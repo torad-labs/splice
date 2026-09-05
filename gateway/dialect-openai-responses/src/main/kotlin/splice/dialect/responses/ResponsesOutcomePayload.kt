@@ -23,6 +23,8 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         bodyText = state.textBuf.toString(),
         emittedText = state.emittedText,
         emittedThinking = state.emittedThinking,
+        messageClosed = state.messageClosed,
+        outputShape = harvest.describeOutput(state.finalResponse, state.streamedItemTypes),
         reasoningEnvelopes = state.reasoningEnvelopes.toList(),
         // The harvest fallback runs ONLY when the streamed list is empty (needs no dedup): a round
         // that emitted only a search call and was missed by the live capture would otherwise

@@ -91,6 +91,51 @@ internal class ResponsesHarvest {
         return Harvested(text.toString(), thinking.toString())
     }
 
+    /** One line naming the completed response's status and every output item by type, with the
+     *  sizes that decide whether it could reach the client: a message's part types and text length,
+     *  a reasoning item's summary count and encrypted length, any other type by its key set. This
+     *  is the evidence the empty-turn honesty gate prints — an item type this dialect does not
+     *  render (agent_message, custom_tool_call, context_compaction, ...) is invisible everywhere
+     *  else, and "model returned no content" was asserting an absence nobody could grep. */
+    public fun describeOutput(resp: JsonObject?, streamedTypes: List<String> = emptyList()): String {
+        if (resp == null) {
+            val streamed = if (streamedTypes.isEmpty()) "" else " streamed=[${streamedTypes.joinToString(",")}]"
+            return "status=<no terminal response>$streamed"
+        }
+        val status = JsonScalars.strOrEmpty(resp["status"]).ifEmpty { "?" }
+        val output = resp["output"] as? JsonArray ?: return "status=$status items=<none>"
+        val items = output.mapNotNull { el -> (el as? JsonObject)?.let(::describeItem) }
+        val streamed = if (streamedTypes.isEmpty()) "" else " streamed=[${streamedTypes.joinToString(",")}]"
+        return "status=$status items=[${items.joinToString(" ")}]$streamed"
+    }
+
+    /** One output item in the evidence form [describeOutput] prints: `message(output_text:0)`,
+     *  `reasoning(summary=0,enc=1842)`, `function_call(name)`, or an unknown type by its keys.
+     *  Public so [ResponsesItemFold] records completed items in the SAME words the terminal
+     *  harvest uses — one vocabulary for the empty-turn line. */
+    public fun describeItem(item: JsonObject): String {
+        val type = JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" }
+        return when (type) {
+            "message" -> {
+                val parts = (item["content"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+                val detail = parts.joinToString(",") { part ->
+                    val t = JsonScalars.strOrEmpty(part["type"]).ifEmpty { "?" }
+                    val len = JsonScalars.strOrEmpty(part["text"]).length +
+                        JsonScalars.strOrEmpty(part["refusal"]).length
+                    "$t:$len"
+                }
+                "message(${detail.ifEmpty { "no parts" }})"
+            }
+            "reasoning" -> {
+                val summaries = (item["summary"] as? JsonArray)?.size ?: 0
+                val enc = JsonScalars.strOrEmpty(item["encrypted_content"]).length
+                "reasoning(summary=$summaries,enc=$enc)"
+            }
+            "function_call" -> "function_call(${JsonScalars.strOrEmpty(item["name"])})"
+            else -> "$type(${item.keys.filter { it != "type" }.joinToString(",")})"
+        }
+    }
+
     /** Append one reasoning item's fullest readable text as a blank-line-separated paragraph. */
     private fun appendReasoningText(thinking: StringBuilder, item: JsonObject) {
         val t = reasoningReadableText(item)

@@ -290,8 +290,9 @@ class ReasoningCacheTest {
     }
 }
 
-// The ONE gate every cache touch point routes through (capture, collect, lookup, include) — a
-// regression dropping the !compact conjunct must fail here, not silently ship (review 2026-07-24).
+// The response-side gate (capture, collect): a compaction's own reasoning is never stored. The
+// request side (lookup, include) rides every turn since 2026-09-05 so a compaction's input matches
+// the session's — see ReasoningCachePolicy.
 class ReasoningCacheActiveTest {
 
     private val quirksOn = ResponsesQuirks(providerTag = "t", reasoningCache = true)
@@ -301,7 +302,7 @@ class ReasoningCacheActiveTest {
         assertTrue(cachePolicy.reasoningCacheActive(quirksOn, compact = false))
         assertFalse(
             cachePolicy.reasoningCacheActive(quirksOn, compact = true),
-            "compaction turns never touch the cache",
+            "a compaction's own reasoning is never stored",
         )
         assertFalse(cachePolicy.reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = false))
         assertFalse(cachePolicy.reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = true))

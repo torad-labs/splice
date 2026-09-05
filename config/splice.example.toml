@@ -54,16 +54,18 @@ zstd_request_body = true
 # it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
 # tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
 # encrypted envelopes, bounded + TTL'd; set reasoning_cache = false to restore the old behavior.
-# parallel_tool_calls (default false): the VALUE sent for parallel_tool_calls on responses-lite
-# (gpt-5.6) turns — the field itself always rides, since a lite request without it 400s. codex-rs
-# reads this per model rather than hardcoding it, so it is a knob here too. false = one tool call
-# per turn, which is why claudex averages ~2x the round-trips of grok/kimi and re-sends the whole
-# context each time. To opt in, add `parallel_tool_calls = true` to this table, above the
-# tool_surface sub-table. Guardrails: a client's explicit disable_parallel_tool_use=true always
-# wins, and toolless turns stay false. Lite-only — ignored on non-lite turns (grok's value comes
-# from the client's tool_choice). UNTESTED against the live backend: leaving the field out
-# entirely once let the backend default to parallel and gpt-5.6 sprayed 30-50 parallel Task
-# calls. Opt in to measure.
+# parallel_tool_calls (default false): explicit wire policy for responses-lite turns.
+# Official Codex also sends false for Lite, even when model metadata advertises parallel support.
+# This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
+# A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
+# Setting true is an experiment, not demonstrated task-efficiency parity.
+# code_mode (default false): experimental Astra JavaScript bridge bundled in splice's JAR.
+# Real tool operations still use Claude Code's ordinary handlers and per-call permissions.
+# No Codex or Node installation is required. Child JVMs have bounded workers/time/heap and deny
+# guest host/I/O access; Graal community is not an OS-hardened same-user attacker sandbox.
+# Unsupported non-text bridge results fail explicitly. Compact/toolless/forced-tool turns
+# retain the ordinary path. Keep this off until the task-level comparison supports enabling it.
+# code_mode = false
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
 [providers.codex.quirks.tool_surface]
@@ -72,8 +74,8 @@ enabled = true
 # request (Anthropic-native sessions keep it deferred, so the asymmetry only shows on this head).
 # Forcing it into the deferred set drops the schema from the eager surface; the model reaches it
 # only via tool_search, which it rarely does for navigation it can already do with grep/read.
-# Conversations that already used LSP keep it eager for their lifetime; the brake takes effect
-# on fresh conversations.
+# Prior LSP use replays its declaration in history; it never promotes LSP into the stable
+# initial tool list. The partition depends on the current catalog and policy, not usage.
 defer = ["LSP"]
 [[providers.codex.models]]
 id = "gpt-6-astra"
@@ -231,10 +233,10 @@ context_window = 262144
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
 # `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
-# one window onto every selected row; omit it when their real backend ceilings differ. Every launch
-# plants one constant CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every row (the pinned
-# one included) compact at its own declared window — live through /model, and a window edited here
-# reaches running sessions after `splice restart`.
+# one window onto every selected row; omit it when their real backend ceilings differ. A launch
+# plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
+# other row compact at its own declared window — live through /model. A window edited here reaches
+# running sessions after `splice restart`, through the window each session reports.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.

@@ -121,7 +121,7 @@ internal class ToolPartitioner(private val quirks: ResponsesQuirks) {
         return when {
             policy == null -> allEager
             !opts.toolSurfaceOpen -> allEager // latch closed
-            !liteShape.isLite(opts) -> allEager // compact is subsumed: isLite is already !compact && …
+            !liteShape.isLite(opts) -> allEager
             else -> partitionWithPolicy(body, policy, allEager)
         }
     }

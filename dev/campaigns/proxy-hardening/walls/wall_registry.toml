@@ -144,7 +144,7 @@ wall = "dev/campaigns/proxy-hardening/walls/cx_01_tool_args_validated.py"
 [[item]]
 id = "CX-02"
 phase = "W4-correctness-walls"
-wall = "dev/campaigns/proxy-hardening/walls/cx_02_compact_directive_dialect_symmetry.py"
+wall = "dev/campaigns/proxy-hardening/walls/cx_02_compaction_is_a_turn.py"
 
 [[item]]
 id = "CX-04"

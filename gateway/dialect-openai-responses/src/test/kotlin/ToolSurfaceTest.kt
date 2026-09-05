@@ -1,5 +1,5 @@
 // Walls for the deferred tool surface partition (ToolSurface.kt). Pins the NEVER-BELOW-STATUS-QUO
-// gate order (off/latch/non-lite/compact/floor/degenerate all fall back to all-eager), transcript
+// gate order (off/latch/non-lite/floor/degenerate all fall back to all-eager), transcript
 // INDEPENDENCE (the partition is a pure function of (body.tools, policy) ONLY — cache-prefix
 // stability, 2026-07-25; replaces the removed R2 always-eager-promotion, whose declaration-replay
 // successor is pinned in ResponsesRequestBuilderTest.kt), the eager/defer overrides, and the
@@ -78,12 +78,14 @@ class ToolSurfaceTest {
         assertTrue(partition.deferred.isEmpty())
     }
 
+    // A compaction partitions exactly like the session turn (2026-09-05): a different eager set
+    // is a different tools[] prefix, and the prompt cache misses the whole transcript.
     @Test
-    fun `compact turn - every tool eager`() {
+    fun `compact turn - partitions like a session turn`() {
         val body = requestOf(mcpTools(20) + builtins(16))
-        val partition = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts(compact = true))
-        assertEquals(body.tools, partition.eager)
-        assertTrue(partition.deferred.isEmpty())
+        val turn = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts())
+        val compaction = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts(compact = true))
+        assertEquals(turn, compaction)
     }
 
     @Test

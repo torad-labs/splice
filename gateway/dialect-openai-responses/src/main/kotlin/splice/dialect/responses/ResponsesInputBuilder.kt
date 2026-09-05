@@ -54,22 +54,17 @@ internal class ResponsesInputBuilder(
     ) {
         when (block) {
             is TextBlock -> sink.add(parts.roleText(role, block.text))
-            is ImageBlock -> appendImage(sink, block, opts)
-            is DocumentBlock -> appendDocument(sink, block, opts)
+            is ImageBlock -> appendImage(sink, block)
+            is DocumentBlock -> appendDocument(sink, block)
             is RedactedThinkingBlock -> inject.appendRedactedThinking(sink, block, opts)
             is ToolUseBlock -> tools.appendToolUse(sink, block, opts, declareByName)
-            is ToolResultBlock -> tools.appendToolResult(sink, block, opts)
+            is ToolResultBlock -> tools.appendToolResult(sink, block)
             is ThinkingBlock -> Unit // visible thinking never rides back upstream
             is UnknownBlock -> Unit // unknown client blocks are dropped, never crash
         }
     }
 
-    private fun appendDocument(
-        sink: JsonArrayBuilder,
-        block: DocumentBlock,
-        opts: BuildOptions,
-    ) {
-        if (opts.compact) return
+    private fun appendDocument(sink: JsonArrayBuilder, block: DocumentBlock) {
         sink.add(
             parts.roleText(
                 "user",
@@ -79,8 +74,7 @@ internal class ResponsesInputBuilder(
         )
     }
 
-    private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock, opts: BuildOptions) {
-        if (opts.compact) return // compact is a text-only summarizer
+    private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock) {
         // DR-155: an undersized image gets its OWN sentence. Falling through to the marker below
         // would print "unsupported source", which is false and undebuggable — the source is
         // perfectly supported and read cleanly; the BACKEND refuses images that small, and only

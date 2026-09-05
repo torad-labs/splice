@@ -99,12 +99,17 @@ internal class WsRoundDriver(
             poller = drive.watchdog.launchIn(inputs.scope, drive.slot, round, inputs.frameEmittedThisRound)
             return try {
                 roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
-            } catch (ignored: WsRoundNeedsSse) {
+            } catch (needsSse: WsRoundNeedsSse) {
                 // The round failed while the client had seen nothing, so it can still be re-served
                 // with the full recovery machinery. Serving the failure raw over the WebSocket
                 // instead would bypass retry/refresh/cooldown entirely — the one way this overlay
-                // could land BELOW the status quo.
-                log("[${provider.key}] websocket round failed before any client frame — serving over SSE\n")
+                // could land BELOW the status quo. The line names the server's failure terminal
+                // (type, code, message): a chained turn the server refuses re-reads the whole
+                // transcript cold over SSE, and which turns it refuses is the finding.
+                log(
+                    "[${provider.key}] websocket round failed before any client frame " +
+                        "(${needsSse.detail}) — serving over SSE\n",
+                )
                 runner.roundBypassed(drive.meta)
                 reported = true
                 null

@@ -47,7 +47,7 @@ status = "sanctioned"
 authority = "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions"
 pin_upstream = "fixture"
 pinned_sha256 = "010e139a7e87bbdaa2132513a919e9ea2505bd5183797ad4061be1687cc9640e"
-replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see [[divergence]]). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
+replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see the divergence rows). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
 covers = "happy-path streaming turn: message_start/ping/content_block_*/message_delta/message_stop ordering, usage payload shape"
 
 [[scenario]]
@@ -65,7 +65,7 @@ status = "sanctioned"
 authority = "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions"
 pin_upstream = "fixture"
 pinned_sha256 = "3b8427226e38d87eded5fdaa61af7d7b6f4746f114a182c0d9c1b414af75f195"
-replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see [[divergence]]). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
+replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see the divergence rows). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
 covers = "tool_use block assembly from streamed function-call arguments"
 
 [[scenario]]
@@ -102,7 +102,7 @@ status = "sanctioned"
 authority = "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions"
 pin_upstream = "fixture"
 pinned_sha256 = "7dc307190d27e32609b0659acea59762319655206128c2ac7bb946eeddc1e41c"
-replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see [[divergence]]). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
+replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see the divergence rows). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
 covers = "assistant-prefill request shaping"
 
 [[scenario]]
@@ -129,7 +129,7 @@ status = "sanctioned"
 authority = "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions"
 pin_upstream = "fixture"
 pinned_sha256 = "be5bf0ff909eb41175b8e1811701908ebb0cb435e72e230b8da5092d9e49fa19"
-replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see [[divergence]]). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
+replay_note = "Passing byte-identical from 2026-08-07 to 2026-09-05 (upstream requests still field-identical except the sanctioned stream_options divergence, see the divergence rows). The reference reported the pinned row's 272000 window with raw counts; since 2026-09-05 the gateway reports the constant client window (1000000) and counts scaled by 1e6/272000, so every row, the pinned one included, compacts at its declared window and a splice.toml window edit lands on running sessions after `splice restart` (ModelCatalog.clientLaunchWindow). Only the usage payload differs from the recording."
 covers = "output-token clamp: reported usage clamped to the client's max_tokens"
 
 [[scenario]]
@@ -169,9 +169,9 @@ recover = "needs a stateful fixture shape recording the refresh call sequence, n
 [[divergence]]
 field = "expected_upstream_requests[].stream_options"
 status = "sanctioned"
-authority = "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions; then PR #57/#58 (789b2ce/561d7ec): turn-scoped summary dedup — sequential-cutoff summary delivery; wall exception bdf6bc0"
+authority = "PR #57/#58 (789b2ce/561d7ec): turn-scoped summary dedup — sequential-cutoff summary delivery; wall exception bdf6bc0"
 pinned_value = '{"reasoning_summary_delivery":"sequential_cutoff"}'
-pinned_sha256 = "5dd1a2aaa27cadb55afb6b741b9b860d62cd7ed617e45b5650fb2df8331eafc8"
+pinned_sha256 = "695bd96a217d1af7e8af90d19e93b9efa7d1fc933eff3fdbbc694ee2598e737e"
 affects = "every request the responses dialect sends — the field did not exist at capture time (captured 2026-07-26, feature merged 2026-07-27)"
 reason = """
 The legacy reference re-requested reasoning summaries on every continuation round, duplicating
@@ -185,8 +185,8 @@ regression and must go kotlin-wrong.
 [[divergence]]
 field = "expected_upstream_requests[].prompt_cache_key"
 status = "sanctioned"
-authority = "7e84b89a: one constant client window — the usage payload reports context_window 1000000 with counts scaled by 1e6/declared so a TOML window edit reaches running sessions; then cache-key strategy quirk: ResponsesRequestBuilder.kt:141 CacheKeyStrategy.SESSION_ID (TOML cache_key = \"session-id\", shipped for grok at config/splice.example.toml:94); review repair 2026-07-30"
-pinned_sha256 = "5dd1a2aaa27cadb55afb6b741b9b860d62cd7ed617e45b5650fb2df8331eafc8"
+authority = "cache-key strategy quirk: ResponsesRequestBuilder.kt:141 CacheKeyStrategy.SESSION_ID (TOML cache_key = \"session-id\", shipped for grok at config/splice.example.toml:94); review repair 2026-07-30"
+pinned_sha256 = "a40bd9951ce456fd2535274196d7ad10b857894d24f2ddbbaa1272b6adc9b28e"
 affects = "all 11 frozen fixtures — every one pins splice-ab79a7c5bb0a3cec72e01e4e19b47fac (the first-message-hash fallback)"
 expected_with_session_header = "claudex:<x-claude-code-session-id>"
 expected_without_session_header = "splice-ab79a7c5bb0a3cec72e01e4e19b47fac"

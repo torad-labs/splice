@@ -45,7 +45,11 @@ internal class TurnStreamer(
                     channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, deps.clock) }
                 },
                 model = built.meta.originalModel,
-                usagePayload = wiring.usagePayloadBuilder(provider.catalog, built.meta),
+                usagePayload = wiring.usagePayloadBuilder(
+                    provider.catalog,
+                    built.meta,
+                    deps.clientWindows.windowFor(built.meta.sessionId),
+                ),
             )
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
             try {

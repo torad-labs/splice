@@ -1,7 +1,7 @@
 // PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — effort
-// precedence (v27), visibility floor semantics, spark summary quirk, compact stripping +
-// instruction forcing + same-model/effort inheritance, cache-key stability, tool mapping,
-// replay gating, grok ladder clamps, purity/determinism.
+// precedence (v27), visibility floor semantics, spark summary quirk, compaction built byte-identical
+// to a turn (2026-09-05), cache-key stability, tool mapping, replay gating, grok ladder clamps,
+// purity/determinism.
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -14,8 +14,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.COMPACT_DIRECTIVE_HEAD
-import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
@@ -36,7 +34,6 @@ private val GROK = ResponsesQuirks(
     effortLadder = EffortLadder.GROK,
     supportsSummary = true,
     summaryRejectModelRegex = null,
-    compactEffortPin = "low",
     emitToolChoice = true,
     emitStrict = true,
 )
@@ -58,8 +55,9 @@ private fun opts(
     configSummary = summary,
     showReasoning = ReasoningDisplayParser.from(show),
     replayReasoning = InjectPriorReasoning(replay),
-    // Default: include when reasoning is shown (independent of input-replay).
-    includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off" && !compact)),
+    // Default: include when reasoning is shown (independent of input-replay, and of compact —
+    // ResponsesTurnOptions derives it the same way, so a compaction's request matches a turn's).
+    includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off")),
     sessionId = sessionId,
     decodeReasoningEnvelope = { data ->
         buildJsonObject {
@@ -267,18 +265,49 @@ class ResponsesRequestBuilderTest {
         assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
     }
 
-    // CACHE LAW (2026-07-20): compaction MUST run on the session's own model AND effort, or the
-    // warm prompt-cache prefix is invalidated and the whole ~160k transcript re-reads cold (the
-    // "compaction ate my subscription" bug). Codex has no compact-model override and no
-    // compactEffortPin, so both inherit the session. Pins the removal of the compactModel footgun.
+    // CACHE LAW (2026-07-20, made total 2026-09-05): compaction MUST run on the session's own
+    // model AND effort, or the warm prompt-cache prefix is invalidated and the whole transcript
+    // re-reads cold (the "compaction ate my subscription" bug). No compact-model override and no
+    // effort pin exist on any provider: both inherit the session.
     @Test
-    fun `compact inherits the session model and effort - codex cache law`() {
+    fun `compact inherits the session model and effort - the cache law`() {
         val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
         val req = build(body, options = opts(compact = true, effort = "high", model = "gpt-5.6-sol"))
         // model is the session's own upstream model — never swapped for a compaction run
         assertEquals("gpt-5.6-sol", req["model"]?.jsonPrimitive?.content)
-        // effort is inherited from the session (config "high"), not pinned to low/other on codex
+        // effort is inherited from the session (config "high"), never pinned lower
         assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    // The whole law in one assertion. OpenAI's prompt cache is an exact-prefix match, so every
+    // compact-only reshaping this builder used to do (directive appended to instructions, tools
+    // stripped, tool results folded to user text, images dropped, lite shape off, cached
+    // reasoning left out) moved the prefix from token zero and every compaction read the whole
+    // transcript cold (perf rows 2026-09-05: compact cached_tokens=0 on every model). The
+    // compaction's request bytes must therefore equal the session turn's for the same body.
+    @Test
+    fun `compaction is built byte-identical to a turn`() {
+        val body = """{"model":"m","system":"base system",
+            "thinking":{"type":"enabled","budget_tokens":16000},
+            "tools":[{"name":"run","input_schema":{"type":"object"}},{"name":"read","input_schema":{"type":"object"}}],
+            "messages":[
+              {"role":"user","content":"start"},
+              {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{"c":1}}]},
+              {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"t1","content":[
+                  {"type":"text","text":"result body"},
+                  {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}]},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}},
+                {"type":"text","text":"Your task is to create a detailed summary of the conversation so far."}
+              ]}]}"""
+        for (model in listOf("gpt-5.6-sol", "gpt-5.4-mini")) {
+            val turn = build(body, options = opts(model = model)).toString()
+            val compaction = build(body, options = opts(compact = true, model = model)).toString()
+            assertEquals(turn, compaction, "compaction must share the turn's prefix on $model")
+            assertTrue(compaction.contains("function_call_output"), "tool results ride as themselves: $compaction")
+            assertTrue(compaction.contains("input_image"), "images ride: $compaction")
+            assertFalse(compaction.contains("COMPACT MODE"), "no directive anywhere: $compaction")
+        }
     }
 
     @Test
@@ -289,33 +318,6 @@ class ResponsesRequestBuilderTest {
         )
         assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         assertNull(req["reasoning"]?.jsonObject?.get("summary"))
-    }
-
-    @Test
-    fun `compact strips tools, forces text-only instructions, folds tool results`() {
-        val req = build(
-            """{"model":"m","system":"base system",
-                "tools":[{"name":"run","input_schema":{"type":"object"}}],
-                "messages":[{"role":"user","content":[
-                  {"type":"tool_result","tool_use_id":"t1","content":"result body"},
-                  {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}},
-                  {"type":"text","text":"please compact"}
-                ]}]}""",
-            options = opts(compact = true),
-        )
-        assertNull(req["tools"])
-        val instructions = req["instructions"]?.jsonPrimitive?.content.orEmpty()
-        assertTrue(instructions.startsWith("base system"))
-        // CX-02 canary (DR-35d): bound to the SHARED definition, not a hand-typed literal — the
-        // wall greps this file for COMPACT_DIRECTIVE_HEAD, and byte-equality with the :core
-        // composition IS the dialect-symmetry claim (chat and passthrough pin the same way).
-        assertTrue(instructions.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $instructions")
-        assertTrue(instructions.contains("No tools. No function calls."))
-        assertEquals(CompactInstructions.withCompactDirective("base system", compact = true), instructions)
-        val inputs = req["input"]!!.jsonArray.map { it.jsonObject }
-        assertTrue(inputs.any { it["content"]?.jsonPrimitive?.content == "[tool_result t1] result body" })
-        // images dropped on compact
-        assertFalse(inputs.any { it.toString().contains("input_image") })
     }
 
     @Test
@@ -413,12 +415,17 @@ class ResponsesRequestBuilderTest {
         assertEquals("true", req["stream"]?.jsonPrimitive?.content)
     }
 
+    // grok used to pin compaction effort to `low` (Node grok/translate-request.mjs:141). The pin
+    // moved the reasoning off the session's and cold-read the transcript on every compaction;
+    // no provider pins any more (2026-09-05).
     @Test
-    fun `grok compaction pins reasoning effort to low regardless of session budget`() {
+    fun `grok compaction inherits the session effort like every provider`() {
         val body = """{"model":"grok-4.5","thinking":{"type":"enabled","budget_tokens":50000},
             "messages":[{"role":"user","content":"summarize"}]}"""
-        val req = build(body, quirks = GROK, options = opts(compact = true, model = "grok-4.5"))
-        assertEquals("low", req["reasoning"]!!.jsonObject["effort"]?.jsonPrimitive?.content)
+        val turn = build(body, quirks = GROK, options = opts(model = "grok-4.5"))
+        val compaction = build(body, quirks = GROK, options = opts(compact = true, model = "grok-4.5"))
+        assertEquals(turn["reasoning"], compaction["reasoning"])
+        assertFalse(compaction["reasoning"]!!.jsonObject["effort"]?.jsonPrimitive?.content == "low")
     }
 
     @Test
@@ -432,12 +439,11 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
-    fun `compact instructions have no blank line between system prompt and COMPACT MODE`() {
-        val body = """{"model":"gpt-5.6-sol","system":"base system",
+    fun `compact instructions are the session's system prompt verbatim`() {
+        val body = """{"model":"gpt-5.4-mini","system":"base system",
             "messages":[{"role":"user","content":"go"}]}"""
-        val req = build(body, options = opts(compact = true))
-        val instructions = req["instructions"]!!.jsonPrimitive.content
-        assertTrue(instructions.startsWith("base system\nCOMPACT MODE")) // \n not \n\n (Node .filter(Boolean))
+        val req = build(body, options = opts(compact = true, model = "gpt-5.4-mini"))
+        assertEquals("base system", req["instructions"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -772,14 +778,16 @@ class ToolSurfaceRequestTest {
     }
 
     @Test
-    fun `the parallel_tool_calls knob does not touch non-lite or compact turns`() {
+    fun `the parallel_tool_calls knob does not touch non-lite turns and rides compaction like a turn`() {
         val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
         val on = CODEX.withParallelToolCallsToml(true)
         // Non-lite model: the lite branch never runs, so the knob is inert and the field stays
         // omitted (backend default) exactly as before.
         assertNull(build(body, quirks = on, options = opts(model = "gpt-5.4-mini"))["parallel_tool_calls"])
-        // Compact turns are not lite by construction (isLite is !compact && …).
-        assertNull(
+        // A compaction on a lite model IS lite (lite is a property of the model, 2026-09-05), so it
+        // carries exactly what the session turn carries.
+        assertEquals(
+            build(body, quirks = on, options = opts(model = "gpt-5.6-sol"))["parallel_tool_calls"],
             build(body, quirks = on, options = opts(compact = true, model = "gpt-5.6-sol"))["parallel_tool_calls"],
         )
     }

@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.COMPACT_DIRECTIVE_HEAD
-import splice.core.turn.CompactInstructions
-import splice.core.turn.compactDirective
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 
@@ -298,55 +295,32 @@ class ChatRequestBuilderTest {
         assertFalse(req.containsKey("tool_choice"))
     }
 
+    // A compaction is built EXACTLY like a turn (2026-09-05): same system, same tools, same
+    // tool_choice, same effort. The backend's prompt cache is an exact-prefix match, so the old
+    // compact-only shaping (directive appended to the system message, tools stripped) cold-read
+    // the whole transcript on every compaction.
     @Test
-    fun `compact inherits session effort and strips tools plus tool_choice`() {
-        // AGENTS cache law: compact mismatch on effort cold-starts the prompt cache. Compact also
-        // strips tools — and with them tool_choice, else a tool_choice with no tools 400s strict
-        // vendors. Supplying real tools + tool_choice makes the stripping assertions bite.
-        val compact = build(
-            """{"model":"m","thinking":{"type":"enabled","budget_tokens":40000},
-                "tools":[{"name":"run","input_schema":{"type":"object"}}],
-                "tool_choice":{"type":"any"},
-                "messages":[{"role":"user","content":"summarize"}]}""",
-            compact = true,
-        )
-        assertEquals("high", compact["reasoning_effort"]?.jsonPrimitive?.content)
-        assertFalse(compact.containsKey("tools"))
-        assertFalse(compact.containsKey("tool_choice"))
-    }
-
-    // CX-02: stripping tools was the ONLY thing chat did on a compact turn, so the backend was
-    // never told it was summarizing and a conversational reply became the stored summary.
-    @Test
-    fun `compact appends the shared directive to the system message`() {
-        val msgs = build(
-            """{"model":"m","system":"You are helpful.",
-                "messages":[{"role":"user","content":"summarize"}]}""",
-            compact = true,
-        ).messages()
-        val system = msgs.first()
-        assertEquals("system", system["role"]?.jsonPrimitive?.content)
-        val content = system["content"]!!.jsonPrimitive.content
-        assertTrue(content.startsWith("You are helpful."), "the client's system prompt stays first")
-        assertTrue(content.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $content")
-        assertEquals(CompactInstructions.withCompactDirective("You are helpful.", compact = true), content)
+    fun `compaction is built byte-identical to a turn`() {
+        val body = """{"model":"m","system":"You are helpful.",
+            "thinking":{"type":"enabled","budget_tokens":40000},
+            "tools":[{"name":"run","input_schema":{"type":"object"}}],
+            "tool_choice":{"type":"any"},
+            "messages":[
+              {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{"c":1}}]},
+              {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"out"},
+                {"type":"text","text":"Your task is to create a detailed summary of the conversation so far."}]}]}"""
+        val turn = build(body)
+        val compaction = build(body, compact = true)
+        assertEquals(turn.toString(), compaction.toString())
+        assertEquals("high", compaction["reasoning_effort"]?.jsonPrimitive?.content, "the session's effort")
+        assertTrue(compaction.containsKey("tools") && compaction.containsKey("tool_choice"), "tools ride: $compaction")
+        assertFalse(compaction.toString().contains("COMPACT MODE"))
     }
 
     @Test
-    fun `compact with no system prompt still gets one carrying the directive`() {
-        val msgs = build(
-            """{"model":"m","messages":[{"role":"user","content":"summarize"}]}""",
-            compact = true,
-        ).messages()
-        assertEquals("system", msgs.first()["role"]?.jsonPrimitive?.content)
-        assertEquals(compactDirective, msgs.first()["content"]!!.jsonPrimitive.content)
-    }
-
-    @Test
-    fun `a non-compact turn carries no directive and no invented system message`() {
-        val plain = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
-        assertFalse(plain.toString().contains(COMPACT_DIRECTIVE_HEAD))
-        assertEquals("user", plain.messages().first()["role"]?.jsonPrimitive?.content)
+    fun `a compact turn with no system prompt invents no system message`() {
+        val msgs = build("""{"model":"m","messages":[{"role":"user","content":"summarize"}]}""", compact = true).messages()
+        assertEquals("user", msgs.first()["role"]?.jsonPrimitive?.content)
     }
 
     @Test

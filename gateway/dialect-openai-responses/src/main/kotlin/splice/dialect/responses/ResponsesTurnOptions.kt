@@ -35,9 +35,8 @@ internal class ResponsesTurnOptions(
             replayReasoning = InjectPriorReasoning(deps.replayReasoning),
             // Ask for the opaque encrypted handle whenever reasoning is visible OR the
             // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
-            includeEncryptedReasoning = RequestEncryptedReasoning(
-                (showOn && !compact) || deps.cachePolicy.reasoningCacheActive(deps.quirks, compact),
-            ),
+            // Not a function of `compact`: the request is built like a turn (the builder header).
+            includeEncryptedReasoning = RequestEncryptedReasoning(showOn || deps.quirks.reasoningCache),
             sessionId = sessionId,
             decodeReasoningEnvelope = { data ->
                 ReasoningReplay.decodeReasoningEnvelope(data) { msg ->
@@ -54,8 +53,10 @@ internal class ResponsesTurnOptions(
             // ONE atomic snapshot per build (review of #71 round 2): per-block lookups could
             // tear across a concurrent eviction (rounds 1..k injected, k+1.. missing), re-ran
             // the first-message SHA-256 per block, and re-touched the conversation per block.
-            // Lazy so a build with no tool_use blocks never touches the cache at all.
-            reasoningLookup = if (!deps.cachePolicy.reasoningCacheActive(deps.quirks, compact)) {
+            // Lazy so a build with no tool_use blocks never touches the cache at all. Wired on a
+            // compaction too: the session's turns carry these reasoning items in their input, so
+            // a compaction built without them shares no prefix with them (2026-09-05).
+            reasoningLookup = if (!deps.quirks.reasoningCache) {
                 { null }
             } else {
                 val snapshot = lazy { deps.reasoningCache.snapshot(deps.ids.stablePromptCacheKey(body.typed)) }
@@ -67,10 +68,10 @@ internal class ResponsesTurnOptions(
         )
     }
 
-    /** codex-rs sends this marker header for responses-lite (5.6-family) turns; compact turns keep
-     *  the normal shape so the header stays off there too (mirrors the builder's lite gate). */
+    /** codex-rs sends this marker header for responses-lite (5.6-family) turns — every turn on
+     *  such a model, compaction included (mirrors the builder's lite gate). */
     fun liteHeaders(meta: TurnMeta): Map<String, String> =
-        if (!meta.compact && deps.quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
+        if (deps.quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
             mapOf("x-openai-internal-codex-responses-lite" to "true")
         } else {
             emptyMap()

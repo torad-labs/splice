@@ -373,3 +373,58 @@ class ModelCatalogTest {
         assertEquals(1_000_000, kimi.contextWindowFor("claude-kimi--k3"), "wrapped bare id")
     }
 }
+
+// 2026-09-05, the second half of the constant-window move: a session launched BEFORE the constant
+// existed still runs on its old env for its whole life, and scaling its counts against the
+// constant made it compact at a third of its row's window ("claudex sessions spend more time
+// compacting than doing anything else"). The client tells us its window on every status-line
+// post, so the scale takes the session's own window when it is known.
+class SessionWindowScaleTest {
+
+    private val codex = ModelCatalog(
+        discoveryPrefix = "claude-codex--",
+        models = listOf(
+            ModelEntry(id = "gpt-5.6-sol", contextWindow = 272_000),
+            ModelEntry(id = "gpt-5.6-sol[1m]", contextWindow = 1_000_000),
+        ),
+        defaultContextWindow = 272_000,
+        pinnedModel = "gpt-5.6-sol",
+    )
+
+    @Test
+    fun `a session's own window replaces the launch constant for an env-governed id`() {
+        assertEquals(400_000L, codex.clientContextWindowFor("gpt-5.6-sol", sessionWindow = 400_000))
+        assertEquals(400_000.0 / 272_000.0, codex.usageScale("gpt-5.6-sol", sessionWindow = 400_000))
+        val atRow = codex.usageScale("gpt-5.6-sol", sessionWindow = 272_000)
+        assertEquals(1.0, atRow, "an env already at the row's window")
+        val unknown = codex.clientContextWindowFor("gpt-5.6-sol", sessionWindow = null)
+        assertEquals(1_000_000L, unknown, "unknown session: the constant")
+        val nonsense = codex.clientContextWindowFor("gpt-5.6-sol", sessionWindow = 0)
+        assertEquals(1_000_000L, nonsense, "a nonsense window: the constant")
+    }
+
+    @Test
+    fun `a 1m id and a claude- id ignore the session window - the client sizes those from the id`() {
+        assertEquals(1_000_000L, codex.clientContextWindowFor("gpt-5.6-sol[1m]", sessionWindow = 400_000))
+        assertEquals(1.0, codex.usageScale("gpt-5.6-sol[1m]", sessionWindow = 400_000))
+        val anthropic = ModelCatalog(
+            discoveryPrefix = "claude-splice--",
+            models = listOf(ModelEntry(id = "claude-fable-5", contextWindow = 200_000)),
+            defaultContextWindow = 200_000,
+            pinnedModel = "claude-fable-5",
+        )
+        assertEquals(200_000L, anthropic.clientContextWindowFor("claude-fable-5", sessionWindow = 400_000))
+        assertEquals(1.0, anthropic.usageScale("claude-fable-5", sessionWindow = 400_000))
+    }
+
+    @Test
+    fun `envGoverned names exactly the ids whose status post reveals the env`() {
+        assertTrue(codex.envGoverned("gpt-5.6-sol"))
+        // The wrapped spelling starts with "claude-", which Claude Code sizes from its own table
+        // (cli 2.1.257 kL()), so its post says nothing about the env either.
+        assertFalse(codex.envGoverned("claude-codex--gpt-5.6-sol"))
+        assertFalse(codex.envGoverned("gpt-5.6-sol[1m]"))
+        assertFalse(codex.envGoverned("claude-codex--gpt-5.6-sol[1m]"))
+        assertFalse(codex.envGoverned("claude-fable-5"))
+    }
+}

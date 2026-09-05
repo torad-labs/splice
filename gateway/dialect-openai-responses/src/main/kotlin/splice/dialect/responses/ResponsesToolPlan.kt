@@ -17,7 +17,7 @@ internal class ResponsesToolPlan(private val quirks: ResponsesQuirks) {
     /** Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
      *  ONLY (ToolSurface.kt header) — the ORIGINAL call site inside build(). */
     internal fun partition(body: AnthropicRequest, opts: BuildOptions): ToolPartition? =
-        if (!opts.compact && body.tools.isNotEmpty()) partitioner.partitionTools(body, opts) else null
+        if (body.tools.isNotEmpty()) partitioner.partitionTools(body, opts) else null
 
     // ── tools ────────────────────────────────────────────────────────────────
 

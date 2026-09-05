@@ -51,7 +51,12 @@ internal class StatuslineRoute(
         // non-empty here — the managed == null early return above guarantees it resolved.
         val roots = config.getConfig(key).statuslineGitRoots
         val renderer = renderers.get(managed.head.key, managed.head.label, roots) {
-            StatuslineRenderer(managed.head.label, roots, catalog = managed.catalog)
+            StatuslineRenderer(
+                managed.head.label,
+                roots,
+                catalog = managed.catalog,
+                clientWindows = managed.clientWindows,
+            )
         }
         val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
         call.respondText(line, ContentType.Text.Plain)

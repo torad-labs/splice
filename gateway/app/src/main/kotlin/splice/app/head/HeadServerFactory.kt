@@ -53,6 +53,7 @@ internal class HeadServerFactory(
                 usageStore = stores.usageStore,
                 perfStats = stores.perfStats,
                 quota = stores.quota,
+                clientWindows = stores.clientWindows,
                 log = log,
                 requestMaterializationGate = requestMaterializationGate,
             ),

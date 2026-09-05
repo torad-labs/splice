@@ -325,3 +325,17 @@ class TopologyConfigOverridesTest {
         assertEquals(setOf("codex", "grok"), TopologyKnobLayer(topology).soleLegacyHeadKeys())
     }
 }
+
+// compact_effort is RETIRED (2026-09-05, operator law): a compaction is built exactly like a turn
+// and inherits the session's model and effort, or the prompt cache misses the whole transcript on
+// the most expensive turn class there is. The key still parses so a config that sets it fails
+// loudly at load, naming the fix, instead of being ignored in silence.
+class QuirksConfigRetiredKnobTest {
+
+    @Test
+    fun `compact_effort fails loudly at config load, naming the fix`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) { QuirksConfig(compactEffort = "low") }
+        assertTrue("compact_effort" in ex.message!! && "retired" in ex.message!!, ex.message)
+        assertNull(QuirksConfig().compactEffort, "absent stays absent")
+    }
+}

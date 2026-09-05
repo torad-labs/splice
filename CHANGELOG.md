@@ -1,5 +1,36 @@
 # Changelog
 
+## splice v0.3.1 — one picker row per model, and the proofs the review asked for - 2026-09-04
+
+### Fixed
+
+- **The `/model` picker lists each model once.** Every head showed a slotted model twice (Sol
+  twice on `claudex`; Kimi K3 (256k) and Kimi K2.7 Code twice on `claude-kimi`). Claude Code draws
+  one row per planted tier (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`) and dedupes rows
+  by their alias, so two tiers on one model drew it twice: Fable shares the frontier with Opus, and
+  on a two-model head Haiku shares Sonnet. A tier cannot be left unset, because its alias then
+  resolves to Claude Code's built-in model, which the head rejects. A repeated tier is now planted
+  under the head's discovery-wrapped spelling (`claude-codex--gpt-5.6-sol`): the head routes it
+  like the bare id, and the picker's allowlist hides the row. Cache rows are unchanged; they are
+  where the Default line's label comes from.
+
+### Changed
+
+- **The watchdog turn-line tests pin what production does.** A test claimed a compaction's
+  first-output tier is lifted to the whole-turn cap; production switches that tier off
+  (`WatchdogBudget.forCompact`), so only the total cap ends a silent compaction. The arm now pins a
+  non-compact first-output fire and a compact total-cap fire, and two new `TurnFinish` arms fire
+  real pollers on virtual ticks and assert the rendered line carries the sentinel through the
+  production hop.
+- **`CLAUDEX_QUOTA_POLL=off` has an effect test.** `ManagedHeadFactory` exposes a poller-start
+  seam; assembling a real ChatGPT subscription head with the knob off starts nothing, with `auto`
+  starts one.
+- **The stable pin recipe is exercised.** `checks/release/accept.sh` now installs with
+  `SPLICE_VERSION` pinned to the jar's own stable tag as well as a synthetic prerelease, and fails
+  when `install.sh` ignores the pin.
+- **Changelog bookkeeping.** "Heads that see each other" landed after `v0.3.0-beta.1` and now sits
+  in the v0.3.0 section, so the beta.1 list matches its tag.
+
 ## splice v0.3.0 — plan usage on every head, and a proxy that matches its reference client - 2026-09-03
 
 ### Added
@@ -19,6 +50,14 @@
   outbound traffic since the beta, so it is named here rather than left implicit;
   `CLAUDEX_QUOTA_POLL=off` stops every poller (daemon restart), and the bars then draw only from
   the rate-limit headers each round already carries.
+
+- **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
+  under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
+  claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
+  appear in each other's `ListAgents` and can message each other with `SendMessage`: a session on one
+  backend can orchestrate a session on another. On by default through `[claude].share`;
+  `isolate = ["sessions"]` walls a head off. (Shipped in this release without a changelog entry;
+  recorded here.)
 
 ### Changed
 
@@ -128,13 +167,6 @@
 
 ### Added
 
-- **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
-  under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
-  claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
-  appear in each other's `ListAgents` and can message each other with `SendMessage`: a session on one
-  backend can orchestrate a session on another. On by default through `[claude].share`;
-  `isolate = ["sessions"]` walls a head off. (Shipped in this release without a changelog entry;
-  recorded here.)
 - **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
   sends the caller credential through the local passthrough head; splice never stores, reads,
   refreshes, or logs that credential. The management key is not reused on this route.

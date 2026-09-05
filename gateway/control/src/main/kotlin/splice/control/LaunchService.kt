@@ -43,6 +43,7 @@ public class LaunchService(
         keyPresentNow: Boolean = true,
     ): LaunchRecipe {
         val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
+        val slots = aliasSlots(effective)
         materializer.materialize(
             MaterializeSpec(
                 configDir = effective.configDir,
@@ -59,7 +60,6 @@ public class LaunchService(
                 loginOutcomeFile = effective.loginOutcomeFile,
             ),
         )
-        val slots = aliasSlots(effective)
         val env = buildEnv(effective, slots)
         val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
@@ -123,8 +123,25 @@ public class LaunchService(
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
             // the wrapped /v1/models spelling must never reach the picker.
             put("ANTHROPIC_MODEL", spec.pinnedModel)
+            // The picker lists one row per PLANTED TIER (Claude Code 2.1.257: fen()/hen()/uen()
+            // emit a row whenever ANTHROPIC_DEFAULT_<tier>_MODEL is set, value = the alias, label =
+            // _NAME) and dedupes rows by value only, so two tiers on one model drew that model
+            // twice: Sol as opus and as fable on claudex, K2.7 Code as sonnet and as haiku on
+            // claude-kimi (the 2026-09-04 release recording). The tier cannot be left unset: the
+            // alias then resolves to Claude Code's built-in model, which this head rejects
+            // ("proxies its own models only"), and every fable- or haiku-tiered subagent dies.
+            // The one lever is the allowlist: a tier row whose model is not on availableModels is
+            // hidden, while the head accepts its own DISCOVERY-WRAPPED spelling (catalog.contains
+            // unwraps). So a repeated tier is planted as "<prefix><id>": routed like the first, drawn
+            // never. Cache rows are untouched on purpose: Claude Code already drops a cache row that
+            // repeats a tier's model, and the cache row is where the Default line's label comes from
+            // (stripping them printed "currently gpt-5.6-sol[1m]"; verified live 2026-09-04). Known
+            // cost: a subagent on the wrapped tier runs under a wrapped ACTIVE id, for which Claude
+            // Code does not honor CLAUDE_CODE_MAX_CONTEXT_TOKENS (header note).
+            val planted = mutableSetOf<String>()
             slots.forEach { (slot, model) ->
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL", model)
+                val repeated = !planted.add(model) && spec.discoveryPrefix.isNotBlank()
+                put("ANTHROPIC_DEFAULT_${slot}_MODEL", if (repeated) spec.discoveryPrefix + model else model)
                 val label = spec.modelLabels[model] ?: model
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)

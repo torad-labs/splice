@@ -213,42 +213,44 @@ grep -q "splice.jar attestation: OK" "$stable_output" || { echo "release accept:
 grep -q "splice-launch attestation: OK" "$stable_output" || { echo "release accept: stable install missing splice-launch attestation OK" >&2; exit 1; }
 rm -rf "$stable_sandbox"
 
-# A prerelease install must pin every download to that exact tag.
-: > "$remote_log"
-: > "$remote_curl_log"
-versioned_sandbox="$(mktemp -d)"
-versioned_output="$versioned_sandbox/output.log"
-mkdir -p "$versioned_sandbox/home" "$versioned_sandbox/share" "$versioned_sandbox/bin" "$versioned_sandbox/work"
-(
-  cd "$versioned_sandbox/work"
-  HOME="$versioned_sandbox/home" \
-  JAVA_TOOL_OPTIONS="-Duser.home=$versioned_sandbox/home" \
-  SPLICE_SHARE_DIR="$versioned_sandbox/share" \
-  SPLICE_BIN_DIR="$versioned_sandbox/bin" \
-  SPLICE_VERSION="v9.8.7-beta.6" \
-  SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
-  SPLICE_FAKE_CURL_LOG="$remote_curl_log" \
-  SPLICE_FAKE_GH_LOG="$remote_log" \
-  PATH="$remote_tools:$versioned_sandbox/bin:$PATH" \
-    bash -s < "$DIST/install.sh"
-) >"$versioned_output" 2>&1 || { cat "$versioned_output" >&2; exit 1; }
-expected_versioned_base="https://github.com/torad-labs/splice/releases/download/v9.8.7-beta.6"
-printf '%s\n' \
-  "$expected_versioned_base/splice.jar" \
-  "$expected_versioned_base/sha256sums.txt" \
-  "$expected_versioned_base/splice-launch" > "$remote_tools/expected-versioned-urls.log"
-cmp -s "$remote_tools/expected-versioned-urls.log" "$remote_curl_log" || {
-  echo "release accept: prerelease install did not use the exact version-pinned URLs" >&2
-  exit 1
-}
-[ "$(grep -c '^attestation verify ' "$remote_log")" -eq 2 ] || {
-  echo "release accept: prerelease install did not attest both release artifacts" >&2
-  cat "$remote_log" >&2
-  exit 1
-}
-grep -q "splice.jar attestation: OK" "$versioned_output" || { echo "release accept: prerelease install missing splice.jar attestation OK" >&2; exit 1; }
-grep -q "splice-launch attestation: OK" "$versioned_output" || { echo "release accept: prerelease install missing splice-launch attestation OK" >&2; exit 1; }
-rm -rf "$versioned_sandbox"
+# Stable and prerelease pins must send every download to their exact tag.
+for pinned_version in "v$jar_version" v9.8.7-beta.6; do
+  : > "$remote_log"
+  : > "$remote_curl_log"
+  versioned_sandbox="$(mktemp -d)"
+  versioned_output="$versioned_sandbox/output.log"
+  mkdir -p "$versioned_sandbox/home" "$versioned_sandbox/share" "$versioned_sandbox/bin" "$versioned_sandbox/work"
+  (
+    cd "$versioned_sandbox/work"
+    HOME="$versioned_sandbox/home" \
+    JAVA_TOOL_OPTIONS="-Duser.home=$versioned_sandbox/home" \
+    SPLICE_SHARE_DIR="$versioned_sandbox/share" \
+    SPLICE_BIN_DIR="$versioned_sandbox/bin" \
+    SPLICE_VERSION="$pinned_version" \
+    SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
+    SPLICE_FAKE_CURL_LOG="$remote_curl_log" \
+    SPLICE_FAKE_GH_LOG="$remote_log" \
+    PATH="$remote_tools:$versioned_sandbox/bin:$PATH" \
+      bash -s < "$DIST/install.sh"
+  ) >"$versioned_output" 2>&1 || { cat "$versioned_output" >&2; exit 1; }
+  expected_versioned_base="https://github.com/torad-labs/splice/releases/download/$pinned_version"
+  printf '%s\n' \
+    "$expected_versioned_base/splice.jar" \
+    "$expected_versioned_base/sha256sums.txt" \
+    "$expected_versioned_base/splice-launch" > "$remote_tools/expected-versioned-urls.log"
+  cmp -s "$remote_tools/expected-versioned-urls.log" "$remote_curl_log" || {
+    echo "release accept: $pinned_version install did not use the exact version-pinned URLs" >&2
+    exit 1
+  }
+  [ "$(grep -c '^attestation verify ' "$remote_log")" -eq 2 ] || {
+    echo "release accept: $pinned_version install did not attest both release artifacts" >&2
+    cat "$remote_log" >&2
+    exit 1
+  }
+  grep -q "splice.jar attestation: OK" "$versioned_output" || { echo "release accept: $pinned_version install missing splice.jar attestation OK" >&2; exit 1; }
+  grep -q "splice-launch attestation: OK" "$versioned_output" || { echo "release accept: $pinned_version install missing splice-launch attestation OK" >&2; exit 1; }
+  rm -rf "$versioned_sandbox"
+done
 
 # A failed provenance check must abort before the candidate artifacts become live.
 cat > "$remote_tools/gh" <<'SH'

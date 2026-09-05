@@ -54,4 +54,13 @@ tasks.withType<Test>().configureEach {
     // per-connection state, so the 1000-stream CEILING test needs the extra heap. Real load is tens
     // of streams (far under 1g either way); this only funds the stress ceiling.
     maxHeapSize = "2g"
+    // A CI failure must carry its assertion MESSAGE, not only "AssertionFailedError at X.kt:274".
+    // Gradle's default prints the location alone, so the two CI-only failures of the perf
+    // telemetry integration arm (runs 33608202738 and 33928312116) left no way to read what was
+    // logged instead of the expected line. Failed events only: a green run stays quiet.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
+    }
 }

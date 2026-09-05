@@ -57,6 +57,7 @@ internal class LaunchSpecFactory(
             // reinterpreting the declaration. See ManagedHeadFactory.forwardClientAuth.
             forwardClientAuth = forwardClientAuth,
             pinnedModel = head.pinnedModel,
+            discoveryPrefix = head.discoveryPrefix,
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
             modelSlots = head.models.orEmpty().mapNotNull { model ->

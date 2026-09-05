@@ -68,6 +68,11 @@ public sealed class TurnOutcome {
          *  Only the latter can answer "did this turn put anything on the wire", which is the
          *  question the empty-turn honesty gate has to ask before calling a turn empty. */
         val emittedThinking: Boolean = false,
+        /** What the completed upstream response actually held, item by item, in one short line
+         *  (`status=completed items=[reasoning(summary=0,enc=1842) message(output_text:0)]`).
+         *  Evidence only: read by the empty-turn line so a "no content" verdict names the shape
+         *  the backend sent instead of asserting an absence nobody can grep. */
+        val outputShape: String = "",
         /** splice-reasoning envelopes (base64) of THIS round's encrypted reasoning items, for
          *  reasoning-continuation replay. Populated only when the turn is fold-eligible; empty
          *  otherwise (opaque handles — the gateway forwards them to the provider's fold controller,

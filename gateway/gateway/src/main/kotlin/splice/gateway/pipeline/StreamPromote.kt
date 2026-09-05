@@ -43,10 +43,16 @@ internal class StreamPromote(
                 // An empty compact is an ERROR, not an empty success (Claude Code would store a
                 // blank summary and lose the thread). Never invent locally.
                 compact.record("empty_model", elapsedMs, error = "api_error")
-                emitter.emitError(ErrorType.API_ERROR, "claudex: compact returned no content from model — retry")
+                log("[gateway] empty-turn shape compact=true ${outcome.outputShape}\n")
+                emitter.emitError(ErrorType.API_ERROR, "claudex: compact returned no content from model — retry (upstream ${outcome.outputShape})")
                 return "empty_compact"
             } else if (honesty.nothingReachesTheClient(outcome, meta)) {
-                emitter.emitError(ErrorType.API_ERROR, "claudex: model returned no content (empty response) — retry")
+                // Name what the backend actually sent: a reasoning-only round, an item type this
+                // dialect never renders, or a genuinely empty output are three different bugs, and
+                // the old line made them one grep-proof sentence (Astra, 2026-09-05: eleven identical
+                // client retries of one turn, each burning 258k input tokens, with no way to tell).
+                log("[gateway] empty-turn shape compact=false ${outcome.outputShape}\n")
+                emitter.emitError(ErrorType.API_ERROR, "claudex: model returned no content (empty response) — retry (upstream ${outcome.outputShape})")
                 return "empty_model"
             }
         } else {

@@ -75,4 +75,26 @@ class HarvestedTest {
         )
         assertEquals("first\n\nsecond", h.thinking)
     }
+
+    @Test
+    fun `describeOutput names every item type with the sizes that decide client visibility`() {
+        val line = harvest.describeOutput(
+            resp(
+                """{"status":"completed","output":[
+                   {"type":"reasoning","summary":[],"encrypted_content":"abcd"},
+                   {"type":"message","content":[{"type":"output_text","text":""}]},
+                   {"type":"function_call","name":"Bash","arguments":"{}"},
+                   {"type":"agent_message","author":"a","recipient":"b","content":[]}]}""",
+            ),
+        )
+        assertEquals(
+            "status=completed items=[reasoning(summary=0,enc=4) message(output_text:0) function_call(Bash) agent_message(author,recipient,content)]",
+            line,
+        )
+    }
+
+    @Test
+    fun `describeOutput says so when no terminal response was ever seen`() {
+        assertEquals("status=<no terminal response>", harvest.describeOutput(null))
+    }
 }

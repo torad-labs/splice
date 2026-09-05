@@ -393,7 +393,7 @@ class ExampleConfigTest {
         val topology = TopologyLoader.parse(exampleToml())
         val headProfiles = mapOf(
             "claudex" to (
-                listOf("gpt-5.6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-5.6-luna" to "haiku") to
+                listOf("gpt-5.6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-5.6-luna" to "haiku", "gpt-6-astra" to "fable") to
                     400_000L
                 ),
             "claude-grok" to (

@@ -123,10 +123,10 @@ covers = "output-token clamp: reported usage clamped to the client's max_tokens"
 [[scenario]]
 name = "compactish"
 status = "sanctioned"
-authority = "22a0744: codex-rs sequential_cutoff parity"
+authority = "d0202374 + 1a649eca: the empty-turn error names the upstream shape; a closed empty message ends clean"
 pin_upstream = "fixture"
-pinned_sha256 = "e755e61e21fdd9b696ca6b5bc4409f5efafeb43e5c386b7795a51278fe23c6f9"
-replay_note = "The frozen mock predates sequential_cutoff and returns only its legacy cumulative-summary carrier. With no reasoning_summary_text.done and no answer text, the gateway now emits the honest no-content error rather than fabricating a clean stop."
+pinned_sha256 = "d3b9f8609e69edfd4a1af576656578cbbcc537ba13e50a9812f5ea78fd865815"
+replay_note = "The frozen mock predates sequential_cutoff and returns only its legacy cumulative-summary carrier, and it completes NO message item (output_item.done without an item). With no reasoning_summary_text.done, no answer text and no closed message, the gateway emits the honest no-content error, whose text now carries the upstream shape it saw (`status=completed items=[] streamed=[reasoning]`) so the class is greppable from the client side. A stream that DOES close a message, even an empty one, ends clean instead (TurnPipelineTest, 2026-09-05)."
 covers = "real Claude Code compaction request shaping and the honest empty-output terminal under sequential_cutoff"
 
 # ── captured deliberately NOT frozen, with reasons (never silently dropped) ──

@@ -13,10 +13,12 @@ internal class ResponsesItemFold(
 ) {
 
     private val frames = ResponsesFrameParse()
+    private val harvest = ResponsesHarvest()
     private var toolSynthCounter = 0
 
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
+        state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
         // codex parity: EVERY added item (reasoning, message, function_call, search) becomes the
         // active item; summary done-events are rendered only while their item is active.
@@ -64,6 +66,8 @@ internal class ResponsesItemFold(
         // not only via the end-of-turn harvest fallback.
         reasoningFold.maybeEmitLateReasoning(item, oi, sink)
         maybeHarvestLateToolArgs(item, oi, sink)
+        recordDoneDetail(item)
+        if (item != null && JsonScalars.strOrEmpty(item["type"]) == "message") state.messageClosed = true
         closeOpenBlocks(oi, sink)
         if (item == null) return
         replay.emitReplayedReasoning(item, sink)
@@ -84,6 +88,18 @@ internal class ResponsesItemFold(
         // site of the DR-108 law, and the only one reached with no output_item.added — so DR-107's
         // eviction never runs here and cannot cover it.
         if (b.tool && !b.sawDelta) emitToolArgText(b, JsonScalars.strOrEmpty(item["arguments"]), sink)
+    }
+
+    /** Evidence for the empty-turn line: what a completed message/reasoning item actually carried,
+     *  since these can ride output_item.done with an EMPTY terminal output array. The bare type
+     *  recorded at added-time is replaced with [ResponsesHarvest.describeItem]'s form. Evidence only. */
+    private fun recordDoneDetail(item: JsonObject?) {
+        if (item == null) return
+        val type = JsonScalars.strOrEmpty(item["type"])
+        if (type != "message" && type != "reasoning") return
+        val detail = harvest.describeItem(item)
+        val idx = state.streamedItemTypes.indexOfLast { it == type }
+        if (idx >= 0) state.streamedItemTypes[idx] = detail else state.streamedItemTypes.add(detail)
     }
 
     /** onItemDone's block-closing half: close both the tool/message block and any reasoning block at

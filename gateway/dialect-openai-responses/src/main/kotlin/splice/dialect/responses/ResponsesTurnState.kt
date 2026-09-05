@@ -54,6 +54,10 @@ internal class ResponsesTurnState {
      *  completed response object without emitting anything, and that is precisely the turn the
      *  honesty gate must still call empty. */
     var emittedThinking = false
+
+    /** A `message` item reached output_item.done this round (text or not) — see
+     *  [splice.core.turn.TurnOutcome.Success.messageClosed]. */
+    var messageClosed = false
     var incomplete = false
 
     // response.incomplete carrying a non-max_output_tokens reason (content_filter, etc.) — the
@@ -88,6 +92,12 @@ internal class ResponsesTurnState {
 
     // Reasoning-cache capture (RC-1): the round's REAL upstream function_call ids, in order.
     val turnToolIds = mutableListOf<String>()
+
+    /** Every output item this round STREAMED, by `type`, in arrival order. The empty-turn line
+     *  reads this because a code-mode model (Astra) can stream an item type this dialect drops
+     *  and finish with an empty terminal `output` array — so `finalResponse` shows nothing while
+     *  the stream carried the whole (unrendered) round. Evidence only; nothing branches on it. */
+    val streamedItemTypes = mutableListOf<String>()
 
     // tool_search_call items this round emitted (deferred tool surface) — populated only when the
     // gateway declared deferral this turn; empty otherwise (pre-deferral behaviour intact).

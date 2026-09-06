@@ -18,6 +18,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.head.TurnLine
 import splice.spi.WatchdogFired
+import splice.spi.WatchdogHeld
 
 private fun meta(compact: Boolean) = TurnMeta(
     compact = compact,
@@ -73,6 +74,26 @@ class TurnLineWatchdogVerdictTest {
         )
         assertTrue("watchdog=total-cap(elapsed=900002ms)" in rendered, rendered)
         assertFalse("first-output" in rendered, "a compact turn has no pre-output idle tier: $rendered")
+    }
+
+    /** 2026-09-06: a silence the poller judged and HELD (the socket was still being pinged) is on
+     *  the line in the numbers it judged, fired or not — a long turn the watchdog looked at must be
+     *  distinguishable from one it never did. */
+    @Test
+    fun `a held silence is on the line, in the numbers the poller judged`() {
+        val ok = TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 141))
+        val rendered = line.render(
+            meta(compact = false),
+            "gpt-6-astra",
+            ok,
+            latencyMs = 345_491,
+            held = WatchdogHeld(idleMs = 300_003, limitMs = 300_000, pingAgoMs = 8_120, sawClientFrame = false),
+        )
+        assertTrue(
+            "watchdog=held(tier=first-output limit=300000ms idle=300003ms ping=8120ms)" in rendered,
+            rendered,
+        )
+        assertFalse("watchdog=idle" in rendered, "held is not fired: $rendered")
     }
 
     @Test

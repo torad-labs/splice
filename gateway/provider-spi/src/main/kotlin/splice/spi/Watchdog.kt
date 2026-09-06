@@ -35,6 +35,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
@@ -49,6 +50,18 @@ public sealed class WatchdogFired {
     public data class TotalCap(val elapsedMs: Long) : WatchdogFired()
 }
 
+/** The idle poller found the round past its tier and did NOT reap it, because the round's socket
+ *  was still being pinged by the server (2026-09-06). Recorded once per turn, at the first such
+ *  poll, so the turn line can say that the silence was judged and held rather than never noticed:
+ *  [idleMs] and [limitMs] are the numbers the poller compared, [pingAgoMs] the liveness that held
+ *  it, [sawClientFrame] the tier. */
+public data class WatchdogHeld(
+    val idleMs: Long,
+    val limitMs: Long,
+    val pingAgoMs: Long,
+    val sawClientFrame: Boolean,
+)
+
 public class TurnWatchdog(
     private val budget: WatchdogBudget,
     // Default is monotonic — sleep/wake/NTP must not invent stalls or freeze totalCap.
@@ -57,11 +70,17 @@ public class TurnWatchdog(
     // production paces exactly as it did; a test wires a ticker that returns instantly and can stop
     // the loop after N samples instead of racing a cancellation against a real 250ms..15s sleep.
     private val ticker: Ticker = ProcessTicker(),
+    /** Where the one "held on a live path" line goes; the head tags it. No-op by default. */
+    private val log: LogSink = LogSink {},
 ) {
     private val firedRef = AtomicReference<WatchdogFired?>(null)
+    private val heldRef = AtomicReference<WatchdogHeld?>(null)
     private val startedAt = clock()
 
     public val fired: WatchdogFired? get() = firedRef.get()
+
+    /** Set once, at the first poll that held a silent round on a live path; null when no poll did. */
+    public val held: WatchdogHeld? get() = heldRef.get()
 
     /** Round boundary. The idle TIER needs no reset any more — [launchIn] reads the round's own
      *  client-frame probe on every poll, and a fresh round starts from a fresh baseline — but the
@@ -100,12 +119,25 @@ public class TurnWatchdog(
      * DR-7: [target] is a ROUND, not the turn — the SSE path parents a job to the turn job and
      * aborts that round's body channel, so the translator survives to report the stall WITH its
      * salvage. Total elapsed is NOT sampled here any more; see [launchTotalCap].
+     *
+     * [pathPulse] is the round's SOCKET liveness (2026-09-06), and it is what separates the two
+     * things an idle tier cannot tell apart on its own: a model reasoning in silence and a path that
+     * died. The ChatGPT backend pings its WebSocket every ~20 s whether or not the model has spoken
+     * (InboxListener.onPing, probed live), so a round past its tier whose last ping is within
+     * [PATH_PING_GRACE_MS] is HELD — polled on, not reaped — and only a round whose path has also
+     * gone quiet is reaped. The live day that earned this (2026-09-05): eleven gpt-6-astra and
+     * gpt-5.6-sol turns were reaped at exactly the 300 s first-output tier, with the socket's last
+     * server ping 5-20 s old on every close line, and each re-POSTed cold from the client; the
+     * model's own answers on that head take 300-750 s of silence before the first delta. Idle is a
+     * stall detector, not a budget (operator, DR-7): a held round is still walled by
+     * [launchTotalCap]. The SSE path passes no pulse and judges exactly as before.
      */
     public fun launchIn(
         scope: CoroutineScope,
         slot: InflightGate.Slot,
         target: Job,
         clientFrame: ClientFrameEmitted,
+        pathPulse: WsPathPulse = WsPathPulse { NEVER_PINGED_MS },
     ): Job =
         scope.launch {
             while (isActive) {
@@ -125,12 +157,28 @@ public class TurnWatchdog(
                 // fold loop open the next — spending past the cap under a name that means "stop".
                 // One breach kind per poller, each cancelling the scope it actually owns.
                 if (idle >= idleLimit) {
+                    val pingAgo = pathPulse.lastPingAgoMs()
+                    if (pingAgo <= PATH_PING_GRACE_MS) {
+                        hold(idle, idleLimit, pingAgo, seen)
+                        continue
+                    }
                     firedRef.compareAndSet(null, WatchdogFired.Idle(idle, seen, idleLimit))
                     target.cancel()
                     return@launch
                 }
             }
         }
+
+    /** Record the hold once and say so once; every later poll that holds is the same fact. */
+    private fun hold(idleMs: Long, limitMs: Long, pingAgoMs: Long, seen: Boolean) {
+        if (!heldRef.compareAndSet(null, WatchdogHeld(idleMs, limitMs, pingAgoMs, seen))) return
+        val tier = if (seen) "mid-output" else "first-output"
+        log(
+            "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
+                "(last server ping ${pingAgoMs / MS_PER_S}s ago) — holding the round, the whole-turn cap " +
+                "(${budget.totalCap.inWholeSeconds}s) is its wall\n",
+        )
+    }
 
     /** NF-03: the whole-turn wall clock, armed from admission to terminal, and since DR-7 the ONLY
      *  place a totalCap breach is raised. It was once a second sampler beside [launchIn]'s, which
@@ -164,3 +212,7 @@ public class TurnWatchdog(
 private const val IDLE_DIVISOR = 3
 private const val MIN_POLL_MS = 250L
 private const val MAX_POLL_MS = 15_000L
+
+// Three missed server pings at the ~20 s cadence: a path that has not pinged for this long is not
+// the path the round is waiting on, and the idle verdict stands.
+private const val PATH_PING_GRACE_MS = 60_000L

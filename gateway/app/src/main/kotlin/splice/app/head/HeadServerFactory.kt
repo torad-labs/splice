@@ -50,6 +50,7 @@ internal class HeadServerFactory(
                 shadow = ShadowClassifier(log = log),
                 compactStats = stores.compactStats,
                 mirrorReasoning = cfg.mirrorReasoning,
+                progressLine = cfg.progressLine,
                 usageStore = stores.usageStore,
                 perfStats = stores.perfStats,
                 quota = stores.quota,

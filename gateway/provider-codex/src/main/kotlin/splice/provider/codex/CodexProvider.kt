@@ -1,11 +1,13 @@
 // NEW: the codex Provider — the shared openai-responses base (ResponsesProvider) with codex quirks
 // (chatgpt-oauth, account_id header, first-message-hash cache key, max effort ceiling, summary
 // supported, spark drops summary). The reasoning-policy wiring lives in the base; this class adds
-// ONLY the ChatGPT-Account-ID header and the codex quirk profile.
+// ONLY the ChatGPT-Account-ID header, codex-rs's per-turn routing/session headers
+// (CodexRoutingHeaders) and the codex quirk profile.
 package splice.provider.codex
 
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.dialect.responses.FoldConfig
@@ -32,6 +34,11 @@ public class CodexProvider(
      *  (gateway/spikes/results/responses-websocket.md): handshake, event vocabulary and
      *  previous_response_id chaining all confirmed. No other Responses upstream has been probed. */
     override val supportsWebSocket: Boolean = true
+
+    private val routing = CodexRoutingHeaders()
+
+    /** codex-rs's per-turn routing/session headers — the measurement is in CodexRoutingHeaders. */
+    override fun perTurnHeaders(meta: TurnMeta): Map<String, String> = routing.forTurn(meta)
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")

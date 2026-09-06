@@ -25,8 +25,22 @@ class LoginCommandTest {
         )
         assertEquals(
             Paths.get("/tmp/splice-custom-auth.json"),
-            LoginCommand().oauthAuthPath(provider, "~/.codex/auth.json"),
+            LoginCommand().oauthAuthPath(provider),
         )
+    }
+
+    // 2026-09-05: a head with no auth.file signs in to SPLICE's own file for its kind — never the
+    // native app's (~/.grok/auth.json here), whose refresh rotation would invalidate splice's session.
+    @Test
+    fun `oauth login defaults to the splice-owned file for the kind, never the native app's`() {
+        val provider = ProviderConfig(
+            dialect = Dialect.OPENAI_RESPONSES,
+            baseUrl = "https://example.invalid",
+            auth = AuthConfig("grok-oauth"),
+        )
+        val path = LoginCommand().oauthAuthPath(provider)
+        assertEquals(Paths.get(TopologyLoader.expandHome("~/.config/splice/auth/grok.json")), path)
+        assertFalse(path.endsWith(Paths.get(".grok", "auth.json")))
     }
 
     // DR-97: the masked prompt must derive its var from the HEAD key — the daemon reads

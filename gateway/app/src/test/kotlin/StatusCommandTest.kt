@@ -47,8 +47,9 @@ class StatusCommandTest {
 
     // DR-98: a kimi-oauth head with default config read permanently not-signed-in — the registry
     // row carried null (claiming a "provider-computed path" nothing computes) while every working
-    // path hard-falls-back to ~/.kimi/credentials/kimi-code.json, so credentialConfigured resolved
-    // NO file: status showed login-needed and doctor FAILed forever against a serving head.
+    // path hard-fell-back to the same literal, so credentialConfigured resolved NO file: status
+    // showed login-needed and doctor FAILed forever against a serving head. Since 2026-09-05 the
+    // default is splice's own ~/.config/splice/auth/kimi.json (AuthKind header), never the app's.
     @Test
     fun `kimi-oauth default credential file counts as configured - DR-98`(@TempDir tmp: Path) {
         val provider = ProviderConfig(
@@ -56,8 +57,8 @@ class StatusCommandTest {
             baseUrl = "https://example.invalid",
             auth = AuthConfig("kimi-oauth"),
         )
-        val creds = Files.createDirectories(tmp.resolve(".kimi").resolve("credentials"))
-        Files.writeString(creds.resolve("kimi-code.json"), """{"access_token":"k"}""")
+        val creds = Files.createDirectories(tmp.resolve(".config").resolve("splice").resolve("auth"))
+        Files.writeString(creds.resolve("kimi.json"), """{"access_token":"k"}""")
         val savedHome = System.getProperty("user.home")
         System.setProperty("user.home", tmp.toString())
         try {

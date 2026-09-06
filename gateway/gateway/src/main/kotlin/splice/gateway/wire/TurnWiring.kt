@@ -22,7 +22,7 @@ internal class TurnWiring(
 
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
      *  collector so both report tokens identically. */
-    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta): UsagePayloadBuilder {
+    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder {
         var factorLogged = false
         return { usage ->
             // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
@@ -32,11 +32,15 @@ internal class TurnWiring(
             val cached = usage?.cachedTokens ?: 0
             val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
             // Per-model context windows are a PROXY concern. Claude Code fixes its window per PROCESS
-            // (the launch env, one constant since 2026-09-05) for every id except a "[1m]" one, so a
+            // (the launch env: the pinned row's window) for every id except a "[1m]" one, so another
             // row's real window can only be served from this side — by moving the numerator of the
             // ratio it compacts on — and that is also what lets a TOML edit reach a running session.
             // Scale by clientWindow/declared and the row compacts at ITS window, switchable live from
-            // /model. Keyed on originalModel (the RAW picker id), because two rows can share one
+            // /model. The client window is THIS SESSION's when it has told us (its status-line posts
+            // carry it — ClientWindows), else the pinned row's current window. Assuming anything else
+            // for a session that has not posted is how 2026-09-05 went: a constant 1e6 scaled every
+            // pre-existing session's counts 2.5-3.7x and it compacted at a third of its window, forever.
+            // Keyed on originalModel (the RAW picker id), because two rows can share one
             // upstream id and it is the row that owns the window. Output tokens are NOT scaled: they
             // are not part of the context total. splice's own accounting (TurnPerf, TurnCacheLine,
             // UsageStore) reads the raw usage and never this payload, so the logs stay truthful.
@@ -49,17 +53,19 @@ internal class TurnWiring(
             // breadcrumb even though every displayed surface stays self-consistent. Non-launched
             // clients (the e2e probe, a bare curl) receive scaled counts against a window they never
             // declared — by design; the raw truth lives in splice's own accounting above.
-            val scale = catalog.usageScale(meta.originalModel)
+            val clientWindow = catalog.clientContextWindowFor(meta.originalModel, sessionWindow)
+            val scale = catalog.usageScale(meta.originalModel, sessionWindow)
             if (scale != 1.0 && !factorLogged) {
                 factorLogged = true
                 log(
                     "[usage] row '${meta.originalModel}' reports client-scaled tokens " +
-                        "(factor $scale, client window ${catalog.clientContextWindowFor(meta.originalModel)})\n",
+                        "(factor $scale, client window $clientWindow" +
+                        "${if (sessionWindow != null) ", the session's own" else ", the launch env"})\n",
                 )
             }
             hud.buildUsagePayload(
                 TurnUsage(scale(nonCachedInput, scale), usage?.outputTokens ?: 0, 0, scale(cached, scale)),
-                catalog.clientContextWindowFor(meta.originalModel),
+                clientWindow,
             )
         }
     }

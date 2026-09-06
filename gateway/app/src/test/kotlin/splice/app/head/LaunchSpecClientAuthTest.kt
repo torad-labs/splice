@@ -140,12 +140,13 @@ class LaunchSpecClientAuthTest {
         assertEquals(333_000, cachedWindow)
     }
 
-    // Until 2026-09-05 this arm pinned that the pinned row's window rode into the spec as a Long
-    // (an Int overflow regression). The spec now carries ONE constant client window whatever the
-    // row declares — that decoupling is what lets a TOML window edit reach a running session — and
-    // the row's own number lives only in the picker cache (the arm above) and in usage scaling.
+    // The pinned row's window rides into the spec as a Long (an Int overflow regression). For one
+    // morning on 2026-09-05 the spec carried a constant 1e6 instead, so that a TOML window edit
+    // would reach a running session — and every session launched before it was scaled 2.5-3.7x
+    // against a window its process never had, compacting at a third of its row's window forever.
+    // A running session is reached through the window it reports on its status line instead.
     @Test
-    fun `launch spec carries the constant client window whatever the pinned row declares`(@TempDir tmp: Path) {
+    fun `launch spec carries the pinned row's window as a Long`(@TempDir tmp: Path) {
         val window = Int.MAX_VALUE.toLong() + 1
         val model = ModelEntry(id = "m", contextWindow = window)
         val base = build(tmp, Dialect.ANTHROPIC_PASSTHROUGH)
@@ -161,8 +162,8 @@ class LaunchSpecClientAuthTest {
 
         val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
 
-        assertEquals(ctx.catalog.clientLaunchWindow, spec.contextWindow, "the row's number never rides the env")
-        assertEquals(1_000_000L, spec.contextWindow)
+        assertEquals(ctx.catalog.clientLaunchWindow, spec.contextWindow, "the launch env is the catalog's number")
+        assertEquals(window, spec.contextWindow, "the pinned row's own window, as a Long")
     }
 
     @Test

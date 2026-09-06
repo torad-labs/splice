@@ -3,6 +3,7 @@
 // ceiling. A data class, so detekt's LongParameterList exempts it (campaign claude-head decomposition).
 package splice.app.head
 
+import splice.core.model.ClientWindows
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
@@ -13,4 +14,7 @@ internal data class HeadStores(
     val compactStats: CompactStats,
     val perfStats: PerfStats,
     val quota: QuotaTracker,
+    /** Per-session client windows (ClientWindows): written by the control plane's statusline
+     *  route, read by the head's usage payload — one instance so both see the same sessions. */
+    val clientWindows: ClientWindows = ClientWindows(),
 )

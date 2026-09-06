@@ -14,9 +14,9 @@
 //     first item) is what makes Y's input look like a legitimate prefix-extension of X's. The
 //     session id is mixed in, so distinct sessions can never share a chain.
 //  2. PER-TURN HEADERS PARTICIPATE IN IDENTITY. A WebSocket's handshake headers are fixed for the
-//     socket's life, but the head's per-turn set is not — the responses-lite marker keys off
-//     `!meta.compact`, so a compact turn on the same conversation wants it OFF on a socket opened
-//     with it ON. Reusing that socket silently sends a lite-SHAPED body without its lite marker.
+//     socket's life, but the head's per-turn set need not be (the responses-lite marker used to
+//     key off `!meta.compact` until 2026-09-05, so a compact turn wanted it OFF on a socket opened
+//     with it ON — a reused socket then silently sent a lite-SHAPED body without its lite marker).
 //     Folding the header set into the key means a changed set opens a new connection instead.
 //  3. THE KEY ENCODING IS LENGTH-PREFIXED, not separator-joined. Any separator can appear inside a
 //     header value, and a joined key would then alias two different header sets onto one
@@ -85,6 +85,7 @@ internal class ResponsesWsRunner(
             val built = session.frameAndEpoch(chain, request, conn.generation)
             pending = ResponsesWsIdentity.PendingCommit(request, conn.generation, built.epoch)
             if (built.frame.chained) log("[ws] ${identity.logKey(key)} chained onto the previous response\n")
+            built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(key)} full send — $it\n") }
             built.frame.json
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head

@@ -119,6 +119,57 @@ class ResponsesWsSessionTest {
         )
     }
 
+    /** THE 2026-09-05 COMPACTION CLASS: the server's context ends with the tool call it just
+     *  emitted, and Claude Code's auto-compaction fires BEFORE that call runs — its body ends at
+     *  the previous tool result plus the compaction prompt, so no delta can answer the call. The
+     *  server refused every chained one ("No tool output found for function call …") and the round
+     *  fell back to a cold SSE send. It must full-send on this socket instead, and say why. */
+    @Test
+    fun `a turn that never answers the call the server holds full-sends and names the call`() {
+        val s = ResponsesWsSession()
+        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), pendingCalls = setOf("call_2"))
+        val f = s.frameFor(KEY, build(convo(1, trailingUserText = "summarize this session")), GEN)
+        assertFalse(f.chained, "the delta would be [message] with call_2 unanswered — the server refuses that")
+        assertTrue(f.frameObj()["previous_response_id"] == null)
+        assertEquals(build(convo(1, trailingUserText = "summarize this session")).items().size, f.frameItems().size)
+        assertTrue(f.fullSendReason?.contains("call_2") == true, "the reason names the call: ${f.fullSendReason}")
+    }
+
+    /** The same held call, ANSWERED: a normal tool round still chains, with or without a user
+     *  message riding behind the tool output. */
+    @Test
+    fun `a turn that answers the held call chains as before`() {
+        val s = ResponsesWsSession()
+        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), pendingCalls = setOf("call_2"))
+        val plain = s.frameFor(KEY, build(convo(2)), GEN)
+        assertTrue(plain.chained, "the delta answers call_2")
+        assertEquals(listOf("function_call_output"), typesOf(plain.frameItems()))
+        assertTrue(plain.fullSendReason == null)
+        val s2 = ResponsesWsSession()
+        s2.completed(KEY, build(convo(1)), "resp_1", GEN, s2.epochOf(KEY), pendingCalls = setOf("call_2"))
+        val steered = s2.frameFor(KEY, build(convo(2, trailingUserText = "and then this")), GEN)
+        assertTrue(steered.chained, "an answered call plus a user message is the steering shape, still a chain")
+        assertEquals(listOf("function_call_output", "message:user"), typesOf(steered.frameItems()))
+    }
+
+    /** The client's ECHO of the held call — the assistant tool_use rebuilt as a function_call with
+     *  the same call_id — is not an answer: a body carrying it with no result still full-sends,
+     *  and the reason line still names the call (review 2026-09-05: the reason read the echo as an
+     *  answer and the full send went unlogged). */
+    @Test
+    fun `the echoed call itself is not an answer, so the reason still names it`() {
+        val s = ResponsesWsSession()
+        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), pendingCalls = setOf("call_2"))
+        val echoed = """{"model":"m","messages":[{"role":"user","content":"start"},""" +
+            """{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"read","input":{"p":"1"}}]},""" +
+            """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"out1"}]},""" +
+            """{"role":"assistant","content":[{"type":"tool_use","id":"call_2","name":"read","input":{"p":"2"}}]},""" +
+            """{"role":"user","content":"summarize this session"}]}"""
+        val f = s.frameFor(KEY, build(echoed), GEN)
+        assertFalse(f.chained, "call_2 has no output in this body")
+        assertTrue(f.fullSendReason?.contains("call_2") == true, "the echo is not an answer: ${f.fullSendReason}")
+    }
+
     /** An assistant TEXT block in the suffix is server-held too (the model produced it). */
     @Test
     fun `a round whose assistant also spoke still chains, dropping the assistant message`() {

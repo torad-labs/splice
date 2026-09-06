@@ -6,6 +6,7 @@ package splice.control
 
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
+import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 
 /** Reads the head's persisted usage/ratelimit (file truth). */
@@ -66,6 +67,10 @@ public data class ManagedHead(
      *  Claude Code pipes to /statusline carries client units on a scaled row. The catalog is what
      *  turns them back into the row's declared window and its label. Null = render the blob as is. */
     val catalog: ModelCatalog? = null,
+    /** Where the statusline route records each session's real window (`session_id` +
+     *  `context_window_size` from the blob) so the head scales that session's counts against it.
+     *  Null = a head that never learns (tests). */
+    val clientWindows: ClientWindows? = null,
 )
 
 /** The launch-time key-presence read [ManagedHead.keyPresence] carries (role-named ctor seam). */

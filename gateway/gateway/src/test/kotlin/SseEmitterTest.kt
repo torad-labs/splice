@@ -105,6 +105,40 @@ class SseEmitterTest {
         assertEquals(ended, frames.size, "an ended turn writes nothing more")
     }
 
+    /** The pinger must not ASSEMBLE its frames on the turn's writer: SseFrameWriter reuses one
+     *  StringBuilder across every frame, so two coroutines in it interleave two frames into one
+     *  buffer. That race needs a multithreaded dispatcher and cannot be reproduced deterministically,
+     *  so what is pinned here is the STRUCTURE that removes it rather than the symptom — the pinger
+     *  owns its own writer and its own port. Collapsing it back onto the turn's writer lands these
+     *  frames on the model's sink and turns this red. */
+    @Test
+    fun `the pinger's frames never travel the turn's writer`() = runTest {
+        val model = mutableListOf<String>()
+        val pinger = mutableListOf<String>()
+        val e = emitters.create(
+            write = { model.add(it) },
+            model = "m",
+            usagePayload = { buildJsonObject { put("input_tokens", 0) } },
+            messageId = "msg_fixed",
+            progressWrite = { pinger.add(it) },
+        )
+
+        e.ensureStarted()
+        val opener = model.size
+        assertTrue(pinger.isEmpty(), "the opener is the turn's own, not the pinger's: $pinger")
+
+        e.heartbeat()
+        e.progress("holding")
+        assertEquals(opener, model.size, "nothing the pinger wrote reached the turn's writer: $model")
+        assertEquals(3, pinger.size, "its ping, its block, its line — all on its own port: $pinger")
+        assertTrue(pinger[0].startsWith("event: ping"), pinger[0])
+
+        val idx = e.openText()
+        e.textDelta(idx, "hi")
+        assertEquals(3, pinger.size, "and the model's content never travels the pinger's: $pinger")
+        assertTrue(model.size > opener, "it went to the turn's writer instead: $model")
+    }
+
     /** The pinger's gate is "the opener is ON THE WIRE", not "the opener has been claimed". The
      *  latch inside MessageStart flips BEFORE message_start is written — it is there for
      *  re-entrancy — so a pinger reading THAT could put its frame ahead of the opener, which is not

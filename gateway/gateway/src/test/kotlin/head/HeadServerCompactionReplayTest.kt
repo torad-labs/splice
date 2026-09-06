@@ -233,7 +233,8 @@ class HeadServerCompactionReplayTest {
         assertTrue(sse.contains("event: message_stop"), "the follower gets the whole answer: $sse")
         assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "one upstream turn served both attempts")
         assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "every slot comes back: ${gate.snapshot()}")
-        assertTrue(logged("the retry cost no upstream turn", mark), lines.drop(mark).joinToString())
+        // Logged after the response is written: the client can be back before the server gets there.
+        assertTrue(waitFor(5_000) { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
         assertTrue(waitFor(5_000) { logged("compaction answer replayed") }, lines.joinToString())
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 }, "the replay releases its own slot")
     }

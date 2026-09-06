@@ -32,8 +32,9 @@ internal class TurnWiring(
             val cached = usage?.cachedTokens ?: 0
             val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
             // Per-model context windows are a PROXY concern. Claude Code fixes its window per PROCESS
-            // (the launch env) for every id except a "[1m]" one, so a row wanting any other window can
-            // only be served from this side — by moving the numerator of the ratio it compacts on.
+            // (the launch env, one constant since 2026-09-05) for every id except a "[1m]" one, so a
+            // row's real window can only be served from this side — by moving the numerator of the
+            // ratio it compacts on — and that is also what lets a TOML edit reach a running session.
             // Scale by clientWindow/declared and the row compacts at ITS window, switchable live from
             // /model. Keyed on originalModel (the RAW picker id), because two rows can share one
             // upstream id and it is the row that owns the window. Output tokens are NOT scaled: they

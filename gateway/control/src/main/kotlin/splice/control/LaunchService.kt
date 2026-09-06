@@ -17,8 +17,9 @@ import splice.core.launch.MaterializeSpec
 import splice.core.util.EnvReader
 import kotlin.math.max
 
-// Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small context window must not shrink the
-// auto-compact window below this.
+// Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small client window must not shrink the
+// auto-compact window below this. Moot for a real launch since the client window became a constant
+// 1e6 (LaunchSpec.contextWindow), kept so a synthetic spec cannot plant a nonsense cap.
 private const val AUTO_COMPACT_FLOOR = 60_000L
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -146,6 +147,11 @@ public class LaunchService(
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
             }
+            // ONE constant client window per process (ModelCatalog.clientLaunchWindow), never the
+            // pinned row's number: the row's real window is applied by usage scaling on every turn,
+            // so a TOML window edit + `splice restart` reaches THIS process live (2026-09-05).
+            // AUTO_COMPACT_WINDOW rides the same number — it is an absolute cap in the client's
+            // (scaled) units, and any smaller value would compact early by exactly that ratio.
             put("CLAUDE_CODE_MAX_CONTEXT_TOKENS", spec.contextWindow.toString())
             put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, spec.contextWindow).toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")

@@ -72,6 +72,13 @@ public interface TurnTerminal : WireSink {
      * still call it, and re-anchor rounds are no-ops. No-op by default for the non-stream sink,
      * which has no incremental wire to open. */
     public suspend fun ensureStarted() {}
+
+    /** A `ping` event on a wire that has gone silent (ClientChannel's pinger, every 30 s without a
+     *  frame): the one frame Claude Code's query loop yields as progress that carries no content,
+     *  so its async-agent stall watchdog (600 s of no yielded event) cannot fire under a long
+     *  reasoning phase or a slow compaction. Written only after message_start and only while the
+     *  turn is still open; the non-stream sink has no incremental wire, so its default is a no-op. */
+    public suspend fun heartbeat() {}
 }
 
 // HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start

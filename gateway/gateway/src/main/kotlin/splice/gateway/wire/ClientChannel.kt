@@ -31,6 +31,7 @@ import splice.core.util.LogSink
 import splice.spi.Ticker
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 // first_delta detection reads the frame prefix — the emitter's event name, not a literal
 // stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).
@@ -41,6 +42,22 @@ private const val PING_FRAME_PREFIX = "event: ping"
 // SSE comment keepalive: pure transport, invisible to SSE parsers (spec: lines starting
 // with ':' are comments) — exists ONLY so a dead client fails a write promptly.
 private const val SSE_KEEPALIVE_COMMENT = ": ping\n\n"
+
+// The heartbeat: a REAL `ping` event on a wire that has been silent this many ticks (30 s at the
+// 2 s tick). The comment above never reaches Claude Code's parser; a ping event does, and its
+// query loop yields every one as progress, which is what re-arms the client's async-agent stall
+// watchdog (600 s with no yielded event: 2.1.257 aborts the agent's turn and marks it failed —
+// "no progress for 600s (stream watchdog did not recover)"). On 2026-09-05 two 11-12 minute Astra
+// compactions each sent message_start and then nothing until the summary, and both sessions hung
+// at exactly 600 s after it. The Anthropic API sends ping events on its own streams; the client
+// counts up to 30 in a row as progress and, with its stream watchdog on (the default), all of
+// them. Only ever written after message_start (SseEmitter.heartbeat), so the wire stays legal.
+private const val HEARTBEAT_EVERY_TICKS = 15
+
+/** The one frame the pinger may write for the turn: a `ping` event, after message_start only. */
+internal fun interface Heartbeat {
+    suspend operator fun invoke()
+}
 
 // HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
 // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
@@ -59,6 +76,9 @@ internal data class ClientChannel(
     val recording: FrameRecording? = null,
     /** Flipped once for good by [detachIfRecording]: writes are recorded, none reach the socket. */
     val detached: AtomicBoolean = AtomicBoolean(false),
+    /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
+     *  a silent wire, time for a heartbeat). */
+    val socketFrames: AtomicLong = AtomicLong(0),
 ) {
     /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
      *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
@@ -76,6 +96,7 @@ internal data class ClientChannel(
             if (!detachIfRecording()) throw e
             return
         }
+        socketFrames.incrementAndGet()
         perf.add(PerfKeys.WRITE_MS, clock() - t)
         perf.add(PerfKeys.FRAMES_OUT, 1)
         // Structural opener carries no content — see PerfKeys.CONTENT_FRAMES_OUT for why G5 must not
@@ -137,8 +158,11 @@ internal data class ClientChannel(
         headKey: String,
         log: LogSink,
         session: String? = null,
+        heartbeat: Heartbeat = Heartbeat {},
     ): Job =
         scope.launch {
+            var seenFrames = socketFrames.get()
+            var silentTicks = 0
             while (isActive) {
                 // HD-19: the ping cadence is a named Ticker, not a bare delay. ProcessTicker always
                 // returns true, so this loop is exactly as unbounded as before; a test can wire a
@@ -149,8 +173,25 @@ internal data class ClientChannel(
                     log("[$headKey] client gone (${who(session)}a frame write failed) — $DETACHED_NOTE\n")
                     return@launch
                 }
+                val frames = socketFrames.get()
+                if (frames != seenFrames) {
+                    seenFrames = frames
+                    silentTicks = 0
+                } else {
+                    silentTicks += 1
+                }
                 try {
-                    writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
+                    if (silentTicks >= HEARTBEAT_EVERY_TICKS) {
+                        // Outside writeMutex: the heartbeat is an emitter frame and takes the lock
+                        // itself on the way through timedClientWrite (a non-reentrant Mutex).
+                        silentTicks = 0
+                        heartbeat()
+                        // The heartbeat is itself a socket frame: consume it, or the next tick
+                        // reads it as client traffic and the cadence drifts to 16 ticks.
+                        seenFrames = socketFrames.get()
+                    } else {
+                        writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
+                    }
                 } catch (e: IOException) {
                     pingFailed(e, turnJob, headKey, log, session)
                     return@launch

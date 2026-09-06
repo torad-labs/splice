@@ -6,6 +6,7 @@ package splice.gateway.head
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
+import splice.gateway.wire.Heartbeat
 import splice.spi.Provider
 
 internal class TurnOneDrive(
@@ -41,6 +42,8 @@ internal class TurnOneDrive(
                         provider.key,
                         deps.log,
                         drive.sessionTag(),
+                        // The pinger's one real frame (ClientChannel.HEARTBEAT_EVERY_TICKS).
+                        heartbeat = Heartbeat { drive.emitter.heartbeat() },
                     )
                 } else {
                     null

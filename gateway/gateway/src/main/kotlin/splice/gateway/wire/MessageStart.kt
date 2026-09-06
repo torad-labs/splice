@@ -26,6 +26,12 @@ internal class MessageStart(
 
     internal val hasStarted: Boolean get() = started
 
+    /** The heartbeat's frame: a ping on a wire the turn has already opened, nothing before that
+     *  (a ping ahead of message_start is not a legal stream). */
+    internal suspend fun pingIfStarted() {
+        if (started) ping()
+    }
+
     internal suspend fun ensureStart() {
         if (started) return
         started = true
@@ -45,6 +51,8 @@ internal class MessageStart(
                 }
             },
         )
-        frames.frame("ping", buildJsonObject { put(TYPE, "ping") })
+        ping()
     }
+
+    private suspend fun ping() = frames.frame("ping", buildJsonObject { put(TYPE, "ping") })
 }

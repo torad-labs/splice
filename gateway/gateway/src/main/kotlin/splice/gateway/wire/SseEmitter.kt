@@ -56,6 +56,14 @@ public class SseEmitter internal constructor(
 
     override suspend fun ensureStarted(): Unit = start.ensureStart()
 
+    /** ClientChannel's heartbeat: a ping after message_start while the turn is still open. A turn
+     *  that has claimed or reached its ending writes nothing more (ended-idempotence, as for every
+     *  other frame). */
+    override suspend fun heartbeat() {
+        if (seal.get() != SealState.OPEN) return
+        start.pingIfStarted()
+    }
+
     /** The ONLY clean ending — derives stop_reason internally (L3). */
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return

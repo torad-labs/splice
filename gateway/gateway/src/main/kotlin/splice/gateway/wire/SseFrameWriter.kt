@@ -25,6 +25,15 @@ internal class SseFrameWriter(private val write: FrameWrite) {
     private val frameBuf = StringBuilder(FRAME_BUF_CAPACITY)
     private val escaper = JsonStringEscaper()
 
+    /** A frame whose bytes are FIXED, written with no assembly at all — the one write shape that
+     *  is safe from a coroutine other than the turn's own. [frameBuf] is one reused StringBuilder
+     *  shared by every other member here ("never escapes the writer; not concurrent"), so a
+     *  keepalive heartbeat racing a model delta through [frame] would interleave two frames into
+     *  one buffer and put a corrupt event on the wire. Nothing to assemble, nothing to share. */
+    internal suspend fun writeVerbatim(frame: String) {
+        write(frame)
+    }
+
     internal suspend fun frame(event: String, data: JsonObject) {
         frameBuf.setLength(0)
         frameBuf.append("event: ").append(event).append("\ndata: ").append(data).append("\n\n")

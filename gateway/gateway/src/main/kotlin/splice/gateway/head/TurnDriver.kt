@@ -19,9 +19,6 @@ package splice.gateway.head
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.CancellationException
 import splice.core.perf.PerfKeys
-import splice.core.perf.TurnPerf
-import splice.spi.BuiltTurn
-import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.RetryNotice
 
@@ -29,6 +26,7 @@ import splice.spi.RetryNotice
 internal class TurnDriver(
     private val provider: Provider,
     private val deps: HeadDeps,
+    private val compactionReplay: CompactionReplay = CompactionReplay(),
 ) {
     private val log get() = deps.log
 
@@ -67,11 +65,12 @@ internal class TurnDriver(
         TurnConnEnd(provider, log, telemetry, failures, health),
         TurnKnownEnd(provider, log, telemetry, failures, health),
     )
-    private val cancellationSeal = CancellationSeal(provider, log, telemetry, health)
+    private val usageStamp = TurnUsageStamp(deps.usageStore, log, telemetry)
+    private val cancellationSeal = CancellationSeal(provider, log, telemetry, health, usageStamp)
     private val turnFinish = TurnFinish(
         deps.clock,
         log,
-        TurnUsageStamp(deps.usageStore, log, telemetry),
+        usageStamp,
         health,
         telemetry,
     )
@@ -80,20 +79,27 @@ internal class TurnDriver(
         deps,
         TurnRoundRun(provider, log, sseRoundDriver, turnFinish),
     )
-    private val streamer = TurnStreamer(provider, deps, driveFactory, this)
+    private val streamer = TurnStreamer(provider, deps, driveFactory, this, compactionReplay)
+    private val localResponses = LocalResponses(provider, deps, compactionReplay)
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.
-    private val collectTurn = CollectTurn(provider, driveFactory, this, deps.quota)
+    private val collectTurn = CollectTurn(provider, driveFactory, this, deps.quota, deps.clientWindows)
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
     internal fun healthCounters(): HeadHealthCounts = health.snapshot()
 
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn. */
-    suspend fun stream(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
-        streamer.stream(call, TurnInputs(built, slot, t0, perf))
+    suspend fun stream(call: ApplicationCall, inputs: TurnInputs) {
+        streamer.stream(call, inputs)
     }
+
+    /** Claude Code's activity side query, answered by the proxy (ActivityLabel): no upstream turn. */
+    suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local) = localResponses.answer(call, local)
+
+    /** A compaction retry served from the detached first attempt's recording (CompactionReplay). */
+    suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) = localResponses.replay(call, replayed)
 
     /** Drive one turn, emit classified failures, and — if a cancellation lands (head stop,
      *  write-timeout, parent cancel) — seal the terminal honestly before rethrowing (see
@@ -121,17 +127,20 @@ internal class TurnDriver(
             failures.catchingTurnFailure { oneDrive.driveOneTurn(drive, pingClient) }
                 .onFailure { e -> ending.emitFailure(drive, e) }
         } catch (e: CancellationException) {
-            cancellationSeal.seal(drive, seal)
+            cancellationSeal.sealAndStamp(drive, seal, e)
             throw e
         }
     }
 
     /** Non-stream sibling of [stream]: Claude Code sends stream:false on some internal calls (the
      *  Node predecessor served them by collecting the terminal object). See [CollectTurn]. */
-    suspend fun collect(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) =
-        collectTurn.collect(call, built, slot, t0, perf)
+    suspend fun collect(call: ApplicationCall, inputs: TurnInputs) = collectTurn.collect(call, inputs)
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */
     internal fun resetHealth() = health.reset()
+
+    /** Head stop: end the detached compactions this head still drives; the scope stays usable for
+     *  the restart (TurnStreamer.stopDetached). */
+    internal fun stopDetached() = streamer.stopDetached()
 }

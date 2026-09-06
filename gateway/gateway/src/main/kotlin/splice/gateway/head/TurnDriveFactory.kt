@@ -42,7 +42,7 @@ internal class TurnDriveFactory(
         // A compact turn's silence before its first output is bounded by totalCap only — see
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
         val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
-        val watchdog = TurnWatchdog(budget, deps.clock)
+        val watchdog = TurnWatchdog(budget, deps.clock, log = { deps.log("[${provider.key}] $it") })
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
             requestBody = built.requestBody,
@@ -58,6 +58,7 @@ internal class TurnDriveFactory(
             channel = channel,
             signals = signals,
             toolSearch = built.toolSearch,
+            roundInterceptor = built.roundInterceptor,
         )
     }
 }

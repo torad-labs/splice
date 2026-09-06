@@ -14,9 +14,9 @@
 //     first item) is what makes Y's input look like a legitimate prefix-extension of X's. The
 //     session id is mixed in, so distinct sessions can never share a chain.
 //  2. PER-TURN HEADERS PARTICIPATE IN IDENTITY. A WebSocket's handshake headers are fixed for the
-//     socket's life, but the head's per-turn set is not — the responses-lite marker keys off
-//     `!meta.compact`, so a compact turn on the same conversation wants it OFF on a socket opened
-//     with it ON. Reusing that socket silently sends a lite-SHAPED body without its lite marker.
+//     socket's life, but the head's per-turn set need not be (the responses-lite marker used to
+//     key off `!meta.compact` until 2026-09-05, so a compact turn wanted it OFF on a socket opened
+//     with it ON — a reused socket then silently sent a lite-SHAPED body without its lite marker).
 //     Folding the header set into the key means a changed set opens a new connection instead.
 //  3. THE KEY ENCODING IS LENGTH-PREFIXED, not separator-joined. Any separator can appear inside a
 //     header value, and a joined key would then alias two different header sets onto one
@@ -30,6 +30,8 @@ import splice.core.auth.Credentials
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.spi.NEVER_PINGED_MS
+import splice.spi.WsPathPulse
 import splice.spi.WsRound
 import splice.spi.WsRoundAbort
 import splice.spi.WsRoundRunner
@@ -58,7 +60,7 @@ internal class ResponsesWsRunner(
         val request = identity.parseRequest(bodyJson)
         val chain = identity.chainKey(meta)
         if (request == null || chain == null) return null
-        val headers = handshakeHeaders(creds) + turnHeaders
+        val headers = handshakeHeaders(creds) + turnHeaders + handshakeOnlyHeaders(turnHeaders)
         val key = identity.connectionKey(chain, meta, headers)
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
         // determines what the next turn's prefix must be, and only a clean terminal may commit it.
@@ -68,6 +70,9 @@ internal class ResponsesWsRunner(
         // aborts the wrong socket, and the lease for why "still my round" is not the same question
         // as "not finished yet". Default no-op covers the paths that never reach a connection.
         var abort = WsRoundAbort { }
+        // The socket's liveness for the idle watchdog, closed over the same connection: a pooled
+        // socket outlives the round, but the poller that reads this is cancelled with the round.
+        var pathPulse = WsPathPulse { NEVER_PINGED_MS }
         val flow = transport.round(
             key = key,
             headers = headers,
@@ -78,6 +83,7 @@ internal class ResponsesWsRunner(
             // the head never sees one (module law).
             val lease = conn.lease.get()
             abort = WsRoundAbort { if (conn.lease.get() == lease) conn.kill() }
+            pathPulse = WsPathPulse { conn.pulse.pingAgoMs() }
             // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
             // window where a concurrent clear bumped the epoch after the frame was built on
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
@@ -85,6 +91,7 @@ internal class ResponsesWsRunner(
             val built = session.frameAndEpoch(chain, request, conn.generation)
             pending = ResponsesWsIdentity.PendingCommit(request, conn.generation, built.epoch)
             if (built.frame.chained) log("[ws] ${identity.logKey(key)} chained onto the previous response\n")
+            built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(key)} full send — $it\n") }
             built.frame.json
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
@@ -97,8 +104,16 @@ internal class ResponsesWsRunner(
         return WsRound(
             events = flow.onEach { event -> identity.observeTerminal(chain, pending, event) },
             abort = abort,
+            pathPulse = pathPulse,
         )
     }
+
+    /** codex-rs names its thread a second time on the WS handshake, as `x-client-request-id` — on
+     *  the handshake only, never on an SSE POST, so it is derived here from the provider's per-turn
+     *  `thread-id` (which rides both) rather than emitted beside it. Part of the connection key like
+     *  every other handshake header, and constant for the session like its source. */
+    private fun handshakeOnlyHeaders(turnHeaders: Map<String, String>): Map<String, String> =
+        turnHeaders[HEADER_THREAD_ID]?.let { mapOf(HEADER_CLIENT_REQUEST_ID to it) } ?: emptyMap()
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
         JsonScalars.str(event[FIELD_TYPE]) in ResponsesRoundEnd.FAILED
@@ -117,3 +132,5 @@ internal class ResponsesWsRunner(
 }
 
 private const val FIELD_TYPE = "type"
+private const val HEADER_THREAD_ID = "thread-id"
+private const val HEADER_CLIENT_REQUEST_ID = "x-client-request-id"

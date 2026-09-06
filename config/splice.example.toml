@@ -27,9 +27,12 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 dialect = "openai-responses"
 base_url = "https://chatgpt.com/backend-api/codex"
 # EXPERIMENTAL: reuses the Codex CLI's public OAuth client identity — NOT a vendor-documented
-# third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
-# Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
-auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/codex.json, written by `splice login claudex`,
+# on whichever ChatGPT account you choose there. Set file = "~/.codex/auth.json" ONLY to share the
+# Codex app's session — the two then rotate each other's refresh token and sign each other out.
+auth = { kind = "chatgpt-oauth" }
 # Table form, not inline: tool_surface below is a sub-table, and TOML forbids adding a sub-table
 # to an inline table. Every knob here is what the daily-driven claudex runs.
 [providers.codex.quirks]
@@ -54,16 +57,23 @@ zstd_request_body = true
 # it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
 # tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
 # encrypted envelopes, bounded + TTL'd; set reasoning_cache = false to restore the old behavior.
-# parallel_tool_calls (default false): the VALUE sent for parallel_tool_calls on responses-lite
-# (gpt-5.6) turns — the field itself always rides, since a lite request without it 400s. codex-rs
-# reads this per model rather than hardcoding it, so it is a knob here too. false = one tool call
-# per turn, which is why claudex averages ~2x the round-trips of grok/kimi and re-sends the whole
-# context each time. To opt in, add `parallel_tool_calls = true` to this table, above the
-# tool_surface sub-table. Guardrails: a client's explicit disable_parallel_tool_use=true always
-# wins, and toolless turns stay false. Lite-only — ignored on non-lite turns (grok's value comes
-# from the client's tool_choice). UNTESTED against the live backend: leaving the field out
-# entirely once let the backend default to parallel and gpt-5.6 sprayed 30-50 parallel Task
-# calls. Opt in to measure.
+# parallel_tool_calls (default false): explicit wire policy for responses-lite turns.
+# Official Codex also sends false for Lite, even when model metadata advertises parallel support.
+# This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
+# A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
+# Setting true is an experiment, not demonstrated task-efficiency parity.
+# code_mode (beta, default false): true automatically adds splice's JAR-bundled JavaScript runner
+# and orchestration instructions only to eligible GPT-6 Astra and Sol turns. Ordinary tools remain
+# Claude Code's permission-checked client handlers, which execute the real operations. Code mode
+# requires neither Codex nor Node. Only chatgpt-oauth + openai-responses providers may enable it.
+# False or omitted disables both additions. Compact/toolless/forced-tool turns retain the ordinary
+# path; unsupported non-text bridge results fail explicitly. Child JVMs bound workers/time/heap and
+# deny guest host/I/O access; Graal community is not an OS-hardened same-user attacker sandbox.
+# This setting is shared by every head using providers.codex. Topology is boot-only: finish ongoing
+# work before editing, then run `splice restart` for a FULL daemon restart. A head restart alone does
+# not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
+# reruns the lost JavaScript source automatically.
+# code_mode = false
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
 [providers.codex.quirks.tool_surface]
@@ -72,8 +82,8 @@ enabled = true
 # request (Anthropic-native sessions keep it deferred, so the asymmetry only shows on this head).
 # Forcing it into the deferred set drops the schema from the eager surface; the model reaches it
 # only via tool_search, which it rarely does for navigation it can already do with grep/read.
-# Conversations that already used LSP keep it eager for their lifetime; the brake takes effect
-# on fresh conversations.
+# Prior LSP use replays its declaration in history; it never promotes LSP into the stable
+# initial tool list. The partition depends on the current catalog and policy, not usage.
 defer = ["LSP"]
 [[providers.codex.models]]
 id = "gpt-6-astra"
@@ -114,9 +124,11 @@ context_window = 128000
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
 # EXPERIMENTAL: reuses the Grok CLI's public OAuth client identity — NOT a vendor-documented
-# third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
-# Documented alternative: an OpenRouter API key (kind = "api-key", env = "OPENROUTER_API_KEY").
-auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: an OpenRouter API key (kind = "api-key", env = "OPENROUTER_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/grok.json, written by `claude-grok login`.
+# Set file = "~/.grok/auth.json" ONLY to share the Grok CLI's session (see the codex note above).
+auth = { kind = "grok-oauth" }  # browser login: `claude-grok login`
 # summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
 # reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
@@ -181,9 +193,12 @@ context_window = 131072
 dialect = "anthropic-passthrough"
 base_url = "https://api.kimi.com/coding"
 # EXPERIMENTAL: reuses the Kimi CLI's public OAuth client identity — NOT a vendor-documented
-# third-party integration. kimi-code.json is password-equivalent; splice reads AND refreshes it in place.
-# Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
-auth = { kind = "kimi-oauth", file = "~/.kimi/credentials/kimi-code.json" }
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/kimi.json plus a device_id beside it, written
+# by `claude-kimi login`. Set file = "~/.kimi/credentials/kimi-code.json" ONLY to share the Kimi
+# CLI's session and device identity (see the codex note above).
+auth = { kind = "kimi-oauth" }
 # The anthropic-passthrough dialect forwards the client's bytes FAITHFULLY by default; each knob
 # below opts into one deformation Kimi's /coding surface requires. They were hardcoded while Kimi
 # was the dialect's only consumer — declaring them here is what lets an api.anthropic.com-shaped
@@ -231,9 +246,10 @@ context_window = 262144
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
 # `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
-# one window onto every selected row; omit it when their real backend ceilings differ. The pinned
-# row sets CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every other row compact at its
-# own declared window while switching live through /model.
+# one window onto every selected row; omit it when their real backend ceilings differ. A launch
+# plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
+# other row compact at its own declared window — live through /model. A window edited here reaches
+# running sessions after `splice restart`, through the window each session reports.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
@@ -255,6 +271,11 @@ context_window = 400000
 command = "claudex"
 [heads.claudex.overrides]
 maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
+# progressLine (bool, default true, restart) is the other knob worth knowing on THIS head. A wire
+# that has gone quiet for 30s carries a short line from splice saying how long the turn has been
+# running and whether the model has produced anything yet — the codex rows reason for minutes with
+# nothing on the wire, and a blank spinner cannot be told from a hung session. Set it to "false" to
+# get silence back; the keepalive pings that hold the turn open are separate and always sent.
 
 # grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
 # titling and `--model haiku` stay served on this head. No fable analog exists: fable stays
@@ -274,7 +295,7 @@ provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
-# Tiers declared on purpose: Llama 4 Maverick as opus (pinned, sets the process window), GLM 5.3
+# Tiers declared on purpose: Llama 4 Maverick as opus (pinned), GLM 5.3
 # as sonnet. haiku and fable stay undeclared and 400 cleanly pre-upstream — the slot note on
 # [heads.claudex] explains what degrades (background titling, `--model haiku`). No head-wide
 # context_window: the two rows have different ceilings and each keeps its own.
@@ -299,7 +320,7 @@ provider = "kimi"
 port = 3102
 discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
-# Tiers declared on purpose: opus is K3 on the 1M window (the pinned row sets the process window),
+# Tiers declared on purpose: opus is K3 on the 1M window (pinned),
 # sonnet is the same K3 held at 256k (Kimi meters the 1M tier at ~2x this one), haiku is Kimi K2.7
 # Code. fable stays undeclared and 400s cleanly pre-upstream (slot note on [heads.claudex]). No
 # head-wide context_window: the rows have different ceilings and each keeps its own.

@@ -9,6 +9,7 @@ import splice.core.turn.Usage
 internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
 
     private val harvest = ResponsesHarvest()
+    private val customCalls = ResponsesCustomCallParse()
 
     fun successOutcome(state: ResponsesTurnState): TurnOutcome = TurnOutcome.Success(
         hasToolUse = state.hasToolUse,
@@ -30,6 +31,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         // that emitted only a search call and was missed by the live capture would otherwise
         // produce a client-visible empty turn through the honesty gate — the worst available failure.
         toolSearches = state.toolSearches.ifEmpty { harvest.harvestToolSearchCalls(state.finalResponse) },
+        customCalls = customCalls.merge(state.customCalls, state.finalResponse),
     )
 
     /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary

@@ -90,8 +90,7 @@ internal class PassthroughThinking(
      *  [PassthroughEffortLadder.fallbackEffort]: it now falls to the cheapest rung instead (never
      *  pricier than whatever the operator asked for) and logs the substitution once per builder
      *  lifetime, not once per turn. */
-    fun effortLadder(typed: AnthropicRequest, compact: Boolean): String {
-        if (compact) quirks.compactEffort?.let { return it }
+    fun effortLadder(typed: AnthropicRequest): String {
         // PT-002: the ONLY branch [configEffort] can reach — see this function's KDoc for why.
         val thinking = typed.thinking
             ?: return effortRules.fallbackEffort(configEffort, quirks.providerTag, configEffortFallbackWarned, log)

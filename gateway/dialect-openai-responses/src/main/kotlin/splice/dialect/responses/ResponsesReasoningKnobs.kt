@@ -17,10 +17,8 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
     private val liteShape = ResponsesLiteShape(quirks)
 
     internal fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
-        // PORT: grok pins compaction effort to `low` (Node grok/translate-request.mjs:141
-        // `req.reasoning = { effort: 'low' }`) — bypasses budget/config so a compaction started
-        // at high effort can't run the summarizer at full cost. codex leaves the pin null → inherits.
-        if (opts.compact) quirks.compactEffortPin?.let { return it }
+        // No compaction pin, on any provider (2026-09-05): a compaction inherits the session's
+        // effort or the reasoning mismatch invalidates the whole prompt-cache prefix.
         if (body.thinking?.disabled == true && quirks.effortLadder == EffortLadder.CODEX) return null
         var effort = looseFields.looseEffort(raw)
         if (effort == null) {

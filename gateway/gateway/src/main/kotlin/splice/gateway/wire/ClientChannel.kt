@@ -7,6 +7,14 @@
 // pinger flips it on a failed keepalive write — the same mechanism on the same three fields this
 // data class holds, so both became member functions instead of free functions taking the fields as
 // separate arguments.
+//
+// DETACHABLE (2026-09-05): a channel built with a [FrameRecording] belongs to a turn that must
+// OUTLIVE its client — a compaction, which Claude Code aborts at 600 s of wall clock and retries
+// byte-identically minutes later. On such a channel every frame is recorded as well as written,
+// and a lost client (failed write, failed keepalive, or Ktor cancelling the call) DETACHES the
+// channel instead of failing or cancelling the turn: no more bytes reach the socket, the turn runs
+// on, and the recording answers the retry (TurnStreamer.driveDetachable, CompactionReplay). A
+// channel with no recording behaves exactly as before — ordinary turns still cancel on a lost client.
 package splice.gateway.wire
 
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +31,7 @@ import splice.core.util.LogSink
 import splice.spi.Ticker
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 // first_delta detection reads the frame prefix — the emitter's event name, not a literal
 // stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).
@@ -34,9 +43,27 @@ private const val PING_FRAME_PREFIX = "event: ping"
 // with ':' are comments) — exists ONLY so a dead client fails a write promptly.
 private const val SSE_KEEPALIVE_COMMENT = ": ping\n\n"
 
+// The heartbeat: a REAL `ping` event on a wire that has been silent this many ticks (30 s at the
+// 2 s tick). The comment above never reaches Claude Code's parser; a ping event does, and its
+// query loop yields every one as progress, which is what re-arms the client's async-agent stall
+// watchdog (600 s with no yielded event: 2.1.257 aborts the agent's turn and marks it failed —
+// "no progress for 600s (stream watchdog did not recover)"). On 2026-09-05 two 11-12 minute Astra
+// compactions each sent message_start and then nothing until the summary, and both sessions hung
+// at exactly 600 s after it. The Anthropic API sends ping events on its own streams; the client
+// counts up to 30 in a row as progress and, with its stream watchdog on (the default), all of
+// them. Only ever written after message_start (SseEmitter.heartbeat), so the wire stays legal.
+private const val HEARTBEAT_EVERY_TICKS = 15
+
+/** The one frame the pinger may write for the turn: a `ping` event, after message_start only. */
+internal fun interface Heartbeat {
+    suspend operator fun invoke()
+}
+
 // HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
 // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
 private const val CLIENT_PING_INTERVAL_MS = 2_000L
+
+private const val DETACHED_NOTE = "compaction continues detached; its answer is held for a retry"
 
 /** Per-turn client write surface: the coalesced writer, a mutex serializing the emitter vs the
  *  keepalive pinger, and the clientGone flag a failed write flips. */
@@ -44,6 +71,14 @@ internal data class ClientChannel(
     val coalesced: ImmediateSseWriter,
     val writeMutex: Mutex,
     val clientGone: AtomicBoolean,
+    /** Set for a turn that must outlive its client (a compaction): every frame is appended here as
+     *  well as written, and a lost client detaches the channel instead of failing the turn. */
+    val recording: FrameRecording? = null,
+    /** Flipped once for good by [detachIfRecording]: writes are recorded, none reach the socket. */
+    val detached: AtomicBoolean = AtomicBoolean(false),
+    /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
+     *  a silent wire, time for a heartbeat). */
+    val socketFrames: AtomicLong = AtomicLong(0),
 ) {
     /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
      *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
@@ -51,23 +86,57 @@ internal data class ClientChannel(
      *  reads it to classify the ending as ClientAbandoned instead of upstream truncation. The
      *  caller holds [writeMutex] around this call; it does not lock itself. */
     fun timedClientWrite(frame: String, perf: TurnPerf, clock: ElapsedClock) {
+        write(frame, perf, clock, modelOutput = true)
+    }
+
+    /** The KEEPALIVE PINGER's write: the heartbeat ping and splice's status line on a quiet wire.
+     *  Recorded, written, and counted in frames and bytes exactly like any other frame — but never
+     *  as model output. That distinction is load-bearing in three places, and the write PORT is
+     *  what carries it, so nothing downstream has to recognise one of our frames after the fact:
+     *  content_frames_out chooses the idle watchdog's tier (counting ours would judge a silent
+     *  Astra turn against the 180 s mid-output cap instead of the 300 s first-output one, reaping
+     *  the healthy turns 2026-09-05 already showed us reaping), it gates G5's pre-content reissue
+     *  (counting ours would downgrade a retryable torn stream to a raw api_error), and first_delta
+     *  is the instrument every latency diagnosis on this proxy starts from. All three stay the
+     *  model's alone. */
+    fun timedProgressWrite(frame: String, perf: TurnPerf, clock: ElapsedClock) {
+        write(frame, perf, clock, modelOutput = false)
+    }
+
+    private fun write(frame: String, perf: TurnPerf, clock: ElapsedClock, modelOutput: Boolean) {
+        recording?.append(frame)
+        if (detached.get()) return
         val t = clock()
         try {
             coalesced.write(frame)
         } catch (e: IOException) {
             clientGone.set(true)
-            throw e
+            if (!detachIfRecording()) throw e
+            return
         }
+        socketFrames.incrementAndGet()
         perf.add(PerfKeys.WRITE_MS, clock() - t)
         perf.add(PerfKeys.FRAMES_OUT, 1)
-        // Structural opener carries no content — see PerfKeys.CONTENT_FRAMES_OUT for why G5 must not
-        // count it as "the client saw output".
-        if (!frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)) {
-            perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
-        }
+        if (modelOutput && carriesContent(frame)) perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
         perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
         perf.markOnce(PerfKeys.FIRST_FRAME)
-        if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+        if (modelOutput && frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+    }
+
+    /** The structural turn-opening pair carries no content — see PerfKeys.CONTENT_FRAMES_OUT for
+     *  why G5 must not count it as "the client saw output". */
+    private fun carriesContent(frame: String): Boolean =
+        !frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)
+
+    /** Stop writing to the socket for good; the turn runs on and the recording stands in for the
+     *  client. False — and nothing changes — for a channel without a recording, so every caller
+     *  that only DETECTS the loss (a failed write or ping, Ktor's cancel of the call) keeps failing
+     *  or cancelling an ordinary turn exactly as before. Idempotent. */
+    fun detachIfRecording(): Boolean {
+        if (recording == null) return false
+        clientGone.set(true)
+        detached.set(true)
+        return true
     }
 
     /** DR-93 (redo): the turn-finally flush, quiet BY CONTRACT. On a dead socket the flush itself
@@ -108,25 +177,59 @@ internal data class ClientChannel(
         headKey: String,
         log: LogSink,
         session: String? = null,
+        heartbeat: Heartbeat = Heartbeat {},
     ): Job =
         scope.launch {
+            var seenFrames = socketFrames.get()
+            var silentTicks = 0
             while (isActive) {
                 // HD-19: the ping cadence is a named Ticker, not a bare delay. ProcessTicker always
                 // returns true, so this loop is exactly as unbounded as before; a test can wire a
                 // ticker that paces N pings instantly and then stops the loop.
                 if (!ticker.awaitTick(CLIENT_PING_INTERVAL_MS)) return@launch
+                if (detached.get()) {
+                    // A frame write detached the channel before this tick: the one log line for it.
+                    log("[$headKey] client gone (${who(session)}a frame write failed) — $DETACHED_NOTE\n")
+                    return@launch
+                }
+                val frames = socketFrames.get()
+                if (frames != seenFrames) {
+                    seenFrames = frames
+                    silentTicks = 0
+                } else {
+                    silentTicks += 1
+                }
                 try {
-                    writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
+                    if (silentTicks >= HEARTBEAT_EVERY_TICKS) {
+                        // Outside writeMutex: the heartbeat is an emitter frame and takes the lock
+                        // itself on the way through timedClientWrite (a non-reentrant Mutex).
+                        silentTicks = 0
+                        heartbeat()
+                        // The heartbeat is itself a socket frame: consume it, or the next tick
+                        // reads it as client traffic and the cadence drifts to 16 ticks.
+                        seenFrames = socketFrames.get()
+                    } else {
+                        writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
+                    }
                 } catch (e: IOException) {
-                    clientGone.set(true)
-                    // The class, not just the message: ClosedChannelException carries none, and
-                    // "keepalive write failed: null" said nothing about who closed what (2026-09-02).
-                    val why = e::class.simpleName + (e.message?.let { ": $it" } ?: "")
-                    val who = session?.let { "session $it, " } ?: ""
-                    log("[$headKey] client gone (${who}keepalive write failed: $why) — cancelling turn\n")
-                    turnJob.cancel()
+                    pingFailed(e, turnJob, headKey, log, session)
                     return@launch
                 }
             }
         }
+
+    private fun pingFailed(e: IOException, turnJob: Job, headKey: String, log: LogSink, session: String?) {
+        clientGone.set(true)
+        // The class, not just the message: ClosedChannelException carries none, and
+        // "keepalive write failed: null" said nothing about who closed what (2026-09-02).
+        val why = e::class.simpleName + (e.message?.let { ": $it" } ?: "")
+        if (detachIfRecording()) {
+            log("[$headKey] client gone (${who(session)}keepalive write failed: $why) — $DETACHED_NOTE\n")
+        } else {
+            log("[$headKey] client gone (${who(session)}keepalive write failed: $why) — cancelling turn\n")
+            turnJob.cancel()
+        }
+    }
+
+    private fun who(session: String?): String = session?.let { "session $it, " } ?: ""
 }

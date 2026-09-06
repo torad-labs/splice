@@ -7,6 +7,8 @@
 // The watchdog arms fire real pollers first, then prove TurnFinish carries each sentinel into the line.
 package head
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -82,10 +84,12 @@ class TurnFinishTest {
         val health = HeadHealthCounters()
         val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
         val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, ElapsedClock { 5L })
+        val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
+        val usageStamp = TurnUsageStamp(usageStore, log, telemetry)
         val finish = TurnFinish(
             ElapsedClock { 5L },
             log,
-            TurnUsageStamp(UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json")), log, telemetry),
+            usageStamp,
             health,
             telemetry,
         )
@@ -226,5 +230,125 @@ class TurnFinishTest {
         assertTrue(rig.logs.any { it.contains("finish-degraded") }, "the downgrade must reach the log")
         AsyncFileIo.drain() // perf rows are appended asynchronously
         assertTrue(Files.readString(rig.perfFile).contains("empty_model"), "perf keeps the honest tag")
+    }
+
+    /** Blocker #5: completed raw posts are a cancellation prefix. The normal final aggregate already
+     *  includes that prefix, so finish must replace it rather than adding it again. */
+    @Test
+    fun `a normal aggregate replaces the raw cancellation prefix`() = runBlocking {
+        val rig = Rig(tmp, "usage-aggregate")
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter)
+        try {
+            drive.recordRawRound(
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 10, reasoningTokens = 1),
+                ),
+            )
+            drive.recordRawRound(
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 200, outputTokens = 5, cachedTokens = 20, reasoningTokens = 2),
+                ),
+            )
+
+            rig.finish.finishTurn(
+                drive,
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 200, outputTokens = 8, cachedTokens = 20, reasoningTokens = 3),
+                ),
+            )
+
+            val counters = drive.perf.snapshot().counters
+            assertEquals(200L, counters["in_tokens"], "the final aggregate owns cumulative input")
+            assertEquals(20L, counters["cached_tokens"], "the final aggregate owns the latest cache count")
+            assertEquals(8L, counters["out_tokens"], "completed raw outputs must not be added twice")
+            assertEquals(8, rig.usageStore.readState().outputTokens5h)
+        } finally {
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `cancellation stamps the completed raw prefix once with cumulative accounting`() = runBlocking {
+        val rig = Rig(tmp, "usage-cancelled-prefix")
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter)
+        try {
+            drive.recordRawRound(
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 10, reasoningTokens = 1),
+                ),
+            )
+            drive.recordRawRound(
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 200, outputTokens = 5, cachedTokens = 20, reasoningTokens = 2),
+                ),
+            )
+
+            rig.usageStamp.stampKnownOnCancellation(drive)
+            rig.usageStamp.stampKnownOnCancellation(drive)
+
+            val counters = drive.perf.snapshot().counters
+            assertEquals(200L, counters["in_tokens"], "input is the latest completed raw round")
+            assertEquals(20L, counters["cached_tokens"], "cache is the latest completed raw round")
+            assertEquals(8L, counters["out_tokens"], "output accrues across completed raw rounds")
+            assertEquals(8, rig.usageStore.readState().outputTokens5h, "the shared stamp must be once-only")
+        } finally {
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `a cancelled success stamp still commits its claimed usage`() = runBlocking {
+        val rig = Rig(tmp, "usage-success-cancelled")
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter)
+        try {
+            val stampJob = launch {
+                cancel(CancellationException("cancel between terminal and usage write"))
+                rig.usageStamp.stampSuccess(
+                    drive,
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = Usage(inputTokens = 100, outputTokens = 7, cachedTokens = 4),
+                    ),
+                )
+            }
+            stampJob.join()
+
+            assertEquals(7, rig.usageStore.readState().outputTokens5h)
+            assertEquals(7L, drive.perf.snapshot().counters["out_tokens"])
+        } finally {
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `cancellation without code-mode raw rounds leaves ordinary usage counters absent`() = runBlocking {
+        val rig = Rig(tmp, "usage-cancelled-disabled")
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter)
+        try {
+            rig.usageStamp.stampKnownOnCancellation(drive)
+
+            val counters = drive.perf.snapshot().counters
+            assertTrue("in_tokens" !in counters)
+            assertTrue("out_tokens" !in counters)
+            assertTrue("cached_tokens" !in counters)
+            assertEquals(0, rig.usageStore.readState().outputTokens5h)
+        } finally {
+            drive.slot.release()
+        }
     }
 }

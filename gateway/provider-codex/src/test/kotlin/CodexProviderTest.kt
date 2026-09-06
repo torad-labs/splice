@@ -103,6 +103,18 @@ class CodexProviderTest {
     }
 
     @Test
+    fun `a built turn carries codex-rs's session, thread and routing headers for its session`() {
+        val codex = provider(accountIdHeader = false)
+        val built = codex.buildTurn(deferrableTurnBody(), compact = false, sessionId = "s1")
+        assertEquals("s1", built.extraHeaders["session-id"])
+        assertEquals("model=${built.meta.upstreamModel}", built.extraHeaders["x-codex-routing-hint"])
+        assertTrue(built.extraHeaders.containsKey("thread-id"), built.extraHeaders.toString())
+        // Same session, a compaction: the same three values (the WS connection key must not churn).
+        val compact = codex.buildTurn(deferrableTurnBody(), compact = true, sessionId = "s1")
+        assertEquals(built.extraHeaders["thread-id"], compact.extraHeaders["thread-id"])
+    }
+
+    @Test
     fun `codex production profile emits empty instructions on lite turns`() {
         val built = provider(accountIdHeader = false).buildTurn(
             deferrableTurnBody(),

@@ -22,6 +22,11 @@ private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
 // window, a silently wrong factor. Mirror the client, never improve on it.
 private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
 
+/** Claude Code honors CLAUDE_CODE_MAX_CONTEXT_TOKENS only for an active id NOT starting with this
+ *  (cli 2.1.257 `kL`: `!id.startsWith("claude-") && !knownAlias(id)`); any other id resolves to
+ *  the client's built-in table or its 200k default, and nothing we launch with can move it. */
+private const val CLIENT_OWN_ID_PREFIX = "claude-"
+
 @Serializable
 public data class ModelEntry(
     val id: String,
@@ -49,8 +54,8 @@ public data class ModelCatalog(
     val extraWindows: List<ExtraWindow> = emptyList(),
     val windowRules: List<WindowRule> = emptyList(),
     val defaultContextWindow: Long,
-    /** The head's pinned model — the row whose window became CLAUDE_CODE_MAX_CONTEXT_TOKENS at
-     *  launch, and therefore the window the CLIENT believes every non-"[1m]" row has. */
+    /** The head's pinned model (ANTHROPIC_MODEL at launch). Its declared window is what every launch
+     *  plants as the client's window ([clientLaunchWindow]). */
     val pinnedModel: String = "",
 ) {
     init {
@@ -116,18 +121,33 @@ public data class ModelCatalog(
             ?: fallback
     }
 
-    /** The window the CLIENT will actually use for [id], which is not always what we declare.
-     *  Claude Code resolves it as: `KE(id) = /\[1m\]/i` -> exactly 1e6, else
-     *  CLAUDE_CODE_MAX_CONTEXT_TOKENS (cli 2.1.233 `G4u`). That "[1m]" test on the id is the ONLY
-     *  id-keyed branch there is — no other spelling moves it — and the env is one number for the
-     *  whole process, so every other row is stuck with the PINNED row's window however it is
-     *  declared here. [usageScale] is what bridges the two. */
-    public fun clientContextWindowFor(id: String): Long =
-        if (oneMillionHint.containsMatchIn(unwrap(id))) {
-            CLAUDE_CODE_ONE_MILLION
-        } else {
-            contextWindowFor(pinnedModel)
-        }
+    /** The window every launch declares to the client (CLAUDE_CODE_MAX_CONTEXT_TOKENS): the pinned
+     *  row's declared window, so on the row a session starts on the client's numbers are exact and
+     *  [usageScale] is 1.0. Any other row is carried against it by scaling. A TOML edit of this
+     *  number still reaches a RUNNING session: the process keeps dividing by the number it was
+     *  launched with, the head learns that number from the session's status-line posts
+     *  (ClientWindows), and scaling carries the edit — never a launch constant. Planting a constant
+     *  1e6 here instead (2026-09-05, reverted the same day) meant every session launched before it
+     *  was scaled against a window 2.5-3.7x larger than the one its process divided by, so it
+     *  compacted at a third of its row's window, forever: the post-compaction floor (tools, system,
+     *  summary, re-attached files) already read as 84% of a 272k window. */
+    public val clientLaunchWindow: Long get() = contextWindowFor(pinnedModel)
+
+    /** The window the CLIENT will actually use for [id] — mirrored from cli 2.1.257 `PL()`, never
+     *  improved on: `/\[1m\]/i` anywhere in the id -> exactly 1e6; an id starting with "claude-"
+     *  (a discovery-wrapped tier, or a passthrough head's native model) ignores our env and
+     *  resolves to the client's own table or its 200k default, so the DECLARED window is returned
+     *  and the counts ride raw — a factor we cannot honestly compute is 1.0; every other id ->
+     *  [clientLaunchWindow], the env the launch planted. */
+    public fun clientContextWindowFor(id: String, sessionWindow: Long? = null): Long = when {
+        oneMillionHint.containsMatchIn(unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
+        id.startsWith(CLIENT_OWN_ID_PREFIX) -> contextWindowFor(id)
+        // An env-governed id: the window is whatever THIS session's process was launched with.
+        // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
+        // status-line posts); a session that has not yet posted is assumed launched with the
+        // pinned row's current window, which is exact for every launch since the last edit.
+        else -> sessionWindow?.takeIf { it > 0 } ?: clientLaunchWindow
+    }
 
     /** Multiplier for the input-token counts reported to the client, so a row compacts at ITS OWN
      *  declared window rather than the session's.
@@ -136,9 +156,16 @@ public data class ModelCatalog(
      *  splice authors the NUMERATOR of that ratio even though the denominator is fixed in the
      *  client's process. Scaling the numerator by `client/declared` makes the ratio reach 1 exactly
      *  when real usage reaches the declared window — so a 500k row on a 256k session compacts at
-     *  500k, live, switchable from the /model menu. Returns 1.0 (untouched counts) whenever the row
-     *  already agrees with the client, which is every row on a head that declares one window. */
-    public fun usageScale(id: String): Double {
+     *  500k, live, switchable from the /model menu. The pinned row rides raw (1.0) on a session
+     *  launched with its current window; 1.0 is also left where the client's window is genuinely
+     *  not ours: a declared 1e6 row and the "claude-" ids [clientContextWindowFor] names. */
+    /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
+     *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
+     *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
+    public fun envGoverned(id: String): Boolean =
+        !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX)
+
+    public fun usageScale(id: String, sessionWindow: Long? = null): Double {
         val declared = contextWindowFor(id)
         // NO "[1m]" exemption, deliberately. `contains()` strips the suffix before its membership
         // test, so an UNDECLARED tier id — `grok-4.6[1m]`, which exists in no catalog — passes the
@@ -147,7 +174,7 @@ public data class ModelCatalog(
         // and hard-fail upstream. Scaling them instead makes the client's 1e6 land on the stripped
         // id's real window. A DECLARED 1e6 row needs no special case: client and declared are both
         // 1e6, so this arithmetic already returns exactly 1.0.
-        val client = clientContextWindowFor(id)
+        val client = clientContextWindowFor(id, sessionWindow)
         if (declared <= 0 || client <= 0) return 1.0
         return client.toDouble() / declared
     }

@@ -18,7 +18,7 @@ internal class ResponsesReasoningInject {
         block: RedactedThinkingBlock,
         opts: BuildOptions,
     ) {
-        if (!opts.compact && opts.replayReasoning.v) {
+        if (opts.replayReasoning.v) {
             opts.decodeReasoningEnvelope(block.data)?.let { addReasoningOnce(sink, it, opts) }
         }
     }

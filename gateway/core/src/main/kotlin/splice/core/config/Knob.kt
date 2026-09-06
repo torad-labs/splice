@@ -5,6 +5,8 @@
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
 package splice.core.config
 
+import splice.core.topology.AuthKind
+
 // KnobKind + knobsByKey + restartRequiredKnobKeys live in KnobKind.kt
 // (concentration, 2026-08-19).
 
@@ -32,7 +34,9 @@ public enum class Knob(
         "codexAuthPath",
         KnobKind.STRING,
         listOf("CODEX_AUTH_PATH"),
-        "~/.codex/auth.json",
+        // The registry's splice-owned default (AuthKind header, 2026-09-05) — referenced, not copied,
+        // so the knob and the file `splice login` writes cannot drift apart (the DR-79 class).
+        AuthKind.ChatgptOAuth.authFile,
         restartRequired = true,
     ),
     PINNED_MODEL(
@@ -89,6 +93,19 @@ public enum class Knob(
         KnobKind.BOOL,
         listOf("CLAUDEX_MIRROR_REASONING"),
         false,
+        restartRequired = true,
+    ),
+
+    // splice's status line on a turn that has gone quiet: "holding this turn open. 4m20s into the
+    // turn, no output from gpt-6-astra yet." A row served buffered end to end (gpt-6-astra, probed
+    // 2026-09-06) shows the user a blank spinner for 5-12 minutes with nothing to distinguish a
+    // working turn from a hung one; this is the proxy answering that, and it is NOT the mirror
+    // above — no reasoning summary, no claim about the model's thinking, only about the wait.
+    PROGRESS_LINE(
+        "progressLine",
+        KnobKind.BOOL,
+        listOf("CLAUDEX_PROGRESS_LINE", "SPLICE_PROGRESS_LINE"),
+        true,
         restartRequired = true,
     ),
 
@@ -229,7 +246,8 @@ public enum class Knob(
         // DR-79: must agree with AuthKind.GrokOAuth's registry default — login writes there, the
         // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
         // auth.file 401 forever while doctor said signed-in (pinned by the registry-agreement arm).
-        "~/.grok/auth.json",
+        // Since 2026-09-05 the value IS the registry's, and it is splice's own file, not ~/.grok's.
+        AuthKind.GrokOAuth.authFile,
         restartRequired = true,
     ),
     CONTROL_PORT(

@@ -54,9 +54,10 @@ Kimi's provider config opts INTO its deformations (inverting today's hardcoding)
 | `synthesizeSignatures` | false — upstream signatures only | true |
 | `providerTag` (exists) | "claude-max" in errors | "kimi" |
 
-The compact directive (CX-02, `:core` `CompactInstructions`) stays wired for ALL passthrough
-heads — parity law, not a quirk. Error strings currently hardcoding `kimi:` become
-`providerTag`-driven (they already carry the field; the literals are the bug).
+The compact directive is GONE (2026-09-05): a compaction is built byte-identical to a turn on
+every head — parity law, not a quirk — or the upstream prompt cache misses the transcript. Error
+strings currently hardcoding `kimi:` become `providerTag`-driven (they already carry the field;
+the literals are the bug).
 
 **Acceptance for this refactor: kimi's wire bytes are byte-identical before/after.** The
 existing kimi passthrough tests stay green UNMODIFIED; a golden-request test pins one

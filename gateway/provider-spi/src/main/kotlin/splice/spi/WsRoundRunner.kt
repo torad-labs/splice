@@ -78,7 +78,23 @@ public interface WsRoundRunner {
 public data class WsRound(
     public val events: Flow<JsonObject>,
     public val abort: WsRoundAbort,
+    /** The round's socket-level liveness, read by the idle watchdog (2026-09-06). The backend pings
+     *  every ~20 s on a healthy path whether or not the model has anything to say, so "no frame for
+     *  300 s, last ping 8 s ago" is a model still reasoning and "no frame for 300 s, no ping for
+     *  90 s" is a dead path. Default: never pinged, which is the SSE path's answer too — the tiers
+     *  then judge exactly as before. */
+    public val pathPulse: WsPathPulse = WsPathPulse { NEVER_PINGED_MS },
 )
+
+/** [WsRound.pathPulse]'s one reading: milliseconds since the server's last ping frame on this
+ *  round's socket, [NEVER_PINGED_MS] when there has been none. An interface rather than a function
+ *  type (kt-no-lambda-seam). */
+public fun interface WsPathPulse {
+    public fun lastPingAgoMs(): Long
+}
+
+/** The pulse of a socket that has never been pinged, and of a transport that has no pings (SSE). */
+public const val NEVER_PINGED_MS: Long = Long.MAX_VALUE
 
 /** [WsRound.abort]'s one operation, as an interface rather than a function type (kt-no-lambda-seam). */
 public fun interface WsRoundAbort {
@@ -88,5 +104,9 @@ public fun interface WsRoundAbort {
 /** Thrown by the head when a WS round failed BEFORE the client saw any content, so the round is
  *  re-served over SSE. A plain RuntimeException on purpose: the stream translators' catch lists
  *  (IOException / SerializationException / IllegalArgumentException) must not swallow it, the same
- *  reason [StreamTornBeforeClient] is one. */
-public class WsRoundNeedsSse : RuntimeException("websocket round failed before any client frame")
+ *  reason [StreamTornBeforeClient] is one. [detail] is what the server said — the failure terminal's
+ *  type and error — so the fallback line names WHY a round left the WebSocket: until 2026-09-05 it
+ *  said only that one did, and every chained compaction that failed this way (and then re-read the
+ *  whole transcript cold over SSE) left no cause anywhere. */
+public class WsRoundNeedsSse(public val detail: String = "") :
+    RuntimeException("websocket round failed before any client frame")

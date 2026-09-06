@@ -22,10 +22,11 @@ internal data class WireShape(val input: JsonArray, val instructions: String?, v
  */
 internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
 
-    /** Lite gate: non-compact turns on a responses-lite model (compact keeps the normal shape —
-     *  a text-only summarizer turn has no tools and its forced instructions stay top-level). */
+    /** Lite gate: every turn on a responses-lite model, compaction included — lite is a property
+     *  of the MODEL, and a compaction built in the non-lite shape shares no prefix with the
+     *  session's lite turns (2026-09-05). */
     fun isLite(opts: BuildOptions): Boolean =
-        !opts.compact && quirks.responsesLiteModelRegex?.containsMatchIn(opts.upstreamModel) == true
+        quirks.responsesLiteModelRegex?.containsMatchIn(opts.upstreamModel) == true
 
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {

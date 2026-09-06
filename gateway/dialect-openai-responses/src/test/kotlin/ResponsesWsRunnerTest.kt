@@ -27,6 +27,7 @@ import splice.dialect.responses.ResponsesWsRunner
 import splice.dialect.responses.ResponsesWsSession
 import splice.dialect.responses.WsUpstream
 import splice.dialect.responses.responsesRequestJson
+import splice.spi.NEVER_PINGED_MS
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket
@@ -53,6 +54,9 @@ private class Rig(private val script: (Int) -> List<String>) {
     var rounds = 0
     val sent = mutableListOf<String>()
 
+    /** The headers of every handshake, in connection order (2026-09-05: the WS-only request id). */
+    val handshakes = mutableListOf<Map<String, String>>()
+
     /** Which SOCKETS were aborted, in creation order. kill() calls abort(), so this is how a test
      *  observes "the round's connection was torn down" and, more importantly, WHICH one. */
     val aborted = mutableListOf<Int>()
@@ -66,11 +70,13 @@ private class Rig(private val script: (Int) -> List<String>) {
         handshakeHeaders = { emptyMap() },
     )
 
-    private var listener: WebSocket.Listener? = null
+    /** The live socket's listener, so a test can deliver a server ping the way the JDK would. */
+    var listener: WebSocket.Listener? = null
 
     @Suppress("UNUSED_PARAMETER")
-    private fun connect(unusedUri: URI, unusedHeaders: Map<String, String>, l: WebSocket.Listener): WebSocket {
+    private fun connect(unusedUri: URI, headers: Map<String, String>, l: WebSocket.Listener): WebSocket {
         listener = l
+        handshakes += headers
         // Its OWN listener, not the shared field: a rig with two live sockets would otherwise feed
         // every frame to whichever connected last.
         val index = sockets++
@@ -103,8 +109,14 @@ private class Rig(private val script: (Int) -> List<String>) {
     suspend fun accept(m: TurnMeta = meta(), body: String = BODY, headers: Map<String, String> = emptyMap()) =
         runner.attempt(body, m, headers, Credentials.Bearer("tok", "acct"))
 
-    suspend fun round(m: TurnMeta = meta(), body: String = BODY): List<JsonObject>? =
-        accept(m, body)?.let { r -> mutableListOf<JsonObject>().also { out -> r.events.collect { out += it } } }
+    suspend fun round(
+        m: TurnMeta = meta(),
+        body: String = BODY,
+        headers: Map<String, String> = emptyMap(),
+    ): List<JsonObject>? =
+        accept(m, body, headers)?.let { r ->
+            mutableListOf<JsonObject>().also { out -> r.events.collect { out += it } }
+        }
 
     fun lastSentChained(): Boolean =
         (responsesRequestJson.parseToJsonElement(sent.last()) as JsonObject)["previous_response_id"] != null
@@ -112,7 +124,130 @@ private class Rig(private val script: (Int) -> List<String>) {
 
 private fun completed(id: String) = """{"type":"response.completed","response":{"id":"$id"}}"""
 
+/** A tool call closing as a streamed output item — how this backend delivers it; its terminal's
+ *  `output` array is EMPTY (the live shape, 2026-09-05), so the call must be gathered here. */
+private fun itemDoneCall(callId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"function_call","call_id":"$callId","name":"read","arguments":"{}"}}"""
+
+private fun completedEmptyOutput(id: String) =
+    """{"type":"response.completed","response":{"id":"$id","output":[]}}"""
+
+/** A tool search the BACKEND executed: it carries a call_id, but nothing will ever answer it. */
+private fun itemDoneServerSearch(callId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"tool_search_call","call_id":"$callId","execution":"server","status":"completed"}}"""
+
+/** A function_call whose call_id is EMPTY: the fold hands the client the item id instead. */
+private fun itemDoneCallByItemId(itemId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"function_call","id":"$itemId","call_id":"","name":"read","arguments":"{}"}}"""
+
+private const val BODY_ANSWERED_BY_ITEM_ID =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call_output","call_id":"fc_9","output":"file"}]}"""
+
+private const val BODY_COMPACT =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"summarize"}]}"""
+
+private const val BODY_ANSWERED =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call_output","call_id":"call_9","output":"file"}]}"""
+
+/** The socket argument onPing hands the listener; it only re-arms request(1) on it. */
+private object FakeSocketForPing : WebSocket {
+    override fun sendText(data: CharSequence, last: Boolean) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendBinary(d: java.nio.ByteBuffer, l: Boolean) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendPing(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendPong(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendClose(c: Int, r: String) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun request(n: Long) = Unit
+    override fun getSubprotocol() = ""
+    override fun isOutputClosed() = false
+    override fun isInputClosed() = false
+    override fun abort() = Unit
+}
+
 class ResponsesWsRunnerTest {
+
+    /** codex-rs names its thread a second time on the WS handshake, as the client request id —
+     *  derived from the provider's per-turn `thread-id` at the handshake, so an SSE POST never
+     *  carries it and a turn without a thread id sends none (2026-09-05). */
+    @Test
+    fun `the handshake carries the thread id as x-client-request-id and nothing without one`() = runTest {
+        val rig = Rig { listOf("""{"type":"response.created"}""", completed("r1")) }
+        checkNotNull(rig.round(headers = mapOf("thread-id" to "t-1"))) { "round one" }
+        assertEquals("t-1", rig.handshakes.last()["x-client-request-id"])
+        assertEquals("t-1", rig.handshakes.last()["thread-id"])
+        // A different header set is a different connection: the second handshake carries none.
+        checkNotNull(rig.round(headers = mapOf("x-splice-probe" to "two"))) { "round two" }
+        assertEquals(2, rig.handshakes.size, "a changed per-turn header set opens a new connection")
+        assertFalse(rig.handshakes.last().containsKey("x-client-request-id"), rig.handshakes.last().toString())
+    }
+
+    /** The terminal's output is read for the calls it leaves open: a next turn that answers none
+     *  of them full-sends (the 2026-09-05 compaction class), one that answers them chains. */
+    @Test
+    fun `a held tool call from the terminal gates the next round's chaining`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_COMPACT)
+        assertFalse(rig.lastSentChained(), "call_9 is unanswered by a compaction body — must full-send")
+        val answered = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        answered.round()
+        answered.round(body = BODY_ANSWERED)
+        assertTrue(answered.lastSentChained(), "the tool round answers call_9 — chains as before")
+    }
+
+    /** A server-executed call is NOT held: the backend answered it itself, so a next turn that
+     *  answers nothing still chains (review 2026-09-05: it was held, and cost a full send with a
+     *  reason line blaming a call the server would never have refused). */
+    @Test
+    fun `a server-executed tool search is not held against the next round`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneServerSearch("ts_7"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_COMPACT)
+        assertTrue(rig.lastSentChained(), "ts_7 was answered by the server — nothing to hold")
+    }
+
+    /** An empty call_id is held under the ITEM id, which is what the client answers with
+     *  (ResponsesItemFold's fallback) — never under "", which nothing could answer. */
+    @Test
+    fun `a call with an empty call_id is held under the item id the client answers with`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCallByItemId("fc_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_ANSWERED_BY_ITEM_ID)
+        assertTrue(rig.lastSentChained(), "the tool round answers fc_9 — the call the client was handed")
+        val unanswered = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCallByItemId("fc_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        unanswered.round()
+        unanswered.round(body = BODY_COMPACT)
+        assertFalse(unanswered.lastSentChained(), "fc_9 is still a held call a compaction never answers")
+    }
 
     /** Every SUCCESS variant must END the round — otherwise the flow never completes, the
      *  connection never returns to the pool, and the turn HANGS (worse than any error). */
@@ -197,6 +332,20 @@ class ResponsesWsRunnerTest {
     /** DR-7: the abort kills THIS round's socket and its events end as an IOException — the shape
      *  the head depends on, because a torn read is what the translator folds into an honest
      *  terminal. A cancellation instead would take the collector down and lose the salvage. */
+    /** 2026-09-06: the accepted round carries its OWN socket's ping pulse for the idle watchdog —
+     *  never pinged reads as never, a server ping read by the listener reads as its age. */
+    @Test
+    fun `an accepted round reads the server pings on its own socket`() = runTest {
+        val rig = Rig { listOf(created("resp_1")) }
+        val round = checkNotNull(rig.accept()) { "the scripted round must be accepted" }
+
+        assertEquals(NEVER_PINGED_MS, round.pathPulse.lastPingAgoMs(), "no ping yet reads as never")
+        val socket = checkNotNull(rig.listener)
+        socket.onPing(FakeSocketForPing, java.nio.ByteBuffer.allocate(0))
+        val age = round.pathPulse.lastPingAgoMs()
+        assertTrue(age in 0..5_000, "a ping just delivered is seconds old at most, got $age ms")
+    }
+
     @Test
     fun `aborting a live round tears its own socket and ends the flow as a torn read - DR-7`() = runTest {
         val rig = Rig { listOf(created("resp_1")) }

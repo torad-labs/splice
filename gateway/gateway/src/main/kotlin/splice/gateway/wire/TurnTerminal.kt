@@ -27,6 +27,13 @@ public fun interface UsagePayloadBuilder {
     public operator fun invoke(usage: Usage?): JsonObject
 }
 
+/** One status line, composed at the instant the wire takes it. A seam rather than a String because
+ *  composing a line CONSUMES the caller's ticker state and reads its live clock — see
+ *  [TurnTerminal.progress]. `operator fun invoke` keeps every call site a plain lambda. */
+public fun interface ProgressLine {
+    public operator fun invoke(): String
+}
+
 public interface TurnTerminal : WireSink {
     /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
      *  abandon sealed it, or a failed error write made retrying pointless. NOT merely "attempted":
@@ -34,6 +41,12 @@ public interface TurnTerminal : WireSink {
      *  (TurnDriver.driveSealingCancellation) can still end the turn honestly (stranded-terminal /
      *  truncated-200 fix, review 2026-07-22 round 3). */
     public val hasEnded: Boolean
+
+    /** True once [emitTerminal] delivered the clean ending — never for an error or an abandon.
+     *  What tells a detached compaction's recording (TurnStreamer) apart from a truncated or
+     *  failed one without any consumer reading terminal literals off the frames (L3). Default
+     *  false: the collecting sink has no detached consumer. */
+    public val endedCleanly: Boolean get() = false
 
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
@@ -66,6 +79,27 @@ public interface TurnTerminal : WireSink {
      * still call it, and re-anchor rounds are no-ops. No-op by default for the non-stream sink,
      * which has no incremental wire to open. */
     public suspend fun ensureStarted() {}
+
+    /** A `ping` event on a wire that has gone silent (ClientChannel's pinger, every 30 s without a
+     *  frame): the one frame Claude Code's query loop yields as progress that carries no content,
+     *  so its async-agent stall watchdog (600 s of no yielded event) cannot fire under a long
+     *  reasoning phase or a slow compaction. Written only after message_start and only while the
+     *  turn is still open; the non-stream sink has no incremental wire, so its default is a no-op. */
+    public suspend fun heartbeat() {}
+
+    /** splice's own status line for a turn that has gone quiet: a short sentence about the wait,
+     *  appended to one thinking block so a user watching a long silent turn can see it is being
+     *  HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first token). It is
+     *  the proxy speaking, not the model, and it is never counted as model output — the pinger's
+     *  write port decides that. Written only after message_start and only while the turn is open;
+     *  the non-stream sink has no incremental wire, so its default is a no-op.
+     *
+     *  [line] is a PRODUCER, not a string, because composing the line CONSUMES state — the caller's
+     *  ticker only says "holding this turn open" once, and reads elapsed and whether the model has
+     *  output yet as it goes. Building it for a write that the guards then drop spends the intro on
+     *  a line no client ever sees, and the next tick silently degrades to the ticker form. So the
+     *  producer runs where the write happens and nowhere else, and this default never runs it. */
+    public suspend fun progress(line: ProgressLine) {}
 }
 
 // HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start

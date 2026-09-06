@@ -14,6 +14,8 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.graaljs.polyglot)
+    testRuntimeOnly(libs.graaljs.community)
 }
 
 // Spikes are experiments with receipts, not CI tests: run explicitly with

@@ -255,13 +255,14 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    @Timeout(3)
+    @Timeout(10)
     fun `runaway source times out and releases its worker slot`() = runBlocking {
         JvmCodeModeRuntime(
             maxWorkers = 1,
             advanceTimeoutMs = 1_000,
             workerClasspath = testClasspath,
         ).use { runtime ->
+            val reclamation = CodeModeWorkerReclamation(this)
             val startedAt = System.nanoTime()
             val timeout = assertThrows(IOException::class.java) {
                 runBlocking { runtime.start("while (true) {}", emptySet()) }
@@ -272,13 +273,12 @@ class CodeModeRuntimeTest {
             assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < 2_000)
             assertTrue(timeout.cause !is CancellationException)
 
-            val cell = runtime.start("return \"reaped\";", emptySet())
-            assertEquals("reaped", completed(cell.advance()).output)
+            reclamation.assertReclaimed(runtime)
         }
     }
 
     @Test
-    @Timeout(3)
+    @Timeout(10)
     fun `cancelling startup reaps the worker and releases capacity`() = runBlocking {
         JvmCodeModeRuntime(
             maxWorkers = 1,

@@ -123,6 +123,10 @@ class HeadServerHeartbeatTest {
         }
     }
 
+    /** One counter out of a perf line, which renders them as `name=value` separated by spaces. */
+    private fun counter(line: String, name: String): Long? =
+        Regex("(?:^| )${Regex.escape(name)}=(\\d+)").find(line)?.groupValues?.get(1)?.toLong()
+
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
@@ -170,5 +174,27 @@ class HeadServerHeartbeatTest {
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 })
         socket.close()
         assertTrue(lines.any { it.contains("perf outcome=ok") }, lines.joinToString())
+
+        // The wait is VISIBLE: the same silence that carries the pings carries splice's own line,
+        // and it names what is actually true here — the client has already seen a delta, so this
+        // turn is paused mid-answer rather than not started.
+        val wire = text()
+        assertTrue("[splice] holding this turn open." in wire, "the status line must reach the client: $wire")
+        assertTrue("has paused mid-answer" in wire, "and must name the wait it is actually in: $wire")
+
+        // And it costs the model's accounting NOTHING. Every frame the pinger wrote is counted in
+        // frames_out and in none of content_frames_out, which is what keeps the idle watchdog on the
+        // right tier and leaves G5's pre-content reissue gated on the model alone.
+        val perf = lines.last { it.contains("perf outcome=ok") }
+        val framesOut = checkNotNull(counter(perf, "frames_out")) { "frames_out missing: $perf" }
+        val contentOut = checkNotNull(counter(perf, "content_frames_out")) { "content_frames_out missing: $perf" }
+        assertTrue(
+            framesOut >= contentOut + 6,
+            "the pinger's pings and status lines are frames the client received: $perf",
+        )
+        assertTrue(
+            contentOut <= 12,
+            "and none of them may be counted as the model reaching the client: $perf",
+        )
     }
 }

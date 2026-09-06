@@ -63,7 +63,7 @@ public abstract class ResponsesProvider(
      *  HERE, never on shared state. */
     protected open fun perTurnHeaders(meta: TurnMeta): Map<String, String> = emptyMap()
 
-    final override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
+    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val built = parts.builder.build(body.typed, body.raw, parts.turnOptions.build(body, compact, sessionId))
         return BuiltTurn(
             built.req,

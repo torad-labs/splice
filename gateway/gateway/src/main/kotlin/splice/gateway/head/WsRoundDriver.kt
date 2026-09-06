@@ -96,7 +96,15 @@ internal class WsRoundDriver(
             val round = Job(inputs.turnJob)
             roundJob = round
             round.invokeOnCompletion { cause -> if (cause != null) accepted.abort.abort() }
-            poller = drive.watchdog.launchIn(inputs.scope, drive.slot, round, inputs.frameEmittedThisRound)
+            // The round's socket pulse rides along (2026-09-06): a silent round on a path the server
+            // is still pinging is held, not reaped — see TurnWatchdog.launchIn.
+            poller = drive.watchdog.launchIn(
+                inputs.scope,
+                drive.slot,
+                round,
+                inputs.frameEmittedThisRound,
+                accepted.pathPulse,
+            )
             return try {
                 roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
             } catch (needsSse: WsRoundNeedsSse) {

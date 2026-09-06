@@ -7,10 +7,12 @@
 // still propagates (status quo at the driver), but the instruments must have recorded first.
 package head
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -30,6 +32,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
+import splice.gateway.head.CancellationSeal
 import splice.gateway.head.HeadHealthCounters
 import splice.gateway.head.TurnConnEnd
 import splice.gateway.head.TurnDrive
@@ -111,6 +114,24 @@ private class DeadClientSuccessTerminal : TurnTerminal {
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
+/** A terminal whose cancellation occurs while the cancellation seal tries to emit its error frame. */
+private class CancellationDuringSealTerminal(private val emission: CancellationException) : TurnTerminal {
+    override val hasEnded: Boolean = false
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override suspend fun emitError(type: ErrorType, message: String): Unit = throw emission
+    override fun abandon() = Unit
+    override suspend fun openText() = WireBlockIndex(0)
+    override suspend fun openThinking() = WireBlockIndex(0)
+    override suspend fun openTool(id: String, name: String) = WireBlockIndex(0)
+    override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+    override suspend fun closeBlock(index: WireBlockIndex) = Unit
+    override suspend fun closeAll() = Unit
+    override suspend fun addTextBlock(text: String) = Unit
+    override suspend fun addRedactedThinking(data: String) = Unit
+}
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TurnEndingAccountingTest {
 
@@ -162,7 +183,10 @@ class TurnEndingAccountingTest {
             )
         }
 
-        suspend fun drive(emitter: TurnTerminal = DeadClientTerminal()): TurnDrive = TurnDrive(
+        suspend fun drive(
+            emitter: TurnTerminal = DeadClientTerminal(),
+            clientGone: Boolean = true,
+        ): TurnDrive = TurnDrive(
             requestBody = buildJsonObject { },
             meta = TurnMeta(
                 compact = false,
@@ -191,7 +215,7 @@ class TurnEndingAccountingTest {
             channel = ClientChannel(
                 ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
                 Mutex(),
-                AtomicBoolean(true),
+                AtomicBoolean(clientGone),
             ),
             toolSearch = null,
         )
@@ -330,5 +354,83 @@ class TurnEndingAccountingTest {
         emitExpectingDeadClient(rig, IllegalStateException("synthetic gateway bug"))
         rig.assertRecorded("error:unexpected")
         assertEquals(1L, rig.health.snapshot().localOrigin)
+    }
+
+    @Test
+    fun `cancellation stamps known usage for collect disconnected and already-ended paths`() = runBlocking {
+        val cases = listOf(
+            Triple("collect", false, false) to DeadClientSuccessTerminal(),
+            Triple("disconnected", true, true) to DeadClientSuccessTerminal(),
+            Triple("already-ended", true, false) to DeadClientTerminal(),
+        )
+        cases.forEach { (case, emitter) ->
+            val (name, sealRequested, clientGone) = case
+            val rig = Rig("usage-cancel-$name")
+            val store = UsageStore(tmp.resolve("usage-cancel-$name.json"), tmp.resolve("rl-cancel-$name.json"))
+            val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
+            val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
+            val drive = rig.drive(emitter, clientGone)
+            try {
+                drive.recordRawRound(
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = Usage(inputTokens = 50, outputTokens = 4, cachedTokens = 5),
+                    ),
+                )
+                seal.sealAndStamp(drive, sealRequested, CancellationException("$name cancellation"))
+                assertEquals(4, store.readState().outputTokens5h, "$name must retain returned raw usage")
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
+    /** Blocker #5: terminal emission can itself cancel. The original cancellation remains the one
+     *  the driver rethrows, while known completed raw rounds are synchronously stamped once. */
+    @Test
+    fun `cancellation during terminal emission preserves the original cancellation and stamps usage`() = runBlocking {
+        val rig = Rig("usage-cancel-during-seal")
+        val store = UsageStore(tmp.resolve("usage-cancel-during-seal.json"), tmp.resolve("rl-cancel-during-seal.json"))
+        val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
+        val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
+        val original = CancellationException("original turn cancellation")
+        val duringEmission = CancellationException("terminal emission cancellation")
+        val drive = rig.drive(CancellationDuringSealTerminal(duringEmission), clientGone = false)
+        try {
+            drive.recordRawRound(
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 10, reasoningTokens = 1),
+                ),
+            )
+            drive.recordRawRound(
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(inputTokens = 200, outputTokens = 5, cachedTokens = 20, reasoningTokens = 2),
+                ),
+            )
+
+            val thrown = try {
+                try {
+                    throw original
+                } catch (caught: CancellationException) {
+                    seal.sealAndStamp(drive, seal = true, original = caught)
+                    throw caught
+                }
+            } catch (caught: CancellationException) {
+                caught
+            }
+
+            assertSame(original, thrown, "cleanup must never replace the turn's cancellation instance")
+            assertEquals(200L, drive.perf.snapshot().counters["in_tokens"])
+            assertEquals(20L, drive.perf.snapshot().counters["cached_tokens"])
+            assertEquals(8L, drive.perf.snapshot().counters["out_tokens"])
+            assertEquals(8, store.readState().outputTokens5h)
+        } finally {
+            drive.slot.release()
+        }
     }
 }

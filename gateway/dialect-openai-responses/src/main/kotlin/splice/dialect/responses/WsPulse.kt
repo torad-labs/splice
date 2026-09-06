@@ -37,6 +37,13 @@ internal class WsPulse(
         lastPingAt.set(clock())
     }
 
+    /** Milliseconds since the last server ping, [Long.MAX_VALUE] before the first — the idle
+     *  watchdog's liveness reading (WsPathPulse). */
+    internal fun pingAgoMs(): Long {
+        val ping = lastPingAt.get()
+        return if (ping == NEVER) Long.MAX_VALUE else clock() - ping
+    }
+
     internal fun roundStarted() {
         roundStartedAt.set(clock())
     }

@@ -62,12 +62,17 @@ zstd_request_body = true
 # This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
 # A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
 # Setting true is an experiment, not demonstrated task-efficiency parity.
-# code_mode (default false): experimental Astra JavaScript bridge bundled in splice's JAR.
-# Real tool operations still use Claude Code's ordinary handlers and per-call permissions.
-# No Codex or Node installation is required. Child JVMs have bounded workers/time/heap and deny
-# guest host/I/O access; Graal community is not an OS-hardened same-user attacker sandbox.
-# Unsupported non-text bridge results fail explicitly. Compact/toolless/forced-tool turns
-# retain the ordinary path. Keep this off until the task-level comparison supports enabling it.
+# code_mode (beta, default false): true automatically adds splice's JAR-bundled JavaScript runner
+# and orchestration instructions only to eligible GPT-6 Astra and Sol turns. Ordinary tools remain
+# Claude Code's permission-checked client handlers, which execute the real operations. Code mode
+# requires neither Codex nor Node. Only chatgpt-oauth + openai-responses providers may enable it.
+# False or omitted disables both additions. Compact/toolless/forced-tool turns retain the ordinary
+# path; unsupported non-text bridge results fail explicitly. Child JVMs bound workers/time/heap and
+# deny guest host/I/O access; Graal community is not an OS-hardened same-user attacker sandbox.
+# This setting is shared by every head using providers.codex. Topology is boot-only: finish ongoing
+# work before editing, then run `splice restart` for a FULL daemon restart. A head restart alone does
+# not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
+# reruns the lost JavaScript source automatically.
 # code_mode = false
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
@@ -266,6 +271,11 @@ context_window = 400000
 command = "claudex"
 [heads.claudex.overrides]
 maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
+# progressLine (bool, default true, restart) is the other knob worth knowing on THIS head. A wire
+# that has gone quiet for 30s carries a short line from splice saying how long the turn has been
+# running and whether the model has produced anything yet — the codex rows reason for minutes with
+# nothing on the wire, and a blank spinner cannot be told from a hung session. Set it to "false" to
+# get silence back; the keepalive pings that hold the turn open are separate and always sent.
 
 # grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
 # titling and `--model haiku` stay served on this head. No fable analog exists: fable stays

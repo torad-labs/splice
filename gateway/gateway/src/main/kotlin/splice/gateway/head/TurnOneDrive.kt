@@ -6,6 +6,7 @@ package splice.gateway.head
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
+import splice.core.perf.PerfKeys
 import splice.gateway.wire.Heartbeat
 import splice.spi.Provider
 
@@ -24,6 +25,8 @@ internal class TurnOneDrive(
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
         val turnJob = Job(parent)
+        // Per TURN: the line remembers whether it has spoken, so the first one explains itself.
+        val progress = TurnProgressLine()
         try {
             withContext(turnJob) {
                 val self = this
@@ -42,8 +45,23 @@ internal class TurnOneDrive(
                         provider.key,
                         deps.log,
                         drive.sessionTag(),
-                        // The pinger's one real frame (ClientChannel.HEARTBEAT_EVERY_TICKS).
-                        heartbeat = Heartbeat { drive.emitter.heartbeat() },
+                        // The pinger's two frames (ClientChannel.HEARTBEAT_EVERY_TICKS): the ping
+                        // that re-arms the client's stall watchdog, and — unless the operator turned
+                        // it off — the status line that makes the wait visible instead of blank.
+                        heartbeat = Heartbeat {
+                            drive.emitter.heartbeat()
+                            if (deps.progressLine) {
+                                // Composed only if the emitter actually writes it: a line built for
+                                // a dropped write spends the intro and the clock reading with it.
+                                drive.emitter.progress {
+                                    progress.next(
+                                        elapsedMs = deps.clock() - drive.t0,
+                                        model = drive.upstreamModel,
+                                        sawOutput = drive.perf.hasMark(PerfKeys.FIRST_DELTA),
+                                    )
+                                }
+                            }
+                        },
                     )
                 } else {
                     null

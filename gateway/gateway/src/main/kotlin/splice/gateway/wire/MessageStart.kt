@@ -12,6 +12,12 @@ import kotlinx.serialization.json.putJsonObject
 private const val TYPE = "type"
 private const val MESSAGE = "message"
 
+/** The ping frame, byte-for-byte what building `{"type":"ping"}` produced — as a CONSTANT, because
+ *  the turn's opening ping and the keepalive heartbeat (SseEmitter.heartbeat, written from the
+ *  pinger's own coroutine) both emit it, and a frame assembled on [SseFrameWriter]'s one reused
+ *  buffer from two coroutines is a corrupt frame. Fixed bytes are safe from either. */
+internal const val PING_FRAME: String = "event: ping\ndata: {\"type\":\"ping\"}\n\n"
+
 /** Opens the turn on the wire NOW, before any content exists — message_start needs nothing from
  *  upstream (id, model and a zeroed usage payload are all known at build time), and message_start
  *  is followed by ping. Neither literal is walled — only message_stop/message_delta/end_turn are,
@@ -22,15 +28,17 @@ internal class MessageStart(
     private val messageId: String,
     private val usagePayload: UsagePayloadBuilder,
 ) {
-    private var started = false
+    // Volatile: written by the turn's own coroutine, READ by the keepalive pinger's — the pinger
+    // reaches this object through its own block writer (WireBlockWriter.openBlock calls ensureStart).
+    @Volatile private var started = false
 
-    internal val hasStarted: Boolean get() = started
+    // Set only once BOTH opener frames are on the wire, and the gate the keepalive pinger asks.
+    // NOT [started]: that one is the re-entrancy latch and flips BEFORE message_start is written,
+    // so a pinger gating on it could put its ping ahead of the opener, which is not a legal stream.
+    @Volatile private var opened = false
 
-    /** The heartbeat's frame: a ping on a wire the turn has already opened, nothing before that
-     *  (a ping ahead of message_start is not a legal stream). */
-    internal suspend fun pingIfStarted() {
-        if (started) ping()
-    }
+    /** message_start and its ping are written — the pinger may speak. */
+    internal val hasOpened: Boolean get() = opened
 
     internal suspend fun ensureStart() {
         if (started) return
@@ -51,8 +59,7 @@ internal class MessageStart(
                 }
             },
         )
-        ping()
+        frames.writeVerbatim(PING_FRAME)
+        opened = true
     }
-
-    private suspend fun ping() = frames.frame("ping", buildJsonObject { put(TYPE, "ping") })
 }

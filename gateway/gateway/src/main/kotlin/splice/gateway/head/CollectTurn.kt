@@ -23,6 +23,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import splice.core.model.ClientWindows
 import splice.core.perf.TurnPerf
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
@@ -40,6 +41,7 @@ internal class CollectTurn(
     private val driveFactory: TurnDriveFactory,
     private val driver: TurnDriver,
     private val quota: QuotaTracker?,
+    private val clientWindows: ClientWindows = ClientWindows(),
 ) {
     private val wiring = TurnWiring()
 
@@ -50,7 +52,7 @@ internal class CollectTurn(
     suspend fun collect(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
         val terminal = CollectingTerminal(
             built.meta.originalModel,
-            wiring.usagePayloadBuilder(provider.catalog, built.meta),
+            wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindows.windowFor(built.meta.sessionId)),
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.

@@ -4,8 +4,10 @@
 package splice.dialect.responses
 
 /** What to send on the wire for one WS round. [chained] is diagnostics + the WS-5 instrument: the
- *  count that must move when chaining engages, and must NOT when it bails. */
-internal data class WsFrame(val json: String, val chained: Boolean)
+ *  count that must move when chaining engages, and must NOT when it bails. [fullSendReason] names
+ *  a bail worth a log line (today: the server holds a tool call this turn never answers); null for
+ *  the silent full sends (no chain yet, a new generation, a rewritten prefix). */
+internal data class WsFrame(val json: String, val chained: Boolean, val fullSendReason: String? = null)
 
 /** The frame AND the epoch it was built under, captured under ONE lock acquisition (F7). Two
  *  acquisitions — frameFor then epochOf — left a window where a concurrent [ResponsesWsSession.cleared]

@@ -1,6 +1,7 @@
 // NEW: the picked model row as the statusline should show it. Claude Code fixes its context window
-// per PROCESS (one constant, via CLAUDE_CODE_MAX_CONTEXT_TOKENS) and splice scales the token
-// counts it reports so every row compacts at its own declared window, which leaves the blob
+// per PROCESS (the pinned row's, via CLAUDE_CODE_MAX_CONTEXT_TOKENS — or whatever an older
+// process was launched with, learned from its posts) and splice scales the token counts it
+// reports so every row compacts at its own declared window, which leaves the blob
 // Claude Code pipes to /statusline in client units: on a 500k row over a 256k session the bar read
 // "…/256k" with counts x 0.512 however the operator switched (operator report, 2026-09-02). This
 // lens undoes that scaling for the picked row and names it by its catalog label; with no catalog,
@@ -19,11 +20,13 @@ internal class StatuslineRow(private val catalog: ModelCatalog?) {
 
     /** (window, used) in the picked row's REAL units: the reported numbers unless the row is a
      *  scaled one, where the declared window replaces the client's and the count is divided by the
-     *  same factor splice multiplied it by. `used_percentage` needs no repair: Claude Code computed
+     *  same factor splice multiplied it by. The factor is derived from the blob's OWN window
+     *  (`reportedSize` is what this session's process actually runs with), so a session launched
+     *  with an older env reads right too. `used_percentage` needs no repair: Claude Code computed
      *  it from the scaled counts against the client window, which is the same ratio. */
     fun window(id: String?, reportedSize: Long, reportedUsed: Long): Pair<Long, Long> {
         val row = declared(id)
-        val scale = row?.let { catalog?.usageScale(it) } ?: 1.0
+        val scale = row?.let { catalog?.usageScale(it, reportedSize) } ?: 1.0
         return if (row == null || scale == 1.0) {
             reportedSize to reportedUsed
         } else {

@@ -29,7 +29,7 @@ jackson = "2.21.5"              # 2.20.1 resolved; advisories in jackson-core/da
 [libraries]
 graaljs-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graaljs" }
 graaljs-community = { module = "org.graalvm.polyglot:js-community", version.ref = "graaljs" }
-zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-15" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-16" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }

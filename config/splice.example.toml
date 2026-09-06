@@ -27,9 +27,12 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 dialect = "openai-responses"
 base_url = "https://chatgpt.com/backend-api/codex"
 # EXPERIMENTAL: reuses the Codex CLI's public OAuth client identity — NOT a vendor-documented
-# third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
-# Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
-auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/codex.json, written by `splice login claudex`,
+# on whichever ChatGPT account you choose there. Set file = "~/.codex/auth.json" ONLY to share the
+# Codex app's session — the two then rotate each other's refresh token and sign each other out.
+auth = { kind = "chatgpt-oauth" }
 # Table form, not inline: tool_surface below is a sub-table, and TOML forbids adding a sub-table
 # to an inline table. Every knob here is what the daily-driven claudex runs.
 [providers.codex.quirks]
@@ -116,9 +119,11 @@ context_window = 128000
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
 # EXPERIMENTAL: reuses the Grok CLI's public OAuth client identity — NOT a vendor-documented
-# third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
-# Documented alternative: an OpenRouter API key (kind = "api-key", env = "OPENROUTER_API_KEY").
-auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: an OpenRouter API key (kind = "api-key", env = "OPENROUTER_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/grok.json, written by `claude-grok login`.
+# Set file = "~/.grok/auth.json" ONLY to share the Grok CLI's session (see the codex note above).
+auth = { kind = "grok-oauth" }  # browser login: `claude-grok login`
 # summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
 # reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
@@ -183,9 +188,12 @@ context_window = 131072
 dialect = "anthropic-passthrough"
 base_url = "https://api.kimi.com/coding"
 # EXPERIMENTAL: reuses the Kimi CLI's public OAuth client identity — NOT a vendor-documented
-# third-party integration. kimi-code.json is password-equivalent; splice reads AND refreshes it in place.
-# Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
-auth = { kind = "kimi-oauth", file = "~/.kimi/credentials/kimi-code.json" }
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/kimi.json plus a device_id beside it, written
+# by `claude-kimi login`. Set file = "~/.kimi/credentials/kimi-code.json" ONLY to share the Kimi
+# CLI's session and device identity (see the codex note above).
+auth = { kind = "kimi-oauth" }
 # The anthropic-passthrough dialect forwards the client's bytes FAITHFULLY by default; each knob
 # below opts into one deformation Kimi's /coding surface requires. They were hardcoded while Kimi
 # was the dialect's only consumer — declaring them here is what lets an api.anthropic.com-shaped

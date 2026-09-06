@@ -1,11 +1,19 @@
 // NEW (2026-09-05): the per-session client window registry — what a session's status-line post
-// teaches the head about the window that session's process really runs with.
+// teaches the head about the window that session's process really runs with, and (afternoon) the
+// store that carries it across a daemon restart.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.ClientWindows
+import java.nio.file.Files
+import java.nio.file.Path
 
 class ClientWindowsTest {
+
+    private fun store(): Path =
+        Files.createTempDirectory("client-windows").resolve("state").resolve("codex-client-windows.json")
 
     @Test
     fun `a recorded session answers with its window and an unknown one with null`() {
@@ -41,5 +49,42 @@ class ClientWindowsTest {
         assertEquals(1L, windows.windowFor("a"))
         assertNull(windows.windowFor("b"))
         assertEquals(3L, windows.windowFor("c"))
+    }
+
+    @Test
+    fun `a recorded window survives a restart through the store file`() {
+        val store = store()
+        ClientWindows(store = store).record("s-persist", 272_000)
+        assertTrue(Files.exists(store), "the registry must be written through, parent dirs included")
+        val reloaded = ClientWindows(store = store)
+        assertEquals(272_000L, reloaded.windowFor("s-persist"))
+        assertNull(reloaded.windowFor("s-other"))
+    }
+
+    @Test
+    fun `an unchanged post does not rewrite the store but a changed window does`() {
+        val store = store()
+        val windows = ClientWindows(store = store)
+        windows.record("s", 272_000)
+        Files.delete(store)
+        windows.record("s", 272_000)
+        assertFalse(Files.exists(store), "the same window again is not a write")
+        windows.record("s", 400_000)
+        assertTrue(Files.exists(store), "a changed window is")
+        assertEquals(400_000L, ClientWindows(store = store).windowFor("s"))
+    }
+
+    @Test
+    fun `a corrupt store is logged by class name and ignored - the registry still learns and re-saves`() {
+        val store = store()
+        Files.createDirectories(store.parent)
+        Files.writeString(store, "{not json")
+        val lines = mutableListOf<String>()
+        val windows = ClientWindows(store = store, log = { lines += it })
+        assertNull(windows.windowFor("s"))
+        // The class name, never the content: kotlinx names the concrete decoding failure.
+        assertTrue(lines.single().contains("ignored (JsonDecodingException)"), lines.toString())
+        windows.record("s", 272_000)
+        assertEquals(272_000L, ClientWindows(store = store).windowFor("s"))
     }
 }

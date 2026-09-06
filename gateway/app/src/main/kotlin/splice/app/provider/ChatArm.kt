@@ -9,6 +9,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
+import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.provider.grok.GrokAuthProvider
@@ -36,7 +37,10 @@ internal class ChatArm(
             GROK_OAUTH -> {
                 val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
                 GrokAuthProvider(
-                    authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
+                    // Splice's own file by default (AuthKind header, 2026-09-05); ~/.grok's only by auth.file.
+                    authPath = Paths.get(
+                        TopologyLoader.expandHome(providerCfg.auth.file ?: AuthKind.GrokOAuth.authFile),
+                    ),
                     authCacheMs = ctx.cfg.authCacheMs,
                     refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
                     prefetchScope = probeScope,

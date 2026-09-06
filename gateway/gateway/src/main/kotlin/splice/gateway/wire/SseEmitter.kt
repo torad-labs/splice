@@ -73,11 +73,20 @@ public class SseEmitter internal constructor(
 
     /** ClientChannel's heartbeat: a ping after message_start while the turn is still open. A turn
      *  that has claimed or reached its ending writes nothing more (ended-idempotence, as for every
-     *  other frame). Fixed bytes through the pinger's own writer — never the turn's shared buffer. */
+     *  other frame). Fixed bytes through the pinger's own writer — never the turn's shared buffer.
+     *
+     *  The seal is read TWICE for the same reason [progress] reads it twice, and the entry read
+     *  alone is what made this verb the one that broke its own promise above (found in peer review,
+     *  2026-09-06): the gap between clearing that read and holding the lock is enough for the whole
+     *  ending to run, after which an unguarded write puts a ping past message_stop. The pinger
+     *  outlives the terminal by design — TurnOneDrive cancels it in its finally, after the round
+     *  returns — so this verb cannot lean on the pinger being gone. */
     override suspend fun heartbeat() {
         if (seal.get() != SealState.OPEN) return
         if (!start.hasOpened) return
-        progressMutex.withLock { progress.frames.writeVerbatim(PING_FRAME) }
+        progressMutex.withLock {
+            if (seal.get() == SealState.OPEN) progress.frames.writeVerbatim(PING_FRAME)
+        }
     }
 
     /** splice's own status line on a quiet wire: appended to ONE thinking block for the turn, opened

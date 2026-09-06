@@ -6,6 +6,7 @@
 package splice.app.cli
 
 import splice.app.LoginIo
+import splice.app.TopologyLoader
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
@@ -36,7 +37,31 @@ internal class DoctorAuth {
         // is THE blocker (FAIL); once any head works, the others are ignorable (WARN).
         val missingStatus = if (heads.none { it.present }) CheckStatus.FAIL else CheckStatus.WARN
         val checks = verdict.credentialVerdict(heads, missingStatus)
-        return checks + restart.splitBrainChecks(heads, snapshot, envReader)
+        return checks + restart.splitBrainChecks(heads, snapshot, envReader) + sharedFileChecks(topology)
+    }
+
+    /** 2026-09-05: a head whose auth.file is the vendor app's own credential file shares one
+     *  refresh-token family with that app, and a refresh by either side signs the other out (the
+     *  AuthKind header). Splice's own file is the default now; a config written against the old
+     *  example still names the app's, works until the next rotation, and is told so here. WARN, never
+     *  FAIL: the head serves. */
+    private fun sharedFileChecks(topology: Topology): List<DoctorCheck> =
+        topology.heads.mapNotNull { (key, head) ->
+            topology.providers[head.provider]?.let { provider -> sharedFileCheck(key, head.provider, provider) }
+        }
+
+    private fun sharedFileCheck(key: String, providerKey: String, provider: ProviderConfig): DoctorCheck? {
+        val kind = AuthKindRegistry.from(provider.auth.kind) as? AuthKind.OAuth
+        val file = provider.auth.file
+        if (kind == null || file == null) return null
+        if (TopologyLoader.expandHome(file) != TopologyLoader.expandHome(kind.nativeAppFile)) return null
+        return DoctorCheck(
+            "auth",
+            CheckStatus.WARN,
+            "$key signs in with the ${kind.nativeApp}'s own credential file ($file) — " +
+                "a token refresh by either side signs the other out",
+            fix = "remove `file` from [providers.$providerKey] auth in splice.toml, then: splice login $key",
+        )
     }
 
     /** PHASE 1, all I/O: every configured head's credential state, read through StatusCommand.

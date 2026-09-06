@@ -22,7 +22,16 @@ internal class TurnWiring(
 
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
      *  collector so both report tokens identically. */
-    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder {
+    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder =
+        usagePayloadBuilderFor(catalog, meta.originalModel, sessionWindow)
+
+    /** The same builder for a response the proxy composes without a provider build (LocalResponses):
+     *  the row id is all it ever read of the meta. */
+    fun usagePayloadBuilderFor(
+        catalog: ModelCatalog,
+        originalModel: String,
+        sessionWindow: Long? = null,
+    ): UsagePayloadBuilder {
         var factorLogged = false
         return { usage ->
             // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
@@ -53,12 +62,12 @@ internal class TurnWiring(
             // breadcrumb even though every displayed surface stays self-consistent. Non-launched
             // clients (the e2e probe, a bare curl) receive scaled counts against a window they never
             // declared — by design; the raw truth lives in splice's own accounting above.
-            val clientWindow = catalog.clientContextWindowFor(meta.originalModel, sessionWindow)
-            val scale = catalog.usageScale(meta.originalModel, sessionWindow)
+            val clientWindow = catalog.clientContextWindowFor(originalModel, sessionWindow)
+            val scale = catalog.usageScale(originalModel, sessionWindow)
             if (scale != 1.0 && !factorLogged) {
                 factorLogged = true
                 log(
-                    "[usage] row '${meta.originalModel}' reports client-scaled tokens " +
+                    "[usage] row '$originalModel' reports client-scaled tokens " +
                         "(factor $scale, client window $clientWindow" +
                         "${if (sessionWindow != null) ", the session's own" else ", the launch env"})\n",
                 )

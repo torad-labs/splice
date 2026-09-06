@@ -24,6 +24,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.spi.WireSink
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 private const val TYPE = "type"
@@ -44,11 +45,14 @@ public class SseEmitter internal constructor(
     // AtomicReference so an illegal ended-without-ending combination is unrepresentable.
     private enum class SealState { OPEN, ENDING, ENDED }
     private val seal = AtomicReference(SealState.OPEN)
+    private val cleanEnd = AtomicBoolean(false)
 
     // The shared stop_reason derivation (L3) — one definition, held rather than copied.
     private val envelope = TerminalEnvelope()
 
     override val hasEnded: Boolean get() = seal.get() == SealState.ENDED
+
+    override val endedCleanly: Boolean get() = cleanEnd.get()
 
     override suspend fun ensureStarted(): Unit = start.ensureStart()
 
@@ -70,6 +74,7 @@ public class SseEmitter internal constructor(
                 },
             )
             frames.frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
+            cleanEnd.set(true)
         } catch (e: CancellationException) {
             // Cancelled mid-frame — release so the cancellation seal's emitError
             // (TurnDriver.driveSealingCancellation) can still seal honestly; a stranded ENDING

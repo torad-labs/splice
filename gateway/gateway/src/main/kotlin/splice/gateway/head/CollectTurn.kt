@@ -24,14 +24,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.model.ClientWindows
-import splice.core.perf.TurnPerf
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnWiring
-import splice.spi.BuiltTurn
-import splice.spi.InflightGate
 import splice.spi.Provider
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
@@ -49,7 +46,8 @@ internal class CollectTurn(
      *  calls (the Node predecessor served them by collecting the terminal object). Drives the SAME
      *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic
      *  Messages JSON body — no SSE channel, no liveness pinger. */
-    suspend fun collect(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
+    suspend fun collect(call: ApplicationCall, inputs: TurnInputs) {
+        val built = inputs.built
         val terminal = CollectingTerminal(
             built.meta.originalModel,
             wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindows.windowFor(built.meta.sessionId)),
@@ -61,7 +59,7 @@ internal class CollectTurn(
             writeMutex = Mutex(),
             clientGone = AtomicBoolean(false),
         )
-        val drive = driveFactory.assembleDrive(TurnInputs(built, slot, t0, perf), terminal, channel)
+        val drive = driveFactory.assembleDrive(inputs, terminal, channel)
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
         // native connection abort client-side, and sealing there only wrote an error body nobody
         // reads while polluting localOriginErrors (review 2026-07-22 round 3).

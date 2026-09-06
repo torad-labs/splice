@@ -3,6 +3,24 @@
 ## Unreleased
 
 ### Fixed
+- **A compaction outlives its client.** Claude Code abandons an auto-compaction at 600 s and
+  retries the same bytes minutes later, and every abort used to cancel the upstream turn (Astra
+  compactions run 5-10 minutes; 7 were cut off this way on 2026-09-05). A compact stream turn now
+  runs on a scope the call's cancellation cannot reach and records its frames: a lost client
+  detaches, the turn finishes, and the byte-identical retry is served from the recording (or
+  follows the turn live if it is still running), with no second upstream turn. A head stop ends
+  the compactions still driving; the scope itself survives a restart (review: the first cut
+  cancelled it, and the first compaction after a restart came back empty with its slot leaked).
+- **Claude Code's activity-label side query is answered locally.** Every 30 s during a subagent
+  turn the client re-sends the whole transcript asking for a 3-5 word present-tense label
+  (294M input tokens in a day at 48% cache hit, 2026-09-05). The head recognises the query and
+  answers it from the transcript's last tool call, with no upstream turn.
+- **codex-rs's session and routing headers ride every turn** (`session-id`, `thread-id`,
+  `x-codex-routing-hint`, and the WebSocket handshake's `x-client-request-id`), so a reconnect
+  can land on the same backend replica and its prompt cache.
+- **A session's learned client window survives a daemon restart** (`<head>-client-windows.json`
+  in the state dir), so the first turn after a restart is scaled against the right window instead
+  of reported raw. A rejected request body is now logged with its byte counts and failure class.
 - **An auto-compaction no longer re-reads the whole transcript cold.** Claude Code compacts
   between a tool call and its execution, so the compaction body ends at the previous tool result
   and the call the backend just emitted is never answered. Chained over the WebSocket, the backend

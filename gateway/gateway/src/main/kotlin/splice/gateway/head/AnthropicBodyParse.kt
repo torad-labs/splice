@@ -13,6 +13,10 @@ import splice.core.util.Cancellables
 internal class AnthropicBodyParse {
     /** Null when the body is not a parseable Anthropic request — a client 400 for both handlers,
      *  never a crash. Cancellation is not caught (runCatchingCancellable rethrows it). */
-    fun parseOrNull(text: String): AnthropicTurnBody? =
-        Cancellables.runCatchingCancellable { AnthropicParse.parseAnthropicBody(text) }.getOrNull()
+    fun parseOrNull(text: String): AnthropicTurnBody? = parse(text).getOrNull()
+
+    /** The failure travels with the rejection, so a client 400 is never silent in the daemon log
+     *  (2026-09-05: a byte-identical retry was 400'd with no line saying why). */
+    fun parse(text: String): Result<AnthropicTurnBody> =
+        Cancellables.runCatchingCancellable { AnthropicParse.parseAnthropicBody(text) }
 }

@@ -9,6 +9,9 @@ package splice.gateway.head
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.perf.TurnPerf
+import splice.spi.InflightGate
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal class HeadAdmission(
     private val deps: HeadDeps,
@@ -25,23 +28,35 @@ internal class HeadAdmission(
         val t0 = deps.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
         telemetry.markAdmitted(perf)
+        // A detached compaction takes the slot with it (TurnStreamer.driveDetachable): the drive
+        // releases it when the upstream turn ends, not this call when its client has gone.
+        var handedOff: AtomicBoolean? = null
 
         try {
             val prepared = admission.materializeOrRespond(call) { preparation.prepareTurn(call, perf) } ?: return
-            when (prepared) {
-                is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
-                is Preparation.Ready -> {
-                    // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
-                    // (Claude Code's internal non-stream calls, served by collecting the same machinery).
-                    if (prepared.stream) {
-                        driver.stream(call, prepared.built, slot, t0, perf)
-                    } else {
-                        driver.collect(call, prepared.built, slot, t0, perf)
-                    }
-                }
-            }
+            handedOff = serve(call, prepared, slot, t0, perf)
         } finally {
-            withContext(NonCancellable) { slot.release() }
+            withContext(NonCancellable) { if (handedOff?.get() != true) slot.release() }
+        }
+    }
+
+    /** Returns the drive's slot-handoff flag for a driven turn; null for the answers that need none. */
+    private suspend fun serve(
+        call: ApplicationCall,
+        prepared: Preparation,
+        slot: InflightGate.Slot,
+        t0: Long,
+        perf: TurnPerf,
+    ): AtomicBoolean? = when (prepared) {
+        is Preparation.Rejected -> null.also { responses.respondInvalidRequest(call, prepared.message) }
+        is Preparation.Local -> null.also { driver.answerLocally(call, prepared) }
+        is Preparation.Replay -> null.also { driver.replay(call, prepared) }
+        is Preparation.Ready -> {
+            val inputs = TurnInputs(prepared.built, slot, t0, perf)
+            // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
+            // (Claude Code's internal non-stream calls, served by collecting the same machinery).
+            if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
+            inputs.slotHandedOff
         }
     }
 }

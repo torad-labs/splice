@@ -281,7 +281,7 @@ class WsRoundDriverTest {
         runner,
     )
 
-    private fun head(port: Int, runner: ScriptedRunner): HeadServer = HeadServer(
+    private fun head(port: Int, runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = provider(runner),
         listenPort = port,
         deps = HeadDeps(
@@ -292,7 +292,7 @@ class WsRoundDriverTest {
             compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
             usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
             perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
-            log = {},
+            log = log,
             requestMaterializationGate = RequestMaterializationGate(2),
         ),
     )
@@ -500,6 +500,50 @@ class WsRoundDriverTest {
         assertSame(cancel, thrown, "the genuine cancellation must propagate unchanged")
         assertEquals(1, runner.endedNotOk, "the aborted acquisition must clear the chaining state")
         assertEquals(0, runner.bypassed, "an aborted acquisition is not a bypass")
+    }
+
+    /** The fallback line names the failure in EVERY shape the dialect's reducer reads — an error
+     *  object under `response`, the flat event, and a plain-string `error` (DR-109) — because the
+     *  refusal it exists to attribute ("No tool output found for function call …") arrives in
+     *  whichever the backend picks, and a multi-line message must stay one log line. */
+    @Test
+    fun `the SSE fallback line carries a nested error object's message`() =
+        assertFallbackLineCarries(
+            """{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error",""" +
+                """"message":"No tool output found for call_1"}}}""",
+            "server_error No tool output found for call_1",
+        )
+
+    @Test
+    fun `the SSE fallback line carries a flat error event's message`() =
+        assertFallbackLineCarries(
+            """{"type":"error","code":null,"message":"No tool output found for call_1"}""",
+            "error No tool output found for call_1",
+        )
+
+    @Test
+    fun `the SSE fallback line carries a plain-string error, folded onto one line`() =
+        assertFallbackLineCarries(
+            """{"type":"error","error":"No tool output found\nfor call_1"}""",
+            "error No tool output found for call_1",
+        )
+
+    private fun assertFallbackLineCarries(event: String, expected: String) {
+        val runner = ScriptedRunner(listOf(event))
+        val lines = mutableListOf<String>()
+        val port = freshPort()
+        val h = head(port, runner, log = { synchronized(lines) { lines += it } })
+        runBlocking { h.start() }
+        try {
+            val sse = turn(port)
+            assertTrue(sse.contains("event: message_stop"), "the SSE path served the turn")
+            assertEquals(1, runner.bypassed, "the failure terminal before any frame is a bypass")
+        } finally {
+            runBlocking { h.stop() }
+        }
+        val line = synchronized(lines) { lines.single { "serving over SSE" in it } }
+        assertTrue(expected in line, "the detail must survive the shape: $line")
+        assertFalse('\n' in line.trimEnd('\n'), "one log line: $line")
     }
 
     /** DR-7, THE WS HALF. The idle watchdog used to target the TURN job on this path, so a stalled

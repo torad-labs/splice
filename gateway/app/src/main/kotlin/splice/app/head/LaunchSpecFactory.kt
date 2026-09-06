@@ -63,9 +63,10 @@ internal class LaunchSpecFactory(
             modelSlots = head.models.orEmpty().mapNotNull { model ->
                 model.slot?.let { slot -> model.id to slot }
             }.toMap(),
-            // One constant client window per process, never the pinned row's number: each row's
-            // real window is applied by usage scaling on the wire, so a TOML edit reaches a running
-            // session after `splice restart` (ModelCatalog.clientLaunchWindow).
+            // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
+            // the row a session starts on; every other row, and a window edited later in the TOML,
+            // is applied by usage scaling on the wire against the window the session really runs
+            // with (learned from its status-line posts).
             contextWindow = ctx.catalog.clientLaunchWindow,
             // The client's request timeout is DERIVED from the head's whole-turn cap (never a
             // second hand-maintained number): the proxy's wall is the one that names the verdict.

@@ -34,9 +34,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
     private val floor = ImageFloor(quirks.minImageEdgePx)
 
     fun messagesArray(system: String?, body: AnthropicRequest): JsonArray = buildJsonArray {
-        // CX-02: on a compact turn the directive rides the system message — and a compact turn
-        // with no system prompt at all still gets one, because stripping tools alone never told
-        // the backend it was summarizing. Non-compact is untouched: no system, no message.
+        // No system prompt, no system message — on every turn, compaction included.
         system?.let { sys ->
             addJsonObject {
                 put(ROLE, "system")

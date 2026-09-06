@@ -19,7 +19,7 @@ class CompactionReplayTest {
     private fun whole() = FrameRecording().apply {
         append("event: message_start\n\n")
         append("event: message_stop\n\n")
-        complete()
+        complete(whole = true)
     }
 
     @Test
@@ -73,5 +73,24 @@ class CompactionReplayTest {
         now = 1_600 // k2 is 1100 ms old, past the 1000 ms ttl; k3 is 800 ms old
         assertNull(replay.lookup(k2))
         assertNotNull(replay.lookup(k3))
+    }
+
+    /** Review of PR 137: insertion order alone evicted the oldest-BEGUN entry, which can be a
+     *  compaction still driving whose retry has not arrived yet. A settled one goes first. */
+    @Test
+    fun `past capacity a settled recording goes before one still in flight`() {
+        val live = checkNotNull(replay.key("s", "live"))
+        val settled = checkNotNull(replay.key("s", "settled"))
+        val third = checkNotNull(replay.key("s", "third"))
+        val inFlight = FrameRecording().apply { append("event: message_start\n\n") }
+        replay.begin(live, inFlight) // oldest, and still driving
+        replay.begin(settled, whole())
+        replay.begin(third, FrameRecording()) // capacity 2: the settled one goes, not the oldest
+        assertSame(inFlight, replay.lookup(live), "a compaction still in flight keeps its entry")
+        assertNull(replay.lookup(settled))
+        assertNotNull(replay.lookup(third))
+        replay.begin(checkNotNull(replay.key("s", "fourth")), FrameRecording()) // all in flight: oldest goes
+        assertNull(replay.lookup(live))
+        assertNotNull(replay.lookup(third))
     }
 }

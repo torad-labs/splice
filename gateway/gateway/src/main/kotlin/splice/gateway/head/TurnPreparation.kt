@@ -28,8 +28,15 @@ internal sealed class Preparation {
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
     data class Local(val text: String, val model: String, val sessionId: String?, val stream: Boolean) : Preparation()
 
-    /** A byte-identical retry of a compaction whose first client gave up: served from its recording. */
-    data class Replay(val recording: FrameRecording, val key: String, val sessionId: String?) : Preparation()
+    /** A byte-identical retry of a compaction whose first client gave up: served from its recording.
+     *  [model] is the row id the retry asked for, for the honest error frame a follower is sealed
+     *  with when the recording ends without a clean terminal. */
+    data class Replay(
+        val recording: FrameRecording,
+        val key: String,
+        val sessionId: String?,
+        val model: String,
+    ) : Preparation()
 }
 
 internal class TurnPreparation(
@@ -100,8 +107,20 @@ internal class TurnPreparation(
         perf.mark(PerfKeys.BUILD)
         // A compaction retry whose bytes match a compaction that outlived its first client is
         // answered from that recording (TurnStreamer records it, LocalResponses replays it).
-        val replayed = if (built.meta.compact && parsed.typed.stream) replayFor(built) else null
+        val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
         return replayed ?: Preparation.Ready(built, parsed.typed.stream)
+    }
+
+    /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn
+     *  has no recording, so a non-stream compaction is served attached, as every turn was before
+     *  2026-09-05. Claude Code's auto-compaction streams; the log line is the tell if that changes. */
+    private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation.Replay? {
+        if (stream) return replayFor(built)
+        deps.log(
+            "[${provider.key}] non-stream compaction (${who(built.meta.sessionId)}served attached: " +
+                "no detached drive, no replay)\n",
+        )
+        return null
     }
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
@@ -112,7 +131,7 @@ internal class TurnPreparation(
             "[${provider.key}] compaction retry matches a detached compaction ($state, " +
                 "${who(built.meta.sessionId)}replaying its answer, no upstream turn)\n",
         )
-        return Preparation.Replay(recording, key, built.meta.sessionId)
+        return Preparation.Replay(recording, key, built.meta.sessionId, built.meta.originalModel)
     }
 
     // The class, never the content (safe-failure-render): the body is the user's transcript. The

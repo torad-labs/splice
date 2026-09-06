@@ -128,12 +128,14 @@ internal class TurnStreamer(
             try {
                 driver.driveSealingCancellation(drive)
             } finally {
-                recording.complete()
+                // The terminal's own verdict, not a frame literal (L3): an error frame or an
+                // abandon is not an answer a retry may be handed. It goes into the recording too,
+                // for a retry already following it (LocalResponses.replay seals on a false).
+                val whole = drive.emitter.endedCleanly
+                recording.complete(whole)
                 drive.channel.flushQuietly()
                 val wasDetached = drive.channel.detached.get()
-                // The terminal's own verdict, not a frame literal (L3): an error frame or an
-                // abandon is not an answer a retry may be handed.
-                val kept = wasDetached && drive.emitter.endedCleanly
+                val kept = wasDetached && whole
                 replay.finish(key, recording, keep = kept)
                 inputs.slot.release()
                 if (wasDetached) deps.log(finishLine(drive, recording, kept))

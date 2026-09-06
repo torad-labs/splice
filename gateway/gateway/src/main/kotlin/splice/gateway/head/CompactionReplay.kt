@@ -61,10 +61,17 @@ internal class CompactionReplay(
         synchronized(lock) { entries.remove(key) }
     }
 
+    // Past capacity, a settled recording goes before one still in flight: begin() inserts at the
+    // START of a compaction, so insertion order alone would evict the oldest-begun entry while its
+    // drive is still running and its retry has not arrived yet (review of PR 137). Only when every
+    // entry is in flight does the oldest go.
     private fun sweep() {
         val now = clock()
         entries.entries.removeIf { now - it.value.startedAtMs > ttlMs }
-        while (entries.size > capacity) entries.remove(entries.keys.first())
+        while (entries.size > capacity) {
+            val victim = entries.entries.firstOrNull { it.value.recording.isComplete }?.key ?: entries.keys.first()
+            entries.remove(victim)
+        }
     }
 
     private fun sha256Hex(text: String): String =

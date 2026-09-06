@@ -14,6 +14,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
@@ -143,7 +144,10 @@ class HeadServerCompactionReplayTest {
         return cond()
     }
 
-    private fun logged(fragment: String): Boolean = lines.any { it.contains(fragment) }
+    /** [since]: lines are shared across the class's tests; a fragment one test also logs is only
+     *  evidence when it appears after the mark the caller took. */
+    private fun logged(fragment: String, since: Int = 0): Boolean =
+        lines.drop(since).any { it.contains(fragment) }
 
     /** RED before the fix (review 2026-09-05, splice-astra): stop() cancelled the detached scope and
      *  start() reused the same driver, so the first compaction after a head restart launched into a
@@ -180,6 +184,9 @@ class HeadServerCompactionReplayTest {
         assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
         assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
         socket.close()
+        // Either detach path may notice the FIN first (Ktor cancelling the call, or the keepalive
+        // pinger's failed write, a real race in this run: review of PR 137); both log the shared
+        // DETACHED_NOTE, which is the fact under test. The slot assertion below holds for both.
         assertTrue(waitFor(20_000) { logged("compaction continues detached") }, lines.joinToString())
         assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: nothing here has finished")
         assertEquals(1, gate.snapshot().inflight, "the slot travels with the detached drive, not the dead call")
@@ -198,6 +205,35 @@ class HeadServerCompactionReplayTest {
         assertTrue(sse.contains("event: message_stop"), "the recorded answer must be whole: $sse")
         assertEquals(upstreamAfterFirst, mock.upstreamBodies.size, "the retry must not start a second upstream turn")
         assertTrue(logged("replaying its answer, no upstream turn"), lines.joinToString())
+    }
+
+    /** Review of PR 137: a retry that arrives while the compaction is still driving follows the live
+     *  recording. It must not hold a second gate slot for the wait (the drive holds one), and it
+     *  receives the whole answer from the one upstream turn. */
+    @Test
+    fun `a retry that arrives while the compaction is still in flight follows it on the drive's slot`() = runBlocking {
+        mock.resetHold()
+        val mark = lines.size
+        val upstreamBefore = mock.upstreamBodies.size
+        val socket = openCompaction()
+        assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        socket.close()
+        assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+
+        val retry = async { post(body) }
+        assertTrue(waitFor(10_000) { logged("still running", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "one compaction, one slot: ${gate.snapshot()}")
+        assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: the retry is following it")
+        assertEquals(1, gate.snapshot().inflight, "the follower rides the drive's slot, it does not hold its own")
+
+        mock.releaseHold()
+        val sse = retry.await()
+        assertTrue(sse.contains("held"), "the follower gets the recorded answer: $sse")
+        assertTrue(sse.contains("event: message_stop"), "the follower gets the whole answer: $sse")
+        assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "one upstream turn served both attempts")
+        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "every slot comes back: ${gate.snapshot()}")
+        assertTrue(logged("the retry cost no upstream turn", mark), lines.drop(mark).joinToString())
         assertTrue(waitFor(5_000) { logged("compaction answer replayed") }, lines.joinToString())
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 }, "the replay releases its own slot")
     }

@@ -11,8 +11,10 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
+import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.CollectingTerminal
+import splice.gateway.wire.FrameWrite
 import splice.gateway.wire.SseEmitterFactory
 import splice.gateway.wire.TurnTerminal
 import splice.gateway.wire.TurnWiring
@@ -59,21 +61,54 @@ internal class LocalResponses(
 
     /** Every recorded frame, then every one still arriving while the compaction is in flight. A
      *  client that hangs up on the replay too leaves the recording in place for the next retry;
-     *  a delivered replay consumes it. */
+     *  a delivered replay consumes it. A recording that ends WITHOUT a clean terminal (the drive
+     *  was cancelled: its own client long gone, the seal abandons and writes nothing) is ended
+     *  here with the honest error frame the seal gives an attached client, so this client retries
+     *  as well — and finds the entry gone (CompactionReplay.finish), so that attempt runs upstream. */
     suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) {
         quotaHeaders(call)
         var frames = 0
+        var whole = false
         call.respondTextWriter(ContentType.Text.EventStream) {
-            replayed.recording.follow { frame ->
+            whole = replayed.recording.follow { frame ->
                 write(frame)
                 flush()
                 frames += 1
+            }
+            if (!whole) {
+                sealFollower(replayed) { frame ->
+                    write(frame)
+                    flush()
+                }
             }
         }
         replay.consumed(replayed.key)
         val who = replayed.sessionId?.let { "session ${it.take(TAG_CHARS)}" } ?: "no session"
         deps.log(
-            "[${provider.key}] compaction answer replayed ($who, $frames frames; the retry cost no upstream turn)\n",
+            if (whole) {
+                "[${provider.key}] compaction answer replayed ($who, $frames frames; the retry cost no upstream turn)\n"
+            } else {
+                "[${provider.key}] compaction retry followed a compaction that did not finish ($who, $frames frames; " +
+                    "sealed with an error, the next retry runs upstream)\n"
+            },
+        )
+    }
+
+    // The one failure ending the wire knows (SseEmitter.emitError, L3): an overloaded error, which
+    // Claude Code retries — the same frame CancellationSeal writes for an attached client.
+    private suspend fun sealFollower(replayed: Preparation.Replay, write: FrameWrite) {
+        val emitter = emitters.create(
+            write = write,
+            model = replayed.model,
+            usagePayload = wiring.usagePayloadBuilderFor(
+                provider.catalog,
+                replayed.model,
+                deps.clientWindows.windowFor(replayed.sessionId),
+            ),
+        )
+        emitter.emitError(
+            ErrorType.OVERLOADED,
+            "${provider.key}: the compaction this retry followed did not finish — retry",
         )
     }
 

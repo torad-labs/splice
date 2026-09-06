@@ -129,6 +129,10 @@ class HeadServerLocalAnswerTest {
         assertTrue(sse.contains("Reading runAgent.ts"), sse)
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""), sse)
         assertTrue(sse.contains("event: message_stop"), sse)
+        // Wire-exact beyond the text (review of PR 137): the usage block the HUD reads and an id in
+        // the shape the client parses (MessageIds), pinned as presence and shape, not values.
+        assertTrue(sse.contains("\"usage\":"), "the synthesized answer must carry a usage block: $sse")
+        assertTrue(MESSAGE_ID.containsMatchIn(sse), "the message id must match the shape the client parses: $sse")
         assertEquals(before, mock.upstreamBodies.size, "no upstream turn may happen for the side query")
         assertTrue(
             lines.any { it.contains("activity label answered locally: \"Reading runAgent.ts\"") },
@@ -142,6 +146,10 @@ class HeadServerLocalAnswerTest {
         val json = post(stream = false)
         assertTrue(json.contains("\"text\":\"Reading runAgent.ts\""), json)
         assertTrue(json.contains("\"stop_reason\":\"end_turn\""), json)
+        assertTrue(json.contains("\"usage\":"), "the synthesized answer must carry a usage block: $json")
+        assertTrue(MESSAGE_ID.containsMatchIn(json), "the message id must match the shape the client parses: $json")
         assertEquals(before, mock.upstreamBodies.size, "no upstream turn may happen for the side query")
     }
 }
+
+private val MESSAGE_ID = Regex("\"id\":\"msg_[0-9]+_[0-9]+\"")

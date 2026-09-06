@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
@@ -35,6 +36,9 @@ public class StatuslineRenderer(
      *  read "…/256k" with counts x 0.512 however the operator switched. The catalog undoes that
      *  scaling for the picked row and names it by its label. Null renders the blob as sent. */
     private val catalog: ModelCatalog? = null,
+    /** Where each post's (session_id, context_window_size) is recorded for an env-governed row, so
+     *  the head can scale THAT session's counts against the window it really runs with. */
+    private val clientWindows: ClientWindows? = null,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -58,6 +62,7 @@ public class StatuslineRenderer(
 
     private val blob = StatuslineJson()
     private val row = StatuslineRow(catalog)
+    private val windowLearner = StatuslineWindowLearner(catalog, clientWindows)
     private val bars = StatuslineBars()
     private val branchCacheLock = Any()
     private val branchCache = LinkedHashMap<String, CachedBranch>(
@@ -68,6 +73,7 @@ public class StatuslineRenderer(
 
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
         val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
+        windowLearner.learn(root)
         val snapshot = usage?.snapshot()
         val segments = listOfNotNull(modelSegment(root), bars.costSegment(root)) +
             bars.limitSegments(root, snapshot?.quota) +

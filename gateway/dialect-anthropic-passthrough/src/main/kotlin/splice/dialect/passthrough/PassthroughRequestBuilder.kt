@@ -1,8 +1,10 @@
 // NEW: (no Node source) Anthropic Messages -> an Anthropic-surface upstream. The body is preserved
-// (unknown fields ride through verbatim) and only these happen unconditionally: `model` is retargeted, `stream` is
-// forced, compact turns drop tools + tool_choice, and (CX-02, 2026-08-10) the compaction directive
-// is appended to `system` on a compact turn — without which a compaction turn is an ordinary
-// tool-stripped turn and a chatty reply is stored silently as the session summary.
+// (unknown fields ride through verbatim) and only these happen unconditionally: `model` is retargeted
+// and `stream` is forced. A compact turn is built EXACTLY like any other turn (2026-09-05, operator
+// law): same system, same tools and tool_choice, same effort. The compact-only reshaping this builder
+// used to do (tools + tool_choice dropped, a directive appended to `system`, an effort pin) moved the
+// upstream's prompt-cache prefix from token zero, so every compaction read the transcript cold.
+// `compact` reaches TurnMeta for the response side only.
 //
 // EVERY OTHER TRANSFORM IS A DECLARED QUIRK, OFF BY DEFAULT (see PassthroughQuirks): cache_control
 // stripping, the content-block allowlist, MFJS schema rewriting, and the adaptive-thinking +
@@ -17,7 +19,7 @@
 // SPLIT (2026-08-17, concentration campaign): the JSON-shaping and turn-metadata responsibilities
 // that used to live here now ride dedicated collaborators in this package (PassthroughQuirks,
 // PassthroughWireKeys, PassthroughCacheControl, PassthroughFieldCopier, PassthroughMessageScrubber,
-// PassthroughToolSanitizer, PassthroughCompactSystem, PassthroughThinking, PassthroughEffortLadder,
+// PassthroughToolSanitizer, PassthroughThinking, PassthroughEffortLadder,
 // BuiltPassthroughRequest, PassthroughTurnMeta). This file keeps only the public entry point and
 // the fixed emission order of build().
 package splice.dialect.passthrough
@@ -36,7 +38,6 @@ internal class PassthroughRequestBuilder(
 
     private val cache = PassthroughCacheControl(quirks.stripCacheControl)
     private val fields = PassthroughFieldCopier(quirks, cache)
-    private val system = PassthroughCompactSystem(cache)
     private val messages = PassthroughMessageScrubber(quirks, cache)
     private val tools = PassthroughToolSanitizer(quirks, cache)
     private val thinking = PassthroughThinking(quirks, configEffort, log, cache)
@@ -50,18 +51,16 @@ internal class PassthroughRequestBuilder(
     ): BuiltPassthroughRequest {
         val raw = body.raw
         val typed = body.typed
-        val effort = thinking.effortLadder(typed, compact)
+        val effort = thinking.effortLadder(typed)
 
         val req = buildJsonObject {
             fields.copyUnhandledFields(this, raw)
             put(MODEL, upstreamModel)
             put(STREAM, true)
-            system.compactAwareSystem(raw[SYSTEM], compact)?.let { put(SYSTEM, it) }
+            raw[SYSTEM]?.let { put(SYSTEM, cache.stripCacheControl(it)) }
             raw[MESSAGES]?.let { put(MESSAGES, messages.scrubMessages(it)) }
-            if (!compact) {
-                raw[TOOLS]?.let { put(TOOLS, tools.sanitizeTools(it)) }
-                raw[TOOL_CHOICE]?.let { put(TOOL_CHOICE, cache.stripCacheControl(it)) }
-            }
+            raw[TOOLS]?.let { put(TOOLS, tools.sanitizeTools(it)) }
+            raw[TOOL_CHOICE]?.let { put(TOOL_CHOICE, cache.stripCacheControl(it)) }
             thinking.putThinking(this, typed, raw[THINKING], effort)
         }
 

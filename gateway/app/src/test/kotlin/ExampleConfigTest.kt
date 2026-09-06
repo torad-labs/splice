@@ -178,8 +178,8 @@ class ExampleConfigTest {
 
     // DR-24 / §22: every selected Grok row keeps its REAL backend ceiling. A head-wide 500k
     // override used to flatten grok-build-latest from 256k to 500k, so a haiku turn could run past
-    // the backend limit and hard-fail instead of compacting. The process's client window is a
-    // constant 1e6; ModelCatalog.usageScale bridges that fixed denominator to each selected row
+    // the backend limit and hard-fail instead of compacting. The process's client window is the
+    // pinned row's; ModelCatalog.usageScale bridges that fixed denominator to each selected row
     // live through /model. Every declared denominator below comes from the parsed source.
     @Test
     fun `example grok windows stay per row while the pinned row sets the process window`() {
@@ -216,11 +216,12 @@ class ExampleConfigTest {
 
         assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row keeps its declared 500k")
         assertEquals(
-            1_000_000L,
+            500_000L,
             catalog.clientContextWindowFor("grok-build-latest"),
-            "non-[1m] rows use the constant client window the launch plants",
+            "non-[1m] rows use the window the launch plants: the pinned row's 500k",
         )
-        assertEquals(2.0, catalog.usageScale("grok-4.6"), "the pinned row scales too: client 1m / real 500k")
+        assertEquals(1.0, catalog.usageScale("grok-4.6"), "the pinned row rides raw: client 500k / real 500k")
+        assertEquals(500_000.0 / 256_000.0, catalog.usageScale("grok-build-latest"), "client 500k / real 256k")
 
         // Undeclared [1m] selectors strip to the row's real ceiling while the client uses literal 1m.
         assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"))

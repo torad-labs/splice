@@ -5,7 +5,6 @@
 // max_tokens IS honored (unlike the ChatGPT backend); reasoning is a plain field where supported.
 package splice.dialect.chat
 
-import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
@@ -25,8 +24,13 @@ public class ChatRequestBuilder(
         compact: Boolean,
         sessionId: String? = null,
     ): BuiltChatRequest {
-        val messages = wire.messagesArray(compactAwareSystem(body.system, compact), body)
-        val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
+        // A compact turn is built EXACTLY like any other turn (2026-09-05, operator law): same
+        // system, same tools, same tool_choice, same effort. Every compact-only reshaping this
+        // builder used to do (directive appended to the system message, tools stripped) moved the
+        // backend's prompt-cache prefix from token zero, so every compaction read the whole
+        // transcript cold. `compact` reaches TurnMeta for the response side only.
+        val messages = wire.messagesArray(body.system, body)
+        val emitTools = quirks.supportsTools && body.tools.isNotEmpty()
         val effort = effortTiers.chatReasoningEffort(body, upstreamModel)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
@@ -45,10 +49,4 @@ public class ChatRequestBuilder(
         )
         return BuiltChatRequest(req, meta)
     }
-
-    /** CX-02: the system text for this turn, or null when there is no system message to emit.
-     *  Compact ALWAYS produces one (the directive is the point); non-compact passes through
-     *  unchanged, including the null that means "emit no system message at all". */
-    private fun compactAwareSystem(system: String?, compact: Boolean): String? =
-        if (compact) CompactInstructions.withCompactDirective(system, compact = true) else system
 }

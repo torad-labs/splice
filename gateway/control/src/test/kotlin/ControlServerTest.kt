@@ -147,9 +147,8 @@ class ControlServerTest {
         pinnedModel = "gpt-5.6-sol",
         availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
         modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
-        // what LaunchSpecFactory passes: the constant client window (ModelCatalog.clientLaunchWindow),
-        // never the pinned row's 272k
-        contextWindow = 1_000_000,
+        // what LaunchSpecFactory passes: the pinned row's window (ModelCatalog.clientLaunchWindow)
+        contextWindow = 272_000,
         modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
         statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
         loginCommand = "claudex login",
@@ -386,10 +385,11 @@ class ControlServerTest {
         assertEquals(key, env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
         assertFalse(env.containsKey("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"))
         assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"]?.jsonPrimitive?.content)
-        // the constant client window (ModelCatalog.clientLaunchWindow), never the pinned row's 272k:
-        // per-row windows are usage-scaled on the wire so a TOML edit reaches a running session
-        assertEquals("1000000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
-        assertEquals("1000000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]?.jsonPrimitive?.content)
+        // the pinned row's window (ModelCatalog.clientLaunchWindow): its counts ride raw; the other
+        // rows are usage-scaled on the wire, and a later TOML edit reaches a running session
+        // through the window that session reports on its status line
+        assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
+        assertEquals("272000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]?.jsonPrimitive?.content)
         // ANTHROPIC_API_KEY is UNSET (else Claude Code's custom-key approval dead-ends at /login)
         assertTrue(obj["unset"]!!.jsonArray.any { it.jsonPrimitive.content == "ANTHROPIC_API_KEY" })
         val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }

@@ -27,6 +27,11 @@ public data class QuirksConfig(
     @SerialName("cache_key") val cacheKey: String = "first-message-hash",
     @SerialName("effort_ceiling") val effortCeiling: String = "max",
     @SerialName("summary_field") val summaryField: Boolean = true,
+    /** RETIRED 2026-09-05 (operator law): a compaction is built exactly like a turn and inherits
+     *  the session's model and effort — any pin moves the reasoning off the session's and the
+     *  backend's prompt cache misses the whole transcript on the most expensive turn class there
+     *  is. The key is still parsed so a config that sets it fails LOUDLY at load (init below)
+     *  instead of being ignored in silence. */
     @SerialName("compact_effort") val compactEffort: String? = null,
     @SerialName("tool_choice") val toolChoice: Boolean = false,
     /** openai-responses only: the gateway-held reasoning cache for tool round-trips (RC-5,
@@ -81,7 +86,15 @@ public data class QuirksConfig(
     @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean? = null,
     /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
     @SerialName("strip_sampling_params") val stripSamplingParams: Boolean? = null,
-)
+) {
+    init {
+        require(compactEffort == null) {
+            "[providers.*.quirks] compact_effort = '$compactEffort' is retired: a compaction is built " +
+                "exactly like a turn and inherits the session's model and effort (any pin misses the " +
+                "prompt cache on the whole transcript); remove the key"
+        }
+    }
+}
 
 /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
  *  ABSENT TABLE = feature off — the nullable-overlay idiom of [QuirksConfig.reasoningCache]. */

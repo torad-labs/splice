@@ -127,7 +127,7 @@ class TopologyConfigOverridesTest {
         assertEquals(listOf("wide-b", "wide-a"), catalog.availableModelIds())
         assertEquals(provider.models.map { it.id }, provider.catalogFor(head.copy(models = null)).availableModelIds())
         assertEquals(setOf(500_000L), catalog.models.map { it.contextWindow }.toSet())
-        assertEquals(2.0, catalog.usageScale("wide-a"), "constant 1e6 client window over the 500k override")
+        assertEquals(1.0, catalog.usageScale("wide-a"), "the pinned row's 500k launch env over the 500k override")
         assertThrows(IllegalArgumentException::class.java) {
             provider.catalogFor(head.copy(models = listOf(HeadModel("not-declared-by-provider"))))
         }
@@ -323,5 +323,19 @@ class TopologyConfigOverridesTest {
     @Test
     fun `a single legacy head per kind is the sole legacy head - DR-80 control`() {
         assertEquals(setOf("codex", "grok"), TopologyKnobLayer(topology).soleLegacyHeadKeys())
+    }
+}
+
+// compact_effort is RETIRED (2026-09-05, operator law): a compaction is built exactly like a turn
+// and inherits the session's model and effort, or the prompt cache misses the whole transcript on
+// the most expensive turn class there is. The key still parses so a config that sets it fails
+// loudly at load, naming the fix, instead of being ignored in silence.
+class QuirksConfigRetiredKnobTest {
+
+    @Test
+    fun `compact_effort fails loudly at config load, naming the fix`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) { QuirksConfig(compactEffort = "low") }
+        assertTrue("compact_effort" in ex.message!! && "retired" in ex.message!!, ex.message)
+        assertNull(QuirksConfig().compactEffort, "absent stays absent")
     }
 }

@@ -4,11 +4,15 @@
 //   - PURE: {req, meta} from (body, opts); never mutates the body (meta replaced v29's
 //     body.__claudex* magic props);
 //   - full fidelity on normal turns: never shrink input, never swap the model;
-//   - COMPACT turns: tools stripped (a tooled compaction can answer with tool_use and empty
-//     the text channel — v29 worst case), forced text-only instructions, model ALWAYS the
-//     session's own (body.model — no compact-model override exists), and effort INHERITS THE
-//     SESSION (codex quirk; a mismatch on model OR effort invalidates the whole prompt-cache
-//     prefix — the "compaction ate my subscription" bug), unless the quirk pins one (grok: low);
+//   - COMPACT turns are built EXACTLY like any other turn (2026-09-05, operator law): same
+//     instructions, same tools and partition, same history rendering, same lite shape, same
+//     reasoning items, same model, same effort. The backend's prompt cache is an exact-prefix
+//     match, and every compact-only reshaping this builder used to do (directive appended to
+//     instructions, tools stripped, tool results folded to user text, images dropped, lite off,
+//     cached reasoning not reinjected) moved the prefix from token zero — so every compaction,
+//     the most expensive turn class there is, read the whole transcript cold (perf rows: compact
+//     cached_tokens=0 on every model). `opts.compact` is therefore NOT consulted here; it only
+//     reaches TurnMeta for the response side (watchdog budget, empty-compaction gate, telemetry).
 //   - images ride as input_image (base64 data URL or url); documents become honest markers;
 //     images inside tool_result ride in a follow-up user message (function_call_output is
 //     string-only on these backends — v25: screenshots silently vanished);
@@ -38,7 +42,6 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
-import splice.core.turn.CompactInstructions
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
 
@@ -61,10 +64,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val partition = toolPlan.partition(body, opts)
         val declareByName = toolPlan.declarationCandidates(body, partition)
         // The loop guard walks the same conversation (stateless) and marks identical-failed-call
-        // streaks for a directive in that result's output. Compaction turns are excluded: their
-        // results fold to plain text and a directive would only feed the summarizer noise.
-        val loopGuardDirectives =
-            if (quirks.loopGuard && !opts.compact) LoopGuard.analyze(body.messages) else emptyMap()
+        // streaks for a directive in that result's output.
+        val loopGuardDirectives = if (quirks.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
         // Constructed per build (the field version predates per-build state) — cheap, race-free.
         val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives)
         val input = buildJsonArray {
@@ -72,7 +73,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
                 inputBuilder.appendMessage(this, msg, opts, declareByName)
             }
         }
-        val instructions = compactAwareInstructions(body.system, opts.compact)
+        val instructions = body.system.orEmpty().ifEmpty { DEFAULT_INSTRUCTIONS }
         val effort = knobs.resolveEffort(body, raw, opts)
         val summary = knobs.resolveSummary(raw, opts, effort)
         val reasoning = knobs.reasoningBlock(effort, summary, opts)
@@ -104,12 +105,6 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         )
         return BuiltRequest(built.req, meta, built.toolSearch)
     }
-
-    // CX-02: the directive text moved to :core (withCompactDirective) so chat and passthrough emit
-    // the SAME one. The composition is unchanged — the Node .filter(Boolean) that dropped the ""
-    // separator is what withCompactDirective's filter reproduces — so the wire bytes are identical.
-    private fun compactAwareInstructions(system: String?, compact: Boolean): String {
-        if (!compact) return system.orEmpty().ifEmpty { "You are a helpful assistant." }
-        return CompactInstructions.withCompactDirective(system, compact = true)
-    }
 }
+
+private const val DEFAULT_INSTRUCTIONS = "You are a helpful assistant."

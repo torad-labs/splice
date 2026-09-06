@@ -151,7 +151,8 @@ private const val THINKING_FIXTURE = """
  "temperature":0.7,"top_p":0.9,"top_k":40}
 """
 
-/** compact turn: tools + tool_choice dropped, compaction directive appended to a string system. */
+/** compact turn: built exactly like a turn since 2026-09-05 — tools, tool_choice and the string
+ *  system ride verbatim; the golden is byte-equal to what the same body builds as a turn. */
 private const val COMPACT_FIXTURE = """
 {"model":"m","system":"be brief","messages":[{"role":"user","content":"summarize"}],
  "tools":[{"name":"run","input_schema":{"type":"object"}}],"tool_choice":{"type":"auto"},

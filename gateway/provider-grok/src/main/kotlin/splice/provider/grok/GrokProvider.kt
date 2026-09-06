@@ -45,7 +45,6 @@ public class GrokQuirks {
         effortLadder = EffortLadder.GROK,
         supportsSummary = true,
         summaryRejectModelRegex = null,
-        compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
         emitToolChoice = true,
         emitStrict = true,
         // xai returns no encrypted reasoning envelopes, so the cache would only widen the

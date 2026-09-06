@@ -3,6 +3,8 @@
 // owns the keys and the commit/clear that those keys protect. Same-package.
 package splice.dialect.responses
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnMeta
 import splice.core.util.Cancellables
@@ -14,23 +16,55 @@ internal class ResponsesWsIdentity(
     private val session: ResponsesWsSession,
     private val log: LogSink,
 ) {
-    data class PendingCommit(val request: JsonObject, val generation: Long, val epoch: Long)
+    data class PendingCommit(val request: JsonObject, val generation: Long, val epoch: Long) {
+        /** call_ids of the client-executed calls this round's response emitted, gathered from the
+         *  streamed output items as they close: this backend's terminal carries an EMPTY `output`
+         *  array (ResponsesItemFold.kt, and the 2026-09-05 live probe, where a terminal-only read
+         *  recorded nothing and the next compaction chained into a refusal). */
+        val calls: MutableSet<String> = mutableSetOf()
+    }
 
     fun observeTerminal(chain: String, pending: PendingCommit?, event: JsonObject) {
         val type = JsonScalars.str(event[FIELD_TYPE])
+        if (type == OUTPUT_ITEM_DONE) {
+            callIdOf(event["item"])?.let { pending?.calls?.add(it) }
+            return
+        }
         if (type !in ResponsesRoundEnd.ALL) return
         val commit = pending
         if (type !in ResponsesRoundEnd.SUCCESS || commit == null) {
             session.cleared(chain)
             return
         }
+        val response = event["response"] as? JsonObject
         session.completed(
             chain,
             commit.request,
-            JsonScalars.str((event["response"] as? JsonObject)?.get("id")),
+            JsonScalars.str(response?.get("id")),
             commit.generation,
             commit.epoch,
+            commit.calls + pendingCalls(response),
         )
+    }
+
+    /** The call_ids the response's output leaves open — every output item that carries one
+     *  (function_call, tool_search_call, any client-executed call the API grows). Type-agnostic on
+     *  purpose: the server's rule is per call_id, not per item type, and the next turn's delta must
+     *  answer each of them or it cannot chain (ResponsesWsSession.unansweredCalls). Read from the
+     *  terminal too, for a backend that does fill `output` there. */
+    private fun pendingCalls(response: JsonObject?): Set<String> =
+        (response?.get("output") as? JsonArray)?.mapNotNull { callIdOf(it) }?.toSet() ?: emptySet()
+
+    /** The id the CLIENT will answer with, or null when nothing will: a server-executed item
+     *  (`execution` other than client — the backend answered it itself, ResponsesToolSearchParse)
+     *  is not held, and a function_call with an empty call_id is held under the item id the fold
+     *  hands the client (ResponsesItemFold), never under "" (review 2026-09-05). */
+    private fun callIdOf(item: JsonElement?): String? {
+        val obj = item as? JsonObject ?: return null
+        val execution = JsonScalars.strOrEmpty(obj[FIELD_EXECUTION])
+        if (execution.isNotEmpty() && execution != EXECUTION_CLIENT) return null
+        val fallback = if (JsonScalars.str(obj[FIELD_TYPE]) == FUNCTION_CALL) JsonScalars.strOrEmpty(obj["id"]) else ""
+        return JsonScalars.strOrEmpty(obj["call_id"]).ifEmpty { fallback }.ifEmpty { null }
     }
 
     /** Session id + first-message hash, or NULL when either is missing.
@@ -81,6 +115,10 @@ internal object ResponsesConversationIdentity {
 }
 
 private const val FIELD_TYPE = "type"
+private const val FIELD_EXECUTION = "execution"
+private const val EXECUTION_CLIENT = "client"
+private const val FUNCTION_CALL = "function_call"
+private const val OUTPUT_ITEM_DONE = "response.output_item.done"
 
 /** 8 bytes of SHA-256: collision-free enough to key a per-head connection pool, and short
  *  enough that the key stays readable. */

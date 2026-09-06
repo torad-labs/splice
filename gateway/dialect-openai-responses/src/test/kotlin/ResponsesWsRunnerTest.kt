@@ -112,7 +112,101 @@ private class Rig(private val script: (Int) -> List<String>) {
 
 private fun completed(id: String) = """{"type":"response.completed","response":{"id":"$id"}}"""
 
+/** A tool call closing as a streamed output item — how this backend delivers it; its terminal's
+ *  `output` array is EMPTY (the live shape, 2026-09-05), so the call must be gathered here. */
+private fun itemDoneCall(callId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"function_call","call_id":"$callId","name":"read","arguments":"{}"}}"""
+
+private fun completedEmptyOutput(id: String) =
+    """{"type":"response.completed","response":{"id":"$id","output":[]}}"""
+
+/** A tool search the BACKEND executed: it carries a call_id, but nothing will ever answer it. */
+private fun itemDoneServerSearch(callId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"tool_search_call","call_id":"$callId","execution":"server","status":"completed"}}"""
+
+/** A function_call whose call_id is EMPTY: the fold hands the client the item id instead. */
+private fun itemDoneCallByItemId(itemId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"function_call","id":"$itemId","call_id":"","name":"read","arguments":"{}"}}"""
+
+private const val BODY_ANSWERED_BY_ITEM_ID =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call_output","call_id":"fc_9","output":"file"}]}"""
+
+private const val BODY_COMPACT =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"summarize"}]}"""
+
+private const val BODY_ANSWERED =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call_output","call_id":"call_9","output":"file"}]}"""
+
 class ResponsesWsRunnerTest {
+
+    /** The terminal's output is read for the calls it leaves open: a next turn that answers none
+     *  of them full-sends (the 2026-09-05 compaction class), one that answers them chains. */
+    @Test
+    fun `a held tool call from the terminal gates the next round's chaining`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_COMPACT)
+        assertFalse(rig.lastSentChained(), "call_9 is unanswered by a compaction body — must full-send")
+        val answered = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        answered.round()
+        answered.round(body = BODY_ANSWERED)
+        assertTrue(answered.lastSentChained(), "the tool round answers call_9 — chains as before")
+    }
+
+    /** A server-executed call is NOT held: the backend answered it itself, so a next turn that
+     *  answers nothing still chains (review 2026-09-05: it was held, and cost a full send with a
+     *  reason line blaming a call the server would never have refused). */
+    @Test
+    fun `a server-executed tool search is not held against the next round`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneServerSearch("ts_7"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_COMPACT)
+        assertTrue(rig.lastSentChained(), "ts_7 was answered by the server — nothing to hold")
+    }
+
+    /** An empty call_id is held under the ITEM id, which is what the client answers with
+     *  (ResponsesItemFold's fallback) — never under "", which nothing could answer. */
+    @Test
+    fun `a call with an empty call_id is held under the item id the client answers with`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCallByItemId("fc_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_ANSWERED_BY_ITEM_ID)
+        assertTrue(rig.lastSentChained(), "the tool round answers fc_9 — the call the client was handed")
+        val unanswered = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCallByItemId("fc_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        unanswered.round()
+        unanswered.round(body = BODY_COMPACT)
+        assertFalse(unanswered.lastSentChained(), "fc_9 is still a held call a compaction never answers")
+    }
 
     /** Every SUCCESS variant must END the round — otherwise the flow never completes, the
      *  connection never returns to the pool, and the turn HANGS (worse than any error). */

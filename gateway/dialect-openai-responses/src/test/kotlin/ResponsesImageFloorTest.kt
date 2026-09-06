@@ -167,19 +167,15 @@ class ResponsesImageFloorTest {
         assertFalse(items.toString().contains("omitted by"))
     }
 
-    // Compact is a text-only summarizer and returns before any image work. Probing there would cost
-    // a decode per image on the one turn shape that has no use for the answer.
+    // A compaction renders images exactly like the session turn (2026-09-05): a dropped item is a
+    // different input prefix, and the prompt cache misses the whole transcript.
     @Test
-    fun `a compact turn drops every image without probing or marking - DR-155`() {
-        val items = items(
-            """{"model":"m","messages":[{"role":"user","content":[
+    fun `a compact turn carries images like any turn`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
-            ]}]}""",
-            FLOORED,
-            opts(compact = true),
-        )
-        assertFalse(items.toString().contains("omitted by"), "no marker on compact: $items")
-        assertFalse(items.toString().contains("input_image"))
+            ]}]}"""
+        assertEquals(items(body, FLOORED, opts()).toString(), items(body, FLOORED, opts(compact = true)).toString())
+        assertTrue(items(body, FLOORED, opts(compact = true)).toString().contains("omitted by"))
     }
 }
 

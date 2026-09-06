@@ -48,6 +48,7 @@ class CodeModeBridgeRuntimeTest {
     @Test
     fun `startup deadline is an ordinary bridge failure preserving upstream usage`() = runBlocking {
         runtime(timeoutMs = 1_000).use { runtime ->
+            val reclamation = CodeModeWorkerReclamation(this)
             val bridge = bridge(runtime)
             val source = "/* private source marker */ while (true) {}"
             val outcome = bridge.interceptor(turn(), disableParallel = false)
@@ -58,14 +59,15 @@ class CodeModeBridgeRuntimeTest {
             assertTrue(failure.message.contains("timed out"))
             assertFalse(failure.message.contains("private source marker"))
             assertFalse(failure.message.contains("cancelled"))
-            val replacement = runtime.start("return 'reaped';", emptySet())
-            assertEquals("reaped", (replacement.advance() as CodeModeStep.Completed).output)
+            reclamation.assertReclaimed(runtime)
         }
     }
 
     @Test
+    @Timeout(20)
     fun `advance deadline is an ordinary bridge failure and does not replay source`() = runBlocking {
-        runtime(timeoutMs = 2_000).use { runtime ->
+        runtime().use { runtime ->
+            val reclamation = CodeModeWorkerReclamation(this)
             val bridge = bridge(runtime)
             val sink = Sink()
             val first = bridge.interceptor(turn(), disableParallel = false)
@@ -81,8 +83,7 @@ class CodeModeBridgeRuntimeTest {
             assertTrue((failure as TurnOutcome.Failure).message.contains("timed out"))
             assertFalse(failure.message.contains(output))
             assertFalse(failure.message.contains("cancelled"))
-            val replacement = runtime.start("return 'reaped';", emptySet())
-            assertEquals("reaped", (replacement.advance() as CodeModeStep.Completed).output)
+            reclamation.assertReclaimed(runtime)
         }
     }
 

@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -74,11 +75,13 @@ import splice.provider.codex.CodexProvider
 import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
+import splice.spi.NEVER_PINGED_MS
 import splice.spi.Provider
 import splice.spi.ProviderTuning
 import splice.spi.TurnWatchdog
 import splice.spi.UpstreamClient
 import splice.spi.WireSink
+import splice.spi.WsPathPulse
 import splice.spi.WsRound
 import splice.spi.WsRoundAbort
 import splice.spi.WsRoundRunner
@@ -149,7 +152,11 @@ private class ScriptedRunner(private val events: List<String>, private val throw
  * on — a torn read, not a cancelled collector — because that is the whole difference between
  * reaping a round and killing the turn with it.
  */
-private class StallingRunner(private val events: List<String>) : WsRoundRunner {
+private class StallingRunner(
+    private val events: List<String>,
+    /** The socket's last-ping age the round reports to the watchdog; never pinged by default. */
+    private val pingAgoMs: Long = NEVER_PINGED_MS,
+) : WsRoundRunner {
     var aborts = 0
     var endedOk = 0
     var endedNotOk = 0
@@ -170,6 +177,7 @@ private class StallingRunner(private val events: List<String>) : WsRoundRunner {
             aborts += 1
             torn.complete(Unit)
         },
+        pathPulse = WsPathPulse { pingAgoMs },
     )
 
     override fun isFailureTerminal(event: JsonObject): Boolean = false
@@ -281,7 +289,7 @@ class WsRoundDriverTest {
         runner,
     )
 
-    private fun head(port: Int, runner: ScriptedRunner): HeadServer = HeadServer(
+    private fun head(port: Int, runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = provider(runner),
         listenPort = port,
         deps = HeadDeps(
@@ -292,7 +300,7 @@ class WsRoundDriverTest {
             compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
             usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
             perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
-            log = {},
+            log = log,
             requestMaterializationGate = RequestMaterializationGate(2),
         ),
     )
@@ -502,6 +510,50 @@ class WsRoundDriverTest {
         assertEquals(0, runner.bypassed, "an aborted acquisition is not a bypass")
     }
 
+    /** The fallback line names the failure in EVERY shape the dialect's reducer reads — an error
+     *  object under `response`, the flat event, and a plain-string `error` (DR-109) — because the
+     *  refusal it exists to attribute ("No tool output found for function call …") arrives in
+     *  whichever the backend picks, and a multi-line message must stay one log line. */
+    @Test
+    fun `the SSE fallback line carries a nested error object's message`() =
+        assertFallbackLineCarries(
+            """{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error",""" +
+                """"message":"No tool output found for call_1"}}}""",
+            "server_error No tool output found for call_1",
+        )
+
+    @Test
+    fun `the SSE fallback line carries a flat error event's message`() =
+        assertFallbackLineCarries(
+            """{"type":"error","code":null,"message":"No tool output found for call_1"}""",
+            "error No tool output found for call_1",
+        )
+
+    @Test
+    fun `the SSE fallback line carries a plain-string error, folded onto one line`() =
+        assertFallbackLineCarries(
+            """{"type":"error","error":"No tool output found\nfor call_1"}""",
+            "error No tool output found for call_1",
+        )
+
+    private fun assertFallbackLineCarries(event: String, expected: String) {
+        val runner = ScriptedRunner(listOf(event))
+        val lines = mutableListOf<String>()
+        val port = freshPort()
+        val h = head(port, runner, log = { synchronized(lines) { lines += it } })
+        runBlocking { h.start() }
+        try {
+            val sse = turn(port)
+            assertTrue(sse.contains("event: message_stop"), "the SSE path served the turn")
+            assertEquals(1, runner.bypassed, "the failure terminal before any frame is a bypass")
+        } finally {
+            runBlocking { h.stop() }
+        }
+        val line = synchronized(lines) { lines.single { "serving over SSE" in it } }
+        assertTrue(expected in line, "the detail must survive the shape: $line")
+        assertFalse('\n' in line.trimEnd('\n'), "one log line: $line")
+    }
+
     /** DR-7, THE WS HALF. The idle watchdog used to target the TURN job on this path, so a stalled
      *  WebSocket round killed the translator along with the round and the salvage died with it —
      *  the SSE path earned salvage-and-continue and this one was left behind. The watchdog now
@@ -534,6 +586,39 @@ class WsRoundDriverTest {
         assertTrue(outcome is TurnOutcome.Failure, "the torn read folds into an honest terminal, not a dead turn")
         assertEquals(0, runner.endedOk, "a reaped round is not a clean terminal")
         assertEquals(1, runner.endedNotOk, "so its chaining state must be cleared")
+    }
+
+    /** 2026-09-05, THE OTHER STALL: a round past its tier on a socket the server is still pinging
+     *  is a model reasoning in silence (gpt-6-astra: 300-750 s before its first delta), and the
+     *  driver hands the round's own pulse to the poller so it is HELD, not reaped. Zero budgets as
+     *  above, so the very first poll is past the tier; the hold is what keeps the abort count at
+     *  zero. The stall never ends on its own, so the turn is cancelled to end the arm. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a silent ws round on a live path is held, not reaped`() = runTest {
+        val runner = StallingRunner(
+            listOf("""{"type":"response.created","response":{"id":"r1"}}"""),
+            pingAgoMs = 8_000,
+        )
+        val inputs = coldFlowInputs(RecordingTerminal(), this, WatchdogBudget(0.seconds, 0.seconds, 30.seconds))
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+
+        val round = launch { driver.run(inputs) }
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(0, runner.aborts, "the poller must hold a silent round whose path is alive")
+        val held = checkNotNull(inputs.drive.watchdog.held) { "the hold must be on the watchdog for the turn line" }
+        assertEquals(8_000L, held.pingAgoMs)
+        inputs.turnJob.cancel()
+        round.join()
+        inputs.drive.slot.release()
+
+        assertEquals(1, runner.aborts, "cancelling the turn still aborts the held round beneath it")
+        assertEquals(0, runner.endedOk)
     }
 
     /** THE REVERSE DIRECTION, and the reason the round job is PARENTED to the turn job rather than

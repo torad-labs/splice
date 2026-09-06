@@ -53,6 +53,10 @@ public class StatePaths(
     /** Per-turn perf telemetry JSONL (bottleneck instrument) — additive, not a frozen HUD name. */
     public fun perfStatsFile(headKey: String): Path = stateDir.resolve("$headKey-perf.jsonl")
 
+    /** The per-session client windows a head learned from status-line posts (ClientWindows): a warm
+     *  start across daemon restarts, re-taught by the next post. */
+    public fun clientWindowsFile(headKey: String): Path = stateDir.resolve("$headKey-client-windows.json")
+
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — HUD contract. The two legacy
      *  names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */
     public fun compactStatsFile(headKey: String, nameOverride: String? = null): Path {

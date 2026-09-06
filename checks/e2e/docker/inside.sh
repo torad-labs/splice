@@ -307,13 +307,15 @@ step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mo
 # ── 7b. per-head model roster + window: what /model offers, what the client compacts on ─────
 # Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a
 # .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
-# Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. The four tier
+# Claude Code ONE client window (CLAUDE_CODE_MAX_CONTEXT_TOKENS = the pinned row's): every other
+# row's real window is applied by usage scaling on the wire, and a later topology edit reaches a
+# running session through the window it reports on its status line. The four tier
 # slots (ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL) never share a BARE id: two tiers on
 # one bare id drew that model twice in /model (v0.3.0); a repeated tier now rides the head's
 # discovery-wrapped spelling, which the allowlist hides (so wrapped values may repeat) and the
 # head still routes. Three
-# heads, three windows: a head reading another head's roster or window is exactly the
-# fresh-install drift this step exists to catch.
+# heads, three rosters: a head reading another head's roster is exactly the fresh-install drift
+# this step exists to catch.
 # The same /launch also PACKAGES the head: the daemon's own status line (settings.json statusLine
 # posting Claude Code's blob to /statusline/<head>), the in-session /login command and the hook
 # that runs the head's sign-in when it is submitted. Splice is the whole package, so a head that
@@ -341,8 +343,10 @@ print("picker:", {"model": settings.get("model"), "availableModels": settings.ge
                   "enforceAvailableModels": settings.get("enforceAvailableModels"), "rows": rows})
 print("packaging:", {"statusLine": statusline, "login.md": os.path.isfile(login_md), "UserPromptSubmit": hook_cmds})
 assert env.get("ANTHROPIC_MODEL") == model, env.get("ANTHROPIC_MODEL")
+# the pinned row's window is the env window; the picker cache rows below carry every row's own
 assert env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(window), env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
 assert env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == str(window), env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+assert rows.get(model) == window, "pinned row window in the picker cache: %r" % rows.get(model)
 assert settings.get("model") == model, settings.get("model")
 assert settings.get("availableModels") == list(expected_rows), "picker off: %r" % settings.get("availableModels")
 assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
@@ -573,6 +577,7 @@ for head, h in t["heads"].items():
         print(f"{head:14} {command:18} launch FAILED: {e}"); bad.append(head); continue
     sessions = os.path.join(env.get("CLAUDE_CONFIG_DIR", ""), "sessions")
     linked = os.path.islink(sessions) and os.path.realpath(sessions) == registry
+    # the env window is the pinned row's declared window on every head
     ok = (env.get("ANTHROPIC_MODEL") == pinned and env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
           and linked and wrapper)
     print(f"{head:14} {command:18} model={env.get('ANTHROPIC_MODEL')} window={env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')}"

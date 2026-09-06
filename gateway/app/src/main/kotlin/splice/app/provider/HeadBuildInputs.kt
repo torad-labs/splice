@@ -41,7 +41,10 @@ internal class HeadBuildInputs(
 
     internal fun resolveProviderConfig(provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
         when (provider.auth.kind) {
-            CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
+            CHATGPT_OAUTH -> provider.copy(
+                baseUrl = cfg.chatgptApiBase,
+                auth = provider.auth.copy(file = cfg.codexAuthPath),
+            )
             GROK_OAUTH -> provider.copy(baseUrl = cfg.xaiApiBase)
             else -> provider
         }
@@ -65,7 +68,7 @@ internal class HeadBuildInputs(
      *  global view is what made a knob tuned for one upstream govern all of them.
      *
      *  [legacyKnobsGovern] (DR-80): the legacy single-head knobs overwrite declared port/model/
-     *  base ONLY for the head that is the sole one of its kind (TopologyKnobLayer.
+     *  base/auth file ONLY for the head that is the sole one of its kind (TopologyKnobLayer.
      *  soleLegacyHeadKeys). With two-plus heads of a kind nothing was seeded, so the overwrite
      *  would hand every head the knob DEFAULTS instead of its declared TOML. */
     // `internal`, not private: DaemonPerHeadConfigTest calls this directly (via Daemon.buildInputs)

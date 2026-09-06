@@ -4,6 +4,7 @@
 package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ToolSearchCall
 import splice.core.util.JsonScalars
 import splice.spi.BufferCapacity
@@ -102,6 +103,9 @@ internal class ResponsesTurnState {
     // tool_search_call items this round emitted (deferred tool surface) — populated only when the
     // gateway declared deferral this turn; empty otherwise (pre-deferral behaviour intact).
     val toolSearches = mutableListOf<ToolSearchCall>()
+
+    /** Custom calls are captured opaque and interpreted only by an explicitly armed round interceptor. */
+    val customCalls = mutableListOf<GatewayCustomCall>()
 
     /** W4-A: fold a refusal fragment into this latch, from any of THREE carriers.
      *

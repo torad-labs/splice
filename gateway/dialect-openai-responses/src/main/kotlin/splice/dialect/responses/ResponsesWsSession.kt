@@ -60,6 +60,10 @@ internal class ResponsesWsSession(
         val generation: Long,
         val bytes: Long,
         var at: Long,
+        /** call_ids of the tool calls the committed response ENDED WITH — the server holds them as
+         *  its context's tail and refuses any continuation that does not answer them ("No tool
+         *  output found for function call …"). A turn that answers none of them cannot chain. */
+        val pendingCalls: Set<String>,
     )
 
     // LRU + idle bounded. Chains retain the full logical input and request properties, so count
@@ -124,7 +128,22 @@ internal class ResponsesWsSession(
         }
         val delta = if (chain == null) null else chainableDelta(chain, request, generation)
         val frame = if (chain == null || delta == null) {
-            WsFrame(frame(request, previousResponseId = null, input = null), chained = false)
+            // Claude Code's auto-compaction is the live case for this reason (2026-09-05): it
+            // fires between a tool call and its execution, so the compaction body ends at the
+            // PREVIOUS tool result and the call the server just emitted is never answered.
+            // Chained, the server refused every one ("No tool output found for function call …")
+            // and the round fell back to a cold SSE send that re-read the whole transcript (35%
+            // cache); a full send on this socket keeps the prefix cache instead.
+            val items = (request[FIELD_INPUT] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
+            val unanswered = chain?.let { unansweredCalls(it.pendingCalls, items) }.orEmpty()
+            WsFrame(
+                frame(request, previousResponseId = null, input = null),
+                chained = false,
+                fullSendReason = unanswered.takeIf { it.isNotEmpty() }?.let {
+                    "the server holds ${it.size} unanswered tool call(s) this turn never answers " +
+                        "(${it.joinToString(", ")}) — a chained send would be refused"
+                },
+            )
         } else {
             WsFrame(frame(request, previousResponseId = chain.responseId, input = JsonArray(delta)), chained = true)
         }
@@ -146,7 +165,20 @@ internal class ResponsesWsSession(
         return items.takeIf { it.size == array.size }
             ?.let { deltaOf(chain.input, it) }
             ?.takeIf { it.isNotEmpty() }
+            ?.takeIf { delta -> unansweredCalls(chain.pendingCalls, delta).isEmpty() }
     }
+
+    /** The held calls [items] carry no answer for. Checked on the DELTA when chaining (the
+     *  server-held prefix ends at the calls themselves, so the delta is the only place an answer
+     *  can be) and on the whole input for the reason line — where the client's echo of the call
+     *  itself (a `*_call` item with the same call_id) is not an answer (review 2026-09-05). */
+    private fun unansweredCalls(pendingCalls: Set<String>, items: List<JsonObject>): List<String> =
+        pendingCalls.filterNot { id ->
+            items.any {
+                JsonScalars.str(it[FIELD_CALL_ID]) == id &&
+                    !JsonScalars.strOrEmpty(it[FIELD_TYPE]).endsWith(CALL_SUFFIX)
+            }
+        }
 
     /** Commit after a clean terminal: the round's FULL logical input becomes the next turn's
      *  prefix (never the delta — the server now holds the chained context PLUS what we sent). */
@@ -156,6 +188,7 @@ internal class ResponsesWsSession(
         responseId: String?,
         generation: Long,
         epoch: Long,
+        pendingCalls: Set<String> = emptySet(),
     ): Unit = synchronized(lock) {
         val now = clock()
         trimLocked(now)
@@ -172,7 +205,7 @@ internal class ResponsesWsSession(
         val props = propsOf(request)
         val bytes = logicalInput.sumOf { it.encodeToByteArray().size.toLong() } +
             props.encodeToByteArray().size.toLong()
-        chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now)
+        chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now, pendingCalls)
         totalBytes += bytes
         trimLocked(now)
     }
@@ -294,4 +327,6 @@ private val CLIENT_NEW = setOf("function_call_output", "message")
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"
 private const val FIELD_ROLE = "role"
+private const val FIELD_CALL_ID = "call_id"
+private const val CALL_SUFFIX = "_call"
 private const val MESSAGE = "message"

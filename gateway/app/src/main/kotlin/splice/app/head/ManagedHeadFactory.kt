@@ -18,6 +18,7 @@ import splice.app.quota.QuotaProbes
 import splice.control.ManagedHead
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.StatePaths
+import splice.core.model.ClientWindows
 import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
@@ -54,6 +55,7 @@ internal class ManagedHeadFactory(
             compactStats = CompactStats(statePaths.compactStatsFile(key)),
             perfStats = PerfStats(statePaths.perfStatsFile(key)),
             quota = QuotaTracker(statePaths.quotaFile(key)),
+            clientWindows = ClientWindows(store = statePaths.clientWindowsFile(key), log = log),
         )
         // Subscription heads (ChatGPT, Kimi, SuperGrok) have a usage endpoint; poll it so the bars
         // are right from the first tick. Every head still observes its rounds' headers. The
@@ -95,6 +97,7 @@ internal class ManagedHeadFactory(
             perf = PerfStatsSource(stores.perfStats),
             keyPresence = keyPresence,
             catalog = ctx.catalog,
+            clientWindows = stores.clientWindows,
         )
     }
 }

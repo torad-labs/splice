@@ -58,16 +58,17 @@ public abstract class ResponsesProvider(
         ),
     )
 
-    /** Per-turn upstream headers beyond the shared Accept set (grok's x-grok-conv-id). Empty by
-     *  default — a header that depends on the turn/session rides HERE, never on shared state. */
-    protected open fun perTurnHeaders(sessionId: String?): Map<String, String> = emptyMap()
+    /** Per-turn upstream headers beyond the shared Accept set (grok's x-grok-conv-id, codex's
+     *  session/thread routing). Empty by default — a header that depends on the turn/session rides
+     *  HERE, never on shared state. */
+    protected open fun perTurnHeaders(meta: TurnMeta): Map<String, String> = emptyMap()
 
-    final override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
+    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val built = parts.builder.build(body.typed, body.raw, parts.turnOptions.build(body, compact, sessionId))
         return BuiltTurn(
             built.req,
             built.meta,
-            perTurnHeaders(sessionId) + parts.turnOptions.liteHeaders(built.meta),
+            perTurnHeaders(built.meta) + parts.turnOptions.liteHeaders(built.meta),
             toolSearch = built.toolSearch,
         )
     }

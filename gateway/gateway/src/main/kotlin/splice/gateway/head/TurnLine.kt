@@ -5,6 +5,7 @@ package splice.gateway.head
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.spi.WatchdogFired
+import splice.spi.WatchdogHeld
 
 internal class TurnLine(
     private val headKey: String,
@@ -17,9 +18,10 @@ internal class TurnLine(
         outcome: TurnOutcome,
         latencyMs: Long,
         fired: WatchdogFired? = null,
+        held: WatchdogHeld? = null,
     ): String {
         val base = "[$headKey] turn compact=${meta.compact} model=$model latency=${latencyMs}ms"
-        return base + verdict(fired) + when (outcome) {
+        return base + verdict(fired) + heldClause(held) + when (outcome) {
             is TurnOutcome.Success ->
                 " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
             is TurnOutcome.Failure ->
@@ -48,5 +50,14 @@ internal class TurnLine(
             " watchdog=idle(tier=$tier limit=${fired.limitMs}ms idle=${fired.idleMs}ms)"
         }
         is WatchdogFired.TotalCap -> " watchdog=total-cap(elapsed=${fired.elapsedMs}ms)"
+    }
+
+    /** The poller saw the round past its tier and held it because the socket was still being
+     *  pinged (2026-09-06). On the line whether or not something later fired, so a turn that ran
+     *  long is distinguishable from one the watchdog never looked at. */
+    private fun heldClause(held: WatchdogHeld?): String {
+        if (held == null) return ""
+        val tier = if (held.sawClientFrame) "mid-output" else "first-output"
+        return " watchdog=held(tier=$tier limit=${held.limitMs}ms idle=${held.idleMs}ms ping=${held.pingAgoMs}ms)"
     }
 }

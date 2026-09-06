@@ -49,6 +49,24 @@ class SseEmitterTest {
         assertTrue(frames[2].contains("\"index\":0"))
     }
 
+    /** The heartbeat (ClientChannel's pinger on a silent wire): nothing before message_start, a ping
+     *  event after it, nothing once the turn has ended. */
+    @Test
+    fun `heartbeat - silent before start, a ping event while open, silent after the terminal`() = runTest {
+        val (frames, e) = collector()
+        e.heartbeat()
+        assertTrue(frames.isEmpty(), "no ping ahead of message_start: $frames")
+        e.ensureStarted()
+        val opened = frames.size
+        e.heartbeat()
+        assertEquals(opened + 1, frames.size)
+        assertEquals("event: ping\ndata: {\"type\":\"ping\"}\n\n", frames.last())
+        e.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage())
+        val ended = frames.size
+        e.heartbeat()
+        assertEquals(ended, frames.size, "an ended turn writes nothing more")
+    }
+
     @Test
     fun `tool flow - eager open, json deltas on same index, close`() = runTest {
         val (frames, e) = collector()

@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test
 import splice.app.TomlStructurePreflight
 import splice.app.TopologyLoader
 import splice.core.config.knobsByKey
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
 import splice.core.topology.HeadModel
 import java.nio.file.Files
@@ -27,6 +29,39 @@ class ExampleConfigTest {
             dir = dir.parent ?: return@repeat
         }
         error("config/splice.example.toml not found from ${Paths.get("").toAbsolutePath()}")
+    }
+
+    /**
+     * SPLICE OWNS ITS CREDENTIAL, in the file operators COPY FROM. AuthKind's header records why
+     * (2026-09-05): a credential shared with the vendor's CLI shares one refresh-token family, an
+     * OpenAI-style refresh ROTATES it, and each side then invalidates the other's session — 24
+     * turns failed inside one 16 s rotation. The native file is an explicit opt-in, never a
+     * default, so no OAuth head in the shipped example may pin one.
+     *
+     * This law exists because the example silently lost it once (2026-09-06: a status-line commit
+     * copied a whole stale TOML in and reverted all three OAuth heads to the vendor files, deleting
+     * the guidance with them) and NOTHING failed — the daemon never parses these defaults, and the
+     * knob-name law below only checks that names resolve, so a vendor path is a valid example. It
+     * was caught in peer review, which is not a gate.
+     *
+     * The denominator is the parsed example crossed with the AuthKind REGISTRY, never a list of
+     * head names: an OAuth kind added later is covered the day it is registered.
+     */
+    @Test
+    fun `example - no OAuth head pins a vendor CLI credential file`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        val oauthHeads = topology.providers.filterValues { AuthKindRegistry.from(it.auth.kind) is AuthKind.OAuth }
+        assertTrue(oauthHeads.isNotEmpty(), "the example must keep demonstrating OAuth heads")
+
+        oauthHeads.forEach { (name, provider) ->
+            val kind = AuthKindRegistry.from(provider.auth.kind) as AuthKind.OAuth
+            assertNull(
+                provider.auth.file,
+                "provider '$name' pins auth.file — the shipped example must default ${kind.wire} to " +
+                    "splice's own ${kind.authFile}, never ${kind.nativeApp}'s ${kind.nativeAppFile}, " +
+                    "which rotates the same refresh token and signs both sides out",
+            )
+        }
     }
 
     @Test
@@ -178,9 +213,9 @@ class ExampleConfigTest {
 
     // DR-24 / §22: every selected Grok row keeps its REAL backend ceiling. A head-wide 500k
     // override used to flatten grok-build-latest from 256k to 500k, so a haiku turn could run past
-    // the backend limit and hard-fail instead of compacting. The pinned 4.6 row still sets the
-    // process's 500k client window; ModelCatalog.usageScale bridges that fixed denominator to each
-    // selected row live through /model. Both denominators below come from the parsed source.
+    // the backend limit and hard-fail instead of compacting. The process's client window is the
+    // pinned row's; ModelCatalog.usageScale bridges that fixed denominator to each selected row
+    // live through /model. Every declared denominator below comes from the parsed source.
     @Test
     fun `example grok windows stay per row while the pinned row sets the process window`() {
         val topology = TopologyLoader.parse(exampleToml())
@@ -214,12 +249,14 @@ class ExampleConfigTest {
             "every selected row must retain its source-declared backend ceiling",
         )
 
-        assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row launches the 500k process")
+        assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row keeps its declared 500k")
         assertEquals(
             500_000L,
             catalog.clientContextWindowFor("grok-build-latest"),
-            "non-[1m] rows use that process window",
+            "non-[1m] rows use the window the launch plants: the pinned row's 500k",
         )
+        assertEquals(1.0, catalog.usageScale("grok-4.6"), "the pinned row rides raw: client 500k / real 500k")
+        assertEquals(500_000.0 / 256_000.0, catalog.usageScale("grok-build-latest"), "client 500k / real 256k")
 
         // Undeclared [1m] selectors strip to the row's real ceiling while the client uses literal 1m.
         assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"))
@@ -449,7 +486,7 @@ class ExampleConfigTest {
         assertEquals(
             setOf(200_000L),
             anthropic.models.map { it.contextWindow }.toSet(),
-            "all claude-splice rows must match: clientContextWindowFor has no claude-* client branch",
+            "all claude-splice rows must equal the real window: a claude-* id ignores our env, so its counts ride raw",
         )
         assertEquals(3104, topology.heads["claude-splice"]!!.port)
         // shadowing the real binary would make the wrapper invoke itself

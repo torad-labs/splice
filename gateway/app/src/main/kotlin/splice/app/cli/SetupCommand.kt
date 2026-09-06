@@ -61,7 +61,8 @@ internal class SetupCommand {
             return true
         }
         println(
-            "$DIM  Subscription heads reuse each vendor CLI's own OAuth identity — " +
+            "$DIM  Subscription heads reuse each vendor CLI's public OAuth client identity, signed in " +
+                "separately for splice (its own credential file, any account) — " +
                 "unofficial; use at your own risk.$RESET",
         )
         var ok = true

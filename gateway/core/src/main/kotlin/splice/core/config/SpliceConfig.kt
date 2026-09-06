@@ -25,6 +25,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val showReasoning: ReasoningDisplay get() = ReasoningDisplayParser.from(string(Knob.SHOW_REASONING))
     public val replayReasoning: Boolean get() = bool(Knob.REPLAY_REASONING)
     public val mirrorReasoning: Boolean get() = bool(Knob.MIRROR_REASONING)
+    public val progressLine: Boolean get() = bool(Knob.PROGRESS_LINE)
 
     // Reasoning-continuation folding (codex 518n-2). Models is a comma list → set; empty = feature off.
     public val foldReasoningModels: Set<String>

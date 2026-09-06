@@ -1,6 +1,6 @@
 // NEW: unit test the near-identity Anthropic -> Kimi passthrough request builder — raw-field
 // preservation, deep cache_control strip, block allowlist, thinking->adaptive+output_config effort
-// ladder, compact tool/effort handling, and sampling-strip quirk. Mirrors ChatRequestBuilderTest.
+// ladder, compaction built like a turn, and sampling-strip quirk. Mirrors ChatRequestBuilderTest.
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -11,10 +11,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.COMPACT_DIRECTIVE_HEAD
-import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
-import splice.core.turn.compactDirective
 import splice.dialect.passthrough.BuiltPassthroughRequest
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
@@ -45,46 +42,29 @@ private fun JsonObject.blockTypes(msg: Int) = blocks(msg).map { it["type"]?.json
 
 class PassthroughRequestBuilderTest {
 
-    // CX-02: passthrough forwards verbatim by design, so the directive is the ONE thing it invents
-    // beyond the thinking pair — without it a kimi compaction turn is an ordinary tool-stripped
-    // turn and a chatty reply is stored silently as the session summary. Anthropic's `system` is
-    // legal as a string OR a block array, and a compact turn may carry neither.
+    // A compaction is built EXACTLY like a turn (2026-09-05): same system, same tools and
+    // tool_choice, same effort. The upstream's prompt cache is an exact-prefix match, so the old
+    // compact-only shaping (tools + tool_choice dropped, a directive block appended to `system`)
+    // cold-read the whole transcript on every compaction.
     @Test
-    fun `compact appends a directive block to an array system`() {
-        val req = build(
-            """{"model":"m","system":[{"type":"text","text":"be brief"}],
-                "messages":[{"role":"user","content":"summarize"}]}""",
-            compact = true,
-        )
-        val blocks = req["system"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(2, blocks.size)
-        assertEquals("be brief", blocks[0]["text"]?.jsonPrimitive?.content)
-        assertEquals("text", blocks[1]["type"]?.jsonPrimitive?.content)
-        assertEquals(compactDirective, blocks[1]["text"]?.jsonPrimitive?.content)
+    fun `compaction is built byte-identical to a turn`() {
+        val body = """{"model":"m","system":[{"type":"text","text":"be brief"}],
+            "tools":[{"name":"run","input_schema":{"type":"object"}}],"tool_choice":{"type":"auto"},
+            "thinking":{"type":"enabled","budget_tokens":40000},
+            "messages":[{"role":"user","content":"Your task is to create a detailed summary of the conversation so far."}]}"""
+        for (quirks in listOf(PASS, NEUTRAL)) {
+            val turn = buildFull(body, quirks = quirks)
+            val compaction = buildFull(body, quirks = quirks, compact = true)
+            assertEquals(turn.req.toString(), compaction.req.toString(), "quirks ${quirks.providerTag}")
+            assertEquals(turn.meta.effort, compaction.meta.effort)
+            assertTrue(compaction.meta.compact && !turn.meta.compact, "meta still names the turn kind")
+        }
     }
 
     @Test
-    fun `compact appends to a string system without changing its type`() {
-        val req = build(
-            """{"model":"m","system":"be brief","messages":[{"role":"user","content":"summarize"}]}""",
-            compact = true,
-        )
-        val system = req["system"]!!.jsonPrimitive.content
-        assertEquals(CompactInstructions.withCompactDirective("be brief", compact = true), system)
-    }
-
-    @Test
-    fun `compact with no system at all still emits the directive`() {
+    fun `a compact turn invents no system field`() {
         val req = build("""{"model":"m","messages":[{"role":"user","content":"summarize"}]}""", compact = true)
-        val blocks = req["system"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(compactDirective, blocks.single()["text"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `a non-compact turn invents no system field and carries no directive`() {
-        val req = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
         assertNull(req["system"])
-        assertFalse(req.toString().contains(COMPACT_DIRECTIVE_HEAD))
     }
 
     @Test
@@ -289,38 +269,19 @@ class PassthroughRequestBuilderTest {
     }
 
     @Test
-    fun `compact strips tools and tool_choice and INHERITS the session effort`() {
+    fun `compact keeps tools and tool_choice and INHERITS the session effort`() {
         val built = buildFull(
             """{"model":"m","messages":[{"role":"user","content":"hi"}],
                 "tools":[{"name":"run","input_schema":{"type":"object"}}],
                 "tool_choice":{"type":"auto"},"thinking":{"type":"enabled","budget_tokens":40000}}""",
             compact = true,
         )
-        assertNull(built.req["tools"])
-        assertNull(built.req["tool_choice"])
-        // v27 doctrine canary: compact inherits the session's own effort — the 40k budget rides
-        // the same "max" rung a non-compact turn gets. Pinning must be an explicit quirk opt-in;
-        // if this assertion ever sees a pinned value again, the default regressed.
+        assertEquals(1, built.req["tools"]!!.jsonArray.size)
+        assertEquals("auto", built.req["tool_choice"]!!.jsonObject["type"]?.jsonPrimitive?.content)
+        // v27 doctrine canary, now total: compact inherits the session's own effort — the 40k
+        // budget rides the same "max" rung a non-compact turn gets, and no quirk can pin it.
         assertEquals("max", built.req.effort())
         assertEquals("max", built.meta.effort)
-    }
-
-    @Test
-    fun `an explicitly configured compact pin still applies to compact turns only`() {
-        val pinned = PASS.copy(compactEffort = "low")
-        val compacted = buildFull(
-            """{"model":"m","messages":[{"role":"user","content":"hi"}],
-                "thinking":{"type":"enabled","budget_tokens":40000}}""",
-            quirks = pinned,
-            compact = true,
-        )
-        assertEquals("low", compacted.req.effort())
-        val session = buildFull(
-            """{"model":"m","messages":[{"role":"user","content":"hi"}],
-                "thinking":{"type":"enabled","budget_tokens":40000}}""",
-            quirks = pinned,
-        )
-        assertEquals("max", session.req.effort())
     }
 
     // --- sampling strip quirk --------------------------------------------------------------------
@@ -454,15 +415,5 @@ class PassthroughRequestBuilderTest {
         // cost). Only the adaptive rewrite (kimi) owns the omit-on-disabled rule.
         assertEquals("disabled", req["thinking"]!!.jsonObject["type"]?.jsonPrimitive?.content)
         assertNull(req["output_config"])
-    }
-
-    @Test
-    fun `the compaction directive is NOT a quirk — every passthrough head gets it`() {
-        val req = build(
-            """{"model":"m","system":"be brief","messages":[{"role":"user","content":"s"}]}""",
-            quirks = NEUTRAL,
-            compact = true,
-        )
-        assertTrue(req["system"]!!.jsonPrimitive.content.contains(COMPACT_DIRECTIVE_HEAD))
     }
 }

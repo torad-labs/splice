@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.KimiRefresh
 import splice.app.TopologyLoader
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.provider.kimi.KimiAuthProvider
@@ -22,8 +23,9 @@ internal class KimiOAuth(
     private val kimiRefresh: KimiRefresh,
 ) {
     internal fun kimiOauthAuth(ctx: ProviderBuild): Pair<RefreshableAuthProvider, KimiDeviceIdentity> {
+        // Splice's own file by default (AuthKind header, 2026-09-05); the native app's only by auth.file.
         val authPath = Paths.get(
-            TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
+            TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: AuthKind.KimiOAuth.authFile),
         )
         val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
         val identityHeaders = identity.headers()

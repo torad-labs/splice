@@ -35,6 +35,12 @@ public interface TurnTerminal : WireSink {
      *  truncated-200 fix, review 2026-07-22 round 3). */
     public val hasEnded: Boolean
 
+    /** True once [emitTerminal] delivered the clean ending — never for an error or an abandon.
+     *  What tells a detached compaction's recording (TurnStreamer) apart from a truncated or
+     *  failed one without any consumer reading terminal literals off the frames (L3). Default
+     *  false: the collecting sink has no detached consumer. */
+    public val endedCleanly: Boolean get() = false
+
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 

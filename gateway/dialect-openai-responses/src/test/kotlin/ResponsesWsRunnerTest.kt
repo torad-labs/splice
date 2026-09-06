@@ -53,6 +53,9 @@ private class Rig(private val script: (Int) -> List<String>) {
     var rounds = 0
     val sent = mutableListOf<String>()
 
+    /** The headers of every handshake, in connection order (2026-09-05: the WS-only request id). */
+    val handshakes = mutableListOf<Map<String, String>>()
+
     /** Which SOCKETS were aborted, in creation order. kill() calls abort(), so this is how a test
      *  observes "the round's connection was torn down" and, more importantly, WHICH one. */
     val aborted = mutableListOf<Int>()
@@ -69,8 +72,9 @@ private class Rig(private val script: (Int) -> List<String>) {
     private var listener: WebSocket.Listener? = null
 
     @Suppress("UNUSED_PARAMETER")
-    private fun connect(unusedUri: URI, unusedHeaders: Map<String, String>, l: WebSocket.Listener): WebSocket {
+    private fun connect(unusedUri: URI, headers: Map<String, String>, l: WebSocket.Listener): WebSocket {
         listener = l
+        handshakes += headers
         // Its OWN listener, not the shared field: a rig with two live sockets would otherwise feed
         // every frame to whichever connected last.
         val index = sockets++
@@ -103,8 +107,14 @@ private class Rig(private val script: (Int) -> List<String>) {
     suspend fun accept(m: TurnMeta = meta(), body: String = BODY, headers: Map<String, String> = emptyMap()) =
         runner.attempt(body, m, headers, Credentials.Bearer("tok", "acct"))
 
-    suspend fun round(m: TurnMeta = meta(), body: String = BODY): List<JsonObject>? =
-        accept(m, body)?.let { r -> mutableListOf<JsonObject>().also { out -> r.events.collect { out += it } } }
+    suspend fun round(
+        m: TurnMeta = meta(),
+        body: String = BODY,
+        headers: Map<String, String> = emptyMap(),
+    ): List<JsonObject>? =
+        accept(m, body, headers)?.let { r ->
+            mutableListOf<JsonObject>().also { out -> r.events.collect { out += it } }
+        }
 
     fun lastSentChained(): Boolean =
         (responsesRequestJson.parseToJsonElement(sent.last()) as JsonObject)["previous_response_id"] != null
@@ -143,6 +153,21 @@ private const val BODY_ANSWERED =
         """{"type":"function_call_output","call_id":"call_9","output":"file"}]}"""
 
 class ResponsesWsRunnerTest {
+
+    /** codex-rs names its thread a second time on the WS handshake, as the client request id —
+     *  derived from the provider's per-turn `thread-id` at the handshake, so an SSE POST never
+     *  carries it and a turn without a thread id sends none (2026-09-05). */
+    @Test
+    fun `the handshake carries the thread id as x-client-request-id and nothing without one`() = runTest {
+        val rig = Rig { listOf("""{"type":"response.created"}""", completed("r1")) }
+        checkNotNull(rig.round(headers = mapOf("thread-id" to "t-1"))) { "round one" }
+        assertEquals("t-1", rig.handshakes.last()["x-client-request-id"])
+        assertEquals("t-1", rig.handshakes.last()["thread-id"])
+        // A different header set is a different connection: the second handshake carries none.
+        checkNotNull(rig.round(headers = mapOf("x-splice-probe" to "two"))) { "round two" }
+        assertEquals(2, rig.handshakes.size, "a changed per-turn header set opens a new connection")
+        assertFalse(rig.handshakes.last().containsKey("x-client-request-id"), rig.handshakes.last().toString())
+    }
 
     /** The terminal's output is read for the calls it leaves open: a next turn that answers none
      *  of them full-sends (the 2026-09-05 compaction class), one that answers them chains. */

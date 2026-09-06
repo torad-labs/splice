@@ -58,7 +58,7 @@ internal class ResponsesWsRunner(
         val request = identity.parseRequest(bodyJson)
         val chain = identity.chainKey(meta)
         if (request == null || chain == null) return null
-        val headers = handshakeHeaders(creds) + turnHeaders
+        val headers = handshakeHeaders(creds) + turnHeaders + handshakeOnlyHeaders(turnHeaders)
         val key = identity.connectionKey(chain, meta, headers)
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
         // determines what the next turn's prefix must be, and only a clean terminal may commit it.
@@ -101,6 +101,13 @@ internal class ResponsesWsRunner(
         )
     }
 
+    /** codex-rs names its thread a second time on the WS handshake, as `x-client-request-id` — on
+     *  the handshake only, never on an SSE POST, so it is derived here from the provider's per-turn
+     *  `thread-id` (which rides both) rather than emitted beside it. Part of the connection key like
+     *  every other handshake header, and constant for the session like its source. */
+    private fun handshakeOnlyHeaders(turnHeaders: Map<String, String>): Map<String, String> =
+        turnHeaders[HEADER_THREAD_ID]?.let { mapOf(HEADER_CLIENT_REQUEST_ID to it) } ?: emptyMap()
+
     override fun isFailureTerminal(event: JsonObject): Boolean =
         JsonScalars.str(event[FIELD_TYPE]) in ResponsesRoundEnd.FAILED
 
@@ -118,3 +125,5 @@ internal class ResponsesWsRunner(
 }
 
 private const val FIELD_TYPE = "type"
+private const val HEADER_THREAD_ID = "thread-id"
+private const val HEADER_CLIENT_REQUEST_ID = "x-client-request-id"

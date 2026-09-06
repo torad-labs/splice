@@ -36,7 +36,8 @@ public class HeadServer(
     private val gate get() = deps.gate
     private val log get() = deps.log
 
-    private val driver = TurnDriver(provider, deps)
+    private val compactionReplay = CompactionReplay()
+    private val driver = TurnDriver(provider, deps, compactionReplay)
     private val window = AdmissionWindow()
     private val responses = AdmissionResponses()
     private val clientAuth = ClientAuth(deps, responses)
@@ -49,7 +50,7 @@ public class HeadServer(
         clientAuth,
         admissionGate,
         AdmissionTelemetry(deps.gate, deps.clock),
-        TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth),
+        TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth, compactionReplay),
         responses,
         driver,
     )
@@ -109,6 +110,9 @@ public class HeadServer(
             log("[${provider.key}] stop: draining timed out with inflight=$inflight — forcing engine stop\n")
         }
         engine.stop()
+        // A detached compaction (TurnStreamer) has no head to record for once the engine is down;
+        // the driver is reused by startLocked, so this ends compactions, never their scope.
+        driver.stopDetached()
         deps.usageStore.flushNow()
     }
 }

@@ -10,6 +10,7 @@ import splice.app.LoginIo
 import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
@@ -51,7 +52,7 @@ internal class LoginCommand {
     ): Boolean =
         when (provider.auth.kind) {
             "kimi-oauth" -> DeviceLoginFlow.run(
-                kimi.spec(headKey, oauthAuthPath(provider, "~/.kimi/credentials/kimi-code.json")),
+                kimi.spec(headKey, oauthAuthPath(provider)),
             )
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
@@ -94,8 +95,8 @@ internal class LoginCommand {
             return null
         }
         return when (provider.auth.kind) {
-            "chatgpt-oauth" -> codex.spec(headKey, oauthAuthPath(provider, "~/.codex/auth.json"))
-            "grok-oauth" -> grok.spec(headKey, oauthAuthPath(provider, "~/.grok/auth.json"))
+            "chatgpt-oauth" -> codex.spec(headKey, oauthAuthPath(provider))
+            "grok-oauth" -> grok.spec(headKey, oauthAuthPath(provider))
             else -> {
                 println("splice: head '$headKey' uses ${provider.auth.kind} auth — no browser login for that kind.")
                 null
@@ -103,8 +104,17 @@ internal class LoginCommand {
         }
     }
 
-    internal fun oauthAuthPath(provider: ProviderConfig, fallback: String): Path =
-        Paths.get(TopologyLoader.expandHome(provider.auth.file ?: fallback))
+    /** The file a login writes: the provider's explicit auth.file, else the registry's splice-owned
+     *  default for its kind (AuthKind header, 2026-09-05). The native apps' files are never a
+     *  fallback here — an operator opts into one by naming it. Only reached for registered OAuth
+     *  kinds, whose default is non-null by construction. */
+    internal fun oauthAuthPath(provider: ProviderConfig): Path {
+        val file = provider.auth.file
+            ?: requireNotNull(AuthKindRegistry.defaultAuthFileFor(provider.auth.kind)) {
+                "no default credential file for auth kind '${provider.auth.kind}'"
+            }
+        return Paths.get(TopologyLoader.expandHome(file))
+    }
 
     /** Which heads support ANY sign-in flow (browser OAuth or api-key prompt) — keyed off auth.kind,
      *  matching login()'s own dispatch. HD-20 banned extension declarations; `Topology` lives in

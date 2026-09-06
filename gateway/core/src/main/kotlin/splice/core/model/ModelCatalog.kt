@@ -22,6 +22,11 @@ private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
 // window, a silently wrong factor. Mirror the client, never improve on it.
 private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
 
+/** Claude Code honors CLAUDE_CODE_MAX_CONTEXT_TOKENS only for an active id NOT starting with this
+ *  (cli 2.1.257 `kL`: `!id.startsWith("claude-") && !knownAlias(id)`); any other id resolves to
+ *  the client's built-in table or its 200k default, and nothing we launch with can move it. */
+private const val CLIENT_OWN_ID_PREFIX = "claude-"
+
 @Serializable
 public data class ModelEntry(
     val id: String,
@@ -49,8 +54,9 @@ public data class ModelCatalog(
     val extraWindows: List<ExtraWindow> = emptyList(),
     val windowRules: List<WindowRule> = emptyList(),
     val defaultContextWindow: Long,
-    /** The head's pinned model — the row whose window became CLAUDE_CODE_MAX_CONTEXT_TOKENS at
-     *  launch, and therefore the window the CLIENT believes every non-"[1m]" row has. */
+    /** The head's pinned model (ANTHROPIC_MODEL at launch). Since 2026-09-05 it does NOT name the
+     *  client's window — every launch plants [clientLaunchWindow] — so nothing in here reads it;
+     *  the head assembly and the launch spec still carry it. */
     val pinnedModel: String = "",
 ) {
     init {
@@ -116,18 +122,28 @@ public data class ModelCatalog(
             ?: fallback
     }
 
-    /** The window the CLIENT will actually use for [id], which is not always what we declare.
-     *  Claude Code resolves it as: `KE(id) = /\[1m\]/i` -> exactly 1e6, else
-     *  CLAUDE_CODE_MAX_CONTEXT_TOKENS (cli 2.1.233 `G4u`). That "[1m]" test on the id is the ONLY
-     *  id-keyed branch there is — no other spelling moves it — and the env is one number for the
-     *  whole process, so every other row is stuck with the PINNED row's window however it is
-     *  declared here. [usageScale] is what bridges the two. */
-    public fun clientContextWindowFor(id: String): Long =
-        if (oneMillionHint.containsMatchIn(unwrap(id))) {
-            CLAUDE_CODE_ONE_MILLION
-        } else {
-            contextWindowFor(pinnedModel)
-        }
+    /** The ONE window every launch declares to the client (CLAUDE_CODE_MAX_CONTEXT_TOKENS): a
+     *  constant, deliberately the number Claude Code hardcodes for a "[1m]" id, so the client-side
+     *  denominator is fixed for the life of the process however the catalog changes. [usageScale]
+     *  then carries EVERY row, the pinned one included, against its declared window — which is
+     *  what lets a TOML window edit + `splice restart` reach a RUNNING session on its next turn.
+     *  Before 2026-09-05 the pinned row's own window was the launch env, so editing it was
+     *  invisible to every live process: the daemon computed a 1.0 factor against the new number
+     *  while the client kept dividing by the old one (the 2026-09-05 272k cutover: six sessions
+     *  stayed on 400k until relaunched). */
+    public val clientLaunchWindow: Long get() = CLAUDE_CODE_ONE_MILLION
+
+    /** The window the CLIENT will actually use for [id] — mirrored from cli 2.1.257 `PL()`, never
+     *  improved on: `/\[1m\]/i` anywhere in the id -> exactly 1e6; an id starting with "claude-"
+     *  (a discovery-wrapped tier, or a passthrough head's native model) ignores our env and
+     *  resolves to the client's own table or its 200k default, so the DECLARED window is returned
+     *  and the counts ride raw — a factor we cannot honestly compute is 1.0; every other id ->
+     *  [clientLaunchWindow], the env the launch planted. */
+    public fun clientContextWindowFor(id: String): Long = when {
+        oneMillionHint.containsMatchIn(unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
+        id.startsWith(CLIENT_OWN_ID_PREFIX) -> contextWindowFor(id)
+        else -> clientLaunchWindow
+    }
 
     /** Multiplier for the input-token counts reported to the client, so a row compacts at ITS OWN
      *  declared window rather than the session's.
@@ -136,8 +152,10 @@ public data class ModelCatalog(
      *  splice authors the NUMERATOR of that ratio even though the denominator is fixed in the
      *  client's process. Scaling the numerator by `client/declared` makes the ratio reach 1 exactly
      *  when real usage reaches the declared window — so a 500k row on a 256k session compacts at
-     *  500k, live, switchable from the /model menu. Returns 1.0 (untouched counts) whenever the row
-     *  already agrees with the client, which is every row on a head that declares one window. */
+     *  500k, live, switchable from the /model menu. With the client window a constant (see
+     *  [clientLaunchWindow]) every row scales, the pinned one included; 1.0 (untouched counts) is
+     *  left only where the client's window is genuinely not ours: a declared 1e6 row and the
+     *  "claude-" ids [clientContextWindowFor] names. */
     public fun usageScale(id: String): Double {
         val declared = contextWindowFor(id)
         // NO "[1m]" exemption, deliberately. `contains()` strips the suffix before its membership

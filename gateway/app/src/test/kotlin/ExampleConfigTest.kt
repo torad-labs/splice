@@ -178,9 +178,9 @@ class ExampleConfigTest {
 
     // DR-24 / §22: every selected Grok row keeps its REAL backend ceiling. A head-wide 500k
     // override used to flatten grok-build-latest from 256k to 500k, so a haiku turn could run past
-    // the backend limit and hard-fail instead of compacting. The pinned 4.6 row still sets the
-    // process's 500k client window; ModelCatalog.usageScale bridges that fixed denominator to each
-    // selected row live through /model. Both denominators below come from the parsed source.
+    // the backend limit and hard-fail instead of compacting. The process's client window is a
+    // constant 1e6; ModelCatalog.usageScale bridges that fixed denominator to each selected row
+    // live through /model. Every declared denominator below comes from the parsed source.
     @Test
     fun `example grok windows stay per row while the pinned row sets the process window`() {
         val topology = TopologyLoader.parse(exampleToml())
@@ -214,12 +214,13 @@ class ExampleConfigTest {
             "every selected row must retain its source-declared backend ceiling",
         )
 
-        assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row launches the 500k process")
+        assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row keeps its declared 500k")
         assertEquals(
-            500_000L,
+            1_000_000L,
             catalog.clientContextWindowFor("grok-build-latest"),
-            "non-[1m] rows use that process window",
+            "non-[1m] rows use the constant client window the launch plants",
         )
+        assertEquals(2.0, catalog.usageScale("grok-4.6"), "the pinned row scales too: client 1m / real 500k")
 
         // Undeclared [1m] selectors strip to the row's real ceiling while the client uses literal 1m.
         assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"))
@@ -449,7 +450,7 @@ class ExampleConfigTest {
         assertEquals(
             setOf(200_000L),
             anthropic.models.map { it.contextWindow }.toSet(),
-            "all claude-splice rows must match: clientContextWindowFor has no claude-* client branch",
+            "all claude-splice rows must equal the real window: a claude-* id ignores our env, so its counts ride raw",
         )
         assertEquals(3104, topology.heads["claude-splice"]!!.port)
         // shadowing the real binary would make the wrapper invoke itself

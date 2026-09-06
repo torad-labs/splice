@@ -30,6 +30,8 @@ import splice.core.auth.Credentials
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.spi.NEVER_PINGED_MS
+import splice.spi.WsPathPulse
 import splice.spi.WsRound
 import splice.spi.WsRoundAbort
 import splice.spi.WsRoundRunner
@@ -68,6 +70,9 @@ internal class ResponsesWsRunner(
         // aborts the wrong socket, and the lease for why "still my round" is not the same question
         // as "not finished yet". Default no-op covers the paths that never reach a connection.
         var abort = WsRoundAbort { }
+        // The socket's liveness for the idle watchdog, closed over the same connection: a pooled
+        // socket outlives the round, but the poller that reads this is cancelled with the round.
+        var pathPulse = WsPathPulse { NEVER_PINGED_MS }
         val flow = transport.round(
             key = key,
             headers = headers,
@@ -78,6 +83,7 @@ internal class ResponsesWsRunner(
             // the head never sees one (module law).
             val lease = conn.lease.get()
             abort = WsRoundAbort { if (conn.lease.get() == lease) conn.kill() }
+            pathPulse = WsPathPulse { conn.pulse.pingAgoMs() }
             // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
             // window where a concurrent clear bumped the epoch after the frame was built on
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
@@ -98,6 +104,7 @@ internal class ResponsesWsRunner(
         return WsRound(
             events = flow.onEach { event -> identity.observeTerminal(chain, pending, event) },
             abort = abort,
+            pathPulse = pathPulse,
         )
     }
 

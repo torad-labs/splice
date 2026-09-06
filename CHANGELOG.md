@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## splice v0.3.1 — silent-stream reliability and the code-mode beta - 2026-09-06
+
+### Added
+- **Default-off JavaScript code mode for ChatGPT providers.** Set `code_mode = true` in a
+  `chatgpt-oauth` + `openai-responses` provider's quirks to enable the bundled GraalJS runner and
+  orchestration guidance together on eligible GPT-6 Astra/Sol turns. Custom head names work;
+  compaction, toolless turns and forced named-tool choices retain the ordinary path. No Node or
+  Codex installation is required. Real operations remain Claude Code's permission-checked client
+  tool calls; JavaScript has no direct shell, filesystem, network or MCP access.
+- **Bounded execution with honest recovery.** Worker, time, heap and wire limits bound each cell.
+  Durable ownership and history retain completed evidence, but a lost worker's JavaScript is never
+  rerun automatically. New user content interrupts before further execution, infrastructure faults
+  remain failures, and cancellation retains only known completed-round usage. Graal community is
+  not an OS-hardened sandbox against same-user attackers.
+- **An explicit beta switch, not a silent default change.** False or omitted disables both the
+  runner and its guidance. The provider setting applies to every head using it and is read at
+  daemon boot: finish pending work before changing TOML, then perform a full `splice restart`.
+  A head restart alone does not reload topology. Bounded synthetic comparisons support the beta;
+  they do not establish general output-quality or efficiency gains.
+
+### Fixed
+- **Silent streaming turns send real SSE ping events.** Keepalive traffic is recognizable to
+  Claude Code during long upstream silences. Optional, default-on `progressLine` messages identify
+  themselves as splice-authored status, not model reasoning. Every streaming head uses the same
+  mechanism; disabling progress lines does not disable pings. The switch requires a restart.
+- **Progress respects the stream lifecycle and accounting.** Separate progress and model writers
+  share block indexes without letting a blocked model write silence keepalives. Progress waits for
+  the published opener, stops at terminal sealing, and never counts as model output or first-delta
+  timing. Rejected pre-opener writes do not consume the introductory status line.
+
 ### Changed
 - **Every OAuth head signs in on its own credential file.** `chatgpt-oauth`, `grok-oauth` and
   `kimi-oauth` now default to `~/.config/splice/auth/{codex,grok,kimi}.json` (kimi's `device_id`

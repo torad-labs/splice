@@ -13,6 +13,7 @@ internal class ResponsesItemFold(
 ) {
 
     private val frames = ResponsesFrameParse()
+    private val customCalls = ResponsesCustomCallParse()
     private val harvest = ResponsesHarvest()
     private var toolSynthCounter = 0
 
@@ -60,6 +61,7 @@ internal class ResponsesItemFold(
             captureToolSearch(item)
             return
         }
+        if (item != null) customCalls.parse(item)?.let { state.customCalls.add(it) }
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index"))
         // Some backends only attach readable reasoning on the completed item (no per-token
         // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,

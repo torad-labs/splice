@@ -49,6 +49,8 @@ public data class QuirksConfig(
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
      *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
     @SerialName("websocket") val webSocket: Boolean? = null,
+    /** Beta ChatGPT responses only: splice-owned JavaScript bridge. Absent/default stays off. */
+    @SerialName("code_mode") val codeMode: Boolean? = null,
     /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
      *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
      *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this

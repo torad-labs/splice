@@ -83,11 +83,12 @@ internal class RoundSplice {
             val total = outcome.partial?.usage?.let { acc.plusTerminal(it) } ?: acc
             if (burned(total)) outcome.copy(salvagedUsage = total.toUsage()) else outcome
         }
-        // DR-125: a hang-up after absorbed rounds burned the same real tokens — but the
-        // abandoning round's own stream died unparsed, so there is no partial to fold in;
-        // the accumulator alone is the honest salvage.
-        is TurnOutcome.ClientAbandoned ->
-            if (burned(acc)) outcome.copy(salvagedUsage = acc.toUsage()) else outcome
+        // An interceptor may have finished billed local continuations before the final stream
+        // was abandoned. Preserve that burn alongside earlier gateway rounds, not instead of it.
+        is TurnOutcome.ClientAbandoned -> {
+            val total = acc.plusTerminal(outcome.salvagedUsage)
+            if (burned(total)) outcome.copy(salvagedUsage = total.toUsage()) else outcome
+        }
         else -> outcome
     }
 

@@ -83,5 +83,15 @@ class DaemonPerHeadConfigTest {
         // maxInflight is the knob the Daemon comment quantifies; it feeds the admission gate.
         assertEquals(3, slow.cfg.maxInflight)
         assertEquals(40, fast.cfg.maxInflight)
+        assertEquals(slow.cfg.codexAuthPath, slow.providerCfg.auth.file)
+        assertEquals(fast.cfg.codexAuthPath, fast.providerCfg.auth.file)
+
+        val declared = d.buildInputs.providerContext(
+            "slow",
+            topology.heads.getValue("slow"),
+            topology.providers.getValue("codex"),
+            legacyKnobsGovern = false,
+        )
+        assertEquals(authFile.toString(), declared.providerCfg.auth.file)
     }
 }

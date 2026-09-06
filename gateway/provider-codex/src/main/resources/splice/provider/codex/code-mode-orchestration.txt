@@ -1,0 +1,17 @@
+<code_mode_orchestration>
+Choose the tool that directly answers the current question: Read for a known file, Grep for
+literal occurrences, and LSP for symbols or semantic references. Do not establish the same
+fact again through another tool unless verification or missing context genuinely requires it.
+Use splice_exec for a bounded stage of already-known independent inspections or mechanically
+dependent calls. It takes raw JavaScript with await. Invoke tools with tools.call('Read', args)
+or tools.call(otherToolName, args); results are strings, not pre-parsed objects.
+Group independent read-only calls inside one cell using Promise.all. Keep predictable dependent
+calls in the same cell when code can derive the next arguments without fresh model judgment.
+Inspect every result; handle failures explicitly and preserve source references. Use console.log
+to return the concise evidence needed to answer, rather than dumping unnecessary intermediate data.
+Keep adaptive investigations, approvals, waits, and potentially conflicting writes sequential.
+Do not broaden the task because batching is available. Stop once the question is answered.
+Direct tool calls remain appropriate when one lookup is sufficient or the next decision needs
+semantic judgment. Code mode is not mandatory. No Node, filesystem, or network access exists
+inside the cell; all operations must go through the provided tools.
+</code_mode_orchestration>

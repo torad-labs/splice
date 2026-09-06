@@ -31,6 +31,8 @@ dependencies {
     implementation(project(":control"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.graaljs.polyglot)
+    implementation(libs.graaljs.community)
     implementation(libs.ktoml.core)
     implementation(libs.ktor.client.java)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -49,6 +51,7 @@ application {
 // ran (caught 2026-07-26 while red-proofing it). Declaring the file as an input makes the example
 // a real gate: touch it, the test re-runs.
 tasks.test {
+    systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
     inputs.file(rootProject.layout.projectDirectory.file("../config/splice.example.toml"))
         .withPropertyName("spliceExampleToml")
         .withPathSensitivity(PathSensitivity.RELATIVE)
@@ -65,6 +68,8 @@ tasks.test {
     environment = environment.filterKeys { it != "XDG_CONFIG_HOME" && it != "SPLICE_CONFIG" }
 }
 
+val releaseVersion = project.version.toString()
+val releaseGroup = rootProject.name
 val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
 val rawBomDir = layout.buildDirectory.dir("reports/cyclonedx")
 val rawLicenseDir = layout.buildDirectory.dir("reports/licenses")
@@ -75,6 +80,7 @@ val bom = complianceDir.map { it.file("bom.cdx.json") }
 val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
+val icuLicense = repositoryRoot.file("checks/release/icu-LICENSE.txt")
 val dashboard = repositoryRoot.file("webui/dist/index.html")
 // The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
 // considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
@@ -92,6 +98,10 @@ val allowedReleaseLicenses = setOf(
     "MIT",
     "MIT License",
     "The Apache Software License, Version 2.0",
+    // Bundled GraalJS community libraries: permissive copyright/patent grant with notice retention.
+    "Universal Permissive License, Version 1.0",
+    // ICU's permissive grant requires the included copyright and third-party notices.
+    "Unicode/ICU License",
 )
 
 tasks.cyclonedxDirectBom {
@@ -133,11 +143,11 @@ val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
         val refReplacements = LinkedHashMap<String, String>()
         val components = (bomJson["components"] as? List<*>).orEmpty().map { raw ->
             val entry = LinkedHashMap(raw as Map<*, *>)
-            if (entry["group"] == rootProject.name && entry["version"] == "unspecified") {
-                entry["version"] = project.version.toString()
+            if (entry["group"] == releaseGroup && entry["version"] == "unspecified") {
+                entry["version"] = releaseVersion
                 listOf("bom-ref", "purl").forEach { key ->
                     val old = entry[key]?.toString() ?: return@forEach
-                    val updated = old.replace("@unspecified", "@${project.version}")
+                    val updated = old.replace("@unspecified", "@$releaseVersion")
                     entry[key] = updated
                     if (key == "bom-ref") refReplacements[old] = updated
                 }
@@ -188,6 +198,7 @@ val copyReleaseLicenses = tasks.register("copyReleaseLicenses") {
 }
 
 val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
+    inputs.file(icuLicense)
     outputs.file(thirdPartyLicenses)
     doLast {
         val sections = linkedMapOf(
@@ -195,6 +206,7 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
             "MIT" to "MIT License",
             "EPL-1.0" to "Eclipse Public License 1.0",
             "OFL-1.1" to "SIL Open Font License 1.1",
+            "UPL-1.0" to "Universal Permissive License 1.0",
         )
         val text = buildString {
             appendLine("Third-party license texts bundled with splice")
@@ -214,6 +226,11 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
                 append(licenseText.trimEnd())
                 appendLine()
             }
+            appendLine()
+            appendLine("================================================================================")
+            appendLine("ICU license and bundled third-party notices")
+            appendLine("================================================================================")
+            appendLine(icuLicense.asFile.readText().trimEnd())
         }
         val output = thirdPartyLicenses.get().asFile
         output.parentFile.mkdirs()
@@ -229,14 +246,14 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
         val metadata = bomJson["metadata"] as? Map<*, *> ?: emptyMap<Any, Any>()
         val rootComponent = metadata["component"] as? Map<*, *> ?: emptyMap<Any, Any>()
         check(rootComponent["name"] == "splice") { "release SBOM root component is not splice" }
-        check(rootComponent["version"] == project.version.toString()) {
-            "release SBOM version ${rootComponent["version"]} does not match ${project.version}"
+        check(rootComponent["version"] == releaseVersion) {
+            "release SBOM version ${rootComponent["version"]} does not match $releaseVersion"
         }
         val components = bomJson["components"] as? List<*> ?: emptyList<Any>()
         check(components.isNotEmpty()) { "release SBOM has no runtime components" }
         val unversionedFirstParty = components.filter { component ->
             val entry = component as? Map<*, *> ?: return@filter false
-            entry["group"] == rootProject.name && entry["version"] == "unspecified"
+            entry["group"] == releaseGroup && entry["version"] == "unspecified"
         }
         check(unversionedFirstParty.isEmpty()) { "release SBOM has unversioned first-party components" }
 
@@ -274,7 +291,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
         }.toSet()
         val runtimeCoordinates = configurations.runtimeClasspath.get().incoming.resolutionResult.allComponents
             .mapNotNull { component -> component.moduleVersion?.let { "${it.group}:${it.name}:${it.version}" } }
-            .filterNot { it.startsWith("${rootProject.name}:") }
+            .filterNot { it.startsWith("${releaseGroup}:") }
             .toSet()
         val missingLicenses = runtimeCoordinates - licensedCoordinates
         check(missingLicenses.isEmpty()) { "runtime dependencies missing from license inventory: $missingLicenses" }
@@ -286,6 +303,10 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "Eclipse Public License - v 1.0",
             "SIL OPEN FONT LICENSE",
             "Version 1.1 - 26 February 2007",
+            "Universal Permissive License",
+            "UNICODE LICENSE V3",
+            "ICU License - ICU 1.8.1 to ICU 57.1",
+            "Chinese/Japanese Word Break Dictionary Data",
         ).forEach { marker -> check(marker in licenseTexts) { "third-party license bundle missing $marker" } }
         val notices = thirdPartyNotices.asFile.readText()
         listOf(
@@ -296,7 +317,39 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
     }
 }
 
+// A classpath test cannot catch lost language service registrations in the shipped fat JAR.
+val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
+    dependsOn(tasks.named("shadowJar"))
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter {
+        includeTestsMatching("CodeModeRuntimeTest")
+        includeTestsMatching("CodeModeBridgeRuntimeTest")
+    }
+    val packagedJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
+    inputs.file(packagedJar)
+    doFirst {
+        val artifact = packagedJar.get().asFile
+        val digest = MessageDigest.getInstance("SHA-256").digest(artifact.readBytes())
+            .joinToString("") { byte -> "%02x".format(byte) }
+        logger.lifecycle("Code-mode packaged worker SHA-256: $digest")
+        systemProperty("codeMode.testClasspath", artifact.absolutePath)
+    }
+}
+tasks.named("check") { dependsOn(codeModePackagedTest) }
+
 tasks.withType<ShadowJar>().configureEach {
+    // JS and regex are separate Truffle languages; both registrations must survive the single-JAR build.
+    mergeServiceFiles()
+    filesMatching(listOf("META-INF/services/**", "META-INF/*.kotlin_module")) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
+    // Graal's community selectors are POM-only; keep their transitive runtime JARs, not ZIP inputs.
+    dependencies {
+        exclude(dependency("org.graalvm.js:js-community:.*"))
+        exclude(dependency("org.graalvm.js:js:.*"))
+        exclude(dependency("org.graalvm.polyglot:js-community:.*"))
+    }
     archiveFileName.set("app-all.jar")
     dependsOn(verifyReleaseCompliance)
     from(repositoryRoot.file("LICENSE")) { into("META-INF"); rename { "LICENSE" } }

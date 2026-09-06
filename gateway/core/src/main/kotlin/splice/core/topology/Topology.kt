@@ -116,6 +116,12 @@ public data class ProviderConfig(
                 },
             ) { "client auth cannot configure Authorization or x-api-key in extra_headers" }
         }
+        if (quirks.codeMode == true) {
+            require(auth.kind == AuthKind.ChatgptOAuth.wire && dialect == Dialect.OPENAI_RESPONSES) {
+                "beta code_mode is only supported with auth.kind = '${AuthKind.ChatgptOAuth.wire}' " +
+                    "and dialect = 'openai-responses'"
+            }
+        }
     }
 
     public val staticHeaders: Map<String, String>

@@ -65,11 +65,12 @@ internal class TurnDriver(
         TurnConnEnd(provider, log, telemetry, failures, health),
         TurnKnownEnd(provider, log, telemetry, failures, health),
     )
-    private val cancellationSeal = CancellationSeal(provider, log, telemetry, health)
+    private val usageStamp = TurnUsageStamp(deps.usageStore, log, telemetry)
+    private val cancellationSeal = CancellationSeal(provider, log, telemetry, health, usageStamp)
     private val turnFinish = TurnFinish(
         deps.clock,
         log,
-        TurnUsageStamp(deps.usageStore, log, telemetry),
+        usageStamp,
         health,
         telemetry,
     )
@@ -126,7 +127,7 @@ internal class TurnDriver(
             failures.catchingTurnFailure { oneDrive.driveOneTurn(drive, pingClient) }
                 .onFailure { e -> ending.emitFailure(drive, e) }
         } catch (e: CancellationException) {
-            cancellationSeal.seal(drive, seal)
+            cancellationSeal.sealAndStamp(drive, seal, e)
             throw e
         }
     }

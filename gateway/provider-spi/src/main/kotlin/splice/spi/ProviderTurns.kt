@@ -17,6 +17,8 @@ public data class BuiltTurn(
      *  only place that knows what was deferred). Null = no deferral this turn, or the feature is
      *  off — the gateway's round loop is byte-for-byte unchanged. */
     val toolSearch: ToolSearchController? = null,
+    /** Gateway-local protocol wrapper for this turn; null preserves the direct round path. */
+    val roundInterceptor: RoundInterceptor? = null,
 )
 
 /** Per-turn liveness signals the gateway hands the translator: the watchdog's typed sentinel and

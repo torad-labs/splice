@@ -216,6 +216,21 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for. They are also **unofficial**: they authenticate by reusing the public OAuth client identity of each vendor's own CLI, not a documented third-party integration, and a vendor could object or break them at any time. Use them at your own risk. The **api-key** routes are ordinary pay-per-token API access with none of that ambiguity, and make the best zero-config starter.
 
+### Beta: code mode for ChatGPT
+
+Code mode is **default-off** and exclusive to Claudex-compatible providers (`auth.kind = "chatgpt-oauth"`, `dialect = "openai-responses"`), including custom head names. In the provider's existing quirks section:
+
+```toml
+[providers.codex.quirks]
+code_mode = true # beta; false or omitted disables both runner and guidance
+```
+
+Enabling it automatically appends orchestration guidance to the caller's instructions and exposes splice's bundled JavaScript runner on eligible GPT-6 Astra/Sol turns. Compaction, toolless turns, and forced named-tool choices keep the ordinary path. Direct tools remain available; all real operations use Claude Code's permission-checked client handlers. No Codex or Node installation is required. Child JVMs bound workers, time, and heap and deny guest host/I/O access; Graal community is not an OS-hardened sandbox against same-user attackers.
+
+Every head using that provider shares the setting. Topology is read only when the daemon boots: finish ongoing work, edit TOML, then run `splice restart` for a **full daemon restart**. A head restart alone does not reload TOML. Finish code-mode work before toggling or restarting: pending JavaScript execution cannot survive a daemon restart, and splice never reruns the lost source automatically.
+
+In a bounded real-Astra test on synthetic tasks, guidance improved batching without reducing graded correctness. That is not a guarantee of better output or less redundant investigation on arbitrary projects; the feature remains beta.
+
 ## Why you might not want splice
 
 Reasons to walk away:

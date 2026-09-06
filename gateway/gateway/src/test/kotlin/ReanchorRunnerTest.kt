@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
@@ -19,12 +20,14 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.round.FoldRunner
 import splice.gateway.round.ReanchorRunner
+import splice.gateway.round.RoundInterception
 import splice.gateway.round.RoundStrategy
 import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.SseEmitterFactory
 import splice.spi.FoldController
 import splice.spi.ReanchorController
 import splice.spi.RetryBackoff
+import splice.spi.RoundInterceptor
 import splice.spi.ToolSearchController
 import splice.spi.WireSink
 
@@ -769,5 +772,86 @@ class RoundStrategySingleRoundTest {
             failure.salvagedUsage.outputTokens,
             "a single-round failure's harvested burn must reach finishTurn's stamp (DR-124's mechanism)",
         )
+    }
+}
+
+/** Blocker #5: code mode invokes the raw round post repeatedly; cancellation must retain only
+ *  completed raw rounds, not a final expanded accumulator or an interrupted hidden post. */
+class RoundStrategyUsageObservationTest {
+
+    @Test
+    fun `code mode observes two completed raw rounds but never the cancelled hidden post`() = runTest {
+        val h = Harness()
+        val observed = mutableListOf<TurnOutcome>()
+        val cancellation = kotlinx.coroutines.CancellationException("hidden post cancelled")
+        var posts = 0
+
+        val thrown = try {
+            RoundStrategy(
+                key = "t",
+                log = { },
+                emitter = h.emitter,
+                signals = h.signals(),
+                postRoundToSink = { _, _ -> error("the direct code-mode path must not buffer") },
+                postRound = {
+                    when (++posts) {
+                        1 -> TurnOutcome.Success(
+                            hasToolUse = true,
+                            incomplete = false,
+                            usage = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 10, reasoningTokens = 1),
+                        )
+                        2 -> TurnOutcome.Success(
+                            hasToolUse = false,
+                            incomplete = false,
+                            usage = Usage(inputTokens = 200, outputTokens = 5, cachedTokens = 20, reasoningTokens = 2),
+                        )
+                        else -> throw cancellation
+                    }
+                },
+                finish = { h.finish(it) },
+                interception = RoundInterception(
+                    rawRoundObserved = { observed += it },
+                    interceptor = RoundInterceptor { _, _, post ->
+                        post("completed-1")
+                        post("completed-2")
+                        post("cancelled-hidden")
+                    },
+                ),
+            ).run(continuationBody(), fold = null, reanchor = null)
+            error("the cancelled hidden post must propagate")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            e
+        }
+
+        assertSame(cancellation, thrown, "the exact cancellation must leave the code-mode driver")
+        assertEquals(2, observed.size, "only posts that returned a terminal outcome are known")
+        assertEquals(listOf(100L, 200L), observed.map { (it as TurnOutcome.Success).usage.inputTokens })
+        assertEquals(listOf(3L, 5L), observed.map { (it as TurnOutcome.Success).usage.outputTokens })
+        assertNull(h.finished, "a cancelled hidden post must never manufacture a terminal outcome")
+    }
+
+    @Test
+    fun `disabled code mode does not observe ordinary raw posts`() = runTest {
+        val h = Harness()
+        val observed = mutableListOf<TurnOutcome>()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = h.emitter,
+            signals = h.signals(),
+            postRoundToSink = { _, _ -> error("the direct path must not buffer") },
+            postRound = {
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(outputTokens = 3),
+                )
+            },
+            finish = { h.finish(it) },
+            interception = RoundInterception(rawRoundObserved = { observed += it }),
+        ).run(continuationBody(), fold = null, reanchor = null)
+
+        assertTrue(observed.isEmpty(), "ordinary turns must retain their existing accounting path")
+        assertTrue(h.finished is TurnOutcome.Success, "the direct path still finishes normally")
     }
 }

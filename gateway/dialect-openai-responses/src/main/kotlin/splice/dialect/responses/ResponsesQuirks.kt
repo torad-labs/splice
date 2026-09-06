@@ -18,7 +18,7 @@ public data class ResponsesQuirks(
      *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
      *  Lite turns (compaction included): instructions ride as a developer input item (top-level field
      *  omitted), tools ride as an additional_tools input item (top-level field omitted),
-     *  parallel_tool_calls is FORCED false (splice omitting it left the backend default parallel ON
+     *  parallel_tool_calls defaults to false (splice omitting it left the backend default parallel ON
      *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
      *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
      *  backend (direct probe 2026-07-19: 200, correct tool call). */
@@ -26,14 +26,11 @@ public data class ResponsesQuirks(
     /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
      *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
     val emitEmptyLiteInstructions: Boolean = false,
-    /** The VALUE sent for parallel_tool_calls on responses-lite turns (the field itself always
-     *  rides — a lite request without it 400s). codex-rs reads this per model from
-     *  `model_info.supports_parallel_tool_calls` rather than hardcoding it, so it is a knob here
-     *  too. Default false = today's behaviour. Turning it on lets the model batch tool calls in one
-     *  turn instead of one per turn; measured 2026-07-31, claudex averages 386 output tokens/turn
-     *  against grok's 663 and kimi's 786, i.e. ~2x the round-trips, and every round-trip re-sends
-     *  the whole context. UNTESTED against the live backend — see the 30-50 parallel Task spray in
-     *  this class's header, which came from omitting the field entirely. */
+    /** Explicit parallel_tool_calls value for responses-lite. Official Codex construction gates
+     *  model parallel support with !use_responses_lite, so Lite sends false even when metadata
+     *  advertises support (pinned source reviewed 2026-09-05). True remains an experimental override,
+     *  not proven task-efficiency parity. JavaScript callback batching is a separate mechanism;
+     *  the client's explicit parallel-disable choice still wins over this knob. */
     val liteParallelToolCalls: Boolean = false,
     /** codex parity: `text.verbosity` on lite turns. codex-cli 0.145.0 sends "low"; null omits. */
     val liteTextVerbosity: String? = "low",

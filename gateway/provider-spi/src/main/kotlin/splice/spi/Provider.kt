@@ -85,4 +85,7 @@ public interface Provider : ProviderIdentity {
      *  SSE post; the runner returns null for "ride SSE", so the overlay can only ever remove work,
      *  never add a failure mode the SSE path did not already have. */
     public val wsRunner: WsRoundRunner? get() = null
+
+    /** Cancel provider-owned per-turn resources when a head stops; the provider remains restartable. */
+    public fun onHeadStop() {}
 }

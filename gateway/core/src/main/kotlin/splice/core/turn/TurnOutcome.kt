@@ -50,6 +50,14 @@ public data class ToolSearchCall(
     val raw: JsonObject,
 )
 
+/** A gateway-local custom tool call captured verbatim from a Responses output item. */
+public data class GatewayCustomCall(
+    val callId: String,
+    val name: String,
+    val input: String,
+    val raw: JsonObject,
+)
+
 public sealed class TurnOutcome {
     /** Buffers ride the outcome (pinned P2-MACH slot): the gateway pipeline runs
      *  promote-to-text -> honesty gates -> mirror -> terminal AFTER the machine returns. */
@@ -92,6 +100,8 @@ public sealed class TurnOutcome {
          *  deferral active; the gateway never reads their contents — it hands them to the turn's
          *  ToolSearchController (the same opaque-forwarding rule as reasoningEnvelopes). */
         val toolSearches: List<ToolSearchCall> = emptyList(),
+        /** Gateway-local custom calls. Empty keeps every non-bridge outcome byte-identical. */
+        val customCalls: List<GatewayCustomCall> = emptyList(),
     ) : TurnOutcome()
 
     public data class Failure(

@@ -58,6 +58,7 @@ internal class TurnDriveFactory(
             channel = channel,
             signals = signals,
             toolSearch = built.toolSearch,
+            roundInterceptor = built.roundInterceptor,
         )
     }
 }

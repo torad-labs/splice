@@ -6,6 +6,7 @@
 package splice.provider.codex
 
 import splice.core.auth.Credentials
+import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
@@ -13,6 +14,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.spi.BuiltTurn
 import splice.spi.ProviderTuning
 
 public class CodexProvider(
@@ -28,7 +30,11 @@ public class CodexProvider(
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
+    codeModeBridge: CodexCodeModeBridge? = null,
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
+
+    private val codeModeTurns = CodexCodeModeTurnBuilder(codeModeBridge)
+    private val codeMode = codeModeBridge
 
     /** Proven against the live ChatGPT backend by the WS-0 spike
      *  (gateway/spikes/results/responses-websocket.md): handshake, event vocabulary and
@@ -39,6 +45,13 @@ public class CodexProvider(
 
     /** codex-rs's per-turn routing/session headers — the measurement is in CodexRoutingHeaders. */
     override fun perTurnHeaders(meta: TurnMeta): Map<String, String> = routing.forTurn(meta)
+
+    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
+        codeModeTurns.prepare(body, compact, sessionId, super.buildTurn(body, compact, sessionId))
+
+    override fun onHeadStop() {
+        codeMode?.onHeadStop()
+    }
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")

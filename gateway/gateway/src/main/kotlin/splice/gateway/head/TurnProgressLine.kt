@@ -1,4 +1,4 @@
-// NEW (2026-09-06): what splice says on a wire that has gone quiet.
+// NEW: what splice says on a wire that has gone quiet (2026-09-06).
 //
 // gpt-6-astra is served buffered end to end on this backend: probed live 2026-09-06, two identical
 // requests returned every reasoning-summary event and the whole answer inside the last 300 ms of a

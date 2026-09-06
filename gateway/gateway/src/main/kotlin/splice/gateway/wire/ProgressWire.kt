@@ -1,4 +1,4 @@
-// NEW (2026-09-06): the keepalive pinger's own write surface, so the pinger and the turn never
+// NEW: the keepalive pinger's own write surface (2026-09-06), so the pinger and the turn never
 // share mutable wire state. Both of the pinger's frames — the heartbeat ping and the status line
 // splice writes on a quiet wire — are assembled and written through THIS pair, never through the
 // turn's own [SseFrameWriter]/[WireBlockWriter].

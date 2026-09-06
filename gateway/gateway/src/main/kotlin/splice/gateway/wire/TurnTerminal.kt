@@ -27,6 +27,13 @@ public fun interface UsagePayloadBuilder {
     public operator fun invoke(usage: Usage?): JsonObject
 }
 
+/** One status line, composed at the instant the wire takes it. A seam rather than a String because
+ *  composing a line CONSUMES the caller's ticker state and reads its live clock — see
+ *  [TurnTerminal.progress]. `operator fun invoke` keeps every call site a plain lambda. */
+public fun interface ProgressLine {
+    public operator fun invoke(): String
+}
+
 public interface TurnTerminal : WireSink {
     /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
      *  abandon sealed it, or a failed error write made retrying pointless. NOT merely "attempted":
@@ -85,8 +92,14 @@ public interface TurnTerminal : WireSink {
      *  HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first token). It is
      *  the proxy speaking, not the model, and it is never counted as model output — the pinger's
      *  write port decides that. Written only after message_start and only while the turn is open;
-     *  the non-stream sink has no incremental wire, so its default is a no-op. */
-    public suspend fun progress(text: String) {}
+     *  the non-stream sink has no incremental wire, so its default is a no-op.
+     *
+     *  [line] is a PRODUCER, not a string, because composing the line CONSUMES state — the caller's
+     *  ticker only says "holding this turn open" once, and reads elapsed and whether the model has
+     *  output yet as it goes. Building it for a write that the guards then drop spends the intro on
+     *  a line no client ever sees, and the next tick silently degrades to the ticker form. So the
+     *  producer runs where the write happens and nowhere else, and this default never runs it. */
+    public suspend fun progress(line: ProgressLine) {}
 }
 
 // HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start

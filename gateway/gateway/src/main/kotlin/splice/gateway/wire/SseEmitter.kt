@@ -99,14 +99,21 @@ public class SseEmitter internal constructor(
      *  it BEFORE calling [closeProgress], so a line that had already passed the gate and is waiting
      *  on [progressMutex] re-reads the seal once it holds the lock and writes nothing — the reason
      *  the check is repeated rather than merely guarding the entry. Without that second read a
-     *  status line could open a fresh block after the ending had closed the last one. */
-    override suspend fun progress(text: String) {
+     *  status line could open a fresh block after the ending had closed the last one.
+     *
+     *  [line] is invoked HERE — inside the lock, past every guard — and never before. Composing a
+     *  line consumes the caller's ticker state, so building one for a write that is then dropped
+     *  loses it: the pre-opener ticks ate the "holding this turn open" intro and the client's first
+     *  visible line was the terse follow-up form (found by splice-astra in the combined run,
+     *  2026-09-06). The same laziness makes the line's clauses true when WRITTEN rather than when
+     *  called, which is what TurnProgressLine's own contract already claimed. */
+    override suspend fun progress(line: ProgressLine) {
         if (seal.get() != SealState.OPEN) return
         if (!start.hasOpened) return
         progressMutex.withLock {
             if (seal.get() == SealState.OPEN) {
                 val idx = progressIndex ?: progress.blocks.openThinking().also { progressIndex = it }
-                progress.blocks.thinkingDelta(idx, text)
+                progress.blocks.thinkingDelta(idx, line())
             }
         }
     }

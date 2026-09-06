@@ -51,13 +51,15 @@ internal class TurnOneDrive(
                         heartbeat = Heartbeat {
                             drive.emitter.heartbeat()
                             if (deps.progressLine) {
-                                drive.emitter.progress(
+                                // Composed only if the emitter actually writes it: a line built for
+                                // a dropped write spends the intro and the clock reading with it.
+                                drive.emitter.progress {
                                     progress.next(
                                         elapsedMs = deps.clock() - drive.t0,
                                         model = drive.upstreamModel,
                                         sawOutput = drive.perf.hasMark(PerfKeys.FIRST_DELTA),
-                                    ),
-                                )
+                                    )
+                                }
                             }
                         },
                     )

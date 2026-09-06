@@ -149,9 +149,9 @@ class ModelCatalogTest {
     @Test
     fun `usage scaling gives a row a window the client cannot be told about`() {
         // Claude Code resolves a window two ways only: /\[1m\]/i on the id -> 1e6, else the ONE
-        // process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS (= the pinned row's window). A third window
-        // therefore cannot come from the client — it comes from us scaling the token counts we
-        // report, since it compacts on (input+cache)/window and splice owns the numerator.
+        // process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS, which the launch plants as a constant 1e6.
+        // Every declared window therefore comes from us scaling the token counts we report, since
+        // it compacts on (input+cache)/window and splice owns the numerator.
         val xai = ModelCatalog(
             discoveryPrefix = "claude-grok--",
             models = listOf(
@@ -162,17 +162,21 @@ class ModelCatalogTest {
             defaultContextWindow = 256_000,
             pinnedModel = "grok-4.6",
         )
-        // the pinned row IS the env: exact counts, nothing to correct
-        assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6"))
-        assertEquals(1.0, xai.usageScale("grok-4.6"))
-        // a "[1m]" row bypasses the env entirely, so it is honest too
+        // the pinned row scales like any other: the client believes the constant 1e6
+        assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6"))
+        assertEquals(3.90625, xai.usageScale("grok-4.6"))
+        // a "[1m]" row bypasses the env entirely and declares 1e6, so its counts ride raw
         assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.3[1m]"))
         assertEquals(1.0, xai.usageScale("grok-4.3[1m]"))
-        // the middle row is the one the client has no way to represent: it believes 256k, so
-        // halving the reported counts makes it compact when REAL usage reaches 500k
-        assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6[500k]"))
-        assertEquals(0.512, xai.usageScale("grok-4.6[500k]"))
-        assertEquals(0.512, xai.usageScale("claude-grok--grok-4.6[500k]"), "wrapped form too")
+        // the 500k row: the client believes 1e6, so doubling the reported counts makes it compact
+        // when REAL usage reaches 500k
+        assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6[500k]"))
+        assertEquals(2.0, xai.usageScale("grok-4.6[500k]"))
+        // the discovery-WRAPPED spelling starts with "claude-", which makes Claude Code ignore the
+        // env (cli 2.1.257 kL) and fall back to its 200k default: no window of ours is in play, so
+        // the counts ride raw rather than against a client number we did not set
+        assertEquals(500_000L, xai.clientContextWindowFor("claude-grok--grok-4.6[500k]"))
+        assertEquals(1.0, xai.usageScale("claude-grok--grok-4.6[500k]"), "wrapped: the client ignores our env")
     }
 
     // DR-24: the 0.512 pin above once depended on exactWindows last-wins — fixture DECLARATION
@@ -199,8 +203,8 @@ class ModelCatalogTest {
                 defaultContextWindow = 256_000,
                 pinnedModel = "grok-4.6",
             )
-            assertEquals(0.512, xai.usageScale("grok-4.6[500k]"), "order ${rows.map { it.id }}")
-            assertEquals(1.0, xai.usageScale("grok-4.6"), "order ${rows.map { it.id }}")
+            assertEquals(2.0, xai.usageScale("grok-4.6[500k]"), "order ${rows.map { it.id }}")
+            assertEquals(3.90625, xai.usageScale("grok-4.6"), "order ${rows.map { it.id }}")
         }
     }
 
@@ -240,7 +244,11 @@ class ModelCatalogTest {
             pinnedModel = "k3-256k",
         )
         assertEquals(1.0, kimi.usageScale("k3[1m]"), "client 1e6 over declared 1e6")
-        assertEquals(1.0, kimi.usageScale("k3-256k"), "the pinned row is the env: exact")
+        assertEquals(
+            1_000_000.0 / 262_144.0,
+            kimi.usageScale("k3-256k"),
+            "the pinned row scales like any other: constant client 1e6 over its declared 256k",
+        )
     }
 
     @Test
@@ -296,9 +304,9 @@ class ModelCatalogTest {
     }
 
     @Test
-    fun `a row declaring LESS than the session window compacts at its own window`() {
-        // codex pins a 400k model but ships a 128k spark row; the client gives every non-[1m] id the
-        // one env window, so spark would run to 400k and overrun upstream. Scaling up fixes that.
+    fun `every row compacts at its own window - the pinned one included`() {
+        // codex pins a 400k model and ships a 128k spark row; the client gives every non-[1m] id the
+        // one env window (a constant 1e6), so each row is scaled up to compact at its own number.
         val codex = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(
@@ -308,8 +316,44 @@ class ModelCatalogTest {
             defaultContextWindow = 400_000,
             pinnedModel = "gpt-5.6-sol",
         )
-        assertEquals(1.0, codex.usageScale("gpt-5.6-sol"))
-        assertEquals(3.125, codex.usageScale("gpt-5.3-codex-spark"))
+        assertEquals(2.5, codex.usageScale("gpt-5.6-sol"))
+        assertEquals(7.8125, codex.usageScale("gpt-5.3-codex-spark"))
+    }
+
+    // 2026-09-05: the codex rows moved 400k -> 272k to stay under OpenAI's 2x price line, and six
+    // running sessions kept compacting at 340k because the pinned row's window WAS the launch env:
+    // the rebuilt catalog computed a 1.0 factor against 272k while each process still divided by
+    // its frozen 400k. A constant client window makes the same edit land on the next turn.
+    @Test
+    fun `a window edit reaches a running process - the client window is a constant`() {
+        fun codex(sol: Long) = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry(id = "gpt-5.6-sol", contextWindow = sol)),
+            defaultContextWindow = sol,
+            pinnedModel = "gpt-5.6-sol",
+        )
+        val before = codex(400_000)
+        val after = codex(272_000)
+        assertEquals(before.clientLaunchWindow, after.clientLaunchWindow, "the launch env never moves")
+        assertEquals(1_000_000L, before.clientContextWindowFor("gpt-5.6-sol"))
+        assertEquals(1_000_000L, after.clientContextWindowFor("gpt-5.6-sol"))
+        assertEquals(2.5, before.usageScale("gpt-5.6-sol"), "400k real reads as the client's 1e6")
+        assertEquals(1_000_000.0 / 272_000.0, after.usageScale("gpt-5.6-sol"), "272k real reads as 1e6 now")
+    }
+
+    // A passthrough head serves Claude Code's own model ids, which start with "claude-": the client
+    // ignores CLAUDE_CODE_MAX_CONTEXT_TOKENS for those and resolves the window from its own table
+    // (cli 2.1.257 kL/PL), so no window of ours exists to scale against — counts must ride raw.
+    @Test
+    fun `a claude- id ignores the launch env so its counts ride raw`() {
+        val anthropic = ModelCatalog(
+            discoveryPrefix = "claude-splice--",
+            models = listOf(ModelEntry(id = "claude-fable-5", contextWindow = 200_000)),
+            defaultContextWindow = 200_000,
+            pinnedModel = "claude-fable-5",
+        )
+        assertEquals(200_000L, anthropic.clientContextWindowFor("claude-fable-5"), "the declared window, not ours")
+        assertEquals(1.0, anthropic.usageScale("claude-fable-5"))
     }
 
     @Test

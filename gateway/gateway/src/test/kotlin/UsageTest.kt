@@ -275,10 +275,10 @@ class UsageTest {
 /** The proxy seam that gives a picker row a window the CLIENT has no way to represent.
  *
  * Claude Code resolves a context window two ways only — `/\[1m\]/i` on the id -> 1e6, else the one
- * process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS — so at most two windows exist per session. It
+ * process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS, which the launch plants as a constant 1e6. It
  * compacts on `(input + cache_creation + cache_read) / window`, and splice writes that numerator,
- * which is the third window's only possible source. These pin that the scale actually reaches the
- * payload, keyed on the RAW picker id (two rows can share one upstream id).
+ * which is every declared window's only possible source. These pin that the scale actually reaches
+ * the payload, keyed on the RAW picker id (two rows can share one upstream id).
  */
 class UsageScalingTest {
 
@@ -320,25 +320,29 @@ class UsageScalingTest {
         assertTrue(logged.single().contains("grok-4.6[500k]"), "the line names the row: $logged")
 
         val exact = mutableListOf<String>()
-        TurnWiring(LogSink { exact += it }).usagePayloadBuilder(xai, meta("grok-4.6"))(Usage(1_000, 7, 200))
-        assertTrue(exact.isEmpty(), "an exact row must not log, got $exact")
+        TurnWiring(LogSink { exact += it }).usagePayloadBuilder(xai, meta("grok-4.3[1m]"))(Usage(1_000, 7, 200))
+        assertTrue(exact.isEmpty(), "an exact row (declared 1e6 = the client's 1e6) must not log, got $exact")
     }
 
     @Test
-    fun `the pinned row is reported EXACTLY - no head that wants one window may drift`() {
+    fun `the pinned row scales too - the client's constant 1e6 carries its declared 256k`() {
+        // Since 2026-09-05 the launch plants a constant 1e6 client window, so the pinned row is no
+        // longer exempt: real 100k of a 256k row must read as 39.06% of the client's 1e6, which is
+        // what lets a TOML window edit reach this process without a relaunch.
         val p = payload("grok-4.6", input = 100_000, cached = 40_000)
-        assertEquals(60_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "input minus cached")
-        assertEquals(40_000, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong())
-        assertEquals(256_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(234_375, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(100k - 40k) x 3.90625")
+        assertEquals(156_250, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "40k x 3.90625")
+        assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
+        assertEquals("39.0625", p["used_percentage"]?.jsonPrimitive?.content, "100k of the row's own 256k")
     }
 
     @Test
-    fun `a 500k row halves the reported counts so it compacts at a REAL 500k`() {
-        // The client believes 256k. Real 250k of context must read as ~128k (50.0%), so the bar
-        // fills at real 500k instead of real 256k. Selectable live from /model.
+    fun `a 500k row doubles the reported counts so it compacts at a REAL 500k`() {
+        // The client believes 1e6. Real 250k of context must read as 500k (50.0%), so the bar
+        // fills at real 500k. Selectable live from /model.
         val p = payload("grok-4.6[500k]", input = 250_000, cached = 0)
-        assertEquals(128_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
-        assertEquals(256_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
+        assertEquals(500_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
         assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "half of the row's own 500k")
     }
 
@@ -348,12 +352,13 @@ class UsageScalingTest {
     // shape rather than an edge case (review 2026-08-28, PR 99). BOTH terms scale, deliberately: the
     // ratio Claude Code compacts on is (input + cache_read)/window, so scaling only one half would
     // report 250k of real context as 69% of the client's 256k instead of the true 50%, and the row's
-    // whole reason for existing is that that percentage is honest against ITS window.
+    // whole reason for existing is that that percentage is honest against ITS window. Scaled only
+    // one half, 250k real on a 500k row would read 250k+200k = 45% of 1e6 instead of the true 50%.
     @Test
     fun `cache_read scales with input, so the compaction ratio is unchanged by the cached split`() {
         val p = payload("grok-4.6[500k]", input = 250_000, cached = 100_000)
-        assertEquals(76_800, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(250k - 100k) x 0.512")
-        assertEquals(51_200, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "100k x 0.512")
+        assertEquals(300_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(250k - 100k) x 2.0")
+        assertEquals(200_000, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "100k x 2.0")
         assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "same 50% as the cached=0 case")
     }
 

@@ -113,6 +113,7 @@ public class HeadServer(
         // A detached compaction (TurnStreamer) has no head to record for once the engine is down;
         // the driver is reused by startLocked, so this ends compactions, never their scope.
         driver.stopDetached()
+        provider.onHeadStop()
         deps.usageStore.flushNow()
     }
 }

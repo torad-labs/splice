@@ -4,6 +4,13 @@ plugins {
     `java-test-fixtures`
 }
 
+// Keep CPU-sized Netty/JDK/coroutine pools bounded in the shared build process budget.
+// The load gate still holds 1000 streams; a 32-core host otherwise exhausts native threads
+// before testing that concurrency ceiling (pthread_create EAGAIN under TasksMax=512).
+tasks.withType<Test>().configureEach {
+    jvmArgs("-XX:ActiveProcessorCount=4")
+}
+
 dependencies {
     implementation(project(":core"))
     implementation(project(":provider-spi"))

@@ -34,7 +34,14 @@ internal class ProviderAssembly(
     private val passthroughArm = PassthroughArm(statePaths, passthroughAssembly, kimiOAuth)
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh)
     private val apiKeyResponsesArm = ApiKeyResponsesArm()
-    private val responsesArm = ResponsesArm(probeScope, log, refreshCall, grokResponsesArm, apiKeyResponsesArm)
+    private val responsesArm = ResponsesArm(
+        statePaths,
+        probeScope,
+        log,
+        refreshCall,
+        grokResponsesArm,
+        apiKeyResponsesArm,
+    )
 
     // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
     // (responses or chat + grok-oauth), openai-platform (responses+api-key, hash cache key),

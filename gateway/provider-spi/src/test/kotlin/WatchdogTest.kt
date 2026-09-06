@@ -33,7 +33,9 @@ import splice.spi.InflightGate
 import splice.spi.Ticker
 import splice.spi.TurnWatchdog
 import splice.spi.WatchdogFired
+import splice.spi.WsPathPulse
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -164,6 +166,43 @@ class WatchdogTest {
             assertTrue(fired is WatchdogFired.Idle, "expected Idle once the client has seen output, got $fired")
             assertTrue((fired as WatchdogFired.Idle).sawClientFrame)
             assertEquals(300L, fired.limitMs, "the sentinel names the tier's cap")
+            poller.cancel()
+            slot.release()
+        }
+    }
+
+    // THE 2026-09-05 CASE, the other half of the frame rule. gpt-6-astra reasons in silence for
+    // 300-750 s before its first delta, and the ChatGPT backend pings the socket every ~20 s the whole
+    // time; eleven turns that day were reaped at the 300 s tier with a server ping 5-20 s old on every
+    // close line, each re-POSTed cold by the client. A round past its tier on a path that is still
+    // being pinged is HELD, and reaped only once the pings stop too. The hold is recorded once and
+    // logged once. Real clock, like every other idle arm: it proves idleness as the slot measures it.
+    @Test
+    fun `a silent round on a live path is held past its tier, and reaped once the path goes quiet`() {
+        runBlocking {
+            val gate = InflightGate({ 0 })
+            val slot = gate.acquire()
+            val lines = mutableListOf<String>()
+            val dog = TurnWatchdog(budget(firstByteMs = 300, idleMs = 300, capMs = 30_000), log = { lines += it })
+            val pingAgo = AtomicLong(8_000) // the last server ping is 8 s old: a live path
+            val target = launch { delay(10.seconds) }
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false }, WsPathPulse { pingAgo.get() })
+            delay(900) // silent 3x the first-output tier
+            assertNull(dog.fired, "a round on a path the server still pings was reaped")
+            assertTrue(target.isActive)
+            val held = checkNotNull(dog.held) { "the hold must be recorded" }
+            assertTrue(held.idleMs >= 300L, "the idleness the poller judged: $held")
+            assertEquals(300L, held.limitMs)
+            assertEquals(8_000L, held.pingAgoMs)
+            assertFalse(held.sawClientFrame)
+            assertEquals(1, lines.size, "one line per turn, not one per poll: $lines")
+            assertTrue("on a live path" in lines.single() && "holding the round" in lines.single(), lines.single())
+            pingAgo.set(90_000) // three pings missed: the path itself has gone quiet
+            target.join()
+            val fired = dog.fired
+            assertTrue(fired is WatchdogFired.Idle, "a quiet path is the stall the tier exists for, got $fired")
+            assertEquals(300L, (fired as WatchdogFired.Idle).limitMs)
+            assertEquals(1, lines.size, "the reap is the terminal's line, not this one's")
             poller.cancel()
             slot.release()
         }

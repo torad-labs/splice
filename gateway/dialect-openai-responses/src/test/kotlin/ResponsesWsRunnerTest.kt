@@ -27,6 +27,7 @@ import splice.dialect.responses.ResponsesWsRunner
 import splice.dialect.responses.ResponsesWsSession
 import splice.dialect.responses.WsUpstream
 import splice.dialect.responses.responsesRequestJson
+import splice.spi.NEVER_PINGED_MS
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket
@@ -69,7 +70,8 @@ private class Rig(private val script: (Int) -> List<String>) {
         handshakeHeaders = { emptyMap() },
     )
 
-    private var listener: WebSocket.Listener? = null
+    /** The live socket's listener, so a test can deliver a server ping the way the JDK would. */
+    var listener: WebSocket.Listener? = null
 
     @Suppress("UNUSED_PARAMETER")
     private fun connect(unusedUri: URI, headers: Map<String, String>, l: WebSocket.Listener): WebSocket {
@@ -151,6 +153,20 @@ private const val BODY_COMPACT =
 private const val BODY_ANSWERED =
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
         """{"type":"function_call_output","call_id":"call_9","output":"file"}]}"""
+
+/** The socket argument onPing hands the listener; it only re-arms request(1) on it. */
+private object FakeSocketForPing : WebSocket {
+    override fun sendText(data: CharSequence, last: Boolean) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendBinary(d: java.nio.ByteBuffer, l: Boolean) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendPing(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendPong(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendClose(c: Int, r: String) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun request(n: Long) = Unit
+    override fun getSubprotocol() = ""
+    override fun isOutputClosed() = false
+    override fun isInputClosed() = false
+    override fun abort() = Unit
+}
 
 class ResponsesWsRunnerTest {
 
@@ -316,6 +332,20 @@ class ResponsesWsRunnerTest {
     /** DR-7: the abort kills THIS round's socket and its events end as an IOException — the shape
      *  the head depends on, because a torn read is what the translator folds into an honest
      *  terminal. A cancellation instead would take the collector down and lose the salvage. */
+    /** 2026-09-06: the accepted round carries its OWN socket's ping pulse for the idle watchdog —
+     *  never pinged reads as never, a server ping read by the listener reads as its age. */
+    @Test
+    fun `an accepted round reads the server pings on its own socket`() = runTest {
+        val rig = Rig { listOf(created("resp_1")) }
+        val round = checkNotNull(rig.accept()) { "the scripted round must be accepted" }
+
+        assertEquals(NEVER_PINGED_MS, round.pathPulse.lastPingAgoMs(), "no ping yet reads as never")
+        val socket = checkNotNull(rig.listener)
+        socket.onPing(FakeSocketForPing, java.nio.ByteBuffer.allocate(0))
+        val age = round.pathPulse.lastPingAgoMs()
+        assertTrue(age in 0..5_000, "a ping just delivered is seconds old at most, got $age ms")
+    }
+
     @Test
     fun `aborting a live round tears its own socket and ends the flow as a torn read - DR-7`() = runTest {
         val rig = Rig { listOf(created("resp_1")) }

@@ -59,6 +59,11 @@ public data class HeadDeps(
     val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
     // Operator-locked off: provider-native reasoning may display, but splice never mirrors it.
     val mirrorReasoning: Boolean = false,
+    /** splice's status line on a turn that has gone quiet (TurnProgressLine). Distinct from
+     *  [mirrorReasoning], which is locked off because it authors a "[reasoning summary]" TEXT block
+     *  into the transcript: this writes no summary and claims nothing about the model's reasoning,
+     *  only about the wait itself, and it is one TOML line to turn off. */
+    val progressLine: Boolean = true,
     /** TRUE only for a head whose auth kind is `client` (campaign claude-head): splice holds no
      *  credential for it, so the caller's own auth headers are forwarded upstream and the
      *  mgmt-key front door is bypassed. FALSE for every other head, which keeps enforcing it. */

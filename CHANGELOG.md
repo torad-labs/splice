@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+- **Every OAuth head signs in on its own credential file.** `chatgpt-oauth`, `grok-oauth` and
+  `kimi-oauth` now default to `~/.config/splice/auth/{codex,grok,kimi}.json` (kimi's `device_id`
+  beside it), written by `splice login <head>` on whichever account you choose there, which may
+  differ from the account the vendor's own CLI or desktop app uses. The apps' files
+  (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`) are never read
+  unless `auth.file` names one. Sharing a file was a trap: a refresh rotates the refresh token, so the
+  app and splice signed each other out, and the head had no credential while the other side rewrote
+  the file (24 failed turns in one 16-second rotation on 2026-09-05). Existing configs that name an
+  app's file keep working; `splice doctor` now warns about them, and the fix is to drop `file` and run
+  `splice login <head>`. The `CODEX_AUTH_PATH` / `GROK_AUTH_PATH` overrides still apply.
+
 ### Fixed
 - **A compaction outlives its client.** Claude Code abandons an auto-compaction at 600 s and
   retries the same bytes minutes later, and every abort used to cancel the upstream turn (Astra

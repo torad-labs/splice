@@ -190,12 +190,14 @@ shell's environment; `splice doctor` detects this state explicitly. Keys in
 
 Each of these is a **password-equivalent secret**: anything that can read the file (or the environment variable) can spend against your account. Keep files `600`, never commit them, never paste them.
 
+Splice signs in on its own. Each OAuth head keeps its own credential file under `~/.config/splice/auth/`, written by `splice login <head>`, and it may be a different account from the one the vendor's own CLI or desktop app uses. The native apps' files (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`) are never read unless you name one in `auth.file`. Sharing a file with the native app is a trap: a refresh rotates the refresh token, so the app and splice invalidate each other's session, and the head has no credential while the other side rewrites the file. `splice doctor` warns when a head still names one.
+
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
 | Claude (`claude-splice`) | `client` | Claude Code's native credential store | forwarded by Claude Code; splice stores no credential |
-| codex (ChatGPT) | `chatgpt-oauth` | `~/.codex/auth.json` | OAuth tokens — password-equivalent |
-| grok (xAI) | `grok-oauth` | `~/.grok/auth.json` | OAuth tokens — password-equivalent |
-| kimi (Moonshot) | `kimi-oauth` | `~/.kimi/credentials/kimi-code.json` | device-flow token — password-equivalent |
+| codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
+| grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
+| kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
 | OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
 | Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
 | splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |

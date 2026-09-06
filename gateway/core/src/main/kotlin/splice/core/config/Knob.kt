@@ -96,6 +96,19 @@ public enum class Knob(
         restartRequired = true,
     ),
 
+    // splice's status line on a turn that has gone quiet: "holding this turn open. 4m20s into the
+    // turn, no output from gpt-6-astra yet." A row served buffered end to end (gpt-6-astra, probed
+    // 2026-09-06) shows the user a blank spinner for 5-12 minutes with nothing to distinguish a
+    // working turn from a hung one; this is the proxy answering that, and it is NOT the mirror
+    // above — no reasoning summary, no claim about the model's thinking, only about the wait.
+    PROGRESS_LINE(
+        "progressLine",
+        KnobKind.BOOL,
+        listOf("CLAUDEX_PROGRESS_LINE", "SPLICE_PROGRESS_LINE"),
+        true,
+        restartRequired = true,
+    ),
+
     // Reasoning-continuation folding (codex 518n-2 "dumbing down" fix). The fold set is the codex
     // models that TRUNCATE their own chain-of-thought at reasoning_tokens == 518n-2 (luna/terra/5.5,
     // NOT sol); a comma list so the operator can edit it. Detection replays the round's encrypted

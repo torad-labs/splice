@@ -87,6 +87,11 @@ internal class TurnStreamer(
                 write = { frame ->
                     channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, deps.clock) }
                 },
+                // The pinger's own frames (heartbeat ping, status line) — same socket, same mutex,
+                // never counted as model output. See ClientChannel.timedProgressWrite.
+                progressWrite = { frame ->
+                    channel.writeMutex.withLock { channel.timedProgressWrite(frame, perf, deps.clock) }
+                },
                 model = built.meta.originalModel,
                 usagePayload = wiring.usagePayloadBuilder(
                     provider.catalog,

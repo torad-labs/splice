@@ -79,6 +79,14 @@ public interface TurnTerminal : WireSink {
      *  reasoning phase or a slow compaction. Written only after message_start and only while the
      *  turn is still open; the non-stream sink has no incremental wire, so its default is a no-op. */
     public suspend fun heartbeat() {}
+
+    /** splice's own status line for a turn that has gone quiet: a short sentence about the wait,
+     *  appended to one thinking block so a user watching a long silent turn can see it is being
+     *  HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first token). It is
+     *  the proxy speaking, not the model, and it is never counted as model output — the pinger's
+     *  write port decides that. Written only after message_start and only while the turn is open;
+     *  the non-stream sink has no incremental wire, so its default is a no-op. */
+    public suspend fun progress(text: String) {}
 }
 
 // HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start

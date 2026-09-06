@@ -86,6 +86,24 @@ internal data class ClientChannel(
      *  reads it to classify the ending as ClientAbandoned instead of upstream truncation. The
      *  caller holds [writeMutex] around this call; it does not lock itself. */
     fun timedClientWrite(frame: String, perf: TurnPerf, clock: ElapsedClock) {
+        write(frame, perf, clock, modelOutput = true)
+    }
+
+    /** The KEEPALIVE PINGER's write: the heartbeat ping and splice's status line on a quiet wire.
+     *  Recorded, written, and counted in frames and bytes exactly like any other frame — but never
+     *  as model output. That distinction is load-bearing in three places, and the write PORT is
+     *  what carries it, so nothing downstream has to recognise one of our frames after the fact:
+     *  content_frames_out chooses the idle watchdog's tier (counting ours would judge a silent
+     *  Astra turn against the 180 s mid-output cap instead of the 300 s first-output one, reaping
+     *  the healthy turns 2026-09-05 already showed us reaping), it gates G5's pre-content reissue
+     *  (counting ours would downgrade a retryable torn stream to a raw api_error), and first_delta
+     *  is the instrument every latency diagnosis on this proxy starts from. All three stay the
+     *  model's alone. */
+    fun timedProgressWrite(frame: String, perf: TurnPerf, clock: ElapsedClock) {
+        write(frame, perf, clock, modelOutput = false)
+    }
+
+    private fun write(frame: String, perf: TurnPerf, clock: ElapsedClock, modelOutput: Boolean) {
         recording?.append(frame)
         if (detached.get()) return
         val t = clock()
@@ -99,15 +117,16 @@ internal data class ClientChannel(
         socketFrames.incrementAndGet()
         perf.add(PerfKeys.WRITE_MS, clock() - t)
         perf.add(PerfKeys.FRAMES_OUT, 1)
-        // Structural opener carries no content — see PerfKeys.CONTENT_FRAMES_OUT for why G5 must not
-        // count it as "the client saw output".
-        if (!frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)) {
-            perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
-        }
+        if (modelOutput && carriesContent(frame)) perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
         perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
         perf.markOnce(PerfKeys.FIRST_FRAME)
-        if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+        if (modelOutput && frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
     }
+
+    /** The structural turn-opening pair carries no content — see PerfKeys.CONTENT_FRAMES_OUT for
+     *  why G5 must not count it as "the client saw output". */
+    private fun carriesContent(frame: String): Boolean =
+        !frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)
 
     /** Stop writing to the socket for good; the turn runs on and the recording stands in for the
      *  client. False — and nothing changes — for a channel without a recording, so every caller

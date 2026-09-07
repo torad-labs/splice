@@ -133,6 +133,33 @@ class TurnPipelineTest {
     /** The compact-stats JSONL the pipeline appended this turn (a fresh reader over the same file). */
     private fun recordedCompact() = CompactStats(tmp.resolve("compact.jsonl")).read()
 
+    /** A deterministic failure (a verdict no retry can change) ends in words, not an error event;
+     *  every other failure keeps the honestly-typed error the client is right to retry. */
+    @Test
+    fun `a deterministic failure ends as an explained text block, a transient one as an error event`() = runTest {
+        val explained = RecTerminal()
+        val tag = pipeline().finishStream(
+            explained,
+            TurnOutcome.Failure(ErrorType.API_ERROR, "code-mode cell is unavailable", deterministic = true),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals("terminal", explained.ending)
+        assertEquals(listOf("\u26A0 splice: code-mode cell is unavailable"), explained.texts)
+        assertEquals("failure:api_error", tag)
+
+        val retried = RecTerminal()
+        pipeline().finishStream(
+            retried,
+            TurnOutcome.Failure(ErrorType.API_ERROR, "upstream stream ended without response.completed"),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals("error", retried.ending)
+        assertEquals(ErrorType.API_ERROR, retried.errorType)
+        assertTrue(retried.texts.isEmpty())
+    }
+
     @Test
     fun `the default pipeline keeps the reasoning mirror locked off`() = runTest {
         val rec = RecTerminal()

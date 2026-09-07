@@ -50,7 +50,11 @@ public class TurnPipeline(
                 if (meta.compact) {
                     compact.recordStreamError(elapsedMs, outcome.type.wireName)
                 }
-                emitter.emitError(outcome.type, outcome.message)
+                if (outcome.deterministic) {
+                    emitter.emitExplained(EXPLAINED_PREFIX + outcome.message, outcome.salvagedUsage)
+                } else {
+                    emitter.emitError(outcome.type, outcome.message)
+                }
                 return "failure:${outcome.type.wireName}"
             }
             is TurnOutcome.ClientAbandoned -> {
@@ -61,3 +65,6 @@ public class TurnPipeline(
         }
     }
 }
+
+/** What a deterministic failure reads as on the client: the proxy speaking, marked as such. */
+private const val EXPLAINED_PREFIX = "\u26A0 splice: "

@@ -161,5 +161,5 @@ internal class CodexCodeModeResume(
     }
 
     private fun failure(message: String, type: ErrorType = ErrorType.INVALID_REQUEST): TurnOutcome.Failure =
-        TurnOutcome.Failure(type, message)
+        TurnOutcome.Failure(type, message, deterministic = true)
 }

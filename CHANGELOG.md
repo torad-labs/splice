@@ -16,6 +16,13 @@
   identically on every retry (47 turns over 80 minutes on 2026-09-07). Evidence is now bounded by
   the upstream output ceiling only, and past that each result is cut to an equal share behind a
   `[truncated N chars]` marker instead of the turn failing.
+- **A code-mode failure is now readable in Claude Code.** Every gateway failure went out as an
+  SSE `error` event. Claude Code 2.1.x re-sends an `api_error` identically until it gives up when
+  the event arrives before content, and after content drops the message for a fixed "API Error:
+  Server error mid-response" line, so a code-mode verdict that no retry can change (a record it
+  cannot resume, a script it cannot admit) surfaced as a retry storm or an unreadable line. Such
+  failures now end the turn with the explanation as a `\u26A0 splice:` text block and a clean stop;
+  transient upstream faults keep the error event the client is right to retry.
 - **Capacity and lost cells report to the model instead of failing the turn.** When no slot can be
   freed, the script's own output tells the model nothing was executed and to call the tools
   directly, and the turn continues. A lost cell retried with the same request likewise completes

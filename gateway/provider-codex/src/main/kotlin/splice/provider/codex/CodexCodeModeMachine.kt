@@ -44,7 +44,13 @@ internal class CodexCodeModeMachine(
     }
 
     suspend fun emit(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
-        if (calls.isEmpty()) return TurnOutcome.Failure(ErrorType.API_ERROR, "code-mode has no client calls to emit")
+        if (calls.isEmpty()) {
+            return TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "code-mode has no client calls to emit",
+                deterministic = true,
+            )
+        }
         calls.forEach { call ->
             val index = sink.openTool(call.clientId, call.name)
             sink.inputJsonDelta(index, call.arguments.toString())
@@ -60,7 +66,7 @@ internal class CodexCodeModeMachine(
 
     fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure {
         registry.lose(record, message)
-        return TurnOutcome.Failure(ErrorType.API_ERROR, message)
+        return TurnOutcome.Failure(ErrorType.API_ERROR, message, deterministic = true)
     }
 
     fun lostMessage(record: CodeModeRecord): String =

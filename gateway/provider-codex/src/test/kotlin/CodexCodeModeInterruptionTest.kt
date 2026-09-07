@@ -99,6 +99,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
             .intercept(siblingResults(listOf(result)), RecordingSink()) { error("must not post fabricated evidence") }
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("not exposed"))
+        assertTrue(outcome.deterministic, "a bridge verdict is the same on every retry")
         assertEquals(state, Files.readString(tempDir.resolve("bridge.json")))
         assertEquals(1, runtime.cell.advances)
     }

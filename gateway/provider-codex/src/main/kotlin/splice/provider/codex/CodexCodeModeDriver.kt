@@ -203,7 +203,7 @@ internal class CodexCodeModeDriver(
     }
 
     private fun failure(message: String, type: ErrorType = ErrorType.INVALID_REQUEST): TurnOutcome.Failure =
-        TurnOutcome.Failure(type, message)
+        TurnOutcome.Failure(type, message, deterministic = true)
 }
 
 private const val RECORD_ID_LOG_CHARS: Int = 8

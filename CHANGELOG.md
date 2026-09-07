@@ -4,6 +4,21 @@
 
 ## splice v0.3.1 — silent-stream reliability and the code-mode beta - 2026-09-06
 
+### Fixed
+- **Code mode no longer refuses a conversation whose environment moved.** A completed script's
+  history baseline is now measured on the conversation alone; the lite preamble (the eager tool
+  list and the base instructions) is excluded. Claude Code grows its tool list mid-conversation
+  (ToolSearch loading a deferred schema, an MCP reconnect), and one such growth after a completed
+  script made every later Astra/Sol turn fail with `code-mode logical history does not match its
+  persisted baseline` until the session compacted. The same growth during a script's own resume
+  turn was misread as new user content and interrupted the script.
+- **History that cannot be placed degrades instead of failing.** A record that no longer lines up,
+  a record past its 24-hour retention, a result from another session or model, or a running script
+  whose history moved underneath it now continues upstream on the client's own history, where its
+  client calls are ordinary tool calls. Each degradation logs once per conversation under
+  `[<head>][code-mode]`. Persisted records from 0.3.1 carry the old measurement and are omitted the
+  same way, so an already-stuck conversation recovers on its next turn.
+
 ### Added
 - **Default-off JavaScript code mode for ChatGPT providers.** Set `code_mode = true` in a
   `chatgpt-oauth` + `openai-responses` provider's quirks to enable the bundled GraalJS runner and

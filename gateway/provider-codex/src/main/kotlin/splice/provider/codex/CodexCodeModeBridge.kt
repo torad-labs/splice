@@ -4,6 +4,7 @@ package splice.provider.codex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
+import splice.core.util.LogSink
 import splice.spi.CodeModeResult
 import splice.spi.CodeModeRuntime
 import splice.spi.RoundInterceptor
@@ -25,6 +26,8 @@ public data class CodeModeBridgeConfig(
     val maxCalls: Int = 64,
     val maxRounds: Int = 32,
     val clock: Clock = Clock.systemUTC(),
+    /** Head-scoped sink for history-degradation lines; uninstalled it is a no-op. */
+    val log: LogSink = LogSink { },
 )
 
 /** Codex-only protocol bridge. It schedules client tools but never executes them. */
@@ -38,13 +41,13 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
     )
 
     private val json = Json { encodeDefaults = true }
-    private val wire = CodexCodeModeWire(json)
+    private val wire = CodexCodeModeWire(json, config.log)
     private val registry = CodexCodeModeRegistry(config, json)
     private val validation = CodexCodeModeValidation(config)
     private val machine = CodexCodeModeMachine(config, registry, validation)
     private val driver = CodexCodeModeDriver(config, registry, wire, validation, machine)
     private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
-    private val controller = CodexCodeModeTurn(registry, wire, driver, resume)
+    private val controller = CodexCodeModeTurn(registry, wire, driver, resume, config.log)
 
     init {
         require(config.maxRecords > 0) { "code-mode maxRecords must be positive" }

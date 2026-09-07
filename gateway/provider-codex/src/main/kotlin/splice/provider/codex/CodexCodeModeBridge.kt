@@ -12,6 +12,7 @@ import java.nio.file.Path
 import java.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 private const val DEFAULT_MAX_SOURCE_CHARS: Int = 65_536
 private const val DEFAULT_MAX_OUTPUT_CHARS: Int = 1_048_576
@@ -28,6 +29,13 @@ public data class CodeModeBridgeConfig(
     val clock: Clock = Clock.systemUTC(),
     /** Head-scoped sink for history-degradation lines; uninstalled it is a no-op. */
     val log: LogSink = LogSink { },
+    /** A cell parked this long without client results is closed: its worker slot is the scarce
+     *  resource, and a client that never returned (session abandoned, compacted, killed) never will.
+     *  2026-09-07: four parked cells held all four slots and every new script failed for an hour. */
+    val cellIdleTimeout: Duration = 30.minutes,
+    /** At capacity the oldest parked cell at least this idle is evicted for the new script; a cell
+     *  younger than this is presumed mid-call (a long Bash command, a permission prompt). */
+    val cellEvictionFloor: Duration = 2.minutes,
 )
 
 /** Codex-only protocol bridge. It schedules client tools but never executes them. */
@@ -52,6 +60,8 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
     init {
         require(config.maxRecords > 0) { "code-mode maxRecords must be positive" }
         require(config.ttl.isPositive()) { "code-mode ttl must be positive" }
+        require(config.cellIdleTimeout.isPositive()) { "code-mode cellIdleTimeout must be positive" }
+        require(config.cellEvictionFloor.isPositive()) { "code-mode cellEvictionFloor must be positive" }
         require(config.maxSourceChars > 0) { "code-mode maxSourceChars must be positive" }
         require(config.maxOutputChars > 0) { "code-mode maxOutputChars must be positive" }
         require(config.maxCalls > 0) { "code-mode maxCalls must be positive" }

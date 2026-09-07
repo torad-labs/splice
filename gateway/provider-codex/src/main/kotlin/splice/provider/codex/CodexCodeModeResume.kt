@@ -31,13 +31,15 @@ internal class CodexCodeModeResume(
         return fresh(record, context, bodyJson)
     }
 
+    /** A lost cell can never resume, so the same request retried can never succeed: rather than
+     *  failing until new user content arrives, the record completes with its interruption evidence
+     *  (results so far, unresolved calls, the reason) and the model continues from there. */
     suspend fun lost(
         record: CodeModeRecord,
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
         val detail = record.error ?: "code-mode process state was lost; source was not rerun"
-        if (!wire.hasExtraContent(bodyJson, record)) return failure(detail, ErrorType.API_ERROR)
         val supplied = suppliedResults(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
         supplied.error?.let { return failure(it) }
         registry.acceptResults(record, context.digest, supplied.results)

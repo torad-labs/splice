@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixed
+- **Code mode no longer runs out of workers behind clients that never came back.** A script whose
+  client calls were never answered (the session was abandoned, compacted or killed) kept its worker
+  slot indefinitely; with four such cells parked, every new script on every session failed with
+  `code-mode runtime failed to start` for the rest of the day. A cell parked longer than 30 minutes
+  without results is now closed, and at capacity the oldest cell parked over 2 minutes is evicted
+  for the newer script. Both are recorded on the record and logged once under `[<head>][code-mode]`.
+- **Capacity and lost cells report to the model instead of failing the turn.** When no slot can be
+  freed, the script's own output tells the model nothing was executed and to call the tools
+  directly, and the turn continues. A lost cell retried with the same request likewise completes
+  with its evidence (results so far, unresolved calls, the reason) and goes upstream once, rather
+  than answering 502 until new user content arrived. The spawn failure's cause is now logged; it was
+  swallowed before, which is why the pool being full went undiagnosed for an hour.
+
 ## splice v0.3.1 — silent-stream reliability and the code-mode beta - 2026-09-06
 
 ### Fixed

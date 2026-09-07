@@ -15,7 +15,7 @@ internal class CodexCodeModeHistory(json: Json) {
 
     fun hasExtraContent(bodyJson: String, record: CodeModeRecord): Boolean {
         val input = codec.root(bodyJson)?.second ?: return true
-        val projected = codec.projection.project(input)
+        val projected = codec.conversation(codec.projection.project(input)).body
         val validBaseline = codec.validFullPrefix(input, record) ||
             codec.validPrefix(projected.logicalItems, record)
         if (!validBaseline) return true
@@ -39,24 +39,33 @@ internal class CodexCodeModeHistory(json: Json) {
         return logicalExtra || replayExtra
     }
 
+    /**
+     * Rewrites every completed record it can still place. A record whose baseline no longer matches
+     * is OMITTED, never fatal: its client calls stay in the history as the ordinary tool calls the
+     * client already saw, which is the pre-code-mode wire shape. Records after an omitted one were
+     * measured on top of its canonical items, so they omit too; the caller logs each omission.
+     */
     fun canonicalize(bodyJson: String, records: List<CodeModeRecord>): CodeModeRewrite {
         val root = codec.root(bodyJson)
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
-        var input = codec.projection.project(root.second)
+        val conversation = codec.conversation(codec.projection.project(root.second))
+        var body = conversation.body
+        val omitted = mutableListOf<CodeModeOmission>()
         records.forEach { record ->
-            val rewritten = canonicalizeRecord(input, record)
-            rewritten.error?.let { return CodeModeRewrite(null, it) }
-            input = checkNotNull(rewritten.input)
+            val rewritten = canonicalizeRecord(body, record)
+            val error = rewritten.error
+            if (error == null) body = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
         }
-        return codec.rebuilt(root.first, input)
+        return codec.rebuilt(root.first, conversation, body).copy(omitted = omitted)
     }
 
     fun restoreBaseline(bodyJson: String, record: CodeModeRecord): CodeModeRewrite {
         val root = codec.root(bodyJson)
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
-        val restored = restoreProjected(codec.projection.project(root.second), record)
+        val conversation = codec.conversation(codec.projection.project(root.second))
+        val restored = restoreProjected(conversation.body, record)
         return restored.error?.let { CodeModeRewrite(null, it) }
-            ?: codec.rebuilt(root.first, checkNotNull(restored.input))
+            ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input))
     }
 
     private fun restoreProjected(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {

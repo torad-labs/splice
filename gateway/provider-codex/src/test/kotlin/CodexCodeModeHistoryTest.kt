@@ -66,7 +66,7 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `unexpected native replay at another baseline offset is rejected`() = runTest {
+    fun `unexpected native replay at another baseline offset abandons the script and continues upstream`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(
                 listOf(
@@ -88,9 +88,13 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
                 completedOutcome()
             }
 
-        assertTrue(outcome is TurnOutcome.Failure)
-        assertEquals(0, upstreamCalls)
+        // The running cell is closed without rerunning its source, and the turn goes upstream on
+        // the client's history rather than failing the conversation.
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(1, upstreamCalls)
         assertEquals(1, runtime.cell.advances)
+        assertTrue(runtime.cell.closed)
+        assertTrue(logLines.any { "abandoned record" in it && "native discovery history was edited" in it })
     }
 
     private fun nativeSearchBody(searchId: String): String =

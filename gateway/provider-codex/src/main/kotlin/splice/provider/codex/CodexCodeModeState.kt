@@ -80,14 +80,14 @@ internal data class CodeModeRecordSnapshot(
         source = source,
         phase = when {
             phase == CodeModePhase.ACTIVE -> CodeModePhase.LOST
-            metadataVersion != CODE_MODE_METADATA_VERSION -> CodeModePhase.LOST
+            staleMetadata() -> CodeModePhase.LOST
             else -> phase
         },
         pending = pending.toMutableList(),
         results = results.mapValues { (id, value) -> value.restore(id) }.toMutableMap(),
         output = output,
         error = when {
-            metadataVersion != CODE_MODE_METADATA_VERSION ->
+            staleMetadata() ->
                 "code-mode replay metadata is unavailable; source was not rerun"
             phase == CodeModePhase.ACTIVE ->
                 "code-mode process state was lost after completed client calls: ${results.keys}; source was not rerun"
@@ -106,6 +106,11 @@ internal data class CodeModeRecordSnapshot(
         continuity = continuity,
         continuityReplay = continuityReplay,
     )
+
+    /** A completed record with old metadata is still terminal — the rewrite omits it (and logs) rather
+     *  than refusing the conversation; only an unfinished one has nothing left to resume. */
+    private fun staleMetadata(): Boolean =
+        metadataVersion != CODE_MODE_METADATA_VERSION && phase != CodeModePhase.COMPLETED
 }
 
 internal data class CodeModeRecord(

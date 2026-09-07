@@ -11,10 +11,15 @@ import kotlinx.serialization.json.put
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesCodeModeProjection
+import java.util.concurrent.ConcurrentHashMap
 
-internal class CodexCodeModeWire(private val json: Json) {
+internal class CodexCodeModeWire(private val json: Json, private val log: LogSink) {
     private val history = CodexCodeModeHistory(json)
+
+    /** Record ids whose omission was already logged — one line per record, not one per turn. */
+    private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     fun injectTool(request: JsonObject): JsonObject {
         val input = request[FIELD_INPUT] as? JsonArray ?: return request
@@ -44,8 +49,17 @@ internal class CodexCodeModeWire(private val json: Json) {
     fun hasExtraContent(bodyJson: String, record: CodeModeRecord): Boolean =
         history.hasExtraContent(bodyJson, record)
 
-    fun canonicalize(bodyJson: String, records: List<CodeModeRecord>): CodeModeRewrite =
-        history.canonicalize(bodyJson, records)
+    fun canonicalize(bodyJson: String, records: List<CodeModeRecord>): CodeModeRewrite {
+        val rewrite = history.canonicalize(bodyJson, records)
+        rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
+            log(
+                "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +
+                    "(outer ${omission.record.outerCallId}): ${omission.reason} — its client calls stay in " +
+                    "the history as ordinary tool calls",
+            )
+        }
+        return rewrite
+    }
 
     fun restoreBaseline(bodyJson: String, record: CodeModeRecord): CodeModeRewrite =
         history.restoreBaseline(bodyJson, record)
@@ -92,10 +106,22 @@ internal data class CodeModeInputBoundary(
     val nativeSegments: List<CodeModeNativeSegment>,
 )
 
-internal data class CodeModeRewrite(val bodyJson: String?, val error: String? = null)
+internal data class CodeModeRewrite(
+    val bodyJson: String?,
+    val error: String? = null,
+    val omitted: List<CodeModeOmission> = emptyList(),
+)
+
+/** A completed record the rewrite could not place; the reason is what the digest check reported. */
+internal data class CodeModeOmission(val record: CodeModeRecord, val reason: String)
 
 internal const val CODE_MODE_TOOL_NAME = "splice_exec"
-internal const val CODE_MODE_METADATA_VERSION = 2
+
+/** v3 (2026-09-07): counts, digests and native offsets are conversation-relative (lite preamble
+ *  excluded). A v2 record's numbers point into the whole input, so it is never re-placed: a
+ *  completed one is omitted from the rewrite, an unfinished one is LOST. */
+internal const val CODE_MODE_METADATA_VERSION = 3
+private const val RECORD_ID_LOG_CHARS = 8
 private const val FIELD_CONTENT = "content"
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"

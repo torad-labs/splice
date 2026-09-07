@@ -131,7 +131,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `expired mapping reports history failure after registry reconstruction`() = runTest {
+    fun `expired mapping continues upstream on the client history after registry reconstruction`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r1", "Read"))))))
         val manager = bridge(runtime, ttl = 1.hours, clock = clock)
@@ -146,11 +146,18 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
             ttl = 1.hours,
             clock = clock,
         )
+        var posted = ""
         val outcome = restored.interceptor(turn(resultId, "A"), null, disableParallel = false)
-            .intercept(requestWithResult(resultId, "A"), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(resultId, "A"), RecordingSink()) { body ->
+                posted = body
+                completedOutcome()
+            }
 
-        assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("expired"))
+        // The record is gone, so nothing can be rewritten: the client's own history goes upstream
+        // untouched (its callback is an ordinary tool call there) and the turn is not refused.
+        assertTrue(outcome is TurnOutcome.Success)
+        assertTrue(resultId in posted)
+        assertTrue(logLines.any { "expired code-mode history" in it })
     }
 
     @Test

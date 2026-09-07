@@ -9,6 +9,13 @@
   `code-mode runtime failed to start` for the rest of the day. A cell parked longer than 30 minutes
   without results is now closed, and at capacity the oldest cell parked over 2 minutes is evicted
   for the newer script. Both are recorded on the record and logged once under `[<head>][code-mode]`.
+- **A lost script's evidence is never too big to report.** The interruption output (results so
+  far, unresolved calls, the reason) rides upstream as the outer call's own output, but it was graded
+  against the worker's 64 KiB text frame, which it never crosses: any script whose accumulated
+  results passed 64 KiB (five `Read`s) poisoned its record, and the same request then failed
+  identically on every retry (47 turns over 80 minutes on 2026-09-07). Evidence is now bounded by
+  the upstream output ceiling only, and past that each result is cut to an equal share behind a
+  `[truncated N chars]` marker instead of the turn failing.
 - **Capacity and lost cells report to the model instead of failing the turn.** When no slot can be
   freed, the script's own output tells the model nothing was executed and to call the tools
   directly, and the turn continues. A lost cell retried with the same request likewise completes

@@ -54,11 +54,7 @@ internal class CodexCodeModeMachine(
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
-        val output = CodeModeInterruption.output(record, detail)
-        if (!validation.fitsOutput(output)) {
-            return poison(record, "code-mode interruption evidence exceeds the size limit; source was not rerun")
-        }
-        registry.complete(record, output)
+        registry.complete(record, CodeModeInterruption.output(record, detail, config.maxOutputChars))
         return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
     }
 

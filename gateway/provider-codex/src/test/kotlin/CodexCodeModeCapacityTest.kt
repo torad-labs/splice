@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
+import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodexCodeModeBridge
 import splice.spi.CodeModeCall
 import splice.spi.CodeModeCapacityException
 import splice.spi.CodeModeCell
@@ -130,14 +133,92 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         assertEquals(1, runtime.starts)
     }
 
+    @Test
+    fun `interruption evidence past the worker text limit completes with every result`() = runTest {
+        val clock = MutableClock(1_000)
+        val runtime = BoundedRuntime(capacity = 4, callsPerCell = 2)
+        val manager = bridge(runtime, clock = clock)
+        val (posted, ids) = lostThenResolved(manager, clock, BIG_RESULT_CHARS)
+
+        val output = interruptionOutput(posted)
+        assertTrue(output.length > WORKER_TEXT_BYTES, "evidence is ${output.length} chars")
+        assertTrue(ids.all { it in output })
+        assertFalse("[truncated" in output)
+        assertEquals("COMPLETED", phaseOf("outer-a"))
+    }
+
+    @Test
+    fun `interruption evidence past the upstream budget is truncated per result`() = runTest {
+        val clock = MutableClock(1_000)
+        val runtime = BoundedRuntime(capacity = 4, callsPerCell = 2)
+        val manager = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtime,
+                tempDir.resolve("bridge.json"),
+                clock = clock,
+                maxOutputChars = SMALL_BUDGET_CHARS,
+                log = LogSink { logLines += it },
+            ),
+        )
+        // Each result fits the budget on its own; together they do not.
+        val (posted, ids) = lostThenResolved(manager, clock, SMALL_BUDGET_CHARS * 2 / 3)
+
+        val output = interruptionOutput(posted)
+        assertTrue(output.length <= SMALL_BUDGET_CHARS, "evidence is ${output.length} chars")
+        assertTrue(ids.all { it in output })
+        assertEquals(2, Regex("\\[truncated \\d+ chars]").findAll(output).count())
+        assertEquals("COMPLETED", phaseOf("outer-a"))
+    }
+
+    /** Starts a two-call script, lets the idle reap lose it, then returns the results: the body
+     *  posted upstream and the two callback ids. */
+    private suspend fun lostThenResolved(
+        manager: CodexCodeModeBridge,
+        clock: MutableClock,
+        resultChars: Int,
+    ): Pair<String, List<String>> {
+        val sink = RecordingSink()
+        manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
+            .intercept(BASE_REQUEST, sink) { outerOutcome("outer-a") }
+        val ids = sink.tools.map { it.id }
+        clock.now += 31.minutes.inWholeMilliseconds
+        manager.interceptor(turn(sessionId = "session-b"), null, disableParallel = false)
+            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+        assertEquals("LOST", phaseOf("outer-a"))
+
+        val results = ids.mapIndexed { index, id -> CodeModeResult(id, "xy"[index].toString().repeat(resultChars)) }
+        var posted = ""
+        val outcome = manager.interceptor(turn(results = results), null, disableParallel = false)
+            .intercept(requestWithResults(results), RecordingSink()) { body ->
+                posted = body
+                completedOutcome()
+            }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        return posted to ids
+    }
+
+    private fun requestWithResults(results: List<CodeModeResult>): String = results.joinToString(
+        prefix = """{"input":[{"role":"developer","content":"s"},""",
+        postfix = "]}",
+    ) { result ->
+        """{"type":"function_call","call_id":"${result.id}","name":"Read","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"${result.id}","output":"${result.output}"}"""
+    }
+
+    private fun interruptionOutput(posted: String): String =
+        Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray.map { it.jsonObject }
+            .single { it["type"]?.jsonPrimitive?.content == "custom_tool_call_output" }
+            .getValue("output").jsonPrimitive.content
+            .also { assertTrue("\"status\":\"interrupted\"" in it, it) }
+
     private fun phaseOf(outerCallId: String): String =
         Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json"))).jsonObject
             .getValue("records").jsonArray.map { it.jsonObject }
             .single { it.getValue("outerCallId").jsonPrimitive.content == outerCallId }
             .getValue("phase").jsonPrimitive.content
 
-    /** Each started cell emits one Read call and then parks until closed; at most [capacity] are open. */
-    private class BoundedRuntime(private val capacity: Int) : CodeModeRuntime {
+    /** Each started cell emits [callsPerCell] Read calls and then parks until closed; at most [capacity] are open. */
+    private class BoundedRuntime(private val capacity: Int, private val callsPerCell: Int = 1) : CodeModeRuntime {
         val cells = mutableListOf<ParkedCell>()
         var starts = 0
         val open: Int get() = cells.count { !it.closed }
@@ -145,19 +226,19 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
             if (open >= capacity) throw CodeModeCapacityException()
             starts++
-            return ParkedCell().also(cells::add)
+            return ParkedCell(callsPerCell).also(cells::add)
         }
 
         override fun close() = Unit
     }
 
-    private class ParkedCell : CodeModeCell {
+    private class ParkedCell(private val calls: Int) : CodeModeCell {
         var closed = false
         private var advances = 0
 
         override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
             if (advances++ == 0) {
-                CodeModeStep.Calls(listOf(CodeModeCall("read", "Read", buildJsonObject {})))
+                CodeModeStep.Calls(List(calls) { CodeModeCall("read-$it", "Read", buildJsonObject {}) })
             } else {
                 CodeModeStep.Completed("done")
             }
@@ -167,3 +248,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         }
     }
 }
+
+private const val BIG_RESULT_CHARS = 40_000
+private const val WORKER_TEXT_BYTES = 65_536
+private const val SMALL_BUDGET_CHARS = 8_192

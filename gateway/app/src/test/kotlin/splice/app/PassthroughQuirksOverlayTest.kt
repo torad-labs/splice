@@ -63,25 +63,16 @@ class PassthroughQuirksOverlayTest {
         assertEquals(false, quirks.mfjsSanitize)
     }
 
-    // DR-121: compact_effort's TOML field is shared with the codex knob, whose vocabulary
-    // includes "medium" — a value the kimi ladder never emits. Pre-fix the overlay returned it
-    // raw, so every thinking-carrying compact turn shipped output_config.effort "medium" and
-    // 400ed until the TOML was fixed. The wall is the quirk type's own init, so it fires at
-    // assembly (daemon boot), naming the fix, instead of riding the wire.
+    // compact_effort is RETIRED (2026-09-05): a compaction is built exactly like a turn and
+    // inherits the session's effort, or the prompt cache misses the whole transcript. The key is
+    // still parsed so a config that sets it fails LOUDLY at load, naming the fix, instead of
+    // being ignored in silence (the DR-121 vocabulary wall it replaces lived on the same seam).
     @Test
-    fun `compact_effort outside the kimi rungs fails at assembly, never rides the wire - DR-121`() {
-        val ex = assertThrows<IllegalArgumentException> {
-            assembly.passthroughQuirks(provider(QuirksConfig(compactEffort = "medium")), kimiBase)
+    fun `compact_effort is retired - any value fails at config construction`() {
+        for (value in listOf("low", "medium", "high")) {
+            val ex = assertThrows<IllegalArgumentException> { QuirksConfig(compactEffort = value) }
+            assertTrue("compact_effort" in ex.message!! && "retired" in ex.message!!, ex.message)
         }
-        assertTrue("compact_effort" in ex.message!!, ex.message)
-        // the legal vocabulary rides in the message — the operator learns the fix from the failure
-        assertTrue("low|high|max" in ex.message!!, ex.message)
-    }
-
-    @Test
-    fun `compact_effort on a kimi rung still overlays cleanly - DR-121 control`() {
-        val quirks = assembly.passthroughQuirks(provider(QuirksConfig(compactEffort = "high")), kimiBase)
-        assertEquals("high", quirks.compactEffort)
     }
 
     // A neutral base (the claude head) declares nothing and must stay faithful.

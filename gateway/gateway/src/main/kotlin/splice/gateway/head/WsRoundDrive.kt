@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonScalars
 import splice.spi.Provider
 import splice.spi.TurnSignals
 import splice.spi.WsRoundNeedsSse
@@ -33,7 +34,9 @@ internal class WsRoundDrive(
         // WebSocket round has no body to misread. An empty snippet makes the classifier keep the
         // translator's own verdict, which is the honest answer here.
         val instrumented = events.onEach { evt ->
-            if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) throw WsRoundNeedsSse()
+            if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
+                throw WsRoundNeedsSse(failureDetail(evt))
+            }
             drive.slot.touch()
             drive.perf.markOnce(PerfKeys.FIRST_BYTE)
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
@@ -63,4 +66,26 @@ internal class WsRoundDrive(
         runner.roundEnded(drive.meta, ok = outcome is TurnOutcome.Success)
         return outcome
     }
+
+    /** The failure terminal's type and the error it carried, in every shape the dialect's reducer
+     *  reads (ResponsesEventReducer.onFailure): an object under `response.error` or `error`, the
+     *  flat event whose own `code`/`message` are the error, or a plain-string `error` (DR-109).
+     *  Folded onto one line and clipped so a verbose server message cannot flood the log. */
+    private fun failureDetail(evt: JsonObject): String {
+        val carried = (evt["response"] as? JsonObject)?.get("error") ?: evt["error"]
+        val error = carried as? JsonObject ?: evt
+        val code = JsonScalars.strOrEmpty(error["code"])
+            .ifEmpty { if (error === evt) "" else JsonScalars.strOrEmpty(error["type"]) }
+        val message = JsonScalars.strOrEmpty(error["message"]).ifEmpty { JsonScalars.strOrEmpty(carried) }
+        return listOf(JsonScalars.strOrEmpty(evt["type"]), code, message)
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
+            .replace(oneLine, " ")
+            .take(FAILURE_DETAIL_MAX_CHARS)
+    }
+
+    private val oneLine = Regex("\\s+")
 }
+
+/** Long enough for a code and a sentence, short enough that one server message stays one line. */
+private const val FAILURE_DETAIL_MAX_CHARS = 240

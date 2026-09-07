@@ -7,6 +7,7 @@
 // import list at all.
 package splice.gateway.head
 
+import splice.core.model.ClientWindows
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -42,6 +43,9 @@ public data class HeadDeps(
      *  every client response as the unified rate-limit headers Claude Code draws its bars from.
      *  Null = a head that neither observes nor emits them (tests, and nothing else). */
     val quota: QuotaTracker? = null,
+    /** The window each Claude Code session actually runs with, learned from its status-line posts
+     *  (the control plane records; the usage payload reads). One per head, shared with ManagedHead. */
+    val clientWindows: ClientWindows = ClientWindows(),
     val log: LogSink,
     val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.
@@ -55,6 +59,11 @@ public data class HeadDeps(
     val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
     // Operator-locked off: provider-native reasoning may display, but splice never mirrors it.
     val mirrorReasoning: Boolean = false,
+    /** splice's status line on a turn that has gone quiet (TurnProgressLine). Distinct from
+     *  [mirrorReasoning], which is locked off because it authors a "[reasoning summary]" TEXT block
+     *  into the transcript: this writes no summary and claims nothing about the model's reasoning,
+     *  only about the wait itself, and it is one TOML line to turn off. */
+    val progressLine: Boolean = true,
     /** TRUE only for a head whose auth kind is `client` (campaign claude-head): splice holds no
      *  credential for it, so the caller's own auth headers are forwarded upstream and the
      *  mgmt-key front door is bypassed. FALSE for every other head, which keeps enforcing it. */

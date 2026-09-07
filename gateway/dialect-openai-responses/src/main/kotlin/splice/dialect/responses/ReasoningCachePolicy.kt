@@ -19,11 +19,11 @@ import splice.core.util.JsonScalars
  */
 internal class ReasoningCachePolicy {
 
-    /** The ONE gate for every reasoning-cache touch point (capture, collect, lookup,
-     *  include-widening): quirks-enabled AND not a compaction turn. Named so the `!compact`
-     *  conjunct is a tested seam instead of four copy-pasted lambda conditions (review 2026-07-24:
-     *  nothing pinned the conjunct; a regression dropping it would have let compaction turns read
-     *  and write the cache unseen). */
+    /** The gate for the RESPONSE-side reasoning-cache touch points (capture, collect):
+     *  quirks-enabled AND not a compaction turn — a compaction's own reasoning is never stored.
+     *  The REQUEST side (lookup, include-widening) deliberately does NOT route through here since
+     *  2026-09-05: a compaction is built exactly like a turn, cached reasoning items included, or
+     *  it shares no prompt-cache prefix with the session (ResponsesRequestBuilder.kt header). */
     fun reasoningCacheActive(quirks: ResponsesQuirks, compact: Boolean): Boolean =
         quirks.reasoningCache && !compact
 

@@ -1,5 +1,118 @@
 # Changelog
 
+## Unreleased
+
+## splice v0.3.1 — silent-stream reliability and the code-mode beta - 2026-09-06
+
+### Fixed
+- **Code mode no longer refuses a conversation whose environment moved.** A completed script's
+  history baseline is now measured on the conversation alone; the lite preamble (the eager tool
+  list and the base instructions) is excluded. Claude Code grows its tool list mid-conversation
+  (ToolSearch loading a deferred schema, an MCP reconnect), and one such growth after a completed
+  script made every later Astra/Sol turn fail with `code-mode logical history does not match its
+  persisted baseline` until the session compacted. The same growth during a script's own resume
+  turn was misread as new user content and interrupted the script.
+- **History that cannot be placed degrades instead of failing.** A record that no longer lines up,
+  a record past its 24-hour retention, a result from another session or model, or a running script
+  whose history moved underneath it now continues upstream on the client's own history, where its
+  client calls are ordinary tool calls. Each degradation logs once per conversation under
+  `[<head>][code-mode]`. Persisted records from 0.3.1 carry the old measurement and are omitted the
+  same way, so an already-stuck conversation recovers on its next turn.
+
+### Added
+- **Default-off JavaScript code mode for ChatGPT providers.** Set `code_mode = true` in a
+  `chatgpt-oauth` + `openai-responses` provider's quirks to enable the bundled GraalJS runner and
+  orchestration guidance together on eligible GPT-6 Astra/Sol turns. Custom head names work;
+  compaction, toolless turns and forced named-tool choices retain the ordinary path. No Node or
+  Codex installation is required. Real operations remain Claude Code's permission-checked client
+  tool calls; JavaScript has no direct shell, filesystem, network or MCP access.
+- **Bounded execution with honest recovery.** Worker, time, heap and wire limits bound each cell.
+  Durable ownership and history retain completed evidence, but a lost worker's JavaScript is never
+  rerun automatically. New user content interrupts before further execution, infrastructure faults
+  remain failures, and cancellation retains only known completed-round usage. Graal community is
+  not an OS-hardened sandbox against same-user attackers.
+- **An explicit beta switch, not a silent default change.** False or omitted disables both the
+  runner and its guidance. The provider setting applies to every head using it and is read at
+  daemon boot: finish pending work before changing TOML, then perform a full `splice restart`.
+  A head restart alone does not reload topology. Bounded synthetic comparisons support the beta;
+  they do not establish general output-quality or efficiency gains.
+
+### Fixed
+- **Silent streaming turns send real SSE ping events.** Keepalive traffic is recognizable to
+  Claude Code during long upstream silences. Optional, default-on `progressLine` messages identify
+  themselves as splice-authored status, not model reasoning. Every streaming head uses the same
+  mechanism; disabling progress lines does not disable pings. The switch requires a restart.
+- **Progress respects the stream lifecycle and accounting.** Separate progress and model writers
+  share block indexes without letting a blocked model write silence keepalives. Progress waits for
+  the published opener, stops at terminal sealing, and never counts as model output or first-delta
+  timing. Rejected pre-opener writes do not consume the introductory status line.
+
+### Changed
+- **Every OAuth head signs in on its own credential file.** `chatgpt-oauth`, `grok-oauth` and
+  `kimi-oauth` now default to `~/.config/splice/auth/{codex,grok,kimi}.json` (kimi's `device_id`
+  beside it), written by `splice login <head>` on whichever account you choose there, which may
+  differ from the account the vendor's own CLI or desktop app uses. The apps' files
+  (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`) are never read
+  unless `auth.file` names one. Sharing a file was a trap: a refresh rotates the refresh token, so the
+  app and splice signed each other out, and the head had no credential while the other side rewrote
+  the file (24 failed turns in one 16-second rotation on 2026-09-05). Existing configs that name an
+  app's file keep working; `splice doctor` now warns about them, and the fix is to drop `file` and run
+  `splice login <head>`. The `CODEX_AUTH_PATH` / `GROK_AUTH_PATH` overrides still apply.
+
+### Fixed
+- **A compaction outlives its client.** Claude Code abandons an auto-compaction at 600 s and
+  retries the same bytes minutes later, and every abort used to cancel the upstream turn (Astra
+  compactions run 5-10 minutes; 7 were cut off this way on 2026-09-05). A compact stream turn now
+  runs on a scope the call's cancellation cannot reach and records its frames: a lost client
+  detaches, the turn finishes, and the byte-identical retry is served from the recording (or
+  follows the turn live if it is still running), with no second upstream turn. A head stop ends
+  the compactions still driving; the scope itself survives a restart (review: the first cut
+  cancelled it, and the first compaction after a restart came back empty with its slot leaked).
+- **Claude Code's activity-label side query is answered locally.** Every 30 s during a subagent
+  turn the client re-sends the whole transcript asking for a 3-5 word present-tense label
+  (294M input tokens in a day at 48% cache hit, 2026-09-05). The head recognises the query and
+  answers it from the transcript's last tool call, with no upstream turn.
+- **codex-rs's session and routing headers ride every turn** (`session-id`, `thread-id`,
+  `x-codex-routing-hint`, and the WebSocket handshake's `x-client-request-id`), so a reconnect
+  can land on the same backend replica and its prompt cache.
+- **A session's learned client window survives a daemon restart** (`<head>-client-windows.json`
+  in the state dir), so the first turn after a restart is scaled against the right window instead
+  of reported raw. A rejected request body is now logged with its byte counts and failure class.
+- **An auto-compaction no longer re-reads the whole transcript cold.** Claude Code compacts
+  between a tool call and its execution, so the compaction body ends at the previous tool result
+  and the call the backend just emitted is never answered. Chained over the WebSocket, the backend
+  refused every such turn ("No tool output found for function call …", 4 of 4 on 2026-09-05) and
+  the round fell back to a cold SSE send with the prefix cache lost (0-37% hit on 200k-token
+  compactions, 5-10 minutes each). The chaining state now remembers the calls a response left
+  open, a turn that answers none of them full-sends on the same socket instead (prefix cache
+  kept), and the fallback line names the backend's failure terminal (type, code, message) so the
+  next refusal of this kind is diagnosable from `daemon.log` alone.
+- **A compaction is built byte-identical to a turn, so it hits the prompt cache.** Every dialect
+  used to reshape the compaction request (a directive appended to the instructions or system,
+  tools and `tool_choice` stripped, tool results folded to text, images dropped, the lite shape
+  off, cached reasoning left out, an effort pin), and the backend's exact-prefix cache missed the
+  whole transcript on every compaction (`cached_tokens=0` on every model, 2026-09-05). The request
+  now carries the session's model, reasoning, tools and history unchanged; `compact` only reaches
+  the response side. The `compact_effort` quirk is retired and a config that sets it fails at load.
+- **A running session's counts are scaled against ITS window, never a guessed one.** Its process
+  divides by the window it was launched with, so the head learns each session's real window from
+  its status-line post (`session_id` + `context_window_size`) and scales that session's counts
+  against it. A session that has not posted yet is assumed on the pinned row's current window,
+  i.e. exact. For one morning on 2026-09-05 every launch planted a constant 1e6 instead, and the
+  sessions launched before it were scaled 2.5-3.7x against a window their process never had:
+  each compacted at a third of its row's window, forever (eight compactions in forty minutes on
+  one session, every one immediately re-triggered). Live, no relaunch.
+
+### Changed
+- **A context window edited in `splice.toml` now reaches running sessions.** A launch plants the
+  pinned row's window (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`), every other row is usage-scaled on the
+  wire, and a session keeps compacting at the row's CURRENT window after an edit because its
+  counts are scaled against the window it reports on its status line. Before, lowering the pinned
+  row's number (the 2026-09-05 move of the codex rows to 272k, under OpenAI's 2x long-context
+  price line) changed nothing for the six sessions already running until each was relaunched. Now
+  `splice restart` is enough. Ids starting with `claude-` (a passthrough head's own models, a
+  discovery-wrapped tier) ignore that env in Claude Code and keep reporting raw counts.
+
 ## splice v0.3.0 — plan usage on every head, GPT-6 Astra on claudex, and a proxy that matches its reference client - 2026-09-04
 
 ### Added

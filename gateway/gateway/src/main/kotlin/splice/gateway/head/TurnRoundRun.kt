@@ -6,6 +6,7 @@ package splice.gateway.head
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.core.util.LogSink
+import splice.gateway.round.RoundInterception
 import splice.gateway.round.RoundStrategy
 import splice.spi.Provider
 
@@ -35,6 +36,10 @@ internal class TurnRoundRun(
             },
             finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
             toolSearch = drive.toolSearch,
+            interception = RoundInterception(
+                interceptor = drive.roundInterceptor,
+                rawRoundObserved = drive::recordRawRound,
+            ),
         ).run(drive.requestBody, fold, reanchor)
     }
 }

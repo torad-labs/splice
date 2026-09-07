@@ -6,9 +6,13 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
 import splice.app.TopologyLoader
+import splice.app.codemode.JvmCodeModeRuntime
+import splice.core.config.StatePaths
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexAuthProvider
+import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
@@ -16,6 +20,7 @@ import splice.spi.ProviderTuning
 import java.nio.file.Paths
 
 internal class ResponsesArm(
+    private val statePaths: StatePaths,
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
@@ -36,7 +41,7 @@ internal class ResponsesArm(
                 // Refresh hits the OAuth ISSUER's token endpoint (auth.openai.com), not the API base_url.
                 val tokenUrl = CodexOAuthEndpoints.tokenUrl(System::getenv)
                 val auth = CodexAuthProvider(
-                    authPath = Paths.get(TopologyLoader.expandHome(cfg.codexAuthPath)),
+                    authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath)),
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
                     prefetchScope = probeScope,
@@ -64,6 +69,7 @@ internal class ResponsesArm(
                         // never receive a fold config, so they stay pure passthrough.
                         foldConfig = quirksOverlay.foldConfigFrom(cfg),
                         accountIdHeader = providerCfg.quirks.accountIdHeader,
+                        codeModeBridge = codeModeBridge(ctx),
                     ),
                     auth,
                 )
@@ -72,4 +78,17 @@ internal class ResponsesArm(
             else -> apiKeyResponsesArm.apiKeyResponsesProvider(ctx, label)
         }
     }
+
+    private fun codeModeBridge(ctx: ProviderBuild): CodexCodeModeBridge? =
+        if (ctx.providerCfg.quirks.codeMode == true) {
+            CodexCodeModeBridge(
+                CodeModeBridgeConfig(
+                    runtime = JvmCodeModeRuntime(),
+                    stateFile = statePaths.stateDir.resolve("${ctx.key}-code-mode.json"),
+                    log = HeadScopedLogs.headScopedLog(ctx.key, log),
+                ),
+            )
+        } else {
+            null
+        }
 }

@@ -83,6 +83,19 @@ class RoundSpliceSalvageTest {
     }
 
     @Test
+    fun `client abandonment preserves intercepted burn alongside earlier gateway rounds`() {
+        val acc = RoundUsage().plusRound(Usage(inputTokens = 50, outputTokens = 6, reasoningTokens = 1))
+        val intercepted = TurnOutcome.ClientAbandoned(
+            salvagedUsage = Usage(inputTokens = 80, outputTokens = 7, cachedTokens = 20, reasoningTokens = 2),
+        )
+        val out = rounds.withFailureSalvage(intercepted, acc) as TurnOutcome.ClientAbandoned
+        assertEquals(
+            Usage(inputTokens = 80, outputTokens = 13, cachedTokens = 20, reasoningTokens = 3),
+            out.salvagedUsage,
+        )
+    }
+
+    @Test
     fun `a clean abandonment stays bare - DR-125`() {
         val bare = TurnOutcome.ClientAbandoned()
         assertEquals(bare, rounds.withFailureSalvage(bare, RoundUsage()))

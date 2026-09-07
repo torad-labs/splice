@@ -42,7 +42,6 @@ internal class QuirksOverlay {
         store = providerCfg.quirks.store,
         cacheKey = providerCfg.quirks.cacheKey,
         summaryField = providerCfg.quirks.summaryField,
-        compactEffort = providerCfg.quirks.compactEffort,
         toolChoice = providerCfg.quirks.toolChoice,
     ).withReasoningCacheToml(providerCfg.quirks.reasoningCache)
         .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
@@ -88,7 +87,6 @@ internal class QuirksOverlay {
     internal fun passthroughQuirks(providerCfg: ProviderConfig, base: PassthroughQuirks): PassthroughQuirks =
         base.copy(
             mapThinkingToAdaptive = providerCfg.quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
-            compactEffort = providerCfg.quirks.compactEffort ?: base.compactEffort,
             stripSamplingParams = providerCfg.quirks.stripSamplingParams ?: base.stripSamplingParams,
             mfjsSanitize = providerCfg.quirks.mfjs ?: base.mfjsSanitize,
             // Absent (null) keeps the base. Empty (`block_allowlist = []`) is the ONLY spelling that

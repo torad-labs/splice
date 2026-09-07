@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.spi.WireSink
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val TYPE = "type"
 
@@ -24,13 +25,20 @@ private const val TYPE = "type"
 internal class WireBlockWriter(
     private val frames: SseFrameWriter,
     private val start: MessageStart,
+    /** The turn's ONE block-index source. Injected and atomic because a turn has a second writer
+     *  since 2026-09-06 — the keepalive pinger's status-line writer (SseEmitter.progress), which
+     *  runs on its own coroutine and must mint from the same sequence so no two blocks can share an
+     *  index and the sequence stays dense. Only the index is shared: each writer keeps its own
+     *  [open] set and its own frame buffer, so the TURN's writer — this file's hot delta path — did
+     *  not become concurrent. The pinger's instance is reached by two coroutines and is guarded by
+     *  SseEmitter.progressMutex instead; nothing here is thread-safe on its own. */
+    private val nextBlockIndex: AtomicInteger = AtomicInteger(0),
 ) : WireSink {
-    private var nextBlockIndex = 0
     private val open = LinkedHashSet<Int>()
 
     private suspend fun openBlock(contentBlock: JsonObject): WireBlockIndex {
         start.ensureStart()
-        val idx = nextBlockIndex++
+        val idx = nextBlockIndex.getAndIncrement()
         open.add(idx)
         frames.frame(
             "content_block_start",

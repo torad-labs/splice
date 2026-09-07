@@ -220,7 +220,11 @@ class HeadServerFoldTest {
     }
 
     /** A dedicated head whose totalCap (1s) is far tighter than its idle budgets — the NF-03 rig. */
-    private fun tightCapHead(gate: InflightGate, capPort: Int): HeadServer = HeadServer(
+    /** [log] is captured rather than discarded so a FAILING run carries its own evidence: the three
+     *  CancellationSeal branches that write zero bytes — clientGone → abandon, emitError IOException
+     *  → abandon, and already-sealed → nothing — are indistinguishable from the wire alone, and a CI
+     *  failure with log = {} costs a whole diagnostic round trip to tell them apart (2026-09-06). */
+    private fun tightCapHead(gate: InflightGate, capPort: Int, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = CodexProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -246,7 +250,7 @@ class HeadServerFoldTest {
             compactStats = CompactStats(tmp.resolve("cap-compact.jsonl")),
             usageStore = UsageStore(tmp.resolve("cap-usage.json"), tmp.resolve("cap-ratelimit.json")),
             perfStats = PerfStats(tmp.resolve("cap-perf.jsonl")),
-            log = {},
+            log = log,
         ),
     )
 
@@ -339,24 +343,33 @@ class HeadServerFoldTest {
         // honest red→green.
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 0 })
         val capPort = freshPort()
-        val capHead = tightCapHead(gate, capPort)
+        // Diagnostics, not a fix: this does not make the reap more likely to win, it makes a loss
+        // legible. The head's own lines name which ending fired (error:cancelled vs client_abort).
+        val headLog = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val capHead = tightCapHead(gate, capPort, log = { headLog.add(it.trim()) })
         capHead.start()
         awaitListening(capPort)
         try {
             val t0 = System.currentTimeMillis()
-            val sse = client.post("http://127.0.0.1:$capPort/v1/messages") {
+            val response = client.post("http://127.0.0.1:$capPort/v1/messages") {
                 header("Content-Type", "application/json")
                 setBody(
                     """{"model":"claude-codex--gpt-5.6-luna","stream":true,"max_tokens":64,
                         "system":"You are a test. SCENARIO:stall",
                         "messages":[{"role":"user","content":"go"}]}""",
                 )
-            }.bodyAsText()
+            }
+            val sse = response.bodyAsText()
             val tookMs = System.currentTimeMillis() - t0
 
-            assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $sse")
-            assertTrue(sse.contains("stalled (watchdog)"), "expected the watchdog-named reason: $sse")
-            assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall (took ${tookMs}ms)")
+            // An empty body and a normally-completed one are DIFFERENT failures and the message must
+            // say which: bodyLen distinguishes them, and the head log names the branch.
+            val headLines = synchronized(headLog) { headLog.toList() }
+            val diag = "status=${response.status} bodyLen=${sse.length} tookMs=$tookMs " +
+                "head=[${headLines.joinToString(" ~ ")}] sse=$sse"
+            assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $diag")
+            assertTrue(sse.contains("stalled (watchdog)"), "expected the watchdog-named reason: $diag")
+            assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall: $diag")
             // the slot must come back within ~one poll interval, not ride the stall
             val deadline = System.currentTimeMillis() + 2_000
             while (System.currentTimeMillis() < deadline && gate.snapshot().inflight != 0) {

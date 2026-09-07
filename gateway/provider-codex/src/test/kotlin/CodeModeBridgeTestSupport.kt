@@ -11,6 +11,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.LogSink
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
 import splice.spi.BuiltTurn
@@ -33,6 +34,9 @@ abstract class CodeModeBridgeTestSupport {
     @TempDir
     protected lateinit var tempDir: Path
 
+    /** Every line the bridge logged through its head-scoped sink, across every bridge built here. */
+    protected val logLines = mutableListOf<String>()
+
     protected fun bridge(
         runtime: CodeModeRuntime,
         maxRecords: Int = 8,
@@ -47,6 +51,7 @@ abstract class CodeModeBridgeTestSupport {
             ttl = ttl,
             maxRounds = maxRounds,
             clock = clock,
+            log = LogSink { logLines += it },
         ),
     )
 
@@ -87,10 +92,11 @@ abstract class CodeModeBridgeTestSupport {
         result: String = "",
         sessionId: String = "session-a",
         results: List<CodeModeResult>? = null,
+        model: String = "gpt-6-astra",
     ) = CodexCodeModeBridge.Turn(
         sessionId = sessionId,
         conversationKey = "splice-first-message",
-        model = "gpt-6-astra",
+        model = model,
         tools = setOf("Read", "Edit"),
         toolResults = results ?: resultId?.let { listOf(CodeModeResult(it, result)) }.orEmpty(),
     )

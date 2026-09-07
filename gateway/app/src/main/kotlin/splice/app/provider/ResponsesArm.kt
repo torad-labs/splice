@@ -85,6 +85,7 @@ internal class ResponsesArm(
                 CodeModeBridgeConfig(
                     runtime = JvmCodeModeRuntime(),
                     stateFile = statePaths.stateDir.resolve("${ctx.key}-code-mode.json"),
+                    log = HeadScopedLogs.headScopedLog(ctx.key, log),
                 ),
             )
         } else {

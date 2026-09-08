@@ -3,6 +3,7 @@
 // thinking already reached the client. These tests pin both halves: empty harvest fallback errors,
 // while an emitted native thinking block remains a clean success without any synthetic mirror.
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -16,7 +17,9 @@ import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.AsyncFileIo
 import splice.gateway.compact.CompactStats
+import splice.gateway.compact.CompactStatsSummary
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.wire.TurnTerminal
 import java.nio.file.Path
@@ -130,8 +133,19 @@ class TurnPipelineTest {
         return rec to tag
     }
 
+    /** Compact stats append on the process-wide file lane AFTER finishStream returns. Drain it
+     *  before JUnit deletes the temp dir, or the append lands in a directory being swept and the
+     *  test fails on teardown ("Failed to delete temp directory", CI 2026-09-07). */
+    @AfterEach
+    fun drainFileLane() {
+        AsyncFileIo.drain()
+    }
+
     /** The compact-stats JSONL the pipeline appended this turn (a fresh reader over the same file). */
-    private fun recordedCompact() = CompactStats(tmp.resolve("compact.jsonl")).read()
+    private fun recordedCompact(): CompactStatsSummary {
+        AsyncFileIo.drain()
+        return CompactStats(tmp.resolve("compact.jsonl")).read()
+    }
 
     /** A deterministic failure (a verdict no retry can change) ends in words, not an error event;
      *  every other failure keeps the honestly-typed error the client is right to retry. */

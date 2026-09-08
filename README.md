@@ -93,8 +93,8 @@ curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install
 To pin one version instead of following `latest` (prereleases never become `latest`):
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.1/install.sh \
-  | env SPLICE_VERSION=v0.3.1 bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.2/install.sh \
+  | env SPLICE_VERSION=v0.3.2 bash
 ```
 
 **Option 2: from source** (no `gh` needed):

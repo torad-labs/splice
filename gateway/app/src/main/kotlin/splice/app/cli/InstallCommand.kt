@@ -7,7 +7,6 @@ package splice.app.cli
 import splice.app.TopologyLoader
 import splice.core.util.EnvReader
 import java.nio.file.Files
-import java.nio.file.Path
 
 /** The `install` / `uninstall` / `init` verbs as one cohesive unit of behavior (Kotlin style law,
  *  2026-08-15: main sources carry no top-level functions) — they share the wrapper-symlink and
@@ -34,10 +33,6 @@ internal class InstallCommand {
 
     internal fun uninstall(headArg: String?, env: EnvReader = EnvReader(System::getenv)): Boolean =
         uninstaller.uninstall(headArg, env)
-
-    internal fun installShim(repoShim: Path, env: EnvReader = EnvReader(System::getenv)) {
-        shim.copyLaunchShim(repoShim, env)
-    }
 
     internal fun installedShimVersion(env: EnvReader = EnvReader(System::getenv)): String? =
         shim.installedShimVersion(env)

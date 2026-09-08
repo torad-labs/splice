@@ -17,7 +17,10 @@ import java.nio.file.Files
 
 class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `aggregate interruption overflow preserves durable evidence and never posts truncated output`() = runTest {
+    fun `aggregate interruption evidence past the worker text limit is posted whole`() = runTest {
+        // Two results that each fit the worker's 64 KiB text frame but together do not. The evidence
+        // never crosses that frame — it is the outer call's own output — so it goes upstream complete;
+        // grading it against the frame poisoned the record and every retry of the same request.
         val steps = listOf(
             CodeModeStep.Calls(listOf(call("first", "Read"), call("second", "Edit"))),
             CodeModeStep.Calls(listOf(call("later", "Read"))),
@@ -28,18 +31,26 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
         val results = sink.tools.map { CodeModeResult(it.id, "é".repeat(20_000), true) }
         val returned = turn(results = results)
+        var upstream = ""
         val outcome = manager.interceptor(returned, disableParallel = false)
-            .intercept(siblingResults(results), RecordingSink()) { error("must not discard evidence upstream") }
-        assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("interruption evidence exceeds"))
+            .intercept(siblingResults(results), RecordingSink()) {
+                upstream = it
+                completedOutcome()
+            }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        val items = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
+        val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
+            .jsonObject.getValue("output").jsonPrimitive.content
+        assertTrue(output.encodeToByteArray().size > 65_536)
+        val posted = Json.parseToJsonElement(output).jsonObject.getValue("results").jsonArray
+            .associate { it.jsonObject.getValue("id").jsonPrimitive.content to it.jsonObject }
+        results.forEach { result ->
+            assertEquals(result.output, posted.getValue(result.id)["output"]?.jsonPrimitive?.content)
+            assertEquals("true", posted.getValue(result.id)["isError"]?.jsonPrimitive?.content)
+        }
         val saved = Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json"))).jsonObject
             .getValue("records").jsonArray.single().jsonObject
-        assertEquals("LOST", saved.getValue("phase").jsonPrimitive.content)
-        val durableResults = saved.getValue("results").jsonObject
-        results.forEach { result ->
-            assertEquals(result.output, durableResults.getValue(result.id).jsonObject["output"]?.jsonPrimitive?.content)
-            assertEquals("true", durableResults.getValue(result.id).jsonObject["isError"]?.jsonPrimitive?.content)
-        }
+        assertEquals("COMPLETED", saved.getValue("phase").jsonPrimitive.content)
         assertTrue(runtime.cell.closed)
         assertEquals(1, runtime.starts)
     }
@@ -88,6 +99,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
             .intercept(siblingResults(listOf(result)), RecordingSink()) { error("must not post fabricated evidence") }
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("not exposed"))
+        assertTrue(outcome.deterministic, "a bridge verdict is the same on every retry")
         assertEquals(state, Files.readString(tempDir.resolve("bridge.json")))
         assertEquals(1, runtime.cell.advances)
     }

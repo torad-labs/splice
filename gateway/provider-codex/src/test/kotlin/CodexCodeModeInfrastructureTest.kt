@@ -45,12 +45,18 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         val record = Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json"))).jsonObject
             .getValue("records").jsonArray.single().jsonObject
         assertEquals("LOST", record.getValue("phase").jsonPrimitive.content)
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
+        var retryPost = ""
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) { body ->
             posts++
+            retryPost = body
             outerOutcome()
         }
-        assertEquals(1, posts)
+        // The retry of the same request cannot resume a lost cell: it completes the record with
+        // the fault as its visible output and goes upstream once; the source is never rerun.
+        assertEquals(2, posts)
         assertEquals(1, starts)
+        assertTrue(retryPost.contains("PROTOCOL/IO"), retryPost)
+        assertTrue(retryPost.contains("sourceRerun"), retryPost)
         assertEquals(!atStartup, closed)
     }
 

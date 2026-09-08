@@ -17,17 +17,18 @@ internal class CodexCodeModeRegistry(
     private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.maxRecords)
     private val cells = mutableMapOf<String, CodeModeCell>()
     private val admissions = mutableMapOf<String, Long>()
+    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history)
     private var generation = 0L
 
     init {
         synchronized(monitor) {
-            val changed = expireRecords() or history.trim(records, config.clock.millis())
+            val changed = sweeper.sweep() or history.trim(records, config.clock.millis())
             if (changed) store.save(records, history.entries)
         }
     }
 
     fun owner(key: String, digest: String, ids: Set<String>): CodeModeRecord? = synchronized(monitor) {
-        if (expireRecords()) store.save(records, history.entries)
+        if (sweeper.sweep()) store.save(records, history.entries)
         records.lastOrNull { record ->
             record.key == key && record.phase == CodeModePhase.ACTIVE
         } ?: records.lastOrNull { record ->
@@ -40,30 +41,30 @@ internal class CodexCodeModeRegistry(
     }
 
     fun completed(key: String): List<CodeModeRecord> = synchronized(monitor) {
-        if (expireRecords()) store.save(records, history.entries)
+        if (sweeper.sweep()) store.save(records, history.entries)
         records.filter { it.key == key && it.phase == CodeModePhase.COMPLETED }
     }
 
     fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean = synchronized(monitor) {
-        if (expireRecords()) store.save(records, history.entries)
+        if (sweeper.sweep()) store.save(records, history.entries)
         history.entries.any { marker ->
             marker.key == key && (marker.lastDigest == digest || marker.resultIds.any { it in ids })
         }
     }
 
     fun foreignResultOwner(key: String, ids: Set<String>): CodeModeRecord? = synchronized(monitor) {
-        if (expireRecords()) store.save(records, history.entries)
+        if (sweeper.sweep()) store.save(records, history.entries)
         records.firstOrNull { record -> record.key != key && record.clientIds().any { it in ids } }
     }
 
     fun unknownBridgeResults(key: String, ids: Set<String>): Set<String> = synchronized(monitor) {
-        if (expireRecords()) store.save(records, history.entries)
+        if (sweeper.sweep()) store.save(records, history.entries)
         val known = records.filter { it.key == key }.flatMap(CodeModeRecord::clientIds).toSet()
         ids.filter { it.startsWith(CODE_MODE_CLIENT_ID_PREFIX) && it !in known }.toSet()
     }
 
     fun add(record: CodeModeRecord): Boolean = synchronized(monitor) {
-        if (expireRecords()) store.save(records, history.entries)
+        if (sweeper.sweep()) store.save(records, history.entries)
         val candidate = records.toMutableList()
         val candidateHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.maxRecords)
         while (candidate.size >= config.maxRecords) {
@@ -146,17 +147,9 @@ internal class CodexCodeModeRegistry(
         store.save(records, history.entries)
     }
 
-    private fun expireRecords(): Boolean {
-        val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
-        val stale = records.filter { it.updatedAt < cutoff }
-        if (stale.isEmpty()) return false
-        stale.forEach { record ->
-            admissions.remove(record.id)
-            cells.remove(record.id)?.close()
-            history.remember(record, config.clock.millis())
-        }
-        records.removeAll(stale.toSet())
-        return true
+    /** See [CodexCodeModeSweeper.evictIdleCell]; the eviction is persisted before the slot is reused. */
+    fun evictIdleCell(): CodeModeRecord? = synchronized(monitor) {
+        sweeper.evictIdleCell()?.also { store.save(records, history.entries) }
     }
 
     fun acceptResults(record: CodeModeRecord, digest: String, supplied: Map<String, CodeModeResult>) =

@@ -19,6 +19,7 @@ import splice.gateway.wire.CollectingTerminal
 import splice.spi.BufferCapacity
 
 private const val ERROR_STATUS = 502
+private const val OK_STATUS = 200
 
 class CollectingTerminalTest {
 
@@ -29,6 +30,19 @@ class CollectingTerminalTest {
     // synthesized) — the block is dropped, but stop_reason=tool_use still claims a tool call
     // happened. Shipping that as a clean 200 with an empty content array is protocol-invalid and
     // silently discards the tool call; the turn must fail honestly instead.
+    @Test
+    fun `explained ending is a clean 200 message carrying the explanation as text`() = runTest {
+        val t = terminal()
+        t.emitExplained("\u26A0 splice: explained", Usage())
+        assertEquals(OK_STATUS, t.httpStatus())
+        val body = t.responseBody()
+        assertEquals("message", body["type"]?.jsonPrimitive?.content)
+        assertEquals("end_turn", body["stop_reason"]?.jsonPrimitive?.content)
+        val block = body.getValue("content").jsonArray.single().jsonObject
+        assertEquals("text", block["type"]?.jsonPrimitive?.content)
+        assertEquals("\u26A0 splice: explained", block["text"]?.jsonPrimitive?.content)
+    }
+
     @Test
     fun `a blank-name tool_use fails the turn honestly instead of a clean 200`() = runTest {
         val t = terminal()

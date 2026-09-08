@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import splice.spi.CodeModeCapacityException
 import splice.spi.CodeModeCell
 import splice.spi.CodeModeInfrastructureException
 import splice.spi.CodeModeRuntime
@@ -43,7 +44,7 @@ public class JvmCodeModeRuntime(
     override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
         check(!closed.get()) { "Code-mode runtime is closed" }
         val start = CodeModeWire.startFrame(source, tools)
-        if (!permits.tryAcquire()) throw IOException("Code-mode worker capacity reached")
+        if (!permits.tryAcquire()) throw CodeModeCapacityException()
         var channel: WorkerChannel? = null
         var started = false
         val permit = WorkerPermit(permits)

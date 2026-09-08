@@ -116,6 +116,33 @@ class SseEmitterTest {
         assertTrue(frames.last().startsWith("event: error\n")) // no clean stop after failure
     }
 
+    /** A deterministic failure ends in words: Claude Code re-sends an error event identically
+     *  before content and hides its message behind "Server error mid-response" after content, so
+     *  the wire carries the explanation as a text block and a clean stop instead. */
+    @Test
+    fun `explained ending writes the message as a text block and a clean stop, never an error event`() = runTest {
+        val (frames, e) = collector()
+        e.emitExplained("\u26A0 splice: nothing was executed", Usage())
+        assertTrue(frames.none { it.startsWith("event: error") }, frames.toString())
+        assertTrue(frames.any { it.startsWith("event: content_block_start") && it.contains("\"type\":\"text\"") })
+        assertTrue(frames.any { it.startsWith("event: content_block_delta") && it.contains("nothing was executed") })
+        assertTrue(frames.any { it.startsWith("event: message_delta") && it.contains("\"stop_reason\":\"end_turn\"") })
+        assertTrue(frames.last().startsWith("event: message_stop"))
+        e.emitError(ErrorType.API_ERROR, "late") // sealed: nothing follows the clean stop
+        assertTrue(frames.last().startsWith("event: message_stop"))
+    }
+
+    @Test
+    fun `explained ending after a streamed tool_use keeps stop_reason tool_use`() = runTest {
+        val (frames, e) = collector()
+        val idx = e.openTool("toolu_1", "Read")
+        e.inputJsonDelta(idx, "{}")
+        e.closeBlock(idx)
+        e.emitExplained("\u26A0 splice: explained", Usage())
+        assertTrue(frames.any { it.startsWith("event: message_delta") && it.contains("\"stop_reason\":\"tool_use\"") })
+        assertTrue(frames.none { it.startsWith("event: error") })
+    }
+
     @Test
     fun `abandon seals with nothing on the wire`() = runTest {
         val (frames, e) = collector()

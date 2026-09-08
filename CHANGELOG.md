@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
+
 ### Fixed
 - **Code mode no longer runs out of workers behind clients that never came back.** A script whose
   client calls were never answered (the session was abandoned, compacted or killed) kept its worker

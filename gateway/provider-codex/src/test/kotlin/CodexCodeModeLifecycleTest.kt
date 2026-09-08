@@ -274,11 +274,19 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue(checkNotNull(runtime.cell).closed)
         assertTrue(sink.tools.isEmpty())
-        val restored = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run")))))
+        val restoredRuntime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run"))))
+        val restored = bridge(restoredRuntime)
+        var posted = ""
         val retry = restored.interceptor(turn(), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
-        assertTrue(retry is TurnOutcome.Failure)
-        assertTrue((retry as TurnOutcome.Failure).message.contains("source was not rerun"))
+            .intercept(BASE_REQUEST, RecordingSink()) { body ->
+                posted = body
+                completedOutcome()
+            }
+        // The lost record can never resume, so the retry completes it with its evidence and goes
+        // upstream; the source is not rerun (no new start) and the model sees why.
+        assertTrue(retry is TurnOutcome.Success)
+        assertEquals(0, restoredRuntime.starts)
+        assertTrue(posted.contains("source was not rerun"))
     }
 
     @Test

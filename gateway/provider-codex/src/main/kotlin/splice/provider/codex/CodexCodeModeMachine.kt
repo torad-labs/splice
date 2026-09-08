@@ -44,7 +44,13 @@ internal class CodexCodeModeMachine(
     }
 
     suspend fun emit(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
-        if (calls.isEmpty()) return TurnOutcome.Failure(ErrorType.API_ERROR, "code-mode has no client calls to emit")
+        if (calls.isEmpty()) {
+            return TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "code-mode has no client calls to emit",
+                deterministic = true,
+            )
+        }
         calls.forEach { call ->
             val index = sink.openTool(call.clientId, call.name)
             sink.inputJsonDelta(index, call.arguments.toString())
@@ -54,17 +60,13 @@ internal class CodexCodeModeMachine(
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
-        val output = CodeModeInterruption.output(record, detail)
-        if (!validation.fitsOutput(output)) {
-            return poison(record, "code-mode interruption evidence exceeds the size limit; source was not rerun")
-        }
-        registry.complete(record, output)
+        registry.complete(record, CodeModeInterruption.output(record, detail, config.maxOutputChars))
         return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
     }
 
     fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure {
         registry.lose(record, message)
-        return TurnOutcome.Failure(ErrorType.API_ERROR, message)
+        return TurnOutcome.Failure(ErrorType.API_ERROR, message, deterministic = true)
     }
 
     fun lostMessage(record: CodeModeRecord): String =

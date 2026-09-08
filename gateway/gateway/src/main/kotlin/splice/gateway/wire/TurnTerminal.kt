@@ -54,6 +54,16 @@ public interface TurnTerminal : WireSink {
     /** The ONLY failure ending — a retryable, honestly-typed error the client can act on. */
     public suspend fun emitError(type: ErrorType, message: String)
 
+    /** The ending for a failure NO retry can change (TurnOutcome.Failure.deterministic): the
+     *  explanation as a text block the client renders verbatim, then the clean terminal. An error
+     *  event here is worse than useless — Claude Code re-sends it identically before content and
+     *  hides the message behind "Server error mid-response" after content — so the wire says what
+     *  happened in words instead. Default composes the two verbs every sink already has. */
+    public suspend fun emitExplained(message: String, usage: Usage) {
+        addTextBlock(message)
+        emitTerminal(hasToolUse = false, incomplete = false, usage = usage)
+    }
+
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()
 

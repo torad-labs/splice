@@ -57,6 +57,21 @@ public class SseEmitter internal constructor(
 
     override val hasEnded: Boolean get() = seal.get() == SealState.ENDED
 
+    // A tool_use block already on the wire must still derive stop_reason=tool_use when a
+    // deterministic failure ends the turn in words — the client runs what it was shown.
+    @Volatile private var toolSeen = false
+
+    override suspend fun openTool(id: String, name: String): WireBlockIndex =
+        blocks.openTool(id, name).also { toolSeen = true }
+
+    /** A deterministic failure's ending: the explanation as one text block, then the clean
+     *  terminal with the stop_reason the streamed content earned. Nothing here is an error frame. */
+    override suspend fun emitExplained(message: String, usage: Usage) {
+        if (seal.get() != SealState.OPEN) return
+        blocks.addTextBlock(message)
+        emitTerminal(hasToolUse = toolSeen, incomplete = false, usage = usage)
+    }
+
     override val endedCleanly: Boolean get() = cleanEnd.get()
 
     override suspend fun ensureStarted(): Unit = start.ensureStart()

@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
+
+### Fixed
+- **Code mode no longer runs out of workers behind clients that never came back.** A script whose
+  client calls were never answered (the session was abandoned, compacted or killed) kept its worker
+  slot indefinitely; with four such cells parked, every new script on every session failed with
+  `code-mode runtime failed to start` for the rest of the day. A cell parked longer than 30 minutes
+  without results is now closed, and at capacity the oldest cell parked over 2 minutes is evicted
+  for the newer script. Both are recorded on the record and logged once under `[<head>][code-mode]`.
+- **A lost script's evidence is never too big to report.** The interruption output (results so
+  far, unresolved calls, the reason) rides upstream as the outer call's own output, but it was graded
+  against the worker's 64 KiB text frame, which it never crosses: any script whose accumulated
+  results passed 64 KiB (five `Read`s) poisoned its record, and the same request then failed
+  identically on every retry (47 turns over 80 minutes on 2026-09-07). Evidence is now bounded by
+  the upstream output ceiling only, and past that each result is cut to an equal share behind a
+  `[truncated N chars]` marker instead of the turn failing.
+- **A code-mode failure is now readable in Claude Code.** Every gateway failure went out as an
+  SSE `error` event. Claude Code 2.1.x re-sends an `api_error` identically until it gives up when
+  the event arrives before content, and after content drops the message for a fixed "API Error:
+  Server error mid-response" line, so a code-mode verdict that no retry can change (a record it
+  cannot resume, a script it cannot admit) surfaced as a retry storm or an unreadable line. Such
+  failures now end the turn with the explanation as a `\u26A0 splice:` text block and a clean stop;
+  transient upstream faults keep the error event the client is right to retry.
+- **Capacity and lost cells report to the model instead of failing the turn.** When no slot can be
+  freed, the script's own output tells the model nothing was executed and to call the tools
+  directly, and the turn continues. A lost cell retried with the same request likewise completes
+  with its evidence (results so far, unresolved calls, the reason) and goes upstream once, rather
+  than answering 502 until new user content arrived. The spawn failure's cause is now logged; it was
+  swallowed before, which is why the pool being full went undiagnosed for an hour.
+
 ## splice v0.3.1 — silent-stream reliability and the code-mode beta - 2026-09-06
 
 ### Fixed

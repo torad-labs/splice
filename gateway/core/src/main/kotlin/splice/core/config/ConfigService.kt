@@ -120,11 +120,6 @@ public class ConfigService(
         return PatchResult(applied, rejected, restartRequired, getConfig())
     }
 
-    public fun resetRuntimeForTests() {
-        synchronized(runtimeLock) { runtimeLayer.clear() }
-        fileCache = null
-    }
-
     private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
         val merged = LinkedHashMap<String, Any?>()
         Knob.entries.forEach { merged[it.key] = it.default }

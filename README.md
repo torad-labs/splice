@@ -93,8 +93,8 @@ curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install
 To pin one version instead of following `latest` (prereleases never become `latest`):
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.1/install.sh \
-  | env SPLICE_VERSION=v0.3.1 bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.2/install.sh \
+  | env SPLICE_VERSION=v0.3.2 bash
 ```
 
 **Option 2: from source** (no `gh` needed):
@@ -226,6 +226,8 @@ code_mode = true # beta; false or omitted disables both runner and guidance
 ```
 
 Enabling it automatically appends orchestration guidance to the caller's instructions and exposes splice's bundled JavaScript runner on eligible GPT-6 Astra/Sol turns. Compaction, toolless turns, and forced named-tool choices keep the ordinary path. Direct tools remain available; all real operations use Claude Code's permission-checked client handlers. No Codex or Node installation is required. Child JVMs bound workers, time, and heap and deny guest host/I/O access; Graal community is not an OS-hardened sandbox against same-user attackers.
+
+Four scripts can be paused at once, each in its own worker JVM. A paused script whose client calls go unanswered for 30 minutes is closed, and when all four slots are held the oldest one paused over 2 minutes is evicted for a newer script; a script that cannot get a slot reports that in its own output so the model calls the tools directly. A closed script is never rerun; its evidence (results so far, unresolved calls, the reason) is what the model sees. That evidence is bounded only by the 1 MiB output ceiling; past it, each result is cut to an equal share behind a `[truncated N chars]` marker rather than the turn failing. A code-mode failure that no retry can change ends the turn with a readable `⚠ splice:` line instead of an API error, because Claude Code either retries error events identically or hides their message once content has streamed.
 
 If a completed script's history can no longer be placed (the record aged out, the session switched model, the conversation moved underneath a running script), splice sends the client's own history upstream instead, where the script's client calls are ordinary tool calls, and logs one `[code-mode]` line for the head. The conversation continues; only that script's batching is lost from the model's view.
 

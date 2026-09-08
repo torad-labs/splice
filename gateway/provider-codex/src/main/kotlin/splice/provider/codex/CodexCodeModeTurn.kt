@@ -150,7 +150,7 @@ internal class CodexCodeModeTurn(
     }
 
     private fun failure(message: String): TurnOutcome.Failure =
-        TurnOutcome.Failure(ErrorType.INVALID_REQUEST, message)
+        TurnOutcome.Failure(ErrorType.INVALID_REQUEST, message, deterministic = true)
 }
 
 private data class PlacedOwner(val record: CodeModeRecord, val bodyJson: String)

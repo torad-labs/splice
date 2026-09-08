@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
+import splice.spi.CodeModeCapacityException
 import splice.spi.CodeModeInfrastructureException
 import splice.spi.CodeModeTimeoutException
 import java.io.IOException
@@ -139,7 +140,7 @@ internal class CodexCodeModeDriver(
         record: CodeModeRecord,
         context: CodeModeRunContext,
     ): Pair<CodeModeRecord, TurnOutcome> = try {
-        val cell = config.runtime.start(record.source, context.turn.tools)
+        val cell = startWithEviction(record, context)
         if (!registry.attach(record, cell)) {
             record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
         } else {
@@ -156,6 +157,14 @@ internal class CodexCodeModeDriver(
         throw error
     } catch (error: CodeModePersistenceException) {
         throw error
+    } catch (_: CodeModeCapacityException) {
+        // Every slot is busy with a presumed-live cell. Nothing ran: tell the MODEL, in the script's
+        // own output, and let the turn continue — a 502 here retried identically until new user
+        // content arrived (2026-09-07, 87 failed turns on one head).
+        config.log(
+            "[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): $CAPACITY_DETAIL",
+        )
+        record to machine.interrupt(record, CAPACITY_DETAIL)
     } catch (_: CodeModeTimeoutException) {
         registry.lose(record, "code-mode runtime timed out during startup; source was not rerun")
         record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
@@ -165,14 +174,38 @@ internal class CodexCodeModeDriver(
             "code-mode infrastructure failure ${error.category}/${error.faultClass}; source was not rerun",
         )
         record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
-    } catch (_: IOException) {
-        registry.lose(record, "code-mode runtime failed to start; source was not rerun")
-        record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
+    } catch (error: IOException) {
+        record to startFailure(record, error)
     } catch (_: RuntimeException) {
+        record to startFailure(record, null)
+    }
+
+    /** One start attempt; at capacity the oldest parked cell is evicted first and the start retried once. */
+    private suspend fun startWithEviction(record: CodeModeRecord, context: CodeModeRunContext) = try {
+        config.runtime.start(record.source, context.turn.tools)
+    } catch (error: CodeModeCapacityException) {
+        registry.evictIdleCell() ?: throw error
+        config.runtime.start(record.source, context.turn.tools)
+    }
+
+    /** The spawn failure's cause chain goes to the head log; the previous `catch (_: …)` hid it, and
+     *  an hour of "runtime failed to start" carried no clue that the pool was simply full. */
+    private fun startFailure(record: CodeModeRecord, error: Exception?): TurnOutcome.Failure {
+        val chain = generateSequence<Throwable>(error) { it.cause }
+            .joinToString(": ") { it.message ?: it::class.simpleName.orEmpty() }
+            .ifEmpty { "runtime exception" }
+        config.log(
+            "[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): " +
+                "runtime failed to start — $chain",
+        )
         registry.lose(record, "code-mode runtime failed to start; source was not rerun")
-        record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
+        return failure(record.error.orEmpty(), ErrorType.API_ERROR)
     }
 
     private fun failure(message: String, type: ErrorType = ErrorType.INVALID_REQUEST): TurnOutcome.Failure =
-        TurnOutcome.Failure(type, message)
+        TurnOutcome.Failure(type, message, deterministic = true)
 }
+
+private const val RECORD_ID_LOG_CHARS: Int = 8
+private const val CAPACITY_DETAIL: String =
+    "code-mode worker capacity reached; nothing was executed — call the tools directly this turn"

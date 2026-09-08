@@ -120,6 +120,13 @@ public sealed class TurnOutcome {
          *  failed — carried so the usage store and perf row do not under-report the exact turns
          *  that ran the most upstream rounds (review-pr 2026-07-24). Zero when no salvage. */
         val salvagedUsage: Usage = Usage(),
+        /** True when the SAME request produces the SAME failure — a verdict the gateway reached on
+         *  its own (a code-mode record it cannot resume, a script the runtime cannot admit), which
+         *  no retry can change. Rendered as a readable ending the client shows verbatim rather than
+         *  an SSE error event: Claude Code 2.1.x re-sends an `api_error` identically until it gives
+         *  up when it arrives before content, and after content replaces the message with a fixed
+         *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07). */
+        val deterministic: Boolean = false,
     ) : TurnOutcome()
 
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:

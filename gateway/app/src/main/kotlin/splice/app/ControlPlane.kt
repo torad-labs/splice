@@ -21,6 +21,9 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.McpSharing
+import splice.core.sessions.HeadOfPid
+import splice.core.sessions.ProcessEnvironment
+import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -41,6 +44,7 @@ internal class ControlPlane(
     private val mcpHosting: McpHostingSettings = McpHostingSettings(),
 ) {
     private val boundary = DaemonBoundary()
+    private val environment = ProcessEnvironment()
 
     // Held here so Daemon can drop the app.provider + spi imports (concentration, 2026-08-19).
     // probeScope is the daemon's OWN scope — ProviderAssembly must receive the SAME instance
@@ -93,6 +97,10 @@ internal class ControlPlane(
             topologyStale = TopologyLoader.staleProbe(topologyPath, topologyDigest),
             turnPathStalled = turnPathStalled,
             mcpHost = mcpHost,
+            sessions = SessionRegistry(
+                home.resolve(".claude").resolve("sessions"),
+                HeadOfPid { pid -> environment.spliceHeadPort(pid)?.let { port -> headOfPort(heads, port) } },
+            ),
         )
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
@@ -103,4 +111,8 @@ internal class ControlPlane(
             .isSuccess
         return if (controlBound) srv else null
     }
+
+    /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
+    private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
+        heads.entries.firstOrNull { it.value.launchSpec?.port == port }?.key
 }

@@ -39,11 +39,13 @@ import splice.control.api.JsonBody
 import splice.control.api.LaunchRoutes
 import splice.control.api.McpRoutes
 import splice.control.api.PerfPayloads
+import splice.control.api.SessionsRoutes
 import splice.control.api.StatuslineRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
+import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
@@ -79,7 +81,10 @@ public class ControlServer(
     private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
     /** v0.4.0 shared MCP hosting; null keeps the control plane exactly as before. */
     private val mcpHost: McpHost? = null,
+    /** v0.4.0 (FEATURES.md §4): the Claude Code session registry, read-only, for /api/sessions. */
+    sessions: SessionRegistry? = null,
 ) {
+    private val sessionsRoutes = sessions?.let(::SessionsRoutes)
     private val payloads =
         ControlPayloads(
             heads,
@@ -136,6 +141,9 @@ public class ControlServer(
                 get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
                 post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
                 get("/api/compact") { guarded(call) { respond(call, compactPayloads.compactJson()) } }
+                if (sessionsRoutes != null) {
+                    get("/api/sessions") { guarded(call) { respond(call, sessionsRoutes.sessionsJson()) } }
+                }
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { statuslineRoute.statusline(call) } // stdin-piped per tick; no bearer

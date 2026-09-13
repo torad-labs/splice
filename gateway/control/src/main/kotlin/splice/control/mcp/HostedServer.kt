@@ -12,10 +12,9 @@ package splice.control.mcp
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -127,9 +126,10 @@ internal class HostedServer(
             pending.remove(hostId)
             return codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' is not running")
         }
-        return try {
-            withTimeout(config.requestTimeout) { slot.answer.await() }
-        } catch (_: TimeoutCancellationException) {
+        // withTimeoutOrNull, not withTimeout+catch: an OUTER cancellation (the client went away, a
+        // caller's own deadline) is a TimeoutCancellationException too and must propagate, never be
+        // read as "the child did not answer" (review 4 regression, 2026-09-13).
+        return withTimeoutOrNull(config.requestTimeout) { slot.answer.await() } ?: run {
             pending.remove(hostId)
             codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' did not answer in time")
         }
@@ -222,9 +222,8 @@ internal class HostedServer(
             )
         }
         send(codec.request(JsonPrimitive(hostId), "initialize", params))
-        val answer = try {
-            withTimeout(config.initializeTimeout) { slot.answer.await() }
-        } catch (_: TimeoutCancellationException) {
+        val answer = withTimeoutOrNull(config.initializeTimeout) { slot.answer.await() }
+        if (answer == null) {
             pending.remove(hostId)
             tearDown("no initialize answer")
             throw McpHostException("'${spec.name}' did not complete the MCP handshake")

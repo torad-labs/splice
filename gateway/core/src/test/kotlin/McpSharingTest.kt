@@ -114,11 +114,28 @@ class McpSharingTest {
                 "flagword":{"command":"srv","args":["--mode=repo"]},
                 "plain":{"command":"srv","args":["--stdio"]}}""",
         ).jsonObject
+        // The probe answers for "repo" as the DAEMON's cwd would; review 3: that is the wrong cwd
+        // for a relative name, so a bare word is never probed and only shape decides.
         val plan = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "K" }, DirectoryProbe { it == "repo" })
             .plan(entries)
-        assertEquals(setOf("plain"), plan.hosted.keys)
+        assertEquals(setOf("bare", "flagword", "plain"), plan.hosted.keys)
         assertTrue(plan.passthrough.getValue("flagrel").contains("./repo"))
-        assertTrue(plan.passthrough.getValue("bare").contains("directory 'repo'"))
-        assertTrue(plan.passthrough.getValue("flagword").contains("directory 'repo'"))
+    }
+
+    @Test
+    fun `relative shapes are refused without any cwd, npm scopes and urls are not paths`() {
+        val entries = Json.parseToJsonElement(
+            """{"rootword":{"command":"srv","args":["--root=repo"]},
+                "slash":{"command":"srv","args":["src/server.js"]},
+                "dir":{"command":"srv","args":["--dir","x"]},
+                "scoped":{"command":"npx","args":["-y","@scope/pkg"]},
+                "url":{"command":"srv","args":["--url=https://x.example/api"]},
+                "abs":{"command":"node","args":["/opt/srv/index.js"]}}""",
+        ).jsonObject
+        val plan = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "K" }, DirectoryProbe { false })
+            .plan(entries)
+        assertEquals(setOf("dir", "scoped", "url", "abs"), plan.hosted.keys)
+        assertTrue(plan.passthrough.getValue("rootword").contains("--root=repo"))
+        assertTrue(plan.passthrough.getValue("slash").contains("src/server.js"))
     }
 }

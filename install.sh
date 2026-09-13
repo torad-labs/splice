@@ -356,6 +356,21 @@ if [ ! -L "$BIN_DIR/splice" ] || [ ! -e "$BIN_DIR/splice" ]; then
 fi
 rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 
+# 4b. Keep a PRISTINE copy of this release under releases/<version>/ for `splice upgrade`: it is
+#     what rollback repoints at, and what the upgrade compares the live launch shim against so a
+#     local edit (the hostshield launcher patch lands AFTER this script) is kept rather than
+#     overwritten. Best effort: an install never fails for want of its own archive copy.
+JAR_VERSION="${JAR_VERSION_OUTPUT#splice }"
+RELEASE_DIR="${SHARE_DIR}/releases/${JAR_VERSION}"
+if mkdir -p "$RELEASE_DIR" &&
+  cp -p "$JAR_DST" "$RELEASE_DIR/splice.jar" &&
+  cp -p "$SHIM_DST" "$RELEASE_DIR/splice-launch" &&
+  ln -sfn "$JAR_VERSION" "${SHARE_DIR}/releases/current"; then
+  echo "splice: release copy kept at $RELEASE_DIR (splice upgrade --rollback target)"
+else
+  echo "splice: WARNING — could not keep a release copy under $RELEASE_DIR; splice upgrade will keep the wrapper as-is" >&2
+fi
+
 echo
 echo "splice: installed  (jar: $JAR_DST)"
 

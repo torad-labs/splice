@@ -17,6 +17,9 @@ internal class McpSession(val id: String, val server: String) {
     val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.DROP_OLDEST)
     val openStreams = AtomicInteger()
 
+    /** The version the child negotiated at this session's initialize; later requests must name it. */
+    @Volatile var protocolVersion: String? = null
+
     @Volatile var lastActivity: Long = 0L
         private set
 

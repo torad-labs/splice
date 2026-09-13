@@ -10,6 +10,7 @@
 // excludes it and it keeps launching per session (status quo).
 package splice.control.mcp
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -83,6 +84,12 @@ internal class HostedServer(
      *  (the 4-session benchmark caught exactly that on 2026-09-13: four copies per server). */
     private val spawnLock = Mutex()
 
+    /** Guards process/initResult so a pump ending an OLD child can never clear its replacement, and
+     *  a spawn that lands after close() tears its child down instead of running orphaned. */
+    private val stateLock = Any()
+
+    @Volatile private var closed = false
+
     @Volatile private var process: Process? = null
 
     @Volatile private var writer: BufferedWriter? = null
@@ -102,7 +109,10 @@ internal class HostedServer(
     val pid: Long? get() = process?.takeIf { it.isAlive }?.pid()
 
     /** The child's initialize result, spawning and handshaking first when the child is not up. */
-    suspend fun ensureStarted(): JsonObject = started ?: spawnLock.withLock { started ?: spawn() }
+    suspend fun ensureStarted(): JsonObject = started ?: spawnLock.withLock {
+        if (closed) throw McpHostException("hosted MCP server '${spec.name}' was closed")
+        started ?: spawn()
+    }
 
     private val started: JsonObject?
         get() = initResult?.takeIf { process?.isAlive == true }
@@ -125,51 +135,74 @@ internal class HostedServer(
         }
     }
 
-    /** Forward a client notification (initialized is swallowed by the host; cancelled is id-remapped). */
-    suspend fun notify(msg: JsonObject) {
-        if (codec.method(msg) == "notifications/initialized") return
+    /** Forward a client notification: initialized is the host's own (swallowed), cancelled is remapped
+     *  to the host id of THAT session's request and dropped when it names none — a cancel must never
+     *  reach the child under another session's id. False when the child could not be written. */
+    suspend fun notify(sessionId: String, msg: JsonObject): Boolean {
+        if (codec.method(msg) == "notifications/initialized") return true
         ensureStarted()
-        send(if (codec.method(msg) == "notifications/cancelled") remapCancelled(msg) else msg)
+        val out = if (codec.method(msg) == "notifications/cancelled") remapCancelled(sessionId, msg) else msg
+        return out == null || send(out)
     }
 
-    /** Fails everything in flight for [sessionId] — the session ended before its answers arrived. */
-    fun dropSession(sessionId: String) {
-        pending.entries.filter { it.value.sessionId == sessionId }.forEach { (id, slot) ->
-            pending.remove(id)
-            slot.fail(codec, "session ended")
-        }
-    }
-
+    /** Permanent: the registry replaced or evicted this server; a spawn racing this call tears down. */
     fun close(reason: String) {
-        val p = process ?: return
-        process = null
-        initResult = null
+        synchronized(stateLock) { closed = true }
+        tearDown(reason)
+    }
+
+    private fun tearDown(reason: String) {
+        val p = synchronized(stateLock) {
+            process.also {
+                process = null
+                initResult = null
+            }
+        } ?: return
         log("[mcp-host] ${spec.name}: closing pid ${p.pid()} ($reason)\n")
         p.destroy()
         if (!p.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)) p.destroyForcibly()
         failPending("hosted MCP server '${spec.name}' closed: $reason")
     }
 
-    private fun remapCancelled(msg: JsonObject): JsonObject {
+    private fun remapCancelled(sessionId: String, msg: JsonObject): JsonObject? {
         val clientId = (msg["params"] as? JsonObject)?.get("requestId")
-        val hostId = clientId?.let { id -> pending.entries.firstOrNull { it.value.clientId == id }?.key }
-        return if (hostId == null) msg else codec.withCancelledRequestId(msg, JsonPrimitive(hostId))
+        val hostId = pending.entries
+            .firstOrNull { it.value.sessionId == sessionId && it.value.clientId == clientId }
+            ?.key
+        return hostId?.let { codec.withCancelledRequestId(msg, JsonPrimitive(it)) }
     }
 
     private suspend fun spawn(): JsonObject {
         if (process != null) failPending("hosted MCP server '${spec.name}' exited")
         if (startedAt > 0L) restarts += 1
+        val p = launch()
+        startedAt = config.clock.millis()
+        Thread({ pump(p) }, "mcp-host-${spec.name}").apply { isDaemon = true }.start()
+        return try {
+            handshake(p)
+        } catch (e: CancellationException) {
+            tearDown("cancelled during the handshake")
+            throw e
+        }
+    }
+
+    /** The child, adopted under [stateLock] — or torn down at once when close() won the race. */
+    private fun launch(): Process {
         val p = try {
             launcher(spec)
         } catch (e: IOException) {
             lastError = "spawn failed: ${e.message}"
             throw McpHostException("cannot start '${spec.name}': ${e.message}", e)
         }
-        process = p
-        writer = p.outputStream.bufferedWriter()
-        startedAt = config.clock.millis()
-        Thread({ pump(p) }, "mcp-host-${spec.name}").apply { isDaemon = true }.start()
-        return handshake(p)
+        synchronized(stateLock) {
+            if (closed) {
+                p.destroyForcibly()
+                throw McpHostException("hosted MCP server '${spec.name}' was closed while starting")
+            }
+            process = p
+            writer = p.outputStream.bufferedWriter()
+        }
+        return p
     }
 
     private suspend fun handshake(p: Process): JsonObject {
@@ -178,7 +211,9 @@ internal class HostedServer(
         pending[hostId] = slot
         val params = buildJsonObject {
             put("protocolVersion", HOST_PROTOCOL)
-            put("capabilities", buildJsonObject { put("roots", buildJsonObject { put("listChanged", false) }) })
+            // No roots: roots are per client and the host serves many; a server that needs them is
+            // not shared (McpSharing rejects project-scoped entries) rather than given an empty list.
+            put("capabilities", buildJsonObject {})
             put(
                 "clientInfo",
                 buildJsonObject {
@@ -192,12 +227,12 @@ internal class HostedServer(
             withTimeout(config.initializeTimeout) { slot.answer.await() }
         } catch (_: TimeoutCancellationException) {
             pending.remove(hostId)
-            close("no initialize answer")
+            tearDown("no initialize answer")
             throw McpHostException("'${spec.name}' did not complete the MCP handshake")
         }
         val result = answer["result"] as? JsonObject
         if (result == null || !p.isAlive) {
-            close("handshake failed")
+            tearDown("handshake failed")
             throw McpHostException("'${spec.name}' rejected the MCP handshake: ${answer["error"]}")
         }
         send(codec.notification("notifications/initialized"))
@@ -233,30 +268,35 @@ internal class HostedServer(
         } catch (e: IOException) {
             lastError = "read failed: ${e.message}"
         }
-        if (process === p) {
-            // stdout EOF arrives a beat before the kernel reaps the child; wait that beat so the code is real.
-            val code = if (p.waitFor(EXIT_WAIT_MS, TimeUnit.MILLISECONDS)) p.exitValue().toString() else "unknown"
-            lastError = lastError ?: "exited with code $code"
-            log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
-            process = null
-            initResult = null
-            failPending("hosted MCP server '${spec.name}' exited")
+        if (process !== p) return
+        // stdout EOF arrives a beat before the kernel reaps the child; wait that beat so the code is real.
+        val code = if (p.waitFor(EXIT_WAIT_MS, TimeUnit.MILLISECONDS)) p.exitValue().toString() else "unknown"
+        // Compare-and-clear: a replacement may have been spawned during the wait; never clear it.
+        val mine = synchronized(stateLock) {
+            (process === p).also {
+                if (it) {
+                    process = null
+                    initResult = null
+                }
+            }
         }
+        if (!mine) return
+        lastError = lastError ?: "exited with code $code"
+        log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
+        failPending("hosted MCP server '${spec.name}' exited")
     }
 
     private fun dispatch(msg: JsonObject) {
         when (codec.kind(msg)) {
-            RpcKind.RESPONSE -> route(msg)
+            RpcKind.RESPONSE -> {
+                val hostId = (msg["id"] as? JsonPrimitive)?.content?.toLongOrNull()
+                val slot = hostId?.let(pending::remove)
+                slot?.answer?.complete(codec.withId(msg, slot.clientId))
+            }
             RpcKind.REQUEST -> answerServerRequest(msg)
             RpcKind.NOTIFICATION -> sink.onNotification(msg)
             RpcKind.INVALID -> Unit
         }
-    }
-
-    private fun route(msg: JsonObject) {
-        val hostId = (msg["id"] as? JsonPrimitive)?.content?.toLongOrNull() ?: return
-        val slot = pending.remove(hostId) ?: return
-        slot.answer.complete(codec.withId(msg, slot.clientId))
     }
 
     private fun answerServerRequest(msg: JsonObject) {
@@ -269,8 +309,12 @@ internal class HostedServer(
         send(reply)
     }
 
-    private fun failPending(message: String) {
-        pending.keys.toList().forEach { id -> pending.remove(id)?.fail(codec, message) }
+    /** Fails what is in flight — everything, or only [sessionId]'s requests (its session ended). */
+    fun failPending(message: String, sessionId: String? = null) {
+        pending.entries
+            .filter { sessionId == null || it.value.sessionId == sessionId }
+            .map { it.key }
+            .forEach { id -> pending.remove(id)?.fail(codec, message) }
     }
 }
 

@@ -19,13 +19,15 @@ import kotlinx.coroutines.selects.select
 import splice.control.mcp.McpHost
 
 private const val SESSION_HEADER = "Mcp-Session-Id"
+private const val PROTOCOL_HEADER = "MCP-Protocol-Version"
 private const val PING_MS = 15_000L
 
 internal class McpRoutes(private val host: McpHost) {
 
     suspend fun post(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
-        val reply = host.post(name, call.request.headers[SESSION_HEADER], call.receiveText())
+        val headers = call.request.headers
+        val reply = host.post(name, headers[SESSION_HEADER], call.receiveText(), headers[PROTOCOL_HEADER])
         reply.sessionId?.let { call.response.header(SESSION_HEADER, it) }
         val body = reply.body
         if (body == null) {
@@ -38,6 +40,14 @@ internal class McpRoutes(private val host: McpHost) {
     suspend fun stream(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
         val sessionId = call.request.headers[SESSION_HEADER]
+        if (!host.protocolAccepted(name, sessionId, call.request.headers[PROTOCOL_HEADER])) {
+            call.respondText(
+                """{"error":"unsupported MCP-Protocol-Version"}""",
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+            return
+        }
         val channel = host.openStream(name, sessionId)
         if (channel == null) {
             call.respondText("""{"error":"session not found"}""", ContentType.Application.Json, HttpStatusCode.NotFound)

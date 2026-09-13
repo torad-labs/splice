@@ -50,4 +50,16 @@ class CodeModeLimitsTest {
         }
         assertTrue(CodeModeLimits.boundedText("a".repeat(500), maxChars = 60).endsWith(" chars]"))
     }
+
+    @Test
+    fun `a cap too small for a marker still cuts on a code point, never inside a surrogate pair`() {
+        val emoji = "\uD83D\uDE00"
+        assertEquals("", CodeModeLimits.boundedText(emoji + "x", maxChars = 1))
+        assertEquals(emoji, CodeModeLimits.boundedText(emoji + "x", maxChars = 2))
+        for (cap in 1..6) {
+            val bounded = CodeModeLimits.boundedText(emoji.repeat(3), maxChars = cap)
+            assertTrue(bounded.length <= cap, "cap $cap -> ${bounded.length}")
+            assertTrue(bounded.isEmpty() || bounded.last().isLowSurrogate(), "cap $cap must end on a code point")
+        }
+    }
 }

@@ -151,6 +151,16 @@ class LocalRuntimeProbeTest {
     }
 
     @Test
+    fun `a server answering the OpenAI list on every models path is generic, not LM Studio`() {
+        val list = """{"object":"list","data":[{"id":"m","object":"model"}]}"""
+        val lenient = LocalHttp { _, url, _ -> if (url.endsWith("/models")) LocalHttpReply(200, list) else null }
+        val probe = LocalRuntimeProbe("http://localhost:1/v1", lenient)
+        val runtime = checkNotNull(probe.detect())
+        assertEquals(LocalRuntimeKind.OPENAI_COMPATIBLE, runtime.kind)
+        assertNull(probe.models(runtime).single().contextLength)
+    }
+
+    @Test
     fun `the live probe reads streaming and tool calls from the reply`() {
         val streamed = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"name\":\"ping\"}}]}}]}\n\n" +
             "data: [DONE]\n"

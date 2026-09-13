@@ -27,7 +27,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPLY_WORDS = ["Hello", " from", " the", " chat", " mock", ".", " 1,", " 2,", " 3", " END"]
-MODELS = ["mock-chat", "mock-chat-2"]
+MODELS = ["mock-chat", "mock-chat-2", "mock-chat-2-big"]
 USAGE = {"prompt_tokens": 12, "completion_tokens": 10, "total_tokens": 22}
 HOLD_SECONDS = float(os.environ.get("MOCK_CHAT_HOLD_S", "30"))
 SCENARIO = re.compile(rb"SCENARIO:([a-z_]+)")

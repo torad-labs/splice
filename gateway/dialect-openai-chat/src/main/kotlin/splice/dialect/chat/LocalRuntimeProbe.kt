@@ -60,10 +60,12 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
 
     /** Null when nothing answers at the base URL. Detection reads the BODY, not the status: LM Studio
      *  answers 200 with an error object on every unknown path (measured 2026-09-13, llmster 0.0.24),
-     *  so a 200 on /api/version proves Ollama only when it carries a version. */
+     *  so a 200 on /api/version proves Ollama only when it carries a version — and a list on
+     *  /api/v0/models proves LM Studio only when its rows carry LM Studio's max_context_length (a
+     *  server that answers every ...-/models path with the OpenAI shape is a generic one). */
     public fun detect(): LocalRuntime? {
         val ollama = get("$root/api/version")?.takeIf { it["version"] != null }
-        val lmStudio = if (ollama == null) get("$root/api/v0/models")?.takeIf { it["data"] != null } else null
+        val lmStudio = if (ollama == null) get("$root/api/v0/models")?.takeIf(::lmStudioShaped) else null
         val generic = if (ollama == null && lmStudio == null) get("$v1/models") else null
         return when {
             ollama != null -> LocalRuntime(LocalRuntimeKind.OLLAMA, JsonScalars.str(ollama, "version"))
@@ -75,6 +77,9 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
             else -> null
         }
     }
+
+    private fun lmStudioShaped(body: JsonObject): Boolean =
+        body["data"] != null && data(body).any { it["max_context_length"] != null }
 
     public fun models(runtime: LocalRuntime): List<LocalModel> = when (runtime.kind) {
         LocalRuntimeKind.LM_STUDIO -> data(get("$root/api/v0/models")).map { m ->

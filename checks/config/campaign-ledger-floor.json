@@ -8,15 +8,15 @@
     "rows": 8
   },
   "claude-head.toml": {
-    "lines": 259,
+    "lines": 262,
     "rows": 13
   },
   "drift-repair.toml": {
-    "lines": 2969,
-    "rows": 188
+    "lines": 3037,
+    "rows": 189
   },
   "head-decoupling.toml": {
-    "lines": 973,
+    "lines": 974,
     "rows": 37
   },
   "kotlin-gateway.toml": {
@@ -32,7 +32,7 @@
     "rows": 88
   },
   "proxy-hardening/oracle/expectations.toml": {
-    "lines": 198,
+    "lines": 246,
     "rows": 0
   },
   "proxy-hardening/walls/law_registry.toml": {
@@ -46,6 +46,10 @@
   "reasoning-cache.toml": {
     "lines": 122,
     "rows": 6
+  },
+  "v0.4.0.toml": {
+    "lines": 133,
+    "rows": 12
   },
   "ws-transport.toml": {
     "lines": 125,

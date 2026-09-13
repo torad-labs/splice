@@ -62,6 +62,7 @@ public class Daemon(
     private val controlPlane = ControlPlane(
         statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
         topologyDigest, topologyPath, refreshCall,
+        mcpHosting = McpHostingSettings().with(topology.daemon),
     )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;

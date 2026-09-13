@@ -17,8 +17,8 @@ import splice.core.SHIM_VERSION
 public sealed class Command {
     public abstract fun run(): Int
 
-    public data object Doctor : Command() {
-        override fun run(): Int = outcomeExitCode(DoctorCommand().doctor())
+    public data class Doctor(val args: List<String> = emptyList()) : Command() {
+        override fun run(): Int = outcomeExitCode(DoctorCommand().doctor(args))
     }
     public data object Version : Command() {
         override fun run(): Int = success { println("splice $GATEWAY_VERSION") }

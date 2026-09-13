@@ -151,6 +151,8 @@ class CodeModeBridgeRuntimeTest {
 
     @Test
     fun `bridge result UTF8 boundary matches the real worker`() = runBlocking {
+        // 65_536 bytes fits untouched; 65_538 is admitted truncated (never rejected: Claude Code
+        // cannot send a corrected result) and the turn still completes through the real worker.
         for (bytes in listOf(65_536, 65_538)) {
             runtime().use { runtime ->
                 val bridge = bridge(runtime, "result-$bytes.json")
@@ -160,29 +162,16 @@ class CodeModeBridgeRuntimeTest {
                 val id = sink.ids.single()
                 val output = "é".repeat(bytes / 2)
                 var posts = 0
+                var upstream = ""
                 val outcome = bridge.interceptor(turn(id, output), disableParallel = false)
                     .intercept(requestWithResult(id, output), Sink()) {
                         posts++
+                        upstream = it
                         TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                     }
-                if (bytes == 65_536) {
-                    assertTrue(outcome is TurnOutcome.Success)
-                    assertEquals(1, posts)
-                } else {
-                    assertTrue(outcome is TurnOutcome.Failure)
-                    assertEquals(
-                        "code-mode tool result '$id' exceeds the size limit",
-                        (outcome as TurnOutcome.Failure).message,
-                    )
-                    assertEquals(0, posts)
-                    val corrected = bridge.interceptor(turn(id, "corrected"), disableParallel = false)
-                        .intercept(requestWithResult(id, "corrected"), Sink()) {
-                            posts++
-                            TurnOutcome.Success(false, false, Usage(), messageClosed = true)
-                        }
-                    assertTrue(corrected is TurnOutcome.Success)
-                    assertEquals(1, posts)
-                }
+                assertTrue(outcome is TurnOutcome.Success, "$bytes: $outcome")
+                assertEquals(1, posts)
+                assertEquals(bytes > 65_536, upstream.contains("[truncated "), "$bytes: marker")
             }
         }
     }

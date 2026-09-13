@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -175,6 +176,24 @@ class ProviderAssemblyCompatibilityTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `code mode defaults on for ChatGPT responses only and explicit false still wins`() {
+        fun enabled(kind: String, dialect: Dialect, codeMode: Boolean?) = ProviderConfig(
+            dialect = dialect,
+            baseUrl = "https://example.invalid",
+            auth = AuthConfig(kind = kind),
+            quirks = QuirksConfig(codeMode = codeMode),
+        ).codeModeEnabled
+
+        assertTrue(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = null))
+        assertTrue(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = true))
+        assertFalse(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = false))
+        assertFalse(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_CHAT, codeMode = null))
+        assertFalse(enabled(AuthKind.GrokOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = null))
+        assertFalse(enabled("api-key", Dialect.OPENAI_RESPONSES, codeMode = null))
+        assertFalse(enabled(AuthKind.KimiOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH, codeMode = null))
     }
 
     @Test

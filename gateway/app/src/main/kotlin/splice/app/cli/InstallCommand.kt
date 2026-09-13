@@ -69,6 +69,7 @@ private val verbs: Map<String, CommandFactory> = mapOf(
     "login" to CommandFactory { a -> Command.Login(a.getOrNull(1)) },
     "setup" to CommandFactory { Command.Setup },
     "add" to CommandFactory { a -> Command.Add(a.drop(1)) },
+    "upgrade" to CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     "status" to CommandFactory { Command.Status },
     "restart" to CommandFactory { Command.Restart },
     "dashboard" to CommandFactory { Command.Dashboard },

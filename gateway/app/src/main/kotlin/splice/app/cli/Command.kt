@@ -42,6 +42,12 @@ public sealed class Command {
     public data class Add(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(runBlocking { AddCommand().add(args) })
     }
+
+    /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */
+    public data class Upgrade(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(UpgradeCommand().upgrade(args))
+    }
+
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
     public data object Restart : Command() { override fun run(): Int = outcomeExitCode(RestartCommand().restart()) }
     public data object Dashboard : Command() {

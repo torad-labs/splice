@@ -40,4 +40,14 @@ class CodeModeLimitsTest {
         assertTrue(bounded.length <= 100, bounded.length.toString())
         assertTrue(bounded.endsWith(" chars]"))
     }
+
+    @Test
+    fun `every positive cap is honoured, down to caps too small for a marker`() {
+        for (cap in listOf(1, 5, 19, 20, 21, 22, 23, 30, 60)) {
+            val bounded = CodeModeLimits.boundedText("a".repeat(500), maxChars = cap)
+            assertTrue(bounded.length <= cap, "cap $cap -> ${bounded.length}: $bounded")
+            assertTrue(CodeModeLimits.fitsText(bounded))
+        }
+        assertTrue(CodeModeLimits.boundedText("a".repeat(500), maxChars = 60).endsWith(" chars]"))
+    }
 }

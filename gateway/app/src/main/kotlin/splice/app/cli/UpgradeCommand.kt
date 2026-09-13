@@ -15,8 +15,6 @@ import kotlin.io.path.deleteRecursively
 
 private const val STILL_BUSY = "turns still in flight after the wait — rerun with --now to restart anyway"
 
-internal data class UpgradeArgs(val to: String? = null, val now: Boolean = false, val rollback: Boolean = false)
-
 internal class UpgradeCommand(
     private val env: EnvReader = EnvReader(System::getenv),
     private val java: String = ProcessHandle.current().info().command().orElse("java"),
@@ -26,34 +24,15 @@ internal class UpgradeCommand(
     private val layout: UpgradeLayout = UpgradeLayout(env),
 ) {
     fun upgrade(args: List<String>): Boolean {
-        val parsed = parse(args) ?: return usage()
+        val parsed = UpgradeArgParser().parse(args) ?: return UpgradeArgParser().usage()
         return try {
             if (parsed.rollback) rollback(parsed) else upgradeTo(parsed)
-        } catch (e: UpgradeRefused) {
-            println("splice upgrade: ${e.message}")
+        } catch (refused: UpgradeRefused) {
+            val reason = refused.reason
+            println("splice upgrade: $reason")
             println("${YELLOW}nothing activated$RESET — ${layout.installedVersion()} stays installed")
             false
         }
-    }
-
-    private fun parse(args: List<String>): UpgradeArgs? {
-        var parsed = UpgradeArgs()
-        var i = 0
-        while (i < args.size) {
-            parsed = when (args[i]) {
-                "--to" -> parsed.copy(to = args.getOrNull(i + 1) ?: return null).also { i++ }
-                "--now" -> parsed.copy(now = true)
-                "--rollback" -> parsed.copy(rollback = true)
-                else -> return null
-            }
-            i++
-        }
-        return parsed
-    }
-
-    private fun usage(): Boolean {
-        println("usage: splice upgrade [--to vX.Y.Z] [--now] [--rollback]")
-        return false
     }
 
     private fun upgradeTo(a: UpgradeArgs): Boolean {

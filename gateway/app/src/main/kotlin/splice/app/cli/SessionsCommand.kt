@@ -10,6 +10,7 @@ import splice.core.sessions.SessionAvailability
 import splice.core.sessions.SessionRecord
 import splice.core.sessions.SessionRegistry
 import splice.core.util.EnvReader
+import splice.core.util.WallClock
 import java.nio.file.Paths
 
 private const val MS_PER_MINUTE = 60_000L
@@ -21,7 +22,7 @@ internal class SessionsCommand {
     internal fun sessions(
         envReader: EnvReader = EnvReader(System::getenv),
         registry: SessionRegistry = defaultRegistry(envReader),
-        now: () -> Long = System::currentTimeMillis,
+        now: WallClock = WallClock { System.currentTimeMillis() },
     ): Boolean {
         val home = Paths.get(System.getProperty("user.home")).toString()
         println("${BOLD}splice sessions$RESET $DIM— Claude Code sessions registered in ~/.claude/sessions$RESET")

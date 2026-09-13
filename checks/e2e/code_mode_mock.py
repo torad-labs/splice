@@ -269,7 +269,9 @@ def run_toggle_probe(head, bearer):
 
 
 def run_toggle_boots(root, artifact, upstream, state):
-    expected_states = ((None, False), (True, True), (False, False), (True, True))
+    # v0.4.0 (V4-11): code mode is ON by default for the chatgpt-oauth + openai-responses shape,
+    # so an omitted key means enabled; an explicit false still turns it off.
+    expected_states = ((None, True), (True, True), (False, False), (True, True))
     for index, (configured, expected_enabled) in enumerate(expected_states):
         boot = root / f"toggle-{index}"
         boot.mkdir()

@@ -47,16 +47,6 @@ import kotlin.io.path.isSymbolicLink
 // ClaudeConfigKeys.kt (concentration, 2026-08-19); the strict/tolerant JSON state reads live in
 // JsonStateReads.kt (concentration, 2026-09-05). Same-package FQCNs are unchanged.
 
-/** Creates one symbolic link. A seam because the swap's whole safety property — that a failure
- *  NEVER destroys the operator's pre-existing file — is only testable on the production path if the
- *  create can be made to fail on demand (no temp filesystem denies createSymbolicLink), and that
- *  failure is exactly the ENOSPC/LSM-EPERM case DR-11 was opened for. Public because it is a
- *  default param of a public constructor and the no-secondary-constructor law leaves one init
- *  path: an internal type here would trip "public constructor exposes internal parameter type". */
-public fun interface SymlinkOp {
-    public operator fun invoke(link: Path, target: Path)
-}
-
 public class ClaudeConfigMaterializer(
     private val home: Path,
     private val log: LogSink = LogSink(DaemonLog::write),

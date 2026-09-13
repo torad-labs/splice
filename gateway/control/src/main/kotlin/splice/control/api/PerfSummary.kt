@@ -12,6 +12,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.control.PerfRow
 import splice.control.PerfRowsSource
 import splice.core.perf.PerfKeys
+import splice.core.util.WallClock
 import kotlin.math.ceil
 
 private const val P50 = 0.50
@@ -27,7 +28,7 @@ public enum class PerfWindow(public val label: String, public val ms: Long) {
     D7("7d", DAYS_PER_WEEK * HOURS_PER_DAY * MS_PER_HOUR),
 }
 
-public class PerfSummary(private val clock: () -> Long = System::currentTimeMillis) {
+public class PerfSummary(private val clock: WallClock = WallClock { System.currentTimeMillis() }) {
 
     /** The window named by [label], or null when it is not one of 1h / 24h / 7d. */
     public fun window(label: String?): PerfWindow? = PerfWindow.entries.firstOrNull { it.label == label }

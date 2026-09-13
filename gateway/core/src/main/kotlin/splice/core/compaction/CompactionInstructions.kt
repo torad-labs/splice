@@ -10,10 +10,15 @@ import java.nio.file.Paths
 
 /** Immutable boot-time resolver for custom compaction text. Resolution is per request, so a model
  *  switch changes the selected rule immediately without sharing mutable session state. */
+/** Reads one instructions file named by `file =` in the config. */
+public fun interface CompactionFileRead {
+    public operator fun invoke(path: Path): String
+}
+
 public class CompactionInstructions(
     config: CompactionConfig = CompactionConfig(),
     private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
-    private val readFile: (Path) -> String = { Files.readString(it) },
+    private val readFile: CompactionFileRead = CompactionFileRead { Files.readString(it) },
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private data class Rule(

@@ -22,6 +22,11 @@ private const val SESSION_HEADER = "Mcp-Session-Id"
 private const val PROTOCOL_HEADER = "MCP-Protocol-Version"
 private const val PING_MS = 15_000L
 
+/** Writes one SSE frame to the client. */
+internal fun interface SseWrite {
+    suspend operator fun invoke(frame: String)
+}
+
 internal class McpRoutes(private val host: McpHost) {
 
     suspend fun post(call: ApplicationCall) {
@@ -79,7 +84,7 @@ internal class McpRoutes(private val host: McpHost) {
     }
 
     /** Notifications as SSE `message` events; a comment ping keeps the connection honest while idle. */
-    private suspend fun pump(channel: ReceiveChannel<String>, write: suspend (String) -> Unit) {
+    private suspend fun pump(channel: ReceiveChannel<String>, write: SseWrite) {
         while (true) {
             val frame = select<String?> {
                 channel.onReceiveCatching { it.getOrNull()?.let { text -> "event: message\ndata: $text\n\n" } ?: "" }

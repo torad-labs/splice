@@ -7,10 +7,15 @@ import java.nio.file.Path
 
 /** Resolves custom instructions only after the positive-marker classifier has identified a real
  *  compaction. Ordinary turns therefore perform no session lookup and cannot receive a tail. */
+/** The project directory a session works in, or null when the session is unknown. */
+public fun interface SessionProjectLookup {
+    public operator fun invoke(sessionId: String?): Path?
+}
+
 public class CompactionTail(
     private val instructions: CompactionInstructions = CompactionInstructions(),
     sessions: SessionProject = SessionProject(),
-    private val projectFor: (String?) -> Path? = sessions::projectFor,
+    private val projectFor: SessionProjectLookup = SessionProjectLookup { sessions.projectFor(it) },
 ) {
     public fun resolve(
         compact: Boolean,

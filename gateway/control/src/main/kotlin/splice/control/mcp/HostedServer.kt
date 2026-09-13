@@ -11,7 +11,6 @@
 package splice.control.mcp
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -26,46 +25,15 @@ import splice.core.util.LogSink
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.IOException
-import java.lang.ProcessBuilder.Redirect
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-private const val RPC_SERVER_EXITED = -32000
 private const val RPC_METHOD_NOT_FOUND = -32601
 private const val HOST_PROTOCOL = "2025-11-25"
 private const val EXIT_WAIT_MS = 1_000L
 private const val DESTROY_GRACE_MS = 2_000L
-
-/** Spawns the child; a seam so tests can run a scripted server and the host never hard-codes Java's launcher. */
-public fun interface McpProcessLauncher {
-    public operator fun invoke(spec: McpServerSpec): Process
-}
-
-/** The default launcher: the spec's command/args/env, stderr discarded (MCP servers log there freely). */
-public class StdioProcessLauncher : McpProcessLauncher {
-    override fun invoke(spec: McpServerSpec): Process {
-        val builder = ProcessBuilder(listOf(spec.command) + spec.args)
-        builder.environment().putAll(spec.env)
-        builder.redirectError(Redirect.DISCARD)
-        return builder.start()
-    }
-}
-
-/** A forwarded request waiting for the child: who asked, under which client id. */
-private class Pending(val sessionId: String, val clientId: JsonElement) {
-    val answer = CompletableDeferred<JsonObject>()
-
-    /** The answer the caller gets when the child never will answer: an error under ITS id. */
-    fun fail(codec: JsonRpcCodec, message: String) {
-        answer.complete(codec.error(clientId, RPC_SERVER_EXITED, message))
-    }
-}
-
-/** Where the child's unsolicited notifications go: the host fans them out to every session. */
-internal fun interface NotificationSink {
-    fun onNotification(msg: JsonObject)
-}
 
 internal class HostedServer(
     private val spec: McpServerSpec,
@@ -176,7 +144,10 @@ internal class HostedServer(
         if (startedAt > 0L) restarts += 1
         val p = launch()
         startedAt = config.clock.millis()
-        Thread({ pump(p) }, "mcp-host-${spec.name}").apply { isDaemon = true }.start()
+        Executors.defaultThreadFactory().newThread { pump(p) }.apply {
+            name = "mcp-host-${spec.name}"
+            isDaemon = true
+        }.start()
         return try {
             handshake(p)
         } catch (e: CancellationException) {
@@ -324,5 +295,3 @@ internal class HostedServer(
             .forEach { id -> pending.remove(id)?.fail(codec, message) }
     }
 }
-
-public class McpHostException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)

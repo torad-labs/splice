@@ -123,12 +123,21 @@ public data class ProviderConfig(
             ) { "client auth cannot configure Authorization or x-api-key in extra_headers" }
         }
         if (quirks.codeMode == true) {
-            require(auth.kind == AuthKind.ChatgptOAuth.wire && dialect == Dialect.OPENAI_RESPONSES) {
-                "beta code_mode is only supported with auth.kind = '${AuthKind.ChatgptOAuth.wire}' " +
+            require(claudexShaped) {
+                "code_mode is only supported with auth.kind = '${AuthKind.ChatgptOAuth.wire}' " +
                     "and dialect = 'openai-responses'"
             }
         }
     }
+
+    /** ChatGPT OAuth over the Responses dialect — the one shape the code-mode bridge speaks. */
+    private val claudexShaped: Boolean
+        get() = auth.kind == AuthKind.ChatgptOAuth.wire && dialect == Dialect.OPENAI_RESPONSES
+
+    /** Code mode graduated in 0.4.0 (Marcos, 2026-09-13): ON by default for the claudex shape,
+     *  `code_mode = false` still turns it off, and every other provider shape stays off. */
+    public val codeModeEnabled: Boolean
+        get() = quirks.codeMode ?: claudexShaped
 
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }

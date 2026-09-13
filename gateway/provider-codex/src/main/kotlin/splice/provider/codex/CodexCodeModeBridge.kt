@@ -72,8 +72,11 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
         turn: Turn,
         initialOuter: GatewayCustomCall? = null,
         disableParallel: Boolean,
-    ): RoundInterceptor = RoundInterceptor { bodyJson, sink, post ->
-        controller.run(CodeModeRunInput(turn, initialOuter, disableParallel, bodyJson, sink, post))
+    ): RoundInterceptor {
+        val admitted = turn.copy(toolResults = turn.toolResults.map(validation::admit))
+        return RoundInterceptor { bodyJson, sink, post ->
+            controller.run(CodeModeRunInput(admitted, initialOuter, disableParallel, bodyJson, sink, post))
+        }
     }
 
     public fun injectTool(request: JsonObject): JsonObject = wire.injectTool(request)

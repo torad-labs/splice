@@ -80,7 +80,7 @@ internal class ResponsesArm(
     }
 
     private fun codeModeBridge(ctx: ProviderBuild): CodexCodeModeBridge? =
-        if (ctx.providerCfg.quirks.codeMode == true) {
+        if (ctx.providerCfg.codeModeEnabled) {
             CodexCodeModeBridge(
                 CodeModeBridgeConfig(
                     runtime = JvmCodeModeRuntime(),

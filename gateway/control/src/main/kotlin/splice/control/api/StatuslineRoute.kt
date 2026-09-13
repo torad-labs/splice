@@ -16,8 +16,13 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import splice.control.StatuslineRenderer
 import splice.core.config.ConfigService
+import splice.core.version.ClientVersionTracker
 import java.io.ByteArrayOutputStream
 
 private const val MAX_STATUSLINE_BYTES = 64 * 1024
@@ -33,8 +38,10 @@ private const val MAX_STATUSLINE_SPURIOUS_WAKEUPS = 1024
 internal class StatuslineRoute(
     private val resolver: HeadResolver,
     private val config: ConfigService,
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     private val renderers = RendererCache()
+    private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun statusline(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
@@ -59,8 +66,13 @@ internal class StatuslineRoute(
             )
         }
         val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
-        call.respondText(line, ContentType.Text.Plain)
+        val warning = clientVersions.statuslineWarning(sessionId(stdin))
+        call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }
+
+    private fun sessionId(stdin: String): String? = runCatching {
+        json.parseToJsonElement(stdin).jsonObject["session_id"]?.jsonPrimitive?.contentOrNull
+    }.getOrNull()
 
     /**
      * The posted body, or null once the failure has ALREADY been answered on [call].

@@ -51,6 +51,8 @@ internal class TurnPreparation(
     private val activityLabel = ActivityLabel()
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
+        val sessionId = call.request.headers[SESSION_HEADER]
+        deps.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
         val body = bodyReader.receiveBodyBounded(call, deps.maxRequestBytes)
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
@@ -60,7 +62,6 @@ internal class TurnPreparation(
         if (!provider.catalog.contains(parsed.typed.model)) {
             return Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
         }
-        val sessionId = call.request.headers[SESSION_HEADER]
         val label = activityLabel.labelFor(parsed.typed)
         return if (label != null) local(label, parsed.typed, sessionId, perf) else build(call, parsed, sessionId, perf)
     }

@@ -9,7 +9,7 @@ FROM eclipse-temurin:21-jre-noble
 
 # Every input is pinned so two builds a month apart prove the same machine (review of #116):
 # Node from the official tarball, verified against its published sha256; Claude Code at an exact
-# version (run.sh overrides it with the host's, when one is discoverable).
+# version (run.sh passes Versions.kt's TESTED_CLAUDE_CODE value explicitly).
 ARG NODE_VERSION=24.20.0
 ARG NODE_SHA256=2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2
 ARG CLAUDE_CODE_VERSION=2.1.257

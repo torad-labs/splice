@@ -5,6 +5,7 @@ package splice.app.cli
 
 import splice.app.LoginIo
 import splice.app.TopologyLoader
+import splice.core.GATEWAY_VERSION
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
@@ -16,7 +17,9 @@ import splice.core.util.SafeFailureText
  *  reads (isClientAuth / authPresent) — it owns "is this head configured?", so DoctorCommand
  *  constructs one rather than re-deriving them. Every member keeps the old function's name.
  *  The printed table lives on LoginKimi (existing-file extract, 2026-08-19). */
-internal class StatusCommand {
+internal class StatusCommand(
+    private val healthProbe: (Int) -> HealthView? = DaemonHealth()::healthView,
+) {
 
     private val loginIo = LoginIo()
     private val table = LoginKimi()
@@ -24,7 +27,8 @@ internal class StatusCommand {
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
         val port = AdminSupport.controlPort()
-        val up = AdminSupport.daemonUp(port)
+        val health = healthProbe(port)
+        val up = health?.version == GATEWAY_VERSION
 
         println("${BOLD}splice$RESET $DIM— Claude Code, wrapped$RESET")
         println()
@@ -34,6 +38,7 @@ internal class StatusCommand {
             "${YELLOW}stopped$RESET $DIM(starts on first launch)$RESET"
         }
         println("  daemon    $daemonLine")
+        clientVersionWarning(health)?.let { println("  warning   $YELLOW$it$RESET") }
         println("  config    $DIM${TopologyLoader.configPath()}$RESET")
         println("  jar       $DIM${jarLine()}$RESET")
         println()
@@ -45,6 +50,8 @@ internal class StatusCommand {
         println()
         table.printNextSteps(topology, envReader)
     }
+
+    internal fun clientVersionWarning(health: HealthView?): String? = health?.clientVersionWarning
 
     /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as
      *  installed (the doctor jarCheck twin). Internal for the permanent arm (codex redo). */

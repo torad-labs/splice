@@ -3,6 +3,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.HealthView
 import splice.app.cli.LoginKimi
 import splice.app.cli.StatusCommand
 import splice.core.topology.AuthConfig
@@ -66,6 +67,27 @@ class StatusCommandTest {
         } finally {
             System.setProperty("user.home", savedHome)
         }
+    }
+
+    @Test
+    fun `status surfaces the aggregate client version warning from health`() {
+        val warning =
+            "Claude Code 2.1.258 is newer than the version splice 0.3.2 was tested with (2.1.257)"
+        val health = HealthView(
+            version = "0.3.2",
+            heads = 1,
+            readyHeads = 1,
+            failedHeads = 0,
+            clientVersionWarning = warning,
+        )
+        assertEquals(warning, StatusCommand().clientVersionWarning(health))
+    }
+
+    @Test
+    fun `status has no client version line when health has no warning`() {
+        val health = HealthView(version = "0.3.2", heads = 1, readyHeads = 1, failedHeads = 0)
+        assertEquals(null, StatusCommand().clientVersionWarning(health))
+        assertEquals(null, StatusCommand().clientVersionWarning(null))
     }
 
     @Test

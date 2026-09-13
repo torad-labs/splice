@@ -98,8 +98,10 @@ internal class LoginKimi {
             AuthKind.Client -> "Anthropic (your login)"
             // Unregistered kinds — api-key, or an operator's custom scheme, which AuthKind.kt
             // deliberately leaves unregistered. The wire dialect is then the only evidence there
-            // is, so the label describes the WIRE and names no vendor it cannot verify.
-            null -> dialectLabel(provider.dialect)
+            // is, so the label describes the WIRE and names no vendor it cannot verify. A local
+            // runtime (v0.4.0, FEATURES.md §10) says so: no subscription, no quota, the operator's
+            // own process.
+            null -> dialectLabel(provider.dialect).let { if (provider.isLocal) "local runtime ($it)" else it }
         }
 
     private fun dialectLabel(dialect: Dialect): String = when (dialect) {

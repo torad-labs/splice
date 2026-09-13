@@ -36,13 +36,15 @@ internal class DoctorCommand {
     // this class already holds — the DoctorInstallProbes(probes) idiom.
     private val daemon = DoctorDaemonChecks(DoctorHeadChecks(doctorRuntime))
 
-    /** `splice doctor [--json [--with-logs] [--out FILE]]`. The text report unless --json (v0.4.0,
-     *  FEATURES.md §6), in which case DoctorReport emits the allowlisted, redacted JSON instead. */
+    /** `splice doctor [--live] [--json [--with-logs] [--out FILE]]`. The text report unless --json
+     *  (v0.4.0, FEATURES.md §6), in which case DoctorReport emits the allowlisted, redacted JSON
+     *  instead. --live (FEATURES.md §10) is the only flag that sends a request anywhere: one tiny
+     *  streamed tool call per local-runtime row, so a model's tool support is proven, not assumed. */
     internal fun doctor(envReader: EnvReader = EnvReader(System::getenv)): Boolean = doctor(emptyList(), envReader)
 
     internal fun doctor(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
         val options = DoctorReportOptions(json = false, withLogs = false, out = null).parse(args)
-        val run = collect(envReader)
+        val run = collect(envReader, options.live)
         if (options.json) {
             val report = DoctorReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
             return report.emit(run, options)
@@ -64,7 +66,7 @@ internal class DoctorCommand {
     }
 
     /** Every section, collected once; both renderings read this. */
-    internal fun collect(envReader: EnvReader): DoctorRun {
+    internal fun collect(envReader: EnvReader, live: Boolean = false): DoctorRun {
         val configPath = TopologyLoader.configPath(envReader)
         val topo = loadTopology(configPath)
         // Resolve the port and probe /health ONCE; both the daemon and auth sections read this snapshot
@@ -75,7 +77,7 @@ internal class DoctorCommand {
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
-            "configuration" to guarded { config.configurationChecks(topo, configPath) },
+            "configuration" to guarded { config.configurationChecks(topo, configPath, live) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to guarded { auth.authChecks(topo, envReader, snapshot) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;

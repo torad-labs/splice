@@ -87,9 +87,14 @@ public class McpHost(
      *  deliberate, not lax: MCP's Streamable HTTP transport says a server that gets no
      *  MCP-Protocol-Version header falls back to what it can identify otherwise — "for example, by
      *  relying on the protocol version negotiated during initialization" — and this host has exactly
-     *  that per session. A header that names ANY other version is a 400. */
-    public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean =
-        protocolVersion == null || sessions.get(name, sessionId)?.protocolVersion == protocolVersion
+     *  that per session. A header that names ANY other version is a 400 — but only on a session that
+     *  EXISTS: an ended or unknown session is the session check's 404 (review 3 addendum), so a
+     *  client that kept the old negotiated version after DELETE is told to reinitialize, not that
+     *  its version is wrong. */
+    public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean {
+        val session = sessions.get(name, sessionId) ?: return true
+        return protocolVersion == null || session.protocolVersion == protocolVersion
+    }
 
     /** The session's notification stream for a GET; null when the session is unknown. */
     public fun openStream(name: String, sessionId: String?): ReceiveChannel<String>? {
@@ -127,17 +132,34 @@ public class McpHost(
 
     private suspend fun initialize(name: String, msg: JsonObject): McpReply {
         val id = msg.getValue("id")
-        val result = try {
-            servers.acquire(name).ensureStarted()
+        // acquire() reserves the server against eviction until release(); the session is created
+        // inside that window and kept only if the server is still bound and alive when it ends.
+        val server = try {
+            servers.acquire(name)
         } catch (e: McpHostException) {
             return bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
         }
-        val session = sessions.create(name)
-        // The child's answer, verbatim: the server picks the protocol version (MCP: a client that
-        // cannot speak it disconnects), and inventing the client's requested one would promise a
-        // dialect the child never negotiated.
-        session.protocolVersion = (result["protocolVersion"] as? JsonPrimitive)?.content
-        return McpReply(HTTP_OK, codec.encode(codec.result(id, result)), session.id)
+        val session = try {
+            val result = server.ensureStarted()
+            sessions.create(name).also { s ->
+                // The child's answer, verbatim: the server picks the protocol version (MCP: a client
+                // that cannot speak it disconnects); inventing the client's requested one would
+                // promise a dialect the child never negotiated.
+                s.protocolVersion = (result["protocolVersion"] as? JsonPrimitive)?.content
+                s.initResult = result
+            }
+        } catch (e: McpHostException) {
+            servers.release(name, server)
+            return bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
+        }
+        val bound = servers.release(name, server) && server.alive
+        if (!bound) sessions.end(name, session.id)
+        val result = session.initResult ?: JsonObject(emptyMap())
+        return if (bound) {
+            McpReply(HTTP_OK, codec.encode(codec.result(id, result)), session.id)
+        } else {
+            bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, "hosted MCP server '$name' was replaced while starting")
+        }
     }
 
     private suspend fun forSession(name: String, sessionId: String?, msg: JsonObject, kind: RpcKind): McpReply {

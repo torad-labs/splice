@@ -5,6 +5,7 @@
 // Holds the only lock in the host; McpHost never reasons about capacity itself.
 package splice.control.mcp
 
+import splice.core.launch.McpServerSpec
 import splice.core.launch.McpSharing
 import splice.core.util.LogSink
 
@@ -24,13 +25,19 @@ internal class HostedServers(
 ) {
     private val servers = HashMap<McpIdentity, HostedServer>()
     private val bindings = HashMap<String, McpIdentity>()
+
+    /** Servers with an initialize in flight: acquire() counts one up, release() one down; eviction
+     *  never takes a reserved server, so the session minted after ensureStarted binds to a server
+     *  that is still registered (review 3, 2026-09-13). */
+    private val reserved = HashMap<McpIdentity, Int>()
     private val lock = Any()
 
     fun get(name: String): HostedServer? = synchronized(lock) { bindings[name]?.let(servers::get) }
 
     fun names(): List<String> = synchronized(lock) { bindings.keys.toList() }
 
-    /** The process for [name]'s current tuple: shared with every alias, replaced when the tuple changed. */
+    /** The process for [name]'s current tuple, RESERVED against eviction until [release]: shared with
+     *  every alias, replaced when the tuple changed. */
     fun acquire(name: String): HostedServer {
         val spec = sharing.hostedSpec(global(), name) ?: throw McpHostException("'$name' is not a hosted MCP server")
         val id = McpIdentity(spec.command, spec.args, spec.env)
@@ -38,14 +45,25 @@ internal class HostedServers(
             val bound = bindings[name]
             if (bound != null && bound != id) unbind(name, "configuration changed")
             bindings[name] = id
-            servers[id]?.let { return it }
-            if (servers.size >= config.maxServers) evictOne()
-            val fresh = HostedServer(spec, config, launcher, codec, log) { msg ->
-                namesOf(id).forEach { alias -> sessions.fanOut(alias, codec.encode(msg)) }
-            }
-            servers[id] = fresh
-            return fresh
+            val server = servers[id] ?: register(id, spec)
+            reserved[id] = (reserved[id] ?: 0) + 1
+            return server
         }
+    }
+
+    /** A new server for [id], evicting one first at capacity. Caller holds [lock]. */
+    private fun register(id: McpIdentity, spec: McpServerSpec): HostedServer {
+        if (servers.size >= config.maxServers) evictOne()
+        return HostedServer(spec, config, launcher, codec, log) { msg ->
+            namesOf(id).forEach { alias -> sessions.fanOut(alias, codec.encode(msg)) }
+        }.also { servers[id] = it }
+    }
+
+    /** Ends the reservation [acquire] took; true when [server] is still the one bound to [name]. */
+    fun release(name: String, server: HostedServer): Boolean = synchronized(lock) {
+        val id = servers.entries.firstOrNull { it.value === server }?.key
+        if (id != null) reserved[id] = ((reserved[id] ?: 1) - 1).takeIf { it > 0 } ?: 0
+        bindings[name] == id && id != null
     }
 
     fun close(name: String, reason: String) {
@@ -68,9 +86,9 @@ internal class HostedServers(
 
     private fun evictOne() {
         val victim = servers.keys
-            .filterNot { id -> namesOf(id).any(sessions::streaming) }
+            .filterNot { id -> (reserved[id] ?: 0) > 0 || namesOf(id).any(sessions::streaming) }
             .minByOrNull { id -> namesOf(id).maxOfOrNull(sessions::lastActivity) ?: 0L }
-            ?: throw McpHostException("MCP host at capacity (${config.maxServers} servers, all streaming)")
+            ?: throw McpHostException("MCP host at capacity (${config.maxServers} servers, all streaming or starting)")
         val last = namesOf(victim).maxOfOrNull(sessions::lastActivity) ?: 0L
         val idle = (config.clock.millis() - last) / MILLIS_PER_MINUTE
         namesOf(victim).forEach { unbind(it, "evicted after $idle min idle to host a newer server") }

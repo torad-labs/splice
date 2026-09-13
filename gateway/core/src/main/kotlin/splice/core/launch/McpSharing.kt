@@ -51,6 +51,10 @@ public fun interface McpRewrite {
     public operator fun invoke(global: JsonObject): JsonObject
 }
 
+private val LOCATION_FLAG =
+    Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|folder|home|base-?dir|work-?dir)")
+private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
+
 public class McpSharing(
     public val enabled: Boolean,
     private val exclude: Set<String>,
@@ -109,18 +113,31 @@ public class McpSharing(
     }
 
     private fun valueRejection(values: List<String>): String? {
-        // Every value is checked bare AND as a flag's payload (`--root=./repo`), both for relative
-        // syntax and for naming an existing directory (a bare `repo` that IS a directory is a
-        // project path the client resolves against ITS cwd) — review 2, 2026-09-13.
+        // Every value is checked bare AND as a flag's payload (`--root=./repo`). A RELATIVE path is
+        // resolved by the client against ITS cwd, which the host cannot know, so the classification
+        // is fail-closed on shape alone (review 3, 2026-09-13): `.`/`./x`/`../x`, any relative token
+        // with a separator that is not an npm scope (`@scope/pkg`) or a URL, and any payload of a
+        // flag whose name says it is a location (--root, --dir, --path, --cwd, ...). Only an
+        // ABSOLUTE path is probed as an existing directory — the daemon's cwd is the wrong cwd for
+        // anything else.
         val candidates = values.flatMap { listOf(it, it.substringAfter('=', "")) }.filter { it.isNotEmpty() }
-        val relative = candidates.firstOrNull { it == "." || it.startsWith("./") || it.startsWith("../") }
-        val directory = candidates.firstOrNull { !it.startsWith("-") && isDirectory(it) }
+        val relative = candidates.firstOrNull(::looksRelative)
+        val located = values.firstOrNull { LOCATION_FLAG.matches(it.substringBefore('=')) && it.contains('=') }
+        val directory = candidates.firstOrNull { it.startsWith("/") && isDirectory(it) }
         return when {
             values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
             relative != null -> "names the relative path '$relative' (project-scoped)"
+            located != null -> "'$located' names a location relative to the client (project-scoped)"
             directory != null -> "names the directory '$directory' (project-scoped)"
             else -> null
         }
+    }
+
+    private fun looksRelative(value: String): Boolean = when {
+        value == "." || value.startsWith("./") || value.startsWith("../") -> true
+        value.startsWith("/") || value.startsWith("@") || value.startsWith("-") -> false
+        URL_SCHEME.containsMatchIn(value) -> false
+        else -> value.contains('/')
     }
 
     /** One `mcpServers` entry read once; every field nullable so a malformed entry rejects in words. */

@@ -36,7 +36,11 @@ import java.time.Duration
 private const val HTTP_OK = 200
 private const val PROBE_TIMEOUT_S = 5L
 private const val LIVE_TIMEOUT_S = 120L
-private const val LIVE_PROMPT = "Call the tool `ping` once, then answer with the single word pong."
+
+// The wording and the schema are what a small model answers with a CALL rather than a think-out-loud
+// (measured 2026-09-13 on qwen3:4b: this pair -> tool_calls in ~400 tokens; "call ping once, then say
+// pong" with a bare {"type":"object"} schema -> 1024 tokens of reasoning and no call).
+private const val LIVE_PROMPT = "You must call the ping tool now."
 
 public enum class LocalRuntimeKind(public val label: String) {
     OLLAMA("Ollama"),
@@ -222,7 +226,14 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
             buildJsonObject {
                 put("name", "ping")
                 put("description", "Answers pong.")
-                put("parameters", buildJsonObject { put("type", "object") })
+                put(
+                    "parameters",
+                    buildJsonObject {
+                        put("type", "object")
+                        put("properties", buildJsonObject {})
+                        put("required", buildJsonArray {})
+                    },
+                )
             },
         )
     }
@@ -237,5 +248,8 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
         Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
 }
 
-private const val LIVE_MAX_TOKENS = 32
+// Room for a thinking model to reason before it calls the tool: at 32 tokens qwen3:4b spent the
+// whole budget inside <think> and the probe reported tool_calls=false for a model that calls tools
+// fine through the head (live, 2026-09-13).
+private const val LIVE_MAX_TOKENS = 1024
 private const val LIVE_DETAIL_CHARS = 200

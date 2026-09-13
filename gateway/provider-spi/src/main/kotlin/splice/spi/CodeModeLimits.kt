@@ -19,10 +19,20 @@ public object CodeModeLimits {
         // The marker's width is bounded by the count it could carry (at most value.length digits):
         // reserve THAT, never a fixed guess, so the result honours any positive cap (review 2026-09-13:
         // a 20-char cap returned a 22-char marker and the "admitted" result was rejected downstream).
+        // A cap too small for any marker keeps a bare prefix — still cut on a code point (review 2:
+        // take(1) on an emoji handed back an unpaired high surrogate).
         val reserve = marker(value.length).length
-        val byteBudget = MAX_TEXT_BYTES - reserve
-        val charBudget = maxChars - reserve
-        if (charBudget < 0) return value.take(maxChars)
+        val withMarker = maxChars >= reserve
+        val end = prefixEnd(
+            value,
+            charBudget = if (withMarker) maxChars - reserve else maxChars,
+            byteBudget = if (withMarker) MAX_TEXT_BYTES - reserve else MAX_TEXT_BYTES,
+        )
+        return value.substring(0, end) + if (withMarker) marker(value.length - end) else ""
+    }
+
+    /** The end of the longest prefix within both budgets that ends on a code point boundary. */
+    private fun prefixEnd(value: String, charBudget: Int, byteBudget: Int): Int {
         var bytes = 0
         var end = 0
         while (end < value.length) {
@@ -33,7 +43,7 @@ public object CodeModeLimits {
             bytes += size
             end += width
         }
-        return value.substring(0, end) + marker(value.length - end)
+        return end
     }
 
     private fun marker(gone: Int): String = " [truncated $gone chars]"

@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §1): everything `splice add` decides BEFORE its first side effect — the
+// NEW: v0.4.0 FEATURES.md §1 — everything `splice add` decides BEFORE its first side effect — the
 // profile, the key, the models, the refusals (taken key or command, missing base URL, quotes), the
 // next free port, and the candidate topology parsed from the operator's file plus the appended
 // tables. Split from AddCommand.kt (concentration, 2026-09-13).

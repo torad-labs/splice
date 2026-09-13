@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §3): `splice perf [--window 1h|24h|7d]` — the windowed summary per
+// NEW: v0.4.0 FEATURES.md §3 — `splice perf [--window 1h|24h|7d]` — the windowed summary per
 // head, printed from the perf files directly (no daemon needed), the same numbers /api/perf/summary
 // serves. Labels say what was measured, never why.
 package splice.app.cli

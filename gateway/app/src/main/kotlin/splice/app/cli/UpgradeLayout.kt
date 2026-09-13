@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): where `splice upgrade` keeps releases and what it repoints. The
+// NEW: v0.4.0 FEATURES.md §5 — where `splice upgrade` keeps releases and what it repoints. The
 // layout is the one install.sh already writes (jar + shim under the share dir, wrappers in bin,
 // config and credentials elsewhere — never touched here) plus one directory per release under
 // <share>/releases/<version>/ holding the PRISTINE jar and launch shim, with `current` and

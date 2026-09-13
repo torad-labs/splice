@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): the download seam `splice upgrade` fetches release assets through
+// NEW: v0.4.0 FEATURES.md §5 — the download seam `splice upgrade` fetches release assets through
 // (https, or file:// for an acceptance fixture), and its JDK implementation. Split from
 // UpgradeRelease.kt (concentration, 2026-09-13).
 package splice.app.cli

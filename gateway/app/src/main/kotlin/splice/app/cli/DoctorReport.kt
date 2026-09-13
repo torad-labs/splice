@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §6): `splice doctor --json [--with-logs] [--out FILE]` — the shareable
+// NEW: v0.4.0 FEATURES.md §6 — `splice doctor --json [--with-logs] [--out FILE]` — the shareable
 // bug report. Schema version 1. Emission is an ALLOWLIST: every key below is named here, so a new
 // topology or perf field is absent until someone adds it; account ids, e-mails, tokens and the
 // session cwd have no key to ride. Free text (check details, log lines) goes through

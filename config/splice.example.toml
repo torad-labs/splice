@@ -52,6 +52,10 @@ base_url = "https://chatgpt.com/backend-api/codex"
 # on whichever ChatGPT account you choose there. Set file = "~/.codex/auth.json" ONLY to share the
 # Codex app's session — the two then rotate each other's refresh token and sign each other out.
 auth = { kind = "chatgpt-oauth" }
+# More accounts of the same kind: `splice login claudex --label work` stores a second credential at
+# ~/.config/splice/auth/chatgpt-oauth/work.json; the head switches to it between turns when the
+# primary's window is exhausted or a 429 outlasts the turn, and comes back after the reset (README,
+# "More than one account per provider"). No key here: the pool is whatever files exist.
 # Table form, not inline: tool_surface below is a sub-table, and TOML forbids adding a sub-table
 # to an inline table. Every knob here is what the daily-driven claudex runs.
 [providers.codex.quirks]

@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): fetch + verify a release EXACTLY as install.sh does — sha256 of
+// NEW: v0.4.0 FEATURES.md §5 — fetch + verify a release EXACTLY as install.sh does — sha256 of
 // every asset against the published sha256sums.txt, then GitHub build-provenance attestation via an
 // authenticated gh for a remote base (a file:// base is an acceptance fixture and skips it), then
 // the candidate must answer `version` like a splice jar and run its own doctor. Everything lands in

@@ -50,6 +50,9 @@ public class ApiKeyAuthProvider(
      *  installed only while this is false). Same read chain as credentials(). */
     public fun hasKeyNow(): Boolean = readKey() != null
 
+    /** The key as configured right now, for a boot-time probe that runs before any turn (v0.4.0 §10). */
+    public fun keyNow(): String? = readKey()
+
     override suspend fun describe(): AuthDescription {
         val key = readKey()
         return AuthDescription(

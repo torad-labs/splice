@@ -62,4 +62,17 @@ class CodeModeLimitsTest {
             assertTrue(bounded.isEmpty() || bounded.last().isLowSurrogate(), "cap $cap must end on a code point")
         }
     }
+
+    @Test
+    fun `the prefix is the longest that fits with the marker actually emitted`() {
+        // 65,537 a's: the widest marker (5 digits) would leave 3 bytes unused; the real marker
+        // carries 2 digits and the prefix fills the ceiling exactly.
+        val bounded = CodeModeLimits.boundedText("a".repeat(CodeModeLimits.MAX_TEXT_BYTES + 1))
+        assertEquals(CodeModeLimits.MAX_TEXT_BYTES, bounded.encodeToByteArray().size)
+        assertTrue(bounded.endsWith(" [truncated 22 chars]"), bounded.takeLast(30))
+        // A character cap right at a digit-width boundary of the marker.
+        val capped = CodeModeLimits.boundedText("b".repeat(200), maxChars = 100)
+        assertEquals(100, capped.length, capped.takeLast(30))
+        assertTrue(capped.endsWith(" chars]"))
+    }
 }

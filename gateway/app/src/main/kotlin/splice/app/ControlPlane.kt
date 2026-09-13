@@ -15,10 +15,12 @@ import splice.control.LaunchService
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
 import splice.control.TurnPathStalled
+import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.ClaudeConfigMaterializer
+import splice.core.launch.McpSharing
 import splice.core.util.LogSink
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -35,6 +37,8 @@ internal class ControlPlane(
     private val topologyDigest: String = "",
     private val topologyPath: Path? = null,
     refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
+    /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
+    private val mcpHosting: McpHostingSettings = McpHostingSettings(),
 ) {
     private val boundary = DaemonBoundary()
 
@@ -65,6 +69,14 @@ internal class ControlPlane(
         headCount: Int,
         turnPathStalled: TurnPathStalled,
     ): ControlServer? {
+        val home = statePaths.rootDir.parent ?: statePaths.rootDir
+        val sharing = McpSharing(
+            enabled = mcpHosting.enabled,
+            exclude = mcpHosting.exclude,
+            endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
+            bearer = mgmtKey::get,
+        )
+        val mcpHost = McpHost(sharing, McpGlobalRead(home), log = log)
         val srv = ControlServer(
             controlPort,
             heads,
@@ -72,7 +84,7 @@ internal class ControlPlane(
             mgmtKey,
             dashboardHtml,
             log,
-            LaunchService(ClaudeConfigMaterializer(statePaths.rootDir.parent ?: statePaths.rootDir)),
+            LaunchService(ClaudeConfigMaterializer(home, mcpRewrite = sharing.rewrite())),
             shutdownDaemon,
             failedHeads,
             headCount,
@@ -80,6 +92,7 @@ internal class ControlPlane(
             configPath = topologyPath?.toString().orEmpty(),
             topologyStale = TopologyLoader.staleProbe(topologyPath, topologyDigest),
             turnPathStalled = turnPathStalled,
+            mcpHost = mcpHost,
         )
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {

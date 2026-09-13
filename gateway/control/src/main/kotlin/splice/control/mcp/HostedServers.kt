@@ -59,11 +59,11 @@ internal class HostedServers(
         }.also { servers[id] = it }
     }
 
-    /** Ends the reservation [acquire] took; true when [server] is still the one bound to [name]. */
+    /** Ends the reservation [acquire] took; true when [server] is still bound to [name] and alive. */
     fun release(name: String, server: HostedServer): Boolean = synchronized(lock) {
         val id = servers.entries.firstOrNull { it.value === server }?.key
         if (id != null) reserved[id] = ((reserved[id] ?: 1) - 1).takeIf { it > 0 } ?: 0
-        bindings[name] == id && id != null
+        bindings[name] == id && id != null && server.alive
     }
 
     fun close(name: String, reason: String) {

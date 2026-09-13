@@ -6,6 +6,8 @@ package splice.control.mcp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.trySendBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -13,15 +15,15 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val STREAM_BUFFER = 256
 
 /** One client session on one hosted server; the stream channel carries the child's notifications. */
-internal class McpSession(val id: String, val server: String) {
+internal class McpSession(val id: String, val server: String, val initResult: JsonObject) {
     val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.DROP_OLDEST)
     val openStreams = AtomicInteger()
 
-    /** The version the child negotiated at this session's initialize; later requests must name it. */
-    @Volatile var protocolVersion: String? = null
-
-    /** The child's initialize result this session was minted with. */
-    @Volatile var initResult: kotlinx.serialization.json.JsonObject? = null
+    /** The version the child negotiated at this session's initialize; later requests must name it. The
+     *  child's answer, verbatim: the server picks the protocol version (MCP: a client that cannot
+     *  speak it disconnects); inventing the client's requested one would promise a dialect the
+     *  child never negotiated. */
+    val protocolVersion: String? = (initResult["protocolVersion"] as? JsonPrimitive)?.content
 
     @Volatile var lastActivity: Long = 0L
         private set
@@ -37,8 +39,9 @@ internal class McpSession(val id: String, val server: String) {
 internal class McpSessions(private val clock: HostClock) {
     private val sessions = ConcurrentHashMap<String, McpSession>()
 
-    fun create(server: String): McpSession {
-        val session = McpSession(UUID.randomUUID().toString(), server)
+    /** A session on [server], minted with the child's [initResult]. */
+    fun create(server: String, initResult: JsonObject): McpSession {
+        val session = McpSession(UUID.randomUUID().toString(), server, initResult)
         touch(session)
         sessions[session.id] = session
         return session

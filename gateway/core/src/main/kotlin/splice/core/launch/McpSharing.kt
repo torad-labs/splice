@@ -122,7 +122,7 @@ public class McpSharing(
         // anything else.
         val candidates = values.flatMap { listOf(it, it.substringAfter('=', "")) }.filter { it.isNotEmpty() }
         val relative = candidates.firstOrNull(::looksRelative)
-        val located = values.firstOrNull { LOCATION_FLAG.matches(it.substringBefore('=')) && it.contains('=') }
+        val located = locationFlag(values)
         val directory = candidates.firstOrNull { it.startsWith("/") && isDirectory(it) }
         return when {
             values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
@@ -132,6 +132,14 @@ public class McpSharing(
             else -> null
         }
     }
+
+    /** A location flag with its payload — the `=` half OR the following token (`--root repo`): either
+     *  way the value is a path the client resolves, so the pair is refused (review 4). */
+    private fun locationFlag(values: List<String>): String? = values.withIndex()
+        .firstOrNull { (i, v) ->
+            LOCATION_FLAG.matches(v.substringBefore('=')) && (v.contains('=') || i + 1 < values.size)
+        }
+        ?.let { (i, v) -> if (v.contains('=')) v else "$v ${values[i + 1]}" }
 
     private fun looksRelative(value: String): Boolean = when {
         value == "." || value.startsWith("./") || value.startsWith("../") -> true

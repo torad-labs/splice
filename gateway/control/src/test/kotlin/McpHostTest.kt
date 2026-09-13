@@ -2,6 +2,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -233,6 +234,17 @@ class McpHostTest {
             assertTrue(text(ans).endsWith("echo=n${idx + 1}"), text(ans))
         }
     }
+
+    @Test
+    fun `a cancelled initialize releases its reservation so capacity is not held by a ghost`(@TempDir dir: Path) =
+        runBlocking {
+            boot(dir, maxServers = 1)
+            // 1 ms is far less than a python child needs to answer initialize: the handshake is
+            // cancelled with the server still reserved — and the finally must hand that back.
+            assertNull(withTimeoutOrNull(1) { host.post("fake", null, INIT) })
+            val s = init("fake2")
+            assertEquals(200, host.post("fake2", s, LIST).status)
+        }
 
     @Test
     fun `an unknown session is 404 and the initialized notification is 202`(@TempDir dir: Path) = runBlocking {

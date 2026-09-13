@@ -139,27 +139,23 @@ public class McpHost(
         } catch (e: McpHostException) {
             return bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
         }
-        val session = try {
-            val result = server.ensureStarted()
-            sessions.create(name).also { s ->
-                // The child's answer, verbatim: the server picks the protocol version (MCP: a client
-                // that cannot speak it disconnects); inventing the client's requested one would
-                // promise a dialect the child never negotiated.
-                s.protocolVersion = (result["protocolVersion"] as? JsonPrimitive)?.content
-                s.initResult = result
-            }
+        var session: McpSession? = null
+        var failure = ""
+        // The reservation ends in a finally: a client that cancels mid-handshake (review 4) must not
+        // leave the server marked "starting" forever, or capacity would refuse every newcomer.
+        try {
+            session = sessions.create(name, server.ensureStarted())
         } catch (e: McpHostException) {
-            servers.release(name, server)
-            return bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
+            failure = e.message.orEmpty()
+        } finally {
+            if (!servers.release(name, server)) {
+                session?.let { sessions.end(name, it.id) }
+                failure = failure.ifEmpty { "hosted MCP server '$name' was replaced while starting" }
+            }
         }
-        val bound = servers.release(name, server) && server.alive
-        if (!bound) sessions.end(name, session.id)
-        val result = session.initResult ?: JsonObject(emptyMap())
-        return if (bound) {
-            McpReply(HTTP_OK, codec.encode(codec.result(id, result)), session.id)
-        } else {
-            bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, "hosted MCP server '$name' was replaced while starting")
-        }
+        val minted = session?.takeIf { failure.isEmpty() }
+        return minted?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
+            ?: bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, failure)
     }
 
     private suspend fun forSession(name: String, sessionId: String?, msg: JsonObject, kind: RpcKind): McpReply {

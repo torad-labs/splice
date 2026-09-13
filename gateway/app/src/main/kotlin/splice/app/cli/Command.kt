@@ -37,6 +37,11 @@ public sealed class Command {
     public data object Setup : Command() {
         override fun run(): Int = outcomeExitCode(runBlocking { SetupCommand().setup() })
     }
+
+    /** v0.4.0 (FEATURES.md §1): `splice add <profile> [...]` — a second provider without editing TOML. */
+    public data class Add(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(runBlocking { AddCommand().add(args) })
+    }
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
     public data object Restart : Command() { override fun run(): Int = outcomeExitCode(RestartCommand().restart()) }
     public data object Dashboard : Command() {

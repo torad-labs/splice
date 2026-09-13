@@ -48,7 +48,7 @@ public class TurnPipeline(
         when (outcome) {
             is TurnOutcome.Failure -> {
                 if (meta.compact) {
-                    compact.recordStreamError(elapsedMs, outcome.type.wireName)
+                    compact.recordStreamError(meta, elapsedMs, outcome.type.wireName)
                 }
                 if (outcome.deterministic) {
                     emitter.emitExplained(EXPLAINED_PREFIX + outcome.message, outcome.salvagedUsage)

@@ -37,6 +37,9 @@ for line in sys.stdin:
     if not line: continue
     m = json.loads(line)
     method = m.get("method"); rid = m.get("id")
+    if method == "notifications/cancelled":
+        send({"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"cancelled=%s" % m["params"].get("requestId")}})
+        continue
     if method == "initialize":
         send({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},
               "serverInfo":{"name":"fake","version":"1"}}})
@@ -76,7 +79,8 @@ class McpHostTest {
         script.writeText(FAKE_SERVER)
         val global = json.parseToJsonElement(
             """{"fake":{"command":"python3","args":["$script"]},
-                "fake2":{"command":"python3","args":["$script"]},
+                "alias":{"command":"python3","args":["$script"]},
+                "fake2":{"command":"python3","args":["$script"],"env":{"FAKE2":"1"}},
                 "remote":{"type":"http","url":"https://x/mcp"}}""",
         ).jsonObject
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "k" }, DirectoryProbe { false })
@@ -98,7 +102,8 @@ class McpHostTest {
         val reply = host.post(name, null, INIT)
         assertEquals(200, reply.status, reply.body)
         val obj = json.parseToJsonElement(reply.body!!).jsonObject
-        assertEquals("2025-06-18", obj["result"]!!.jsonObject["protocolVersion"]!!.jsonPrimitive.content)
+        // The CHILD's negotiated version, never the client's requested one (review 2026-09-13).
+        assertEquals("2025-11-25", obj["result"]!!.jsonObject["protocolVersion"]!!.jsonPrimitive.content)
         assertEquals("1", obj["id"]!!.jsonPrimitive.content)
         return checkNotNull(reply.sessionId)
     }
@@ -144,6 +149,69 @@ class McpHostTest {
         assertEquals(1, pids.size, "one child for six sessions, got $pids")
         assertEquals(0, status("fake")["restarts"]!!.jsonPrimitive.content.toInt())
         assertEquals(6, status("fake")["sessions"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `aliases with an identical launch tuple share one process and a different tuple does not`(@TempDir dir: Path) =
+        runBlocking {
+            boot(dir)
+            val a = init("fake")
+            val b = init("alias")
+            val c = init("fake2")
+            val pidA = text(call(a, 1, "echo", "a")).substringBefore(" ")
+            val pidB = text(call(b, 1, "echo", "b", name = "alias")).substringBefore(" ")
+            val pidC = text(call(c, 1, "echo", "c", name = "fake2")).substringBefore(" ")
+            assertEquals(pidA, pidB, "one process for two names with the same tuple")
+            assertNotEquals(pidA, pidC, "a different env is a different process")
+            assertEquals(status("fake")["pid"], status("alias")["pid"])
+            val ids = (status("fake")["session_ids"] as JsonArray).map { it.jsonPrimitive.content }
+            assertEquals(listOf(a), ids)
+        }
+
+    @Test
+    fun `a later request must name the negotiated protocol version`(@TempDir dir: Path) = runBlocking {
+        boot(dir)
+        val s = init()
+        assertEquals(400, host.post("fake", s, LIST, protocolVersion = "2025-03-26").status)
+        assertEquals(200, host.post("fake", s, LIST, protocolVersion = "2025-11-25").status)
+        assertEquals(200, host.post("fake", s, LIST).status)
+        assertFalse(host.protocolAccepted("fake", s, "2024-11-05"))
+    }
+
+    @Test
+    fun `a cancel is remapped to that session's own request and dropped when it names none`(@TempDir dir: Path) =
+        runBlocking {
+            boot(dir)
+            val a = init()
+            val b = init()
+            val streamB = checkNotNull(host.openStream("fake", b))
+            val streamA = checkNotNull(host.openStream("fake", a))
+            val slow = async { call(a, 7, "slow", "1") }
+            kotlinx.coroutines.delay(300)
+            val cancel = """{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}}"""
+            // B has no request 7: the cancel must not reach the child under A's host id.
+            assertEquals(202, host.post("fake", b, cancel).status)
+            val silent = kotlinx.coroutines.withTimeoutOrNull(500) { streamB.receive() }
+            assertNull(silent, "a cancel naming no request of its own session is dropped")
+            // A's cancel IS forwarded, under the host id (not 7) the child knows.
+            assertEquals(202, host.post("fake", a, cancel).status)
+            val seen = withTimeout(STREAM_WAIT_MS) { streamA.receive() }
+            assertTrue(seen.contains("cancelled=") && !seen.contains("cancelled=7"), seen)
+            slow.await()
+            host.closeStream("fake", a)
+            host.closeStream("fake", b)
+        }
+
+    @Test
+    fun `status says hosting is off when the planner is disabled even with no servers`() {
+        val off = McpSharing(false, emptySet(), "http://127.0.0.1:1/mcp/", { "k" }, DirectoryProbe { false })
+        val status = McpHost(
+            off,
+            { JsonObject(emptyMap()) },
+            McpHostConfig(clock = clock),
+            log = LogSink { },
+        ).statusJson()
+        assertEquals("false", json.parseToJsonElement(status).jsonObject["hosting"]!!.jsonPrimitive.content)
     }
 
     @Test

@@ -33,6 +33,7 @@ import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
+import splice.core.version.ClientVersionTracker
 import splice.gateway.head.CompactionTail
 import java.nio.file.Path
 
@@ -59,10 +60,12 @@ public class Daemon(
         perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
     )
     private val mgmtKey = MgmtKey(statePaths)
+    private val clientVersions = ClientVersionTracker()
     private val controlPlane = ControlPlane(
         statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
         topologyDigest, topologyPath, refreshCall,
         mcpHosting = McpHostingSettings().with(topology.daemon),
+        clientVersions = clientVersions,
     )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
@@ -84,7 +87,7 @@ public class Daemon(
         ),
         SessionProject(),
     )
-    private val headServerFactory = HeadServerFactory(config, mgmtKey, log, compactionTail)
+    private val headServerFactory = HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions)
     private val launchSpecFactory = LaunchSpecFactory(
         topology,
         controlPlane.signInPlanner,

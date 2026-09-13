@@ -11,6 +11,7 @@ import splice.core.model.ClientWindows
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
+import splice.core.version.ClientVersionTracker
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.perf.PerfStats
@@ -47,6 +48,8 @@ public data class HeadDeps(
      *  (the control plane records; the usage payload reads). One per head, shared with ManagedHead. */
     val clientWindows: ClientWindows = ClientWindows(),
     val compactionTail: CompactionTail = CompactionTail(),
+    /** Daemon-wide Claude Code version observations; production injects one instance into every head. */
+    val clientVersions: ClientVersionTracker = ClientVersionTracker(),
     val log: LogSink,
     val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.

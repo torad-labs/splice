@@ -8,6 +8,7 @@ import splice.app.provider.ProviderBuild
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
+import splice.core.version.ClientVersionTracker
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.CompactionTail
 import splice.gateway.head.HeadDeps
@@ -21,6 +22,7 @@ internal class HeadServerFactory(
     private val mgmtKey: MgmtKey,
     private val log: LogSink,
     private val compactionTail: CompactionTail = CompactionTail(),
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     private val upstreamFactory = UpstreamFactory()
     private val requestMaterializationGate = RequestMaterializationGate()
@@ -58,6 +60,7 @@ internal class HeadServerFactory(
                 quota = stores.quota,
                 clientWindows = stores.clientWindows,
                 compactionTail = compactionTail,
+                clientVersions = clientVersions,
                 log = log,
                 requestMaterializationGate = requestMaterializationGate,
             ),

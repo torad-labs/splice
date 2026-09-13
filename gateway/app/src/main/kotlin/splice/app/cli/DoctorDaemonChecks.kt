@@ -16,6 +16,7 @@ import java.nio.file.Path
 internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
 
     private val probeWrite = DoctorProbeWrite()
+    private val clientVersion = DoctorClientVersion()
 
     internal fun daemonChecks(
         snapshot: DaemonSnapshot,
@@ -55,6 +56,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
         )
         return listOf(daemon) + heads.headChecks(snapshot, topology) +
             listOfNotNull(
+                clientVersion.check(snapshot.health),
                 heads.topologyFreshness(snapshot, configPath),
                 heads.mgmtKeyCheck(statePaths, snapshot.running),
             ) +

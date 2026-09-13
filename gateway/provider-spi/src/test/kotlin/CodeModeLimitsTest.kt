@@ -75,4 +75,17 @@ class CodeModeLimitsTest {
         assertEquals(100, capped.length, capped.takeLast(30))
         assertTrue(capped.endsWith(" chars]"))
     }
+
+    @Test
+    fun `the digit cliff is crossed when one more kept character narrows the marker`() {
+        // Bytes: 65,514 a's + " [truncated 999 chars]" (22) = 65,536 exactly; stopping at 65,513 + the
+        // 23-char 1000 marker would also fit but be one character shorter (review 4).
+        val bytes = CodeModeLimits.boundedText("a".repeat(CodeModeLimits.MAX_TEXT_BYTES + 977))
+        assertEquals(CodeModeLimits.MAX_TEXT_BYTES, bytes.encodeToByteArray().size)
+        assertTrue(bytes.endsWith(" [truncated 999 chars]"), bytes.takeLast(30))
+        // Characters: 201 a's + the 22-char 999 marker = 223 exactly.
+        val chars = CodeModeLimits.boundedText("a".repeat(1_200), maxChars = 223)
+        assertEquals(223, chars.length, chars.takeLast(30))
+        assertTrue(chars.endsWith(" [truncated 999 chars]"), chars.takeLast(30))
+    }
 }

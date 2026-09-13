@@ -16,40 +16,30 @@ public object CodeModeLimits {
      *  corrected result, so a rejected 70 KiB Read was a dead turn. */
     public fun boundedText(value: String, maxChars: Int = Int.MAX_VALUE): String {
         if (value.length <= maxChars && fitsText(value)) return value
-        // The marker's width is bounded by the count it could carry (at most value.length digits):
-        // reserve THAT, never a fixed guess, so the result honours any positive cap (review 2026-09-13:
-        // a 20-char cap returned a 22-char marker and the "admitted" result was rejected downstream).
         // A cap too small for any marker keeps a bare prefix — still cut on a code point (review 2:
-        // take(1) on an emoji handed back an unpaired high surrogate).
-        val widest = marker(value.length).length
-        val withMarker = maxChars >= widest
-        if (!withMarker) return value.substring(0, prefixEnd(value, maxChars, MAX_TEXT_BYTES))
-        // Reserve what the marker will ACTUALLY measure, not the widest it could: start from the
-        // widest, and while the marker for what is really gone is narrower, give the prefix the
-        // difference back (review 3, 2026-09-13: 65,537 a's kept 65,512 + a 21-char marker, three
-        // bytes short of the ceiling). Each pass shrinks the reserve, so it ends within digit-widths.
-        var reserve = widest
-        var end = prefixEnd(value, maxChars - reserve, MAX_TEXT_BYTES - reserve)
-        var actual = marker(value.length - end).length
-        while (actual < reserve) {
-            reserve = actual
-            end = prefixEnd(value, maxChars - reserve, MAX_TEXT_BYTES - reserve)
-            actual = marker(value.length - end).length
-        }
-        return value.substring(0, end) + marker(value.length - end)
+        // take(1) on an emoji handed back an unpaired high surrogate). Otherwise the cut is solved
+        // against the marker that WOULD be emitted for each candidate end: one more character kept
+        // is one fewer gone, and at a digit cliff (1000 -> 999) that also narrows the marker, so
+        // the total can stay flat across the cliff (reviews 3-4, 2026-09-13). Bytes never shrink and
+        // the marker never widens as the prefix grows, so the feasible ends are one prefix and a
+        // single walk finds the longest.
+        val withMarker = maxChars >= marker(value.length).length
+        val end = prefixEnd(value, maxChars, withMarker)
+        return value.substring(0, end) + if (withMarker) marker(value.length - end) else ""
     }
 
-    /** The end of the longest prefix within both budgets that ends on a code point boundary. */
-    private fun prefixEnd(value: String, charBudget: Int, byteBudget: Int): Int {
+    /** The end of the longest prefix that, with its own marker when [withMarker], fits both budgets. */
+    private fun prefixEnd(value: String, maxChars: Int, withMarker: Boolean): Int {
         var bytes = 0
         var end = 0
         while (end < value.length) {
             val codePoint = value.codePointAt(end)
-            val width = Character.charCount(codePoint)
+            val next = end + Character.charCount(codePoint)
             val size = utf8Size(codePoint)
-            if (bytes + size > byteBudget || end + width > charBudget) break
+            val markerWidth = if (withMarker) marker(value.length - next).length else 0
+            if (bytes + size + markerWidth > MAX_TEXT_BYTES || next + markerWidth > maxChars) break
             bytes += size
-            end += width
+            end = next
         }
         return end
     }

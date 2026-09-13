@@ -128,14 +128,17 @@ class McpSharingTest {
             """{"rootword":{"command":"srv","args":["--root=repo"]},
                 "slash":{"command":"srv","args":["src/server.js"]},
                 "dir":{"command":"srv","args":["--dir","x"]},
+                "rootpair":{"command":"srv","args":["--root","repo"]},
                 "scoped":{"command":"npx","args":["-y","@scope/pkg"]},
                 "url":{"command":"srv","args":["--url=https://x.example/api"]},
                 "abs":{"command":"node","args":["/opt/srv/index.js"]}}""",
         ).jsonObject
         val plan = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "K" }, DirectoryProbe { false })
             .plan(entries)
-        assertEquals(setOf("dir", "scoped", "url", "abs"), plan.hosted.keys)
+        assertEquals(setOf("scoped", "url", "abs"), plan.hosted.keys)
         assertTrue(plan.passthrough.getValue("rootword").contains("--root=repo"))
+        assertTrue(plan.passthrough.getValue("rootpair").contains("--root repo"))
+        assertTrue(plan.passthrough.getValue("dir").contains("--dir x"))
         assertTrue(plan.passthrough.getValue("slash").contains("src/server.js"))
     }
 }

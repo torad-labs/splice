@@ -44,7 +44,10 @@ class HostedServersTest {
         val atCapacity = assertThrows(McpHostException::class.java) { servers.acquire("b") }
         assertTrue(atCapacity.message.orEmpty().contains("capacity"), atCapacity.message)
         assertSame(a, servers.get("a"))
-        assertTrue(servers.release("a", a), "still bound after release")
+        // release() answers "bound AND alive"; this registry never launched a child, so it is false
+        // here while the binding itself stays until eviction.
+        assertTrue(!servers.release("a", a), "a was never started, so it is not live")
+        assertSame(a, servers.get("a"), "still bound after release")
         val b = servers.acquire("b")
         assertNotSame(a, b)
         assertEquals(listOf("b"), servers.names(), "a was evicted once unreserved")

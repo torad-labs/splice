@@ -83,13 +83,20 @@ private val PERF_FIELDS: Set<String> = setOf(
 )
 
 /** What the operator asked for on the command line. */
-internal data class DoctorReportOptions(val json: Boolean, val withLogs: Boolean, val out: Path?) {
+internal data class DoctorReportOptions(
+    val json: Boolean,
+    val withLogs: Boolean,
+    val out: Path?,
+    /** v0.4.0 (FEATURES.md §10): send each local runtime one tiny streamed request with one tool. */
+    val live: Boolean = false,
+) {
     internal fun parse(args: List<String>): DoctorReportOptions {
         val outIndex = args.indexOf("--out")
         return DoctorReportOptions(
             json = "--json" in args,
             withLogs = "--with-logs" in args,
             out = args.getOrNull(outIndex + 1)?.takeIf { outIndex >= 0 }?.let(Paths::get),
+            live = "--live" in args,
         )
     }
 }

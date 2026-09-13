@@ -123,6 +123,20 @@ class BackendLabelTest {
     }
 
     @Test
+    fun `a local runtime is labelled local, never as a vendor or a subscription`() {
+        val local = ProviderConfig(
+            dialect = Dialect.OPENAI_CHAT,
+            baseUrl = "http://localhost:11434/v1",
+            auth = AuthConfig("api-key"),
+        )
+        val label = LoginKimi().backendLabel(local)
+        assertTrue(label.startsWith("local runtime"), label)
+        assertFalse(label.contains("platform"), label)
+        val hosted = LoginKimi().backendLabel(provider("api-key", Dialect.OPENAI_CHAT))
+        assertFalse(hosted.contains("local"), hosted)
+    }
+
+    @Test
     fun `the documented kimi api-key alternative is not OpenAI either - DR-175`() {
         // config/splice.example.toml documents MOONSHOT_API_KEY over anthropic-passthrough as the
         // pay-per-token path. It is an UNREGISTERED kind, so it takes the dialect fallback — which

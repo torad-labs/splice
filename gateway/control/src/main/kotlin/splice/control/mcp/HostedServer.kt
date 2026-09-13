@@ -141,7 +141,14 @@ internal class HostedServer(
     suspend fun notify(sessionId: String, msg: JsonObject): Boolean {
         if (codec.method(msg) == "notifications/initialized") return true
         ensureStarted()
-        val out = if (codec.method(msg) == "notifications/cancelled") remapCancelled(sessionId, msg) else msg
+        val out = if (codec.method(msg) != "notifications/cancelled") {
+            msg
+        } else {
+            val clientId = (msg["params"] as? JsonObject)?.get("requestId")
+            pending.entries
+                .firstOrNull { it.value.sessionId == sessionId && it.value.clientId == clientId }
+                ?.let { codec.withCancelledRequestId(msg, JsonPrimitive(it.key)) }
+        }
         return out == null || send(out)
     }
 
@@ -162,14 +169,6 @@ internal class HostedServer(
         p.destroy()
         if (!p.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)) p.destroyForcibly()
         failPending("hosted MCP server '${spec.name}' closed: $reason")
-    }
-
-    private fun remapCancelled(sessionId: String, msg: JsonObject): JsonObject? {
-        val clientId = (msg["params"] as? JsonObject)?.get("requestId")
-        val hostId = pending.entries
-            .firstOrNull { it.value.sessionId == sessionId && it.value.clientId == clientId }
-            ?.key
-        return hostId?.let { codec.withCancelledRequestId(msg, JsonPrimitive(it)) }
     }
 
     private suspend fun spawn(): JsonObject {
@@ -231,20 +230,24 @@ internal class HostedServer(
             throw McpHostException("'${spec.name}' did not complete the MCP handshake")
         }
         val result = answer["result"] as? JsonObject
-        // Publish under stateLock, and only while THIS child is still the adopted, live, unclosed one:
-        // a close() landing between the answer and the publish must win (review 2, 2026-09-13), or a
-        // session would be minted on a server that is already dead or unbound.
-        val published = synchronized(stateLock) {
-            (result != null && !closed && process === p && p.isAlive).also { if (it) initResult = result }
-        }
-        if (!published || result == null) {
+        if (result == null || !publish(p, result)) {
             tearDown("handshake failed")
             throw McpHostException("'${spec.name}' rejected the MCP handshake: ${answer["error"]}")
         }
-        send(codec.notification("notifications/initialized"))
         lastError = null
         log("[mcp-host] ${spec.name}: hosted as pid ${p.pid()}\n")
         return result
+    }
+
+    /** The child is operational only once it has been told `initialized`: send that FIRST, then
+     *  publish under stateLock, and only while THIS child is still the adopted, live, unclosed one —
+     *  a close() landing between the answer and the publish must win (reviews 2-3, 2026-09-13), or a
+     *  session would be minted on a server that is dead, unbound, or not yet serving. */
+    private fun publish(p: Process, result: JsonObject): Boolean {
+        val initialized = send(codec.notification("notifications/initialized"))
+        return synchronized(stateLock) {
+            (initialized && !closed && process === p && p.isAlive).also { if (it) initResult = result }
+        }
     }
 
     private fun send(msg: JsonObject): Boolean {

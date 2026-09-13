@@ -142,10 +142,30 @@ def tools_by_server(init: dict) -> dict[str, list[str]]:
     Identity, not a count: equal totals could hide one server's tools replaced by another's."""
     by_server: dict[str, set[str]] = {}
     for name in init.get("tools", []):
-        m = re.fullmatch(r"mcp__([\w-]+)__([\w-]+)", name)
-        if m:
-            by_server.setdefault(m.group(1), set()).add(m.group(2))
+        # Split on the delimiter only; a tool name is whatever the protocol allowed (dots included).
+        if not name.startswith("mcp__") or "__" not in name[5:]:
+            continue
+        server, tool = name[5:].split("__", 1)
+        if server and tool:
+            by_server.setdefault(server, set()).add(tool)
     return {s: sorted(t) for s, t in sorted(by_server.items())}
+
+
+def selftest() -> int:
+    """The parser keeps dotted and hyphenated tool names and groups by server (review 3)."""
+    init = {"tools": ["Read", "mcp__remotion-docs__remotion-documentation", "mcp__fs__files.read",
+                      "mcp__fs__files.write_v2", "mcp__x__", "mcp____t"],
+            "mcp_servers": [{"name": "fs", "status": "connected"}]}
+    got = tools_by_server(init)
+    want = {"fs": ["files.read", "files.write_v2"], "remotion-docs": ["remotion-documentation"]}
+    if got != want:
+        print(f"SELFTEST FAILED: {got} != {want}", file=sys.stderr)
+        return 1
+    if server_status(init) != {"fs": "connected"}:
+        print("SELFTEST FAILED: server status", file=sys.stderr)
+        return 1
+    print("bench selftest: PASS")
+    return 0
 
 
 def server_status(init: dict) -> dict[str, str]:
@@ -194,6 +214,8 @@ def run_sessions(n: int, mcp_config: dict, model: str, daemon_pid: int | None) -
 
 
 def main() -> int:
+    if sys.argv[1:] == ["--selftest"]:
+        return selftest()
     ap = argparse.ArgumentParser()
     ap.add_argument("--control-port", type=int, required=True)
     ap.add_argument("--mgmt-key-file", required=True)

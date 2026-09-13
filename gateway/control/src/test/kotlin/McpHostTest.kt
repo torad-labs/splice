@@ -178,6 +178,10 @@ class McpHostTest {
         assertEquals(200, host.post("fake", s, LIST, protocolVersion = "2025-11-25").status)
         assertEquals(200, host.post("fake", s, LIST).status)
         assertFalse(host.protocolAccepted("fake", s, "2024-11-05"))
+        // An ended session is 404 whatever version the client still names: reinitialize, not 400.
+        assertTrue(host.endSession("fake", s))
+        assertEquals(404, host.post("fake", s, LIST, protocolVersion = "2025-11-25").status)
+        assertEquals(404, host.post("fake", "unknown", LIST, protocolVersion = "1999-01-01").status)
     }
 
     @Test

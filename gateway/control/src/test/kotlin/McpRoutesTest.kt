@@ -118,6 +118,19 @@ class McpRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, del.status)
         assertEquals(HttpStatusCode.NotFound, post(LIST_MSG, session).status)
+        // Ended session + the old negotiated version on GET and DELETE: 404, never 400.
+        val gone = client.get("http://127.0.0.1:$port/mcp/fake") {
+            header("Authorization", "Bearer $key")
+            header("Mcp-Session-Id", session)
+            header("MCP-Protocol-Version", "2025-11-25")
+        }
+        assertEquals(HttpStatusCode.NotFound, gone.status)
+        val again = client.delete("http://127.0.0.1:$port/mcp/fake") {
+            header("Authorization", "Bearer $key")
+            header("Mcp-Session-Id", session)
+            header("MCP-Protocol-Version", "2025-11-25")
+        }
+        assertEquals(HttpStatusCode.NotFound, again.status)
     }
 
     @Test

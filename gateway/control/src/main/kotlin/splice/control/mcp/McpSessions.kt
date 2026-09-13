@@ -20,6 +20,9 @@ internal class McpSession(val id: String, val server: String) {
     /** The version the child negotiated at this session's initialize; later requests must name it. */
     @Volatile var protocolVersion: String? = null
 
+    /** The child's initialize result this session was minted with. */
+    @Volatile var initResult: kotlinx.serialization.json.JsonObject? = null
+
     @Volatile var lastActivity: Long = 0L
         private set
 

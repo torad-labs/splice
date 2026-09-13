@@ -51,7 +51,7 @@ jobs:
 
       - name: setup java
         # Cache derives from reviewed main code; the attestation chain is the integrity control.
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.6.0 # zizmor: ignore[cache-poisoning]
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v5.6.0 # zizmor: ignore[cache-poisoning]
         with:
           distribution: temurin
           java-version: '21'

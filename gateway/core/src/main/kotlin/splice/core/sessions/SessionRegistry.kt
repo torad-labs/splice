@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -51,7 +52,7 @@ public class SessionRegistry(
     private val sessionsDir: Path,
     private val headOf: HeadOfPid,
     private val pidAlive: PidAlive = PidAlive { pid -> ProcessHandle.of(pid).map { it.isAlive }.orElse(false) },
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
 ) {
     private val json = Json { ignoreUnknownKeys = true }

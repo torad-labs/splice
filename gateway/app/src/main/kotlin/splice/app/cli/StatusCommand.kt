@@ -17,8 +17,13 @@ import splice.core.util.SafeFailureText
  *  reads (isClientAuth / authPresent) — it owns "is this head configured?", so DoctorCommand
  *  constructs one rather than re-deriving them. Every member keeps the old function's name.
  *  The printed table lives on LoginKimi (existing-file extract, 2026-08-19). */
+/** The daemon's /health view for a control port, or null when nothing answers. */
+internal fun interface HealthProbe {
+    operator fun invoke(port: Int): HealthView?
+}
+
 internal class StatusCommand(
-    private val healthProbe: (Int) -> HealthView? = DaemonHealth()::healthView,
+    private val healthProbe: HealthProbe = HealthProbe { port -> DaemonHealth().healthView(port) },
 ) {
 
     private val loginIo = LoginIo()

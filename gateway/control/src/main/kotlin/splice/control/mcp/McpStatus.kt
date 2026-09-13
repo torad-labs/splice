@@ -11,10 +11,15 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.launch.McpSharing
 
+/** The live hosted process for a server name, or null when none is running. */
+internal fun interface HostedServerLookup {
+    operator fun invoke(name: String): HostedServer?
+}
+
 internal class McpStatus(
     private val sharing: McpSharing,
     private val global: GlobalMcpServers,
-    private val server: (String) -> HostedServer?,
+    private val server: HostedServerLookup,
     private val sessions: McpSessions,
 ) {
     fun json(): String {
@@ -22,7 +27,7 @@ internal class McpStatus(
         return buildJsonObject {
             put("hosting", sharing.enabled)
             putJsonObject("servers") {
-                plan.hosted.keys.forEach { name -> putJsonObject(name) { hosted(name) } }
+                plan.hosted.keys.forEach { name -> putJsonObject(name) { hosted(this, name) } }
                 plan.passthrough.forEach { (name, reason) ->
                     putJsonObject(name) {
                         put("eligible", false)
@@ -33,18 +38,18 @@ internal class McpStatus(
         }.toString()
     }
 
-    private fun JsonObjectBuilder.hosted(name: String) {
-        put("eligible", true)
+    private fun hosted(out: JsonObjectBuilder, name: String) {
+        out.put("eligible", true)
         val server = server(name)
-        put("hosted", server?.alive == true)
-        server?.pid?.let { put("pid", it) }
+        out.put("hosted", server?.alive == true)
+        server?.pid?.let { out.put("pid", it) }
         val live = sessions.forServer(name)
-        put("sessions", live.size)
-        putJsonArray("session_ids") { live.forEach { add(JsonPrimitive(it.id)) } }
-        put("streams", live.sumOf { it.openStreams.get() })
-        server?.startedAt?.takeIf { it > 0 }?.let { put("started_at", it) }
-        live.maxOfOrNull { it.lastActivity }?.let { put("last_activity", it) }
-        put("restarts", server?.restarts ?: 0)
-        server?.lastError?.let { put("last_error", it) }
+        out.put("sessions", live.size)
+        out.putJsonArray("session_ids") { live.forEach { add(JsonPrimitive(it.id)) } }
+        out.put("streams", live.sumOf { it.openStreams.get() })
+        server?.startedAt?.takeIf { it > 0 }?.let { out.put("started_at", it) }
+        live.maxOfOrNull { it.lastActivity }?.let { out.put("last_activity", it) }
+        out.put("restarts", server?.restarts ?: 0)
+        server?.lastError?.let { out.put("last_error", it) }
     }
 }

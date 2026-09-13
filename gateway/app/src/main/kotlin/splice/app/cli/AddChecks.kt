@@ -21,37 +21,10 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
 
 private const val HTTP_OK = 200
-private const val PROBE_TIMEOUT_S = 10L
 private const val LISTED_SHOWN = 10
 private const val LIVE_MAX_TOKENS = 8
-
-internal data class AddHttpReply(val status: Int, val body: String)
-
-/** The one seam to the network: a request, or null when nothing answers. */
-internal fun interface AddHttp {
-    operator fun invoke(method: String, url: String, bearer: String?, body: String?): AddHttpReply?
-}
-
-internal class JdkAddHttp(private val client: HttpClient = HttpClient.newHttpClient()) : AddHttp {
-    override fun invoke(method: String, url: String, bearer: String?, body: String?): AddHttpReply? = Cancellables
-        .runCatchingCancellable {
-            val builder = HttpRequest.newBuilder(URI(url))
-                .timeout(Duration.ofSeconds(PROBE_TIMEOUT_S))
-                .header("Content-Type", "application/json")
-                .method(method, body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody())
-            bearer?.let { builder.header("Authorization", "Bearer $it") }
-            val reply = client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
-            AddHttpReply(reply.statusCode(), reply.body())
-        }
-        .getOrNull()
-}
 
 internal data class AddCheck(val name: String, val ok: Boolean, val detail: String)
 

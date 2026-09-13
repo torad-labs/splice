@@ -21,6 +21,25 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # Plan-usage bars: a subscription head (ChatGPT, Kimi, SuperGrok) polls its provider's usage
 # endpoint every five minutes with that head's own bearer. Env CLAUDEX_QUOTA_POLL=off stops every
 # poller (restart the daemon); the bars then draw only from the headers each round already carries.
+# Shared MCP hosting (default on): stdio MCP servers that depend on neither a project directory nor
+# client roots start once in the daemon and serve every session over loopback Streamable HTTP;
+# each head's .claude.json points at the hosted URL, your own config file is never edited.
+# mcp_hosting = false            # every session launches its own servers, as before
+# mcp_hosting_exclude = ["name"] # keep these servers per session even when eligible
+
+# ── compaction instructions: your text after Claude Code's own summarizer prompt ──
+# Most specific scope wins and REPLACES the others (project+model > project > model > global);
+# absent inherits; instructions = "" opts out. Text inline or file = "~/path". Compaction requests
+# only: the cached request prefix is byte-identical with and without it. /api/compact shows the
+# effective text and its source.
+# [compaction]
+# instructions = "Keep every file path, command and error text verbatim."
+# [[compaction.model]]
+# model = "gpt-6-astra"          # the upstream id, after any [1m]-style suffix is stripped
+# file = "~/.config/splice/compaction-astra.md"
+# [[compaction.project]]
+# path = "/home/me/projects/app" # the session's working directory, longest path wins
+# instructions = "Summarize the migration plan in docs/plan.md first."
 
 # ── EXPERIMENTAL OPT-IN: ChatGPT Codex subscription via OAuth ─────────────────
 [providers.codex]
@@ -62,13 +81,14 @@ zstd_request_body = true
 # This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
 # A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
 # Setting true is an experiment, not demonstrated task-efficiency parity.
-# code_mode (beta, default false): true automatically adds splice's JAR-bundled JavaScript runner
-# and orchestration instructions only to eligible GPT-6 Astra and Sol turns. Ordinary tools remain
-# Claude Code's permission-checked client handlers, which execute the real operations. Code mode
-# requires neither Codex nor Node. Only chatgpt-oauth + openai-responses providers may enable it.
-# False or omitted disables both additions. Compact/toolless/forced-tool turns retain the ordinary
-# path; unsupported non-text bridge results fail explicitly. Child JVMs bound workers/time/heap and
-# deny guest host/I/O access; Graal community is not an OS-hardened same-user attacker sandbox.
+# code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
+# adds splice's JAR-bundled JavaScript runner and orchestration instructions only to eligible GPT-6
+# Astra and Sol turns. Ordinary tools remain Claude Code's permission-checked client handlers, which
+# execute the real operations. Code mode requires neither Codex nor Node. Only chatgpt-oauth +
+# openai-responses providers may enable it; code_mode = false turns it off. Compact/toolless/forced-
+# tool turns retain the ordinary path; a single tool result over 64 KiB is truncated at admission
+# behind a "[truncated N chars]" marker. Child JVMs bound workers/time/heap and deny guest host/I/O
+# access; Graal community is not an OS-hardened same-user attacker sandbox.
 # This setting is shared by every head using providers.codex. Topology is boot-only: finish ongoing
 # work before editing, then run `splice restart` for a FULL daemon restart. A head restart alone does
 # not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
@@ -151,8 +171,32 @@ id = "grok-build-latest"
 label = "Grok Build"
 context_window = 256000
 
+# ── local runtime: Ollama / LM Studio / vLLM on this machine (Chat Completions) ─
+# A loopback base_url is local by default (local = true|false overrides). splice never downloads a
+# model or starts the runtime; at boot and in `splice doctor` it asks the runtime what it serves and
+# REFUSES a row the runtime does not list or that declares more context than the runtime serves
+# (the refused head is DEGRADED, the rest of the daemon serves). Ollama: /api/ps reports the window
+# a LOADED model was given (the model card is only a ceiling); LM Studio: loaded_context_length;
+# vLLM: max_model_len. `splice doctor --live` proves streaming + one tool call per listed model.
+# The key env is unused by these runtimes but the api-key kind needs a name; any value works.
+# [providers.ollama]
+# dialect = "openai-chat"
+# base_url = "http://localhost:11434/v1"   # LM Studio: http://localhost:1234/v1, vLLM: :8000/v1
+# auth = { kind = "api-key", env = "OLLAMA_API_KEY" }
+# [[providers.ollama.models]]
+# id = "qwen3:4b"                          # exactly as `ollama list` / /v1/models spells it
+# label = "Qwen3 4B (local)"
+# context_window = 32768                   # at or under what the runtime serves for this model
+# [heads.ollama]
+# provider = "ollama"
+# port = 3105
+# discovery_prefix = "claude-ollama--"
+# pinned_model = "qwen3:4b"
+# [heads.ollama.claude]
+# command = "claude-ollama"
+
 # ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
-# Swap base_url + env for Ollama (http://localhost:11434/v1), LM Studio, DeepSeek, etc.
+# Swap base_url + env for DeepSeek, Fireworks, etc.; a loopback runtime is the local example above.
 # api-key resolution: $OPENROUTER_API_KEY from the daemon's env wins; else the shared
 # ~/.config/splice/keys.toml store (written by `claude-openrouter login` / `splice key set` /
 # the in-session token-capture hook) — env always overrides the store.

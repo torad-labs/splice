@@ -46,6 +46,7 @@ public data class HeadDeps(
     /** The window each Claude Code session actually runs with, learned from its status-line posts
      *  (the control plane records; the usage payload reads). One per head, shared with ManagedHead. */
     val clientWindows: ClientWindows = ClientWindows(),
+    val compactionTail: CompactionTail = CompactionTail(),
     val log: LogSink,
     val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.

@@ -48,6 +48,7 @@ public class PassthroughProvider(
     override val replayReasoning: Boolean = false
 
     private val builder = PassthroughRequestBuilder(quirks, configEffort)
+    private val compactionTail = PassthroughCompactionTail()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -59,6 +60,9 @@ public class PassthroughProvider(
         )
         return BuiltTurn(built.req, built.meta)
     }
+
+    override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
+        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
 
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         PassthroughStreamTranslator(

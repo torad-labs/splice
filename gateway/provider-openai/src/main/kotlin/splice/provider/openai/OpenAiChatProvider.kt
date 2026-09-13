@@ -8,6 +8,7 @@ package splice.provider.openai
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.dialect.chat.ChatCompactionTail
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatStreamTranslator
@@ -29,12 +30,16 @@ public class OpenAiChatProvider(
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
 
     private val builder = ChatRequestBuilder(quirks, showReasoning)
+    private val compactionTail = ChatCompactionTail()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
         val built = builder.build(body.typed, upstreamModel, body.typed.model, compact, sessionId)
         return BuiltTurn(built.req, built.meta)
     }
+
+    override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
+        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
 
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         ChatStreamTranslator(

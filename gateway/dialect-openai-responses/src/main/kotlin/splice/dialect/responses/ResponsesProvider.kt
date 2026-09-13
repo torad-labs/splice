@@ -43,6 +43,7 @@ public abstract class ResponsesProvider(
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
 
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
+    private val compactionTail = ResponsesCompactionTail()
     private val parts = ResponsesParts(
         ResponsesPartsInput(
             tuning = tuning,
@@ -72,6 +73,9 @@ public abstract class ResponsesProvider(
             toolSearch = built.toolSearch,
         )
     }
+
+    final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
+        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
 
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         parts.turnSeams.streamTranslator(meta, signals)

@@ -35,6 +35,10 @@ public data class TurnMeta(
      *  false landing, and it must be visible in one grep of the perf JSONL. */
     val toolsEager: Int? = null,
     val toolsDeferred: Int? = null,
+    /** Effective custom compaction text and its scope source. Both stay null on ordinary turns;
+     *  compact turns use null text for the untouched client default and empty text for opt-out. */
+    val compactionInstructions: String? = null,
+    val compactionInstructionsSource: String? = null,
     /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
      *  build fresh translators; without a shared set, a section re-titled by a continuation round
      *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror

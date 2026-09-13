@@ -61,6 +61,10 @@ public interface Provider : ProviderIdentity {
 
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
 
+    /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves
+     *  current behavior for a provider whose dialect has not opted into the 0.4.0 capability. */
+    public fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
+
     public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 
     /** Default: the bare SSE accept header every Responses/Chat upstream needs. Providers with a

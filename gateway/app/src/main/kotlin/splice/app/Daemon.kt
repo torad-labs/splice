@@ -25,12 +25,15 @@ import splice.control.ControlServer
 import splice.control.DashboardPage
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
+import splice.core.compaction.CompactionInstructions
+import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
+import splice.gateway.head.CompactionTail
 import java.nio.file.Path
 
 public class Daemon(
@@ -72,7 +75,15 @@ public class Daemon(
     // directly to pin that each head resolves against getConfig(key) — see HeadBuildInputs' KDoc.
     // Inferred so this file does not name HeadBuildInputs (concentration, 2026-08-19).
     internal val buildInputs get() = controlPlane.buildInputs
-    private val headServerFactory = HeadServerFactory(config, mgmtKey, log)
+    private val compactionTail = CompactionTail(
+        CompactionInstructions(
+            topology.compaction,
+            topologyPath?.parent ?: TopologyLoader.configPath().parent,
+            log = log,
+        ),
+        SessionProject(),
+    )
+    private val headServerFactory = HeadServerFactory(config, mgmtKey, log, compactionTail)
     private val launchSpecFactory = LaunchSpecFactory(
         topology,
         controlPlane.signInPlanner,

@@ -231,12 +231,17 @@ internal class HostedServer(
             throw McpHostException("'${spec.name}' did not complete the MCP handshake")
         }
         val result = answer["result"] as? JsonObject
-        if (result == null || !p.isAlive) {
+        // Publish under stateLock, and only while THIS child is still the adopted, live, unclosed one:
+        // a close() landing between the answer and the publish must win (review 2, 2026-09-13), or a
+        // session would be minted on a server that is already dead or unbound.
+        val published = synchronized(stateLock) {
+            (result != null && !closed && process === p && p.isAlive).also { if (it) initResult = result }
+        }
+        if (!published || result == null) {
             tearDown("handshake failed")
             throw McpHostException("'${spec.name}' rejected the MCP handshake: ${answer["error"]}")
         }
         send(codec.notification("notifications/initialized"))
-        initResult = result
         lastError = null
         log("[mcp-host] ${spec.name}: hosted as pid ${p.pid()}\n")
         return result

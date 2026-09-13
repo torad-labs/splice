@@ -109,8 +109,12 @@ public class McpSharing(
     }
 
     private fun valueRejection(values: List<String>): String? {
-        val relative = values.firstOrNull { it == "." || it.startsWith("./") || it.startsWith("../") }
-        val directory = values.firstNotNullOfOrNull(::directoryNamed)
+        // Every value is checked bare AND as a flag's payload (`--root=./repo`), both for relative
+        // syntax and for naming an existing directory (a bare `repo` that IS a directory is a
+        // project path the client resolves against ITS cwd) — review 2, 2026-09-13.
+        val candidates = values.flatMap { listOf(it, it.substringAfter('=', "")) }.filter { it.isNotEmpty() }
+        val relative = candidates.firstOrNull { it == "." || it.startsWith("./") || it.startsWith("../") }
+        val directory = candidates.firstOrNull { !it.startsWith("-") && isDirectory(it) }
         return when {
             values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
             relative != null -> "names the relative path '$relative' (project-scoped)"
@@ -118,11 +122,6 @@ public class McpSharing(
             else -> null
         }
     }
-
-    /** The existing directory [value] names — bare (`/abs/dir`) or as a flag value (`--root=/abs/dir`). */
-    private fun directoryNamed(value: String): String? =
-        listOf(value, value.substringAfter('=', ""))
-            .firstOrNull { it.startsWith("/") && isDirectory(it) }
 
     /** One `mcpServers` entry read once; every field nullable so a malformed entry rejects in words. */
     private inner class Entry(val obj: JsonObject?) {

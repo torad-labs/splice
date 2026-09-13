@@ -69,7 +69,12 @@ internal class McpRoutes(private val host: McpHost) {
 
     suspend fun delete(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
-        val ended = host.endSession(name, call.request.headers[SESSION_HEADER])
+        val sessionId = call.request.headers[SESSION_HEADER]
+        if (!host.protocolAccepted(name, sessionId, call.request.headers[PROTOCOL_HEADER])) {
+            call.respond(HttpStatusCode.BadRequest)
+            return
+        }
+        val ended = host.endSession(name, sessionId)
         call.respond(if (ended) HttpStatusCode.OK else HttpStatusCode.NotFound)
     }
 

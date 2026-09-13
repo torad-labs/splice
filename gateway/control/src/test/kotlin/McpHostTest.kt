@@ -137,6 +137,16 @@ class McpHostTest {
     }
 
     @Test
+    fun `concurrent initializes from many sessions spawn exactly one process`(@TempDir dir: Path) = runBlocking {
+        boot(dir)
+        val sessions = (1..6).map { async { init() } }.awaitAll()
+        val pids = sessions.mapIndexed { i, s -> text(call(s, i, "echo", "x")).substringBefore(" ") }.toSet()
+        assertEquals(1, pids.size, "one child for six sessions, got $pids")
+        assertEquals(0, status("fake")["restarts"]!!.jsonPrimitive.content.toInt())
+        assertEquals(6, status("fake")["sessions"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
     fun `string ids and concurrent calls never cross sessions`(@TempDir dir: Path) = runBlocking {
         boot(dir)
         val a = init()

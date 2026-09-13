@@ -12,6 +12,8 @@ package splice.control.mcp
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -32,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong
 private const val RPC_SERVER_EXITED = -32000
 private const val RPC_METHOD_NOT_FOUND = -32601
 private const val HOST_PROTOCOL = "2025-11-25"
+private const val EXIT_WAIT_MS = 1_000L
 private const val DESTROY_GRACE_MS = 2_000L
 
 /** Spawns the child; a seam so tests can run a scripted server and the host never hard-codes Java's launcher. */
@@ -76,6 +79,10 @@ internal class HostedServer(
     private val pending = ConcurrentHashMap<Long, Pending>()
     private val writeLock = Any()
 
+    /** Single-flight spawn: N sessions initializing at once must share ONE child, not race N up
+     *  (the 4-session benchmark caught exactly that on 2026-09-13: four copies per server). */
+    private val spawnLock = Mutex()
+
     @Volatile private var process: Process? = null
 
     @Volatile private var writer: BufferedWriter? = null
@@ -95,7 +102,10 @@ internal class HostedServer(
     val pid: Long? get() = process?.takeIf { it.isAlive }?.pid()
 
     /** The child's initialize result, spawning and handshaking first when the child is not up. */
-    suspend fun ensureStarted(): JsonObject = initResult?.takeIf { process?.isAlive == true } ?: spawn()
+    suspend fun ensureStarted(): JsonObject = started ?: spawnLock.withLock { started ?: spawn() }
+
+    private val started: JsonObject?
+        get() = initResult?.takeIf { process?.isAlive == true }
 
     /** Forward one request; the answer comes back under [clientId] no matter how the child numbered it. */
     suspend fun call(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
@@ -224,7 +234,9 @@ internal class HostedServer(
             lastError = "read failed: ${e.message}"
         }
         if (process === p) {
-            lastError = lastError ?: "exited with code ${runCatching { p.exitValue() }.getOrDefault(-1)}"
+            // stdout EOF arrives a beat before the kernel reaps the child; wait that beat so the code is real.
+            val code = if (p.waitFor(EXIT_WAIT_MS, TimeUnit.MILLISECONDS)) p.exitValue().toString() else "unknown"
+            lastError = lastError ?: "exited with code $code"
             log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
             process = null
             initResult = null

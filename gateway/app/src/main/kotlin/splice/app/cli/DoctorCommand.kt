@@ -36,7 +36,35 @@ internal class DoctorCommand {
     // this class already holds — the DoctorInstallProbes(probes) idiom.
     private val daemon = DoctorDaemonChecks(DoctorHeadChecks(doctorRuntime))
 
-    internal fun doctor(envReader: EnvReader = EnvReader(System::getenv)): Boolean {
+    /** `splice doctor [--json [--with-logs] [--out FILE]]`. The text report unless --json (v0.4.0,
+     *  FEATURES.md §6), in which case DoctorReport emits the allowlisted, redacted JSON instead. */
+    internal fun doctor(envReader: EnvReader = EnvReader(System::getenv)): Boolean = doctor(emptyList(), envReader)
+
+    internal fun doctor(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
+        val options = DoctorReportOptions(json = false, withLogs = false, out = null).parse(args)
+        val run = collect(envReader)
+        if (options.json) {
+            val report = DoctorReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
+            return report.emit(run, options)
+        }
+        val sections = run.sections
+        println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
+        sections.forEach { (title, checks) -> renderSection(title, checks) }
+        val all = sections.flatMap { it.second }
+        val failures = all.count { it.status == CheckStatus.FAIL }
+        val warnings = all.count { it.status == CheckStatus.WARN }
+        println()
+        when {
+            failures > 0 ->
+                println("$RED$failures issue(s)$RESET — fixes listed above. Re-run ${CYAN}splice doctor$RESET after.")
+            warnings > 0 -> println("${GREEN}No blockers$RESET ($warnings warning(s) above).")
+            else -> println("${GREEN}Everything checks out.$RESET")
+        }
+        return failures == 0
+    }
+
+    /** Every section, collected once; both renderings read this. */
+    internal fun collect(envReader: EnvReader): DoctorRun {
         val configPath = TopologyLoader.configPath(envReader)
         val topo = loadTopology(configPath)
         // Resolve the port and probe /health ONCE; both the daemon and auth sections read this snapshot
@@ -54,19 +82,7 @@ internal class DoctorCommand {
             // this one reads the runtime instruments (health counters + perf outcome tail).
             "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader) },
         )
-        println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
-        sections.forEach { (title, checks) -> renderSection(title, checks) }
-        val all = sections.flatMap { it.second }
-        val failures = all.count { it.status == CheckStatus.FAIL }
-        val warnings = all.count { it.status == CheckStatus.WARN }
-        println()
-        when {
-            failures > 0 ->
-                println("$RED$failures issue(s)$RESET — fixes listed above. Re-run ${CYAN}splice doctor$RESET after.")
-            warnings > 0 -> println("${GREEN}No blockers$RESET ($warnings warning(s) above).")
-            else -> println("${GREEN}Everything checks out.$RESET")
-        }
-        return failures == 0
+        return DoctorRun(topology, sections)
     }
 
     // One crashing check must not kill the report (nor masquerade as healthy).
@@ -120,3 +136,5 @@ internal class DoctorCommand {
         }
     }
 }
+
+private val CLAUDE_VERSION = listOf("claude", "--version")

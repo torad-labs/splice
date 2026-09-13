@@ -60,7 +60,7 @@ internal fun interface CommandFactory {
 // per parse. A map keeps parse() at trivial complexity (no 10-arm `when`, which would trip
 // CyclomaticComplexMethod). The COMMANDS are the sealed type; this is just parsing.
 private val verbs: Map<String, CommandFactory> = mapOf(
-    "doctor" to CommandFactory { Command.Doctor },
+    "doctor" to CommandFactory { a -> Command.Doctor(a.drop(1)) },
     "version" to CommandFactory { Command.Version },
     "shim-version" to CommandFactory { Command.ShimVersion },
     "init" to CommandFactory { Command.Init },

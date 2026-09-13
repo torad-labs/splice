@@ -10,8 +10,10 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
 import splice.core.topology.AuthKind
+import splice.core.topology.ProviderConfig
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.dialect.chat.LocalRuntimeProbe
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.openai.ApiKeyAuthProvider
@@ -33,6 +35,7 @@ internal class ChatArm(
     internal fun chatProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
+        if (providerCfg.isLocal) refuseContradictedRows(key, providerCfg)
         val auth = when (providerCfg.auth.kind) {
             GROK_OAUTH -> {
                 val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
@@ -72,5 +75,28 @@ internal class ChatArm(
             ),
             auth,
         )
+    }
+
+    /** v0.4.0 (FEATURES.md §10): a local runtime that is UP and contradicts the row refuses the
+     *  head with the runtime's own words; a runtime that is down boots as today (per-turn errors),
+     *  because refusing every head whose runtime is not yet started would be below the status quo. */
+    private fun refuseContradictedRows(key: String, providerCfg: ProviderConfig) {
+        val probe = LocalRuntimeProbe(providerCfg.baseUrl)
+        val runtime = probe.detect()
+        if (runtime == null) {
+            log(
+                "[$key] local runtime at ${providerCfg.baseUrl} is not answering; " +
+                    "the head boots, turns fail until it is up\n",
+            )
+            return
+        }
+        val rows = providerCfg.models.associate { it.id to it.contextWindow }
+        val refused = probe.validate(rows, probe.models(runtime)).filterNot { it.ok }
+        check(refused.isEmpty()) {
+            "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
+                refused.joinToString("; ") { "'${it.id}': ${it.reason}" }
+        }
+        val version = runtime.version?.let { " $it" }.orEmpty()
+        log("[$key] local runtime ${runtime.kind.label}$version: ${rows.size} row(s) validated\n")
     }
 }

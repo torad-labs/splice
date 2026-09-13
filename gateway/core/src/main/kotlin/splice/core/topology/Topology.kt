@@ -102,7 +102,14 @@ public data class ProviderConfig(
     @SerialName("extra_windows") val extraWindows: List<ExtraWindow> = emptyList(),
     @SerialName("window_rules") val windowRules: List<WindowRule> = emptyList(),
     @SerialName("default_context_window") val defaultContextWindow: Long = 0,
+    /** v0.4.0 (FEATURES.md §10): a user-managed local runtime (Ollama, LM Studio, vLLM) on the
+     *  openai-chat dialect. Absent = auto: an openai-chat provider on a loopback base_url is local. */
+    val local: Boolean? = null,
 ) {
+    /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
+    public val isLocal: Boolean
+        get() = local ?: LocalProviderRule().isLocalByDefault(dialect, baseUrl)
+
     /**
      * [extraHeaders] with TOML key quoting removed — THE accessor every consumer must use.
      *

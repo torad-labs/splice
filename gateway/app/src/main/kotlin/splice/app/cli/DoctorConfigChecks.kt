@@ -14,9 +14,13 @@ internal enum class CheckStatus { OK, INFO, WARN, FAIL }
  *  main sources carry no top-level functions). Stateless — DoctorCommand builds one and asks it,
  *  inside the same `guarded { }` lambda the section always ran in; the member keeps the old
  *  function's name so the diff at the call site is a receiver insertion. */
-internal class DoctorConfigChecks {
+internal class DoctorConfigChecks(private val localRuntime: DoctorLocalRuntime = DoctorLocalRuntime()) {
 
-    internal fun configurationChecks(topo: DoctorTopology, configPath: Path): List<DoctorCheck> = when (topo) {
+    internal fun configurationChecks(
+        topo: DoctorTopology,
+        configPath: Path,
+        live: Boolean = false,
+    ): List<DoctorCheck> = when (topo) {
         is DoctorTopology.Absent -> listOf(
             DoctorCheck(CHECK_TOPOLOGY, CheckStatus.INFO, "no topology yet at $configPath", "splice init"),
         )
@@ -55,7 +59,8 @@ internal class DoctorConfigChecks {
                     "change one head's port in $configPath",
                 )
             }
-            listOf(summary) + brokenRefs + portDupes
+            // v0.4.0 (FEATURES.md §10): local runtimes answer for themselves, in their own words.
+            listOf(summary) + brokenRefs + portDupes + localRuntime.localChecks(topology, live)
         }
     }
 }

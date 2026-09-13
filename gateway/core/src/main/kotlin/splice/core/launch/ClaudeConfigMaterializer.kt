@@ -61,6 +61,9 @@ public class ClaudeConfigMaterializer(
     private val home: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
     private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
+    /** v0.4.0 shared MCP hosting: rewrites the inherited `mcpServers` so eligible stdio servers
+     *  point at the daemon's host instead of spawning per session. Null = today's behaviour. */
+    private val mcpRewrite: McpRewrite? = null,
 ) {
 
     private val json = Json {
@@ -348,7 +351,7 @@ public class ClaudeConfigMaterializer(
             val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { shareMcp }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size
-                put(Keys.MCP_SERVERS, globalMcp)
+                put(Keys.MCP_SERVERS, mcpRewrite?.invoke(globalMcp) ?: globalMcp)
             }
             for (k in portKeys) {
                 // Read once into a local: the map is looked up twice in the old shape and the

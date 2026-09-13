@@ -9,8 +9,9 @@
 //             (the model card: a CEILING, not the served window), the `num_ctx` parameter when the
 //             modelfile sets it, and GET /api/ps -> models[].context_length for a LOADED model (the
 //             window the server actually allocated: its own default when num_ctx is unset — measured
-//             2026-09-13 on Ollama 0.30.5: qwen3:4b card 262144, served 32768). Until the model is
-//             loaded the served window is unknown and only the ceiling can refuse a row.
+//             2026-09-13 on Ollama 0.30.5: qwen3:4b card 262144, served 32768). A loaded window beats
+//             num_ctx (the server may cap or override it); until the model is loaded num_ctx stands in
+//             and, absent both, only the ceiling can refuse a row.
 //   LM Studio GET /api/v0/models -> data[].max_context_length (+ loaded_context_length when loaded)
 //   vLLM      GET /v1/models -> data[].max_model_len
 //   other     GET /v1/models only; context unknown, so a declared window is trusted but reported as such
@@ -56,12 +57,19 @@ public fun interface LocalHttp {
     public operator fun invoke(method: String, url: String, body: String?): LocalHttpReply?
 }
 
-public class JdkLocalHttp(private val client: HttpClient = HttpClient.newHttpClient()) : LocalHttp {
+/** [headers] ride on every probe request: the provider's static headers and its bearer, so a runtime
+ *  that guards /v1/models (vLLM --api-key) answers the probe the way it answers a turn. */
+public class JdkLocalHttp(
+    private val headers: Map<String, String> = emptyMap(),
+    private val client: HttpClient = HttpClient.newHttpClient(),
+) : LocalHttp {
     override fun invoke(method: String, url: String, body: String?): LocalHttpReply? = Cancellables
         .runCatchingCancellable {
-            val request = HttpRequest.newBuilder(URI(url))
+            val builder = HttpRequest.newBuilder(URI(url))
                 .timeout(Duration.ofSeconds(if (body == null) PROBE_TIMEOUT_S else LIVE_TIMEOUT_S))
                 .header("Content-Type", "application/json")
+            headers.forEach { (name, value) -> builder.header(name, value) }
+            val request = builder
                 .method(
                     method,
                     body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody(),
@@ -95,10 +103,12 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
     private val v1 = baseUrl.trimEnd('/')
     private val root = v1.removeSuffix("/v1")
 
-    /** Null when nothing answers at the base URL. */
+    /** Null when nothing answers at the base URL. Detection reads the BODY, not the status: LM Studio
+     *  answers 200 with an error object on every unknown path (measured 2026-09-13, llmster 0.0.24),
+     *  so a 200 on /api/version proves Ollama only when it carries a version. */
     public fun detect(): LocalRuntime? {
-        val ollama = get("$root/api/version")
-        val lmStudio = if (ollama == null) get("$root/api/v0/models") else null
+        val ollama = get("$root/api/version")?.takeIf { it["version"] != null }
+        val lmStudio = if (ollama == null) get("$root/api/v0/models")?.takeIf { it["data"] != null } else null
         val generic = if (ollama == null && lmStudio == null) get("$v1/models") else null
         return when {
             ollama != null -> LocalRuntime(LocalRuntimeKind.OLLAMA, JsonScalars.str(ollama, "version"))
@@ -216,7 +226,9 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
             numCtx?.let { "num_ctx $it" },
             served?.let { "loaded with context $it" },
         ).joinToString(", ")
-        return LocalModel(id, numCtx ?: served, detail.ifEmpty { null }, ceiling = max)
+        // The loaded window is the one the server allocated; num_ctx is only what the modelfile asks
+        // for, and OLLAMA_CONTEXT_LENGTH or a request can override it. Exact beats declared.
+        return LocalModel(id, served ?: numCtx, detail.ifEmpty { null }, ceiling = max)
     }
 
     private fun pingTool(): JsonObject = buildJsonObject {

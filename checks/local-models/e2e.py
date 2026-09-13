@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Local models e2e (FEATURES.md §10): starts a splice daemon from a jar against a config with one
-good Ollama head and deliberately bad heads, then proves — against the live runtime — that a row
+good local head and deliberately bad heads, then proves — against the live runtime — that a row
 naming an unlisted model or over-declaring context is refused at boot, that the good head streams,
 survives a cancelled turn, carries a tool result into the next turn, and that doctor reports it all
-as "local". Fail-closed: the receipt is written only when every check passes.
+as "local". Fail-closed: the receipt is written only when every check passes. One run = one runtime;
+run it once per runtime (Ollama, LM Studio) and keep one receipt each.
 
-  e2e.py --jar app-all.jar --config splice-local.toml --home /isolated/home \
-         --good-head ollama --bad-heads ollama-unlisted,ollama-overclaim --out receipts/local-models.json
+  e2e.py --runtime ollama --jar app-all.jar --config splice-local.toml --home /isolated/home \
+         --good-head ollama --bad-heads ollama-unlisted,ollama-overclaim --out receipts/local-models-ollama.json
+  e2e.py --runtime lmstudio --jar app-all.jar --config splice-lmstudio.toml --home /isolated/home \
+         --good-head lmstudio --bad-heads lmstudio-unlisted,lmstudio-overclaim \
+         --out receipts/local-models-lmstudio.json
 
-Stdlib only. The runtime is the operator's: this script never pulls a model or starts Ollama.
+Stdlib only. The runtime is the operator's: this script never pulls a model or starts a runtime.
 """
 from __future__ import annotations
 
@@ -39,29 +43,64 @@ class Failed(Exception):
     pass
 
 
-def ollama_json(base: str, path: str, body: dict | None = None, timeout: int = 300) -> dict:
+RUNTIME_LABEL = {"ollama": "Ollama", "lmstudio": "LM Studio"}
+RUNTIME_URL = {"ollama": "http://localhost:11434", "lmstudio": "http://localhost:1234"}
+
+
+def runtime_json(base: str, path: str, body: dict | None = None, timeout: int = 300) -> dict:
     req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body else None,
                                  headers={"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
 
 
-def runtime_facts(base: str, model: str) -> dict:
+def runtime_facts(runtime: str, base: str, model: str) -> dict:
+    return ollama_facts(base, model) if runtime == "ollama" else lmstudio_facts(base, model)
+
+
+def lmstudio_facts(base: str, model: str) -> dict:
+    """/api/v0/models carries max_context_length (the model's ceiling) and, once loaded,
+    loaded_context_length (the served window). Warm-up is one tiny chat completion (JIT load).
+    The API has no version endpoint; the daemon's own status line is recorded when lms is on PATH."""
+    rows = {m["id"]: m for m in runtime_json(base, "/api/v0/models")["data"]}
+    if model not in rows:
+        raise Failed(f"{model} is not downloaded (lms ls: {sorted(rows)})")
+    t0 = time.monotonic()
+    runtime_json(base, "/v1/chat/completions", {"model": model, "max_tokens": 1,
+                                                "messages": [{"role": "user", "content": "hi"}]})
+    load_s = round(time.monotonic() - t0, 1)
+    row = {m["id"]: m for m in runtime_json(base, "/api/v0/models")["data"]}[model]
+    served = row.get("loaded_context_length")
+    if served is None:
+        raise Failed("/api/v0/models reports no loaded_context_length after the warm-up")
+    try:
+        status = subprocess.run(["lms", "daemon", "status"], capture_output=True, text=True, timeout=30)
+        version = status.stdout.strip().splitlines()[-1] if status.returncode == 0 else "unknown"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        version = "unknown (lms not on PATH)"
+    return {
+        "runtime": "LM Studio", "version": version, "model": model, "quantization": row.get("quantization"),
+        "card_context_length": row.get("max_context_length"), "num_ctx": None,
+        "served_context_length": served, "warm_load_s": load_s, "capabilities": row.get("capabilities"),
+    }
+
+
+def ollama_facts(base: str, model: str) -> dict:
     """Version, the model's digest, its card context, and — after a warm-up that loads it — the
     window Ollama actually allocated (/api/ps). Warm-up is one tiny generate; the model stays
     loaded for the daemon boot that follows, so the boot verdict reads the served window."""
-    version = ollama_json(base, "/api/version")["version"]
-    tags = {m["name"]: m for m in ollama_json(base, "/api/tags")["models"]}
+    version = runtime_json(base, "/api/version")["version"]
+    tags = {m["name"]: m for m in runtime_json(base, "/api/tags")["models"]}
     if model not in tags:
         raise Failed(f"{model} is not pulled (ollama list: {sorted(tags)})")
-    show = ollama_json(base, "/api/show", {"model": model})
+    show = runtime_json(base, "/api/show", {"model": model})
     info = show["model_info"]
     card = next((v for k, v in info.items() if k.endswith(".context_length")), None)
     num_ctx = re.search(r"^\s*num_ctx\s+(\d+)", show.get("parameters", ""), re.M)
     t0 = time.monotonic()
-    ollama_json(base, "/api/generate", {"model": model, "prompt": "hi", "stream": False, "think": False,
+    runtime_json(base, "/api/generate", {"model": model, "prompt": "hi", "stream": False, "think": False,
                                         "keep_alive": "15m"})
     load_s = round(time.monotonic() - t0, 1)
-    served = next((m.get("context_length") for m in ollama_json(base, "/api/ps")["models"]
+    served = next((m.get("context_length") for m in runtime_json(base, "/api/ps")["models"]
                    if m["name"] == model), None)
     if served is None:
         raise Failed("/api/ps reports no context_length for the loaded model")
@@ -82,7 +121,7 @@ class Daemon:
 
     def env(self) -> dict:
         return {**os.environ, "SPLICE_CONFIG": str(self.config), "OLLAMA_API_KEY": "ollama",
-                "HOME": str(self.home)}
+                "LMSTUDIO_API_KEY": "lmstudio", "HOME": str(self.home)}
 
     def start(self) -> None:
         self.home.mkdir(parents=True, exist_ok=True)
@@ -211,9 +250,9 @@ def check_boot(d: Daemon, good: str, bad: list[str]) -> dict:
             "refused": refusals, "up_line": up.strip()}
 
 
-def check_streaming(port: int, bearer: str, model: str) -> dict:
+def check_streaming(port: int, bearer: str, model: str, head: str) -> dict:
     proc = subprocess.run(
-        [sys.executable, str(STREAM_PROBE), "--head", "ollama", "--port", str(port), "--model", model,
+        [sys.executable, str(STREAM_PROBE), "--head", head, "--port", str(port), "--model", model,
          "--total-ms", "180000", "--first-delta-ms", "90000"],
         env={**os.environ, "SPLICE_PROBE_BEARER": bearer}, capture_output=True, text=True)
     summary = json.loads(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else {}
@@ -241,7 +280,7 @@ def ollama_cancelled(since_epoch: float) -> str:
     return line.strip()
 
 
-def check_cancellation(port: int, bearer: str, model: str, perf: Path) -> dict:
+def check_cancellation(port: int, bearer: str, model: str, perf: Path, runtime: str) -> dict:
     gone_before = sum(1 for r in perf_rows(perf) if r.get("outcome") in GONE)
     t_cancel = time.time()
     body = {"model": model, "max_tokens": 1024,
@@ -265,7 +304,9 @@ def check_cancellation(port: int, bearer: str, model: str, perf: Path) -> dict:
     time.sleep(2)
     return {"deltas_before_cancel": sum(1 for n, _ in events if n == "content_block_delta"),
             "next_turn_s": round(time.monotonic() - t0, 1), "next_turn_text": text_of(after)[:80],
-            "head_outcome": gone_rows, "ollama_journal": ollama_cancelled(t_cancel)}
+            "head_outcome": gone_rows,
+            "runtime_evidence": ollama_cancelled(t_cancel) if runtime == "ollama" else
+            "LM Studio keeps no journal; the head's client-gone row and the prompt next turn are the evidence"}
 
 
 def check_tool_continuity(port: int, bearer: str, model: str) -> dict:
@@ -289,7 +330,7 @@ def check_tool_continuity(port: int, bearer: str, model: str) -> dict:
             "second_stop_reason": stop_reason(second), "second_text": text[:160]}
 
 
-def check_doctor(d: Daemon, good: str, bad: list[str], model: str, bad_rows: dict[str, str]) -> dict:
+def check_doctor(d: Daemon, good: str, bad: list[str], model: str, bad_rows: dict[str, str], label: str) -> dict:
     proc = subprocess.run(["java", f"-Duser.home={d.home}", "-jar", str(d.jar), "doctor", "--json"],
                           env=d.env(), capture_output=True, text=True, timeout=120)
     if proc.returncode not in (0, 1):
@@ -306,7 +347,7 @@ def check_doctor(d: Daemon, good: str, bad: list[str], model: str, bad_rows: dic
         if local.get(name, {}).get("status") != "fail":
             raise Failed(f"doctor {name}: {local.get(name)}")
     summary = local[f"local:{good}"]["detail"]
-    if "Ollama" not in summary or "local" not in f"local:{good}":
+    if label not in summary or "local" not in f"local:{good}":
         raise Failed(f"doctor summary does not name the runtime: {summary}")
     return {name: {"status": c["status"], "detail": c["detail"]} for name, c in local.items()}
 
@@ -317,12 +358,14 @@ def main() -> int:
     ap.add_argument("--config", required=True, type=Path)
     ap.add_argument("--home", required=True, type=Path)
     ap.add_argument("--control-port", type=int, default=3196)
-    ap.add_argument("--ollama", default="http://localhost:11434")
+    ap.add_argument("--runtime", choices=sorted(RUNTIME_LABEL), default="ollama")
+    ap.add_argument("--runtime-url", default=None, help="defaults to the runtime's own port on localhost")
     ap.add_argument("--good-head", default="ollama")
     ap.add_argument("--bad-heads", default="ollama-unlisted,ollama-overclaim")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--keep-daemon", action="store_true")
     args = ap.parse_args()
+    runtime_url = args.runtime_url or RUNTIME_URL[args.runtime]
     bad = [b for b in args.bad_heads.split(",") if b]
     topo = tomllib.loads(args.config.read_text())
     good_row = topo["providers"][args.good_head]["models"][0]
@@ -331,17 +374,17 @@ def main() -> int:
     d = Daemon(args.jar.resolve(), args.config.resolve(), args.home.resolve(), args.control_port)
     receipt = {"kind": "local-models-e2e", "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "jar_sha256": hashlib.sha256(args.jar.read_bytes()).hexdigest(),
-               "lm_studio": {"tested": False, "reason": "not installed on the reference machine"},
                "vllm": {"tested": False, "documented": "checks/local-models/README.md"}}
+    label = RUNTIME_LABEL[args.runtime]
     try:
-        receipt["ollama"] = runtime_facts(args.ollama, good_row["id"])
+        receipt["runtime"] = runtime_facts(args.runtime, runtime_url, good_row["id"])
         declared = good_row["context_window"]
-        served = receipt["ollama"]["served_context_length"]
+        served = receipt["runtime"]["served_context_length"]
         if declared != served:
-            raise Failed(f"config declares {declared} for the good row; Ollama serves {served} — align the config")
+            raise Failed(f"config declares {declared} for the good row; {label} serves {served} — align the config")
         receipt["context_limit"] = {"declared": declared, "served": served,
-                                    "card": receipt["ollama"]["card_context_length"]}
-        print(f"runtime: {receipt['ollama']}")
+                                    "card": receipt["runtime"]["card_context_length"]}
+        print(f"runtime: {receipt['runtime']}")
         d.start()
         receipt["boot"] = check_boot(d, args.good_head, bad)
         print(f"boot: {receipt['boot']['up_line']}")
@@ -351,13 +394,14 @@ def main() -> int:
             f"http://127.0.0.1:{port}/v1/models", headers={"Authorization": f"Bearer {bearer}"}), timeout=10).read())
         model = models["data"][0]["id"]
         receipt["head_model"] = model
-        receipt["streaming"] = check_streaming(port, bearer, model)
+        receipt["streaming"] = check_streaming(port, bearer, model, args.good_head)
         print(f"streaming: {receipt['streaming']}")
-        receipt["cancellation"] = check_cancellation(port, bearer, model, d.state / f"{args.good_head}-perf.jsonl")
+        receipt["cancellation"] = check_cancellation(port, bearer, model, d.state / f"{args.good_head}-perf.jsonl",
+                                                     args.runtime)
         print(f"cancellation: {receipt['cancellation']}")
         receipt["tool_continuity"] = check_tool_continuity(port, bearer, model)
         print(f"tool continuity: {receipt['tool_continuity']}")
-        receipt["doctor"] = check_doctor(d, args.good_head, bad, good_row["id"], bad_rows)
+        receipt["doctor"] = check_doctor(d, args.good_head, bad, good_row["id"], bad_rows, label)
         print(f"doctor: {json.dumps(receipt['doctor'], indent=1)}")
     except Failed as e:
         print(f"E2E FAILED: {e}", file=sys.stderr)

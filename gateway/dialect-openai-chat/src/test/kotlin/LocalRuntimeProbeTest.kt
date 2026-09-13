@@ -78,6 +78,44 @@ class LocalRuntimeProbeTest {
     }
 
     @Test
+    fun `LM Studio answering 200 with an error object on Ollama's paths is still LM Studio`() {
+        val lmStudio = LocalHttp { _, url, _ ->
+            if (url.endsWith("/api/v0/models")) {
+                val row = """{"id":"qwen/qwen3-4b","max_context_length":32768,"state":"loaded","loaded_context_length":8192}"""
+                LocalHttpReply(200, """{"data":[$row],"object":"list"}""")
+            } else {
+                LocalHttpReply(200, """{"error":"Unexpected endpoint or method. (GET ${url.substringAfter(":1")})"}""")
+            }
+        }
+        val probe = LocalRuntimeProbe("http://localhost:1/v1", lmStudio)
+        val runtime = checkNotNull(probe.detect())
+        assertEquals(LocalRuntimeKind.LM_STUDIO, runtime.kind)
+        val model = probe.models(runtime).single()
+        assertEquals(8192L, model.contextLength)
+        assertFalse(probe.validate(mapOf("qwen/qwen3-4b" to 32768L), listOf(model)).single().ok)
+    }
+
+    @Test
+    fun `the loaded window beats a modelfile num_ctx that claims more`() {
+        val show = """{"parameters":"num_ctx 65536","model_info":{"qwen3.context_length":262144}}"""
+        val ps = """{"models":[{"name":"qwen3:4b","context_length":32768}]}"""
+        val probe = LocalRuntimeProbe(
+            "http://localhost:1/v1",
+            http(
+                mapOf(
+                    "GET /api/version" to """{"version":"0.30.5"}""",
+                    "GET /v1/models" to """{"data":[{"id":"qwen3:4b"}]}""",
+                    "POST /api/show" to show,
+                    "GET /api/ps" to ps,
+                ),
+            ),
+        )
+        val warm = probe.models(checkNotNull(probe.detect())).single()
+        assertEquals(32768L, warm.contextLength)
+        assertFalse(probe.validate(mapOf("qwen3:4b" to 65536L), listOf(warm)).single().ok)
+    }
+
+    @Test
     fun `LM Studio and vLLM report context their own way and an unknown runtime reports none`() {
         val lmstudio = LocalRuntimeProbe(
             "http://localhost:1/v1",

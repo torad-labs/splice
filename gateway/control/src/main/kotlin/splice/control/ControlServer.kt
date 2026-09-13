@@ -21,6 +21,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
@@ -36,9 +37,11 @@ import splice.control.api.HeadResolver
 import splice.control.api.HeadRoutes
 import splice.control.api.JsonBody
 import splice.control.api.LaunchRoutes
+import splice.control.api.McpRoutes
 import splice.control.api.PerfPayloads
 import splice.control.api.StatuslineRoute
 import splice.control.api.UsagePayloads
+import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
@@ -74,6 +77,8 @@ public class ControlServer(
     private val configPath: String = "",
     private val topologyStale: TopologyStale = TopologyStale { false },
     private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
+    /** v0.4.0 shared MCP hosting; null keeps the control plane exactly as before. */
+    private val mcpHost: McpHost? = null,
 ) {
     private val payloads =
         ControlPayloads(
@@ -96,6 +101,7 @@ public class ControlServer(
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
     private val statuslineRoute = StatuslineRoute(resolver, config)
+    private val mcpRoutes = mcpHost?.let(::McpRoutes)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -134,14 +140,22 @@ public class ControlServer(
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { statuslineRoute.statusline(call) } // stdin-piped per tick; no bearer
                 get("/statusline/{head}") { statuslineRoute.statusline(call) }
+                if (mcpRoutes != null && mcpHost != null) {
+                    get("/api/mcp") { guarded(call) { respond(call, mcpHost.statusJson()) } }
+                    post("/mcp/{name}") { guarded(call) { mcpRoutes.post(call) } }
+                    get("/mcp/{name}") { guarded(call) { mcpRoutes.stream(call) } }
+                    delete("/mcp/{name}") { guarded(call) { mcpRoutes.delete(call) } }
+                }
             }
         }
         engine.start(wait = false)
         server = engine
+        mcpHost?.start()
     }
 
     @Synchronized
     public fun stop() {
+        mcpHost?.stop()
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
     }

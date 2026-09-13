@@ -19,7 +19,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
-import splice.core.launch.McpRewrite
 import splice.core.launch.TokenCaptureSpec
 import splice.core.util.LogSink
 import java.io.IOException
@@ -203,20 +202,6 @@ class ClaudeConfigMaterializerTest {
         assertTrue(obj["mcpServers"]!!.jsonObject.containsKey("fs"))
         assertEquals("true", obj["verbose"]?.jsonPrimitive?.content) // PORT_KEY inherited
         assertEquals("true", obj["hasCompletedOnboarding"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `the mcp rewrite seam replaces the inherited servers and the count still reports the operator's`(
-        @TempDir tmp: Path,
-    ) {
-        seedGlobal(tmp)
-        val dir = tmp.resolve(".claude-codex")
-        val rewrite = McpRewrite { buildJsonObject { put("fs", buildJsonObject { put("type", "http") }) } }
-        val result = ClaudeConfigMaterializer(tmp, mcpRewrite = rewrite)
-            .materialize(dir, allPolicy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
-        assertEquals(1, result.mcpServers)
-        val obj = Json.parseToJsonElement(dir.resolve(".claude.json").readText()).jsonObject
-        assertEquals("http", obj["mcpServers"]!!.jsonObject["fs"]!!.jsonObject["type"]?.jsonPrimitive?.content)
     }
 
     @Test

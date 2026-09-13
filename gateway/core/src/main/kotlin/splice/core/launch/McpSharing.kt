@@ -88,31 +88,42 @@ public class McpSharing(
     /** The spec for [name] as the operator's file declares it now, or null when it is not hosted. */
     public fun hostedSpec(global: JsonObject, name: String): McpServerSpec? = plan(global).hosted[name]
 
-    private fun eligible(name: String, entry: JsonElement, reasons: MutableMap<String, String>): McpServerSpec? {
-        val obj = entry as? JsonObject
-        val type = obj?.let { str(it["type"]) }
-        val command = obj?.let { str(it["command"]) }
-        val args = (obj?.get("args") as? JsonArray)?.mapNotNull { str(it) } ?: emptyList()
-        val env = (obj?.get("env") as? JsonObject)?.mapNotNull { (k, v) -> str(v)?.let { k to it } }?.toMap()
-            ?: emptyMap()
-        val values = args + env.values
-        val directory = values.firstOrNull { it.startsWith("/") && isDirectory(it) }
-        val rejection = when {
-            name in exclude -> "excluded by [daemon] mcp_hosting_exclude"
-            obj == null -> "entry is not an object"
-            type != null && type != "stdio" -> "transport '$type' already serves many clients"
-            command == null -> "no command"
-            obj.containsKey("cwd") -> "has a cwd (session-scoped)"
-            values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
-            directory != null -> "names the directory '$directory' (project-scoped)"
-            else -> null
-        }
-        return if (rejection == null && command != null) {
-            McpServerSpec(name, command, args, env)
+    private fun eligible(name: String, element: JsonElement, reasons: MutableMap<String, String>): McpServerSpec? {
+        val entry = Entry(element as? JsonObject)
+        val rejection = rejection(name, entry)
+        return if (rejection == null && entry.command != null) {
+            McpServerSpec(name, entry.command, entry.args, entry.env)
         } else {
             reasons[name] = rejection ?: "no command"
             null
         }
+    }
+
+    private fun rejection(name: String, entry: Entry): String? = when {
+        name in exclude -> "excluded by [daemon] mcp_hosting_exclude"
+        entry.obj == null -> "entry is not an object"
+        entry.type != null && entry.type != "stdio" -> "transport '${entry.type}' already serves many clients"
+        entry.command == null -> "no command"
+        entry.obj.containsKey("cwd") -> "has a cwd (session-scoped)"
+        else -> valueRejection(entry.args + entry.env.values)
+    }
+
+    private fun valueRejection(values: List<String>): String? {
+        val directory = values.firstOrNull { it.startsWith("/") && isDirectory(it) }
+        return when {
+            values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
+            directory != null -> "names the directory '$directory' (project-scoped)"
+            else -> null
+        }
+    }
+
+    /** One `mcpServers` entry read once; every field nullable so a malformed entry rejects in words. */
+    private inner class Entry(val obj: JsonObject?) {
+        val type: String? = obj?.let { str(it["type"]) }
+        val command: String? = obj?.let { str(it["command"]) }
+        val args: List<String> = (obj?.get("args") as? JsonArray)?.mapNotNull { str(it) } ?: emptyList()
+        val env: Map<String, String> =
+            (obj?.get("env") as? JsonObject)?.mapNotNull { (k, v) -> str(v)?.let { k to it } }?.toMap() ?: emptyMap()
     }
 
     private fun str(e: JsonElement?): String? = (e as? JsonPrimitive)?.takeIf { it.isString }?.content

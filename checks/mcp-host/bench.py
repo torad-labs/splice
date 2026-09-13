@@ -11,7 +11,10 @@ Usage:
            --out checks/e2e/receipts/mcp-host-bench.json
 
 Each session is `claude -p` with --strict-mcp-config and a prompt that lists the tools and stops,
-so the servers are actually initialized and queried. Sampling is /proc based (Linux only).
+so the servers are actually initialized and queried. The tool surface is read from Claude Code's
+own stream-json `system/init` event (the tools it loaded and each MCP server's connection status),
+never from the model's prose — a session's answer once named tools of servers it did not have
+(review 2, 2026-09-13). Sampling is /proc based (Linux only).
 """
 from __future__ import annotations
 
@@ -122,6 +125,33 @@ def daemon_jar_sha256(pid: int) -> str | None:
     return hashlib.sha256(Path(jar).read_bytes()).hexdigest() if jar and Path(jar).exists() else None
 
 
+def init_event(output: str) -> dict:
+    """Claude Code's `system/init` event from stream-json output; {} when the session never got there."""
+    for line in output.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("type") == "system" and msg.get("subtype") == "init":
+            return msg
+    return {}
+
+
+def tools_by_server(init: dict) -> dict[str, list[str]]:
+    """The exact MCP tool names the session LOADED, grouped by server (`mcp__<server>__<tool>`).
+    Identity, not a count: equal totals could hide one server's tools replaced by another's."""
+    by_server: dict[str, set[str]] = {}
+    for name in init.get("tools", []):
+        m = re.fullmatch(r"mcp__([\w-]+)__([\w-]+)", name)
+        if m:
+            by_server.setdefault(m.group(1), set()).add(m.group(2))
+    return {s: sorted(t) for s, t in sorted(by_server.items())}
+
+
+def server_status(init: dict) -> dict[str, str]:
+    return {s["name"]: s.get("status", "?") for s in init.get("mcp_servers", [])}
+
+
 def run_sessions(n: int, mcp_config: dict, model: str, daemon_pid: int | None) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         cfg = Path(tmp) / "mcp.json"
@@ -130,7 +160,8 @@ def run_sessions(n: int, mcp_config: dict, model: str, daemon_pid: int | None) -
         for i in range(n):
             procs.append(
                 subprocess.Popen(
-                    ["claude", "-p", PROMPT, "--model", model, "--mcp-config", str(cfg), "--strict-mcp-config"],
+                    ["claude", "-p", PROMPT, "--model", model, "--mcp-config", str(cfg), "--strict-mcp-config",
+                     "--output-format", "stream-json", "--verbose"],
                     cwd=tmp,
                     stdout=open(Path(tmp) / f"out{i}.txt", "w"),
                     stderr=subprocess.STDOUT,
@@ -145,11 +176,14 @@ def run_sessions(n: int, mcp_config: dict, model: str, daemon_pid: int | None) -
         sampler.stop.set()
         sampler.join()
         full = [(Path(tmp) / f"out{i}.txt").read_text() for i in range(n)]
+        inits = [init_event(o) for o in full]
         outputs = [o[:400] for o in full]
         return {
             "sessions": n,
             "exit_codes": [p.returncode for p in procs],
-            "mcp_tools_listed": [len(set(re.findall(r"mcp__[\w-]+__\w+", o))) for o in full],
+            "mcp_servers": [server_status(i) for i in inits],
+            "mcp_tools": [tools_by_server(i) for i in inits],
+            "mcp_tools_listed": [sum(len(v) for v in tools_by_server(i).values()) for i in inits],
             "wall_s": round(time.time() - t0, 1),
             "peak_server_rss_kb": sampler.peak_servers,
             "peak_workload_rss_kb": sampler.peak_workload,
@@ -201,8 +235,18 @@ def main() -> int:
     problems = []
     if any(code != 0 for code in a["exit_codes"] + b["exit_codes"]):
         problems.append(f"session exit codes unhosted={a['exit_codes']} hosted={b['exit_codes']}")
-    if min(a["mcp_tools_listed"]) == 0 or a["mcp_tools_listed"] != b["mcp_tools_listed"]:
-        problems.append(f"tool surface differs or is empty: unhosted={a['mcp_tools_listed']} hosted={b['mcp_tools_listed']}")
+    # Every session, both modes, must list EVERY requested server with the SAME tool names — per
+    # server, by name, never by total count.
+    for mode, run in (("unhosted", a), ("hosted", b)):
+        for i, (tools, status) in enumerate(zip(run["mcp_tools"], run["mcp_servers"])):
+            absent = [s for s in names if not tools.get(s)]
+            if absent:
+                problems.append(f"{mode} session {i} loaded no tools for {absent}")
+            down = {s: status.get(s) for s in names if status.get(s) != "connected"}
+            if down:
+                problems.append(f"{mode} session {i} MCP server status not connected: {down}")
+    if a["mcp_tools"] != b["mcp_tools"]:
+        problems.append(f"tool surface differs between modes: unhosted={a['mcp_tools']} hosted={b['mcp_tools']}")
     if saving is None or saving < 0.5:
         problems.append(f"server RSS saving {saving} is below the 50% bar")
     if problems:

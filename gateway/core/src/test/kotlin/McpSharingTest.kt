@@ -105,4 +105,20 @@ class McpSharingTest {
         assertNull(sharing().hostedSpec(global, "docs"))
         assertNull(sharing().hostedSpec(global, "missing"))
     }
+
+    @Test
+    fun `a relative path behind a flag and a bare directory name are project-scoped too`() {
+        val entries = Json.parseToJsonElement(
+            """{"flagrel":{"command":"srv","args":["--root=./repo"]},
+                "bare":{"command":"srv","args":["repo"]},
+                "flagword":{"command":"srv","args":["--mode=repo"]},
+                "plain":{"command":"srv","args":["--stdio"]}}""",
+        ).jsonObject
+        val plan = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "K" }, DirectoryProbe { it == "repo" })
+            .plan(entries)
+        assertEquals(setOf("plain"), plan.hosted.keys)
+        assertTrue(plan.passthrough.getValue("flagrel").contains("./repo"))
+        assertTrue(plan.passthrough.getValue("bare").contains("directory 'repo'"))
+        assertTrue(plan.passthrough.getValue("flagword").contains("directory 'repo'"))
+    }
 }

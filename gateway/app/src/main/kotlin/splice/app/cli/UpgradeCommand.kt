@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]` — fetch + verify the
+// NEW: v0.4.0 FEATURES.md §5 — `splice upgrade [--to vX] [--now] [--rollback]` — fetch + verify the
 // release exactly as install.sh does, stage it under <share>/releases/<version>/, preflight with the
 // candidate's own doctor, wait for every head's inflight to reach zero (or --now), repoint the live
 // jar, refresh or keep the wrapper (UpgradeWrapper), restart the unit, run doctor. --rollback

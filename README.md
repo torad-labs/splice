@@ -232,6 +232,27 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 | splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |
 | splice control plane | — | `~/.claude-codex/state/mgmt-key` | dashboard/API unlock key — password-equivalent |
 
+### More than one account per provider
+
+An OAuth head can hold several accounts of its kind and switch between them when one runs out.
+The first `splice login <head>` stays the primary account in the file above; every further
+`splice login <head> --label <name>` lands beside it under `~/.config/splice/auth/<kind>/<name>.json`
+(its quota state in `<name>-quota.json` next to it). Without `--label` the name is derived from
+nothing personal: the ChatGPT plan plus a short hash of the account id, or `grok-2`, `kimi-3` by
+ordinal. A file is only ever used by the provider whose kind it carries inside; a mislabeled file
+is refused at boot, never silently used.
+
+Selection is sticky per session and decided only between turns. A session keeps the account it
+last used until the provider reports that account exhausted (a window at 100 %, or a 429 whose
+reset is later than a turn can wait); the next turn goes out on the pool account with the lowest
+seven-day usage whose five-hour window is open, and the session returns to its primary at the
+first turn after that account's reset time. A turn already streaming finishes on the account it
+started on. The first turn after a switch pays one cold prompt-cache read, and its perf row says
+so and names the account. When every account is out, the turn fails the way limits fail today
+and names the earliest reset across the pool. The status line, `splice status` and `splice doctor`
+name the account a head or session is on and the last switch with its reason; the daemon log
+records each switch once under `[<head>]`.
+
 ## Provider support
 
 | Route | Auth | Status |

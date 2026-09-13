@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §1): the `splice add` command line as data, and its parser. Split from
+// NEW: v0.4.0 FEATURES.md §1 — the `splice add` command line as data, and its parser. Split from
 // AddCommand.kt (concentration, 2026-09-13).
 package splice.app.cli
 

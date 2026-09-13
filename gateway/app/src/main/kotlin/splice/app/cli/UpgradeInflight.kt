@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): the daemon's in-flight count as `splice upgrade` reads it — the sum
+// NEW: v0.4.0 FEATURES.md §5 — the daemon's in-flight count as `splice upgrade` reads it — the sum
 // of every head's gate.inflight on /api/heads, with the mgmt key. Split from UpgradeDaemon.kt
 // (concentration, 2026-09-13).
 package splice.app.cli

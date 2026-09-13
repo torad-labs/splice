@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): the running daemon's side of an upgrade — wait until every head's
+// NEW: v0.4.0 FEATURES.md §5 — the running daemon's side of an upgrade — wait until every head's
 // inflight on /api/heads is zero (or --now), restart the user unit when one supervises the daemon
 // (hostshield's splice.service) and the plain restart verb otherwise, then run the NEW jar's doctor.
 package splice.app.cli

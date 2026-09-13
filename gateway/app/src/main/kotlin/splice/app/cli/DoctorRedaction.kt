@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §6): the one redaction pass every free-text field of `splice doctor
+// NEW: v0.4.0 FEATURES.md §6 — the one redaction pass every free-text field of `splice doctor
 // --json` goes through — check details, URL hosts, paths, and (with --with-logs) daemon.log lines.
 // Structured fields are ALLOWLISTED in DoctorReport (a field that is not named is not emitted);
 // this class handles the text that cannot be allowlisted: it masks credential shapes (bearer and

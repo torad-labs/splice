@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §10): the doctor rows for local providers — the runtime's own answers
+// NEW: v0.4.0 FEATURES.md §10 — the doctor rows for local providers — the runtime's own answers
 // (kind, version, listed models, context) against what each HEAD on the provider advertises (its
 // context_window override applied, picker suffixes stripped — the same rows boot validates),
 // labelled "local" and never dressed as subscription or quota state. The probe carries the

@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §1): the profiles `splice add` knows — one per auth-kind/dialect pair
+// NEW: v0.4.0 FEATURES.md §1 — the profiles `splice add` knows — one per auth-kind/dialect pair
 // Topology already validates — as DATA: the wire shape, the default head and wrapper command, the
 // starter models. The command asks the operator only for what a profile cannot know (a base URL
 // for a generic OpenAI-compatible endpoint, models where the profile ships none), and this class

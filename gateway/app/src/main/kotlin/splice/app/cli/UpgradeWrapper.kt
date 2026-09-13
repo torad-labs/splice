@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): the launch shim is the one artifact an operator may have edited
+// NEW: v0.4.0 FEATURES.md §5 — the launch shim is the one artifact an operator may have edited
 // after install (the hostshield launcher patch rewrites it in place). An upgrade compares the live
 // shim with the PRISTINE copy of the release it came from: identical -> replaced by the new
 // release's shim; different, or no pristine copy to compare with -> KEPT, and the diff against the

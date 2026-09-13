@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §4): `splice sessions` — the Claude Code sessions registered in
+// NEW: v0.4.0 FEATURES.md §4 — `splice sessions` — the Claude Code sessions registered in
 // ~/.claude/sessions, joined to the splice head each one talks to, with the copyable SendMessage
 // address per live session. Read-only: the registry is Claude Code's, and no socket is touched.
 package splice.app.cli

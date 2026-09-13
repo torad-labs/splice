@@ -36,6 +36,17 @@
   fields. Emission is an allowlist: account ids, e-mails, tokens and working directories never
   appear, home paths print as `~`, and `--with-logs` passes the last 500 daemon lines through the
   same redaction. Nothing is uploaded.
+- **Automatic account switching when a provider's limits are hit.** `splice login <head> --label
+  <name>` adds a second (third, ...) OAuth account of the same kind under
+  `~/.config/splice/auth/<kind>/<name>.json`; the first login stays the primary in the file it always
+  had, so nothing migrates. Selection is per turn and sticky per session: a session keeps its account
+  until the provider reports it exhausted (a window at 100 % or a 429 whose reset outlasts the turn),
+  then the next turn goes out on the pool account with the lowest seven-day usage whose five-hour
+  window is open, and the session returns to its primary once that account's reset has passed. A turn
+  in flight finishes where it started; the first turn after a switch is accounted as cache-cold and
+  its perf row names the account. When every account is out the turn fails honestly, naming the
+  earliest reset. A credential is only ever used by the kind it carries; a mislabeled file is refused.
+  The status line, `splice status` and `splice doctor` name the account in use and the last switch.
 - **Custom compaction instructions.** `[compaction]` in `splice.toml` carries global text (inline
   or `file =`), `[[compaction.model]]` rows keyed by upstream model id and `[[compaction.project]]`
   rows keyed by absolute directory (optionally per model). The most specific scope replaces the

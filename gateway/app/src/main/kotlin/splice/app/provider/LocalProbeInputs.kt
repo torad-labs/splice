@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §10): what the local-runtime probe carries and what it checks — shared by
+// NEW: v0.4.0 FEATURES.md §10 — what the local-runtime probe carries and what it checks — shared by
 // the boot refusal (ChatArm) and doctor (DoctorLocalRuntime) so both see the same runtime and the
 // same rows. Headers: the provider's static extra_headers plus its bearer, because a runtime that
 // guards /v1/models (vLLM --api-key) must answer the probe exactly as it answers a turn. Rows: the

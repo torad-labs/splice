@@ -25,6 +25,7 @@ import splice.core.sessions.HeadOfPid
 import splice.core.sessions.ProcessEnvironment
 import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
+import splice.core.version.ClientVersionTracker
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
 import java.nio.file.Path
@@ -42,6 +43,7 @@ internal class ControlPlane(
     refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
     /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
     private val mcpHosting: McpHostingSettings = McpHostingSettings(),
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
@@ -101,6 +103,7 @@ internal class ControlPlane(
                 home.resolve(".claude").resolve("sessions"),
                 HeadOfPid { pid -> environment.spliceHeadPort(pid)?.let { port -> headOfPort(heads, port) } },
             ),
+            clientVersions = clientVersions,
         )
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {

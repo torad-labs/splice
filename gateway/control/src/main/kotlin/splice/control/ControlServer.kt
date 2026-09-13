@@ -47,6 +47,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
+import splice.core.version.ClientVersionTracker
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
 private const val STOP_GRACE_MS = 100L
@@ -83,6 +84,7 @@ public class ControlServer(
     private val mcpHost: McpHost? = null,
     /** v0.4.0 (FEATURES.md §4): the Claude Code session registry, read-only, for /api/sessions. */
     sessions: SessionRegistry? = null,
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     private val sessionsRoutes = sessions?.let(::SessionsRoutes)
     private val payloads =
@@ -94,6 +96,7 @@ public class ControlServer(
             configPath,
             topologyStale,
             turnPathStalled,
+            clientVersions,
         )
     private val resolver = HeadResolver(heads, payloads)
     private val jsonBody = JsonBody()
@@ -105,7 +108,7 @@ public class ControlServer(
     private val authRoutes = AuthRoutes(heads, resolver)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
-    private val statuslineRoute = StatuslineRoute(resolver, config)
+    private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
     private val mcpRoutes = mcpHost?.let(::McpRoutes)
 
     @Volatile

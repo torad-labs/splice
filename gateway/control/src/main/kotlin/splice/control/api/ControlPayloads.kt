@@ -17,6 +17,7 @@ import splice.control.TopologyStale
 import splice.control.TurnPathStalled
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.version.ClientVersionTracker
 
 private const val KEY = "key"
 private const val LABEL = "label"
@@ -31,6 +32,7 @@ internal class ControlPayloads(
     private val configPath: String = "",
     private val topologyStale: TopologyStale = TopologyStale { false },
     private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
 
     fun controlHealthJson(): String = buildJsonObject {
@@ -63,6 +65,7 @@ internal class ControlPayloads(
         }
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
+        clientVersions.aggregateWarning()?.let { put("clientVersionWarning", it) }
         // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.
         put(HEADS, configuredHeads)
         // Launch shims wait for readyHeads + failedHeads == heads before POSTing /launch (post

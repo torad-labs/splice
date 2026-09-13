@@ -26,6 +26,8 @@ FAILED=0
 CODEX_MOCK_PORT=""
 CODEX_AUTH_PATH=""
 CHAT_MOCK_PORT=""
+TESTED_CLAUDE_CODE="${SPLICE_TESTED_CLAUDE_CODE:-}"
+CLAUDE_CODE_ACTUAL="$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
 
 # ── receipt plumbing ─────────────────────────────────────────────────────────────────────────────
 STEP_N=0
@@ -64,13 +66,15 @@ finish() {
     [ -f "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null
   done
   cp "$HOME/.claude-codex/logs/daemon.log" "$OUT/daemon.log" 2>/dev/null
-  python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" <<'EOF'
+  python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" "$CLAUDE_CODE_ACTUAL" "$TESTED_CLAUDE_CODE" <<'EOF'
 import json, sys, datetime
 steps = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 receipt = {
     "kind": "splice-fresh-machine-e2e",
     "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     "verdict": "FAIL" if sys.argv[3] == "1" else "PASS",
+    "claudeCodeVersion": sys.argv[4],
+    "testedClaudeCodeVersion": sys.argv[5],
     "steps": steps,
 }
 json.dump(receipt, open(sys.argv[2], "w"), indent=1)
@@ -102,6 +106,17 @@ sys.exit(0 if d.get("ok") and d.get("readyHeads") == d.get("heads") and d.get("f
 }
 
 echo "fresh-machine e2e: user=$(id -un) home=$HOME artifacts=$ARTIFACTS"
+
+client_version_receipt() {
+  echo "actual=$CLAUDE_CODE_ACTUAL tested=$TESTED_CLAUDE_CODE"
+  [ -n "$CLAUDE_CODE_ACTUAL" ] || { echo "claude --version did not report a numeric version"; return 1; }
+  [ -n "$TESTED_CLAUDE_CODE" ] || { echo "SPLICE_TESTED_CLAUDE_CODE was not provided"; return 1; }
+  [ "$CLAUDE_CODE_ACTUAL" = "$TESTED_CLAUDE_CODE" ] || {
+    echo "the image has Claude Code $CLAUDE_CODE_ACTUAL, but splice records $TESTED_CLAUDE_CODE as tested"
+    return 1
+  }
+}
+step "Claude Code version matches the splice tested pin" client_version_receipt
 
 # ── 1. the two mock upstreams (loopback only) ───────────────────────────────────────────────────
 # step() runs its command in a command substitution (a subshell), so the mocks report through

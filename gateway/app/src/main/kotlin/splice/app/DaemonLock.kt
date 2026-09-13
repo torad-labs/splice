@@ -123,6 +123,7 @@ internal object DaemonProbe {
         val topologyStale: Boolean? = null,
         val ok: Boolean? = null,
         val turnPathStalled: List<String> = emptyList(),
+        val clientVersionWarning: String? = null,
     )
 
     /** JW-05: the per-head runtime counters from /api/heads (bearer-guarded) — the
@@ -152,6 +153,7 @@ internal object DaemonProbe {
                 turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
                     ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
                     .orEmpty(),
+                clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
             )
         }
     }.getOrNull()

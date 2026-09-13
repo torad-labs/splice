@@ -53,13 +53,26 @@ class DoctorLocalRuntimeTest {
         assertEquals(CheckStatus.FAIL, checks[2].status)
         assertTrue(checks[2].detail.contains("not listed"))
         val live = DoctorLocalRuntime(up).localChecks(topology, live = true)
-        assertEquals(5, live.size)
+        assertEquals(4, live.size, "one live row for the listed model, none for the unlisted one")
         assertEquals(CheckStatus.OK, live.first { it.name == "local:ollama/qwen3:4b/live" }.status)
+        assertTrue(live.none { it.name == "local:ollama/ghost:1b/live" })
+    }
+
+    @Test
+    fun `the head's effective rows are checked, not the provider table`() {
+        val overriding = toml.replace("port = 3901", "port = 3901\ncontext_window = 65536")
+        val checks = DoctorLocalRuntime(up).localChecks(TopologyLoader.parse(overriding), live = false)
+        val row = checks.first { it.name == "local:ollama/qwen3:4b" }
+        assertEquals(CheckStatus.FAIL, row.status)
+        assertTrue(row.detail.contains("65536"), row.detail)
+        val suffixed = toml.replace("id = \"qwen3:4b\"", "id = \"qwen3:4b[8k]\"")
+        val stripped = DoctorLocalRuntime(up).localChecks(TopologyLoader.parse(suffixed), live = false)
+        assertEquals(CheckStatus.OK, stripped.first { it.name == "local:ollama/qwen3:4b" }.status)
     }
 
     @Test
     fun `a runtime that is down is one WARN row with the fix, never a fabricated OK`() {
-        val checks = DoctorLocalRuntime { _, _, _ -> null }.localChecks(TopologyLoader.parse(toml), live = true)
+        val checks = DoctorLocalRuntime(http = { _, _, _ -> null }).localChecks(TopologyLoader.parse(toml), live = true)
         assertEquals(1, checks.size)
         assertEquals(CheckStatus.WARN, checks.single().status)
         assertTrue(checks.single().detail.contains("no runtime answering"))

@@ -10,9 +10,9 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
 import splice.core.topology.AuthKind
-import splice.core.topology.ProviderConfig
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.dialect.chat.JdkLocalHttp
 import splice.dialect.chat.LocalRuntimeProbe
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
@@ -27,6 +27,7 @@ internal class ChatArm(
     private val grokRefresh: GrokRefresh,
 ) {
     private val overlay = QuirksOverlay()
+    private val probeInputs = LocalProbeInputs()
 
     // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered
     // api-key/custom kinds use generic Bearer auth. Grok rides this dialect because
@@ -35,7 +36,6 @@ internal class ChatArm(
     internal fun chatProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
-        if (providerCfg.isLocal) refuseContradictedRows(key, providerCfg)
         val auth = when (providerCfg.auth.kind) {
             GROK_OAUTH -> {
                 val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
@@ -56,6 +56,7 @@ internal class ChatArm(
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
         }
+        if (providerCfg.isLocal) refuseContradictedRows(ctx, (auth as? ApiKeyAuthProvider)?.keyNow())
         return Wired(
             OpenAiChatProvider(
                 tuning = ProviderTuning(
@@ -80,8 +81,10 @@ internal class ChatArm(
     /** v0.4.0 (FEATURES.md §10): a local runtime that is UP and contradicts the row refuses the
      *  head with the runtime's own words; a runtime that is down boots as today (per-turn errors),
      *  because refusing every head whose runtime is not yet started would be below the status quo. */
-    private fun refuseContradictedRows(key: String, providerCfg: ProviderConfig) {
-        val probe = LocalRuntimeProbe(providerCfg.baseUrl)
+    private fun refuseContradictedRows(ctx: ProviderBuild, bearer: String?) {
+        val key = ctx.key
+        val providerCfg = ctx.providerCfg
+        val probe = LocalRuntimeProbe(providerCfg.baseUrl, JdkLocalHttp(probeInputs.headers(providerCfg, bearer)))
         val runtime = probe.detect()
         if (runtime == null) {
             log(
@@ -90,7 +93,9 @@ internal class ChatArm(
             )
             return
         }
-        val rows = providerCfg.models.associate { it.id to it.contextWindow }
+        // The HEAD's effective rows, not the provider's: a head context_window override and a picker
+        // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
+        val rows = probeInputs.effectiveRows(ctx.catalog)
         val refused = probe.validate(rows, probe.models(runtime)).filterNot { it.ok }
         check(refused.isEmpty()) {
             "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +

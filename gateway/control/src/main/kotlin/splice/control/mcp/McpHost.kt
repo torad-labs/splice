@@ -13,8 +13,6 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.launch.McpSharing
 import splice.core.util.LogSink
 import java.util.concurrent.Executors
@@ -51,7 +49,7 @@ public class McpHost(
     private val codec = JsonRpcCodec()
     private val sessions = McpSessions(config.clock)
     private val servers = HostedServers(sharing, global, config, launcher, codec, log, sessions)
-    private val status = McpStatus(sharing, global, servers.live, sessions)
+    private val status = McpStatus(sharing, global, servers::get, sessions)
 
     @Volatile private var sweeper: ScheduledExecutorService? = null
 
@@ -69,8 +67,9 @@ public class McpHost(
         servers.closeAll("daemon stopping")
     }
 
-    /** One client POST. [sessionId] is the `Mcp-Session-Id` header, absent on `initialize`. */
-    public suspend fun post(name: String, sessionId: String?, body: String): McpReply {
+    /** One client POST. [sessionId] is the `Mcp-Session-Id` header, absent on `initialize`;
+     *  [protocolVersion] is the `MCP-Protocol-Version` header a client sends after initialize. */
+    public suspend fun post(name: String, sessionId: String?, body: String, protocolVersion: String? = null): McpReply {
         val msg = codec.parse(body)
             ?: return bad(HTTP_BAD_REQUEST, JsonPrimitive(0), RPC_INVALID, "not a JSON-RPC object")
         val kind = codec.kind(msg)
@@ -78,9 +77,15 @@ public class McpHost(
         return when {
             kind == RpcKind.INVALID -> bad(HTTP_BAD_REQUEST, id, RPC_INVALID, "invalid JSON-RPC")
             kind == RpcKind.REQUEST && codec.method(msg) == "initialize" -> initialize(name, msg)
+            !protocolAccepted(name, sessionId, protocolVersion) ->
+                bad(HTTP_BAD_REQUEST, id, RPC_INVALID, "unsupported MCP-Protocol-Version '$protocolVersion'")
             else -> forSession(name, sessionId, msg, kind)
         }
     }
+
+    /** True when [protocolVersion] is absent or names the version the session negotiated. */
+    public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean =
+        protocolVersion == null || sessions.get(name, sessionId)?.protocolVersion == protocolVersion
 
     /** The session's notification stream for a GET; null when the session is unknown. */
     public fun openStream(name: String, sessionId: String?): ReceiveChannel<String>? {
@@ -100,7 +105,7 @@ public class McpHost(
     /** DELETE: the client is done with this session. */
     public fun endSession(name: String, sessionId: String?): Boolean {
         val session = sessions.end(name, sessionId) ?: return false
-        servers.get(name)?.dropSession(session.id)
+        servers.get(name)?.failPending("session ended", session.id)
         return true
     }
 
@@ -124,12 +129,11 @@ public class McpHost(
             return bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
         }
         val session = sessions.create(name)
-        val requested = ((msg["params"] as? JsonObject)?.get("protocolVersion") as? JsonPrimitive)?.content
-        val handshake = buildJsonObject {
-            result.forEach { (k, v) -> put(k, v) }
-            if (requested != null) put("protocolVersion", requested)
-        }
-        return McpReply(HTTP_OK, codec.encode(codec.result(id, handshake)), session.id)
+        // The child's answer, verbatim: the server picks the protocol version (MCP: a client that
+        // cannot speak it disconnects), and inventing the client's requested one would promise a
+        // dialect the child never negotiated.
+        session.protocolVersion = (result["protocolVersion"] as? JsonPrimitive)?.content
+        return McpReply(HTTP_OK, codec.encode(codec.result(id, result)), session.id)
     }
 
     private suspend fun forSession(name: String, sessionId: String?, msg: JsonObject, kind: RpcKind): McpReply {
@@ -140,12 +144,28 @@ public class McpHost(
         val server = servers.get(name) ?: return bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "server not hosted")
         return when (kind) {
             RpcKind.REQUEST -> forward(server, session, msg)
-            RpcKind.NOTIFICATION -> {
-                runCatching { server.notify(msg) }
-                    .onFailure { log("[mcp-host] $name: notify failed (${it.message})\n") }
-                McpReply(HTTP_ACCEPTED, null)
-            }
+            RpcKind.NOTIFICATION -> notification(name, server, session, msg)
             RpcKind.RESPONSE, RpcKind.INVALID -> McpReply(HTTP_ACCEPTED, null)
+        }
+    }
+
+    /** 202 when the child took it; 503 in words when it could not — never a silent drop. */
+    private suspend fun notification(
+        name: String,
+        server: HostedServer,
+        session: McpSession,
+        msg: JsonObject,
+    ): McpReply {
+        val delivered = try {
+            server.notify(session.id, msg)
+        } catch (e: McpHostException) {
+            log("[mcp-host] $name: notify failed (${e.message})\n")
+            false
+        }
+        return if (delivered) {
+            McpReply(HTTP_ACCEPTED, null)
+        } else {
+            bad(HTTP_UNAVAILABLE, JsonPrimitive(0), RPC_SERVER_ERROR, "hosted MCP server '$name' is not running")
         }
     }
 

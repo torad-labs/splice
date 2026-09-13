@@ -195,8 +195,20 @@ def main() -> int:
     print(json.dumps({k: v for k, v in b.items() if k != "outputs_head"}))
 
     saving = 1 - (b["peak_server_rss_kb"] / a["peak_server_rss_kb"]) if a["peak_server_rss_kb"] else None
-    if min(b["mcp_tools_listed"]) == 0:
-        print("a hosted session listed no MCP tools; the receipt is not a proof of hosting", file=sys.stderr)
+    # Fail closed: a receipt is only written when the run PROVES the claim — every session exited 0
+    # in both modes, every session saw the same non-empty tool surface hosted as unhosted, and the
+    # saving clears the 50% bar. Anything else is a failed benchmark, not a receipt.
+    problems = []
+    if any(code != 0 for code in a["exit_codes"] + b["exit_codes"]):
+        problems.append(f"session exit codes unhosted={a['exit_codes']} hosted={b['exit_codes']}")
+    if min(a["mcp_tools_listed"]) == 0 or a["mcp_tools_listed"] != b["mcp_tools_listed"]:
+        problems.append(f"tool surface differs or is empty: unhosted={a['mcp_tools_listed']} hosted={b['mcp_tools_listed']}")
+    if saving is None or saving < 0.5:
+        problems.append(f"server RSS saving {saving} is below the 50% bar")
+    if problems:
+        for problem in problems:
+            print(f"BENCH FAILED: {problem}", file=sys.stderr)
+        return 1
     receipt = {
         "kind": "mcp-host-bench",
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

@@ -55,6 +55,31 @@ class McpSharingTest {
     }
 
     @Test
+    fun `a command that expands, a relative path, or a directory behind a flag is project-scoped`() {
+        val entries = Json.parseToJsonElement(
+            """
+            {
+              "cmd": {"command": "${'$'}{HOME}/bin/mcp", "args": []},
+              "dot": {"command": "node", "args": ["srv.js", "."]},
+              "rel": {"command": "node", "args": ["./repo"]},
+              "flag": {"command": "node", "args": ["--root=/home/op/project"]},
+              "envdir": {"command": "node", "args": [], "env": {"ROOT": "/home/op/project"}},
+              "fine": {"command": "node", "args": ["--port=8080", "/home/op/not-a-dir"]}
+            }
+            """.trimIndent(),
+        ).jsonObject
+        val plan = sharing().plan(entries)
+        assertEquals(setOf("fine"), plan.hosted.keys)
+        assertTrue(plan.passthrough.getValue("cmd").contains("VAR"))
+        assertTrue(plan.passthrough.getValue("dot").contains("relative"))
+        assertTrue(plan.passthrough.getValue("rel").contains("./repo"))
+        assertTrue(plan.passthrough.getValue("flag").contains("/home/op/project"))
+        assertTrue(plan.passthrough.getValue("envdir").contains("/home/op/project"))
+        assertTrue(sharing().enabled)
+        assertTrue(!sharing(enabled = false).enabled)
+    }
+
+    @Test
     fun `a hosted entry becomes an http entry at the host with the bearer, others are byte-identical`() {
         val out = sharing().plan(global).rewritten
         val exa = out.getValue("exa").jsonObject

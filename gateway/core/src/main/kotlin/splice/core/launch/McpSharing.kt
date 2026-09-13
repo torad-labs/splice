@@ -52,7 +52,7 @@ public fun interface McpRewrite {
 }
 
 public class McpSharing(
-    private val enabled: Boolean,
+    public val enabled: Boolean,
     private val exclude: Set<String>,
     /** `http://127.0.0.1:<port>/mcp/` — the host's endpoint prefix; the server name is appended. */
     private val endpointPrefix: String,
@@ -105,17 +105,24 @@ public class McpSharing(
         entry.type != null && entry.type != "stdio" -> "transport '${entry.type}' already serves many clients"
         entry.command == null -> "no command"
         entry.obj.containsKey("cwd") -> "has a cwd (session-scoped)"
-        else -> valueRejection(entry.args + entry.env.values)
+        else -> valueRejection(listOf(entry.command) + entry.args + entry.env.values)
     }
 
     private fun valueRejection(values: List<String>): String? {
-        val directory = values.firstOrNull { it.startsWith("/") && isDirectory(it) }
+        val relative = values.firstOrNull { it == "." || it.startsWith("./") || it.startsWith("../") }
+        val directory = values.firstNotNullOfOrNull(::directoryNamed)
         return when {
             values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
+            relative != null -> "names the relative path '$relative' (project-scoped)"
             directory != null -> "names the directory '$directory' (project-scoped)"
             else -> null
         }
     }
+
+    /** The existing directory [value] names — bare (`/abs/dir`) or as a flag value (`--root=/abs/dir`). */
+    private fun directoryNamed(value: String): String? =
+        listOf(value, value.substringAfter('=', ""))
+            .firstOrNull { it.startsWith("/") && isDirectory(it) }
 
     /** One `mcpServers` entry read once; every field nullable so a malformed entry rejects in words. */
     private inner class Entry(val obj: JsonObject?) {

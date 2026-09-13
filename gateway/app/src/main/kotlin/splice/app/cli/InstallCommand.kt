@@ -73,6 +73,7 @@ private val verbs: Map<String, CommandFactory> = mapOf(
     "dashboard" to CommandFactory { Command.Dashboard },
     "key" to CommandFactory { a -> Command.Key(a.drop(1)) },
     "logs" to CommandFactory { a -> Command.Logs(a.drop(1)) },
+    "sessions" to CommandFactory { Command.Sessions },
 )
 
 /** argv -> Command. Was `Command.parse` on the type's own static block — the shape the same

@@ -6,3 +6,11 @@ package splice.control
 public fun interface HeadPerfSource {
     public fun tailNumeric(n: Int): List<Map<String, Long>>
 }
+
+/** One perf row with its outcome tag — the windowed summary's input (v0.4.0, FEATURES.md §3). */
+public data class PerfRow(val ts: Long, val outcome: String, val fields: Map<String, Long>)
+
+/** Rows recorded at or after [sinceMs], oldest first, across every generation the file keeps. */
+public fun interface PerfRowsSource {
+    public fun rowsSince(sinceMs: Long): List<PerfRow>
+}

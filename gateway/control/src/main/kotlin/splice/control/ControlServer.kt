@@ -138,6 +138,7 @@ public class ControlServer(
                 get("/api/perf") {
                     guarded(call) { respond(call, perfPayloads.perfJson(tail(call, DEFAULT_PERF_TAIL))) }
                 }
+                get("/api/perf/summary") { guarded(call) { respond(call, perfPayloads.summaryJson(window(call))) } }
                 get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
                 post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
                 get("/api/compact") { guarded(call) { respond(call, compactPayloads.compactJson()) } }
@@ -187,4 +188,6 @@ public class ControlServer(
     // ControlPayloads.perfJson's and HeadRoutes.logsJson's original call sites.
     private fun tail(call: ApplicationCall, default: Int): Int =
         (call.request.queryParameters["tail"]?.toIntOrNull() ?: default).coerceIn(1, MAX_TAIL)
+
+    private fun window(call: ApplicationCall): String? = call.request.queryParameters["window"]
 }

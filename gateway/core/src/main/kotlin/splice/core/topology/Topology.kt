@@ -80,6 +80,10 @@ public data class DaemonConfig(
     @SerialName("fold_max_continue") val foldMaxContinue: Int? = null,
     @SerialName("fold_marker_text") val foldMarkerText: String? = null,
     @SerialName("fold_max_tier") val foldMaxTier: Int? = null,
+    // Shared MCP hosting (v0.4.0, FEATURES.md §8). Nullable so an ABSENT key means "on" at the
+    // wiring site without a literal default here that the knob layer would then have to know.
+    @SerialName("mcp_hosting") val mcpHosting: Boolean? = null,
+    @SerialName("mcp_hosting_exclude") val mcpHostingExclude: List<String>? = null,
 )
 
 @Serializable

@@ -2,6 +2,80 @@
 
 ## Unreleased
 
+### Added
+- **`splice add <profile>` adds a second provider without editing TOML.** Five profiles as data
+  (`codex`, `grok`, `kimi`, `claude`, `api-key`); the command authenticates with the login verb's
+  own flow, takes models and context windows (`--model id:window`), always checks the candidate
+  before writing (the file parses, the credential is present, the base URL answers, the models are
+  listed where the dialect publishes a list), runs one short live turn only on `--live`, then
+  appends the provider and head tables through a sibling temp file and one rename. Anything that
+  stops the flow leaves the previous file byte-identical.
+- **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
+  `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
+  an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
+  candidate's own doctor, waits until every head's in-flight count on `/api/heads` is zero (or
+  `--now`), repoints the live jar, restarts the user unit when one supervises this install, and
+  runs doctor. A launch shim edited since its release was installed is kept and its diff printed,
+  never overwritten. `--rollback` repoints at the previous release, kept until the next successful
+  upgrade. Config and credentials live elsewhere and are never touched; a failed verification
+  activates nothing. `install.sh` keeps the pristine release copy the comparison needs.
+- **`splice sessions` and `/api/sessions`.** The Claude Code sessions on this machine
+  (`~/.claude/sessions/*.json`) joined to the head that launched each, with live / stale / gone
+  derived from the pid and the last update rather than the file's own status, and the copyable
+  `SendMessage` line per live session. Read-only; headless `claude -p` runs never register and the
+  footer says so.
+- **`splice perf [--window 1h|24h|7d]` and `/api/perf/summary`.** Per head: p50/p95/max of time
+  before first byte, time streaming and total, outcomes by tag, failure share, retries and
+  refreshes, cache hit ratio, peak in-flight, and rows whose telemetry was dropped. The window is
+  clamped to what the rotated perf files hold and the response says so; empty data is reported as
+  empty, never as zero-latency traffic.
+- **`splice doctor --json [--with-logs] [--out FILE]`: a shareable, redacted report.** Schema
+  version 1 carries the splice and Claude Code versions, OS and JVM, the topology's SHAPE
+  (kinds, dialects, model ids and windows, quirk names, a host but never a URL with credentials),
+  every check with its fix, and the last 200 perf rows per head restricted to named numeric
+  fields. Emission is an allowlist: account ids, e-mails, tokens and working directories never
+  appear, home paths print as `~`, and `--with-logs` passes the last 500 daemon lines through the
+  same redaction. Nothing is uploaded.
+- **Custom compaction instructions.** `[compaction]` in `splice.toml` carries global text (inline
+  or `file =`), `[[compaction.model]]` rows keyed by upstream model id and `[[compaction.project]]`
+  rows keyed by absolute directory (optionally per model). The most specific scope replaces the
+  less specific ones (project+model, project, model, global); `instructions = ""` opts out. The
+  text rides after Claude Code's own summarizer prompt on compaction requests only, so the cached
+  request prefix is byte-identical with and without it. `/api/compact` shows the effective text and
+  its source.
+- **Shared MCP hosting.** stdio MCP servers that do not depend on a project directory or client
+  roots are started once by the daemon and served to every session over Streamable HTTP on
+  loopback (`/mcp/<name>`, one MCP session per client session, JSON-RPC ids remapped, notifications
+  fanned out, `tools/list` cached); each head's `.claude.json` is rewritten to point at the hosted
+  URL while the operator's file is never edited. Servers named `http`/`sse`/`ws` pass through
+  untouched. Lifecycle mirrors code mode: start on first use, idle reap, eviction under pressure; a
+  crash fails pending calls honestly and the next call restarts the server, never replaying tool
+  operations. `[daemon] mcp_hosting = false` turns it off, `mcp_hosting_exclude` keeps named
+  servers per session; `/api/mcp` shows eligibility and ownership. Measured on the reference
+  machine's own MCP set with four parallel sessions (`checks/mcp-host/bench.py`).
+- **Local models are first-class on the `openai-chat` dialect.** A provider on a loopback
+  `base_url` is local by default (`local = true|false` overrides). At boot and in doctor splice asks
+  the runtime what it serves (Ollama `/api/version`, `/v1/models`, `/api/show`, `/api/ps`; LM Studio
+  `/api/v0/models`; vLLM `max_model_len`) and REFUSES a row the runtime does not list or that
+  declares more context than the runtime serves, with the runtime's own words; a runtime that is
+  down boots as before. The rows checked are each head's effective ones (a head `context_window`
+  override applied, picker suffixes stripped) and the probe carries the provider's headers and
+  bearer. `splice doctor --live` adds one tiny streamed request with one tool per listed model.
+  Status and doctor label these heads `local runtime` and never imply subscription or quota
+  semantics. Proven live against Ollama 0.30.5 and LM Studio (llmster 0.0.24), one model each
+  (`checks/local-models/`); vLLM documented.
+- **Version-drift warning.** `Versions.kt` records the Claude Code version the fresh-machine e2e
+  ran against; the daemon reads the client version from the `User-Agent` already on every request,
+  and when a session's Claude Code is newer than that, doctor, `splice status` and the status line
+  say so once. Equal or older is silent; no scheduled job, no live probe.
+
+### Changed
+- **Code mode is out of beta and on by default for ChatGPT.** A `chatgpt-oauth` +
+  `openai-responses` provider gets the bundled JavaScript runner and orchestration guidance with
+  no config line; `code_mode = false` still turns it off, and every other provider shape stays off.
+  A single tool result over the 64 KiB text frame that admission used to reject is now truncated
+  at admission behind a `[truncated N chars]` marker and the turn completes.
+
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 
 ### Fixed

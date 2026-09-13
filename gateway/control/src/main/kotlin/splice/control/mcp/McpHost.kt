@@ -49,13 +49,16 @@ public class McpHost(
     private val codec = JsonRpcCodec()
     private val sessions = McpSessions(config.clock)
     private val servers = HostedServers(sharing, global, config, launcher, codec, log, sessions)
-    private val status = McpStatus(sharing, global, servers::get, sessions)
+    private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions)
 
     @Volatile private var sweeper: ScheduledExecutorService? = null
 
     public fun start() {
         val exec = Executors.newSingleThreadScheduledExecutor { r ->
-            Thread(r, "mcp-host-sweep").apply { isDaemon = true }
+            Executors.defaultThreadFactory().newThread(r).apply {
+                name = "mcp-host-sweep"
+                isDaemon = true
+            }
         }
         exec.scheduleAtFixedRate({ runCatching { sweep() } }, SWEEP_PERIOD_S, SWEEP_PERIOD_S, TimeUnit.SECONDS)
         sweeper = exec

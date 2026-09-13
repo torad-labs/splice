@@ -3,55 +3,22 @@
 // (hostshield's splice.service) and the plain restart verb otherwise, then run the NEW jar's doctor.
 package splice.app.cli
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import splice.core.util.Cancellables
-import splice.core.util.EnvReader
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Path
-import java.time.Duration
 
 private const val POLL_MS = 2_000L
 private const val MAX_WAIT_MS = 30L * 60 * 1000
-private const val PROBE_TIMEOUT_S = 5L
 private const val USER_UNIT = "splice.service"
 private const val NANOS_PER_MS = 1_000_000L
 
-/** Turns in flight across every head, or null when no daemon answers (nothing to wait for). */
-internal fun interface UpgradeInflight {
-    operator fun invoke(): Int?
-}
-
-internal class JdkUpgradeInflight(private val env: EnvReader) : UpgradeInflight {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val client = HttpClient.newHttpClient()
-
-    override fun invoke(): Int? {
-        val key = (AdminSupport.readMgmtKey(env) as? MgmtKeyRead.Present)?.key ?: return null
-        val port = AdminSupport.controlPort(env)
-        return Cancellables.runCatchingCancellable {
-            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/heads"))
-                .timeout(Duration.ofSeconds(PROBE_TIMEOUT_S))
-                .header("Authorization", "Bearer $key")
-                .GET()
-                .build()
-            val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
-            json.parseToJsonElement(reply.body()).jsonObject.getValue("heads").jsonArray.sumOf { head ->
-                head.jsonObject["gate"]?.jsonObject?.get("inflight")?.jsonPrimitive?.content?.toIntOrNull() ?: 0
-            }
-        }.getOrNull()
-    }
+/** Restarts the daemon the plain way (`splice restart`: stop, then cold start from this shell). */
+internal fun interface DaemonRestart {
+    operator fun invoke(): Boolean
 }
 
 internal class UpgradeDaemon(
     private val process: UpgradeProcess,
     private val inflight: UpgradeInflight,
-    private val restartVerb: () -> Boolean = { RestartCommand().restart() },
+    private val restartVerb: DaemonRestart = DaemonRestart { RestartCommand().restart() },
     private val pollMs: Long = POLL_MS,
     private val maxWaitMs: Long = MAX_WAIT_MS,
 ) {

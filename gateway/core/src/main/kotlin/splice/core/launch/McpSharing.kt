@@ -55,13 +55,18 @@ private val LOCATION_FLAG =
     Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|folder|home|base-?dir|work-?dir)")
 private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
 
+/** The control plane's bearer at plan time (the mgmt key may be minted after the planner exists). */
+public fun interface McpBearer {
+    public operator fun invoke(): String
+}
+
 public class McpSharing(
     public val enabled: Boolean,
     private val exclude: Set<String>,
     /** `http://127.0.0.1:<port>/mcp/` — the host's endpoint prefix; the server name is appended. */
     private val endpointPrefix: String,
     /** Read at plan time, never cached: the key may be minted after this object exists. */
-    private val bearer: () -> String,
+    private val bearer: McpBearer,
     private val isDirectory: DirectoryProbe = DirectoryProbe { Files.isDirectory(Path.of(it)) },
 ) {
     public fun plan(global: JsonObject): McpPlan {

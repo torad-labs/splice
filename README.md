@@ -97,6 +97,13 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.2/install
   | env SPLICE_VERSION=v0.3.2 bash
 ```
 
+**Upgrading.** `splice upgrade` fetches and verifies the latest release the same way (or one
+version with `--to vX.Y.Z`), stages it beside the current one under
+`~/.local/share/splice/releases/`, waits for every head's in-flight turns to finish (`--now` skips
+the wait), repoints the live jar, restarts the daemon and runs doctor. A launch shim you edited is
+kept and its diff printed. `splice upgrade --rollback` puts the previous release back; it is kept
+until the next successful upgrade. Config and credentials are never touched.
+
 **Option 2: from source** (no `gh` needed):
 
 ```bash
@@ -158,12 +165,23 @@ Admin verbs go through the `splice` command:
 ```bash
 splice status         # per-head status
 splice doctor         # check the whole install; every failing check prints its fix
+splice doctor --json  # the same as a redacted, shareable report (--with-logs, --out FILE, --live)
+splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|claude|api-key)
+splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
+splice sessions       # the Claude Code sessions on this machine, joined to their heads
+splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
 splice restart        # restart the daemon with this shell's environment
 splice dashboard      # open the control dashboard (loopback :3096)
 splice init           # write the supported OpenRouter API-key starter topology
 splice install --all  # (re)link the wrapper commands
 <head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi)
 ```
+
+`splice add` asks only for what a profile cannot know (a base URL and models for a generic
+OpenAI-compatible endpoint), signs in through the same flow as `login`, checks the candidate
+before writing anything (the file parses, the credential is present, the endpoint answers, the
+models are listed where the dialect lists them; `--live` adds one short turn) and appends the two
+tables through a temp file and one rename, so a refused add leaves your file byte-identical.
 
 The dashboard and every control endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
 
@@ -178,7 +196,18 @@ There is nothing to configure. `sessions` is in the default `[claude].share` lis
 ## Troubleshooting
 
 `splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
-the exact fix under every failing check.
+the exact fix under every failing check. `splice doctor --json` writes the same findings as a
+report you can share: versions, the topology's shape (never a credential, an account id or a
+working directory), every check with its fix, and the last perf rows; `--with-logs` appends the
+last 500 daemon lines through the same redaction, `--out FILE` writes it. Nothing is uploaded.
+
+`splice sessions` lists the Claude Code sessions on the machine with the head that launched each
+one and whether it is live, stale or gone, plus the `SendMessage` line that reaches it.
+`splice perf --window 24h` shows, per head, how long turns wait before the first byte and how long
+they stream, the failure share by outcome, retries, cache hit ratio and peak concurrency.
+
+When a session's Claude Code is newer than the version this splice release was tested with,
+doctor, `splice status` and the status line say so once; equal or older is silent.
 
 The daemon reads API-key env vars from **its own** environment. Export a key *after* the daemon
 has started and the shell sees it but the daemon does not: launches warn, requests fail upstream. `splice restart` restarts the daemon with your current
@@ -213,19 +242,59 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 | codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |
 | grok (xAI) | `grok-oauth` | **Primary** — unofficial, at your own risk |
 | kimi (Moonshot) | `kimi-oauth` | **Primary** — unofficial, at your own risk |
+| Local runtimes (Ollama, LM Studio, vLLM) | `api-key` on a loopback `base_url` | **Supported** — user-managed; rows validated against what the runtime serves |
 
 The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for. They are also **unofficial**: they authenticate by reusing the public OAuth client identity of each vendor's own CLI, not a documented third-party integration, and a vendor could object or break them at any time. Use them at your own risk. The **api-key** routes are ordinary pay-per-token API access with none of that ambiguity, and make the best zero-config starter.
 
-### Beta: code mode for ChatGPT
+### Local models
 
-Code mode is **default-off** and exclusive to Claudex-compatible providers (`auth.kind = "chatgpt-oauth"`, `dialect = "openai-responses"`), including custom head names. In the provider's existing quirks section:
+A provider on a loopback `base_url` (Ollama at `http://localhost:11434/v1`, LM Studio at
+`http://localhost:1234/v1`, vLLM at `http://localhost:8000/v1`) is treated as local: splice never
+downloads a model or manages the runtime, but at boot and in `splice doctor` it asks the runtime
+what it serves and refuses a row the runtime does not list or that declares more context than the
+runtime serves, with the runtime's own words (`declares context_window 65536, runtime serves
+32768`). The refused head is reported DEGRADED while the rest of the daemon serves; a runtime
+that is down boots as before and fails per turn. `splice doctor --live` adds one tiny streamed
+request with one tool per listed model, so tool calling and streaming are proven before a session
+depends on them. Status and doctor label these heads `local runtime` and never imply subscription
+or quota state. Set `local = false` on a provider to opt out of the loopback rule, `local = true`
+to force it elsewhere. See [`checks/local-models/README.md`](checks/local-models/README.md) for
+what each runtime reports and how it was tested.
+
+### Shared MCP hosting
+
+Every Claude Code session normally starts its own copy of every stdio MCP server in its config.
+splice starts each such server once, in the daemon, and serves it to every session over
+Streamable HTTP on loopback: each head's `.claude.json` is rewritten to point at the hosted URL
+while your own config file is never edited. A server whose command names a project directory or
+that depends on client roots keeps launching per session (its reason is on `/api/mcp`);
+`http`/`sse`/`ws` servers pass through untouched. Hosted servers start on first use, are reaped
+when idle and evicted under memory pressure; a crash fails the pending calls honestly and the next
+call restarts the server. `[daemon] mcp_hosting = false` turns hosting off,
+`mcp_hosting_exclude = ["name"]` keeps named servers per session.
+
+### Compaction instructions
+
+`[compaction]` in `splice.toml` adds your own instructions to Claude Code's compaction requests,
+globally, per upstream model (`[[compaction.model]]`) or per project directory
+(`[[compaction.project]]`, optionally per model). The most specific scope replaces the others;
+`instructions = ""` opts a scope out. The text rides after Claude Code's own summarizer prompt on
+compaction requests only, so the cached request prefix is byte-identical with and without it, and
+`/api/compact` shows the effective text and where it came from.
+
+### Code mode for ChatGPT
+
+Code mode is **on by default** for Claudex-compatible providers (`auth.kind = "chatgpt-oauth"`,
+`dialect = "openai-responses"`), including custom head names, and exclusive to them. It rides the
+same unofficial ChatGPT OAuth route and carries the same terms caveat: use it at your own risk. To
+turn it off, in the provider's existing quirks section:
 
 ```toml
 [providers.codex.quirks]
-code_mode = true # beta; false or omitted disables both runner and guidance
+code_mode = false # true or omitted enables both runner and guidance on Claudex-shaped providers
 ```
 
-Enabling it automatically appends orchestration guidance to the caller's instructions and exposes splice's bundled JavaScript runner on eligible GPT-6 Astra/Sol turns. Compaction, toolless turns, and forced named-tool choices keep the ordinary path. Direct tools remain available; all real operations use Claude Code's permission-checked client handlers. No Codex or Node installation is required. Child JVMs bound workers, time, and heap and deny guest host/I/O access; Graal community is not an OS-hardened sandbox against same-user attackers.
+When on, it automatically appends orchestration guidance to the caller's instructions and exposes splice's bundled JavaScript runner on eligible GPT-6 Astra/Sol turns. Compaction, toolless turns, and forced named-tool choices keep the ordinary path. Direct tools remain available; all real operations use Claude Code's permission-checked client handlers. No Codex or Node installation is required. Child JVMs bound workers, time, and heap and deny guest host/I/O access; Graal community is not an OS-hardened sandbox against same-user attackers.
 
 Four scripts can be paused at once, each in its own worker JVM. A paused script whose client calls go unanswered for 30 minutes is closed, and when all four slots are held the oldest one paused over 2 minutes is evicted for a newer script; a script that cannot get a slot reports that in its own output so the model calls the tools directly. A closed script is never rerun; its evidence (results so far, unresolved calls, the reason) is what the model sees. That evidence is bounded only by the 1 MiB output ceiling; past it, each result is cut to an equal share behind a `[truncated N chars]` marker rather than the turn failing. A code-mode failure that no retry can change ends the turn with a readable `⚠ splice:` line instead of an API error, because Claude Code either retries error events identically or hides their message once content has streamed.
 
@@ -233,7 +302,7 @@ If a completed script's history can no longer be placed (the record aged out, th
 
 Every head using that provider shares the setting. Topology is read only when the daemon boots: finish ongoing work, edit TOML, then run `splice restart` for a **full daemon restart**. A head restart alone does not reload TOML. Finish code-mode work before toggling or restarting: pending JavaScript execution cannot survive a daemon restart, and splice never reruns the lost source automatically.
 
-In a bounded real-Astra test on synthetic tasks, guidance improved batching without reducing graded correctness. That is not a guarantee of better output or less redundant investigation on arbitrary projects; the feature remains beta.
+A single tool result larger than the runner's 64 KiB text frame is truncated at admission behind a `[truncated N chars]` marker and the turn completes. In a bounded real-Astra test on synthetic tasks, guidance improved batching without reducing graded correctness. That is not a guarantee of better output or less redundant investigation on arbitrary projects.
 
 ## Why you might not want splice
 
@@ -278,7 +347,8 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
 config/        splice.example.toml — the sample multi-provider topology
 bin/           splice-launch (the installed wrapper) + claudex (the codex-head entry)
-install.sh     fetch/build the jar, install the shim, link wrapper commands
+install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
+checks/        the local gate and the live harnesses (docker e2e, local models, MCP hosting bench)
 webui/         React 19 + Vite + Zustand dashboard, single-file build
 experiments/   cache-replay A/B reproducer
 .rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)

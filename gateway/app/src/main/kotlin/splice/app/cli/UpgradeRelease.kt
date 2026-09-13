@@ -6,67 +6,19 @@
 // through two seams so the command is tested without a socket or a gh.
 package splice.app.cli
 
-import splice.core.util.Cancellables
-import java.io.IOException
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
-import java.time.Duration
 
 internal const val SUMS_ASSET = "sha256sums.txt"
 private const val REPO = "torad-labs/splice"
 private const val RELEASES = "https://github.com/$REPO/releases"
-private const val HTTP_OK = 200
-private const val FETCH_TIMEOUT_S = 300L
-private const val NO_SUCH_COMMAND = 127
 private const val SHIM_MODE = "rwxr-xr-x"
 
-internal data class UpgradeExit(val code: Int, val stdout: String)
-
-/** Run a command; [inherit] streams its output to the operator instead of capturing it. */
-internal fun interface UpgradeProcess {
-    operator fun invoke(command: List<String>, inherit: Boolean): UpgradeExit
-}
-
-/** GET a URL (https or file://), or null when nothing answers. */
-internal fun interface UpgradeFetch {
-    operator fun invoke(url: String): ByteArray?
-}
-
-internal class JdkUpgradeProcess : UpgradeProcess {
-    override fun invoke(command: List<String>, inherit: Boolean): UpgradeExit = try {
-        val builder = ProcessBuilder(command).redirectErrorStream(false).redirectError(ProcessBuilder.Redirect.INHERIT)
-        if (inherit) builder.redirectOutput(ProcessBuilder.Redirect.INHERIT)
-        val process = builder.start()
-        val out = if (inherit) "" else process.inputStream.bufferedReader().readText()
-        UpgradeExit(process.waitFor(), out)
-    } catch (e: IOException) {
-        UpgradeExit(NO_SUCH_COMMAND, e.message.orEmpty())
-    }
-}
-
-internal class JdkUpgradeFetch(
-    private val client: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build(),
-) : UpgradeFetch {
-    override fun invoke(url: String): ByteArray? = Cancellables.runCatchingCancellable {
-        if (url.startsWith("file:")) {
-            Files.readAllBytes(Paths.get(URI(url)))
-        } else {
-            val request = HttpRequest.newBuilder(URI(url)).timeout(Duration.ofSeconds(FETCH_TIMEOUT_S)).GET().build()
-            val reply = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
-            reply.body().takeIf { reply.statusCode() == HTTP_OK }
-        }
-    }.getOrNull()
-}
-
-/** A refusal decided before anything was activated; its message is the whole explanation. */
-internal class UpgradeRefused(message: String) : RuntimeException(message)
+/** A refusal decided before anything was activated. [reason] is text this command authored (a version, a
+ *  path, a verdict), never bytes of a file it read — so it is printed as-is, not through SafeFailureText. */
+internal class UpgradeRefused(val reason: String) : RuntimeException(reason)
 
 internal class UpgradeRelease(
     private val fetch: UpgradeFetch,

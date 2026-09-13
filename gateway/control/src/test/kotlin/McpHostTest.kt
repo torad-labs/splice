@@ -169,7 +169,9 @@ class McpHostTest {
         }
 
     @Test
-    fun `a later request must name the negotiated protocol version`(@TempDir dir: Path) = runBlocking {
+    fun `a later request naming another protocol version is refused, absence rides the negotiated one`(
+        @TempDir dir: Path,
+    ) = runBlocking {
         boot(dir)
         val s = init()
         assertEquals(400, host.post("fake", s, LIST, protocolVersion = "2025-03-26").status)

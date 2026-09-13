@@ -83,7 +83,11 @@ public class McpHost(
         }
     }
 
-    /** True when [protocolVersion] is absent or names the version the session negotiated. */
+    /** True when [protocolVersion] names the version the session negotiated, or is absent. Absence is
+     *  deliberate, not lax: MCP's Streamable HTTP transport says a server that gets no
+     *  MCP-Protocol-Version header falls back to what it can identify otherwise — "for example, by
+     *  relying on the protocol version negotiated during initialization" — and this host has exactly
+     *  that per session. A header that names ANY other version is a 400. */
     public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean =
         protocolVersion == null || sessions.get(name, sessionId)?.protocolVersion == protocolVersion
 

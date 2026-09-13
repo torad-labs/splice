@@ -104,9 +104,17 @@ class McpRoutesTest {
             header("Authorization", "Bearer $key")
         }.bodyAsText()
         assertTrue(status.contains("\"hosted\":true"), status)
+        val wrongVersion = client.delete("http://127.0.0.1:$port/mcp/fake") {
+            header("Authorization", "Bearer $key")
+            header("Mcp-Session-Id", session)
+            header("MCP-Protocol-Version", "2024-11-05")
+        }
+        assertEquals(HttpStatusCode.BadRequest, wrongVersion.status)
+        assertEquals(HttpStatusCode.OK, post(LIST_MSG, session).status, "a refused DELETE ends nothing")
         val del = client.delete("http://127.0.0.1:$port/mcp/fake") {
             header("Authorization", "Bearer $key")
             header("Mcp-Session-Id", session)
+            header("MCP-Protocol-Version", "2025-11-25")
         }
         assertEquals(HttpStatusCode.OK, del.status)
         assertEquals(HttpStatusCode.NotFound, post(LIST_MSG, session).status)

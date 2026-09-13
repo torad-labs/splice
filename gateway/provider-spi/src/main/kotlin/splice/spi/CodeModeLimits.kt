@@ -16,8 +16,13 @@ public object CodeModeLimits {
      *  corrected result, so a rejected 70 KiB Read was a dead turn. */
     public fun boundedText(value: String, maxChars: Int = Int.MAX_VALUE): String {
         if (value.length <= maxChars && fitsText(value)) return value
-        val byteBudget = MAX_TEXT_BYTES - MARKER_RESERVE
-        val charBudget = (maxChars - MARKER_RESERVE).coerceAtLeast(0)
+        // The marker's width is bounded by the count it could carry (at most value.length digits):
+        // reserve THAT, never a fixed guess, so the result honours any positive cap (review 2026-09-13:
+        // a 20-char cap returned a 22-char marker and the "admitted" result was rejected downstream).
+        val reserve = marker(value.length).length
+        val byteBudget = MAX_TEXT_BYTES - reserve
+        val charBudget = maxChars - reserve
+        if (charBudget < 0) return value.take(maxChars)
         var bytes = 0
         var end = 0
         while (end < value.length) {
@@ -28,8 +33,10 @@ public object CodeModeLimits {
             bytes += size
             end += width
         }
-        return value.substring(0, end) + " [truncated ${value.length - end} chars]"
+        return value.substring(0, end) + marker(value.length - end)
     }
+
+    private fun marker(gone: Int): String = " [truncated $gone chars]"
 
     private fun utf8Size(codePoint: Int): Int = when {
         codePoint < ONE_BYTE_LIMIT -> 1
@@ -38,7 +45,6 @@ public object CodeModeLimits {
         else -> FOUR_BYTES
     }
 
-    private const val MARKER_RESERVE = 40
     private const val ONE_BYTE_LIMIT = 0x80
     private const val TWO_BYTE_LIMIT = 0x800
     private const val THREE_BYTE_LIMIT = 0x10000

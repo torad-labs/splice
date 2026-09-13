@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the app-side glue for shared MCP hosting — the [daemon] knobs as
+// NEW: v0.4.0 FEATURES.md §8 — the app-side glue for shared MCP hosting — the [daemon] knobs as
 // a value the control plane can take without seeing the topology, and the tolerant read of the
 // operator's ~/.claude.json that the planner and the host both consult (never cached: an edit to
 // the operator's servers takes effect at the next spawn).

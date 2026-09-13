@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §1): `splice add <profile>` — a second provider without editing TOML.
+// NEW: v0.4.0 FEATURES.md §1 — `splice add <profile>` — a second provider without editing TOML.
 // pick profile -> authenticate (the login verb's own flows) -> models -> local checks ALWAYS
 // (candidate TOML parses, credential present, base URL answers, models listed where the dialect
 // has a list) -> ONE optional short live turn, skipped by default -> atomic save (a temp file next

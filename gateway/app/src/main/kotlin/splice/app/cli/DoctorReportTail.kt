@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §6): the doctor report's tails — the last perf rows per head restricted
+// NEW: v0.4.0 FEATURES.md §6 — the doctor report's tails — the last perf rows per head restricted
 // to the named numeric keys plus model and outcome, and (only with --with-logs) the last daemon
 // log lines through DoctorRedaction. Split from DoctorReport.kt (concentration, 2026-09-13).
 package splice.app.cli

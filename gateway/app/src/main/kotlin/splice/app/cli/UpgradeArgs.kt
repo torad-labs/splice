@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §5): the `splice upgrade` command line as data, its parser and usage.
+// NEW: v0.4.0 FEATURES.md §5 — the `splice upgrade` command line as data, its parser and usage.
 // Split from UpgradeCommand.kt (concentration, 2026-09-13).
 package splice.app.cli
 

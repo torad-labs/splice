@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §1): the seams `splice add` reaches the world through — the terminal
+// NEW: v0.4.0 FEATURES.md §1 — the seams `splice add` reaches the world through — the terminal
 // prompt, the login flow, the wrapper linker and the daemon probe — each named for its role so the
 // command is tested without a terminal, a browser or a daemon. Split from AddCommand.kt
 // (concentration, 2026-09-13).

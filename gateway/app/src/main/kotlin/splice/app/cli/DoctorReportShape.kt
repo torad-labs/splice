@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §6): the topology SHAPE in the doctor report — provider kinds, dialects,
+// NEW: v0.4.0 FEATURES.md §6 — the topology SHAPE in the doctor report — provider kinds, dialects,
 // model ids and windows, quirk names, base URL host only. An allowlist: a key absent here is a
 // key the report does not know. Split from DoctorReport.kt (concentration, 2026-09-13).
 package splice.app.cli

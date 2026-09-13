@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §1): the checks `splice add` runs BEFORE it writes anything — the
+// NEW: v0.4.0 FEATURES.md §1 — the checks `splice add` runs BEFORE it writes anything — the
 // candidate TOML parses, the credential is present, the base URL answers, the chosen models are
 // listed where the dialect publishes a list — and the ONE optional live turn the operator can ask
 // for. Network goes through one seam so the command is tested without a socket.

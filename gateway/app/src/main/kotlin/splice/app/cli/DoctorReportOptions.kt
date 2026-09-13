@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §6): what `splice doctor` was asked for, what a run collected, and the
+// NEW: v0.4.0 FEATURES.md §6 — what `splice doctor` was asked for, what a run collected, and the
 // one seam the JSON report reads that the text doctor already owns (the captured Claude Code
 // version). Split from DoctorReport.kt so the emitter file carries the emission only.
 package splice.app.cli

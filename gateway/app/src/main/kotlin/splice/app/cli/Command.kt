@@ -51,6 +51,9 @@ public sealed class Command {
     public data object Sessions : Command() {
         override fun run(): Int = outcomeExitCode(SessionsCommand().sessions())
     }
+    public data class Perf(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(PerfCommand().perf(args))
+    }
 
     /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`
      *  arm still calls it unqualified; it was a top-level function until the no-top-level-functions

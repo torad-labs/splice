@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.AuthHttpClientFactory
 import splice.app.CompactStatsSource
 import splice.app.LogFileSource
+import splice.app.PerfRowsFileSource
 import splice.app.PerfStatsSource
 import splice.app.UsageStoreSource
 import splice.app.provider.ProviderAssembly
@@ -95,6 +96,7 @@ internal class ManagedHeadFactory(
                 forwardClientAuth = forwardClientAuth,
             ),
             perf = PerfStatsSource(stores.perfStats),
+            perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key)),
             keyPresence = keyPresence,
             catalog = ctx.catalog,
             clientWindows = stores.clientWindows,

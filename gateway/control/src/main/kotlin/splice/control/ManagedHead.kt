@@ -57,6 +57,8 @@ public data class ManagedHead(
     val launchSpec: LaunchSpec? = null,
     /** Per-turn perf telemetry rows for /api/perf; null = head has no perf sink wired. */
     val perf: HeadPerfSource? = null,
+    /** v0.4.0 (FEATURES.md §3): the same rows with outcome tags, for the windowed summary. */
+    val perfRows: PerfRowsSource? = null,
     /** DR-81: "does this head hold a working api key RIGHT NOW" — read per /launch, never frozen
      *  into [launchSpec] (the spec is assembled once at boot; `splice key set` promises live
      *  pickup, and a boot-frozen gate left the paste-your-key capture hook armed against a

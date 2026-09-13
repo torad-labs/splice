@@ -20,6 +20,23 @@ private const val P95 = 0.95
 
 internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
 
+    private val summary = PerfSummary()
+
+    /** `/api/perf/summary?window=1h|24h|7d` (v0.4.0, FEATURES.md §3): one summary per head. */
+    fun summaryJson(label: String?): String = buildJsonObject {
+        val window = summary.window(label) ?: PerfWindow.H24
+        put("window", window.label)
+        putJsonArray(HEADS) {
+            heads.values.forEach { m ->
+                addJsonObject {
+                    put(KEY, m.head.key)
+                    put(LABEL, m.head.label)
+                    summary.summarize(m.perfRows, window).forEach { (k, v) -> put(k, v) }
+                }
+            }
+        }
+    }.toString()
+
     // {heads:[{key,label,count,stages:{<field>:{count,p50,p95,max}}}]} — fields are the TurnPerf
     // marks/counters (PerfKeys names), marks first in pipeline order, counters after.
     fun perfJson(tailN: Int): String = buildJsonObject {

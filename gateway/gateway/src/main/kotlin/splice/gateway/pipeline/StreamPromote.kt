@@ -40,13 +40,13 @@ internal class StreamPromote(
                         "source=${picked.source} chars=${picked.text.length}\n",
                 )
                 emitter.addTextBlock(picked.text)
-                if (meta.compact) compact.record(picked.source, elapsedMs, chars = picked.text.length)
+                if (meta.compact) compact.record(meta, picked.source, elapsedMs, chars = picked.text.length)
                 PromoteVerdict(null)
             }
             meta.compact -> {
                 // An empty compact is an ERROR, not an empty success (Claude Code would store a
                 // blank summary and lose the thread). Never invent locally.
-                compact.record("empty_model", elapsedMs, error = "api_error")
+                compact.record(meta, "empty_model", elapsedMs, error = "api_error")
                 log("[gateway] empty-turn shape compact=true ${outcome.outputShape}\n")
                 emitter.emitError(
                     ErrorType.API_ERROR,
@@ -85,9 +85,9 @@ internal class StreamPromote(
     private fun recordCompactShape(meta: TurnMeta, emittedText: Boolean, bodyText: String, elapsedMs: Long) {
         if (!meta.compact) return
         if (emittedText) {
-            compact.record("model_text", elapsedMs, chars = bodyText.length)
+            compact.record(meta, "model_text", elapsedMs, chars = bodyText.length)
         } else {
-            compact.record("tooled_no_text", elapsedMs)
+            compact.record(meta, "tooled_no_text", elapsedMs)
         }
     }
 }

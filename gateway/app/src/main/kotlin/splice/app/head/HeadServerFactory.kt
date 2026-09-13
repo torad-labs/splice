@@ -9,6 +9,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.gateway.compact.ShadowClassifier
+import splice.gateway.head.CompactionTail
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
@@ -19,6 +20,7 @@ internal class HeadServerFactory(
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
     private val log: LogSink,
+    private val compactionTail: CompactionTail = CompactionTail(),
 ) {
     private val upstreamFactory = UpstreamFactory()
     private val requestMaterializationGate = RequestMaterializationGate()
@@ -55,6 +57,7 @@ internal class HeadServerFactory(
                 perfStats = stores.perfStats,
                 quota = stores.quota,
                 clientWindows = stores.clientWindows,
+                compactionTail = compactionTail,
                 log = log,
                 requestMaterializationGate = requestMaterializationGate,
             ),

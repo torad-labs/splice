@@ -87,7 +87,7 @@ internal class TurnPreparation(
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val fromProvider = provider.buildTurn(parsed, compactProbe.compact, sessionId)
+        val fromProvider = buildProviderTurn(parsed, compactProbe.compact, sessionId)
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
         // session. Stamped here, once, when the provider left it null.
@@ -109,6 +109,28 @@ internal class TurnPreparation(
         // answered from that recording (TurnStreamer records it, LocalResponses replays it).
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
         return replayed ?: Preparation.Ready(built, parsed.typed.stream)
+    }
+
+    private fun buildProviderTurn(
+        parsed: AnthropicTurnBody,
+        compact: Boolean,
+        sessionId: String?,
+    ): BuiltTurn {
+        val effective = deps.compactionTail.resolve(
+            compact,
+            provider.catalog.stripSuffixes(parsed.typed.model),
+            sessionId,
+        )
+        val base = provider.buildTurn(parsed, compact, sessionId)
+        val tailed = effective?.tailText?.let { provider.withCompactionTail(base, it) } ?: base
+        return effective?.let {
+            tailed.copy(
+                meta = tailed.meta.copy(
+                    compactionInstructions = it.text,
+                    compactionInstructionsSource = it.source,
+                ),
+            )
+        } ?: tailed
     }
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn

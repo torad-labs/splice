@@ -21,6 +21,7 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.compaction.CompactionConfig
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -30,6 +31,7 @@ import splice.core.model.WindowRule
 public data class Topology(
     val daemon: DaemonConfig = DaemonConfig(),
     val claude: ClaudeSharingDefaults = ClaudeSharingDefaults(),
+    val compaction: CompactionConfig = CompactionConfig(),
     val defaults: Map<String, String> = emptyMap(),
     val providers: Map<String, ProviderConfig> = emptyMap(),
     val heads: Map<String, HeadConfig> = emptyMap(),

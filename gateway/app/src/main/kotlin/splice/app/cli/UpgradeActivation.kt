@@ -33,14 +33,19 @@ internal class UpgradeActivation(
             layout.current to layout.pointedVersion(layout.current)?.let(Path::of),
         )
         val liveBefore = if (Files.isSymbolicLink(layout.liveJar)) Files.readSymbolicLink(layout.liveJar) else null
-        var refreshedShim = false
+        var previousShim: Path? = null
         Cancellables.runCatchingCancellable {
-            refreshedShim = wrapper.activate(layout.liveShim, fromDir.resolve(SHIM_ASSET), dir.resolve(SHIM_ASSET))
+            previousShim = wrapper.activate(
+                layout.liveShim,
+                fromDir.resolve(SHIM_ASSET),
+                dir.resolve(SHIM_ASSET),
+                fromDir.resolve(EDITED_SHIM),
+            )
             point(layout.previous, Path.of(from))
             point(layout.current, Path.of(version))
             point(layout.liveJar, layout.share.relativize(dir.resolve(JAR_ASSET)))
         }.getOrElse { e ->
-            val failed = restore(links, liveBefore, fromDir.resolve(SHIM_ASSET).takeIf { refreshedShim })
+            val failed = restore(links, liveBefore, previousShim)
             val why = "activating $version failed (${SafeFailureText.render(e)})"
             throw UpgradeRefused(if (failed.isEmpty()) "$why; $from restored" else "$why; recovery FAILED for $failed")
         }

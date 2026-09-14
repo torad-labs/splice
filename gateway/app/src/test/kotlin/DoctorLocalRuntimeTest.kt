@@ -73,6 +73,33 @@ class DoctorLocalRuntimeTest {
         assertTrue(live.none { it.name == "local:ollama/ghost:1b/live" })
     }
 
+    /** `doctor --live` loads the model; the verdict must read the window the runtime then reports,
+     *  not the list fetched before the load (review 2026-09-14). */
+    @Test
+    fun `the live probe loads the model and the verdict reads the served window it reveals`() {
+        var loaded = false
+        val loading = LocalHttp { method, url, body ->
+            when {
+                url.endsWith("/api/ps") -> {
+                    val models = if (loaded) """[{"name":"qwen3:4b","context_length":4096}]""" else "[]"
+                    LocalHttpReply(200, """{"models":$models}""")
+                }
+                url.endsWith("/chat/completions") -> {
+                    loaded = true
+                    up(method, url, body)
+                }
+                else -> up(method, url, body)
+            }
+        }
+        val topology = TopologyLoader.parse(toml)
+        val cold = DoctorLocalRuntime(loading).localChecks(topology, live = false)
+        assertEquals(CheckStatus.OK, cold.first { it.name == "local:ollama/qwen3:4b" }.status, "unloaded: card only")
+        val hot = DoctorLocalRuntime(loading).localChecks(topology, live = true)
+        val row = hot.first { it.name == "local:ollama/qwen3:4b" }
+        assertEquals(CheckStatus.FAIL, row.status, "loaded at 4096 < declared 8192: ${row.detail}")
+        assertTrue(row.detail.contains("runtime serves 4096"), row.detail)
+    }
+
     @Test
     fun `doctor applies the daemon's per-head window override in both directions`() {
         // Boot builds catalogFor(head, contextWindowOverride): an override wider than the served window

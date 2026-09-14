@@ -217,12 +217,12 @@ internal object LoginHookScripts {
             appendLine(ELSE_TOP)
             appendLine("  hit=unparsed")
             appendLine("fi")
-            if (hook.viaBrowser) {
-                appendLine("if [ \"${d}hit\" = unparsed ]; then")
-                appendLine("  printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.UNPARSED)))}")
-                appendLine("  exit 0")
-                appendLine("fi")
-            }
+            // Every head: an api-key head answered an unreadable input with its paste/terminal lead
+            // text, contradicting the contract above (review 2026-09-14).
+            appendLine("if [ \"${d}hit\" = unparsed ]; then")
+            appendLine("  printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.UNPARSED)))}")
+            appendLine("  exit 0")
+            appendLine("fi")
             appendLine("if [ -n \"${d}hit\" ]; then")
             if (hook.viaBrowser) {
                 append(browserSpawn(hook))
@@ -246,7 +246,7 @@ internal object LoginHookScripts {
     private const val LABEL_ARGS = "^[[:space:]]+--label([[:space:]]+|=)([a-z0-9][a-z0-9._-]{0,47})[[:space:]]*$"
     private const val LABEL_GROUP = 2
 
-    private enum class Refusal { BAD_ARGS, UNPARSED, STUCK, NO_COMMAND, DIED }
+    private enum class Refusal { BAD_ARGS, UNPARSED, STUCK, NO_COMMAND, DIED, FOREIGN }
 
     /** The ways the browser branch declines to start a login, each saying what to do instead. */
     private fun refusalText(hook: LoginHookSpec, why: Refusal): String =
@@ -268,16 +268,24 @@ internal object LoginHookScripts {
             Refusal.STUCK ->
                 "A previous ${hook.signInLabel} sign-in is still waiting and could not be cancelled. " +
                     "Finish it in the browser, or wait for it to time out, then /login again."
+            Refusal.FOREIGN ->
+                "A ${hook.signInLabel} sign-in started outside this session (${hook.loginCommand} in a " +
+                    "terminal) is still waiting for its browser callback. Finish it there, or stop it, " +
+                    "then /login again. Nothing was started."
         }
 
     /** The browser branch: an optional --label NAME rides through to the login command (checked
      *  here against the CLI's label shape; anything else is refused and nothing is spawned), a
      *  sign-in still waiting for its callback is cancelled first ([LoginHookPending]), and the
      *  reason names which of these happened. loginCommand is deliberately NOT quoted: it IS a
-     *  command line ("claudex login"); its first word is the head the pending sign-in is matched by. */
+     *  command line ("claudex login"); its first word is the head the pending sign-in is matched by.
+     *  Only a sign-in THIS hook started (marked ${LoginHookPending.ORIGIN_MARKER} in its environment)
+     *  is ever cancelled: one the user started in a terminal is named and left alone (review
+     *  2026-09-14: the hook killed a labeled terminal sign-in mid-consent and started the primary). */
     private fun browserSpawn(hook: LoginHookSpec): String {
         val d = "$"
         val stuck = "printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.STUCK)))}"
+        val foreign = "printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.FOREIGN)))}"
         return buildString {
             appendLine("  label='' nre=${shellSingleQuote(NO_ARGS)} lre=${shellSingleQuote(LABEL_ARGS)}")
             appendLine("  if [[ ${d}args =~ ${d}nre ]]; then :")
@@ -294,11 +302,12 @@ internal object LoginHookScripts {
             appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.NO_COMMAND)))}")
             appendLine(EXIT)
             appendLine("  fi")
-            append(LoginHookPending.cancelBlock(hook.loginCommand.substringBefore(' '), stuck))
+            append(LoginHookPending.cancelBlock(hook.loginCommand.substringBefore(' '), stuck, foreign))
+            val origin = LoginHookPending.ORIGIN_MARKER
             appendLine("  if [ -n \"${d}label\" ]; then")
-            appendLine("    nohup ${hook.loginCommand} --label \"${d}label\" >/dev/null 2>&1 &")
+            appendLine("    $origin nohup ${hook.loginCommand} --label \"${d}label\" >/dev/null 2>&1 &")
             appendLine(ELSE)
-            appendLine("    nohup ${hook.loginCommand} >/dev/null 2>&1 &")
+            appendLine("    $origin nohup ${hook.loginCommand} >/dev/null 2>&1 &")
             appendLine("  fi")
             appendLine("  spawned=$d!")
             appendLine("  sleep 0.3")

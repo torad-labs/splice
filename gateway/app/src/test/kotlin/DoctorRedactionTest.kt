@@ -55,6 +55,13 @@ class DoctorRedactionTest {
     fun `only the host of a URL survives`() {
         assertEquals("api.example.invalid", redaction.host("https://user:pass@api.example.invalid/v1?key=abc"))
         assertEquals("<unparsable>", redaction.host("not a url"))
+        assertEquals(
+            "<redacted:id>.tenant.example.invalid",
+            redaction.host("https://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b.tenant.example.invalid/v1"),
+            "a UUID-shaped label is an identifier wherever it rides",
+        )
+        val keyed = redaction.host("https://AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij.example.invalid/v1")
+        assertFalse(keyed.contains("AbCdEfGh"), keyed)
     }
 
     @Test
@@ -67,6 +74,7 @@ class DoctorRedactionTest {
             "[2026-09-13 10:00:53] [claudex][code-mode] abandoned record 9 (outer call_x): history mismatch",
             "    at splice.core.topology.HeadConfig.deserialize(Topology.kt:202)",
             "[2026-09-13 10:00:53] [codex] turn ERROR auth-missing: Authorization: Bearer verysecrettoken",
+            "[2026-09-13 10:00:53] [claudex] turn compact=false model=gpt-5.6-sol latency=1200ms ok out=42 tool=false",
             "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 session=" + "x".repeat(1000) +
                 " api_key=abc client_secret=s3cr3t model=gpt-6-astra compact=false attempts=NaN",
             "[2026-09-13 10:00:55] [mcp-host] context7: hosted as pid 4242",
@@ -80,12 +88,14 @@ class DoctorRedactionTest {
                 "[2026-09-13 10:00:53] [daemon] failed",
                 "[2026-09-13 10:00:53] [claudex][code-mode] abandoned record",
                 "[2026-09-13 10:00:53] [codex] turn ERROR",
+                "[2026-09-13 10:00:53] [claudex] turn compact=false model=gpt-5.6-sol",
                 "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 model=gpt-6-astra compact=false",
                 "[2026-09-13 10:00:55] [mcp-host] context7: hosted as pid",
                 "[2026-09-13 10:00:56] [mcp-host] context7: pid 4242 exited",
             ),
             out.kept,
-            "head plus vocabulary pairs only: prose pairs, a session id, secret-named keys, NaN are gone",
+            "head plus vocabulary pairs only: prose pairs, a session id, secret-named keys, NaN are gone; " +
+                "a turn line keeps compact= and model= (latency is not numeric, ok is not a pair)",
         )
         assertEquals(4, out.dropped, "prose, prefixed prose, a stack frame and a child's prose are not daemon events")
     }

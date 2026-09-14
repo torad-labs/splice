@@ -91,12 +91,15 @@ internal class DoctorLocalRuntime(
         val listedIds = listed.map { it.id }.toSet()
         val probed = if (live) rows.keys.filter { it in listedIds } else emptyList()
         val probes = probed.map { id -> liveCheck(name, probe, id) }
-        val verdicts = probe.validate(rows, listed).map { v ->
+        // The probe loaded the model: read the list again so the verdicts see the window the runtime
+        // actually allocated, not the pre-load snapshot (review 2026-09-14).
+        val current = if (probed.isEmpty()) listed else probe.models(runtime) ?: listed
+        val verdicts = probe.validate(rows, current, runtime.kind).map { v ->
             val fix = "fix [[providers.$key.models]] (or the head's context_window) to a model the runtime " +
                 "lists, at or under its context"
             DoctorCheck("$name/${v.id}", if (v.ok) CheckStatus.OK else CheckStatus.FAIL, v.reason, fix.takeIf { !v.ok })
         }
-        return listOf(summary(name, provider, runtime, listed)) + verdicts + probes
+        return listOf(summary(name, provider, runtime, current)) + verdicts + probes
     }
 
     private fun summary(

@@ -24,6 +24,7 @@ import splice.control.HeadLogSource
 import splice.control.HeadUsageSource
 import splice.control.ManagedHead
 import splice.control.UsageView
+import splice.core.GATEWAY_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -63,7 +64,7 @@ class ClientVersionSurfaceTest {
         try {
             awaitPort(port)
             val expected =
-                "Claude Code 2.1.258 is newer than the version splice 0.3.2 was tested with (2.1.257)"
+                "Claude Code 2.1.258 is newer than the version splice $GATEWAY_VERSION was tested with (2.1.257)"
             assertEquals(expected, healthWarning(port))
 
             val first = statusline(port, "session-new")

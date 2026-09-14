@@ -15,8 +15,10 @@ internal class DaemonHealth {
 
     internal fun healthView(port: Int): HealthView? = DaemonProbe.healthView(port)
 
-    /** True only when the listener answers splice's versioned HTTP health contract. */
-    internal fun daemonUp(port: Int): Boolean = healthView(port)?.version == GATEWAY_VERSION
+    /** True only when the listener answers splice's versioned HTTP health contract with [expected] —
+     *  this CLI's own version unless the caller just activated another (`splice upgrade`). */
+    internal fun daemonUp(port: Int, expected: String = GATEWAY_VERSION): Boolean =
+        healthView(port)?.version == expected
 
     internal fun cliVersion(): String = GATEWAY_VERSION
 

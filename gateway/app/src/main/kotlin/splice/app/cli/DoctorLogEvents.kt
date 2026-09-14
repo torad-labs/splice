@@ -9,7 +9,9 @@ private const val MAX_LINE_CHARS = 400
  *  daemon's log call sites and its live log). A message that opens with none of them is not
  *  one of the daemon's events, whatever its prefix says. */
 private val EVENT_HEADS: Regex = listOf(
-    "compact=(true|false)", "cache: ", "perf ", "turn (compact=|ERROR |cancelled)",
+    // `turn ` is the whole head: what follows (compact=… model=…) is the daemon's pair run, so the
+    // lookahead keeps compact= OUT of the head (review 2026-09-14: every turn line lost its pairs).
+    "compact=(true|false)", "cache: ", "perf ", "turn (?=compact=)", "turn (ERROR |cancelled)",
     "row '", "activity label", "count_tokens ", "tool search round", "socket (stream|closed|failed)",
     "websocket round", "frame arrived", "rate-limit cooldown", "fold (round|re-anchor)", "upstream \\d+ attempt",
     "re-anchor \\d+:", "transport(-possible-duplicate)? ", "mid-stream ",

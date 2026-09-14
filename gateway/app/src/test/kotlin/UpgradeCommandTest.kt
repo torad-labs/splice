@@ -1,6 +1,6 @@
 // `splice upgrade` (v0.4.0, FEATURES.md §5) against a fake share dir and a file:// release: a
 // verified release lands in its own directory and the live jar repoints to it; a failed
-// verification activates nothing; an edited wrapper is kept with its diff printed; rollback
+// verification activates nothing; an edited wrapper is refreshed, saved and its diff printed; rollback
 // repoints at the previous release; config and credentials are never touched.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -37,6 +37,10 @@ class UpgradeCommandTest {
     private var inflightAnswers = ArrayDeque<InflightRead>()
     private var inflightAfter: InflightRead = InflightRead.NoDaemon
     private var reportedVersion = "9.9.9"
+    private var unitActive = true
+
+    /** What /health reports after a restart: the release `current` points at, unless a test pins it. */
+    private var servingVersion: ((Path) -> String?)? = null
 
     /** [unitJar] is what the fake user unit's ExecStart names; null = no unit supervises this install. */
     private fun process(gh: Int = 0, unitJar: Path? = null) = UpgradeProcess { cmd, _ ->
@@ -51,6 +55,7 @@ class UpgradeCommandTest {
 
     private fun systemctl(cmd: List<String>, unitJar: Path?): UpgradeExit = when (cmd[2]) {
         "show" -> UpgradeExit(0, unitJar?.let { "java -jar $it daemon" } ?: "")
+        "is-active" -> UpgradeExit(0, if (unitJar != null && unitActive) "active\n" else "inactive\n")
         else -> UpgradeExit(0, "").also { unitRestarts++ }
     }
 
@@ -87,8 +92,10 @@ class UpgradeCommandTest {
                 verbRestarts++
                 true
             },
+            healthVersion = { servingVersion?.invoke(home) ?: link(home, "current") },
             pollMs = 1,
             maxWaitMs = maxWaitMs,
+            confirmPollMs = 1,
         )
         return UpgradeCommand(
             env = env,
@@ -184,7 +191,8 @@ class UpgradeCommandTest {
         assertEquals("9.9.9", link(home, "current"))
         assertEquals("0.3.2", link(home, "previous"))
         assertEquals("old-jar", read(home, "releases/0.3.2/splice.jar"), "the flat jar was recorded")
-        assertEquals(1 to 0, unitRestarts to verbRestarts, "the unit that names this jar was restarted")
+        assertEquals(1 to 0, unitRestarts to verbRestarts, "the active unit that names this jar was restarted")
+        assertTrue(out.contains("serving 9.9.9"), out)
         assertTrue(calls.any { it.first() == "java" && it.last() == "doctor" }, "doctor ran on the new jar")
         assertTrue(calls.none { it.first() == "gh" }, "a file:// base needs no gh")
         assertIntact(intact)
@@ -215,8 +223,10 @@ class UpgradeCommandTest {
         assertIntact(intact)
     }
 
+    /** The shim is version-locked to the jar (the launch handshake), so an edited one is refreshed
+     *  too — saved beside its release with the diff printed, never silently lost (review 2026-09-14). */
     @Test
-    fun `an edited wrapper is kept and its diff printed, and rollback repoints at the previous release`(
+    fun `an edited wrapper is refreshed, its copy saved and diff printed, and rollback repoints at previous`(
         @TempDir home: Path,
     ) {
         val intact = flatInstall(home, shim = PATCHED)
@@ -225,17 +235,78 @@ class UpgradeCommandTest {
         inflightAnswers = ArrayDeque(listOf(InflightRead.Count(2), InflightRead.Count(1), InflightRead.Count(0)))
         val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9")) }
         assertTrue(ok, out)
-        assertTrue(out.contains("kept") && out.contains("+echo patched"), out)
-        assertEquals(PATCHED, read(home, "splice-launch"))
+        assertTrue(out.contains("edited since") && out.contains("+echo patched"), out)
+        assertEquals(NEWER, read(home, "splice-launch"), "the new release's shim is live")
+        assertEquals(PATCHED, read(home, "releases/0.3.2/splice-launch.edited"), "the edit is saved")
         assertEquals(2, out.split("in flight").size - 1, "waited two polls for the turns in flight")
         val (back, out2) = captured { command(home, base).upgrade(listOf("--rollback", "--now")) }
         assertTrue(back, out2)
         assertEquals("old-jar", read(home, "splice.jar"))
         assertEquals("0.3.2", link(home, "current"))
         assertEquals("9.9.9", link(home, "previous"))
-        assertEquals(PATCHED, read(home, "splice-launch"), "still kept")
+        assertEquals(STOCK, read(home, "splice-launch"), "rollback activates that release's shim")
+        assertEquals(PATCHED, read(home, "releases/0.3.2/splice-launch.edited"), "the saved edit stays")
         assertEquals(0 to 2, unitRestarts to verbRestarts, "no unit names this install's jar: the verb restarts")
         assertIntact(intact)
+    }
+
+    /** A flat install has no pristine shim: the live one is recorded with its jar and refreshed, so
+     *  launches keep working and a rollback has a shim to copy (review 2026-09-14). */
+    @Test
+    fun `a flat install's shim is recorded, refreshed, and restored by rollback - review 2026-09-14`(
+        @TempDir home: Path,
+    ) {
+        flatInstall(home)
+        val base = release(home)
+        val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9", "--now")) }
+        assertTrue(ok, out)
+        assertEquals(NEWER, read(home, "splice-launch"))
+        assertEquals(STOCK, read(home, "releases/0.3.2/splice-launch"), "the flat shim was recorded with its jar")
+        assertTrue(out.contains("refreshed from the release") && !out.contains("saved at"), out)
+        val (back, out2) = captured { command(home, base).upgrade(listOf("--rollback", "--now")) }
+        assertTrue(back, out2)
+        assertEquals(STOCK, read(home, "splice-launch"), "the recorded shim came back with its jar")
+    }
+
+    /** The restart is judged by what /health serves afterwards, never by an exit code: a unit whose
+     *  file names the jar but is inactive does not own the daemon; a daemon still on the old version
+     *  is named (review 2026-09-14). */
+    @Test
+    fun `an inactive unit takes the verb path, and a daemon still serving the old version is reported`(
+        @TempDir home: Path,
+    ) {
+        flatInstall(home)
+        pristine(home)
+        unitActive = false
+        val (ok, out) = captured { command(home, release(home), supervised = true).upgrade(listOf("--now")) }
+        assertTrue(ok, out)
+        assertEquals(0 to 1, unitRestarts to verbRestarts, "a loaded but inactive unit does not own the daemon")
+        unitActive = true
+        servingVersion = { "9.9.9" }
+        val (back, out2) = captured {
+            command(home, release(home), supervised = true).upgrade(listOf("--rollback", "--now"))
+        }
+        assertFalse(back, out2)
+        assertTrue(out2.contains("still serves 9.9.9"), out2)
+        assertEquals("0.3.2", link(home, "current"), "the rollback itself landed; only the restart is red")
+    }
+
+    /** A candidate older than 0.4.0 has no `doctor --json`; its text doctor is not run against the
+     *  live install for nothing, and `--to` names the tag with or without its v (review 2026-09-14). */
+    @Test
+    fun `a pre-0-4-0 candidate skips the JSON doctor preflight, and --to accepts a bare version`(
+        @TempDir home: Path,
+    ) {
+        flatInstall(home)
+        reportedVersion = "0.3.9"
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "0.3.9", "--now")) }
+        assertTrue(ok, out)
+        assertTrue(out.contains("predates doctor --json"), out)
+        assertTrue(calls.none { it.contains("--json") }, "no doctor --json for a jar that ignores the flag: $calls")
+        assertEquals("0.3.9", link(home, "current"))
+        val release = UpgradeRelease(JdkUpgradeFetch(), process(), "java")
+        assertEquals(release.base("v0.4.0", null), release.base("0.4.0", null), "one tag, two spellings")
+        assertTrue(release.base("0.4.0", null).endsWith("/download/v0.4.0"), release.base("0.4.0", null))
     }
 
     @Test

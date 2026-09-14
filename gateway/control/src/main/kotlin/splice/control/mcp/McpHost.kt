@@ -125,8 +125,11 @@ public class McpHost(
     public fun sweep() {
         val now = config.clock.millis()
         val limit = config.idleTimeout.inWholeMilliseconds
+        // A reserved server is mid-initialize (its session is minted only after the handshake), so
+        // it has no session yet and must not read as idle (review 2026-09-14: a sweep tick during a
+        // slow npx handshake killed the just-spawned child and answered the client 503).
         servers.names()
-            .filterNot { sessions.busy(it, now, limit) }
+            .filterNot { servers.reserved(it) || sessions.busy(it, now, limit) }
             .forEach { servers.close(it, "idle for ${limit / MILLIS_PER_MINUTE} min") }
     }
 

@@ -36,6 +36,23 @@ class AccountLoginTest {
     }
 
     @Test
+    fun `two same-kind primaries in one directory own separate pools`() {
+        val codex = dir.resolve("codex.json")
+        val work = dir.resolve("codex-work.json")
+        Files.writeString(codex, "{}")
+        Files.writeString(work, "{}")
+        val store = OAuthAccountFiles()
+        store.writeLabeled(AuthKind.ChatgptOAuth, codex, "backup", JsonObject(emptyMap()))
+        assertEquals(listOf("primary", "backup"), store.discover(AuthKind.ChatgptOAuth, codex).map { it.label })
+        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, work).map { it.label })
+        assertTrue(Files.exists(dir.resolve("chatgpt-oauth/codex.json/backup.json")))
+        val bare = dir.resolve("codex")
+        Files.writeString(bare, "{}")
+        val bareLabels = store.discover(AuthKind.ChatgptOAuth, bare).map { it.label }
+        assertEquals(listOf("primary"), bareLabels, "codex and codex.json are different primaries")
+    }
+
+    @Test
     fun `first login keeps the provider native legacy primary`() {
         val primary = dir.resolve("grok.json")
         val account = OAuthAccountFiles().loginAccount(AuthKind.GrokOAuth, primary, requestedLabel = null)
@@ -61,7 +78,7 @@ class AccountLoginTest {
         assertTrue(LoginIo().persistIfSignedIn(primary, providerJson, account))
 
         assertEquals(original, Files.readString(primary))
-        val target = dir.resolve("kimi-oauth/work.json")
+        val target = dir.resolve("kimi-oauth/kimi.json/work.json")
         val onDisk = Json.parseToJsonElement(Files.readString(target)).jsonObject
         assertEquals("backup-secret", onDisk["access_token"]?.jsonPrimitive?.content)
         assertEquals("kimi-oauth", onDisk["splice_auth_kind"]?.jsonPrimitive?.content)
@@ -203,7 +220,7 @@ class AccountLoginTest {
                 grok,
             ),
         )
-        assertTrue(Files.exists(dir.resolve("grok-oauth/grok-2.json")))
+        assertTrue(Files.exists(dir.resolve("grok-oauth/grok.json/grok-2.json")))
 
         val kimiPrimary = dir.resolve("kimi.json")
         Files.writeString(kimiPrimary, "{}")
@@ -217,7 +234,7 @@ class AccountLoginTest {
         val kimi = requireNotNull(LoginKimi().spec("kimi", kimiPrimary, "auto").account)
         assertEquals("kimi-3", kimi.resolvedLabel())
         assertTrue(LoginIo().persistIfSignedIn(kimiPrimary, """{"access_token":"kimi-secret"}""", kimi))
-        assertTrue(Files.exists(dir.resolve("kimi-oauth/kimi-3.json")))
-        assertFalse(Files.exists(dir.resolve("kimi-oauth/auto.json")))
+        assertTrue(Files.exists(dir.resolve("kimi-oauth/kimi.json/kimi-3.json")))
+        assertFalse(Files.exists(dir.resolve("kimi-oauth/kimi.json/auto.json")))
     }
 }

@@ -25,7 +25,8 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # client roots start once in the daemon and serve every session over loopback Streamable HTTP;
 # each head's .claude.json points at the hosted URL, your own config file is never edited.
 # mcp_hosting = false            # every session launches its own servers, as before
-# mcp_hosting_exclude = ["name"] # keep these servers per session even when eligible
+# mcp_hosting_exclude = ["name"] # keep these servers per session even when eligible; hosted servers
+#                                # run in your home directory, so list any that reads its cwd unnamed
 
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);
@@ -53,7 +54,7 @@ base_url = "https://chatgpt.com/backend-api/codex"
 # Codex app's session — the two then rotate each other's refresh token and sign each other out.
 auth = { kind = "chatgpt-oauth" }
 # More accounts of the same kind: `splice login claudex --label work` stores a second credential at
-# ~/.config/splice/auth/chatgpt-oauth/work.json; the head switches to it between turns when the
+# ~/.config/splice/auth/chatgpt-oauth/codex.json/work.json; the head switches to it between turns when the
 # primary's window is exhausted or a 429 outlasts the turn, and comes back after the reset (README,
 # "More than one account per provider"). No key here: the pool is whatever files exist.
 # Table form, not inline: tool_surface below is a sub-table, and TOML forbids adding a sub-table

@@ -354,6 +354,34 @@ class LoginHookScriptSafetyTest {
         }
     }
 
+    /** The replacement must be resolvable BEFORE a waiting sign-in is cancelled, and must survive
+     *  its first moment after: otherwise the hook destroys a working sign-in and starts nothing. */
+    @Test
+    fun `a login command that cannot start leaves a pending sign-in alone and says so - review 2026-09-14`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val missing = tmp.resolve("no-such-wrapper")
+        val hook = write(tmp, "login-missing.sh", LoginHookScripts.loginHookScript(browserSpec(missing)))
+        val jar = parkJar(tmp)
+        val pending = pendingLogin(missing, jar, ignoreTerm = false)
+        try {
+            Thread.sleep(500)
+            val env = mapOf("SPLICE_JAR" to jar.toString())
+            val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
+            val reason = decision(ran)
+            assertTrue(reason.startsWith("The Codex (ChatGPT) login command ($missing) is not on"), reason)
+            Thread.sleep(300)
+            assertTrue(pending.isAlive, "the waiting sign-in was left alone: nothing could replace it")
+        } finally {
+            pending.destroyForcibly()
+        }
+        val dying = write(tmp, "dying.sh", "#!/usr/bin/env bash\nexit 3\n")
+        dying.toFile().setExecutable(true)
+        val hook2 = write(tmp, "login-dying.sh", LoginHookScripts.loginHookScript(browserSpec(dying)))
+        val ran2 = run("bash", hook2.toString(), stdin = """{"prompt":"/login"}""", dir = tmp)
+        val reason2 = decision(ran2)
+        assertTrue(reason2.startsWith("$dying login exited as soon as it started"), reason2)
+    }
+
     @Test
     fun `a bystander carrying the text, with no pending sign-in, is neither killed nor a restart - V4-13`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")

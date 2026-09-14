@@ -69,6 +69,9 @@ class DoctorRedactionTest {
             "[2026-09-13 10:00:53] [codex] turn ERROR auth-missing: Authorization: Bearer verysecrettoken",
             "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 session=" + "x".repeat(1000) +
                 " api_key=abc client_secret=s3cr3t model=gpt-6-astra compact=false attempts=NaN",
+            "[2026-09-13 10:00:55] [mcp-host] context7: hosted as pid 4242",
+            "[2026-09-13 10:00:56] [mcp-host] context7: pid 4242 exited (exited with code 3 /home/me/secret)",
+            "[2026-09-13 10:00:57] [mcp-host] context7: some prose the child printed",
         )
         val out = redaction.logLines(lines, SafeNames(redaction, null))
         assertEquals(
@@ -78,11 +81,13 @@ class DoctorRedactionTest {
                 "[2026-09-13 10:00:53] [claudex][code-mode] abandoned record",
                 "[2026-09-13 10:00:53] [codex] turn ERROR",
                 "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 model=gpt-6-astra compact=false",
+                "[2026-09-13 10:00:55] [mcp-host] context7: hosted as pid",
+                "[2026-09-13 10:00:56] [mcp-host] context7: pid 4242 exited",
             ),
             out.kept,
             "head plus vocabulary pairs only: prose pairs, a session id, secret-named keys, NaN are gone",
         )
-        assertEquals(3, out.dropped, "prose, prefixed prose and a stack frame are not daemon events")
+        assertEquals(4, out.dropped, "prose, prefixed prose, a stack frame and a child's prose are not daemon events")
     }
 
     @Test

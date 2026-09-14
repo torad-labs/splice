@@ -20,9 +20,15 @@ public data class HeadAccountPoolView(
     /** A text projection rejected selection evidence; unlike a head-wide null, it cannot name the primary. */
     val selectionUnknown: Boolean = false,
 ) {
+    /** Null when the selection is unknown: a rejected selection never names the primary, on any
+     *  surface (status line, usage payload, CLI text, doctor report alike). */
     public fun selectedAccount(): HeadAccountView? =
-        selectedLabel?.let { selected -> accounts.find { it.label == selected } }
-            ?: accounts.find(HeadAccountView::primary)
+        if (selectionUnknown) {
+            null
+        } else {
+            selectedLabel?.let { selected -> accounts.find { it.label == selected } }
+                ?: accounts.find(HeadAccountView::primary)
+        }
 
     /** The selected account's windows, or null when it has none yet (a fresh sign-in, a failing
      *  probe): callers then fall through to the head's tracked quota and the client's rate_limits

@@ -54,7 +54,10 @@ class SessionRegistryTest {
         write(dir, 22, """{"sessionId":"no-pid","updatedAt":$now}""")
         Files.writeString(dir.resolve("23.json"), "{ not json")
         Files.writeString(dir.resolve("24.key"), "ignored")
-        val rows = registry(dir, alive = setOf(21L)).read()
+        // A runaway file in the shared directory is skipped by size, never read whole on every poll.
+        val huge = """{"pid":25,"updatedAt":$now,"name":"""" + "x".repeat(70_000) + "\"}"
+        Files.writeString(dir.resolve("25.json"), huge)
+        val rows = registry(dir, alive = setOf(21L, 25L)).read()
         assertEquals(2, rows.size)
         val bare = rows.single { it.pid == 21L }
         assertEquals(SessionAvailability.STALE, bare.availability)

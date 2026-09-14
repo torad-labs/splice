@@ -10,14 +10,13 @@ import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
-import splice.spi.AccountLabelPolicy
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-internal class OAuthAccountWrites(private val json: Json) {
+internal class OAuthAccountWrites(private val json: Json, private val validation: OAuthAccountValidation) {
     fun decorated(kind: AuthKind.OAuth, label: String, providerJson: JsonObject): JsonObject {
-        requireLabel(label)
+        validation.requireLabel(label)
         return buildJsonObject {
             providerJson.forEach { (key, value) -> put(key, value) }
             put(FIELD_KIND, JsonPrimitive(kind.wire))
@@ -26,7 +25,7 @@ internal class OAuthAccountWrites(private val json: Json) {
     }
 
     fun writeLabeled(kind: AuthKind.OAuth, dir: Path, label: String, providerJson: JsonObject): Path {
-        requireLabel(label)
+        validation.requireLabel(label)
         if (retainedQuota(dir, label) != null) {
             throw OAuthAccountRefused("OAuth account label has retained quota state; choose another label")
         }
@@ -49,7 +48,7 @@ internal class OAuthAccountWrites(private val json: Json) {
         providerJson: JsonObject,
         identity: OAuthAccountIdentity? = null,
     ): OAuthAccountWrite {
-        requireLabel(label)
+        validation.requireLabel(label)
         val retainedQuota = retainedQuota(dir, label)
         val match = identity?.invoke(providerJson)?.let { ExistingIdentity(kind, identity, it, json) }
         val destination = reusableLabel(dir, label, match) ?: if (retainedQuota == null) {
@@ -66,17 +65,6 @@ internal class OAuthAccountWrites(private val json: Json) {
         val credentialPresent = Files.isRegularFile(dir.resolve("$label.json"), LinkOption.NOFOLLOW_LINKS)
         val quota = dir.resolve("$label-quota.json")
         return quota.takeIf { !credentialPresent && Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
-    }
-
-    fun requireLabel(label: String) {
-        val reason = when {
-            !AccountLabelPolicy.isSafe(label) -> "invalid OAuth account label"
-            label == PRIMARY -> "OAuth account label primary is reserved for the legacy credential"
-            label == AUTO -> "OAuth account label auto is reserved for derived labels"
-            label.endsWith("-quota") -> "OAuth account labels must not end in -quota"
-            else -> null
-        }
-        if (reason != null) throw OAuthAccountRefused(reason)
     }
 
     private fun reusableLabel(dir: Path, base: String, match: ExistingIdentity?): String? {

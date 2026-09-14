@@ -3,9 +3,8 @@ package splice.app.auth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import splice.core.topology.AuthKind
+import splice.core.util.LogSink
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -60,8 +59,12 @@ public data class OAuthAccountWrite(val file: Path, val retainedQuota: Path? = n
 public class OAuthAccountRefused(public val reason: String) : IllegalArgumentException(reason)
 
 /** Finds the in-place legacy primary and validated labeled accounts for one OAuth kind. */
-public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys = true }) {
-    private val writes = OAuthAccountWrites(json)
+public class OAuthAccountFiles(
+    json: Json = Json { ignoreUnknownKeys = true },
+    log: LogSink = LogSink(System.err::print),
+) {
+    private val validation = OAuthAccountValidation(json, log)
+    private val writes = OAuthAccountWrites(json, validation)
 
     public fun discover(kind: AuthKind.OAuth, primaryFile: Path): List<OAuthAccountFile> {
         val poolDir = poolDir(kind, primaryFile)
@@ -73,7 +76,11 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
                 .filter { it.fileName.toString().endsWith(JSON_SUFFIX) }
                 .filter { !it.fileName.toString().endsWith("-quota.json") }
                 .sorted()
-                .forEach { path -> found += validated(kind, path, poolDir) }
+                .forEach { path ->
+                    validation.validatedLabel(kind, path)?.let { label ->
+                        found += account(label, path, poolDir, primary = false)
+                    }
+                }
         }
         require(found.map(OAuthAccountFile::label).distinct().size == found.size) {
             "duplicate OAuth account label for ${kind.wire}"
@@ -93,7 +100,7 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         if (requestedLabel == PRIMARY) {
             refuse("the primary account keeps its reserved label; omit --label to sign in again")
         }
-        if (requestedLabel != AUTO) requireLabel(requestedLabel)
+        if (requestedLabel != AUTO) validation.requireLabel(requestedLabel)
         val primaryExists = Files.isRegularFile(primaryFile)
         if (!primaryExists) {
             refuse("sign in without --label first to create the primary ${kind.wire} account")
@@ -141,18 +148,6 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         identity: OAuthAccountIdentity? = null,
     ): OAuthAccountWrite = writes.writeTokenDerived(kind, poolDir(kind, primaryFile), label, providerJson, identity)
 
-    private fun validated(kind: AuthKind.OAuth, path: Path, poolDir: Path): OAuthAccountFile {
-        val label = path.fileName.toString().removeSuffix(JSON_SUFFIX)
-        requireLabel(label)
-        val raw = runCatching { json.parseToJsonElement(Files.readString(path)).jsonObject }
-            .getOrElse { throw IllegalArgumentException("invalid ${kind.wire} OAuth account file", it) }
-        val fileKind = (raw[FIELD_KIND] as? JsonPrimitive)?.content
-        val fileLabel = (raw[FIELD_LABEL] as? JsonPrimitive)?.content
-        require(fileKind == kind.wire) { "pooled OAuth account file has the wrong auth kind" }
-        require(fileLabel == label) { "pooled OAuth account file does not match its filename" }
-        return account(label, path, poolDir, primary = false)
-    }
-
     private fun account(label: String, path: Path, poolDir: Path, primary: Boolean): OAuthAccountFile =
         OAuthAccountFile(
             label,
@@ -186,8 +181,6 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
     }
 
     private fun refuse(reason: String): Nothing = throw OAuthAccountRefused(reason)
-
-    private fun requireLabel(label: String) = writes.requireLabel(label)
 }
 
 /** Non-PII defaults used when login was not given --label. */

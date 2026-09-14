@@ -16,20 +16,29 @@
   edited while the sign-in and checks ran is left alone and the command says to rerun; and when the
   daemon restart that was asked for fails, the command exits non-zero (the head is saved and
   `splice restart` is named) instead of printing a launch line for a head the daemon does not serve.
+  A config saved without a trailing newline is not "changed" on every run; a flag followed by
+  another flag (`--model --yes`) is a missing value, never a model named `--yes`; a config with no
+  head yet gets the first head port.
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
   `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
   an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
   candidate's own doctor, waits until every head's in-flight count on `/api/heads` is zero (or
   `--now`), repoints the live jar, restarts the user unit when one supervises this install, and
   runs doctor. A launch shim edited since its release was installed is kept and its diff printed,
-  never overwritten. `--rollback` repoints at the previous release, kept until the next successful
+  never overwritten. Release downloads follow same-scheme redirects only (an HTTPS to HTTP step
+  would carry the jar and its sums over the same downgraded hop); every process the upgrade runs
+  (`gh attestation verify` included) has a deadline; `--rollback --to` is refused instead of the
+  version being ignored; install.sh records the release it replaces as `previous`, so the first
+  rollback after an install has somewhere to go; temp links are named per process and instant.
+  `--rollback` repoints at the previous release, kept until the next successful
   upgrade. Config and credentials live elsewhere and are never touched; a failed verification
   activates nothing. `install.sh` keeps the pristine release copy the comparison needs.
 - **`splice sessions` and `/api/sessions`.** The Claude Code sessions on this machine
   (`~/.claude/sessions/*.json`) joined to the head that launched each, with live / stale / gone
   derived from the pid and the last update rather than the file's own status, and the copyable
-  `SendMessage` line per live session. Read-only; headless `claude -p` runs never register and the
-  footer says so.
+  `SendMessage` line per live session. A live pid whose process started long after the
+  registration is a reused pid and reads as gone. Read-only; headless `claude -p` runs never
+  register and the footer says so.
 - **`splice perf [--window 1h|24h|7d]` and `/api/perf/summary`.** Per head: p50/p95/max of time
   before first byte, time streaming and total, outcomes by tag, failure share overall and per
   outcome tag (rows whose outcome cannot be read are shown as unattributed, never as failures),
@@ -81,7 +90,11 @@
   earliest reset. A credential is only ever used by the kind it carries; a mislabeled file is refused.
   The upstream wait budget of a turn counts from the drive's start, beside the watchdog, never
   from admission: time queued behind the inflight gate is no longer charged to the provider, so a
-  turn that waited longer than the cap still makes its first upstream call.
+  turn that waited longer than the cap still makes its first upstream call. On a pooled head the
+  status line draws each window from the selected account's own tracker first and the client's
+  headers fill only a window the tracker lacks; a locally answered side query carries the session's
+  selected account's quota, not the primary's; an account's headers ride on top of the provider's,
+  never instead of them; and a 401 from `/api/auth` reads as a failed read, not "no pools".
   The status line, `splice status` and `splice doctor` name the account in use and the last switch.
   Labeled credential files are read without following symlinks (a linked file is skipped, its
   ordinal stays occupied), matching how they are written; the primary file is resolved as before.
@@ -111,7 +124,11 @@
   working directory without naming it belongs in `mcp_hosting_exclude`. A server whose last
   session ended is idle from then, not from forever, so the next session reuses the process
   instead of the next sweep killing it; a server mid-initialize is never swept; and a reservation
-  taken by an initialize always ends, so capacity can no longer leak until restart.
+  taken by an initialize always ends, so capacity can no longer leak until restart. A client's
+  progress token is private to its session: the child sees the host's request id and the progress
+  notification goes back to that one session with the client's token restored. A second crash in a
+  row waits before respawning (5 s, 10 s, ... 60 s; calls in between fail in words); a child that
+  ignores TERM is torn down outside the registry lock, so the other servers keep answering.
 - **Local models are first-class on the `openai-chat` dialect.** A provider on a loopback
   `base_url` is local by default (`local = true|false` overrides). At boot and in doctor splice asks
   the runtime what it serves (Ollama `/api/version`, `/v1/models`, `/api/show`, `/api/ps`; LM Studio

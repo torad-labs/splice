@@ -68,8 +68,9 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
     /** Symlink swap: a sibling temp link, then ONE rename — the name never dangles, and a regular
      *  file at [link] (the flat install's jar) is replaced the same way. */
     fun point(link: Path, target: Path) {
-        val tmp = link.resolveSibling(link.fileName.toString() + ".upgrade-tmp")
-        Files.deleteIfExists(tmp)
+        // Named per process and instant: two upgrades racing on one install never share a temp link.
+        val stamp = "${ProcessHandle.current().pid()}-${System.nanoTime()}"
+        val tmp = link.resolveSibling("${link.fileName}.upgrade-$stamp.tmp")
         Files.createSymbolicLink(tmp, target)
         Files.move(tmp, link, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }

@@ -21,7 +21,9 @@ internal fun interface UpgradeFetch {
 }
 
 internal class JdkUpgradeFetch(
-    private val client: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build(),
+    // NORMAL, not ALWAYS: a release redirect that stepped down from HTTPS to HTTP would carry the
+    // jar AND the sums it is checked against over the same downgraded hop (review 2026-09-14).
+    private val client: HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
 ) : UpgradeFetch {
     override fun invoke(url: String): ByteArray? = Cancellables.runCatchingCancellable {
         if (url.startsWith("file:")) {

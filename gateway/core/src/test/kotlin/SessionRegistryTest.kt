@@ -15,10 +15,11 @@ class SessionRegistryTest {
         Files.writeString(dir.resolve("$pid.json"), body)
     }
 
-    private fun registry(dir: Path, alive: Set<Long>) = SessionRegistry(
+    private fun registry(dir: Path, alive: Set<Long>, started: Map<Long, Long> = emptyMap()) = SessionRegistry(
         sessionsDir = dir,
         headOf = { pid -> if (pid == 11L) "claudex" else null },
         pidAlive = { it in alive },
+        pidStartedAt = { started[it] },
         clock = { now },
         staleAfterMs = 60_000L,
     )
@@ -37,6 +38,19 @@ class SessionRegistryTest {
         assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability)
         assertEquals(SessionAvailability.GONE, rows.getValue(13L).availability)
         assertEquals("busy", rows.getValue(13L).status)
+    }
+
+    @Test
+    fun `a live pid whose process is younger than the registration is a reused pid, so GONE`(@TempDir dir: Path) {
+        val day = 86_400_000L
+        write(dir, 11, """{"pid":11,"updatedAt":$now,"startedAt":${now - 10_000}}""")
+        write(dir, 12, """{"pid":12,"updatedAt":$now,"startedAt":${now - day}}""")
+        write(dir, 13, """{"pid":13,"updatedAt":$now,"startedAt":${now - day}}""")
+        val started = mapOf(11L to now - 20_000, 12L to now - 60_000)
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L), started = started).read().associateBy { it.pid }
+        assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "process older than the session")
+        assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "process a day younger: reused pid")
+        assertEquals(SessionAvailability.LIVE, rows.getValue(13L).availability, "unknown start time: trusted")
     }
 
     @Test

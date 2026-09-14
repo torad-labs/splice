@@ -19,7 +19,7 @@ import java.io.IOException
  *  the eviction victim, and eviction resumes once the reservation is released (review 3). */
 class HostedServersTest {
 
-    private val global = Json.parseToJsonElement(
+    private var global = Json.parseToJsonElement(
         """{"a":{"command":"srv-a"},"b":{"command":"srv-b"}}""",
     ).jsonObject
 
@@ -38,12 +38,16 @@ class HostedServersTest {
     }
 
     @Test
-    fun `a server unbound between acquire and release still ends its reservation`() {
+    fun `a tuple replaced between acquire and release still ends its reservation`() {
         val servers = registry()
+        val original = global
         val a = servers.acquire("a")
-        servers.close("a", "swept mid-handshake")
-        assertTrue(!servers.release("a", a), "no longer bound")
+        global = Json.parseToJsonElement("""{"a":{"command":"srv-replacement"}}""").jsonObject
+        val replacement = servers.acquire("a")
+        assertTrue(!servers.release("a", a), "old tuple no longer bound")
+        assertTrue(!servers.release("a", replacement), "replacement never launched")
         assertTrue(!servers.reserved("a"))
+        global = original
         val again = servers.acquire("a")
         assertTrue(servers.reserved("a"))
         assertTrue(!servers.release("a", again), "never launched, so not alive")

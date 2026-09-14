@@ -16,12 +16,35 @@ class McpSessionsTest {
     @Test
     fun `a full stream collapses the backlog to the list invalidations plus the newest notification`() {
         val session = sessions.create(SERVER, buildJsonObject {})
-        repeat(BUFFER + 1) { sessions.fanOut(SERVER, """{"n":$it}""") }
+        val newest = """{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"""
+        repeat(BUFFER + 1) { sessions.fanOut(SERVER, newest) }
         val drained = generateSequence { session.stream.tryReceive().getOrNull() }.toList()
         val invalidations = listOf("tools", "prompts", "resources").map {
             """{"jsonrpc":"2.0","method":"notifications/$it/list_changed"}"""
         }
-        assertEquals(invalidations + """{"n":$BUFFER}""", drained)
+        assertEquals(invalidations + newest, drained)
+    }
+
+    @Test
+    fun `resource update overflow ends the session with an explicit error instead of false invalidations`() {
+        val session = sessions.create(SERVER, buildJsonObject {})
+        val update = """{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"test:item"}}"""
+        repeat(BUFFER + 1) { sessions.fanOut(SERVER, update) }
+        val drained = generateSequence { session.stream.tryReceive().getOrNull() }.toList()
+        assertEquals(1, drained.size)
+        assertTrue(drained.single().contains("overflow"), drained.toString())
+        assertTrue(session.stream.tryReceive().isClosed)
+        assertEquals(null, sessions.get(SERVER, session.id), "next request must reinitialize")
+    }
+
+    @Test
+    fun `eviction activity includes the time the last session ended`() {
+        var now = 100L
+        val timed = McpSessions(HostClock { now })
+        val session = timed.create(SERVER, buildJsonObject {})
+        now = 200L
+        timed.end(SERVER, session.id)
+        assertEquals(200L, timed.lastActivity(SERVER))
     }
 
     @Test

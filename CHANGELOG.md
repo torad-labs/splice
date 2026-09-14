@@ -180,6 +180,20 @@
   notification goes back to that one session with the client's token restored. A second crash in a
   row waits before respawning (5 s, 10 s, ... 60 s; calls in between fail in words); a child that
   ignores TERM is torn down outside the registry lock, so the other servers keep answering.
+  The generated hosted-MCP configuration (and the benchmark) carries a domain-separated HMAC
+  bearer accepted only on `/mcp/*`; a management bearer still works there. This keeps management
+  authority out of generated MCP headers, NOT out of the head process: a head still receives
+  `ANTHROPIC_AUTH_TOKEN`, which a passthrough child may inherit, and daemon-hosted children
+  inherit the daemon's environment, so no environment-isolation claim is made. Only list-change
+  notifications coalesce; an overflowed backlog of anything else invalidates the MCP session and
+  requires reinitialization on its next request, sessions without an open GET stream included,
+  and a closed overflow pump releases its stream accounting immediately. A malformed config entry
+  (a non-string transport type, a non-string member in `args` or `env`) passes through whole with
+  the reason, never hosted with a different launch tuple; the respawn backoff exponent is clamped;
+  every child's shutdown shares one 2 s budget behind a stopped-host barrier; a child's stderr is
+  drained bounded and only its presence is logged. Benchmark measurement failures are scoped to
+  demonstrated workload lineage, not unrelated system processes, and a benchmark run bounds its
+  client waits, cleans its owned children on every exit and refuses a receipt without the jar hash.
 - **Local models are first-class on the `openai-chat` dialect.** A provider on a loopback
   `base_url` is local by default (`local = true|false` overrides). At boot and in doctor splice asks
   the runtime what it serves (Ollama `/api/version`, `/v1/models`, `/api/show`, `/api/ps`; LM Studio

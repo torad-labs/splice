@@ -55,7 +55,7 @@ private val LOCATION_FLAG =
     Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|folder|home|base-?dir|work-?dir)")
 private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
 
-/** The control plane's bearer at plan time (the mgmt key may be minted after the planner exists). */
+/** The MCP-scoped bearer at plan time; generated client configs must not carry management authority. */
 public fun interface McpBearer {
     public operator fun invoke(): String
 }
@@ -111,6 +111,7 @@ public class McpSharing(
     private fun rejection(name: String, entry: Entry): String? = when {
         name in exclude -> "excluded by [daemon] mcp_hosting_exclude"
         entry.obj == null -> "entry is not an object"
+        entry.malformed != null -> entry.malformed
         entry.type != null && entry.type != "stdio" -> "transport '${entry.type}' already serves many clients"
         entry.command == null -> "no command"
         entry.obj.containsKey("cwd") -> "has a cwd (session-scoped)"
@@ -160,6 +161,16 @@ public class McpSharing(
         val args: List<String> = (obj?.get("args") as? JsonArray)?.mapNotNull { str(it) } ?: emptyList()
         val env: Map<String, String> =
             (obj?.get("env") as? JsonObject)?.mapNotNull { (k, v) -> str(v)?.let { k to it } }?.toMap() ?: emptyMap()
+        val malformed: String? = when {
+            obj?.containsKey("type") == true && type == null -> "malformed transport type"
+            obj?.containsKey("args") == true &&
+                (obj["args"] !is JsonArray || (obj["args"] as JsonArray).any { str(it) == null }) ->
+                "malformed args (expected only strings)"
+            obj?.containsKey("env") == true &&
+                (obj["env"] !is JsonObject || (obj["env"] as JsonObject).values.any { str(it) == null }) ->
+                "malformed env (expected string values)"
+            else -> null
+        }
     }
 
     private fun str(e: JsonElement?): String? = (e as? JsonPrimitive)?.takeIf { it.isString }?.content

@@ -24,6 +24,19 @@ class DoctorRedactionTest {
     }
 
     @Test
+    fun `a JSON-quoted credential key masks its short quoted value and keeps the structure`() {
+        val body = """{"refresh_token":"1//0eXk3-abcDEF_ghij","api_key": "AIzaSyA-short-one","note":"kept"}"""
+        val out = redaction.text(body)
+        listOf("1//0eXk3-abcDEF_ghij", "AIzaSyA-short-one").forEach {
+            assertFalse(out.contains(it), "$it leaked: $out")
+        }
+        assertTrue(out.contains(""""refresh_token":"<redacted>""""), out)
+        assertTrue(out.contains(""""api_key": "<redacted>""""), out)
+        assertTrue(out.contains(""""note":"kept"}"""), "the value after the secret survives: $out")
+        assertEquals("token=<redacted> next", redaction.text("token=abc,def next"), "unquoted: masked to the space")
+    }
+
+    @Test
     fun `long opaque tokens and UUID-shaped ids are masked while ordinary words survive`() {
         val out = redaction.text(
             "session 0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b key AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij done",

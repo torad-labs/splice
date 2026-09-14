@@ -99,8 +99,14 @@ private object LoginProcesses {
 
     /** The shim's exact invocation (`java -jar <jar> login <head>`, a real java executable), waiting;
      *  [hookStarted] marks it the way the hook marks every login it spawns. */
-    fun pendingLogin(recorder: Path, jar: Path, ignoreTerm: Boolean, hookStarted: Boolean = true): Process {
-        val argv = mutableListOf(javaBin, "-jar", jar.toString(), "login", recorder.toString())
+    fun pendingLogin(
+        recorder: Path,
+        jar: Path,
+        ignoreTerm: Boolean,
+        hookStarted: Boolean = true,
+        word: String = recorder.toString(),
+    ): Process {
+        val argv = mutableListOf(javaBin, "-jar", jar.toString(), "login", word)
         if (ignoreTerm) argv += "stubborn"
         val builder = ProcessBuilder(argv)
         if (hookStarted) builder.environment()["SPLICE_LOGIN_ORIGIN"] = "hook"
@@ -175,6 +181,7 @@ class LoginHookScriptSafetyTest {
         sentinel = "SPLICE_CODEX_LOGIN",
         outcomeFile = "/nonexistent/receipt",
         canCapturePaste = false,
+        headKey = "codex",
     )
 
     private fun recorder(dir: Path): Path {
@@ -409,6 +416,41 @@ class LoginHookScriptSafetyTest {
             assertTrue(!Files.exists(tmp.resolve("args.txt")), "nothing was started")
         } finally {
             terminal.destroyForcibly()
+        }
+    }
+
+    @Test
+    fun `a sign-in spelled with the head key is found under either origin - review 2026-09-14`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val recorder = recorder(tmp)
+        val hook = write(tmp, "login-key.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
+        val jar = LoginProcesses.parkJar(tmp)
+        val env = mapOf("SPLICE_JAR" to jar.toString())
+        // `splice login codex` in a terminal: named and left alone, nothing started.
+        val terminal =
+            LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, hookStarted = false, word = "codex")
+        try {
+            Thread.sleep(500)
+            val reason = decision(run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env))
+            assertTrue(reason.startsWith("A Codex (ChatGPT) sign-in started outside this session"), reason)
+            Thread.sleep(300)
+            assertTrue(terminal.isAlive, "the terminal sign-in was signalled")
+            assertTrue(!Files.exists(tmp.resolve("args.txt")), "nothing was started")
+        } finally {
+            terminal.destroyForcibly()
+            terminal.waitFor(5, TimeUnit.SECONDS)
+        }
+        // The same spelling started by a hook: cancelled, and a fresh sign-in starts.
+        val pending = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, word = "codex")
+        try {
+            Thread.sleep(500)
+            val reason = decision(run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env))
+            val cancelled = "A previous Codex (ChatGPT) sign-in was still waiting and was cancelled."
+            assertTrue(reason.startsWith(cancelled), reason)
+            assertTrue(pending.waitFor(5, TimeUnit.SECONDS), "the pending sign-in was killed")
+            assertEquals(listOf("login"), recordedArgs(tmp), "and a fresh one was started")
+        } finally {
+            pending.destroyForcibly()
         }
     }
 

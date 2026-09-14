@@ -38,6 +38,9 @@ public data class MaterializeSpec(
     /** Absolute path of this head's login receipt (LoginOutcomeFile). Empty disables the
      *  in-session confirmation — the detached sign-in still works, it just cannot report back. */
     val loginOutcomeFile: String = "",
+    /** The head's topology key ("codex"): `splice login <key>` and `<wrapper> login` name the same
+     *  sign-in, and the /login hook must find it under either spelling (review 2026-09-14). */
+    val headKey: String = "",
     // Install the SessionStart key-missing advertiser. The daemon sets this only while the head's
     // key is unconfigured and re-materializes on every launch, so the advertiser removes itself
     // once the key lands. Requires tokenCapture for the paste instruction to be true.

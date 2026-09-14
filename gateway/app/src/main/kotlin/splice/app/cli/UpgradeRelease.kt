@@ -38,10 +38,10 @@ internal class UpgradeRelease(
     fun stage(base: String, staging: Path): String {
         val remote = !base.startsWith("file:")
         if (remote) requireAuthedGh()
-        val sums = String(fetch("$base/$SUMS_ASSET") ?: refuse("no $SUMS_ASSET at $base"))
+        val sums = String(fetched(base, SUMS_ASSET))
         Files.createDirectories(staging)
         for (asset in listOf(JAR_ASSET, SHIM_ASSET)) {
-            val bytes = fetch("$base/$asset") ?: refuse("no $asset at $base")
+            val bytes = fetched(base, asset)
             verifySum(asset, bytes, sums)
             val file = Files.write(staging.resolve(asset), bytes)
             if (remote) attest(file, asset)
@@ -50,6 +50,14 @@ internal class UpgradeRelease(
         }
         Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
         return validate(staging.resolve(JAR_ASSET))
+    }
+
+    /** Absent (null) and failed (a status class, a transport class) are different refusals: a 403
+     *  or a DNS failure is not "no asset", and the operator's next step differs (review 2026-09-14). */
+    private fun fetched(base: String, asset: String): ByteArray = try {
+        fetch("$base/$asset") ?: refuse("no $asset at $base")
+    } catch (failed: UpgradeFetchFailed) {
+        refuse("fetching $asset from $base failed: ${failed.why}")
     }
 
     private fun requireAuthedGh() {

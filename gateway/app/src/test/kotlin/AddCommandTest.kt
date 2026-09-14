@@ -14,6 +14,8 @@ import splice.app.cli.AddHttp
 import splice.app.cli.AddHttpReply
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.EnvReader
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,6 +49,8 @@ class AddCommandTest {
         daemonUp: Boolean = false,
         restartOk: Boolean = true,
         editConfigDuringLogin: Boolean = false,
+        deleteConfigDuringLogin: Boolean = false,
+        answers: Map<String, ArrayDeque<String>> = emptyMap(),
     ) = AddCommand(
         checks = AddChecks(http),
         login = { key, provider, _ ->
@@ -55,6 +59,7 @@ class AddCommandTest {
                 installed += "login:$key"
             }
             if (editConfigDuringLogin) Files.writeString(config(), Files.readString(config()) + EDIT)
+            if (deleteConfigDuringLogin) Files.delete(config())
             login
         },
         install = { key, _ ->
@@ -66,7 +71,7 @@ class AddCommandTest {
             restartOk
         },
         daemonUp = { daemonUp },
-        prompt = { _, default -> default },
+        prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
     )
 
     private fun authFile(kind: String): Path {
@@ -180,6 +185,48 @@ class AddCommandTest {
         val failing = command(http(routes), daemonUp = true, restartOk = false)
         assertFalse(runBlocking { failing.add(listOf("codex", "--yes"), env) }, "asked-for restart failed")
         assertTrue(Files.readString(config()).contains("[heads.codex]"), "but the head is saved for splice restart")
+    }
+
+    @Test
+    fun `a config deleted while the sign-in ran is refused, not recreated from the stale candidate`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        starter()
+        val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
+        val racing = command(http(routes), daemonUp = true, deleteConfigDuringLogin = true)
+        val out = capture { assertFalse(runBlocking { racing.add(listOf("codex", "--yes"), env) }) }
+        assertTrue(out.contains("could not be read again"), out)
+        assertFalse(Files.exists(config()), "a rename must not recreate the file from the stale candidate")
+        assertEquals(0, restarted)
+    }
+
+    @Test
+    fun `a typed context window that is not a positive integer is asked again, three misses refuse the add`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val args = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1", "--yes")
+        val retried = command(
+            http(fwRoutes),
+            answers = mapOf(
+                "model id (blank when done):" to ArrayDeque(listOf("m", "")),
+                "context window for m:" to ArrayDeque(listOf("32k", "99999999999999999999", "64000")),
+            ),
+        )
+        assertTrue(runBlocking { retried.add(args, env) })
+        val window = TopologyLoader.parse(Files.readString(config())).providers.getValue("fw").models.single()
+        assertEquals(64_000L, window.contextWindow, "the third answer, never the 128000 default")
+        Files.writeString(config(), before)
+        val refused = command(
+            http(fwRoutes),
+            answers = mapOf(
+                "model id (blank when done):" to ArrayDeque(listOf("m", "")),
+                "context window for m:" to ArrayDeque(listOf("32k", "1.5", "-3", "64000")),
+            ),
+        )
+        val out = capture { assertFalse(runBlocking { refused.add(args, env) }) }
+        assertTrue(out.contains("must be a positive integer"), out)
+        assertEquals(before, Files.readString(config()), "nothing written")
     }
 
     @Test
@@ -309,5 +356,17 @@ class AddCommandTest {
             listOf("--model", "m:1000", "--command", "openrouter", "--yes")
         assertFalse(runBlocking { command(http(fwRoutes)).add(collide, env) })
         assertEquals(implicit, Files.readString(config()))
+    }
+
+    private fun capture(block: () -> Unit): String {
+        val buf = ByteArrayOutputStream()
+        val original = System.out
+        System.setOut(PrintStream(buf, true))
+        try {
+            block()
+        } finally {
+            System.setOut(original)
+        }
+        return buf.toString()
     }
 }

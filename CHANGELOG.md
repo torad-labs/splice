@@ -19,7 +19,10 @@
   A config saved without a trailing newline is not "changed" on every run; a flag followed by
   another flag (`--model --yes`) is a missing value, never a model named `--yes`; a config with no
   head yet gets the first head port. A model id given twice is refused (the catalog keys rows by
-  id, so the second window would silently win).
+  id, so the second window would silently win). A config that cannot be read again at save time
+  (deleted or replaced meanwhile) is refused, never recreated from the stale candidate; a typed
+  context window that is not a positive integer (`32k`, a decimal, a number past Long) is asked
+  again instead of silently becoming 128000, and three misses refuse the add.
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
   `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
   an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
@@ -45,7 +48,12 @@
   rollback after an install has somewhere to go; temp links are named per process and instant.
   `--rollback` repoints at the previous release, kept until the next successful
   upgrade. Config and credentials live elsewhere and are never touched; a failed verification
-  activates nothing. `install.sh` keeps the pristine release copy the comparison needs.
+  activates nothing. `install.sh` keeps the pristine release copy the comparison needs. One
+  upgrade runs at a time per install (an OS lock under `releases/`; a second run is refused before
+  it fetches anything, so two runs can never prune each other's release). A download that fails
+  (DNS, TLS, a timeout, a 403 or 5xx) is refused by its class, never reported as a missing asset.
+  An activation that began without a live shim and failed removes the shim it wrote. `install.sh`
+  reads the `previous` link back after writing it and warns when something else is in its way.
 - **`splice sessions` and `/api/sessions`.** The Claude Code sessions on this machine
   (`~/.claude/sessions/*.json`) joined to the head that launched each, with live / stale / gone
   derived from the pid and the last update rather than the file's own status, and the copyable
@@ -55,7 +63,9 @@
   Liveness reads the identity Claude Code writes beside the pid: a registration from another pid
   domain (a container sharing `~/.claude`) or a pid whose kernel start time is not the registered
   one (reused after the session exited) is GONE, so a stranger's process is never listed live or
-  read for its head.
+  read for its head. A sessions directory that exists but cannot be listed (a permission failure,
+  a file in its place) is reported by the command (non-zero) and the API (`error`), never read
+  as no sessions; a missing directory is genuinely none.
 - **`splice perf [--window 1h|24h|7d]` and `/api/perf/summary`.** Per head: p50/p95/max of time
   before first byte, time streaming and total, outcomes by tag, failure share overall and per
   outcome tag (rows whose outcome cannot be read are shown as unattributed, never as failures),
@@ -64,7 +74,9 @@
   is missing; a restart whose counter catches up hides its drops). A window the rotated perf files
   cannot reach back to is reported clamped, with how far they reach; a quiet window over files that
   do reach past it is sparse traffic, not a clamp; no rows at all says so; a perf file that cannot
-  be read is reported as a read error with the coverage marked unknown, never as short retention.
+  be read is reported as a read error with the coverage marked unknown, never as short retention;
+  a file whose every line is unparseable says "no valid perf rows read" with the skipped count
+  (`skipped_lines`), never "no perf rows recorded yet".
   Empty data is reported as empty, never as zero-latency traffic. Reads stream the
   files, never hold a generation whole, and a rotation during the read is read again. `splice
   perf` is read-only and refuses malformed flags.
@@ -186,6 +198,9 @@
   and serves `qwen3`), and a generic OpenAI-compatible server's model list (a proxy's aliases, a
   llama-server file path, listing turned off) is not authoritative, so an unlisted row there is
   trusted rather than refusing the head at boot; a refusal now names `local = false` as the opt-out.
+  The live probe proves a tool call by shape (a `choices[0]` delta or message whose `tool_calls`
+  names `ping`), never by marker strings an error chunk could carry, and a non-200 reply is
+  described by its status class and size only, its body never printed into the doctor.
 - **Version-drift warning.** `Versions.kt` records the Claude Code version the fresh-machine e2e
   ran against; the daemon reads the client version from the `User-Agent` already on every request,
   and when a session's Claude Code is newer than that, doctor, `splice status` and the status line

@@ -88,6 +88,7 @@ internal class LaunchSpecFactory(
             // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
             // key), or a detached sign-in reports into a file nothing reads.
             loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),
+            headKey = key,
             advertiseKeySetup = signIn.tokenCapture != null,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,

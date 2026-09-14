@@ -31,9 +31,12 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
 
     private val jwt = Regex("eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}")
     private val bearer = Regex("(?i)\\bbearer\\s+\\S+")
+
+    // The key may be JSON-quoted ("refresh_token": "...") and the value quoted; the quotes and the
+    // separator are kept, the value is masked up to the next whitespace or quote (review 2026-09-14).
     private val keyValue = Regex(
         "(?i)\\b([a-z0-9_-]*(?:key|token|secret|password|passwd|pwd|cookie|signature|credential|authorization)" +
-            "[a-z0-9_-]*)(\\s*[=:]\\s*)\\S+",
+            "[a-z0-9_-]*)(\"?\\s*[=:]\\s*\"?)[^\\s\"']+",
     )
     private val providerKey = Regex("\\b(sk|xai|gsk|xoxb|ghp|github_pat)[-_][A-Za-z0-9_-]{8,}")
     private val email = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")

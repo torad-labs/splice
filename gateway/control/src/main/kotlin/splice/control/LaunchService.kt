@@ -60,6 +60,7 @@ public class LaunchService(
                 tokenCapture = effective.tokenCapture,
                 advertiseKeySetup = effective.advertiseKeySetup,
                 loginOutcomeFile = effective.loginOutcomeFile,
+                headKey = effective.headKey,
             ),
         )
         val env = buildEnv(effective, slots)

@@ -3,6 +3,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.compaction.SessionProject
+import splice.core.util.ElapsedClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -71,10 +72,62 @@ class SessionProjectTest {
         val cwd = tmp.resolve("cached-project").toAbsolutePath()
         val registry = sessions.resolve("worker.json")
         Files.writeString(registry, """{"sessionId":"cached","cwd":"$cwd"}""")
-        val resolver = SessionProject(sessions, projects)
+        var now = 0L
+        val resolver = SessionProject(sessions, projects, ElapsedClock { now })
 
         assertEquals(cwd.normalize(), resolver.projectFor("cached"))
         Files.delete(registry)
+        now = 60_000L
+        assertEquals(cwd.normalize(), resolver.projectFor("cached"))
+    }
+
+    @Test
+    fun `negative lookup avoids rescans until its original TTL expires`() {
+        val sessions = Files.createDirectories(tmp.resolve("sessions"))
+        val projects = Files.createDirectories(tmp.resolve("projects"))
+        val cwd = tmp.resolve("new-project").toAbsolutePath()
+        var now = 0L
+        val resolver = SessionProject(sessions, projects, ElapsedClock { now })
+
+        assertNull(resolver.projectFor("new"))
+        Files.writeString(sessions.resolve("new.json"), """{"sessionId":"new","cwd":"$cwd"}""")
+        now = 4_999L
+        assertNull(resolver.projectFor("new"), "a rescan would already see the new registry entry")
+        now = 5_000L
+        assertEquals(cwd.normalize(), resolver.projectFor("new"), "a cache hit must not renew the TTL")
+    }
+
+    @Test
+    fun `failed directory lookup can recover through a new transcript after the TTL`() {
+        val sessions = tmp.resolve("sessions")
+        val projects = tmp.resolve("projects")
+        val cwd = tmp.resolve("headless-project").toAbsolutePath()
+        var now = 0L
+        val resolver = SessionProject(sessions, projects, ElapsedClock { now })
+        assertNull(resolver.projectFor("headless"))
+
+        val encoded = Files.createDirectories(projects.resolve("-headless-project"))
+        Files.writeString(encoded.resolve("headless.jsonl"), """{"sessionId":"headless","cwd":"$cwd"}""")
+        assertNull(resolver.projectFor("headless"))
+        now = 5_000L
+        assertEquals(cwd.normalize(), resolver.projectFor("headless"))
+    }
+
+    @Test
+    fun `negative cache evicts its oldest entry at capacity without forgetting a positive lookup`() {
+        val sessions = Files.createDirectories(tmp.resolve("sessions"))
+        val projects = Files.createDirectories(tmp.resolve("projects"))
+        val cwd = tmp.resolve("cached-project").toAbsolutePath()
+        val registry = sessions.resolve("worker.json")
+        Files.writeString(registry, """{"sessionId":"cached","cwd":"$cwd"}""")
+        val resolver = SessionProject(sessions, projects, ElapsedClock { 0L })
+        assertEquals(cwd.normalize(), resolver.projectFor("cached"))
+        Files.delete(registry)
+        assertNull(resolver.projectFor("oldest"))
+        repeat(1_024) { assertNull(resolver.projectFor("missing-$it")) }
+
+        Files.writeString(registry, """{"sessionId":"oldest","cwd":"$cwd"}""")
+        assertEquals(cwd.normalize(), resolver.projectFor("oldest"))
         assertEquals(cwd.normalize(), resolver.projectFor("cached"))
     }
 }

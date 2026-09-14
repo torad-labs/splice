@@ -95,7 +95,11 @@
   status line draws each window from the selected account's own tracker first and the client's
   headers fill only a window the tracker lacks; a locally answered side query carries the session's
   selected account's quota, not the primary's; an account's headers ride on top of the provider's,
-  never instead of them; and a 401 from `/api/auth` reads as a failed read, not "no pools".
+  never instead of them; and a 401 from `/api/auth` reads as a failed read, not "no pools". A file
+  in a pool directory that is not a credential at all (unparseable, or without a kind) is skipped
+  with one diagnostic naming it instead of taking the whole head down; a credential that declares
+  the wrong kind or label is still refused. Per-session account stickiness is kept for at most
+  4096 sessions, least recently used first out.
   The status line, `splice status` and `splice doctor` name the account in use and the last switch.
   Labeled credential files are read without following symlinks (a linked file is skipped, its
   ordinal stays occupied), matching how they are written; the primary file is resolved as before.
@@ -107,7 +111,10 @@
   request prefix is byte-identical with and without it. `/api/compact` shows the effective text and
   its source.
   A `[[compaction.project]]` path may start with `~/`, and a relative one resolves under the
-  topology directory, exactly like `file =`; a tilde no longer stops the daemon at boot.
+  topology directory, exactly like `file =`; a tilde no longer stops the daemon at boot. A session
+  whose project cannot be resolved is not looked up again for 5 seconds (a hit is never cached as
+  a miss, so a new registry entry becomes visible). On the `openai-chat` wire the instructions
+  extend a trailing user message instead of adding a second user message after it.
 - **Shared MCP hosting.** stdio MCP servers that do not depend on a project directory or client
   roots are started once by the daemon and served to every session over Streamable HTTP on
   loopback (`/mcp/<name>`, one MCP session per client session, JSON-RPC ids remapped, notifications

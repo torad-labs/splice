@@ -294,6 +294,39 @@ class AccountPoolTest {
     }
 
     @Test
+    fun `sticky session capacity evicts the least recently used without changing an issued turn`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true, five = 100.0)
+        val backup = fixture.account("plus-a")
+        val pool = fixture.pool(primary, backup)
+        val issued = pool.select("session-1")
+        pool.select("session-0")
+        for (i in 2 until 4_096) pool.select("session-$i")
+        assertFalse(pool.select("session-1").cacheCold)
+
+        pool.select("overflow")
+
+        assertEquals(null, pool.view("session-0").selectedLabel)
+        assertEquals("plus-a", pool.view("session-1").selectedLabel)
+        assertSame(backup, issued.account)
+        assertTrue(pool.select("session-0").cacheCold, "an evicted session starts relative to primary again")
+        assertEquals(null, pool.view("session-2").selectedLabel)
+    }
+
+    @Test
+    fun `concurrent distinct sessions cannot grow stickiness past its capacity`() = runBlocking {
+        val fixture = Fixture()
+        val pool = fixture.pool(fixture.account("primary", primary = true))
+        val ids = List(4_160) { "session-$it" }
+
+        ids.map { id -> async(Dispatchers.Default) { pool.select(id) } }.awaitAll()
+
+        assertEquals(4_096, ids.count { pool.view(it).selectedLabel != null })
+        pool.reset()
+        assertTrue(ids.all { pool.view(it).selectedLabel == null })
+    }
+
+    @Test
     fun `pool views are masked and reset clears runtime state`() = runBlocking {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)

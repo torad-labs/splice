@@ -2,11 +2,13 @@
 package splice.spi
 
 import splice.core.usage.QuotaWindow
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 private const val FULLY_USED = 100.0
 private const val MS_PER_SECOND = 1_000L
+private const val MAX_TRACKED_SESSIONS = 4_096
+private const val SESSION_MAP_CAPACITY = 16
+private const val SESSION_MAP_LOAD = 0.75f
 
 /** A head-local OAuth account pool. A returned [AccountSelection] is immutable for the whole turn. */
 public class AccountPool(
@@ -16,7 +18,10 @@ public class AccountPool(
     private val accounts = accounts.toList()
     private val byLabel = accounts.associateBy(PoolAccount::label)
     private val primary = accounts.singleOrNull(PoolAccount::primary)
-    private val sessions = ConcurrentHashMap<String, SessionAccount>()
+
+    // Access order keeps active sessions sticky without retaining every session the daemon ever saw.
+    // Reads reorder the map too, so selection, views and reset share its monitor.
+    private val sessions = LinkedHashMap<String, SessionAccount>(SESSION_MAP_CAPACITY, SESSION_MAP_LOAD, true)
     private val headLastSwitch = AtomicReference<AccountSwitch?>(null)
     private val statelessLock = Any()
     private var statelessPrevious: SessionAccount? = null
@@ -32,13 +37,12 @@ public class AccountPool(
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         val at = now()
         if (sessionId == null) return selectStateless(at)
-        var selection: AccountSelection? = null
-        sessions.compute(sessionId) { _, previous ->
-            val chosen = selected(previous, at, sticky = true)
-            selection = chosen.first
-            chosen.second
+        return synchronized(sessions) {
+            val chosen = selected(sessions[sessionId], at, sticky = true)
+            sessions[sessionId] = chosen.second
+            if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
+            chosen.first
         }
-        return checkNotNull(selection)
     }
 
     private fun selectStateless(at: Long): AccountSelection = synchronized(statelessLock) {
@@ -68,7 +72,7 @@ public class AccountPool(
     /** Safe state for operator surfaces; null names head-wide state, never another session's choice. */
     public fun view(sessionId: String?): AccountPoolView {
         val at = now()
-        val session = sessionId?.let(sessions::get)
+        val session = synchronized(sessions) { sessionId?.let(sessions::get) }
         return AccountPoolView(
             selectedLabel = session?.label,
             accounts = accounts.map { account -> accountView(account, session?.label, at) },
@@ -78,7 +82,7 @@ public class AccountPool(
 
     /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. */
     public fun reset() {
-        sessions.clear()
+        synchronized(sessions) { sessions.clear() }
         synchronized(statelessLock) { statelessPrevious = null }
         headLastSwitch.set(null)
         accounts.forEach {

@@ -61,9 +61,19 @@ internal class HostedServers(
 
     /** Ends the reservation [acquire] took; true when [server] is still bound to [name] and alive. */
     fun release(name: String, server: HostedServer): Boolean = synchronized(lock) {
-        val id = servers.entries.firstOrNull { it.value === server }?.key
-        if (id != null) reserved[id] = ((reserved[id] ?: 1) - 1).takeIf { it > 0 } ?: 0
-        bindings[name] == id && id != null && server.alive
+        // The identity comes from the server itself, never from a scan of `servers`: a server
+        // unbound between acquire and release (a sweep, a tuple change) is no longer in the map,
+        // and its reservation must still end or eviction refuses newcomers until restart
+        // (review 2026-09-14). A count at zero leaves the map, so `reserved` cannot grow forever.
+        val id = server.identity
+        val left = (reserved[id] ?: 1) - 1
+        if (left > 0) reserved[id] = left else reserved.remove(id)
+        bindings[name] == id && servers[id] === server && server.alive
+    }
+
+    /** Is [name]'s server mid-initialize? The idle sweep must not close one that is (review 2026-09-14). */
+    fun reserved(name: String): Boolean = synchronized(lock) {
+        bindings[name]?.let { (reserved[it] ?: 0) > 0 } ?: false
     }
 
     fun close(name: String, reason: String) {

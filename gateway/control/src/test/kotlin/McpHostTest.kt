@@ -327,6 +327,24 @@ class McpHostTest {
         }
 
     @Test
+    fun `a server whose last session ended is idle from then, so the next session reuses it`(@TempDir dir: Path) =
+        runBlocking {
+            boot(dir)
+            val a = init()
+            val pid = text(call(a, 1, "echo", "x")).substringBefore(" ")
+            assertTrue(host.endSession("fake", a))
+            clock.now += 10.minutes.inWholeMilliseconds
+            host.sweep()
+            assertTrue(hosted("fake"), "no session, but the last one ended inside the idle window")
+            val b = init()
+            assertEquals(pid, text(call(b, 2, "echo", "y")).substringBefore(" "), "the same process serves")
+            assertTrue(host.endSession("fake", b))
+            clock.now += 60.minutes.inWholeMilliseconds
+            host.sweep()
+            assertFalse(hosted("fake"), "reaped once the idle window has passed since the last session")
+        }
+
+    @Test
     fun `at capacity the longest-idle streamless server is evicted for the newcomer`(@TempDir dir: Path) = runBlocking {
         boot(dir, maxServers = 1)
         val a = init("fake")

@@ -25,6 +25,15 @@ class McpSessionsTest {
     }
 
     @Test
+    fun `a server is busy for one idle window after its last session ends, then idle`() {
+        val session = sessions.create(SERVER, buildJsonObject {})
+        sessions.end(SERVER, session.id)
+        assertTrue(sessions.busy(SERVER, now = 5_000L, idleMillis = 10_000L))
+        assertTrue(!sessions.busy(SERVER, now = 10_000L, idleMillis = 10_000L))
+        assertTrue(!sessions.busy("other", now = 0L, idleMillis = 10_000L), "another server never ended a session")
+    }
+
+    @Test
     fun `below the buffer nothing is dropped or reordered`() {
         val session = sessions.create(SERVER, buildJsonObject {})
         repeat(BUFFER) { sessions.fanOut(SERVER, "$it") }

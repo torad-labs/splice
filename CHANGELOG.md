@@ -52,6 +52,9 @@
   (a bare login would sign the primary in again). The receipt for a labeled sign-in says the
   account is saved beside the primary and joins the pool after `splice restart`; only an unlabeled
   sign-in is "using the new credentials", because that is the only one this session switches to.
+  The hook proves the login command resolves BEFORE cancelling a waiting sign-in, and reports a
+  replacement that exits as soon as it starts; the launch shim marker is now `shim-3`, so an
+  installed shim from before the `--label` forwarding is reported stale by the daemon and doctor.
 - **`splice doctor --json [--with-logs] [--out FILE]`: a shareable, redacted report.** Schema
   version 1 carries the splice and Claude Code versions, OS and JVM, the topology's SHAPE
   (kinds, dialects, model ids and windows, quirk names, a host but never a URL with credentials),
@@ -67,7 +70,8 @@
   malformed flag prints usage and writes nothing. Nothing is uploaded.
 - **Automatic account switching when a provider's limits are hit.** `splice login <head> --label
   <name>` adds a second (third, ...) OAuth account of the same kind under
-  `~/.config/splice/auth/<kind>/<name>.json`; the first login stays the primary in the file it always
+  `~/.config/splice/auth/<kind>/<primary file>/<name>.json` (`chatgpt-oauth/codex.json/work.json` for the default
+  primary, so two same-kind heads never share a pool); the first login stays the primary in the file it always
   had, so nothing migrates. Selection is per turn and sticky per session: a session keeps its account
   until the provider reports it exhausted (a window at 100 % or a 429 whose reset outlasts the turn),
   then the next turn goes out on the pool account with the lowest seven-day usage whose five-hour
@@ -75,6 +79,9 @@
   in flight finishes where it started; the first turn after a switch is accounted as cache-cold and
   its perf row names the account. When every account is out the turn fails honestly, naming the
   earliest reset. A credential is only ever used by the kind it carries; a mislabeled file is refused.
+  The upstream wait budget of a turn counts from the drive's start, beside the watchdog, never
+  from admission: time queued behind the inflight gate is no longer charged to the provider, so a
+  turn that waited longer than the cap still makes its first upstream call.
   The status line, `splice status` and `splice doctor` name the account in use and the last switch.
   Labeled credential files are read without following symlinks (a linked file is skipped, its
   ordinal stays occupied), matching how they are written; the primary file is resolved as before.
@@ -85,6 +92,8 @@
   text rides after Claude Code's own summarizer prompt on compaction requests only, so the cached
   request prefix is byte-identical with and without it. `/api/compact` shows the effective text and
   its source.
+  A `[[compaction.project]]` path may start with `~/`, and a relative one resolves under the
+  topology directory, exactly like `file =`; a tilde no longer stops the daemon at boot.
 - **Shared MCP hosting.** stdio MCP servers that do not depend on a project directory or client
   roots are started once by the daemon and served to every session over Streamable HTTP on
   loopback (`/mcp/<name>`, one MCP session per client session, JSON-RPC ids remapped, notifications
@@ -97,13 +106,21 @@
   machine's own MCP set with four parallel sessions (`checks/mcp-host/bench.py`). A client that
   falls a full buffer (256) of notifications behind on its stream loses the stale backlog, never the
   fact that its lists may have changed: the backlog collapses to the three `list_changed`
-  notifications plus the newest one, so the client re-lists once it catches up.
+  notifications plus the newest one, so the client re-lists once it catches up. A hosted child
+  runs in the home directory (stated, never the daemon's accidental cwd); a server that reads its
+  working directory without naming it belongs in `mcp_hosting_exclude`. A server whose last
+  session ended is idle from then, not from forever, so the next session reuses the process
+  instead of the next sweep killing it; a server mid-initialize is never swept; and a reservation
+  taken by an initialize always ends, so capacity can no longer leak until restart.
 - **Local models are first-class on the `openai-chat` dialect.** A provider on a loopback
   `base_url` is local by default (`local = true|false` overrides). At boot and in doctor splice asks
   the runtime what it serves (Ollama `/api/version`, `/v1/models`, `/api/show`, `/api/ps`; LM Studio
   `/api/v0/models`; vLLM `max_model_len`) and REFUSES a row the runtime does not list or that
   declares more context than the runtime serves, with the runtime's own words; a runtime that is
-  down boots as before. The rows checked are each head's effective ones (a head `context_window`
+  down boots as before, and so does one whose model list does not answer yet (a list call that
+  fails is not a runtime that lists nothing: no row is refused for it, doctor shows one WARN).
+  The boot probe is bounded (2 s to connect, 5 s per request, `/api/show` only for the configured
+  rows), so a wedged local runtime cannot hold the daemon's other heads hostage. The rows checked are each head's effective ones (a head `context_window`
   override applied, picker suffixes stripped) and the probe carries the provider's headers and
   bearer. `splice doctor --live` adds one tiny streamed request with one tool per listed model.
   Status and doctor label these heads `local runtime` and never imply subscription or quota

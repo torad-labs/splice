@@ -79,10 +79,18 @@ internal class DoctorLocalRuntime(
         // unknown id with whichever model is loaded — a green live row for a refused id would lie),
         // and BEFORE the verdicts: its one request loads the model, and a loaded model is the only
         // one whose served window the runtime reports, so the verdicts read the exact number.
-        val listedIds = probe.models(runtime).map { it.id }.toSet()
+        val listed = probe.models(runtime)
+            ?: return listOf(
+                DoctorCheck(
+                    name,
+                    CheckStatus.WARN,
+                    "${runtime.kind.label} answers at ${provider.baseUrl} but its model list does not",
+                    FIX_START,
+                ),
+            )
+        val listedIds = listed.map { it.id }.toSet()
         val probed = if (live) rows.keys.filter { it in listedIds } else emptyList()
         val probes = probed.map { id -> liveCheck(name, probe, id) }
-        val listed = probe.models(runtime)
         val verdicts = probe.validate(rows, listed).map { v ->
             val fix = "fix [[providers.$key.models]] (or the head's context_window) to a model the runtime " +
                 "lists, at or under its context"

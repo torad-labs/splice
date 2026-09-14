@@ -125,6 +125,23 @@ class AddCommandTest {
     }
 
     @Test
+    fun `a mistyped flag, a flag without its value or a second word is refused, not swallowed`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val cmd = command(http(fwRoutes))
+        val good = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1", "--model", "m", "--yes")
+        listOf(
+            good + "--nam" + "x",
+            good + "--modle" + "m",
+            good + "extra",
+            good + "--model",
+            listOf("-y", "api-key"),
+        ).forEach { args -> assertFalse(runBlocking { cmd.add(args, env) }, args.toString()) }
+        assertEquals(before, Files.readString(config()), "nothing written for a refused command line")
+    }
+
+    @Test
     fun `an oauth profile signs in and lands its provider and head, and a refused sign-in writes nothing`(
         @TempDir home: Path,
     ) = withHome(home) {

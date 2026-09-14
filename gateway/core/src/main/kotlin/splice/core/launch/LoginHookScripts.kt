@@ -203,6 +203,10 @@ internal object LoginHookScripts {
             // An input that mentions /login or the sentinel yet has no top-level prompt string is
             // refused with a message, never treated as a bare login (that would sign the primary in).
             appendLine("[[ ${d}input == *\"/login\"* || ${d}input == *$sentinel* ]] || exit 0")
+            // The scanner walks the input byte by byte in bash. A /login command line is a few hundred
+            // bytes with the hook's own fields; a large paste that merely mentions /login is an
+            // ordinary prompt and is never scanned (bounded latency under the 15 s hook budget).
+            appendLine("[ \"$d{#input}\" -le $MAX_SCAN_BYTES ] || exit 0")
             append(LoginHookJson.scanner())
             appendLine("hit='' args='' prompt=''")
             appendLine("if json_prompt; then")
@@ -230,6 +234,7 @@ internal object LoginHookScripts {
         }
 
     private const val ELSE = "  else"
+    private const val MAX_SCAN_BYTES = 16384
     private const val ELSE_TOP = "else"
     private const val NO_ARGS = "^[[:space:]]*$"
 

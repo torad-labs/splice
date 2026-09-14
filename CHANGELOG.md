@@ -9,7 +9,8 @@
   before writing (the file parses, the credential is present, the base URL answers, the models are
   listed where the dialect publishes a list), runs one short live turn only on `--live`, then
   appends the provider and head tables through a sibling temp file and one rename. Anything that
-  stops the flow leaves the previous file byte-identical.
+  stops the flow leaves the previous file byte-identical, and a command line it cannot mean (an
+  unknown flag, a flag without its value, a second word) is refused with the usage, never swallowed.
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
   `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
   an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the

@@ -298,6 +298,21 @@ class LoginHookScriptSafetyTest {
     }
 
     @Test
+    fun `a large paste that mentions slash login is an ordinary prompt and is never scanned - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val hook = write(tmp, "login-large.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
+        val paste = "see /login handler\\n" + "log line\\n".repeat(120_000)
+        val started = System.nanoTime()
+        val ran = run("bash", hook.toString(), stdin = """{"prompt":"$paste"}""", dir = tmp)
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        assertEquals(0, ran.exit, ran.err)
+        assertEquals("", ran.out, "a mention inside a paste is not a login")
+        assertTrue(elapsedMs < 3_000, "the hook answered in ${elapsedMs}ms: the scan must not walk a paste")
+        Thread.sleep(150)
+        assertTrue(!Files.exists(tmp.resolve("args.txt")), "nothing started")
+    }
+
+    @Test
     fun `the login command file expands to the sentinel plus the arguments - V4-13`() {
         val md = LoginHookScripts.loginCommandMd("Codex (ChatGPT)", "SPLICE_CODEX_LOGIN")
         assertTrue(md.endsWith("SPLICE_CODEX_LOGIN \$ARGUMENTS\n"), md)

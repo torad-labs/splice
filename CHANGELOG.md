@@ -18,14 +18,27 @@
   `splice restart` is named) instead of printing a launch line for a head the daemon does not serve.
   A config saved without a trailing newline is not "changed" on every run; a flag followed by
   another flag (`--model --yes`) is a missing value, never a model named `--yes`; a config with no
-  head yet gets the first head port.
+  head yet gets the first head port. A model id given twice is refused (the catalog keys rows by
+  id, so the second window would silently win).
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
   `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
   an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
   candidate's own doctor, waits until every head's in-flight count on `/api/heads` is zero (or
   `--now`), repoints the live jar, restarts the user unit when one supervises this install, and
-  runs doctor. A launch shim edited since its release was installed is kept and its diff printed,
-  never overwritten. Release downloads follow same-scheme redirects only (an HTTPS to HTTP step
+  runs doctor. The launch shim is always refreshed with the release (it is version-locked to the
+  jar by the launch handshake, so a kept old shim could launch nothing); a shim edited since its
+  release was installed, or one with no pristine copy (every flat 0.3.x install), is saved beside
+  its release as `splice-launch.edited` with its diff printed, never lost; a flat install's live
+  shim is recorded with its jar so a rollback has one to restore. The restart is judged by what
+  `/health` serves afterwards, never by an exit code: the old CLI no longer polls for its own
+  version and calls a good restart a failure, a loaded-but-inactive user unit (a daemon started by
+  hand) takes the stop-and-start path instead of restarting a JVM that exits on the daemon lock,
+  and a daemon still on the old version is named. `--to 0.4.0` and `--to v0.4.0` name the same
+  tag; a candidate older than 0.4.0 skips the `doctor --json` preflight it cannot answer instead of
+  running its text doctor against the live install and being refused for it; another running
+  upgrade's staging directory is never pruned, and a pruned one is a refusal, not a stack trace.
+  `install.sh` records the flat install it replaces as `previous`, so the first `--rollback` after
+  it has somewhere to go. Release downloads follow same-scheme redirects only (an HTTPS to HTTP step
   would carry the jar and its sums over the same downgraded hop); every process the upgrade runs
   (`gh attestation verify` included) has a deadline; `--rollback --to` is refused instead of the
   version being ignored; install.sh records the release it replaces as `previous`, so the first
@@ -39,6 +52,10 @@
   `SendMessage` line per live session. A live pid whose process started long after the
   registration is a reused pid and reads as gone. Read-only; headless `claude -p` runs never
   register and the footer says so.
+  Liveness reads the identity Claude Code writes beside the pid: a registration from another pid
+  domain (a container sharing `~/.claude`) or a pid whose kernel start time is not the registered
+  one (reused after the session exited) is GONE, so a stranger's process is never listed live or
+  read for its head.
 - **`splice perf [--window 1h|24h|7d]` and `/api/perf/summary`.** Per head: p50/p95/max of time
   before first byte, time streaming and total, outcomes by tag, failure share overall and per
   outcome tag (rows whose outcome cannot be read are shown as unattributed, never as failures),
@@ -64,6 +81,11 @@
   The hook proves the login command resolves BEFORE cancelling a waiting sign-in, and reports a
   replacement that exits as soon as it starts; the launch shim marker is now `shim-3`, so an
   installed shim from before the `--label` forwarding is reported stale by the daemon and doctor.
+  The hook cancels only the sign-ins it started (each carries `SPLICE_LOGIN_ORIGIN=hook` in its
+  environment): a sign-in you began in a terminal and are finishing in the browser is named and
+  left alone, never killed and replaced by a primary login. An input whose top-level prompt cannot
+  be read is refused with the same "no prompt string" reason on an api-key head as on a browser
+  head, instead of being answered as a bare `/login`.
 - **`splice doctor --json [--with-logs] [--out FILE]`: a shareable, redacted report.** Schema
   version 1 carries the splice and Claude Code versions, OS and JVM, the topology's SHAPE
   (kinds, dialects, model ids and windows, quirk names, a host but never a URL with credentials),
@@ -78,6 +100,8 @@
   tags, event, key=value pairs) with a count of the lines that were not daemon events; an MCP host
   line keeps its server name as a safe token and its event head, so a report of a hosting problem
   carries the hosting lines. A malformed flag prints usage and writes nothing. Nothing is uploaded.
+  Per-turn daemon log lines keep their `compact=` and `model=` pairs in the report (the event head
+  had swallowed the first key, leaving every turn line empty).
 - **Automatic account switching when a provider's limits are hit.** `splice login <head> --label
   <name>` adds a second (third, ...) OAuth account of the same kind under
   `~/.config/splice/auth/<kind>/<primary file>/<name>.json` (`chatgpt-oauth/codex.json/work.json` for the default
@@ -115,6 +139,13 @@
   whose project cannot be resolved is not looked up again for 5 seconds (a hit is never cached as
   a miss, so a new registry entry becomes visible). On the `openai-chat` wire the instructions
   extend a trailing user message instead of adding a second user message after it.
+  A `file =` rule re-reads its file when it changes, so an edit is live at the next compaction
+  without a restart (a file that becomes unreadable disables the rule, as at boot). Project paths
+  and the session's cwd compare as physical paths, so a project configured through a symlink
+  matches the cwd Claude Code records. A compaction retry is matched to its detached first attempt
+  on the request BEFORE the instructions tail, so a project found late or an edited file cannot
+  start a second upstream compaction; and when a dialect cannot place the tail (no user text to
+  extend) the compact row says `(not applied)` instead of claiming instructions the wire never carried.
 - **Shared MCP hosting.** stdio MCP servers that do not depend on a project directory or client
   roots are started once by the daemon and served to every session over Streamable HTTP on
   loopback (`/mcp/<name>`, one MCP session per client session, JSON-RPC ids remapped, notifications
@@ -151,6 +182,10 @@
   Status and doctor label these heads `local runtime` and never imply subscription or quota
   semantics. Proven live against Ollama 0.30.5 and LM Studio (llmster 0.0.24), one model each
   (`checks/local-models/`); vLLM documented.
+  A row named without its tag matches the runtime's `:latest` listing (Ollama lists `qwen3:latest`
+  and serves `qwen3`), and a generic OpenAI-compatible server's model list (a proxy's aliases, a
+  llama-server file path, listing turned off) is not authoritative, so an unlisted row there is
+  trusted rather than refusing the head at boot; a refusal now names `local = false` as the opt-out.
 - **Version-drift warning.** `Versions.kt` records the Claude Code version the fresh-machine e2e
   ran against; the daemon reads the client version from the `User-Agent` already on every request,
   and when a session's Claude Code is newer than that, doctor, `splice status` and the status line
@@ -159,6 +194,7 @@
 ### Changed
   The tracker remembers at most 4096 sessions and forgets the oldest first, so a daemon that
   lives for months never grows on session ids.
+  Its tests render the warning from `GATEWAY_VERSION`, so the version bump does not turn them red.
 - **Code mode is out of beta and on by default for ChatGPT.** A `chatgpt-oauth` +
   `openai-responses` provider gets the bundled JavaScript runner and orchestration guidance with
   no config line; `code_mode = false` still turns it off, and every other provider shape stays off.

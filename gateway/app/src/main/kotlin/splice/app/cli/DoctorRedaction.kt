@@ -67,9 +67,11 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
      *  FileSystemException names still goes through the path allowlist here). */
     fun failure(e: Throwable): String = text(SafeFailureText.render(e))
 
-    /** Only the host of a URL — never userinfo, path or query, which is where credentials ride. */
+    /** Only the host of a URL — never userinfo, path or query, which is where credentials ride — and
+     *  through the same shape pass as every other string: a key- or UUID-shaped label (a per-tenant
+     *  endpoint) is masked like the token it is (review 2026-09-14). */
     fun host(url: String): String =
-        runCatching { URI(url).host }.getOrNull()?.takeIf { it.isNotBlank() } ?: "<unparsable>"
+        runCatching { URI(url).host }.getOrNull()?.takeIf { it.isNotBlank() }?.let(::text) ?: "<unparsable>"
 
     /** Daemon EVENTS only, each reduced to its structure; every other line is counted, not shown. */
     fun logLines(lines: List<String>, names: SafeNames): LogSelection = events.select(lines, names)

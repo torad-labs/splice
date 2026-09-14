@@ -55,6 +55,88 @@ private fun run(vararg argv: String, stdin: String = "", dir: Path, env: Map<Str
 private fun write(dir: Path, name: String, body: String): Path =
     Files.write(dir.resolve(name), body.toByteArray())
 
+/** The real JVMs the pending-sign-in cases need: a parked one in the shim's exact invocation, unrelated
+ *  JVMs and bash bystanders that carry the words but are not ours. */
+private object LoginProcesses {
+    private val javaBin: String = Path.of(System.getProperty("java.home"), "bin", "java").toString()
+
+    /** A REAL JVM parked the way `splice.jar login` parks on its loopback listener: a tiny jar
+     *  compiled here whose main sleeps; with `stubborn` as its last argument it registers a slow
+     *  shutdown hook, so TERM does not end it within the hook's 2 s (the JVM mid-shutdown-hook case). */
+    fun parkJar(dir: Path): Path {
+        val jar = dir.resolve("park.jar")
+        if (Files.exists(jar)) return jar
+        val compiler = ToolProvider.getSystemJavaCompiler()
+        assumeTrue(compiler != null, "a JDK compiler is required to build the parked-JVM stand-in")
+        val src = write(
+            dir,
+            "Park.java",
+            """
+            public class Park {
+                public static void main(String[] args) throws Exception {
+                    if (args.length > 0 && args[args.length - 1].equals("stubborn")) {
+                        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                            try { Thread.sleep(30000); } catch (InterruptedException ignored) { }
+                        }));
+                    }
+                    Thread.sleep(60000);
+                }
+            }
+            """.trimIndent(),
+        )
+        val classes = Files.createDirectories(dir.resolve("park-classes"))
+        assertEquals(0, compiler.run(null, null, null, "-d", classes.toString(), src.toString()), "javac")
+        val manifest = Manifest()
+        manifest.mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
+        manifest.mainAttributes[Attributes.Name.MAIN_CLASS] = "Park"
+        JarOutputStream(Files.newOutputStream(jar), manifest).use { out ->
+            out.putNextEntry(JarEntry("Park.class"))
+            out.write(Files.readAllBytes(classes.resolve("Park.class")))
+            out.closeEntry()
+        }
+        return jar
+    }
+
+    /** The shim's exact invocation (`java -jar <jar> login <head>`, a real java executable), waiting;
+     *  [hookStarted] marks it the way the hook marks every login it spawns. */
+    fun pendingLogin(recorder: Path, jar: Path, ignoreTerm: Boolean, hookStarted: Boolean = true): Process {
+        val argv = mutableListOf(javaBin, "-jar", jar.toString(), "login", recorder.toString())
+        if (ignoreTerm) argv += "stubborn"
+        val builder = ProcessBuilder(argv)
+        if (hookStarted) builder.environment()["SPLICE_LOGIN_ORIGIN"] = "hook"
+        return builder.start()
+    }
+
+    /** An UNRELATED JVM (the same real java executable) whose main is something else and whose
+     *  own application arguments carry `-jar <the splice jar> login <head>`: in jar mode (another
+     *  main jar) or class mode. Fixed positions decide, so neither is ours. */
+    fun otherJvm(dir: Path, recorder: Path, spliceJar: Path, classMode: Boolean): Process {
+        val park = parkJar(dir)
+        val launch = if (classMode) {
+            listOf("-cp", dir.resolve("park-classes").toString(), "Park")
+        } else {
+            val other = dir.resolve("report.jar")
+            if (!Files.exists(other)) Files.copy(park, other)
+            listOf("-jar", other.toString(), "--inspect")
+        }
+        val tail = listOf("-jar", spliceJar.toString(), "login", recorder.toString())
+        return ProcessBuilder(listOf(javaBin) + launch + tail).start()
+    }
+
+    /** A process whose command line carries the login words but whose executable is bash: the
+     *  words are one argv element ([oneWord]) or separate ones, and argv[0] may even say java. */
+    fun bystander(recorder: Path, oneWord: Boolean, argv0Java: Boolean = false): Process {
+        val loop = "while :; do sleep 1; done"
+        val cmd = if (oneWord) {
+            "exec -a 'java -jar /x/splice.jar login $recorder' sleep 60"
+        } else {
+            val prefix = if (argv0Java) "exec -a java " else "exec "
+            prefix + "bash -c '$loop' x java -jar /x/splice.jar login '$recorder'"
+        }
+        return ProcessBuilder("bash", "-c", cmd).start()
+    }
+}
+
 class LoginHookScriptSafetyTest {
 
     private val tmp: Path = Files.createTempDirectory("login-hook-safety")
@@ -102,81 +184,6 @@ class LoginHookScriptSafetyTest {
         val script = write(dir, "recorder.sh", body)
         script.toFile().setExecutable(true)
         return script
-    }
-
-    private val javaBin: String = Path.of(System.getProperty("java.home"), "bin", "java").toString()
-
-    /** A REAL JVM parked the way `splice.jar login` parks on its loopback listener: a tiny jar
-     *  compiled here whose main sleeps; with `stubborn` as its last argument it registers a slow
-     *  shutdown hook, so TERM does not end it within the hook's 2 s (the JVM mid-shutdown-hook case). */
-    private fun parkJar(dir: Path): Path {
-        val jar = dir.resolve("park.jar")
-        if (Files.exists(jar)) return jar
-        val compiler = ToolProvider.getSystemJavaCompiler()
-        assumeTrue(compiler != null, "a JDK compiler is required to build the parked-JVM stand-in")
-        val src = write(
-            dir,
-            "Park.java",
-            """
-            public class Park {
-                public static void main(String[] args) throws Exception {
-                    if (args.length > 0 && args[args.length - 1].equals("stubborn")) {
-                        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                            try { Thread.sleep(30000); } catch (InterruptedException ignored) { }
-                        }));
-                    }
-                    Thread.sleep(60000);
-                }
-            }
-            """.trimIndent(),
-        )
-        val classes = Files.createDirectories(dir.resolve("park-classes"))
-        assertEquals(0, compiler.run(null, null, null, "-d", classes.toString(), src.toString()), "javac")
-        val manifest = Manifest()
-        manifest.mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
-        manifest.mainAttributes[Attributes.Name.MAIN_CLASS] = "Park"
-        JarOutputStream(Files.newOutputStream(jar), manifest).use { out ->
-            out.putNextEntry(JarEntry("Park.class"))
-            out.write(Files.readAllBytes(classes.resolve("Park.class")))
-            out.closeEntry()
-        }
-        return jar
-    }
-
-    /** The shim's exact invocation: `java -jar <jar> login <head>`, with a real java executable. */
-    private fun pendingLogin(recorder: Path, jar: Path, ignoreTerm: Boolean): Process {
-        val argv = mutableListOf(javaBin, "-jar", jar.toString(), "login", recorder.toString())
-        if (ignoreTerm) argv += "stubborn"
-        return ProcessBuilder(argv).start()
-    }
-
-    /** An UNRELATED JVM (the same real java executable) whose main is something else and whose
-     *  own application arguments carry `-jar <the splice jar> login <head>`: in jar mode (another
-     *  main jar) or class mode. Fixed positions decide, so neither is ours. */
-    private fun otherJvm(dir: Path, recorder: Path, spliceJar: Path, classMode: Boolean): Process {
-        val park = parkJar(dir)
-        val launch = if (classMode) {
-            listOf("-cp", dir.resolve("park-classes").toString(), "Park")
-        } else {
-            val other = dir.resolve("report.jar")
-            if (!Files.exists(other)) Files.copy(park, other)
-            listOf("-jar", other.toString(), "--inspect")
-        }
-        val tail = listOf("-jar", spliceJar.toString(), "login", recorder.toString())
-        return ProcessBuilder(listOf(javaBin) + launch + tail).start()
-    }
-
-    /** A process whose command line carries the login words but whose executable is bash: the
-     *  words are one argv element ([oneWord]) or separate ones, and argv[0] may even say java. */
-    private fun bystander(recorder: Path, oneWord: Boolean, argv0Java: Boolean = false): Process {
-        val loop = "while :; do sleep 1; done"
-        val cmd = if (oneWord) {
-            "exec -a 'java -jar /x/splice.jar login $recorder' sleep 60"
-        } else {
-            val prefix = if (argv0Java) "exec -a java " else "exec "
-            prefix + "bash -c '$loop' x java -jar /x/splice.jar login '$recorder'"
-        }
-        return ProcessBuilder("bash", "-c", cmd).start()
     }
 
     private fun recordedArgs(dir: Path): List<String> {
@@ -326,17 +333,17 @@ class LoginHookScriptSafetyTest {
         val hook = write(tmp, "login-pending.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
         // A jar path with spaces, as SPLICE_JAR may hold and the shim quotes through.
         val jar = Files.createDirectories(tmp.resolve("my dir")).resolve("custom-0.4.0.jar")
-        Files.copy(parkJar(tmp), jar)
-        val pending = pendingLogin(recorder, jar, ignoreTerm = false)
+        Files.copy(LoginProcesses.parkJar(tmp), jar)
+        val pending = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false)
         // Bystanders: the words as one argv element; as separate elements under a bash executable;
         // argv[0] claiming java over a bash executable; a JVM in jar mode and one in class mode
         // carrying the splice sequence in their own arguments. None is ever signalled.
         val bystanders = listOf(
-            bystander(recorder, oneWord = true),
-            bystander(recorder, oneWord = false),
-            bystander(recorder, oneWord = false, argv0Java = true),
-            otherJvm(tmp, recorder, jar, classMode = false),
-            otherJvm(tmp, recorder, jar, classMode = true),
+            LoginProcesses.bystander(recorder, oneWord = true),
+            LoginProcesses.bystander(recorder, oneWord = false),
+            LoginProcesses.bystander(recorder, oneWord = false, argv0Java = true),
+            LoginProcesses.otherJvm(tmp, recorder, jar, classMode = false),
+            LoginProcesses.otherJvm(tmp, recorder, jar, classMode = true),
         )
         try {
             Thread.sleep(500)
@@ -361,8 +368,8 @@ class LoginHookScriptSafetyTest {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val missing = tmp.resolve("no-such-wrapper")
         val hook = write(tmp, "login-missing.sh", LoginHookScripts.loginHookScript(browserSpec(missing)))
-        val jar = parkJar(tmp)
-        val pending = pendingLogin(missing, jar, ignoreTerm = false)
+        val jar = LoginProcesses.parkJar(tmp)
+        val pending = LoginProcesses.pendingLogin(missing, jar, ignoreTerm = false)
         try {
             Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
@@ -382,16 +389,39 @@ class LoginHookScriptSafetyTest {
         assertTrue(reason2.startsWith("$dying login exited as soon as it started"), reason2)
     }
 
+    /** The hook owns only the sign-ins it started. One the user began in a terminal (`claudex login
+     *  --label work`, waiting on the browser) is the same argv; it is named and left alone. */
+    @Test
+    fun `a sign-in the user started in a terminal is named and left alone - review 2026-09-14`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val recorder = recorder(tmp)
+        val hook = write(tmp, "login-foreign.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
+        val jar = LoginProcesses.parkJar(tmp)
+        val terminal = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, hookStarted = false)
+        try {
+            Thread.sleep(500)
+            val env = mapOf("SPLICE_JAR" to jar.toString())
+            val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login --label work"}""", dir = tmp, env = env)
+            val reason = decision(ran)
+            assertTrue(reason.startsWith("A Codex (ChatGPT) sign-in started outside this session"), reason)
+            Thread.sleep(300)
+            assertTrue(terminal.isAlive, "the terminal sign-in was signalled")
+            assertTrue(!Files.exists(tmp.resolve("args.txt")), "nothing was started")
+        } finally {
+            terminal.destroyForcibly()
+        }
+    }
+
     @Test
     fun `a bystander carrying the text, with no pending sign-in, is neither killed nor a restart - V4-13`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-bystander.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
-        val jar = parkJar(tmp)
+        val jar = LoginProcesses.parkJar(tmp)
         val bystanders = listOf(
-            bystander(recorder, oneWord = false, argv0Java = true),
-            otherJvm(tmp, recorder, jar, classMode = false),
-            otherJvm(tmp, recorder, jar, classMode = true),
+            LoginProcesses.bystander(recorder, oneWord = false, argv0Java = true),
+            LoginProcesses.otherJvm(tmp, recorder, jar, classMode = false),
+            LoginProcesses.otherJvm(tmp, recorder, jar, classMode = true),
         )
         try {
             Thread.sleep(500)
@@ -410,8 +440,8 @@ class LoginHookScriptSafetyTest {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-stuck.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
-        val jar = parkJar(tmp)
-        val pending = pendingLogin(recorder, jar, ignoreTerm = true)
+        val jar = LoginProcesses.parkJar(tmp)
+        val pending = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = true)
         try {
             Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
@@ -424,6 +454,19 @@ class LoginHookScriptSafetyTest {
         } finally {
             pending.destroyForcibly()
         }
+    }
+
+    /** The unparsed refusal is every head's: an api-key head used to answer an unreadable input
+     *  with its paste/terminal lead text, as if a bare /login had been read. */
+    @Test
+    fun `an api-key head refuses an input without a readable prompt with the unparsed text - review 2026-09-14`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val hook = write(tmp, "login-apikey-unparsed.sh", LoginHookScripts.loginHookScript(spec()))
+        val ran = run("bash", hook.toString(), stdin = """{"prompt":null,"note":"/login"}""", dir = tmp)
+        val reason = decision(ran)
+        assertTrue(reason.startsWith("/login was seen but this hook input carries no prompt string"), reason)
+        val readable = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp)
+        assertTrue(decision(readable).startsWith("Paste your"), "a readable /login still gets the lead text")
     }
 
     @Test

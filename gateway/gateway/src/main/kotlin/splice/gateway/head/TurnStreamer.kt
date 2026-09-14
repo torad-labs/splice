@@ -67,7 +67,7 @@ internal class TurnStreamer(
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs) {
         val built = inputs.built
         val perf = inputs.perf
-        val replayKey = if (built.meta.compact) replay.key(built.meta.sessionId, built.requestBody.toString()) else null
+        val replayKey = if (built.meta.compact) replay.key(built.meta, built.requestBody.toString()) else null
         // No recording without a scope to detach onto: the compaction then runs attached, as every
         // turn did before 2026-09-05, instead of being handed to a launch that never starts.
         val recording = if (replayKey != null && detachedScope.isActive) FrameRecording() else null

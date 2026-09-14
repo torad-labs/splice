@@ -9,6 +9,7 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.attribute.FileTime
 
 /** Immutable boot-time resolver for custom compaction text. Resolution is per request, so a model
  *  switch changes the selected rule immediately without sharing mutable session state. */
@@ -27,7 +28,11 @@ public class CompactionInstructions(
         val text: String?,
         val scope: CompactionScope,
         val source: String,
+        /** The `file =` behind [text], re-read when it changes; null for inline text. */
+        val file: Path? = null,
     )
+
+    private data class FileText(val modified: FileTime?, val text: String?)
 
     private data class ProjectRule(
         val path: Path,
@@ -38,6 +43,7 @@ public class CompactionInstructions(
     private val global: Rule?
     private val models: Map<String, Rule>
     private val projects: List<ProjectRule>
+    private val files = HashMap<Path, FileText>()
 
     init {
         require(config.model.all { it.model.isNotBlank() }) { "compaction model must not be blank" }
@@ -83,13 +89,40 @@ public class CompactionInstructions(
     /** project/model > project > model > global. Within either project tier, the longest matching
      *  absolute path wins. An unknown project uses global directly; empty text remains an opt-out. */
     public fun resolve(model: String, project: Path?): EffectiveCompactionInstructions {
-        val normalized = project?.normalize()?.takeIf { it.isAbsolute }
+        val normalized = project?.normalize()?.takeIf { it.isAbsolute }?.let(::realPath)
         val selected = normalized?.let { path ->
             projectRule(path, model) ?: projectRule(path, null) ?: models[model] ?: global
         } ?: global
-        return selected?.let { EffectiveCompactionInstructions(it.text, it.scope, it.source) }
+        return selected?.let { EffectiveCompactionInstructions(currentText(it), it.scope, it.source) }
             ?: EffectiveCompactionInstructions(null, CompactionScope.CLIENT, CompactionScope.CLIENT.wire)
     }
+
+    /** A file rule's text as of now: re-read when the file's modification time moved since the last
+     *  read (one stat per compaction), so an edit is live without a restart and a file that becomes
+     *  unreadable disables the rule the way it would have at boot (review 2026-09-14). */
+    private fun currentText(rule: Rule): String? {
+        val file = rule.file ?: return rule.text
+        val modified = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(file) }.getOrNull()
+        synchronized(files) {
+            val cached = files[file]
+            if (cached != null && cached.modified == modified) return cached.text
+            val text = Cancellables.runCatchingCancellable { readFile(file) }
+                .onFailure { failure ->
+                    log(
+                        "[compaction] $file unreadable (${SafeFailureText.render(failure)}) — " +
+                            "custom instructions disabled for ${rule.source}\n",
+                    )
+                }
+                .getOrNull()
+            files[file] = FileText(modified, text)
+            return text
+        }
+    }
+
+    /** The physical path when it exists (Claude Code records `getcwd`, which resolves symlinks), else
+     *  the path as given. */
+    private fun realPath(path: Path): Path =
+        Cancellables.runCatchingCancellable { path.toRealPath() }.getOrDefault(path)
 
     private fun projectRule(project: Path, model: String?): Rule? = projects.asSequence()
         .filter { it.model == model && project.startsWith(it.path) }
@@ -109,7 +142,11 @@ public class CompactionInstructions(
         val path = resolvePath(file)
         return Cancellables.runCatchingCancellable { readFile(path) }
             .fold(
-                onSuccess = { Rule(it, scope, "$source file:$path") },
+                onSuccess = { text ->
+                    val modified = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(path) }.getOrNull()
+                    synchronized(files) { files[path] = FileText(modified, text) }
+                    Rule(text, scope, "$source file:$path", path)
+                },
                 onFailure = { failure ->
                     log(
                         "[compaction] $path unreadable (${SafeFailureText.render(failure)}) — " +
@@ -127,6 +164,6 @@ public class CompactionInstructions(
             raw
         }
         val path = Paths.get(expanded)
-        return if (path.isAbsolute) path.normalize() else configDir.resolve(path).normalize()
+        return realPath(if (path.isAbsolute) path.normalize() else configDir.resolve(path).normalize())
     }
 }

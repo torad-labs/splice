@@ -56,6 +56,9 @@ internal class UpgradeCommand(
         layout.ensureCurrentRecorded()
         val dir = layout.versionDir(version)
         discard(dir)
+        if (!Files.isDirectory(staging)) {
+            throw UpgradeRefused("the staged release at $staging disappeared (another upgrade running?); rerun")
+        }
         Files.move(staging, dir, StandardCopyOption.ATOMIC_MOVE)
         println("  $GREEN✓$RESET ${"staged".padEnd(UPGRADE_PAD)} $version -> $dir")
         if (!daemon.waitIdle(a.now)) {
@@ -64,7 +67,7 @@ internal class UpgradeCommand(
         }
         activation.activate(version, installed)
         layout.prunable().forEach(::discard)
-        return finish()
+        return finish(version)
     }
 
     private fun rollback(a: UpgradeArgs): Boolean {
@@ -77,7 +80,7 @@ internal class UpgradeCommand(
             return false
         }
         activation.activate(previous, installed)
-        return finish()
+        return finish(previous)
     }
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
@@ -106,10 +109,16 @@ internal class UpgradeCommand(
         return version
     }
 
-    private fun finish(): Boolean {
-        val restarted = daemon.restart(layout.liveJar)
+    private fun finish(version: String): Boolean {
+        val restart = daemon.restart(layout.liveJar, version)
+        val restarted = restart is DaemonRestarted.Serving
         val glyph = if (restarted) "$GREEN✓$RESET" else "$RED✗$RESET"
-        val outcome = if (restarted) "restarted" else "did not restart — run: splice restart"
+        val outcome = when (restart) {
+            DaemonRestarted.Serving -> "restarted, serving $version"
+            is DaemonRestarted.StillOld ->
+                "still serves ${restart.version} (a daemon started by hand?) — run: splice restart"
+            DaemonRestarted.NotAnswering -> "did not answer after the restart — run: splice restart"
+        }
         println("  $glyph ${"daemon".padEnd(UPGRADE_PAD)} $outcome")
         println()
         daemon.doctor(java, layout.liveJar)

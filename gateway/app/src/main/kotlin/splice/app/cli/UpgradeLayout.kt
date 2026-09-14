@@ -14,6 +14,10 @@ import java.nio.file.StandardCopyOption
 
 internal const val JAR_ASSET = "splice.jar"
 internal const val SHIM_ASSET = "splice-launch"
+
+/** Where an upgrade saves a live shim that differed from its release's copy (UpgradeWrapper). */
+internal const val EDITED_SHIM = "splice-launch.edited"
+private const val STAGING_PREFIX = ".staging-"
 internal const val UPGRADE_PAD = 11
 private const val CURRENT_LINK = "current"
 private const val PREVIOUS_LINK = "previous"
@@ -44,7 +48,7 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
         return releases.resolve(version)
     }
 
-    fun stagingDir(): Path = releases.resolve(".staging-${ProcessHandle.current().pid()}")
+    fun stagingDir(): Path = releases.resolve("$STAGING_PREFIX${ProcessHandle.current().pid()}")
 
     /** The version the live jar points at: the current link when one exists, else this CLI's own. */
     fun installedVersion(): String = pointedVersion(current) ?: GATEWAY_VERSION
@@ -53,14 +57,19 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
         if (Files.isSymbolicLink(link)) Files.readSymbolicLink(link).fileName.toString() else null
 
     /** A flat install (install.sh before 0.4.0) has no release copy of what it runs; record the live
-     *  jar under its version so rollback has somewhere to go. The shim is NOT copied: a live shim may
-     *  carry a local edit, and only install.sh knows the pristine bytes. */
+     *  jar AND shim under its version so rollback has somewhere to go. The live shim is the one that
+     *  pairs with that jar (a shim and a jar are version-locked by the launch handshake), local edit
+     *  included: the pristine bytes are gone, and a rollback that copied nothing failed on the
+     *  missing file (review 2026-09-14). */
     fun ensureCurrentRecorded() {
         if (Files.isSymbolicLink(current)) return
         val dir = versionDir(installedVersion())
         Files.createDirectories(dir)
         if (!Files.exists(dir.resolve(JAR_ASSET))) {
             Files.copy(liveJar, dir.resolve(JAR_ASSET), StandardCopyOption.COPY_ATTRIBUTES)
+        }
+        if (!Files.exists(dir.resolve(SHIM_ASSET)) && Files.exists(liveShim)) {
+            Files.copy(liveShim, dir.resolve(SHIM_ASSET), StandardCopyOption.COPY_ATTRIBUTES)
         }
         point(current, dir.fileName)
     }
@@ -75,13 +84,20 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
         Files.move(tmp, link, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
-    /** Every release directory that is neither current nor previous, oldest debris included. */
+    /** Every release directory that is neither current nor previous, oldest debris included — but
+     *  never the staging directory of an upgrade that is still running (its pid is alive). */
     fun prunable(): List<Path> {
         val keep = setOfNotNull(pointedVersion(current), pointedVersion(previous))
         if (!Files.isDirectory(releases)) return emptyList()
         return Files.list(releases).use { entries ->
             entries.filter { Files.isDirectory(it) && !Files.isSymbolicLink(it) && it.fileName.toString() !in keep }
+                .filter { !liveStaging(it.fileName.toString()) }
                 .toList()
         }
+    }
+
+    private fun liveStaging(name: String): Boolean {
+        val pid = name.removePrefix(STAGING_PREFIX).takeIf { name.startsWith(STAGING_PREFIX) }?.toLongOrNull()
+        return pid != null && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
     }
 }

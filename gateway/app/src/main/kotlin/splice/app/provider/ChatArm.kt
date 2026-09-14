@@ -98,10 +98,11 @@ internal class ChatArm(
             log("[$key] local runtime $where answered but its model list did not; the head boots, rows unchecked\n")
             return
         }
-        val refused = probe.validate(rows, listed).filterNot { it.ok }
+        val refused = probe.validate(rows, listed, runtime.kind).filterNot { it.ok }
         check(refused.isEmpty()) {
             "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
-                refused.joinToString("; ") { "'${it.id}': ${it.reason}" }
+                refused.joinToString("; ") { "'${it.id}': ${it.reason}" } +
+                " (fix the row, or set local = false on the provider to skip this check)"
         }
         val version = runtime.version?.let { " $it" }.orEmpty()
         log("[$key] local runtime ${runtime.kind.label}$version: ${rows.size} row(s) validated\n")

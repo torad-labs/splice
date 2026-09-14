@@ -24,12 +24,12 @@ python3 checks/local-models/e2e.py --runtime ollama \
   --jar gateway/app/build/libs/app-all.jar \
   --config /path/to/splice-local.toml --home /path/to/isolated-home \
   --good-head ollama --bad-heads ollama-unlisted,ollama-overclaim \
-  --out checks/e2e/receipts/local-models-ollama.json
+  --out checks/local-models/receipts/local-models-ollama.json
 python3 checks/local-models/e2e.py --runtime lmstudio \
   --jar gateway/app/build/libs/app-all.jar \
   --config /path/to/splice-lmstudio.toml --home /path/to/isolated-home \
   --good-head lmstudio --bad-heads lmstudio-unlisted,lmstudio-overclaim \
-  --out checks/e2e/receipts/local-models-lmstudio.json
+  --out checks/local-models/receipts/local-models-lmstudio.json
 ```
 
 The receipt is only written when every check passes. It records the runtime and its version, the

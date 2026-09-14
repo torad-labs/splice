@@ -6,6 +6,7 @@ package splice.app.cli
 
 import splice.app.LoginIo
 import splice.app.TopologyLoader
+import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
@@ -106,7 +107,8 @@ internal object AdminSupport {
         Cancellables.runCatchingCancellable { Files.getLastModifiedTime(jar) }.exceptionOrNull()
 
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
-    fun ensureDaemon(port: Int = controlPort()): Boolean = launch.ensureDaemon(port)
+    fun ensureDaemon(port: Int = controlPort(), expectedVersion: String = GATEWAY_VERSION): Boolean =
+        launch.ensureDaemon(port, expectedVersion)
 
     /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
      *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. Both

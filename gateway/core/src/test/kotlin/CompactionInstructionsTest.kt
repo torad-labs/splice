@@ -130,6 +130,51 @@ class CompactionInstructionsTest {
         assertTrue(resolved.source.endsWith("file:${tmp.resolve("compact.txt")}"), resolved.source)
     }
 
+    /** `file =` text is read again when the file changes, so an edit is live at the next
+     *  compaction without a restart; a file that becomes unreadable disables the rule as at boot. */
+    @Test
+    fun `an edited instructions file is picked up on the next resolve without a restart - review 2026-09-14`() {
+        val file = tmp.resolve("live.txt")
+        Files.writeString(file, "first")
+        val reads = mutableListOf<Path>()
+        val resolver = CompactionInstructions(
+            CompactionConfig(file = "live.txt"),
+            tmp,
+            readFile = { path ->
+                reads.add(path)
+                Files.readString(path)
+            },
+        )
+        assertEquals("first", resolver.resolve("astra", null).text)
+        assertEquals("first", resolver.resolve("astra", null).text)
+        assertEquals(1, reads.size, "unchanged file: no re-read")
+        Files.writeString(file, "second")
+        Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000))
+        assertEquals("second", resolver.resolve("astra", null).text)
+        assertEquals(2, reads.size)
+        Files.delete(file)
+        assertNull(resolver.resolve("astra", null).text, "gone: disabled, as it would have been at boot")
+    }
+
+    /** Claude Code records getcwd (symlinks resolved); a project configured through a symlink must
+     *  still match (review 2026-09-14). */
+    @Test
+    fun `a project configured through a symlink matches the physical cwd Claude Code records`() {
+        val physical = Files.createDirectories(tmp.resolve("data").resolve("proj"))
+        Files.createDirectories(physical.resolve("src"))
+        val link = Files.createSymbolicLink(tmp.resolve("proj-link"), physical)
+        val resolver = CompactionInstructions(
+            CompactionConfig(
+                instructions = "global",
+                project = listOf(CompactionProjectConfig(link.toString(), instructions = "project")),
+            ),
+            tmp,
+        )
+        assertEquals("project", resolver.resolve("astra", physical.resolve("src")).text)
+        assertEquals("project", resolver.resolve("astra", link.resolve("src")).text)
+        assertEquals("global", resolver.resolve("astra", tmp.resolve("elsewhere")).text)
+    }
+
     @Test
     fun `an unreadable selected file degrades to the untouched client request`() {
         val logs = mutableListOf<String>()

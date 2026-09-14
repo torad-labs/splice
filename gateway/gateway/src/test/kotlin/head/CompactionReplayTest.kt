@@ -29,6 +29,11 @@ class CompactionReplayTest {
         assertEquals(replay.key("s", """{"a":1}"""), replay.key("s", """{"a":1}"""))
         assertNotEquals(replay.key("s", """{"a":1}"""), replay.key("s", """{"a":2}"""))
         assertNotEquals(replay.key("s", "{}"), replay.key("t", "{}"))
+        // A recorded pre-tail hash outranks the upstream bytes: a tail that resolved differently on
+        // the retry (project found late, file edited) still finds the first attempt (review 2026-09-14).
+        val pre = replay.bodyHash("""{"client":1}""")
+        assertEquals(replay.key("s", "tail A", pre), replay.key("s", "tail B", pre))
+        assertNotEquals(replay.key("s", "tail A", pre), replay.key("s", "tail A"))
     }
 
     @Test

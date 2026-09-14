@@ -39,6 +39,9 @@ public data class TurnMeta(
      *  compact turns use null text for the untouched client default and empty text for opt-out. */
     val compactionInstructions: String? = null,
     val compactionInstructionsSource: String? = null,
+    /** sha256 of the provider body before any compaction tail: what a compaction retry is matched on
+     *  (CompactionReplay), so a tail resolved differently on the retry cannot miss the recording. */
+    val compactionRequestHash: String? = null,
     /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
      *  build fresh translators; without a shared set, a section re-titled by a continuation round
      *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror

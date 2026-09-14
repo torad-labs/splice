@@ -9,8 +9,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import splice.control.mcp.GlobalMcpServers
 import splice.core.topology.DaemonConfig
+import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 internal data class McpHostingSettings(
@@ -24,21 +27,45 @@ internal data class McpHostingSettings(
 
 /** `mcpServers` from `<home>/.claude.json`; absent, unreadable or malformed reads as no servers,
  *  matching the materializer's tolerant global read — a bad operator file never fails a launch. */
-internal class McpGlobalRead(private val home: Path) : GlobalMcpServers {
+internal class McpGlobalRead(
+    private val home: Path,
+    private val log: LogSink = LogSink(System.err::print),
+) : GlobalMcpServers {
     private val json = Json { ignoreUnknownKeys = true }
+    private var lastFailure: String? = null
 
+    @Synchronized
     override fun invoke(): JsonObject {
         val file = home.resolve(".claude.json")
         val text = try {
             Files.readString(file)
+        } catch (_: NoSuchFileException) {
+            val present = Files.exists(file, LinkOption.NOFOLLOW_LINKS)
+            return empty(if (present) "global MCP configuration is unreadable" else null)
         } catch (_: IOException) {
-            return buildJsonObject {}
+            return empty("global MCP configuration is unreadable")
         }
-        val parsed = try {
-            json.parseToJsonElement(text) as? JsonObject
-        } catch (_: IllegalArgumentException) {
-            null
+        val parsed = parse(text)
+        val servers = parsed?.get("mcpServers") as? JsonObject
+        return when {
+            parsed == null -> empty("global MCP configuration is malformed")
+            servers != null -> servers.also { lastFailure = null }
+            parsed.containsKey("mcpServers") -> empty("global MCP server map is malformed")
+            else -> empty(null)
         }
-        return parsed?.get("mcpServers") as? JsonObject ?: buildJsonObject {}
+    }
+
+    private fun parse(text: String): JsonObject? = try {
+        json.parseToJsonElement(text) as? JsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    private fun empty(reason: String?): JsonObject {
+        if (reason != null && reason != lastFailure) {
+            log("[mcp-host] $reason; server discovery unavailable (file content withheld)\n")
+        }
+        lastFailure = reason
+        return buildJsonObject {}
     }
 }

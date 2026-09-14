@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -30,6 +31,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.DirectoryProbe
+import splice.core.launch.McpAccessKey
 import splice.core.launch.McpSharing
 import java.net.ServerSocket
 import java.net.Socket
@@ -47,6 +49,7 @@ class McpRoutesTest {
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var control: ControlServer
     private lateinit var key: String
+    private lateinit var generatedConfig: String
     private lateinit var host: McpHost
 
     @BeforeAll
@@ -58,7 +61,14 @@ class McpRoutesTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         val global = json.parseToJsonElement("""{"fake":{"command":"python3","args":["$script"]}}""").jsonObject
-        val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:$port/mcp/", mgmt::get, DirectoryProbe { false })
+        val sharing = McpSharing(
+            true,
+            emptySet(),
+            "http://127.0.0.1:$port/mcp/",
+            McpAccessKey(mgmt::get),
+            DirectoryProbe { false },
+        )
+        generatedConfig = sharing.plan(global).rewritten.toString()
         host = McpHost(sharing, { global }, log = { })
         control = ControlServer(
             port = port,
@@ -131,6 +141,20 @@ class McpRoutesTest {
             header("MCP-Protocol-Version", "2025-11-25")
         }
         assertEquals(HttpStatusCode.NotFound, again.status)
+    }
+
+    @Test
+    fun `MCP scoped bearer connects without granting management access`() = runBlocking {
+        val scoped = McpAccessKey { key }()
+        val headers = json.parseToJsonElement(generatedConfig).jsonObject["fake"]!!.jsonObject["headers"]!!.jsonObject
+        assertEquals("Bearer $scoped", headers["Authorization"]!!.jsonPrimitive.content)
+        assertFalse(generatedConfig.contains(key), "generated MCP config must not contain the management secret")
+        assertEquals(HttpStatusCode.OK, post(INIT_MSG, bearer = scoped).status)
+        val management = client.get("http://127.0.0.1:$port/api/mcp") {
+            header("Authorization", "Bearer $scoped")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, management.status)
+        assertEquals(HttpStatusCode.OK, post(INIT_MSG).status, "existing management clients keep access")
     }
 
     @Test

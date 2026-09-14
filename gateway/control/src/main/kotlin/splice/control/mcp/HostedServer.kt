@@ -17,9 +17,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.launch.McpServerSpec
 import splice.core.util.LogSink
 import java.io.BufferedReader
@@ -30,15 +27,13 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-private const val RPC_METHOD_NOT_FOUND = -32601
-private const val HOST_PROTOCOL = "2025-11-25"
 private const val EXIT_WAIT_MS = 1_000L
-private const val DESTROY_GRACE_MS = 2_000L
 
 /** A child that lived shorter than this is a crash, and two in a row are a crash loop. */
 private const val CRASH_LOOP_MS = 30_000L
 private const val BACKOFF_BASE_MS = 5_000L
 private const val BACKOFF_MAX_MS = 60_000L
+private const val BACKOFF_MAX_SHIFT = 4
 private const val MILLIS_PER_SECOND = 1_000L
 
 internal class HostedServer(
@@ -52,6 +47,8 @@ internal class HostedServer(
     private val ids = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, Pending>()
     private val progress = ProgressTokens()
+    private val stops = McpProcessStop()
+    private val stderr = McpStderr(log)
 
     /** Consecutive short-lived children; the second and later wait before respawning. */
     @Volatile private var crashes = 0
@@ -137,22 +134,26 @@ internal class HostedServer(
     }
 
     /** Permanent: the registry replaced or evicted this server; a spawn racing this call tears down. */
-    fun close(reason: String) {
+    fun close(reason: String, wait: Boolean = true): Process? {
         synchronized(stateLock) { closed = true }
-        tearDown(reason)
+        return tearDown(reason, wait)
     }
 
-    private fun tearDown(reason: String) {
+    private fun tearDown(reason: String, wait: Boolean = true): Process? {
         val p = synchronized(stateLock) {
             process.also {
                 process = null
+                writer = null
                 initResult = null
             }
-        } ?: return
-        log("[mcp-host] ${spec.name}: closing pid ${p.pid()} ($reason)\n")
-        p.destroy()
-        if (!p.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)) p.destroyForcibly()
+        }
         failPending("hosted MCP server '${spec.name}' closed: $reason")
+        p?.let {
+            log("[mcp-host] ${spec.name}: closing pid ${it.pid()} ($reason)\n")
+            it.destroy()
+            if (wait) stops.await(listOf(it))
+        }
+        return p
     }
 
     private suspend fun spawn(): JsonObject {
@@ -162,7 +163,9 @@ internal class HostedServer(
         // One crash still respawns immediately: a single failure is not a loop (review 2026-09-14).
         val loop = if (exitedAt > 0L && exitedAt - startedAt < CRASH_LOOP_MS) crashes + 1 else 0
         val sinceExit = config.clock.millis() - exitedAt
-        val wait = if (loop > 1) minOf(BACKOFF_BASE_MS shl (loop - 2), BACKOFF_MAX_MS) - sinceExit else 0L
+        // Bound the exponent before shifting: bounding the shifted result cannot undo Long overflow.
+        val shift = (loop - 2).coerceIn(0, BACKOFF_MAX_SHIFT)
+        val wait = if (loop > 1) minOf(BACKOFF_BASE_MS shl shift, BACKOFF_MAX_MS) - sinceExit else 0L
         if (wait > 0L) {
             val seconds = wait / MILLIS_PER_SECOND + 1
             val message = "hosted MCP server '${spec.name}' keeps crashing ($loop times); next restart in $seconds s"
@@ -171,6 +174,7 @@ internal class HostedServer(
         crashes = loop
         if (startedAt > 0L) restarts += 1
         val p = launch()
+        stderr.watch(spec.name, p)
         startedAt = config.clock.millis()
         Executors.defaultThreadFactory().newThread { pump(p) }.apply {
             name = "mcp-host-${spec.name}"
@@ -207,20 +211,7 @@ internal class HostedServer(
         val hostId = ids.getAndIncrement()
         val slot = Pending("host", JsonPrimitive(hostId))
         pending[hostId] = slot
-        val params = buildJsonObject {
-            put("protocolVersion", HOST_PROTOCOL)
-            // No roots: roots are per client and the host serves many; a server that needs them is
-            // not shared (McpSharing rejects project-scoped entries) rather than given an empty list.
-            put("capabilities", buildJsonObject {})
-            put(
-                "clientInfo",
-                buildJsonObject {
-                    put("name", "splice-mcp-host")
-                    put("version", "0.4.0")
-                },
-            )
-        }
-        send(codec.request(JsonPrimitive(hostId), "initialize", params))
+        send(codec.initializeRequest(hostId))
         val answer = withTimeoutOrNull(config.initializeTimeout) { slot.answer.await() }
         if (answer == null) {
             pending.remove(hostId)
@@ -230,7 +221,7 @@ internal class HostedServer(
         val result = answer["result"] as? JsonObject
         if (result == null || !publish(p, result)) {
             tearDown("handshake failed")
-            throw McpHostException("'${spec.name}' rejected the MCP handshake: ${answer["error"]}")
+            throw McpHostException("'${spec.name}' rejected the MCP handshake (server detail withheld)")
         }
         lastError = null
         log("[mcp-host] ${spec.name}: hosted as pid ${p.pid()}\n")
@@ -300,22 +291,15 @@ internal class HostedServer(
                 val slot = hostId?.let(pending::remove)
                 slot?.answer?.complete(codec.withId(msg, slot.clientId))
             }
-            RpcKind.REQUEST -> answerServerRequest(msg)
-            RpcKind.NOTIFICATION -> progress.owner(msg, pending)
-                ?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }
-                ?: sink.onNotification(msg)
+            RpcKind.REQUEST -> send(codec.serverReply(msg))
+            RpcKind.NOTIFICATION -> if (codec.method(msg) == "notifications/progress") {
+                // A missing owner is late or unknown progress, never a global notification.
+                progress.owner(msg, pending)?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }
+            } else {
+                sink.onNotification(msg)
+            }
             RpcKind.INVALID -> Unit
         }
-    }
-
-    private fun answerServerRequest(msg: JsonObject) {
-        val id = msg.getValue("id")
-        val reply = when (codec.method(msg)) {
-            "ping" -> codec.result(id, buildJsonObject {})
-            "roots/list" -> codec.result(id, buildJsonObject { put("roots", buildJsonArray {}) })
-            else -> codec.error(id, RPC_METHOD_NOT_FOUND, "splice-mcp-host does not proxy server-initiated requests")
-        }
-        send(reply)
     }
 
     /** Fails what is in flight — everything, or only [sessionId]'s requests (its session ended). */

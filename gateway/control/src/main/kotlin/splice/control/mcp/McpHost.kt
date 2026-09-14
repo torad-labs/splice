@@ -28,7 +28,6 @@ private const val HTTP_BAD_REQUEST = 400
 private const val HTTP_NOT_FOUND = 404
 private const val HTTP_UNAVAILABLE = 503
 private const val SWEEP_PERIOD_S = 60L
-private const val MILLIS_PER_MINUTE = 60_000L
 
 /** What the transport writes back: status, an optional session header, and a JSON body (or none for 202). */
 public data class McpReply(val status: Int, val body: String?, val sessionId: String? = null)
@@ -101,16 +100,24 @@ public class McpHost(
 
     /** The session's notification stream for a GET; null when the session is unknown. */
     public fun openStream(name: String, sessionId: String?): ReceiveChannel<String>? {
-        val session = sessions.get(name, sessionId) ?: return null
-        session.openStreams.incrementAndGet()
-        sessions.touch(session)
-        return session.stream
+        val server = servers.reserve(name) ?: return null
+        return try {
+            sessions.get(name, sessionId)?.let { session ->
+                session.openStreams.incrementAndGet()
+                sessions.touch(session)
+                session.stream
+            }
+        } finally {
+            servers.release(name, server)
+        }
     }
 
     public fun closeStream(name: String, sessionId: String?) {
-        sessions.get(name, sessionId)?.let {
-            sessions.touch(it)
-            it.openStreams.decrementAndGet()
+        val server = servers.reserve(name) ?: return
+        try {
+            sessions.closeStream(name, sessionId)
+        } finally {
+            servers.release(name, server)
         }
     }
 
@@ -125,12 +132,8 @@ public class McpHost(
     public fun sweep() {
         val now = config.clock.millis()
         val limit = config.idleTimeout.inWholeMilliseconds
-        // A reserved server is mid-initialize (its session is minted only after the handshake), so
-        // it has no session yet and must not read as idle (review 2026-09-14: a sweep tick during a
-        // slow npx handshake killed the just-spawned child and answered the client 503).
-        servers.names()
-            .filterNot { servers.reserved(it) || sessions.busy(it, now, limit) }
-            .forEach { servers.close(it, "idle for ${limit / MILLIS_PER_MINUTE} min") }
+        // The registry checks liveness and unbinds under the same lock used to acquire request leases.
+        servers.sweep(now, limit)
     }
 
     /** `/api/mcp`. */
@@ -169,11 +172,20 @@ public class McpHost(
         val session = sessions.get(name, sessionId)
             ?: return bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
         sessions.touch(session)
-        val server = servers.get(name) ?: return bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "server not hosted")
-        return when (kind) {
-            RpcKind.REQUEST -> forward(server, session, msg)
-            RpcKind.NOTIFICATION -> notification(name, server, session, msg)
-            RpcKind.RESPONSE, RpcKind.INVALID -> McpReply(HTTP_ACCEPTED, null)
+        val server = servers.reserve(name) ?: return bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "server not hosted")
+        return try {
+            if (sessions.get(name, sessionId) !== session) {
+                bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
+            } else {
+                when (kind) {
+                    RpcKind.REQUEST -> forward(server, session, msg)
+                    RpcKind.NOTIFICATION -> notification(name, server, session, msg)
+                    RpcKind.RESPONSE, RpcKind.INVALID -> McpReply(HTTP_ACCEPTED, null)
+                }
+            }
+        } finally {
+            sessions.touch(session)
+            servers.release(name, server)
         }
     }
 

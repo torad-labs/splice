@@ -45,6 +45,7 @@ import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
+import splice.core.launch.McpAccessKey
 import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -86,6 +87,7 @@ public class ControlServer(
     sessions: SessionRegistry? = null,
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
+    private val mcpAccessKey = McpAccessKey(mgmtKey::get)
     private val sessionsRoutes = sessions?.let(::SessionsRoutes)
     private val payloads =
         ControlPayloads(
@@ -154,9 +156,9 @@ public class ControlServer(
                 get("/statusline/{head}") { statuslineRoute.statusline(call) }
                 if (mcpRoutes != null && mcpHost != null) {
                     get("/api/mcp") { guarded(call) { respond(call, mcpHost.statusJson()) } }
-                    post("/mcp/{name}") { guarded(call) { mcpRoutes.post(call) } }
-                    get("/mcp/{name}") { guarded(call) { mcpRoutes.stream(call) } }
-                    delete("/mcp/{name}") { guarded(call) { mcpRoutes.delete(call) } }
+                    post("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.post(call) } }
+                    get("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.stream(call) } }
+                    delete("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.delete(call) } }
                 }
             }
         }
@@ -172,8 +174,10 @@ public class ControlServer(
         server = null
     }
 
-    private suspend fun guarded(call: ApplicationCall, block: MgmtRoute) {
-        if (!mgmtKey.matchesBearer(call.request.headers["Authorization"])) {
+    private suspend fun guarded(call: ApplicationCall, mcp: Boolean = false, block: MgmtRoute) {
+        val header = call.request.headers["Authorization"]
+        val authorized = mgmtKey.matchesBearer(header) || (mcp && mcpAccessKey.matchesBearer(header))
+        if (!authorized) {
             call.respondText(
                 buildJsonObject { put("error", "unauthorized") }.toString(),
                 ContentType.Application.Json,

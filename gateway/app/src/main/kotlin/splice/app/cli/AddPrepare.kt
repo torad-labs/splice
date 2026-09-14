@@ -1,7 +1,8 @@
 // NEW: v0.4.0 FEATURES.md §1 — everything `splice add` decides BEFORE its first side effect — the
 // profile, the key, the models, the refusals (taken key or command, missing base URL, quotes), the
 // next free port, and the candidate topology parsed from the operator's file plus the appended
-// tables. Split from AddCommand.kt (concentration, 2026-09-13).
+// tables. Split from AddCommand.kt (concentration, 2026-09-13); the model rows live in AddModelRows
+// (concentration, 2026-09-14).
 package splice.app.cli
 
 import splice.app.TopologyLoader
@@ -13,11 +14,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val FIRST_HEAD_PORT = 3099
-private const val DEFAULT_WINDOW = 128_000L
-private const val MAX_PROMPTED_MODELS = 8
 private val KEY_RE = Regex("[a-z0-9][a-z0-9-]*")
 private const val OPENAI_CHAT_DIALECT = "openai-chat"
-private val VALUE_RE = Regex("[^\"\\\\\\p{Cntrl}]+")
 
 /** Everything decided before the first side effect. */
 internal data class AddCandidate(
@@ -34,6 +32,7 @@ internal data class AddCandidate(
 
 internal class AddPrepare(private val checks: AddChecks, private val prompt: AddPrompter) {
     private val profiles = AddProfiles()
+    private val modelRows = AddModelRows(prompt)
 
     fun candidate(args: AddArgs, env: EnvReader): AddCandidate? {
         val profile = args.profile?.let(profiles::find) ?: return usage()
@@ -44,7 +43,7 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
         val resolved = profile.copy(
             baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
             command = args.command ?: profile.command.ifEmpty { "claude-$key" },
-            models = models(args, profile),
+            models = modelRows.resolve(args, profile),
         )
         val problem = keyProblem(resolved, current, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
         val appended = if (problem == null) profiles.toml(resolved, key, nextPort(current)) else ""
@@ -103,36 +102,12 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
     }
 
     /** [profile] here is the resolved one: base URL, command and models already filled in. */
-    private fun valueProblem(profile: AddProfile): String? {
-        val quoted = profile.models.any { !VALUE_RE.matches(it.id) || !VALUE_RE.matches(it.label) }
-        return when {
-            profile.baseUrl.isNullOrEmpty() -> "--base-url is required for '${profile.name}'"
-            profile.models.isEmpty() -> "no models: pass --model <id>:<context_window> (repeatable)"
-            quoted -> "model ids must not contain quotes"
-            profile.models.any { it.contextWindow <= 0 } -> "context windows must be positive: --model ID:WINDOW"
-            !VALUE_RE.matches(profile.baseUrl) || !VALUE_RE.matches(profile.command) -> "values must not contain quotes"
-            else -> null
-        }
-    }
-
-    /** `--model id:window` rows, else the profile's own, else what the operator types in (TTY only). */
-    private fun models(args: AddArgs, profile: AddProfile): List<AddModel> {
-        val given = args.models.map { spec ->
-            // A model id may itself carry colons (ollama: qwen3:4b), so the window is the LAST segment
-            // and only when it is a number; a non-positive number is refused below, never defaulted.
-            val window = spec.substringAfterLast(':', "").toLongOrNull()
-            val id = if (window == null) spec else spec.substringBeforeLast(':')
-            AddModel(id, id, window ?: DEFAULT_WINDOW)
-        }
-        if (given.isNotEmpty() || profile.models.isNotEmpty()) return given.ifEmpty { profile.models }
-        val typed = mutableListOf<AddModel>()
-        while (typed.size < MAX_PROMPTED_MODELS) {
-            val id = prompt("model id (blank when done):", "")
-            if (id.isEmpty()) break
-            val window = prompt("context window for $id:", DEFAULT_WINDOW.toString()).toLongOrNull()
-            typed += AddModel(id, id, window ?: DEFAULT_WINDOW)
-        }
-        return typed
+    private fun valueProblem(profile: AddProfile): String? = when {
+        profile.baseUrl.isNullOrEmpty() -> "--base-url is required for '${profile.name}'"
+        modelRows.problem(profile.models) != null -> modelRows.problem(profile.models)
+        !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.command) ->
+            "values must not contain quotes"
+        else -> null
     }
 
     private fun nextPort(current: Topology): Int {

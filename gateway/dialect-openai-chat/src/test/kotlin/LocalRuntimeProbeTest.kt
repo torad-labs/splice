@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.dialect.chat.LocalHttp
 import splice.dialect.chat.LocalHttpReply
+import splice.dialect.chat.LocalModel
 import splice.dialect.chat.LocalRuntime
 import splice.dialect.chat.LocalRuntimeKind
 import splice.dialect.chat.LocalRuntimeProbe
@@ -73,6 +74,23 @@ class LocalRuntimeProbeTest {
         val over = probe.validate(mapOf("qwen3:4b" to 32768L), listed).single()
         assertFalse(over.ok)
         assertTrue(over.reason.contains("runtime serves 8192"), over.reason)
+    }
+
+    @Test
+    fun `an untagged id is its latest tag, and a generic server's list never refuses a row - review 2026-09-14`() {
+        val probe = LocalRuntimeProbe("http://localhost:1/v1", ollama)
+        val latest = listOf(LocalModel("qwen3:latest", 8192L))
+        val tagged = probe.validate(mapOf("qwen3" to 8192L, "qwen3:latest" to 8192L), latest).associateBy { it.id }
+        val untagged = tagged.getValue("qwen3")
+        assertTrue(untagged.ok, "Ollama lists qwen3:latest and serves qwen3: $untagged")
+        assertTrue(tagged.getValue("qwen3:latest").ok)
+        assertFalse(probe.validate(mapOf("qwen3" to 100000L), latest).single().ok, "the alias still carries its window")
+        val proxy = listOf(LocalModel("alias-a", null))
+        val generic = probe.validate(mapOf("gpt-x" to 128000L), proxy, LocalRuntimeKind.OPENAI_COMPATIBLE).single()
+        assertTrue(generic.ok, generic.reason)
+        assertTrue(generic.reason.contains("not authoritative"), generic.reason)
+        val vllm = probe.validate(mapOf("gpt-x" to 128000L), proxy, LocalRuntimeKind.VLLM).single()
+        assertFalse(vllm.ok, "vLLM lists all it serves")
     }
 
     @Test

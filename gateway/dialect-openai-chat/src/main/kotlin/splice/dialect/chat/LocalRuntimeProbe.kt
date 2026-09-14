@@ -102,13 +102,31 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
         }
     }
 
-    /** Refuse a row the runtime does not list, or that declares more context than the runtime reports. */
-    public fun validate(rows: Map<String, Long>, listed: List<LocalModel>): List<LocalRowVerdict> =
-        rows.map { (id, window) -> verdict(id, window, listed) }
+    /** Refuse a row the runtime does not list, or that declares more context than the runtime reports.
+     *  An untagged id names its `:latest` tag (Ollama lists `qwen3:latest` and serves `qwen3`). A
+     *  generic OpenAI-compatible server's list is not authoritative (a proxy lists aliases, llama-server
+     *  lists a file path, listing may be off), so there an unlisted row is trusted, never refused
+     *  (review 2026-09-14: heads that served on 0.3.x refused to boot). */
+    public fun validate(
+        rows: Map<String, Long>,
+        listed: List<LocalModel>,
+        kind: LocalRuntimeKind = LocalRuntimeKind.OLLAMA,
+    ): List<LocalRowVerdict> = rows.map { (id, window) -> verdict(id, window, listed, kind) }
 
-    private fun verdict(id: String, window: Long, listed: List<LocalModel>): LocalRowVerdict {
-        val model = listed.firstOrNull { it.id == id }
-            ?: return LocalRowVerdict(id, false, "not listed by the runtime (listed: ${listed.joinToString { it.id }})")
+    private fun verdict(id: String, window: Long, listed: List<LocalModel>, kind: LocalRuntimeKind): LocalRowVerdict {
+        val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
+        if (model == null) {
+            val ids = listed.joinToString { it.id }
+            return if (kind == LocalRuntimeKind.OPENAI_COMPATIBLE) {
+                LocalRowVerdict(
+                    id,
+                    true,
+                    "not listed by the ${kind.label} server (list not authoritative; listed: $ids), $window trusted",
+                )
+            } else {
+                LocalRowVerdict(id, false, "not listed by the runtime (listed: $ids)")
+            }
+        }
         val refusal = refusal(window, model)
         return if (refusal != null) {
             LocalRowVerdict(id, false, refusal)

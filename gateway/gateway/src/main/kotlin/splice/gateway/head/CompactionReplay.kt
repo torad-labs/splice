@@ -12,6 +12,7 @@
 // client actually left are kept; a compaction delivered to its client has no retry to serve.
 package splice.gateway.head
 
+import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.gateway.wire.FrameRecording
@@ -27,11 +28,20 @@ internal class CompactionReplay(
     private val lock = Any()
     private val entries = LinkedHashMap<String, Entry>()
 
-    /** Null without a session: a retry cannot be tied to its first attempt. */
-    fun key(sessionId: String?, upstreamBody: String): String? {
+    /** Null without a session: a retry cannot be tied to its first attempt. The hash is the body
+     *  BEFORE the compaction tail when the preparation recorded one (TurnMeta.compactionRequestHash):
+     *  a project resolved late or an instructions file edited between attempts changes the tail,
+     *  never the client's bytes, and the client is retrying THIS compaction (review 2026-09-14). */
+    fun key(meta: TurnMeta, upstreamBody: String): String? =
+        key(meta.sessionId, upstreamBody, meta.compactionRequestHash)
+
+    fun key(sessionId: String?, upstreamBody: String, bodyHash: String? = null): String? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
-        return "$session:${sha256Hex(upstreamBody)}"
+        return "$session:${bodyHash ?: sha256Hex(upstreamBody)}"
     }
+
+    /** The hash [key] uses for a body: exposed so the preparation can record it before tailing. */
+    fun bodyHash(body: String): String = sha256Hex(body)
 
     /** A compaction's recording, from its first frame: a retry may attach while it is in flight. */
     fun begin(key: String, recording: FrameRecording) {

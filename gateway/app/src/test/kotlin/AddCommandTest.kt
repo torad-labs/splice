@@ -192,10 +192,13 @@ class AddCommandTest {
         assertFalse(runBlocking { command(http(routes)).add(base + "--model" + "m:0", env) })
         assertFalse(runBlocking { command(http(routes)).add(base + "--model" + "m:-1", env) })
         assertEquals(before, Files.readString(config()), "nothing written for a non-positive window")
-        val two = base + "--model" + "qwen3:4b:32768" + "--model" + "qwen3:4b"
+        val twice = base + "--model" + "qwen3:4b:32768" + "--model" + "qwen3:4b"
+        assertFalse(runBlocking { command(http(routes)).add(twice, env) }, "one id, two windows: refused")
+        assertEquals(before, Files.readString(config()), "nothing written for a repeated model id")
+        val two = base + "--model" + "qwen3:4b:32768" + "--model" + "m"
         assertTrue(runBlocking { command(http(routes)).add(two, env) })
         val models = TopologyLoader.parse(Files.readString(config())).providers.getValue("fw").models
-        assertEquals(listOf("qwen3:4b" to 32_768L, "qwen3:4b" to 128_000L), models.map { it.id to it.contextWindow })
+        assertEquals(listOf("qwen3:4b" to 32_768L, "m" to 128_000L), models.map { it.id to it.contextWindow })
     }
 
     @Test

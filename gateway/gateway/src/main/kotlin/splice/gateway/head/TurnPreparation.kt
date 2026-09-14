@@ -124,14 +124,19 @@ internal class TurnPreparation(
         )
         val base = provider.buildTurn(parsed, compact, sessionId)
         val tailed = effective?.tailText?.let { provider.withCompactionTail(base, it) } ?: base
-        return effective?.let {
+        // A dialect that cannot place the tail (no user text to extend) returns the request as it
+        // was: the meta then says so instead of claiming instructions the wire never carried.
+        val applied = effective?.tailText == null || tailed.requestBody != base.requestBody
+        val hash = if (compact) replay.bodyHash(base.requestBody.toString()) else null
+        return effective?.let { eff ->
             tailed.copy(
                 meta = tailed.meta.copy(
-                    compactionInstructions = it.text,
-                    compactionInstructionsSource = it.source,
+                    compactionInstructions = if (applied) eff.text else null,
+                    compactionInstructionsSource = if (applied) eff.source else "${eff.source} (not applied)",
+                    compactionRequestHash = hash,
                 ),
             )
-        } ?: tailed
+        } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
     }
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn
@@ -147,7 +152,7 @@ internal class TurnPreparation(
     }
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
-        val key = replay.key(built.meta.sessionId, built.requestBody.toString()) ?: return null
+        val key = replay.key(built.meta, built.requestBody.toString()) ?: return null
         val recording = replay.lookup(key) ?: return null
         val state = if (recording.isComplete) "finished" else "still running"
         deps.log(

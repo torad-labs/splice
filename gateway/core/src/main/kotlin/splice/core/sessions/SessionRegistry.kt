@@ -3,7 +3,9 @@
 // never register). Every field is optional because Claude Code owns the schema and may add,
 // rename or omit keys; a malformed file is skipped, never fatal. Availability is derived, never
 // trusted from the file: a registration whose pid is gone is GONE whatever its status says, and
-// one whose updatedAt is older than the stale window is STALE (alive, but not heard from).
+// one whose updatedAt is older than the stale window is STALE (alive, but not heard from). The
+// pid is read in the DOMAIN the file names (PidIdentity): another namespace's pid, or a pid whose
+// start time moved since the registration, is GONE.
 package splice.core.sessions
 
 import kotlinx.serialization.json.Json
@@ -71,6 +73,7 @@ public class SessionRegistry(
     },
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
+    private val identity: PidIdentity = ProcPidIdentity(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -89,7 +92,13 @@ public class SessionRegistry(
             .getOrNull() as? JsonObject ?: return null
         val pid = JsonScalars.long(obj, "pid")
         val updatedAt = JsonScalars.long(obj, "updatedAt")
-        val availability = availability(pid, updatedAt, JsonScalars.long(obj, "startedAt"))
+        val availability = availability(
+            pid,
+            updatedAt,
+            JsonScalars.long(obj, "startedAt"),
+            JsonScalars.str(obj, "pidDomain"),
+            JsonScalars.str(obj, "procStart"),
+        )
         return SessionRecord(
             pid = pid,
             sessionId = JsonScalars.str(obj, "sessionId"),
@@ -107,13 +116,31 @@ public class SessionRegistry(
         )
     }
 
-    private fun reusedPid(pid: Long, startedAt: Long?): Boolean =
-        startedAt != null && (pidStartedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+    /** Claude Code's own identity facts decide first: a domain that is not this host's (the pid is
+     *  another namespace's), or a start time that is not the running process's (the pid was reused).
+     *  Only a registration without them falls back to the start-time tolerance. */
+    private fun foreignPid(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean {
+        val hostDomain = identity.hostDomain()
+        val judged = domain != null && hostDomain != null
+        if (judged && domain != hostDomain) return true
+        val start = procStart?.let { identity.procStart(pid) }
+        if (procStart != null && start != null) return procStart != start
+        return startedAt != null && (pidStartedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+    }
+
+    private fun gone(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean =
+        !pidAlive(pid) || foreignPid(pid, domain, procStart, startedAt)
 
     /** A pid that is absent or not a real process id (0, negative) is GONE for this one row only; so
-     *  is a live pid whose process started long after the registration (the pid was reused). */
-    private fun availability(pid: Long?, updatedAt: Long?, startedAt: Long?): SessionAvailability = when {
-        pid == null || pid <= 0 || !pidAlive(pid) || reusedPid(pid, startedAt) -> SessionAvailability.GONE
+     *  is a live pid that is not the registered process (foreignPid). */
+    private fun availability(
+        pid: Long?,
+        updatedAt: Long?,
+        startedAt: Long?,
+        domain: String?,
+        procStart: String?,
+    ): SessionAvailability = when {
+        pid == null || pid <= 0 || gone(pid, domain, procStart, startedAt) -> SessionAvailability.GONE
         updatedAt == null || clock() - updatedAt > staleAfterMs -> SessionAvailability.STALE
         else -> SessionAvailability.LIVE
     }

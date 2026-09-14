@@ -2,6 +2,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.sessions.PidIdentity
 import splice.core.sessions.SessionAvailability
 import splice.core.sessions.SessionRegistry
 import java.nio.file.Files
@@ -15,14 +16,53 @@ class SessionRegistryTest {
         Files.writeString(dir.resolve("$pid.json"), body)
     }
 
-    private fun registry(dir: Path, alive: Set<Long>, started: Map<Long, Long> = emptyMap()) = SessionRegistry(
+    private val hostDomain = "linux:652c492b8aae4140b9d078835b2ed12a:pid:[4026531836]"
+
+    private fun identity(
+        procStarts: Map<Long, String> = emptyMap(),
+        domain: String? = hostDomain,
+    ) = object : PidIdentity {
+        override fun hostDomain(): String? = domain
+        override fun procStart(pid: Long): String? = procStarts[pid]
+    }
+
+    private fun registry(
+        dir: Path,
+        alive: Set<Long>,
+        started: Map<Long, Long> = emptyMap(),
+        identity: PidIdentity = identity(),
+    ) = SessionRegistry(
         sessionsDir = dir,
         headOf = { pid -> if (pid == 11L) "claudex" else null },
         pidAlive = { it in alive },
         pidStartedAt = { started[it] },
         clock = { now },
         staleAfterMs = 60_000L,
+        identity = identity,
     )
+
+    /** Claude Code writes pidDomain and procStart; they decide before the start-time tolerance does. */
+    @Test
+    fun `another domain's pid, or a pid whose start time moved, is GONE whatever process holds it - review 2026-09-14`(
+        @TempDir dir: Path,
+    ) {
+        val other = "linux:ffffffffffffffffffffffffffffffff:pid:[4026531836]"
+        val host = hostDomain
+        write(dir, 11, """{"pid":11,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"187740"}""")
+        write(dir, 12, """{"pid":12,"updatedAt":$now,"startedAt":$now,"pidDomain":"$other","procStart":"187740"}""")
+        write(dir, 13, """{"pid":13,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"100"}""")
+        write(dir, 14, """{"pid":14,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"555"}""")
+        val starts = mapOf(11L to "187740", 12L to "187740", 13L to "187740")
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L, 14L), identity = identity(starts)).read()
+            .associateBy { it.pid }
+        assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "same domain, same start")
+        assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "a container's pid: not this host's")
+        assertEquals(SessionAvailability.GONE, rows.getValue(13L).availability, "the pid was reused since")
+        assertEquals(SessionAvailability.LIVE, rows.getValue(14L).availability, "start unreadable here: trusted")
+        val noHost = registry(dir, alive = setOf(12L), identity = identity(starts, domain = null)).read()
+        val unjudged = noHost.single { it.pid == 12L }.availability
+        assertEquals(SessionAvailability.LIVE, unjudged, "no host domain: not judged")
+    }
 
     @Test
     fun `live, stale and gone are derived from the pid and updatedAt, never from status`(@TempDir dir: Path) {

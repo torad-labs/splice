@@ -9,6 +9,7 @@ import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.GATEWAY_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -73,7 +74,7 @@ class ClientVersionObservationTest {
         }
 
         assertEquals(
-            "Claude Code 2.1.258 is newer than the version splice 0.3.2 was tested with (2.1.257)",
+            "Claude Code 2.1.258 is newer than the version splice $GATEWAY_VERSION was tested with (2.1.257)",
             versions.aggregateWarning(),
         )
     }

@@ -16,6 +16,9 @@ private const val REPO = "torad-labs/splice"
 private const val RELEASES = "https://github.com/$REPO/releases"
 private const val SHIM_MODE = "rwxr-xr-x"
 
+/** `doctor --json` shipped in 0.4.0. */
+private const val JSON_DOCTOR_MINOR = 4
+
 /** A refusal decided before anything was activated. [reason] is text this command authored (a version, a
  *  path, a verdict), never bytes of a file it read — so it is printed as-is, not through SafeFailureText. */
 internal class UpgradeRefused(val reason: String) : RuntimeException(reason)
@@ -25,10 +28,11 @@ internal class UpgradeRelease(
     private val process: UpgradeProcess,
     private val java: String,
 ) {
-    /** The release base: SPLICE_RELEASE_BASE_URL wins (the installer's override), else the tag or latest. */
+    /** The release base: SPLICE_RELEASE_BASE_URL wins (the installer's override), else the tag or latest.
+     *  Tags are `v<version>` (release.yml); `--to 0.4.0` and `--to v0.4.0` name the same one. */
     fun base(to: String?, override: String?): String =
         override?.trim()?.takeIf { it.isNotEmpty() }?.trimEnd('/')
-            ?: if (to == null) "$RELEASES/latest/download" else "$RELEASES/download/$to"
+            ?: if (to == null) "$RELEASES/latest/download" else "$RELEASES/download/v${to.removePrefix("v")}"
 
     /** Fetch, verify and validate the release into [staging]; returns the candidate's version. */
     fun stage(base: String, staging: Path): String {
@@ -70,18 +74,33 @@ internal class UpgradeRelease(
     }
 
     /** The candidate answers `version` like a splice jar and its doctor RUNS (findings are next
-     *  steps, exactly as install.sh treats them; a crash or garbage is a refusal). */
+     *  steps, exactly as install.sh treats them; a crash or garbage is a refusal). A candidate older
+     *  than 0.4.0 has no `--json`: its verb table ignored the flag and ran the full text doctor —
+     *  write probes and daemon calls against the live install — only to be refused for not printing
+     *  JSON (review 2026-09-14). Such a candidate skips the preflight, and says so. */
     private fun validate(jar: Path): String {
         val version = process(listOf(java, "-jar", jar.toString(), "version"), false)
         val line = version.stdout.trim()
         if (version.code != 0 || !line.startsWith("splice ")) {
             refuse("candidate jar failed validation: ${line.ifEmpty { "<empty>" }}")
         }
+        val candidate = line.removePrefix("splice ").trim()
+        if (predatesJsonDoctor(candidate)) {
+            println("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
+            return candidate
+        }
         val doctor = process(listOf(java, "-jar", jar.toString(), "doctor", "--json"), false)
         if (doctor.code !in 0..1 || !doctor.stdout.trimStart().startsWith("{")) {
-            refuse("candidate jar's doctor did not run (exit ${doctor.code})")
+            refuse("candidate jar's doctor --json did not answer with a report (exit ${doctor.code})")
         }
-        return line.removePrefix("splice ").trim()
+        return candidate
+    }
+
+    private fun predatesJsonDoctor(version: String): Boolean {
+        val parts = version.substringBefore('-').substringBefore('+').split('.')
+        val major = parts.getOrNull(0)?.toIntOrNull() ?: return false
+        val minor = parts.getOrNull(1)?.toIntOrNull() ?: return false
+        return major == 0 && minor < JSON_DOCTOR_MINOR
     }
 
     private fun refuse(reason: String): Nothing = throw UpgradeRefused(reason)

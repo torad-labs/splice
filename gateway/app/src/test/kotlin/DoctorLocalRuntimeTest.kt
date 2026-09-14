@@ -1,11 +1,15 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.TopologyLoader
 import splice.app.cli.CheckStatus
+import splice.app.cli.ConfigHeadWindowOverride
 import splice.app.cli.DoctorLocalRuntime
+import splice.core.util.EnvReader
 import splice.dialect.chat.LocalHttp
 import splice.dialect.chat.LocalHttpReply
+import java.nio.file.Path
 
 class DoctorLocalRuntimeTest {
 
@@ -57,6 +61,37 @@ class DoctorLocalRuntimeTest {
         assertEquals(CheckStatus.OK, live.first { it.name == "local:ollama/qwen3:4b/live" }.status)
         assertTrue(live.none { it.name == "local:ollama/ghost:1b/live" })
     }
+
+    @Test
+    fun `doctor applies the daemon's per-head window override in both directions`() {
+        // Boot builds catalogFor(head, contextWindowOverride): an override wider than the served window
+        // makes the daemon refuse the row, so doctor must FAIL it too; one narrower makes both accept.
+        val wide = DoctorLocalRuntime(up, override = { _, _ -> 65536L })
+        val widened = wide.localChecks(TopologyLoader.parse(toml), live = false)
+        assertEquals(CheckStatus.FAIL, widened.first { it.name == "local:ollama/qwen3:4b" }.status)
+        val declared = toml.replace("port = 3901", "port = 3901\ncontext_window = 65536")
+        val narrow = DoctorLocalRuntime(up, override = { _, _ -> 8192L })
+        val narrowed = narrow.localChecks(TopologyLoader.parse(declared), live = false)
+        assertEquals(CheckStatus.OK, narrowed.first { it.name == "local:ollama/qwen3:4b" }.status)
+    }
+
+    @Test
+    fun `the real config override reads the head's own overrides table like the daemon does`(@TempDir tmp: Path) {
+        // Daemon.kt feeds ConfigService BOTH the global layer and [heads.<key>.overrides]; a doctor that
+        // built only the global layer said OK for a row boot refuses (REVIEW 2/3 false split).
+        val env = EnvReader { name -> tmp.resolve("state").toString().takeIf { name == "CLAUDEX_STATE_DIR" } }
+        val widened = toml + "\n[heads.local.overrides]\ncontextWindowOverride = \"65536\"\n"
+        val wide = DoctorLocalRuntime(up, env, ConfigHeadWindowOverride(env))
+        assertEquals(CheckStatus.FAIL, wide.localChecks(TopologyLoader.parse(widened), live = false).row().status)
+        val declared = toml.replace("port = 3901", "port = 3901\ncontext_window = 65536")
+        val narrowed = declared + "\n[heads.local.overrides]\ncontextWindowOverride = \"8192\"\n"
+        val narrow = DoctorLocalRuntime(up, env, ConfigHeadWindowOverride(env))
+        assertEquals(CheckStatus.OK, narrow.localChecks(TopologyLoader.parse(narrowed), live = false).row().status)
+        val plain = DoctorLocalRuntime(up, env, ConfigHeadWindowOverride(env))
+        assertEquals(CheckStatus.FAIL, plain.localChecks(TopologyLoader.parse(declared), live = false).row().status)
+    }
+
+    private fun List<splice.app.cli.DoctorCheck>.row() = first { it.name == "local:ollama/qwen3:4b" }
 
     @Test
     fun `the head's effective rows are checked, not the provider table`() {

@@ -9,6 +9,9 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
+import splice.app.auth.OAuthAccountFiles
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
@@ -18,7 +21,9 @@ import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
+import splice.spi.Provider
 import splice.spi.ProviderTuning
+import java.nio.file.Path
 import java.nio.file.Paths
 
 internal class ChatArm(
@@ -28,6 +33,7 @@ internal class ChatArm(
 ) {
     private val overlay = QuirksOverlay()
     private val probeInputs = LocalProbeInputs()
+    private val accountFiles = OAuthAccountFiles()
 
     // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered
     // api-key/custom kinds use generic Bearer auth. Grok rides this dialect because
@@ -36,47 +42,66 @@ internal class ChatArm(
     internal fun chatProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
-        val auth = when (providerCfg.auth.kind) {
-            GROK_OAUTH -> {
-                val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
-                GrokAuthProvider(
-                    // Splice's own file by default (AuthKind header, 2026-09-05); ~/.grok's only by auth.file.
-                    authPath = Paths.get(
-                        TopologyLoader.expandHome(providerCfg.auth.file ?: AuthKind.GrokOAuth.authFile),
-                    ),
-                    authCacheMs = ctx.cfg.authCacheMs,
-                    refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
-                    prefetchScope = probeScope,
-                    // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
-                    log = HeadScopedLogs.headScopedLog(ctx.key, log),
-                )
-            }
-            else -> ApiKeyAuthProvider(
+        val accounts = if (providerCfg.auth.kind == GROK_OAUTH) {
+            val primaryPath = Paths.get(
+                TopologyLoader.expandHome(providerCfg.auth.file ?: AuthKind.GrokOAuth.authFile),
+            )
+            grokAccounts(ctx, primaryPath)
+        } else {
+            emptyList()
+        }
+        val auth = accounts.takeIf { it.isNotEmpty() }
+            ?.let(WiredAccounts::providerAccount)
+            ?.auth
+            ?: ApiKeyAuthProvider(
                 envVar = providerCfg.auth.effectiveApiKeyEnv(key),
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
-        }
         if (providerCfg.isLocal) refuseContradictedRows(ctx, (auth as? ApiKeyAuthProvider)?.keyNow())
-        return Wired(
-            OpenAiChatProvider(
-                tuning = ProviderTuning(
-                    key = key,
-                    label = label,
-                    catalog = ctx.catalog,
-                    pinnedModel = ctx.head.pinnedModel,
-                    auth = auth,
-                    baseUrl = providerCfg.baseUrl,
-                    watchdog = ctx.watchdog,
-                    loginCommand = ctx.loginCommand,
-                ),
-                // The profile and its TOML overlay live in QuirksOverlay with the other two dialects
-                // (DR-155) — this arm's job is auth selection and provider construction.
-                quirks = overlay.chatQuirks(providerCfg, key, label),
-                showReasoning = ctx.cfg.showReasoning,
+        val provider = OpenAiChatProvider(
+            tuning = ProviderTuning(
+                key = key,
+                label = label,
+                catalog = ctx.catalog,
+                pinnedModel = ctx.head.pinnedModel,
+                auth = auth,
+                baseUrl = providerCfg.baseUrl,
+                watchdog = ctx.watchdog,
+                loginCommand = ctx.loginCommand,
             ),
-            auth,
+            // The profile and its TOML overlay live in QuirksOverlay with the other two dialects
+            // (DR-155) — this arm's job is auth selection and provider construction.
+            quirks = overlay.chatQuirks(providerCfg, key, label),
+            showReasoning = ctx.cfg.showReasoning,
         )
+        val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }
+            ?.let { StaticChatHeaders(provider, it) }
+            ?: provider
+        return Wired(configured, auth, accounts)
     }
+
+    private fun grokAccounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {
+        val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
+        return accountFiles.discover(AuthKind.GrokOAuth, primaryPath).map { file ->
+            WiredAccount(
+                label = file.label,
+                primary = file.primary,
+                auth = grokAuth(ctx, file.credentialFile, tokenUrl),
+                quotaFile = file.quotaFile,
+                credentialPresent = file.credentialPresent,
+            )
+        }
+    }
+
+    private fun grokAuth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
+        GrokAuthProvider(
+            authPath = path,
+            authCacheMs = ctx.cfg.authCacheMs,
+            refreshCall = { refreshToken -> grokRefresh.refresh(tokenUrl, refreshToken) },
+            prefetchScope = probeScope,
+            // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail.
+            log = HeadScopedLogs.headScopedLog(ctx.key, log),
+        )
 
     /** v0.4.0 (FEATURES.md §10): a local runtime that is UP and contradicts the row refuses the
      *  head with the runtime's own words; a runtime that is down boots as today (per-turn errors),
@@ -103,5 +128,23 @@ internal class ChatArm(
         }
         val version = runtime.version?.let { " $it" }.orEmpty()
         log("[$key] local runtime ${runtime.kind.label}$version: ${rows.size} row(s) validated\n")
+    }
+}
+
+/** Makes configured probe headers ride real chat turns too; credential-owned auth always wins. */
+private class StaticChatHeaders(
+    private val delegate: Provider,
+    private val configured: Map<String, String>,
+) : Provider by delegate {
+    override fun extraHeaders(creds: Credentials): Map<String, String> {
+        val authHeader = when (creds) {
+            is Credentials.Bearer -> "Authorization"
+            is Credentials.ApiKey -> creds.header
+            Credentials.ClientForwarded -> null
+        }
+        val safeConfigured = configured.filterKeys { key ->
+            authHeader == null || !key.equals(authHeader, ignoreCase = true)
+        }
+        return delegate.extraHeaders(creds) + safeConfigured
     }
 }

@@ -4,8 +4,14 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.app.LoginSpec
+import splice.app.auth.OAuthAccountFiles
+import splice.app.auth.OAuthAccountIdentity
+import splice.app.auth.OAuthAccountLabel
+import splice.app.auth.OAuthAccountLabels
+import splice.core.topology.AuthKind
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.provider.codex.CodexOAuth
@@ -21,10 +27,17 @@ internal class LoginCodex {
     private val json = Json { ignoreUnknownKeys = true }
     private val env: EnvReader = EnvReader(System::getenv)
 
-    internal fun spec(head: String, authPath: Path): LoginSpec {
+    internal fun spec(head: String, authPath: Path, label: String? = null): LoginSpec {
         val pkce = oauth.makePkce()
         val state = randomToken()
         val clientId = CodexOAuthEndpoints.clientId(env)
+        val account = OAuthAccountFiles().loginAccount(
+            AuthKind.ChatgptOAuth,
+            authPath,
+            label,
+            OAuthAccountLabel(::defaultLabel),
+            OAuthAccountIdentity(::accountId),
+        )
         return LoginSpec(
             head = head,
             authorizeUrl = oauth.buildAuthorizeUrl(pkce.challenge, state, clientId, env),
@@ -39,6 +52,7 @@ internal class LoginCodex {
             },
             authPath = authPath,
             toAuthJson = { body -> authJson(body) },
+            account = account,
         )
     }
 
@@ -52,6 +66,21 @@ internal class LoginCodex {
             apiKey = null,
             nowIso = Instant.now().toString(),
         ).toString()
+    }
+
+    private fun defaultLabel(authJson: JsonObject?): String? {
+        val tokens = authJson?.get("tokens") as? JsonObject ?: return null
+        val accessToken = JsonScalars.str(tokens, "access_token")
+        val idToken = JsonScalars.str(tokens, "id_token")
+        val plan = oauth.planTypeFromToken(accessToken) ?: oauth.planTypeFromToken(idToken)
+        return accountId(authJson)?.let { OAuthAccountLabels.chatGpt(plan, it) }
+    }
+
+    private fun accountId(authJson: JsonObject): String? {
+        val tokens = authJson["tokens"] as? JsonObject ?: return null
+        return JsonScalars.str(tokens, "account_id")
+            ?: oauth.accountIdFromToken(JsonScalars.str(tokens, "access_token"))
+            ?: oauth.accountIdFromToken(JsonScalars.str(tokens, "id_token"))
     }
 
     private fun randomToken(): String {

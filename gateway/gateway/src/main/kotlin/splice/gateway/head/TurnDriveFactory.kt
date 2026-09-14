@@ -11,6 +11,7 @@ import splice.core.perf.PerfKeys
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
 import splice.spi.Provider
+import splice.spi.RemainingTurnWait
 import splice.spi.TurnWatchdog
 
 internal class TurnDriveFactory(
@@ -43,6 +44,10 @@ internal class TurnDriveFactory(
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
         val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
         val watchdog = TurnWatchdog(budget, deps.clock, log = { deps.log("[${provider.key}] $it") })
+        val totalCapMs = budget.totalCap.inWholeMilliseconds
+        val remainingTurnWait = RemainingTurnWait {
+            (totalCapMs - (deps.clock() - inputs.t0)).coerceAtLeast(0L)
+        }
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
             requestBody = built.requestBody,
@@ -55,10 +60,13 @@ internal class TurnDriveFactory(
             upstreamModel = meta.upstreamModel,
             perf = perf,
             turnHeaders = built.extraHeaders,
+            account = inputs.account,
             channel = channel,
             signals = signals,
             toolSearch = built.toolSearch,
             roundInterceptor = built.roundInterceptor,
+            remainingTurnWait = remainingTurnWait,
+            quota = inputs.quota,
         )
     }
 }

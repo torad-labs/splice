@@ -82,7 +82,9 @@ internal class CollectTurn(
             try {
                 driver.driveSealingCancellation(drive, pingClient = false, seal = false)
                 // Same unified rate-limit headers as the streaming path (TurnStreamer).
-                quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
+                (inputs.quota ?: quota)?.clientHeaders()?.forEach { (name, value) ->
+                    call.response.header(name, value)
+                }
                 call.respondText(
                     terminal.responseBody().toString(),
                     ContentType.Application.Json,

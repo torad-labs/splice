@@ -51,7 +51,7 @@ internal class TurnPreparation(
     private val activityLabel = ActivityLabel()
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
-        val sessionId = call.request.headers[SESSION_HEADER]
+        val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
         deps.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
         val body = bodyReader.receiveBodyBounded(call, deps.maxRequestBytes)
         perf.mark(PerfKeys.RECV)

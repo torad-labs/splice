@@ -25,6 +25,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
+import java.util.jar.Attributes
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import java.util.jar.Manifest
+import javax.tools.ToolProvider
 
 // Every character that used to break one of the two layers: an apostrophe closes a single-quoted
 // shell word, a double quote and a backslash corrupt JSON, a newline escapes a `#` comment, and a
@@ -36,8 +41,10 @@ private data class Ran(val exit: Int, val out: String, val err: String)
 private fun bashAvailable(): Boolean =
     runCatching { ProcessBuilder("bash", "-c", "exit 0").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false)
 
-private fun run(vararg argv: String, stdin: String = "", dir: Path): Ran {
-    val p = ProcessBuilder(*argv).directory(dir.toFile()).start()
+private fun run(vararg argv: String, stdin: String = "", dir: Path, env: Map<String, String> = emptyMap()): Ran {
+    val builder = ProcessBuilder(*argv).directory(dir.toFile())
+    builder.environment().putAll(env)
+    val p = builder.start()
     p.outputStream.use { it.write(stdin.toByteArray()) }
     val out = p.inputStream.readBytes().decodeToString()
     val err = p.errorStream.readBytes().decodeToString()
@@ -74,6 +81,305 @@ class LoginHookScriptSafetyTest {
             write(tmp, name, body)
             val checked = run("bash", "-n", name, dir = tmp)
             assertEquals(0, checked.exit, "$name is not valid bash: ${checked.err}")
+        }
+    }
+
+    /** The browser branch SPAWNS loginCommand: here it is a recorder script, so the spawn is
+     *  observable and harmless. Its path is the head word the pending-process pattern is built from. */
+    private fun browserSpec(recorder: Path) = LoginHookSpec(
+        loginCommand = "$recorder login",
+        signInLabel = "Codex (ChatGPT)",
+        viaBrowser = true,
+        sentinel = "SPLICE_CODEX_LOGIN",
+        outcomeFile = "/nonexistent/receipt",
+        canCapturePaste = false,
+    )
+
+    private fun recorder(dir: Path): Path {
+        // Written whole, then renamed: the reader polls for the file, so a partial write is never seen.
+        val body = "#!/usr/bin/env bash\nprintf '%s\\n' \"\$@\" > \"$dir/args.tmp\" && " +
+            "mv \"$dir/args.tmp\" \"$dir/args.txt\"\n"
+        val script = write(dir, "recorder.sh", body)
+        script.toFile().setExecutable(true)
+        return script
+    }
+
+    private val javaBin: String = Path.of(System.getProperty("java.home"), "bin", "java").toString()
+
+    /** A REAL JVM parked the way `splice.jar login` parks on its loopback listener: a tiny jar
+     *  compiled here whose main sleeps; with `stubborn` as its last argument it registers a slow
+     *  shutdown hook, so TERM does not end it within the hook's 2 s (the JVM mid-shutdown-hook case). */
+    private fun parkJar(dir: Path): Path {
+        val jar = dir.resolve("park.jar")
+        if (Files.exists(jar)) return jar
+        val compiler = ToolProvider.getSystemJavaCompiler()
+        assumeTrue(compiler != null, "a JDK compiler is required to build the parked-JVM stand-in")
+        val src = write(
+            dir,
+            "Park.java",
+            """
+            public class Park {
+                public static void main(String[] args) throws Exception {
+                    if (args.length > 0 && args[args.length - 1].equals("stubborn")) {
+                        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                            try { Thread.sleep(30000); } catch (InterruptedException ignored) { }
+                        }));
+                    }
+                    Thread.sleep(60000);
+                }
+            }
+            """.trimIndent(),
+        )
+        val classes = Files.createDirectories(dir.resolve("park-classes"))
+        assertEquals(0, compiler.run(null, null, null, "-d", classes.toString(), src.toString()), "javac")
+        val manifest = Manifest()
+        manifest.mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
+        manifest.mainAttributes[Attributes.Name.MAIN_CLASS] = "Park"
+        JarOutputStream(Files.newOutputStream(jar), manifest).use { out ->
+            out.putNextEntry(JarEntry("Park.class"))
+            out.write(Files.readAllBytes(classes.resolve("Park.class")))
+            out.closeEntry()
+        }
+        return jar
+    }
+
+    /** The shim's exact invocation: `java -jar <jar> login <head>`, with a real java executable. */
+    private fun pendingLogin(recorder: Path, jar: Path, ignoreTerm: Boolean): Process {
+        val argv = mutableListOf(javaBin, "-jar", jar.toString(), "login", recorder.toString())
+        if (ignoreTerm) argv += "stubborn"
+        return ProcessBuilder(argv).start()
+    }
+
+    /** An UNRELATED JVM (the same real java executable) whose main is something else and whose
+     *  own application arguments carry `-jar <the splice jar> login <head>`: in jar mode (another
+     *  main jar) or class mode. Fixed positions decide, so neither is ours. */
+    private fun otherJvm(dir: Path, recorder: Path, spliceJar: Path, classMode: Boolean): Process {
+        val park = parkJar(dir)
+        val launch = if (classMode) {
+            listOf("-cp", dir.resolve("park-classes").toString(), "Park")
+        } else {
+            val other = dir.resolve("report.jar")
+            if (!Files.exists(other)) Files.copy(park, other)
+            listOf("-jar", other.toString(), "--inspect")
+        }
+        val tail = listOf("-jar", spliceJar.toString(), "login", recorder.toString())
+        return ProcessBuilder(listOf(javaBin) + launch + tail).start()
+    }
+
+    /** A process whose command line carries the login words but whose executable is bash: the
+     *  words are one argv element ([oneWord]) or separate ones, and argv[0] may even say java. */
+    private fun bystander(recorder: Path, oneWord: Boolean, argv0Java: Boolean = false): Process {
+        val loop = "while :; do sleep 1; done"
+        val cmd = if (oneWord) {
+            "exec -a 'java -jar /x/splice.jar login $recorder' sleep 60"
+        } else {
+            val prefix = if (argv0Java) "exec -a java " else "exec "
+            prefix + "bash -c '$loop' x java -jar /x/splice.jar login '$recorder'"
+        }
+        return ProcessBuilder("bash", "-c", cmd).start()
+    }
+
+    private fun recordedArgs(dir: Path): List<String> {
+        val file = dir.resolve("args.txt")
+        repeat(50) { if (Files.exists(file)) return Files.readAllLines(file) else Thread.sleep(100) }
+        return emptyList()
+    }
+
+    private fun decision(ran: Ran): String {
+        assertEquals(0, ran.exit, ran.err)
+        val decision = Json.parseToJsonElement(ran.out).jsonObject
+        assertEquals("block", decision["decision"]?.jsonPrimitive?.content, ran.out)
+        return decision["reason"]?.jsonPrimitive?.content.orEmpty()
+    }
+
+    @Test
+    fun `slash login with a trailing space or arguments is intercepted, and --label rides to the CLI - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val hook = write(tmp, "login-args.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
+        val spaced = run("bash", hook.toString(), stdin = """{"prompt":"/login "}""", dir = tmp)
+        assertTrue(decision(spaced).startsWith("Opening your browser"), spaced.out)
+        assertEquals(listOf("login"), recordedArgs(tmp), "no label: the plain login command")
+        Files.delete(tmp.resolve("args.txt"))
+        val labeled = run("bash", hook.toString(), stdin = """{"prompt": "/login --label work"}""", dir = tmp)
+        decision(labeled)
+        assertEquals(listOf("login", "--label", "work"), recordedArgs(tmp), "--label rides through")
+        Files.delete(tmp.resolve("args.txt"))
+        val body = """{"prompt":"SPLICE_CODEX_LOGIN --label ops.2"}"""
+        val expanded = run("bash", hook.toString(), stdin = body, dir = tmp)
+        decision(expanded)
+        assertEquals(listOf("login", "--label", "ops.2"), recordedArgs(tmp), "the expanded command form too")
+        val other = run("bash", hook.toString(), stdin = """{"prompt":"/loginx"}""", dir = tmp)
+        assertEquals(0, other.exit, other.err)
+        assertEquals("", other.out, "/loginx is not /login")
+        val prose = run("bash", hook.toString(), stdin = """{"prompt":"how does /login work?"}""", dir = tmp)
+        assertEquals("", prose.out, "a sentence mentioning /login is a prompt")
+        Files.delete(tmp.resolve("args.txt"))
+        // Claude Code writes a typed tab or newline into the JSON as the escape, not the character.
+        val escaped = run("bash", hook.toString(), stdin = """{"prompt":"/login\t--label ops\n"}""", dir = tmp)
+        decision(escaped)
+        assertEquals(listOf("login", "--label", "ops"), recordedArgs(tmp), "escaped whitespace is whitespace")
+        Files.delete(tmp.resolve("args.txt"))
+        val newline = run("bash", hook.toString(), stdin = """{"prompt":"/login\n"}""", dir = tmp)
+        assertTrue(decision(newline).startsWith("Opening your browser"), newline.out)
+        assertEquals(listOf("login"), recordedArgs(tmp), "a trailing escaped newline is /login")
+    }
+
+    /** A label the CLI would refuse must not fall back to a bare login: that signs the PRIMARY in
+     *  again and overwrites its credential. The hook refuses first and starts nothing. */
+    @Test
+    fun `an argument the login command would refuse is refused by the hook and nothing starts - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val hook = write(tmp, "login-bad.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
+        val long = "a".repeat(49)
+        listOf(
+            """/login --label \"my work\"""",
+            "/login --label my work",
+            "/login --label Work",
+            "/login --label -x",
+            "/login --label $long",
+            "/login --label",
+            "/login --force",
+            "SPLICE_CODEX_LOGIN --label Work",
+            """SPLICE_CODEX_LOGIN\t--label Work""",
+            """SPLICE_CODEX_LOGIN\n--label Work\n""",
+        ).forEach { prompt ->
+            val ran = run("bash", hook.toString(), stdin = """{"prompt":"$prompt"}""", dir = tmp)
+            val reason = decision(ran)
+            assertTrue(reason.startsWith("/login takes no arguments other than --label NAME"), "$prompt -> $reason")
+            Thread.sleep(150)
+            assertTrue(!Files.exists(tmp.resolve("args.txt")), "$prompt must start nothing")
+        }
+        val equals = run("bash", hook.toString(), stdin = """{"prompt":"/login --label=work-2"}""", dir = tmp)
+        decision(equals)
+        assertEquals(listOf("login", "--label", "work-2"), recordedArgs(tmp), "--label=NAME is the same flag")
+        Files.delete(tmp.resolve("args.txt"))
+        val cwd = """{"prompt":"/login","cwd":"/home/x/--label evil"}"""
+        decision(run("bash", hook.toString(), stdin = cwd, dir = tmp))
+        assertEquals(listOf("login"), recordedArgs(tmp), "arguments are read from the prompt field only")
+    }
+
+    @Test
+    fun `the top-level prompt is decoded whatever the field order, nesting or escapes - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val hook = write(tmp, "login-json.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
+        // Only the TOP-LEVEL prompt is read: a nested object with its own prompt key is data.
+        val nested = """{"session_id":"s","prompt":"hello","metadata":{"prompt":"/login --label work"}}"""
+        val nestedRan = run("bash", hook.toString(), stdin = nested, dir = tmp)
+        assertEquals("", nestedRan.out, "a nested prompt key is not the prompt")
+        Thread.sleep(150)
+        assertTrue(!Files.exists(tmp.resolve("args.txt")), "nothing started for a nested prompt")
+        // Field order and nesting before the prompt do not matter: the top-level prompt is decoded.
+        listOf(
+            """{"metadata":{"prompt":"x"},"prompt":"/login"}""" to listOf("login"),
+            """{"x":{"y":[1,{"prompt":"z"}]},"prompt":"SPLICE_CODEX_LOGIN --label ops"}""" to
+                listOf("login", "--label", "ops"),
+            """{"prompt":"\/login --label=a.b","cwd":"/x"}""" to listOf("login", "--label", "a.b"),
+            """{"prompt":"/login\t--label q\"x\"","p":"\"prompt\":\"/login\""}""" to null,
+        ).forEach { (input, expected) ->
+            val ran = run("bash", hook.toString(), stdin = input, dir = tmp)
+            val reason = decision(ran)
+            if (expected == null) {
+                assertTrue(reason.startsWith("/login takes no arguments"), "$input -> $reason")
+                Thread.sleep(150)
+                assertTrue(!Files.exists(tmp.resolve("args.txt")), "$input must start nothing")
+            } else {
+                assertEquals(expected, recordedArgs(tmp), input)
+                Files.delete(tmp.resolve("args.txt"))
+            }
+        }
+        // A readable top-level prompt that is not /login is an ordinary prompt, whatever else the
+        // input carries; an input with no top-level prompt string that mentions /login is refused.
+        val ordinary = run("bash", hook.toString(), stdin = """{"a":{"prompt":"/login"},"prompt":"hello"}""", dir = tmp)
+        assertEquals("", ordinary.out, "the top-level prompt is hello")
+        val none = run("bash", hook.toString(), stdin = """{"a":{"prompt":"/login"}}""", dir = tmp)
+        assertTrue(decision(none).startsWith("/login was seen but this hook input carries no prompt"), none.out)
+        Thread.sleep(150)
+        assertTrue(!Files.exists(tmp.resolve("args.txt")), "an unreadable input starts nothing")
+    }
+
+    @Test
+    fun `the login command file expands to the sentinel plus the arguments - V4-13`() {
+        val md = LoginHookScripts.loginCommandMd("Codex (ChatGPT)", "SPLICE_CODEX_LOGIN")
+        assertTrue(md.endsWith("SPLICE_CODEX_LOGIN \$ARGUMENTS\n"), md)
+        assertTrue(md.contains("argument-hint: \"[--label NAME]\""), md)
+    }
+
+    @Test
+    fun `a sign-in still waiting for its callback is cancelled before a new one starts - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val recorder = recorder(tmp)
+        val hook = write(tmp, "login-pending.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
+        // A jar path with spaces, as SPLICE_JAR may hold and the shim quotes through.
+        val jar = Files.createDirectories(tmp.resolve("my dir")).resolve("custom-0.4.0.jar")
+        Files.copy(parkJar(tmp), jar)
+        val pending = pendingLogin(recorder, jar, ignoreTerm = false)
+        // Bystanders: the words as one argv element; as separate elements under a bash executable;
+        // argv[0] claiming java over a bash executable; a JVM in jar mode and one in class mode
+        // carrying the splice sequence in their own arguments. None is ever signalled.
+        val bystanders = listOf(
+            bystander(recorder, oneWord = true),
+            bystander(recorder, oneWord = false),
+            bystander(recorder, oneWord = false, argv0Java = true),
+            otherJvm(tmp, recorder, jar, classMode = false),
+            otherJvm(tmp, recorder, jar, classMode = true),
+        )
+        try {
+            Thread.sleep(500)
+            val env = mapOf("SPLICE_JAR" to jar.toString())
+            val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
+            val reason = decision(ran)
+            val restarted = "A previous Codex (ChatGPT) sign-in was still waiting and was cancelled."
+            assertTrue(reason.startsWith(restarted), reason)
+            assertTrue(pending.waitFor(5, TimeUnit.SECONDS), "the pending sign-in was killed")
+            assertEquals(listOf("login"), recordedArgs(tmp), "and a fresh one was started")
+            bystanders.forEachIndexed { i, b -> assertTrue(b.isAlive, "bystander $i survives: not our invocation") }
+        } finally {
+            bystanders.forEach { it.destroyForcibly() }
+            pending.destroyForcibly()
+        }
+    }
+
+    @Test
+    fun `a bystander carrying the text, with no pending sign-in, is neither killed nor a restart - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val recorder = recorder(tmp)
+        val hook = write(tmp, "login-bystander.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
+        val jar = parkJar(tmp)
+        val bystanders = listOf(
+            bystander(recorder, oneWord = false, argv0Java = true),
+            otherJvm(tmp, recorder, jar, classMode = false),
+            otherJvm(tmp, recorder, jar, classMode = true),
+        )
+        try {
+            Thread.sleep(500)
+            val env = mapOf("SPLICE_JAR" to jar.toString())
+            val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
+            assertTrue(decision(ran).startsWith("Opening your browser"), "no restart was announced: ${ran.out}")
+            assertEquals(listOf("login"), recordedArgs(tmp))
+            bystanders.forEach { assertTrue(it.isAlive, "a bystander was signalled") }
+        } finally {
+            bystanders.forEach { it.destroyForcibly() }
+        }
+    }
+
+    @Test
+    fun `a pending sign-in that ignores TERM is killed, and only then does the new one start - V4-13`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val recorder = recorder(tmp)
+        val hook = write(tmp, "login-stuck.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
+        val jar = parkJar(tmp)
+        val pending = pendingLogin(recorder, jar, ignoreTerm = true)
+        try {
+            Thread.sleep(500)
+            val env = mapOf("SPLICE_JAR" to jar.toString())
+            val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
+            val reason = decision(ran)
+            val restarted = "A previous Codex (ChatGPT) sign-in was still waiting and was cancelled."
+            assertTrue(reason.startsWith(restarted), reason)
+            assertTrue(pending.waitFor(5, TimeUnit.SECONDS), "the pending sign-in was killed after TERM was ignored")
+            assertEquals(listOf("login"), recordedArgs(tmp), "and a fresh one was started")
+        } finally {
+            pending.destroyForcibly()
         }
     }
 

@@ -13,6 +13,7 @@ import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.spi.CredentialHeaders
 import java.nio.file.Paths
 
 /** Kimi's static vendor headers as they were hardcoded before the TOML surface existed: its
@@ -23,6 +24,7 @@ private val KIMI_BASE_HEADERS = mapOf(
     "anthropic-version" to "2023-06-01",
     "User-Agent" to "KimiCLI/1.5",
 )
+private val SSE_HEADERS = mapOf("Accept" to "text/event-stream")
 
 internal class PassthroughArm(
     private val statePaths: StatePaths,
@@ -46,21 +48,16 @@ internal class PassthroughArm(
                 auth,
             )
         }
+        if (providerCfg.auth.kind == KIMI_OAUTH) return kimiOauthProvider(ctx, label)
         val kimiProvider = ctx.head.provider == "kimi"
-        val (auth, identity) = when (providerCfg.auth.kind) {
-            KIMI_OAUTH -> kimiOAuth.kimiOauthAuth(ctx)
-            else -> {
-                val apiKey = ApiKeyAuthProvider(
-                    envVar = providerCfg.auth.effectiveApiKeyEnv(key),
-                    keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
-                )
-                val kimiIdentity = if (kimiProvider) {
-                    KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
-                } else {
-                    null
-                }
-                apiKey to kimiIdentity
-            }
+        val auth = ApiKeyAuthProvider(
+            envVar = providerCfg.auth.effectiveApiKeyEnv(key),
+            keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+        )
+        val identity = if (kimiProvider) {
+            KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
+        } else {
+            null
         }
         return Wired(
             passthroughAssembly.passthroughProviderFor(
@@ -81,5 +78,32 @@ internal class PassthroughArm(
             ),
             auth,
         )
+    }
+
+    private fun kimiOauthProvider(ctx: ProviderBuild, label: String): Wired {
+        val accounts = kimiOAuth.kimiOauthAccounts(ctx)
+        val default = kimiOAuth.providerAccount(accounts)
+        val provider = passthroughAssembly.passthroughProviderFor(
+            ctx = ctx,
+            label = label,
+            auth = default.auth,
+            base = PassthroughQuirksDefaults().kimi(ctx.key),
+            baseHeaders = KIMI_BASE_HEADERS,
+            identityHeaders = IdentityHeaders(default.identity::headers),
+        )
+        val staticHeaders = KIMI_BASE_HEADERS + ctx.providerCfg.staticHeaders
+        val wiredAccounts = accounts.map { account ->
+            WiredAccount(
+                label = account.label,
+                primary = account.primary,
+                auth = account.auth,
+                quotaFile = account.quotaFile,
+                credentialPresent = account.credentialPresent,
+                extraHeaders = CredentialHeaders {
+                    SSE_HEADERS + staticHeaders + account.identity.headers()
+                },
+            )
+        }
+        return Wired(provider, default.auth, wiredAccounts)
     }
 }

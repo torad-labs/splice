@@ -3,6 +3,7 @@
 // (concentration, 2026-08-19). Same-package FQCN is unchanged.
 package splice.app
 
+import splice.app.auth.OAuthLoginAccount
 import java.nio.file.Path
 
 /** Everything the device flow needs for one provider's login (built by LoginCommand per head). */
@@ -16,4 +17,5 @@ public data class DeviceLoginSpec(
     val identityHeaders: Map<String, String>,
     /** token-endpoint success body → the auth.json content to persist. */
     val toAuthJson: AuthJsonFromResponse,
+    val account: OAuthLoginAccount? = null,
 )

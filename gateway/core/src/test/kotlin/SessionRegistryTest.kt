@@ -64,6 +64,18 @@ class SessionRegistryTest {
     }
 
     @Test
+    fun `a non-positive pid is gone for that row only and never aborts the listing`(@TempDir dir: Path) {
+        write(dir, 0, """{"pid":0,"name":"zero","updatedAt":$now}""")
+        write(dir, 41, """{"pid":-5,"name":"neg","updatedAt":$now}""")
+        write(dir, 42, """{"pid":42,"name":"real","updatedAt":$now}""")
+        val rows = SessionRegistry(sessionsDir = dir, headOf = { null }, clock = { now }).read()
+        assertEquals(3, rows.size, "the default liveness probe tolerates every row")
+        rows.filter { (it.pid ?: 0L) <= 0L }.forEach {
+            assertEquals(SessionAvailability.GONE, it.availability, it.name)
+        }
+    }
+
+    @Test
     fun `rows come newest activity first and carry the messaging address`(@TempDir dir: Path) {
         write(dir, 31, """{"pid":31,"updatedAt":${now - 10},"messagingSocketPath":"/run/user/1000/cc-socks/31.sock"}""")
         write(dir, 32, """{"pid":32,"updatedAt":${now - 1}}""")

@@ -22,17 +22,30 @@ internal class UpgradeDaemon(
     private val pollMs: Long = POLL_MS,
     private val maxWaitMs: Long = MAX_WAIT_MS,
 ) {
-    /** False when turns were still in flight after [maxWaitMs]; the candidate stays staged. */
+    /** True only when every head reports zero turns, or no daemon exists at all. A read that cannot
+     *  see the turns (key, timeout, shape) is waited out like a busy one and then refused: an unknown
+     *  count is never treated as zero. False leaves the candidate staged. */
     fun waitIdle(now: Boolean): Boolean {
         if (now) return true
         val start = System.nanoTime()
-        var busy = inflight() ?: 0
-        while (busy > 0 && (System.nanoTime() - start) / NANOS_PER_MS < maxWaitMs) {
-            println("  ${"waiting".padEnd(UPGRADE_PAD)} $busy turn(s) in flight; restarting when they finish")
+        var read = inflight()
+        while (!idle(read) && (System.nanoTime() - start) / NANOS_PER_MS < maxWaitMs) {
+            println("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}")
             Thread.sleep(pollMs)
-            busy = inflight() ?: 0
+            read = inflight()
         }
-        return busy == 0
+        if (read is InflightRead.Unknown) {
+            println("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}; not activating")
+        }
+        return idle(read)
+    }
+
+    private fun idle(read: InflightRead): Boolean = read is InflightRead.NoDaemon || read == InflightRead.Count(0)
+
+    private fun describe(read: InflightRead): String = when (read) {
+        is InflightRead.Count -> "${read.turns} turn(s) in flight; restarting when they finish"
+        is InflightRead.Unknown -> "in-flight count unknown (${read.reason})"
+        InflightRead.NoDaemon -> "no daemon running"
     }
 
     /** The user unit when one supervises THIS install (its ExecStart names [liveJar] — hostshield's

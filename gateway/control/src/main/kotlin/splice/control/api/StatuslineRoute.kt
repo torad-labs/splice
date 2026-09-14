@@ -63,10 +63,12 @@ internal class StatuslineRoute(
                 roots,
                 catalog = managed.catalog,
                 clientWindows = managed.clientWindows,
+                accountPool = managed.accountPool,
             )
         }
-        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
-        val warning = clientVersions.statuslineWarning(sessionId(stdin))
+        val sessionId = sessionId(stdin)
+        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h, sessionId)
+        val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }
 

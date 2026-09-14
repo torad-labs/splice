@@ -73,7 +73,9 @@ internal class TurnStreamer(
         val recording = if (replayKey != null && detachedScope.isActive) FrameRecording() else null
         // The head's quota windows ride every response as the headers Claude Code reads into its
         // rate_limits (the 5h/7d bars): the client sees the head's real plan usage, proxy or not.
-        deps.quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
+        (inputs.quota ?: deps.quota)?.clientHeaders()?.forEach { (name, value) ->
+            call.response.header(name, value)
+        }
         call.respondTextWriter(ContentType.Text.EventStream) {
             // Flush-per-frame: a frame buffered across an upstream lull is invisible to the
             // user exactly when responsiveness matters (see ImmediateSseWriter header).

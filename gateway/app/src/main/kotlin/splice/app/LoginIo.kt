@@ -10,6 +10,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.app.auth.OAuthAccountFiles
+import splice.app.auth.OAuthLoginAccount
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
@@ -68,17 +70,47 @@ internal class LoginIo {
      *  Fail-closed on an unparseable body too: a credential file whose token we cannot read is not
      *  one to call a successful login. Nothing is written on refusal — the previous credential, if
      *  any, is left intact rather than replaced by a worthless one. */
-    internal fun persistIfSignedIn(path: Path, authJson: String): Boolean {
-        val token = Cancellables.runCatchingCancellable {
-            (loginJson.parseToJsonElement(authJson) as? JsonObject)?.let { accessTokenOf(it) }
+    internal fun persistIfSignedIn(
+        path: Path,
+        authJson: String,
+        account: OAuthLoginAccount? = null,
+    ): Boolean {
+        val parsed = Cancellables.runCatchingCancellable {
+            loginJson.parseToJsonElement(authJson) as? JsonObject
         }.getOrNull()
+        val token = parsed?.let(::accessTokenOf)
         if (token.isNullOrBlank()) {
             println("splice: token endpoint returned no access token — NOT signed in, nothing written")
             return false
         }
-        writeCredentialFile(path, authJson)
-        println("splice: signed in — credentials written to $path")
+        val target = Cancellables.runCatchingCancellable {
+            if (account == null || account.primary) {
+                writeCredentialFile(path, authJson)
+                path
+            } else {
+                persistLabeled(path, account, parsed)
+            }
+        }.getOrElse { failure ->
+            println("splice: credential persistence error: ${SafeFailureText.render(failure)}")
+            null
+        } ?: return false
+        println("splice: signed in — credentials written to $target")
         return true
+    }
+
+    private fun persistLabeled(path: Path, account: OAuthLoginAccount, parsed: JsonObject): Path? {
+        val label = account.resolvedLabel(parsed)
+        if (label.isNullOrBlank()) {
+            println("splice: token endpoint returned no stable account id — NOT signed in, nothing written")
+            return null
+        }
+        val files = OAuthAccountFiles(loginJson)
+        if (!account.tokenDerivedLabel) return files.writeLabeled(account.kind, path, label, parsed)
+        val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
+        written.retainedQuota?.let { quota ->
+            println("splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}")
+        }
+        return written.file
     }
 
     /** DR-172 gap (2026-09-01): the codex and grok login specs hand this the ON-DISK shape their

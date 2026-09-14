@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the hosted-process registry. Identity is the LAUNCH TUPLE
+// NEW: v0.4.0 FEATURES.md §8 — the hosted-process registry. Identity is the LAUNCH TUPLE
 // (command, args, env), never the name: two operator entries that expand to the same tuple are
 // aliases of one process, and a name whose entry changes rebinds to a new tuple. A process lives
 // while any name is bound to it; it is replaced when its last name rebinds, evicted at capacity.

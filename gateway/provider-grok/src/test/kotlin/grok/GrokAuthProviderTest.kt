@@ -771,3 +771,43 @@ class GrokPersistLinePrivacyTest {
         assertTrue(persist.contains("credential write failed"), "the typed Write branch must be what fired: $persist")
     }
 }
+
+class GrokAccountMetadataTest {
+    @Test
+    fun `refresh preserves labeled metadata and never decorates the legacy primary`() = runTest {
+        for (labeled in listOf(false, true)) {
+            val dir = Files.createTempDirectory("grok-account-metadata")
+            val file = dir.resolve("auth.json")
+            val metadata = if (labeled) {
+                ""","splice_auth_kind":"grok-oauth","splice_account_label":"backup""""
+            } else {
+                ""
+            }
+            Files.writeString(
+                file,
+                """{"tokens":{"access_token":"old","refresh_token":"refresh"},
+                    "expires":1$metadata}""",
+            )
+            val auth = GrokAuthProvider(
+                authPath = file,
+                clock = { 1_000_000L },
+                refreshCall = {
+                    RefreshAttempt.Granted(GrokRefreshedTokens("new", "rotated", expiresIn = 3600))
+                },
+            )
+
+            auth.refresh()
+
+            val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
+            if (labeled) {
+                assertEquals("grok-oauth", onDisk["splice_auth_kind"]?.jsonPrimitive?.content)
+                assertEquals("backup", onDisk["splice_account_label"]?.jsonPrimitive?.content)
+                assertFalse("splice_auth_kind" in onDisk["tokens"]!!.jsonObject)
+                assertFalse("splice_account_label" in onDisk["tokens"]!!.jsonObject)
+            } else {
+                assertFalse("splice_auth_kind" in onDisk)
+                assertFalse("splice_account_label" in onDisk)
+            }
+        }
+    }
+}

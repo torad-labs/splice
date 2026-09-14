@@ -18,7 +18,15 @@ internal const val UPGRADE_PAD = 11
 private const val CURRENT_LINK = "current"
 private const val PREVIOUS_LINK = "previous"
 
+// SemVer 2.0.0 (semver.org, the canonical grammar): no leading zeros in the numeric parts or numeric
+// prerelease identifiers, no empty identifiers, hyphens allowed inside identifiers, build metadata after +.
+private const val NUM = """(?:0|[1-9]\d*)"""
+private const val PRE_ID = """(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"""
+private const val SEMVER_SEGMENT =
+    """$NUM\.$NUM\.$NUM(?:-$PRE_ID(?:\.$PRE_ID)*)?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?"""
+
 internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = InstallLayout()) {
+    private val semver = Regex(SEMVER_SEGMENT)
     val share: Path = installLayout.shareDir(env)
     val liveJar: Path = share.resolve(JAR_ASSET)
     val liveShim: Path = installLayout.launchShimPath(env)
@@ -26,7 +34,15 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
     val current: Path = releases.resolve(CURRENT_LINK)
     val previous: Path = releases.resolve(PREVIOUS_LINK)
 
-    fun versionDir(version: String): Path = releases.resolve(version)
+    /** Releases live exactly one normalized SemVer 2.0.0 segment below releases/: a link name ("current"),
+     *  "..", an absolute path, a leading zero or an empty identifier is refused BEFORE a path is built,
+     *  whoever supplies it — a candidate jar's version line, --to, or a previous link's target. */
+    fun versionDir(version: String): Path {
+        if (!semver.matches(version)) {
+            throw UpgradeRefused("release version '$version' is not a normalized SemVer version")
+        }
+        return releases.resolve(version)
+    }
 
     fun stagingDir(): Path = releases.resolve(".staging-${ProcessHandle.current().pid()}")
 

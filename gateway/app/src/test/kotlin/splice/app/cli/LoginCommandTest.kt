@@ -80,6 +80,27 @@ class LoginCommandTest {
      *  tree (StatePaths reads the same property) — the DR-111 law: a test never writes a real
      *  receipt. */
     @Test
+    fun `OAuth account refusal prints its authored reason`() {
+        val topology = TopologyLoader.parse(OAUTH_HEAD_TOML)
+        val provider = topology.providers.getValue("codex")
+        val out = java.io.ByteArrayOutputStream()
+        val saved = System.out
+        System.setOut(java.io.PrintStream(out))
+        val ok = try {
+            kotlinx.coroutines.runBlocking {
+                LoginCommand().runLoginFlow("codex", provider, topology, label = "Private Email")
+            }
+        } finally {
+            System.setOut(saved)
+        }
+
+        assertFalse(ok)
+        assertTrue(out.toString().contains("invalid OAuth account label"), out.toString())
+        assertFalse(out.toString().contains("Private Email"), out.toString())
+        assertFalse(out.toString().contains("withheld"), out.toString())
+    }
+
+    @Test
     fun `login derives the api-key env var from the HEAD key at the real call site - DR-97`(@TempDir tmp: Path) {
         val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
         Files.createDirectories(config.parent)
@@ -114,6 +135,25 @@ class LoginCommandTest {
         )
     }
 }
+
+private const val OAUTH_HEAD_TOML = """
+[daemon]
+control_port = 3096
+
+[providers.codex]
+dialect = "openai-responses"
+base_url = "https://example.invalid"
+auth = { kind = "chatgpt-oauth" }
+[[providers.codex.models]]
+id = "gpt-test"
+context_window = 200000
+
+[heads.codex]
+provider = "codex"
+port = 3101
+discovery_prefix = "claude-codex--"
+pinned_model = "gpt-test"
+"""
 
 /** A head whose key differs from its provider's, with no explicit auth.env — the only shape in
  *  which head-derived and provider-derived env vars differ (AuthConfig.effectiveApiKeyEnv). */

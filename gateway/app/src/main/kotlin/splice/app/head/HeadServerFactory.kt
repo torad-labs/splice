@@ -58,6 +58,8 @@ internal class HeadServerFactory(
                 usageStore = stores.usageStore,
                 perfStats = stores.perfStats,
                 quota = stores.quota,
+                accountPool = stores.accountPool,
+                accountQuotas = stores.accountQuotas,
                 clientWindows = stores.clientWindows,
                 compactionTail = compactionTail,
                 clientVersions = clientVersions,

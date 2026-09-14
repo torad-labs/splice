@@ -17,6 +17,7 @@ import splice.gateway.compact.ShadowClassifier
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.spi.AccountPool
 import splice.spi.InflightGate
 import splice.spi.ProcessTicker
 import splice.spi.ProcessWaiter
@@ -44,6 +45,9 @@ public data class HeadDeps(
      *  every client response as the unified rate-limit headers Claude Code draws its bars from.
      *  Null = a head that neither observes nor emits them (tests, and nothing else). */
     val quota: QuotaTracker? = null,
+    /** OAuth-only pool policy is head-local; account auth/quota/cooldowns may be shared by kind. */
+    val accountPool: AccountPool? = null,
+    val accountQuotas: Map<String, QuotaTracker> = emptyMap(),
     /** The window each Claude Code session actually runs with, learned from its status-line posts
      *  (the control plane records; the usage payload reads). One per head, shared with ManagedHead. */
     val clientWindows: ClientWindows = ClientWindows(),

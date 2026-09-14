@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §4): a read-only view of Claude Code's own session registry,
+// NEW: v0.4.0 FEATURES.md §4 — a read-only view of Claude Code's own session registry,
 // ~/.claude/sessions/<pid>.json (one file per interactive session; headless `claude -p` runs
 // never register). Every field is optional because Claude Code owns the schema and may add,
 // rename or omit keys; a malformed file is skipped, never fatal. Availability is derived, never
@@ -51,7 +51,9 @@ public fun interface HeadOfPid {
 public class SessionRegistry(
     private val sessionsDir: Path,
     private val headOf: HeadOfPid,
-    private val pidAlive: PidAlive = PidAlive { pid -> ProcessHandle.of(pid).map { it.isAlive }.orElse(false) },
+    private val pidAlive: PidAlive = PidAlive { pid ->
+        pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+    },
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
 ) {
@@ -88,8 +90,9 @@ public class SessionRegistry(
         )
     }
 
+    /** A pid that is absent or not a real process id (0, negative) is GONE for this one row only. */
     private fun availability(pid: Long?, updatedAt: Long?): SessionAvailability = when {
-        pid == null || !pidAlive(pid) -> SessionAvailability.GONE
+        pid == null || pid <= 0 || !pidAlive(pid) -> SessionAvailability.GONE
         updatedAt == null || clock() - updatedAt > staleAfterMs -> SessionAvailability.STALE
         else -> SessionAvailability.LIVE
     }

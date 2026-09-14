@@ -10,6 +10,7 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.perf.TurnPerf
+import splice.spi.AllAccountsExhausted
 import splice.spi.InflightGate
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -66,12 +67,26 @@ internal class HeadAdmission(
                 driver.replay(call, prepared)
             }
             is Preparation.Ready -> {
+                val account = try {
+                    deps.accountPool?.select(prepared.built.meta.sessionId)
+                } catch (e: AllAccountsExhausted) {
+                    driver.recordAccountExhausted(
+                        prepared.built.meta,
+                        admitted.perf,
+                        admitted.t0,
+                        e.earliestResetEpochSeconds,
+                    )
+                    responses.respondRateLimited(call, e.message.orEmpty())
+                    return
+                }
                 val inputs = TurnInputs(
                     prepared.built,
                     admitted.slot,
                     admitted.t0,
                     admitted.perf,
                     slotHandedOff = admitted.handedOff,
+                    account = account,
+                    quota = account?.account?.label?.let(deps.accountQuotas::get) ?: deps.quota,
                 )
                 // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
                 // (Claude Code's internal non-stream calls, served by collecting the same machinery).

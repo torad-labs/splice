@@ -73,6 +73,10 @@ public data class ManagedHead(
      *  `context_window_size` from the blob) so the head scales that session's counts against it.
      *  Null = a head that never learns (tests). */
     val clientWindows: ClientWindows? = null,
+    /** Head-local OAuth account selections and quotas, projected without credential material. */
+    val accountPool: HeadAccountPoolSource? = null,
+    /** Per-account masked descriptions; never passed to the unauthenticated statusline. */
+    val accountAuth: HeadAccountAuthSource? = null,
 )
 
 /** The launch-time key-presence read [ManagedHead.keyPresence] carries (role-named ctor seam). */

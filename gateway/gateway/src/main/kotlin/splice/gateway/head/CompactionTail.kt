@@ -1,3 +1,5 @@
+// NEW: v0.4.0 FEATURES.md §7 — the custom compaction text a turn carries: global, per-model and per-project
+// instructions resolved for the session that sent the turn, appended after the client's own summarizer prompt.
 package splice.gateway.head
 
 import splice.core.compaction.CompactionInstructions

@@ -13,6 +13,7 @@ import splice.app.PerfStatsSource
 import splice.app.UsageStoreSource
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.Wired
 import splice.app.quota.QuotaPoller
 import splice.app.quota.QuotaProbe
 import splice.app.quota.QuotaProbes
@@ -45,27 +46,27 @@ internal class ManagedHeadFactory(
     },
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
+    private val accountPools = HeadAccountPools()
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
         val cfg = ctx.cfg
         val wired = providerAssembly.buildProvider(ctx)
+        val accountQuotas = accountQuotas(key, wired)
+        val primaryQuota = wired.accounts.singleOrNull { it.primary }
+            ?.let { accountQuotas.getValue(it.label) }
+            ?: QuotaTracker(statePaths.quotaFile(key))
         val stores = HeadStores(
             usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
             compactStats = CompactStats(statePaths.compactStatsFile(key)),
             perfStats = PerfStats(statePaths.perfStatsFile(key)),
-            quota = QuotaTracker(statePaths.quotaFile(key)),
+            quota = primaryQuota,
+            accountPool = accountPools.build(wired, accountQuotas),
+            accountQuotas = accountQuotas,
             clientWindows = ClientWindows(store = statePaths.clientWindowsFile(key), log = log),
         )
-        // Subscription heads (ChatGPT, Kimi, SuperGrok) have a usage endpoint; poll it so the bars
-        // are right from the first tick. Every head still observes its rounds' headers. The
-        // daemon-wide QUOTA_POLL knob ("off") is the operator's way to stop that outbound egress.
-        if (!cfg.quotaPollOff) {
-            quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
-                startQuotaPoller(key, probe, stores.quota)
-            }
-        }
+        startQuotaPollers(ctx, wired, stores, cfg.quotaPollOff)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
@@ -100,6 +101,39 @@ internal class ManagedHeadFactory(
             keyPresence = keyPresence,
             catalog = ctx.catalog,
             clientWindows = stores.clientWindows,
+            accountPool = accountPools.source(stores.accountPool),
+            accountAuth = accountPools.authSource(wired),
         )
+    }
+
+    /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
+     *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a
+     *  file. Labeled accounts persist next to their credential. */
+    private fun accountQuotas(key: String, wired: Wired): Map<String, QuotaTracker> =
+        wired.accounts.associate { account ->
+            val file = if (account.primary) statePaths.quotaFile(key) else account.quotaFile
+            account.label to QuotaTracker(file)
+        }
+
+    private fun startQuotaPollers(
+        ctx: ProviderBuild,
+        wired: Wired,
+        stores: HeadStores,
+        off: Boolean,
+    ) {
+        if (off) return
+        // Subscription heads have a usage endpoint. Every OAuth account gets its own persisted
+        // snapshot and poller; non-pooled heads retain the legacy single tracker path.
+        if (wired.accounts.isEmpty()) {
+            quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
+                startQuotaPoller(ctx.key, probe, stores.quota)
+            }
+            return
+        }
+        wired.accounts.forEach { account ->
+            quotaProbes.forHead(ctx, account.auth)?.let { probe ->
+                startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label))
+            }
+        }
     }
 }

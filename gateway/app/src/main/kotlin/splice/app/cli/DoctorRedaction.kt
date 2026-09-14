@@ -43,6 +43,14 @@ private val EVENT_HEADS: Regex = listOf(
     "upgrade ", "refresh", "credential", "materialized", "linked", "stopping", "stopped", "shutdown",
 ).joinToString("|", prefix = "^(", postfix = ")").toRegex()
 
+/** The MCP host's events: `[mcp-host] <server>: <event>`, where the server is an operator-authored
+ *  name (aliased like any other) and the event opens with one of these (HostedServer's log calls). */
+private val MCP_EVENT_HEADS: Regex = listOf(
+    "hosted as pid", "closing pid", "pid \\d+ exited", "keeps crashing", "spawn failed", "did not complete",
+    "rejected the MCP handshake", "no initialize answer", "handshake failed", "cancelled during the handshake",
+    "exited", "evicted", "idle for", "closed", "replaced", "not running",
+).joinToString("|", prefix = "^(", postfix = ")").toRegex()
+
 /** The keys an event may carry: the perf keys plus the daemon's own counters and identities. A key
  *  outside this vocabulary is not the daemon's, whatever follows its `=`. */
 private val LOG_PAIR_KEYS: Set<String> = perfNumericFields + setOf(
@@ -119,6 +127,15 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
     private fun event(line: String, names: SafeNames): String? {
         val shaped = daemonLine.find(line) ?: return null
         val (stamp, tags, message) = shaped.destructured
+        val safeTags = tag.findAll(tags).joinToString("") { "[${names.head(it.groupValues[1])}]" }
+        return if (tags.contains("[mcp-host]")) {
+            mcpEvent(stamp, safeTags, message, names)
+        } else {
+            daemonEvent(stamp, safeTags, message, names)
+        }
+    }
+
+    private fun daemonEvent(stamp: String, safeTags: String, message: String, names: SafeNames): String? {
         val head = EVENT_HEADS.find(message) ?: return null
         val pairs = message.substring(head.range.last + 1).trim().split(WHITESPACE)
             .map { word -> pair.find(word) }
@@ -127,8 +144,17 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
                 val (key, value) = checkNotNull(p).destructured
                 pairValue(key, value, names)?.let { "$key=$it" }
             }
-        val safeTags = tag.findAll(tags).joinToString("") { "[${names.head(it.groupValues[1])}]" }
         return (listOf(stamp, safeTags, head.value.trimEnd()) + pairs).joinToString(" ").take(MAX_LINE_CHARS)
+    }
+
+    /** An MCP host line: the server name as a safe token, then the event head, nothing else (the
+     *  pid, the reason and the child's own words stay out). Dropped before, so a report of a hosting
+     *  problem carried no hosting line at all (review 2026-09-14). */
+    private fun mcpEvent(stamp: String, safeTags: String, message: String, names: SafeNames): String? {
+        val server = message.substringBefore(": ", "")
+        val head = MCP_EVENT_HEADS.find(message.substringAfter(": ", "")) ?: return null
+        val parts = listOf(stamp, safeTags, names.token(server) + ":", head.value.trimEnd())
+        return parts.joinToString(" ").take(MAX_LINE_CHARS)
     }
 
     private fun pairValue(key: String, value: String, names: SafeNames): String? = when {

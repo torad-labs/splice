@@ -112,8 +112,9 @@ bash checks/e2e/docker/run.sh --no-build               # reuse the image
 
 Each run writes `checks/e2e/receipts/docker-<stamp>.json` (per-step verdict, seconds, evidence)
 and exits non-zero on any failed step; a failed step never stops the run, so later steps stay
-evidence. The image pins Claude Code to the host's `claude --version` (override with
-`SPLICE_E2E_CLAUDE_VERSION`). Run it before `npm run promote`: a release that has not passed here has
+evidence. The image pins Claude Code to `TESTED_CLAUDE_CODE` in
+`gateway/core/src/main/kotlin/splice/core/Versions.kt` (the version the release is proven against;
+bump it there, never in the script). Run it before `npm run promote`: a release that has not passed here has
 not been installed anywhere.
 
 ## Debugging a failure

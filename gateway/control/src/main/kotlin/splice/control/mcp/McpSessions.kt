@@ -6,7 +6,7 @@ package splice.control.mcp
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import splice.core.util.JsonScalars
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -40,7 +40,7 @@ internal class McpSession(val id: String, val server: String, val initResult: Js
      *  child's answer, verbatim: the server picks the protocol version (MCP: a client that cannot
      *  speak it disconnects); inventing the client's requested one would promise a dialect the
      *  child never negotiated. */
-    val protocolVersion: String? = (initResult["protocolVersion"] as? JsonPrimitive)?.content
+    val protocolVersion: String? = JsonScalars.str(initResult, "protocolVersion")
 
     @Volatile var lastActivity: Long = 0L
         private set

@@ -14,6 +14,17 @@ private val VALUED_FLAGS: Map<String, FlagSetter> = mapOf(
     "--command" to FlagSetter { p, v -> p.copy(command = v) },
 )
 
+/** One switch (no value) applied to the arguments so far. */
+internal fun interface FlagSwitch {
+    operator fun invoke(args: AddArgs): AddArgs
+}
+
+private val SWITCHES: Map<String, FlagSwitch> = mapOf(
+    "--live" to FlagSwitch { p -> p.copy(live = true) },
+    "--yes" to FlagSwitch { p -> p.copy(yes = true) },
+    "-y" to FlagSwitch { p -> p.copy(yes = true) },
+)
+
 internal data class AddArgs(
     val profile: String? = null,
     val name: String? = null,
@@ -25,21 +36,32 @@ internal data class AddArgs(
 )
 
 internal class AddArgParser {
-    fun parse(args: List<String>): AddArgs {
+    /** Null on anything the command line cannot mean: an unknown flag, a valued flag without its
+     *  value, or a second positional word (a mistyped flag used to be swallowed here and the add
+     *  went on with the defaults, so `--nam foo` wrote a provider the operator never asked for). */
+    fun parse(args: List<String>): AddArgs? {
         var parsed = AddArgs()
         var i = 0
         while (i < args.size) {
             val a = args[i]
-            val v = args.getOrNull(i + 1).orEmpty()
             val valued = VALUED_FLAGS[a]
+            val switch = SWITCHES[a]
             parsed = when {
-                valued != null -> valued(parsed, v).also { i++ }
-                a == "--live" -> parsed.copy(live = true)
-                a == "--yes" || a == "-y" -> parsed.copy(yes = true)
-                else -> parsed.copy(profile = parsed.profile ?: a)
+                valued != null -> valued(parsed, args.getOrNull(i + 1) ?: return null).also { i++ }
+                switch != null -> switch(parsed)
+                a.startsWith("-") || parsed.profile != null -> return null
+                else -> parsed.copy(profile = a)
             }
             i++
         }
         return parsed
+    }
+
+    fun usage(): Boolean {
+        println(
+            "usage: splice add <profile> [--name NAME] [--base-url URL] [--model ID]... [--command CMD] " +
+                "[--live] [--yes]",
+        )
+        return false
     }
 }

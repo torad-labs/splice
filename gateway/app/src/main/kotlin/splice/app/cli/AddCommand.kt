@@ -26,7 +26,8 @@ internal class AddCommand(
     private val prepare = AddPrepare(checks, prompt)
 
     suspend fun add(args: List<String>, env: EnvReader = EnvReader(System::getenv)): Boolean {
-        val candidate = prepare.candidate(AddArgParser().parse(args), env) ?: return false
+        val parsed = AddArgParser().parse(args) ?: return AddArgParser().usage()
+        val candidate = prepare.candidate(parsed, env) ?: return false
         val title = "${BOLD}splice add ${candidate.args.profile}$RESET"
         println("$title $DIM— '${candidate.key}' as $CYAN${candidate.command}$RESET")
         val ok = authenticate(candidate, env) && verified(candidate, env)

@@ -16,6 +16,10 @@ import java.nio.file.Path
 
 private const val DEFAULT_STALE_MS = 30L * 60L * 1000L
 
+/** A registration is a few hundred bytes; the directory is shared by every head, so a runaway or
+ *  foreign file there is skipped rather than read whole on every poll. */
+private const val MAX_RECORD_BYTES = 64L shl 10
+
 public enum class SessionAvailability { LIVE, STALE, GONE }
 
 public data class SessionRecord(
@@ -68,8 +72,10 @@ public class SessionRegistry(
 
     private fun record(file: Path): SessionRecord? {
         val obj = Cancellables
-            .runCatchingCancellable { json.parseToJsonElement(Files.readString(file)) as? JsonObject }
-            .getOrNull() ?: return null
+            .runCatchingCancellable {
+                if (Files.size(file) > MAX_RECORD_BYTES) null else json.parseToJsonElement(Files.readString(file))
+            }
+            .getOrNull() as? JsonObject ?: return null
         val pid = JsonScalars.long(obj, "pid")
         val updatedAt = JsonScalars.long(obj, "updatedAt")
         val availability = availability(pid, updatedAt)

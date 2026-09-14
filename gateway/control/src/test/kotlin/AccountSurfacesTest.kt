@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.control.HeadAccountPoolSource
@@ -105,6 +106,14 @@ class AccountSurfacesTest {
         assertTrue(line.contains("backup"), line)
         assertTrue(line.contains("1%"), line)
         assertFalse(line.contains("100%"), "the primary's exhausted window is not the selected account's: $line")
+    }
+
+    @Test
+    fun `an unknown selection names no account on any surface, never the primary`() {
+        val unknown = poolView().copy(selectionUnknown = true)
+        assertNull(unknown.selectedAccount(), "a rejected selection must not fall back to the primary")
+        assertNull(unknown.selectedQuota(), "and lends no windows to the status line")
+        assertEquals("backup", poolView().selectedAccount()?.label, "control: a known selection is named")
     }
 
     private fun poolView(): HeadAccountPoolView = HeadAccountPoolView(

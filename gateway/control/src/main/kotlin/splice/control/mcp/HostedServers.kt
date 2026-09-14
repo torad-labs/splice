@@ -27,13 +27,33 @@ internal class HostedServers(
     private val servers = HashMap<McpIdentity, HostedServer>()
     private val bindings = HashMap<String, McpIdentity>()
 
-    /** Servers with an initialize in flight: acquire() counts one up, release() one down; eviction
-     *  never takes a reserved server, so the session minted after ensureStarted binds to a server
-     *  that is still registered (review 3, 2026-09-13). */
+    /** Handshakes, requests and stream attachments hold a lease until release(); eviction never
+     *  takes a reserved process. Every alias shares the same launch-tuple reservation count. */
     private val reserved = HashMap<McpIdentity, Int>()
     private val lock = Any()
+    private var closed = false
+    private val stops = McpProcessStop()
 
     fun get(name: String): HostedServer? = synchronized(lock) { bindings[name]?.let(servers::get) }
+
+    /** Lease an existing process before sending, under the same lock eviction uses. */
+    fun reserve(name: String): HostedServer? = synchronized(lock) {
+        val id = bindings[name]
+        val server = id?.let(servers::get)?.takeUnless { closed }
+        if (server != null) reserved[server.identity] = (reserved[server.identity] ?: 0) + 1
+        server
+    }
+
+    /** Recheck idle state atomically with unbinding; a request lease always wins against eviction. */
+    fun sweep(now: Long, idleMillis: Long) {
+        val closing = Closing()
+        synchronized(lock) {
+            bindings.keys.filterNot(::reserved).forEach { sessions.expire(it, now, idleMillis) }
+            bindings.keys.toList().filterNot { reserved(it) || sessions.busy(it, now, idleMillis) }
+                .forEach { unbind(it, "idle for ${idleMillis / MILLIS_PER_MINUTE} min", closing) }
+        }
+        closing.run()
+    }
 
     fun names(): List<String> = synchronized(lock) { bindings.keys.toList() }
 
@@ -44,10 +64,11 @@ internal class HostedServers(
         val id = McpIdentity(spec.command, spec.args, spec.env)
         val closing = Closing()
         val server = synchronized(lock) {
+            if (closed) throw McpHostException("MCP host is stopping")
             val bound = bindings[name]
             if (bound != null && bound != id) unbind(name, "configuration changed", closing)
-            bindings[name] = id
             val server = servers[id] ?: register(id, spec, closing)
+            bindings[name] = id
             reserved[id] = (reserved[id] ?: 0) + 1
             server
         }
@@ -82,19 +103,21 @@ internal class HostedServers(
         bindings[name] == id && servers[id] === server && server.alive
     }
 
-    /** Is [name]'s server mid-initialize? The idle sweep must not close one that is (review 2026-09-14). */
+    /** Is [name]'s process leased? The idle sweep must not retire it or its sessions mid-operation. */
     fun reserved(name: String): Boolean = synchronized(lock) {
         bindings[name]?.let { (reserved[it] ?: 0) > 0 } ?: false
     }
 
-    fun close(name: String, reason: String) {
-        val closing = Closing()
-        synchronized(lock) { unbind(name, reason, closing) }
-        closing.run()
-    }
-
     fun closeAll(reason: String) {
-        names().forEach { close(it, reason) }
+        val closing = synchronized(lock) {
+            closed = true
+            val snapshot = servers.values.toList()
+            bindings.keys.forEach(sessions::dropServer)
+            bindings.clear()
+            servers.clear()
+            snapshot
+        }
+        stops.await(closing.mapNotNull { it.close(reason, wait = false) })
     }
 
     private fun namesOf(id: McpIdentity): List<String> =

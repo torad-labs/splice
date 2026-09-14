@@ -4,6 +4,7 @@
 package splice.control.mcp
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +18,7 @@ private const val METHOD = "method"
 private const val PARAMS = "params"
 private const val VERSION_KEY = "jsonrpc"
 private const val VERSION = "2.0"
+private const val RPC_METHOD_NOT_FOUND = -32601
 
 /** What a parsed message is; the host branches on this once and never re-inspects the object. */
 internal enum class RpcKind { REQUEST, NOTIFICATION, RESPONSE, INVALID }
@@ -86,6 +88,33 @@ internal class JsonRpcCodec(private val json: Json = Json { ignoreUnknownKeys = 
         put(ID, id)
         put(METHOD, method)
         put(PARAMS, params)
+    }
+
+    /** The host, not any one client, owns this context-independent handshake. */
+    fun initializeRequest(id: Long): JsonObject = request(
+        JsonPrimitive(id),
+        "initialize",
+        buildJsonObject {
+            put("protocolVersion", "2025-11-25")
+            put("capabilities", buildJsonObject {})
+            put(
+                "clientInfo",
+                buildJsonObject {
+                    put("name", "splice-mcp-host")
+                    put("version", "0.4.0")
+                },
+            )
+        },
+    )
+
+    /** Callback-dependent servers remain operator-excluded; never invent a client's capabilities. */
+    fun serverReply(msg: JsonObject): JsonObject {
+        val id = msg.getValue(ID)
+        return when (method(msg)) {
+            "ping" -> result(id, buildJsonObject {})
+            "roots/list" -> result(id, buildJsonObject { put("roots", JsonArray(emptyList())) })
+            else -> error(id, RPC_METHOD_NOT_FOUND, "splice-mcp-host does not proxy server-initiated requests")
+        }
     }
 
     fun notification(method: String, params: JsonObject? = null): JsonObject = buildJsonObject {

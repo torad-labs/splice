@@ -20,6 +20,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.ClaudeConfigMaterializer
+import splice.core.launch.McpAccessKey
 import splice.core.launch.McpSharing
 import splice.core.sessions.HeadOfPid
 import splice.core.sessions.ProcessEnvironment
@@ -80,9 +81,9 @@ internal class ControlPlane(
             enabled = mcpHosting.enabled,
             exclude = mcpHosting.exclude,
             endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
-            bearer = mgmtKey::get,
+            bearer = McpAccessKey(mgmtKey::get),
         )
-        val mcpHost = McpHost(sharing, McpGlobalRead(home), log = log)
+        val mcpHost = McpHost(sharing, McpGlobalRead(home, log), log = log)
         val srv = ControlServer(
             controlPort,
             heads,

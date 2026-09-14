@@ -45,11 +45,12 @@ internal class ProgressTokens {
     }
 
     /** For a progress notification carrying a host token: its owner and the message with the client's
-     *  token restored; null for any other notification (fanned out as before). */
+     *  token restored. Missing ownership means drop, including progress after completion or timeout. */
     fun owner(msg: JsonObject, pending: Map<Long, Pending>): Pair<Pending, JsonObject>? {
         val params = msg[PARAMS] as? JsonObject ?: return null
         val token = (params[PROGRESS_TOKEN] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        val slot = token?.removePrefix(HOST_TOKEN_PREFIX)?.toLongOrNull()?.let(pending::get)
+        val slot = token?.takeIf { it.startsWith(HOST_TOKEN_PREFIX) }
+            ?.removePrefix(HOST_TOKEN_PREFIX)?.toLongOrNull()?.let(pending::get)
         val original = slot?.progressToken ?: return null
         return slot to JsonObject(msg + (PARAMS to JsonObject(params + (PROGRESS_TOKEN to original))))
     }

@@ -24,16 +24,30 @@ private val LIST_INVALIDATIONS = listOf("tools", "prompts", "resources").map { k
 internal class McpSession(val id: String, val server: String, val initResult: JsonObject) {
     val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.SUSPEND)
     val openStreams = AtomicInteger()
+    private val codec = JsonRpcCodec()
 
-    /** Queue a notification; when the client is a full buffer behind, the stale backlog collapses to
-     *  the list invalidations plus this one instead of silently dropping the oldest. */
+    @Volatile var overflowed: Boolean = false
+        private set
+
+    /** Only list invalidations coalesce. Losing a resource update cannot be repaired by re-listing:
+     *  end that session explicitly so its next request reinitializes instead of trusting stale state. */
+    @Synchronized
     fun offer(text: String) {
-        if (stream.trySend(text).isSuccess) return
-        while (stream.tryReceive().isSuccess) {
-            // the backlog is stale: whatever it said, the invalidations below cover it
+        val sent = stream.trySend(text)
+        if (sent.isSuccess || sent.isClosed) return
+        val backlog = generateSequence { stream.tryReceive().getOrNull() }.toList() + text
+        val methods = LIST_INVALIDATIONS.mapNotNull { codec.parse(it)?.let(codec::method) }.toSet()
+        if (backlog.all { codec.parse(it)?.let(codec::method) in methods }) {
+            LIST_INVALIDATIONS.forEach { stream.trySend(it) }
+            stream.trySend(text)
+        } else {
+            overflowed = true
+            stream.trySend(
+                """{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"error",""" +
+                    """"data":"notification stream overflow; reinitialize this MCP session"}}""",
+            )
+            stream.close()
         }
-        LIST_INVALIDATIONS.forEach { stream.trySend(it) }
-        stream.trySend(text)
     }
 
     /** The version the child negotiated at this session's initialize; later requests must name it. The
@@ -70,7 +84,16 @@ internal class McpSessions(private val clock: HostClock) {
     }
 
     /** The session when [id] exists AND belongs to [server]; a session never crosses servers. */
-    fun get(server: String, id: String?): McpSession? = id?.let(sessions::get)?.takeIf { it.server == server }
+    fun get(server: String, id: String?): McpSession? =
+        id?.let(sessions::get)?.takeIf { it.server == server && !it.overflowed }
+
+    /** A closed overflowed stream still owns its count until the HTTP pump's finally runs. */
+    fun closeStream(server: String, id: String?) {
+        id?.let(sessions::get)?.takeIf { it.server == server }?.let {
+            touch(it)
+            it.openStreams.decrementAndGet()
+        }
+    }
 
     fun end(server: String, id: String?): McpSession? {
         val session = get(server, id) ?: return null
@@ -85,6 +108,16 @@ internal class McpSessions(private val clock: HostClock) {
     }
 
     fun forServer(server: String): List<McpSession> = sessions.values.filter { it.server == server }
+
+    /** The registry holds its lease lock: no request or stream attachment can race this retirement. */
+    fun expire(server: String, now: Long, idleMillis: Long) {
+        forServer(server).filter { it.overflowed || !it.busy(now, idleMillis) }.forEach { session ->
+            sessions.remove(session.id)
+            session.stream.close()
+            // Expiration observes old activity; unlike DELETE, it does not start another idle window.
+            ended.merge(server, session.lastActivity, ::maxOf)
+        }
+    }
 
     fun dropServer(server: String) {
         ended.remove(server)
@@ -109,5 +142,6 @@ internal class McpSessions(private val clock: HostClock) {
 
     fun streaming(server: String): Boolean = forServer(server).any { it.openStreams.get() > 0 }
 
-    fun lastActivity(server: String): Long = forServer(server).maxOfOrNull { it.lastActivity } ?: 0L
+    fun lastActivity(server: String): Long =
+        maxOf(forServer(server).maxOfOrNull { it.lastActivity } ?: 0L, ended[server] ?: 0L)
 }

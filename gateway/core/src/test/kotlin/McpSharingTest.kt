@@ -91,6 +91,23 @@ class McpSharingTest {
     }
 
     @Test
+    fun `malformed launch fields pass through whole instead of changing the launch tuple`() {
+        val entries = Json.parseToJsonElement(
+            """{"argsType":{"command":"srv","args":"--stdio"},
+                "argsMember":{"command":"srv","args":["--port",123]},
+                "envType":{"command":"srv","env":[]},
+                "envMember":{"command":"srv","env":{"PORT":123}},
+                "transport":{"command":"srv","type":false},
+                "nullArgs":{"command":"srv","args":null}}""",
+        ).jsonObject
+        val plan = sharing().plan(entries)
+        assertTrue(plan.hosted.isEmpty(), plan.hosted.toString())
+        assertEquals(entries, plan.rewritten)
+        assertEquals(entries.keys, plan.passthrough.keys)
+        assertTrue(plan.passthrough.values.all { it.contains("malformed") })
+    }
+
+    @Test
     fun `disabled hosting returns the operator's object untouched and hosts nothing`() {
         val plan = sharing(enabled = false).plan(global)
         assertEquals(global, plan.rewritten)

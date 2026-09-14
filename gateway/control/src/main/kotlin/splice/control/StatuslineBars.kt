@@ -25,12 +25,17 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
         return "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", cost)
     }
 
-    fun limitSegments(root: JsonObject, quota: QuotaView?): List<String> {
+    /** [quotaFirst]: the line is pooled, so the tracked windows are the SELECTED account's and win;
+     *  the client's rate_limits (possibly another account's) fill only a window the tracker lacks. */
+    fun limitSegments(root: JsonObject, quota: QuotaView?, quotaFirst: Boolean = false): List<String> {
         val limits = root["rate_limits"] as? JsonObject
-        val five = window(limits, "five_hour") ?: quota?.fiveHour?.let { it.usedPct to it.resetsAt }
-        val seven = window(limits, "seven_day") ?: quota?.sevenDay?.let { it.usedPct to it.resetsAt }
+        val five = pick(window(limits, "five_hour"), quota?.fiveHour?.let { it.usedPct to it.resetsAt }, quotaFirst)
+        val seven = pick(window(limits, "seven_day"), quota?.sevenDay?.let { it.usedPct to it.resetsAt }, quotaFirst)
         return listOfNotNull(segment("5h", five), segment("7d", seven))
     }
+
+    private fun pick(client: Pair<Int, Long?>?, tracked: Pair<Int, Long?>?, quotaFirst: Boolean): Pair<Int, Long?>? =
+        if (quotaFirst) tracked ?: client else client ?: tracked
 
     private fun window(limits: JsonObject?, key: String): Pair<Int, Long?>? {
         val w = limits?.get(key) as? JsonObject ?: return null

@@ -35,7 +35,7 @@ internal class LocalResponses(
             local.model,
             deps.clientWindows.windowFor(local.sessionId),
         )
-        quotaHeaders(call)
+        quotaHeaders(call, local.sessionId)
         if (local.stream) {
             call.respondTextWriter(ContentType.Text.EventStream) {
                 val emitter = emitters.create(
@@ -66,7 +66,7 @@ internal class LocalResponses(
      *  here with the honest error frame the seal gives an attached client, so this client retries
      *  as well — and finds the entry gone (CompactionReplay.finish), so that attempt runs upstream. */
     suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) {
-        quotaHeaders(call)
+        quotaHeaders(call, replayed.sessionId)
         var frames = 0
         var whole = false
         call.respondTextWriter(ContentType.Text.EventStream) {
@@ -112,9 +112,12 @@ internal class LocalResponses(
         )
     }
 
-    // The head's quota windows ride every response (TurnStreamer / CollectTurn do the same).
-    private fun quotaHeaders(call: ApplicationCall) {
-        deps.quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
+    // The quota windows ride every response (TurnStreamer / CollectTurn do the same): on a pooled
+    // head the SESSION's selected account, not the primary's, or the bars would flip on every locally
+    // answered side query (review 2026-09-14).
+    private fun quotaHeaders(call: ApplicationCall, sessionId: String?) {
+        val selected = deps.accountPool?.view(sessionId)?.selectedLabel?.let(deps.accountQuotas::get)
+        (selected ?: deps.quota)?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
     }
 
     private suspend fun emitText(terminal: TurnTerminal, text: String) {

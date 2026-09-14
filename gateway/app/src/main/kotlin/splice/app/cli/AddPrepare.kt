@@ -137,7 +137,8 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
 
     private fun nextPort(current: Topology): Int {
         val taken = current.heads.values.map { it.port } + listOfNotNull(current.daemon.controlPort)
-        return generateSequence(maxOf(taken.max(), FIRST_HEAD_PORT - 1) + 1) { it + 1 }.first { it !in taken }
+        val floor = maxOf(taken.maxOrNull() ?: 0, FIRST_HEAD_PORT - 1) + 1
+        return generateSequence(floor) { it + 1 }.first { it !in taken }
     }
 }
 

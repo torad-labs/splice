@@ -28,7 +28,8 @@ internal class SseRoundPost(
                 url = provider.upstreamUrl,
                 auth = account?.auth ?: provider.auth,
                 extraHeaders = { creds ->
-                    (account?.extraHeaders?.invoke(creds) ?: provider.extraHeaders(creds)) + drive.turnHeaders
+                    // The account's headers ride ON TOP of the provider's, never instead of them.
+                    provider.extraHeaders(creds) + account?.extraHeaders?.invoke(creds).orEmpty() + drive.turnHeaders
                 },
                 onRetry = onRetry,
                 perf = drive.perf,

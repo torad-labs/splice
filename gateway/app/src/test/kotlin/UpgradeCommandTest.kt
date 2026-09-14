@@ -239,6 +239,14 @@ class UpgradeCommandTest {
     }
 
     @Test
+    fun `rollback with a version is refused instead of silently ignoring it`(@TempDir home: Path) {
+        flatInstall(home)
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--rollback", "--to", "v1.2.3")) }
+        assertFalse(ok)
+        assertTrue(out.contains("--rollback takes no --to"), out)
+    }
+
+    @Test
     fun `an in-flight count that cannot be read never activates`(@TempDir home: Path) {
         val intact = flatInstall(home)
         inflightAnswers = ArrayDeque(listOf(InflightRead.Count(2)))

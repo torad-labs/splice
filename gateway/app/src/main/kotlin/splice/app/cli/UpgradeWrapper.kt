@@ -33,7 +33,8 @@ internal class UpgradeWrapper(private val process: UpgradeProcess) {
     }
 
     private fun replace(live: Path, release: Path) {
-        val tmp = live.resolveSibling(".${live.fileName}.upgrade-tmp")
+        val stamp = "${ProcessHandle.current().pid()}-${System.nanoTime()}"
+        val tmp = live.resolveSibling(".${live.fileName}.upgrade-$stamp.tmp")
         Files.copy(release, tmp, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
         Files.move(tmp, live, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }

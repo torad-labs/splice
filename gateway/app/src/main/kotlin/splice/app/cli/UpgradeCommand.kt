@@ -29,6 +29,9 @@ internal class UpgradeCommand(
     fun upgrade(args: List<String>): Boolean {
         val parsed = UpgradeArgParser().parse(args) ?: return UpgradeArgParser().usage()
         return try {
+            if (parsed.rollback && parsed.to != null) {
+                throw UpgradeRefused("--rollback takes no --to: it repoints at the previous release only")
+            }
             if (parsed.rollback) rollback(parsed) else upgradeTo(parsed)
         } catch (refused: UpgradeRefused) {
             val reason = refused.reason

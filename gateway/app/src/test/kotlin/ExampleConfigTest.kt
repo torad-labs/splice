@@ -529,7 +529,7 @@ class ExampleConfigTest {
         // usageScale is a ModelCatalog METHOD, not a knob: the example's k3[1m] note has to name it
         // to explain why that row must declare exactly 1000000 (Claude Code hardcodes 1e6 for a
         // "[1m]" id, so any other declared value becomes a scale factor on a pinned row).
-        val prose = setOf("xAI", "usageScale")
+        val prose = setOf("xAI", "usageScale", "vLLM")
         prose.forEach {
             assertTrue(
                 !knobsByKey.containsKey(it),

@@ -7,7 +7,9 @@
 // :app: println-exempt.
 package splice.app.cli
 
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -23,6 +25,7 @@ internal class UpgradeCommand(
     private val daemon: UpgradeDaemon = UpgradeDaemon(JdkUpgradeProcess(), JdkUpgradeInflight(env)),
     private val layout: UpgradeLayout = UpgradeLayout(env),
 ) {
+    private val activation = UpgradeActivation(layout, wrapper)
     fun upgrade(args: List<String>): Boolean {
         val parsed = UpgradeArgParser().parse(args) ?: return UpgradeArgParser().usage()
         return try {
@@ -36,14 +39,11 @@ internal class UpgradeCommand(
     }
 
     private fun upgradeTo(a: UpgradeArgs): Boolean {
+        a.to?.let { layout.versionDir(it.removePrefix("v")) }
         val base = release.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
         println("${BOLD}splice upgrade$RESET $DIM— from $base$RESET")
         val staging = layout.stagingDir()
-        val version = try {
-            release.stage(base, staging)
-        } finally {
-            if (!Files.exists(staging.resolve(JAR_ASSET))) discard(staging)
-        }
+        val version = staged(base, staging, a.to)
         val installed = layout.installedVersion()
         if (version == installed) {
             discard(staging)
@@ -59,7 +59,7 @@ internal class UpgradeCommand(
             println("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
             return false
         }
-        activate(version, installed)
+        activation.activate(version, installed)
         layout.prunable().forEach(::discard)
         return finish()
     }
@@ -73,18 +73,34 @@ internal class UpgradeCommand(
             println("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
             return false
         }
-        activate(previous, installed)
+        activation.activate(previous, installed)
         return finish()
     }
 
-    /** Repoint the live jar, refresh or keep the wrapper, then move the current/previous links. */
-    private fun activate(version: String, from: String) {
-        val dir = layout.versionDir(version)
-        layout.point(layout.liveJar, layout.share.relativize(dir.resolve(JAR_ASSET)))
-        wrapper.activate(layout.liveShim, layout.versionDir(from).resolve(SHIM_ASSET), dir.resolve(SHIM_ASSET))
-        layout.point(layout.previous, Path.of(from))
-        layout.point(layout.current, Path.of(version))
-        println("  $GREEN✓$RESET ${"activated".padEnd(UPGRADE_PAD)} $version ($from kept for --rollback)")
+    /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
+     *  directory, and a `--to` that the candidate jar does not confirm is a refusal, not a rename. */
+    private fun staged(base: String, staging: Path, requested: String?): String {
+        // runCatchingCancellable folds I/O and parse failures into a refusal; a refusal thrown by the
+        // verifier itself passes straight through it, so the cleanup catches the refusal, not the Result.
+        return try {
+            val version = Cancellables.runCatchingCancellable { release.stage(base, staging) }
+                .getOrElse { e -> throw UpgradeRefused("staging failed: ${SafeFailureText.render(e)}") }
+            matched(version, requested)
+        } catch (refused: UpgradeRefused) {
+            discard(staging)
+            throw refused
+        }
+    }
+
+    /** The jar's own version line must be a plain semver segment (versionDir refuses anything else,
+     *  so no path is ever built from it) and must confirm --to when one was given. */
+    private fun matched(version: String, requested: String?): String {
+        layout.versionDir(version)
+        val wanted = requested?.removePrefix("v")
+        if (wanted != null && wanted != version) {
+            throw UpgradeRefused("release $requested delivered a jar reporting $version — refusing to activate it")
+        }
+        return version
     }
 
     private fun finish(): Boolean {

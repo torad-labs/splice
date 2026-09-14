@@ -1,3 +1,5 @@
+// NEW: v0.4.0 FEATURES.md §2 — daemon-lifetime observations of the Claude Code versions sending requests,
+// against the tested version, for the drift warning.
 package splice.core.version
 
 import splice.core.GATEWAY_VERSION

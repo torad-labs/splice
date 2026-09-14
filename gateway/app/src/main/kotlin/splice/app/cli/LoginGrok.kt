@@ -4,6 +4,8 @@
 package splice.app.cli
 
 import splice.app.LoginSpec
+import splice.app.auth.OAuthAccountFiles
+import splice.core.topology.AuthKind
 import splice.core.util.EnvReader
 import splice.provider.grok.GrokOAuth
 import splice.provider.grok.GrokOAuthEndpoints
@@ -17,11 +19,12 @@ internal class LoginGrok {
     private val oauth = GrokOAuth()
     private val env: EnvReader = EnvReader(System::getenv)
 
-    internal fun spec(head: String, authPath: Path): LoginSpec {
+    internal fun spec(head: String, authPath: Path, label: String? = null): LoginSpec {
         val pkce = oauth.makeGrokPkce()
         val state = randomToken()
         val nonce = randomToken()
         val clientId = GrokOAuthEndpoints.clientId(env)
+        val account = OAuthAccountFiles().loginAccount(AuthKind.GrokOAuth, authPath, label)
         return LoginSpec(
             head = head,
             authorizeUrl = oauth.buildGrokAuthorizeUrl(pkce.challenge, state, nonce, clientId, env),
@@ -47,6 +50,7 @@ internal class LoginGrok {
                     nowIso = Instant.now().toString(),
                 ).toString()
             },
+            account = account,
         )
     }
 

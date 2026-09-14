@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the client sessions of the MCP host — one per Claude Code
+// NEW: v0.4.0 FEATURES.md §8 — the client sessions of the MCP host — one per Claude Code
 // session per hosted server — and the per-session notification stream. Owns every question the
 // host asks about liveness (open streams, last activity) so idle reaping reads one truth.
 package splice.control.mcp

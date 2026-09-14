@@ -8,6 +8,8 @@ package splice.app.cli
 
 import splice.app.DeviceLoginSpec
 import splice.app.LoginIo
+import splice.app.auth.OAuthAccountFiles
+import splice.app.auth.OAuthLoginAccount
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
@@ -25,14 +27,16 @@ internal class LoginKimi {
     private val oauth = KimiOAuth()
     private val env: EnvReader = EnvReader(System::getenv)
     private val loginIo = LoginIo()
+    private val accountFiles = OAuthAccountFiles()
 
     // Class member is fine here: doctor no longer builds this type to reach
     // isClientAuth, so the Regex is compiled once per status()/kimi-login, not
     // per doctor predicate. File-scope private val is illegal for new code.
     private val ansi = Regex("\\u001B\\[[0-9;]*m")
 
-    internal fun spec(head: String, authPath: Path): DeviceLoginSpec {
-        val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
+    internal fun spec(head: String, authPath: Path, label: String? = null): DeviceLoginSpec {
+        val account = accountFiles.loginAccount(AuthKind.KimiOAuth, authPath, label)
+        val identity = KimiDeviceIdentity(deviceIdPath = deviceIdPath(authPath, account))
         return DeviceLoginSpec(
             head = head,
             clientId = KimiOAuthEndpoints.CLIENT_ID,
@@ -43,7 +47,15 @@ internal class LoginKimi {
             toAuthJson = { body ->
                 oauth.kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString()
             },
+            account = account,
         )
+    }
+
+    private fun deviceIdPath(authPath: Path, account: OAuthLoginAccount): Path = if (account.primary) {
+        authPath.resolveSibling("device_id")
+    } else {
+        val label = requireNotNull(account.resolvedLabel())
+        accountFiles.poolDir(account.kind, authPath).resolve("$label-device_id")
     }
 
     // Calls LoginIo / AuthKindRegistry directly — constructing StatusCommand

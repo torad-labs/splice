@@ -1,3 +1,5 @@
+// NEW: v0.4.0 FEATURES.md §7 — the custom compaction text on the openai-chat wire, appended as the final
+// user message after the client's own summarizer prompt.
 package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonArray

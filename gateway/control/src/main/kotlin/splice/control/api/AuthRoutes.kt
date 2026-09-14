@@ -7,10 +7,15 @@ package splice.control.api
 import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.control.HeadAccountPoolView
 import splice.control.ManagedHead
+import splice.core.auth.AuthDescription
 import splice.core.auth.RefreshableAuthProvider
 
 internal class AuthRoutes(
@@ -21,14 +26,19 @@ internal class AuthRoutes(
     // `codex`; multi-head keys each), value = {kind, login, present, ...describe fields}. The webui
     // AuthPayload reads every configured head. login = automated for oauth, manual for api-key.
     suspend fun authJson(): String {
-        val described = heads.values.map { m -> m to m.auth.describe() }
+        val described = heads.values.map { managed ->
+            Triple(managed, managed.auth.describe(), managed.accountAuth?.descriptions().orEmpty())
+        }
         return buildJsonObject {
-            described.forEach { (m, desc) ->
-                putJsonObject(m.head.key) {
-                    put("kind", desc.kind)
-                    put("login", if (desc.kind.contains("oauth")) "automated" else "manual")
-                    put("present", desc.present)
-                    desc.fields.forEach { (k, v) -> put(k, v) }
+            described.forEach { (managed, description, accountAuth) ->
+                putJsonObject(managed.head.key) {
+                    put("kind", description.kind)
+                    put("login", if (description.kind.contains("oauth")) "automated" else "manual")
+                    put("present", description.present)
+                    description.fields.forEach { (key, value) -> put(key, value) }
+                    managed.accountPool?.view(null)?.let { pool ->
+                        AccountPoolJson().write(this, pool, accountAuth)
+                    }
                 }
             }
         }.toString()
@@ -62,5 +72,57 @@ internal class AuthRoutes(
                 ContentType.Application.Json,
             )
         }
+    }
+}
+
+internal class AccountPoolJson {
+    fun write(
+        into: JsonObjectBuilder,
+        view: HeadAccountPoolView,
+        descriptions: Map<String, AuthDescription> = emptyMap(),
+    ) {
+        into.putJsonObject("account_pool") {
+            put("selected_label", view.selectedLabel)
+            putJsonArray("accounts") {
+                view.accounts.forEach { account ->
+                    addJsonObject {
+                        put("label", account.label)
+                        put("primary", account.primary)
+                        put("selected", account.selected)
+                        put("available", account.available)
+                        put("credential_present", account.credentialPresent)
+                        put("plan", account.plan)
+                        put("five_hour_used_percent", account.fiveHourUsedPercent)
+                        put("five_hour_reset_epoch_seconds", account.fiveHourResetEpochSeconds)
+                        put("seven_day_used_percent", account.sevenDayUsedPercent)
+                        put("seven_day_reset_epoch_seconds", account.sevenDayResetEpochSeconds)
+                        descriptions[account.label]?.let { description -> auth(this, description) }
+                    }
+                }
+            }
+            view.lastSwitch?.let { switch ->
+                putJsonObject("last_switch") {
+                    put("from", switch.from)
+                    put("to", switch.to)
+                    put("reason", switch.reason)
+                    put("at_epoch_millis", switch.atEpochMillis)
+                }
+            }
+        }
+    }
+
+    private fun auth(into: JsonObjectBuilder, description: AuthDescription) {
+        into.putJsonObject("auth") {
+            put("kind", description.kind)
+            put("present", description.present)
+            description.fields.forEach { (key, value) ->
+                if (safeAuthField(key)) put(key, value)
+            }
+        }
+    }
+
+    private fun safeAuthField(key: String): Boolean = when (key) {
+        "account_id_masked", "login", "refresh_latched" -> true
+        else -> false
     }
 }

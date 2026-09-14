@@ -42,7 +42,22 @@ class PerfStatsTest {
         val lines = Files.readAllLines(file)
         assertTrue(lines[0].contains("\"session\":\"a6b15bd7\""), lines[0])
         assertTrue("session" !in lines[1], lines[1])
+        assertTrue(lines.none { it.contains("cache_cold") }, "one-account rows stay byte-compatible: $lines")
         assertTrue("session" !in rows[0], "a string field never reaches the numeric aggregation input")
+    }
+
+    @Test
+    fun `a switched turn records its account and cold cache`() {
+        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { 7L })
+        val meta = PerfRowMeta("m", "ok", compact = false, account = "backup", cacheCold = true)
+
+        stats.record(meta, TurnPerf { 0L }.snapshot())
+        stats.tailNumeric(10)
+
+        val row = Files.readString(file)
+        assertTrue(row.contains("\"account\":\"backup\""), row)
+        assertTrue(row.contains("\"cache_cold\":true"), row)
     }
 
     @Test

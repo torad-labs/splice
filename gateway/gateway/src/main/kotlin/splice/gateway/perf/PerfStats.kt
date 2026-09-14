@@ -33,6 +33,8 @@ public data class PerfRowMeta(
      *  the perf log is attributable to ONE Claude Code session in a single grep (2026-09-02: seven
      *  client aborts in two hours could only be tied to sessions by cross-reading transcripts). */
     val session: String? = null,
+    val account: String? = null,
+    val cacheCold: Boolean = false,
 )
 
 private const val DEFAULT_TAIL = 200
@@ -59,6 +61,10 @@ public class PerfStats(
             put("outcome", meta.outcome)
             put("compact", meta.compact)
             meta.session?.let { put("session", it) }
+            meta.account?.let { account ->
+                put("account", account)
+                put("cache_cold", meta.cacheCold)
+            }
             snap.marks.forEach { (k, v) -> put(k, v) }
             snap.counters.forEach { (k, v) -> put(k, v) }
         }.toString()

@@ -692,3 +692,75 @@ class CodexAuthIdentityTest {
         )
     }
 }
+
+class CodexAccountMetadataTest {
+    @Test
+    fun `JWT account label claims exclude email`() {
+        val oauth = CodexOAuth()
+        val token = jwt(
+            """{"email":"private@example.com","https://api.openai.com/auth":{
+                "chatgpt_account_id":"acct-1234","chatgpt_plan_type":"plus"}}""",
+        )
+
+        assertEquals("acct-1234", oauth.accountIdFromToken(token))
+        assertEquals("plus", oauth.planTypeFromToken(token))
+        assertNull(oauth.planTypeFromToken("garbage"))
+    }
+
+    @Test
+    fun `access token metadata does not change the legacy account header`() {
+        val oauth = CodexOAuth()
+        val access = jwt(
+            """{"https://api.openai.com/auth":{"chatgpt_account_id":"access-account"}}""",
+        )
+
+        val auth = oauth.authJsonFromTokens(
+            idToken = null,
+            accessToken = access,
+            refreshToken = "refresh",
+            apiKey = null,
+            nowIso = "2026-09-13T00:00:00Z",
+        )
+
+        assertFalse("account_id" in auth["tokens"]!!.jsonObject)
+        assertEquals("access-account", oauth.accountIdFromToken(access), "auto labels may still derive the safe hash")
+    }
+
+    @Test
+    fun `refresh preserves labeled metadata and never decorates the legacy primary`(@TempDir tmp: Path) = runTest {
+        for (labeled in listOf(false, true)) {
+            val file = tmp.resolve("auth-$labeled.json")
+            val metadata = if (labeled) {
+                ""","splice_auth_kind":"chatgpt-oauth","splice_account_label":"backup""""
+            } else {
+                ""
+            }
+            Files.writeString(
+                file,
+                """{"tokens":{"access_token":"old","refresh_token":"refresh",
+                    "account_id":"acct"},"last_refresh":"old"$metadata}""",
+            )
+            val auth = CodexAuthProvider(
+                authPath = file,
+                authCacheMs = 60_000L,
+                refreshCall = {
+                    RefreshAttempt.Granted(RefreshedTokens("new", "rotated", idToken = null))
+                },
+            )
+
+            auth.refresh()
+
+            val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(Files.readString(file)).jsonObject
+            val tokens = onDisk["tokens"]!!.jsonObject
+            if (labeled) {
+                assertEquals("chatgpt-oauth", onDisk["splice_auth_kind"]?.jsonPrimitive?.content)
+                assertEquals("backup", onDisk["splice_account_label"]?.jsonPrimitive?.content)
+                assertFalse("splice_auth_kind" in tokens)
+                assertFalse("splice_account_label" in tokens)
+            } else {
+                assertFalse("splice_auth_kind" in onDisk)
+                assertFalse("splice_account_label" in onDisk)
+            }
+        }
+    }
+}

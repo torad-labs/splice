@@ -3,7 +3,10 @@
 // splice.core.perf in the file.
 package splice.control.api
 
-import kotlinx.serialization.json.JsonObject
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respondText
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -15,16 +18,29 @@ import splice.core.perf.PerfKeys
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
-private const val P50 = 0.50
-private const val P95 = 0.95
 
 internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
 
     private val summary = PerfSummary()
 
-    /** `/api/perf/summary?window=1h|24h|7d` (v0.4.0, FEATURES.md §3): one summary per head. */
-    fun summaryJson(label: String?): String = buildJsonObject {
-        val window = summary.window(label) ?: PerfWindow.H24
+    /** `/api/perf/summary?window=1h|24h|7d` (v0.4.0, FEATURES.md §3): one summary per head. An absent
+     *  window is 24h; an unknown one is refused with 400, never answered with a different window
+     *  (the CLI refuses the same input). */
+    suspend fun summary(call: ApplicationCall) {
+        val label = call.request.queryParameters["window"]
+        val window = if (label == null) PerfWindow.H24 else summary.window(label)
+        if (window == null) {
+            call.respondText(
+                buildJsonObject { put("error", "unknown window '$label'; use 1h, 24h or 7d") }.toString(),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+        } else {
+            call.respondText(summaryJson(window), ContentType.Application.Json)
+        }
+    }
+
+    fun summaryJson(window: PerfWindow): String = buildJsonObject {
         put("window", window.label)
         putJsonArray(HEADS) {
             heads.values.forEach { m ->
@@ -51,7 +67,7 @@ internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
                     putJsonObject("stages") {
                         orderedPerfFields(rows).forEach { field ->
                             val values = rows.mapNotNull { it[field] }
-                            if (values.isNotEmpty()) put(field, statsJson(values))
+                            summary.stats(values)?.let { put(field, it) }
                         }
                     }
                 }
@@ -65,21 +81,5 @@ internal class PerfPayloads(private val heads: Map<String, ManagedHead>) {
         val marks = PerfKeys.markOrder.filter { it in seen }
         val rest = (seen - PerfKeys.markOrder.toSet()).sorted()
         return marks + rest
-    }
-
-    private fun statsJson(values: List<Long>): JsonObject {
-        val sorted = values.sorted()
-        return buildJsonObject {
-            put("count", sorted.size)
-            put("p50", percentile(sorted, P50))
-            put("p95", percentile(sorted, P95))
-            put("max", sorted.last())
-        }
-    }
-
-    /** Nearest-rank percentile on a pre-sorted list. */
-    private fun percentile(sorted: List<Long>, q: Double): Long {
-        val rank = kotlin.math.ceil(q * sorted.size).toInt().coerceIn(1, sorted.size)
-        return sorted[rank - 1]
     }
 }

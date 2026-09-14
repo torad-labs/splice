@@ -1,11 +1,11 @@
-// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.kimiOauthAuth) @ ed5c868 — invariants unchanged:
-// the device identity is built FIRST because its X-Msh-* headers ride the refresh call itself,
-// then the auth provider that refreshes against them.
+// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.kimiOauthAuth) @ ed5c868 — each pooled
+// credential keeps the Kimi identity used by both its refresh call and its upstream turns.
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.KimiRefresh
 import splice.app.TopologyLoader
+import splice.app.auth.OAuthAccountFiles
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
@@ -13,31 +13,68 @@ import splice.core.util.LogSink
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuthEndpoints
+import java.nio.file.Path
 import java.nio.file.Paths
 
-/** Kimi's device-flow OAuth construction: the device identity is built FIRST because its X-Msh-*
- *  headers ride the refresh call itself, then the auth provider that refreshes against them. */
+/** One Kimi OAuth credential and the device identity that must travel with it. */
+internal data class KimiOAuthAccount(
+    val label: String,
+    val primary: Boolean,
+    val auth: RefreshableAuthProvider,
+    val quotaFile: Path,
+    val credentialPresent: Boolean,
+    val identity: KimiDeviceIdentity,
+)
+
+/** Kimi's device-flow OAuth construction, repeated once per discovered account file. */
 internal class KimiOAuth(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val kimiRefresh: KimiRefresh,
 ) {
-    internal fun kimiOauthAuth(ctx: ProviderBuild): Pair<RefreshableAuthProvider, KimiDeviceIdentity> {
-        // Splice's own file by default (AuthKind header, 2026-09-05); the native app's only by auth.file.
-        val authPath = Paths.get(
+    private val accountFiles = OAuthAccountFiles()
+
+    internal fun kimiOauthAccounts(ctx: ProviderBuild): List<KimiOAuthAccount> {
+        val primaryPath = Paths.get(
             TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: AuthKind.KimiOAuth.authFile),
         )
-        val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
-        val identityHeaders = identity.headers()
         val tokenUrl = KimiOAuthEndpoints.tokenUrl(System::getenv)
-        val auth = KimiAuthProvider(
+        return accountFiles.discover(AuthKind.KimiOAuth, primaryPath).map { file ->
+            val identity = KimiDeviceIdentity(deviceIdPath(file.credentialFile, file.primary, file.label))
+            KimiOAuthAccount(
+                label = file.label,
+                primary = file.primary,
+                auth = kimiAuth(ctx, file.credentialFile, identity, tokenUrl),
+                quotaFile = file.quotaFile,
+                credentialPresent = file.credentialPresent,
+                identity = identity,
+            )
+        }
+    }
+
+    internal fun providerAccount(accounts: List<KimiOAuthAccount>): KimiOAuthAccount {
+        val readablePrimary = accounts.singleOrNull { it.primary && it.credentialPresent }
+        return readablePrimary ?: accounts.firstOrNull(KimiOAuthAccount::credentialPresent)
+            ?: accounts.single(KimiOAuthAccount::primary)
+    }
+
+    private fun kimiAuth(
+        ctx: ProviderBuild,
+        authPath: Path,
+        identity: KimiDeviceIdentity,
+        tokenUrl: String,
+    ): RefreshableAuthProvider {
+        val identityHeaders = identity.headers()
+        return KimiAuthProvider(
             authPath = authPath,
             authCacheMs = ctx.cfg.authCacheMs,
-            refreshCall = { rt -> kimiRefresh.refresh(tokenUrl, rt, identityHeaders) },
+            refreshCall = { refreshToken -> kimiRefresh.refresh(tokenUrl, refreshToken, identityHeaders) },
             prefetchScope = probeScope,
-            // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
+            // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail.
             log = HeadScopedLogs.headScopedLog(ctx.key, log),
         )
-        return auth to identity
     }
+
+    private fun deviceIdPath(authPath: Path, primary: Boolean, label: String): Path =
+        authPath.resolveSibling(if (primary) "device_id" else "$label-device_id")
 }

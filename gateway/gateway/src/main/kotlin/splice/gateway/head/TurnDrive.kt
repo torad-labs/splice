@@ -12,9 +12,12 @@ import splice.core.turn.Usage
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.round.RoundUsage
 import splice.gateway.round.RunnerSignals
+import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
+import splice.spi.AccountSelection
 import splice.spi.InflightGate
+import splice.spi.RemainingTurnWait
 import splice.spi.RoundInterceptor
 import splice.spi.ToolSearchController
 import splice.spi.TurnWatchdog
@@ -40,6 +43,8 @@ internal data class TurnDrive(
     val perf: TurnPerf,
     /** Per-turn upstream headers from BuiltTurn (e.g. grok conv-id affinity). */
     val turnHeaders: Map<String, String>,
+    /** Immutable OAuth account chosen before this turn started. */
+    val account: AccountSelection? = null,
     /** Runner liveness gates + the health hook for absorbed round failures (built once in
      *  TurnDriveFactory.assembleDrive; one construction site, the policies never drift). */
     val signals: RunnerSignals,
@@ -50,9 +55,12 @@ internal data class TurnDrive(
     val toolSearch: ToolSearchController?,
     /** Optional gateway-local wrapper around each posted round. */
     val roundInterceptor: RoundInterceptor? = null,
+    val remainingTurnWait: RemainingTurnWait = RemainingTurnWait { Long.MAX_VALUE },
+    val quota: QuotaTracker? = null,
 ) {
     private val rawRoundUsage = AtomicReference<RoundUsage?>(null)
     private val usageStampClaim = AtomicBoolean(false)
+    private val accountBoundaryClaim = AtomicBoolean(false)
 
     // `internal`, not `private`: TurnDrive is an internal type and TurnDriver (a different class)
     // reads this — a private member would be unreachable. Reads only this drive's own `perf`.
@@ -85,8 +93,11 @@ internal data class TurnDrive(
     /** Finish and cancellation share this per-turn claim, so a known prefix cannot be stamped twice. */
     internal fun claimUsageStamp(): Boolean = usageStampClaim.compareAndSet(false, true)
 
+    /** True once on the first round after an account switch. */
+    internal fun claimAccountBoundary(): Boolean = accountBoundaryClaim.compareAndSet(false, true)
+
     /** The client session's short tag for log lines and perf rows; null when it sent none. */
     internal fun sessionTag(): String? = meta.sessionId?.take(SESSION_TAG_CHARS)
 }
 
-private const val SESSION_TAG_CHARS = 8
+internal const val SESSION_TAG_CHARS = 8

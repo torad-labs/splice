@@ -31,8 +31,10 @@ public sealed class Command {
     public data class Uninstall(val target: String?) : Command() {
         override fun run(): Int = outcomeExitCode(InstallCommand().uninstall(target))
     }
-    public data class Login(val head: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head) })
+
+    /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind. */
+    public data class Login(val head: String?, val label: String? = null) : Command() {
+        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head, label) })
     }
     public data object Setup : Command() {
         override fun run(): Int = outcomeExitCode(runBlocking { SetupCommand().setup() })

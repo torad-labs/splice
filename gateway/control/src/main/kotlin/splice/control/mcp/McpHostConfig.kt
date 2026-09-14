@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the host's knobs, mirrored on code mode's worker pool — the one
+// NEW: v0.4.0 FEATURES.md §8 — the host's knobs, mirrored on code mode's worker pool — the one
 // pool splice already runs — so the lifecycle story (idle reap, eviction at capacity) is the same
 // story twice, not a new one.
 package splice.control.mcp

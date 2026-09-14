@@ -1,3 +1,5 @@
+// NEW: v0.4.0 FEATURES.md §7 — a Claude Code session id mapped to its working directory: the live registry
+// first, the transcript directory for headless runs.
 package splice.core.compaction
 
 import kotlinx.serialization.json.Json

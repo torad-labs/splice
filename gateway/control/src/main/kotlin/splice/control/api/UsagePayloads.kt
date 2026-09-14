@@ -24,6 +24,8 @@ internal class UsagePayloads(
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
 ) {
+    private val accountJson = AccountPoolJson()
+
     // PORT-OF server/src/control/api.mjs usage payload @ pre-public-port-baseline: top-level window/warn knobs +
     // per-head {key,label,usage:{output_tokens_5h,entries,ratelimit,warn}} (webui UsagePayload).
     fun usageJson(): String {
@@ -35,16 +37,19 @@ internal class UsagePayloads(
             putJsonArray(HEADS) {
                 heads.values.forEach { m ->
                     val usage = m.usage.snapshot()
+                    val pool = m.accountPool?.view(null)
+                    val selectedQuota = pool?.selectedQuota() ?: usage.quota
                     val rlView = usage.ratelimit
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
                     val warn = UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h)
                     addJsonObject {
                         put(KEY, m.head.key)
                         put(LABEL, m.head.label)
+                        pool?.let { accountJson.write(this, it) }
                         putJsonObject("usage") {
                             put("output_tokens_5h", usage.outputTokens5h)
                             put("entries", usage.entries)
-                            usage.quota?.let { q -> quota(this, q) }
+                            selectedQuota?.let { q -> quota(this, q) }
                             if (rlView != null) {
                                 putJsonObject("ratelimit") {
                                     put("limit_tokens", rlView.limitTokens)

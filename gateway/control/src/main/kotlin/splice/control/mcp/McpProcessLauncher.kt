@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): how a hosted MCP child is spawned, and the host's own failure
+// NEW: v0.4.0 FEATURES.md §8 — how a hosted MCP child is spawned, and the host's own failure
 // type. Split from HostedServer.kt (concentration, 2026-09-13).
 package splice.control.mcp
 

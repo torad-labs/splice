@@ -1,9 +1,13 @@
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.SessionsCommand
 import splice.core.sessions.SessionRegistry
+import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -45,6 +49,60 @@ class SessionsCommandTest {
         assertFalse(gamma.contains("live"))
         assertFalse(lines.any { it.contains("SendMessage(to=\"gamma\")") }, "gone sessions get no send line")
         assertTrue(out.contains("claude -p"))
+    }
+
+    @Test
+    fun `a stale session prints no send line even with a name and a socket`(@TempDir dir: Path) {
+        Files.writeString(
+            dir.resolve("21.json"),
+            """{"pid":21,"name":"old","updatedAt":${now - 5_000_000},"messagingSocketPath":"/run/x/21.sock"}""",
+        )
+        val registry = SessionRegistry(sessionsDir = dir, headOf = { null }, pidAlive = { true }, clock = { now })
+        val out = capture { SessionsCommand().sessions({ null }, registry) { now } }
+        assertTrue(out.contains("old") && out.contains("stale"), out)
+        assertFalse(out.contains("SendMessage("), "only LIVE rows are messageable: $out")
+    }
+
+    @Test
+    fun `registry text is sanitized and a name is escaped inside the send syntax`(@TempDir dir: Path) {
+        val name = "al\u001b[31mpha\"x"
+        val json = """{"pid":31,"name":${Json.encodeToString(name)},"status":"bu\u0007sy",""" +
+            """"updatedAt":$now,"cwd":"/w/\u001b]0;evil\u0007a"}"""
+        Files.writeString(dir.resolve("31.json"), json)
+        // A blank name falls back to the socket, which is just as untrusted: C1 (0x9b = CSI), a
+        // quote, a backslash and a Unicode format character ride in it.
+        val socket = "/run/x/\u009b31m\"q\\\u200e32.sock"
+        val blank = """{"pid":32,"name":"","updatedAt":$now,"messagingSocketPath":${Json.encodeToString(socket)}}"""
+        Files.writeString(dir.resolve("32.json"), blank)
+        val registry = SessionRegistry(sessionsDir = dir, headOf = { null }, pidAlive = { true }, clock = { now })
+        val out = capture { SessionsCommand().sessions({ null }, registry) { now } }
+        val injected = listOf("\u001b[31m", "\u0007", "\u001b]0;evil", "\u009b", "\u200e")
+        assertTrue(injected.none { it in out }, "no registry control sequence reaches the terminal: $out")
+        assertTrue(out.contains("SendMessage(to=\"al[31mpha\\\"x\")"), out)
+        val socketLine = "SendMessage(to=\"uds:/run/x/31m\\\"q\\\\32.sock\")  "
+        assertTrue(out.contains(socketLine), "the socket is cleaned and escaped inside the syntax: $out")
+        assertTrue(out.contains("# uds:/run/x/31m\"q\\32.sock"), "the comment shows the cleaned socket: $out")
+    }
+
+    @Test
+    fun `an unreadable topology leaves heads unknown and writes nothing`(@TempDir home: Path) {
+        val sessions = Files.createDirectories(home.resolve(".claude/sessions"))
+        val me = ProcessHandle.current().pid()
+        Files.writeString(sessions.resolve("$me.json"), """{"pid":$me,"name":"self","updatedAt":$now}""")
+        val bad = home.resolve("bad.toml")
+        Files.writeString(bad, "not = [toml")
+        val prev = System.getProperty("user.home")
+        System.setProperty("user.home", home.toString())
+        val env = EnvReader { name -> bad.toString().takeIf { name == "SPLICE_CONFIG" } }
+        val out = try {
+            capture { SessionsCommand().sessions(env) { now } }
+        } finally {
+            System.setProperty("user.home", prev)
+        }
+        assertTrue(out.contains("self") && out.contains("unknown head"), out)
+        assertEquals("not = [toml", Files.readString(bad), "the malformed file is untouched")
+        val entries = Files.list(home).use { it.map { p -> p.fileName.toString() }.toList().toSet() }
+        assertEquals(setOf(".claude", "bad.toml"), entries, "no starter config was materialized")
     }
 
     private fun capture(block: () -> Boolean): String {

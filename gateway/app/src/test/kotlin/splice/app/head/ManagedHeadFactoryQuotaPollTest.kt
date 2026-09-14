@@ -5,11 +5,13 @@ package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.SignInPlanner
 import splice.app.TokenUrlRefreshCall
+import splice.app.auth.OAuthAccountFiles
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -19,6 +21,7 @@ import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKind
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -108,5 +111,24 @@ class ManagedHeadFactoryQuotaPollTest {
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
 
         assertEquals(1, starts)
+    }
+
+    @Test
+    fun `quota poll auto starts one poller per OAuth account`(@TempDir tmp: Path) = runTest {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("pool"))
+        val ctx = build(statePaths, quotaPoll = "auto")
+        val primaryFile = Path.of(checkNotNull(ctx.providerCfg.auth.file))
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.ChatgptOAuth,
+            primaryFile,
+            "backup",
+            buildJsonObject {},
+        )
+        var starts = 0
+        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _ -> starts += 1 })
+
+        factory.assembleHead(ctx, controlPort = 3098)
+
+        assertEquals(2, starts)
     }
 }

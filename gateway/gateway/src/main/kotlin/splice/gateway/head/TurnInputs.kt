@@ -4,6 +4,8 @@
 package splice.gateway.head
 
 import splice.core.perf.TurnPerf
+import splice.gateway.usage.QuotaTracker
+import splice.spi.AccountSelection
 import splice.spi.BuiltTurn
 import splice.spi.InflightGate
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,4 +20,6 @@ internal data class TurnInputs(
     /** Set by TurnStreamer when a detached compaction takes [slot] with it: the drive releases the
      *  slot when the upstream turn ends, and HeadAdmission's finally must then leave it alone. */
     val slotHandedOff: AtomicBoolean = AtomicBoolean(false),
+    val account: AccountSelection? = null,
+    val quota: QuotaTracker? = null,
 )

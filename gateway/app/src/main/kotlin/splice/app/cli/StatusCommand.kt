@@ -10,7 +10,6 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 
 /** The `status` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Also the home of the two credential-presence predicates doctor
@@ -24,10 +23,12 @@ internal fun interface HealthProbe {
 
 internal class StatusCommand(
     private val healthProbe: HealthProbe = HealthProbe { port -> DaemonHealth().healthView(port) },
+    private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
 ) {
 
     private val loginIo = LoginIo()
     private val table = LoginKimi()
+    private val extras = StatusExtras(accountPools)
 
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
@@ -52,20 +53,15 @@ internal class StatusCommand(
             val provider = topology.providers[head.provider] ?: continue
             println("  " + table.row(key, head, provider, envReader))
         }
+        if (up) extras.printAccounts(port, envReader)
         println()
         table.printNextSteps(topology, envReader)
     }
 
     internal fun clientVersionWarning(health: HealthView?): String? = health?.clientVersionWarning
 
-    /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as
-     *  installed (the doctor jarCheck twin). Internal for the permanent arm (codex redo). */
-    internal fun jarLine(): String {
-        val jar = AdminSupport.selfJar() ?: return "not installed — run: splice install"
-        val failure = AdminSupport.jarAccessFailure(jar)
-            ?: return jar.toString()
-        return "$jar is unreadable (${SafeFailureText.render(failure)}) — fix access to it"
-    }
+    /** DR-86 twin of doctor's jarCheck; lives on StatusExtras, kept here for the permanent arm's callers. */
+    internal fun jarLine(): String = extras.jarLine()
 
     /** A head that DECLARES the caller's own credential rather than one splice holds.
      *

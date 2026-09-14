@@ -10,6 +10,9 @@ import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
+
+private val OUTCOME_TAG = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 /** The probe's BYTE write, as a named seam (the [WrapperClaim] precedent, and a fun interface
  *  rather than a raw lambda type for the same reason that one is).
@@ -35,7 +38,11 @@ internal object FileProbeWrite : ProbeWrite {
 /** The writability probe as a constructed collaborator rather than a free function (Kotlin style
  *  law, 2026-08-15: main sources carry no top-level functions). Stateless — doctor builds one and
  *  asks it; the member keeps the old function's name so every historical grep still lands. */
-internal class DoctorProbeWrite(private val write: ProbeWrite = FileProbeWrite) {
+internal class DoctorProbeWrite(
+    private val write: ProbeWrite = FileProbeWrite,
+    private val files: DoctorReportFiles =
+        DoctorReportFiles(DoctorRedaction(Paths.get(System.getProperty("user.home")))),
+) {
 
     /** JW-17: write-and-delete a dot-prefixed probe in [dir] (created first, as the daemon would).
      *  OK carries [okDetail] (the path, or a richer label); a failure is a FAIL whose fix is chosen
@@ -64,36 +71,44 @@ internal class DoctorProbeWrite(private val write: ProbeWrite = FileProbeWrite) 
             // fact and the reflective lookup that used to produce the same six syllables is gone.
             DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (AccessDeniedException)", "chmod u+rwx $dir")
         } catch (e: java.io.IOException) {
-            DoctorCheck(
-                name,
-                CheckStatus.FAIL,
-                "$dir is not writable (${SafeFailureText.render(e)})",
-                "check free space: df -h $dir",
-            )
+            val why = "$dir is not writable (${SafeFailureText.render(e)})"
+            DoctorCheck(name, CheckStatus.FAIL, why, "check free space: df -h $dir")
         } finally {
             probe?.let { p -> Cancellables.runCatchingCancellable { Files.deleteIfExists(p) } }
         }
     }
 
     /** Last-N turn outcomes from the per-head perf JSONL — "last failure: 4m ago (upstream_failed)"
-     *  is the sentence doctor exists to say. Missing/empty file = INFO (a fresh head has no turns). */
+     *  is the sentence doctor exists to say. Read as a bounded tail of BOTH generations (a failure
+     *  that rotated into .1 minutes ago still counts); a generation that cannot be read is said,
+     *  never presented as no turns. Missing/empty files = INFO (a fresh head has no turns). */
     internal fun perfTailRow(headKey: String, perfFile: Path): DoctorCheck {
-        val rows = Cancellables.runCatchingCancellable {
-            Files.readAllLines(perfFile).takeLast(PERF_TAIL_TURNS).mapNotNull { line -> perfRow(line) }
-        }.getOrNull().orEmpty()
-        if (rows.isEmpty()) return DoctorCheck("head $headKey turns", CheckStatus.INFO, "no turns recorded yet")
+        val read = files.tails(perfFile, PROBE_TAIL_BYTES)
+        val rows = read.lines.takeLast(PERF_TAIL_TURNS * 2).mapNotNull(::perfRow).takeLast(PERF_TAIL_TURNS)
         val failures = rows.filter { (outcome, _) -> outcome != "ok" }
-        if (failures.isEmpty()) {
-            return DoctorCheck("head $headKey turns", CheckStatus.OK, "last ${rows.size} turn(s) clean")
+        val name = "head $headKey turns"
+        val unread = read.error?.let { " (a perf file could not be read: $it)" }.orEmpty()
+        return when {
+            rows.isEmpty() && read.error != null ->
+                DoctorCheck(name, CheckStatus.WARN, "perf file could not be read: ${read.error}", null)
+            rows.isEmpty() -> DoctorCheck(name, CheckStatus.INFO, "no turns recorded yet")
+            failures.isEmpty() -> DoctorCheck(name, CheckStatus.OK, "last ${rows.size} turn(s) clean$unread")
+            else -> failed(name, headKey, rows.size, failures, unread)
         }
+    }
+
+    private fun failed(
+        name: String,
+        headKey: String,
+        n: Int,
+        failures: List<Pair<String, Long>>,
+        unread: String,
+    ): DoctorCheck {
         val (outcome, ts) = failures.last()
         val ageMin = ((System.currentTimeMillis() - ts) / MS_PER_MINUTE).coerceAtLeast(0)
-        return DoctorCheck(
-            "head $headKey turns",
-            CheckStatus.WARN,
-            "${failures.size} of last ${rows.size} turn(s) failed — last failure: ${ageMin}m ago ($outcome)",
-            "splice logs --head $headKey --tail 50",
-        )
+        val last = "last failure: ${ageMin}m ago (${tag(outcome)})"
+        val detail = "${failures.size} of last $n turn(s) failed — $last$unread"
+        return DoctorCheck(name, CheckStatus.WARN, detail, "splice logs --head $headKey --tail 50")
     }
 
     /** One perf JSONL row -> (outcome, ts); null on a malformed line (tail readers stay tolerant). */
@@ -102,7 +117,14 @@ internal class DoctorProbeWrite(private val write: ProbeWrite = FileProbeWrite) 
         val outcome = JsonScalars.str(obj, "outcome")
         if (outcome == null) null else outcome to (JsonScalars.long(obj, "ts") ?: 0L)
     }.getOrNull()
+
+    /** An outcome is a tag from the daemon's vocabulary; a perf row is a plain file, so anything
+     *  else shaped is shown as ?, never quoted. */
+    private fun tag(outcome: String): String = outcome.takeIf { OUTCOME_TAG.matches(it) } ?: "?"
 }
 
 private const val PERF_TAIL_TURNS = 20
+
+/** Enough bytes for well over 20 rows per generation (a row is under 1 KiB). */
+private const val PROBE_TAIL_BYTES = 64 shl 10
 private const val MS_PER_MINUTE = 60_000L

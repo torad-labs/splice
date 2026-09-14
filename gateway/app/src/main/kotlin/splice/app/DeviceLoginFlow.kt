@@ -138,7 +138,7 @@ public object DeviceLoginFlow {
         if (resp.status.isSuccess()) {
             // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
             // body with no access token ended the poll as a SUCCESS over an empty credential.
-            val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body))
+            val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body), spec.account)
             return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
         }
         if (resp.status.value >= HTTP_SERVER_ERROR_FLOOR) {

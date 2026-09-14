@@ -1,3 +1,5 @@
+// NEW: v0.4.0 FEATURES.md §7 — the boot-time resolver for custom compaction text: global, per-model and
+// per-project rows, chosen per request so a model switch selects the new rule at once.
 package splice.core.compaction
 
 import splice.core.util.Cancellables

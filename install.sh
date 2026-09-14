@@ -362,10 +362,16 @@ rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 #     overwritten. Best effort: an install never fails for want of its own archive copy.
 JAR_VERSION="${JAR_VERSION_OUTPUT#splice }"
 RELEASE_DIR="${SHARE_DIR}/releases/${JAR_VERSION}"
+CURRENT_LINK="${SHARE_DIR}/releases/current"
+# The release that was current becomes `previous`, so the first `splice upgrade --rollback` after
+# an install.sh run has somewhere to go instead of skipping a version (review 2026-09-14).
+if [ -L "$CURRENT_LINK" ] && [ "$(readlink "$CURRENT_LINK")" != "$JAR_VERSION" ]; then
+  ln -sfn "$(readlink "$CURRENT_LINK")" "${SHARE_DIR}/releases/previous" || true
+fi
 if mkdir -p "$RELEASE_DIR" &&
   cp -p "$JAR_DST" "$RELEASE_DIR/splice.jar" &&
   cp -p "$SHIM_DST" "$RELEASE_DIR/splice-launch" &&
-  ln -sfn "$JAR_VERSION" "${SHARE_DIR}/releases/current"; then
+  ln -sfn "$JAR_VERSION" "$CURRENT_LINK"; then
   echo "splice: release copy kept at $RELEASE_DIR (splice upgrade --rollback target)"
 else
   echo "splice: WARNING — could not keep a release copy under $RELEASE_DIR; splice upgrade will keep the wrapper as-is" >&2

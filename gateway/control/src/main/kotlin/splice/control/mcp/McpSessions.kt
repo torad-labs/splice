@@ -98,6 +98,11 @@ internal class McpSessions(private val clock: HostClock) {
         forServer(server).forEach { it.offer(text) }
     }
 
+    /** One session's own notification (a progress update for its request); nobody else sees it. */
+    fun deliver(server: String, sessionId: String, text: String) {
+        get(server, sessionId)?.offer(text)
+    }
+
     /** Busy = some session streams, some session spoke within [idleMillis], or the last one ended within it. */
     fun busy(server: String, now: Long, idleMillis: Long): Boolean =
         forServer(server).any { it.busy(now, idleMillis) } || ended[server]?.let { now - it < idleMillis } == true

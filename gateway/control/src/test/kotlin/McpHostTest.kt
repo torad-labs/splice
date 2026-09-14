@@ -30,7 +30,9 @@ import kotlin.time.Duration.Companion.seconds
 /** A scripted stdio MCP server: answers initialize, echoes tools/call with its own pid, emits one
  *  notification on `notify`, pings the client on `ping-me`, and dies on `crash`. */
 private const val FAKE_SERVER = """
-import json, os, sys, time
+import json, os, signal, sys, time
+if os.environ.get("FAKE2"):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 def send(o):
     sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
 for line in sys.stdin:
@@ -54,6 +56,9 @@ for line in sys.stdin:
             time.sleep(float(args.get("seconds", 1)))
         if args.get("op") == "notify":
             send({"jsonrpc":"2.0","method":"notifications/tools/list_changed"})
+        if args.get("op") == "progress":
+            tok = m["params"].get("_meta", {}).get("progressToken")
+            send({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":tok,"progress":1}})
         if args.get("op") == "ping-me":
             send({"jsonrpc":"2.0","id":"srv-1","method":"ping"})
         send({"jsonrpc":"2.0","id":rid,"result":{"content":[{"type":"text","text":"pid=%d echo=%s" % (os.getpid(), args.get("text",""))}]}})
@@ -272,6 +277,57 @@ class McpHostTest {
         assertTrue(fa.contains("notifications/tools/list_changed"), fa)
         assertTrue(fb.contains("notifications/tools/list_changed"), fb)
         assertNull(host.openStream("fake", "nope"))
+    }
+
+    @Test
+    fun `a progress notification reaches only the session whose request carries its token`(@TempDir dir: Path) =
+        runBlocking {
+            boot(dir)
+            val a = init()
+            val b = init()
+            val sa = checkNotNull(host.openStream("fake", a))
+            val sb = checkNotNull(host.openStream("fake", b))
+            val body = """{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"echo",""" +
+                """"_meta":{"progressToken":"t-1"},"arguments":{"op":"progress"}}}"""
+            assertEquals(200, host.post("fake", a, body).status)
+            val fa = withTimeout(STREAM_WAIT_MS) { sa.receive() }
+            assertTrue(fa.contains("notifications/progress") && fa.contains("\"t-1\""), "a's own token back: $fa")
+            call(b, 2, "notify")
+            val fb = withTimeout(STREAM_WAIT_MS) { sb.receive() }
+            assertTrue(fb.contains("list_changed"), "b saw no progress frame before its own notification: $fb")
+        }
+
+    @Test
+    fun `a second crash in a row waits before respawning, and calls in between fail in words`(@TempDir dir: Path) =
+        runBlocking {
+            boot(dir)
+            val a = init()
+            val crash = """{"jsonrpc":"2.0","id":9,"method":"tools/call",""" +
+                """"params":{"name":"echo","arguments":{"op":"crash"}}}"""
+            host.post("fake", a, crash)
+            call(a, 1, "echo", "x") // one crash: respawned at once
+            host.post("fake", a, crash)
+            val refused = json.parseToJsonElement(host.post("fake", a, LIST).body!!).jsonObject
+            val message = refused["error"]!!.jsonObject["message"]!!.jsonPrimitive.content
+            assertTrue(message.contains("keeps crashing"), message)
+            clock.now += 6_000L
+            assertTrue(text(call(a, 2, "echo", "y")).endsWith("echo=y"), "respawned once the backoff passed")
+        }
+
+    @Test
+    fun `closing a child that ignores TERM never holds the registry lock`(@TempDir dir: Path) = runBlocking {
+        boot(dir)
+        val stubborn = init("fake2")
+        call(stubborn, 1, "echo", "x", name = "fake2")
+        clock.now += 60.minutes.inWholeMilliseconds
+        val sweeper = Thread { host.sweep() }.apply { start() }
+        Thread.sleep(200)
+        val started = System.nanoTime()
+        host.statusJson()
+        val waitedMs = (System.nanoTime() - started) / 1_000_000
+        sweeper.join()
+        assertTrue(waitedMs < 1_000, "status waited ${waitedMs}ms behind the 2 s teardown grace")
+        assertFalse(hosted("fake2"))
     }
 
     @Test

@@ -144,6 +144,7 @@ class AddCommandTest {
             good + "--modle" + "m",
             good + "extra",
             good + "--model",
+            good + "--model" + "--live",
             listOf("-y", "api-key"),
         ).forEach { args -> assertFalse(runBlocking { cmd.add(args, env) }, args.toString()) }
         assertEquals(before, Files.readString(config()), "nothing written for a refused command line")
@@ -196,6 +197,19 @@ class AddCommandTest {
         val models = TopologyLoader.parse(Files.readString(config())).providers.getValue("fw").models
         assertEquals(listOf("qwen3:4b" to 32_768L, "qwen3:4b" to 128_000L), models.map { it.id to it.contextWindow })
     }
+
+    @Test
+    fun `a config without a trailing newline, or without any head, is still added to`(@TempDir home: Path) =
+        withHome(home) {
+            val trimmed = starter().trimEnd('\n')
+            Files.writeString(config(), trimmed)
+            val base = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1", "--model", "m", "--yes")
+            assertTrue(runBlocking { command(http(fwRoutes)).add(base, env) }, "one newline is not a change")
+            assertTrue(Files.readString(config()).startsWith(trimmed + "\n"), "the file is appended, not rewritten")
+            Files.writeString(config(), "")
+            assertTrue(runBlocking { command(http(fwRoutes)).add(base, env) }, "no head to take a port from")
+            assertTrue(Files.readString(config()).contains("[heads.fw]"))
+        }
 
     @Test
     fun `a model list the endpoint cannot serve refuses the add instead of trusting the rows`(

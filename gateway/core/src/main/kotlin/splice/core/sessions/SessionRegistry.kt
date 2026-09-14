@@ -47,6 +47,14 @@ public fun interface PidAlive {
     public operator fun invoke(pid: Long): Boolean
 }
 
+/** When the process started (epoch ms), or null when unknown. Seam so tests decide without spawning. */
+public fun interface PidStartedAt {
+    public operator fun invoke(pid: Long): Long?
+}
+
+/** A process that started this long after its registration's startedAt is a reused pid, not the session. */
+private const val PID_REUSE_TOLERANCE_MS = 300_000L
+
 /** Which splice head launched this pid, if any. */
 public fun interface HeadOfPid {
     public operator fun invoke(pid: Long): String?
@@ -57,6 +65,9 @@ public class SessionRegistry(
     private val headOf: HeadOfPid,
     private val pidAlive: PidAlive = PidAlive { pid ->
         pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+    },
+    private val pidStartedAt: PidStartedAt = PidStartedAt { pid ->
+        ProcessHandle.of(pid).flatMap { it.info().startInstant() }.map { it.toEpochMilli() }.orElse(null)
     },
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
@@ -78,7 +89,7 @@ public class SessionRegistry(
             .getOrNull() as? JsonObject ?: return null
         val pid = JsonScalars.long(obj, "pid")
         val updatedAt = JsonScalars.long(obj, "updatedAt")
-        val availability = availability(pid, updatedAt)
+        val availability = availability(pid, updatedAt, JsonScalars.long(obj, "startedAt"))
         return SessionRecord(
             pid = pid,
             sessionId = JsonScalars.str(obj, "sessionId"),
@@ -96,9 +107,13 @@ public class SessionRegistry(
         )
     }
 
-    /** A pid that is absent or not a real process id (0, negative) is GONE for this one row only. */
-    private fun availability(pid: Long?, updatedAt: Long?): SessionAvailability = when {
-        pid == null || pid <= 0 || !pidAlive(pid) -> SessionAvailability.GONE
+    private fun reusedPid(pid: Long, startedAt: Long?): Boolean =
+        startedAt != null && (pidStartedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+
+    /** A pid that is absent or not a real process id (0, negative) is GONE for this one row only; so
+     *  is a live pid whose process started long after the registration (the pid was reused). */
+    private fun availability(pid: Long?, updatedAt: Long?, startedAt: Long?): SessionAvailability = when {
+        pid == null || pid <= 0 || !pidAlive(pid) || reusedPid(pid, startedAt) -> SessionAvailability.GONE
         updatedAt == null || clock() - updatedAt > staleAfterMs -> SessionAvailability.STALE
         else -> SessionAvailability.LIVE
     }

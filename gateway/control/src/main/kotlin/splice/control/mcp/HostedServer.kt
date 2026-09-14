@@ -35,6 +35,12 @@ private const val HOST_PROTOCOL = "2025-11-25"
 private const val EXIT_WAIT_MS = 1_000L
 private const val DESTROY_GRACE_MS = 2_000L
 
+/** A child that lived shorter than this is a crash, and two in a row are a crash loop. */
+private const val CRASH_LOOP_MS = 30_000L
+private const val BACKOFF_BASE_MS = 5_000L
+private const val BACKOFF_MAX_MS = 60_000L
+private const val MILLIS_PER_SECOND = 1_000L
+
 internal class HostedServer(
     private val spec: McpServerSpec,
     private val config: McpHostConfig,
@@ -45,6 +51,12 @@ internal class HostedServer(
 ) {
     private val ids = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, Pending>()
+    private val progress = ProgressTokens()
+
+    /** Consecutive short-lived children; the second and later wait before respawning. */
+    @Volatile private var crashes = 0
+
+    @Volatile private var exitedAt = 0L
     private val writeLock = Any()
 
     /** Single-flight spawn: N sessions initializing at once must share ONE child, not race N up
@@ -91,9 +103,10 @@ internal class HostedServer(
     suspend fun call(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
         ensureStarted()
         val hostId = ids.getAndIncrement()
-        val slot = Pending(sessionId, clientId)
+        val (out, token) = progress.outbound(request, hostId)
+        val slot = Pending(sessionId, clientId, token)
         pending[hostId] = slot
-        if (!send(codec.withId(request, JsonPrimitive(hostId)))) {
+        if (!send(codec.withId(out, JsonPrimitive(hostId)))) {
             pending.remove(hostId)
             return codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' is not running")
         }
@@ -144,6 +157,18 @@ internal class HostedServer(
 
     private suspend fun spawn(): JsonObject {
         if (process != null) failPending("hosted MCP server '${spec.name}' exited")
+        // A crash loop (the last child died young, and so did the one before) waits before the next
+        // spawn: 5 s, 10 s, ... 60 s; calls in between fail in words instead of respawning at once.
+        // One crash still respawns immediately: a single failure is not a loop (review 2026-09-14).
+        val loop = if (exitedAt > 0L && exitedAt - startedAt < CRASH_LOOP_MS) crashes + 1 else 0
+        val sinceExit = config.clock.millis() - exitedAt
+        val wait = if (loop > 1) minOf(BACKOFF_BASE_MS shl (loop - 2), BACKOFF_MAX_MS) - sinceExit else 0L
+        if (wait > 0L) {
+            val seconds = wait / MILLIS_PER_SECOND + 1
+            val message = "hosted MCP server '${spec.name}' keeps crashing ($loop times); next restart in $seconds s"
+            throw McpHostException(message)
+        }
+        crashes = loop
         if (startedAt > 0L) restarts += 1
         val p = launch()
         startedAt = config.clock.millis()
@@ -262,6 +287,7 @@ internal class HostedServer(
             }
         }
         if (!mine) return
+        exitedAt = config.clock.millis()
         lastError = lastError ?: "exited with code $code"
         log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
         failPending("hosted MCP server '${spec.name}' exited")
@@ -275,7 +301,9 @@ internal class HostedServer(
                 slot?.answer?.complete(codec.withId(msg, slot.clientId))
             }
             RpcKind.REQUEST -> answerServerRequest(msg)
-            RpcKind.NOTIFICATION -> sink.onNotification(msg)
+            RpcKind.NOTIFICATION -> progress.owner(msg, pending)
+                ?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }
+                ?: sink.onNotification(msg)
             RpcKind.INVALID -> Unit
         }
     }

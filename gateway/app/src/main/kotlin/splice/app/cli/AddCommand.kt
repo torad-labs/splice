@@ -64,7 +64,10 @@ internal class AddCommand(
      *  file is read again first and a change in between (an editor, a second `splice add`) refuses the
      *  write instead of being overwritten by a rename. */
     private fun save(c: AddCandidate): Boolean {
+        // Normalized the way the candidate's `existing` was (one trailing newline), or a config saved
+        // without one would be "changed" on every run and never written (review 2026-09-14).
         val current = Cancellables.runCatchingCancellable { Files.readString(c.path) }.getOrNull()
+            ?.let { it.trimEnd('\n') + "\n" }
         if (current != null && current != c.existing) {
             println("  $RED✗$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} changed while this add was running — rerun")
             return false

@@ -86,13 +86,12 @@ public class StatuslineRenderer(
         val pool = accountPool?.view(sessionId)
         val account = pool?.selectedAccount()
         val selectedQuota = pool?.selectedQuota()
-        val limitsRoot = if (selectedQuota == null) root else JsonObject(root - "rate_limits")
         val switchReason = pool?.lastSwitch?.takeIf { it.to == account?.label }?.reason
         val accountText = account?.let { selected ->
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
         val segments = listOfNotNull(modelSegment(root), accountText, bars.costSegment(root)) +
-            bars.limitSegments(limitsRoot, selectedQuota ?: snapshot?.quota) +
+            bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
             listOfNotNull(
                 contextSegment(root),
                 cacheSegment(root),

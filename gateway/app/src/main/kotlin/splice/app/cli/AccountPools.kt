@@ -27,6 +27,8 @@ private const val READ_TIMEOUT_S = 5L
 
 /** Pools keyed by head (empty when no head holds one); NULL when the projection could not be read —
  *  no mgmt key, nothing answering, or a body that is not the /api/auth shape. */
+private const val HTTP_OK = 200
+
 internal fun interface AccountPoolRead {
     operator fun invoke(port: Int, env: EnvReader): Map<String, HeadAccountPoolView>?
 }
@@ -44,7 +46,9 @@ internal class JdkAccountPoolRead(
                 .header("Authorization", "Bearer $key")
                 .GET()
                 .build()
-            projection.parse(client.send(request, HttpResponse.BodyHandlers.ofString()).body())
+            val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
+            // A 401 (a stale mgmt key) is a read that FAILED, not a daemon with no pools.
+            reply.takeIf { it.statusCode() == HTTP_OK }?.let { projection.parse(it.body()) }
         }.getOrNull()
     }
 }

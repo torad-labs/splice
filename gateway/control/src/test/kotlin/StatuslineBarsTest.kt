@@ -2,6 +2,8 @@
 // the model, session spend, 5h and 7d bars. Drawn from Claude Code's own rate_limits when the
 // blob carries them, else from the head's tracked quota; the reset time appears only once a bar
 // is worth acting on.
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.Test
 import splice.control.HeadUsageSource
 import splice.control.QuotaView
 import splice.control.QuotaWindowView
+import splice.control.StatuslineBars
 import splice.control.StatuslineRenderer
 import splice.control.UsageView
 
@@ -20,6 +23,18 @@ class StatuslineBarsTest {
         val usage = HeadUsageSource { UsageView(0L, 0, null, quota) }
         val line = StatuslineRenderer(label = "grok").render(stdin, usage, warnPct = 0, warnTokens5h = 0)
         return line.replace(ansi, "")
+    }
+
+    @Test
+    fun `on a pooled line the selected account's window wins and the client fills a missing one`() {
+        val root = Json.parseToJsonElement(
+            """{"rate_limits":{"five_hour":{"used_percentage":14},"seven_day":{"used_percentage":42}}}""",
+        ).jsonObject
+        val tracked = QuotaView(QuotaWindowView(72, null), null, "pro")
+        val pooled = StatuslineBars().limitSegments(root, tracked, quotaFirst = true).map { it.replace(ansi, "") }
+        assertEquals(listOf("5h ██████░░ 72%", "7d ███░░░░░ 42%"), pooled)
+        val plain = StatuslineBars().limitSegments(root, tracked).map { it.replace(ansi, "") }
+        assertEquals(listOf("5h █░░░░░░░ 14%", "7d ███░░░░░ 42%"), plain, "unpooled: the client's own headers win")
     }
 
     @Test

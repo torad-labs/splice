@@ -47,7 +47,11 @@ internal class AddArgParser {
             val valued = VALUED_FLAGS[a]
             val switch = SWITCHES[a]
             parsed = when {
-                valued != null -> valued(parsed, args.getOrNull(i + 1) ?: return null).also { i++ }
+                // `--model --yes` is a model without its value, not a model named "--yes".
+                valued != null -> {
+                    val value = args.getOrNull(i + 1)?.takeUnless { it.startsWith("-") } ?: return null
+                    valued(parsed, value).also { i++ }
+                }
                 switch != null -> switch(parsed)
                 a.startsWith("-") || parsed.profile != null -> return null
                 else -> parsed.copy(profile = a)

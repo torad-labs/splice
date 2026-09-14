@@ -173,7 +173,7 @@ internal object LoginHookScripts {
             appendLine("  msg=\"$d{msg//$d'\\t'/ }\"")
             appendLine("  if [ -n \"${d}msg\" ]; then")
             appendLine("    " + receiptEcho(hook.signInLabel, "\"${d}msg\""))
-            appendLine("    exit 0")
+            appendLine(EXIT)
             appendLine("  fi")
             appendLine("fi")
             // /login exactly, /login followed by whitespace (a trailing space is a common keystroke)
@@ -234,6 +234,7 @@ internal object LoginHookScripts {
         }
 
     private const val ELSE = "  else"
+    private const val EXIT = "    exit 0"
     private const val MAX_SCAN_BYTES = 16384
     private const val ELSE_TOP = "else"
     private const val NO_ARGS = "^[[:space:]]*$"
@@ -245,11 +246,18 @@ internal object LoginHookScripts {
     private const val LABEL_ARGS = "^[[:space:]]+--label([[:space:]]+|=)([a-z0-9][a-z0-9._-]{0,47})[[:space:]]*$"
     private const val LABEL_GROUP = 2
 
-    private enum class Refusal { BAD_ARGS, UNPARSED, STUCK }
+    private enum class Refusal { BAD_ARGS, UNPARSED, STUCK, NO_COMMAND, DIED }
 
-    /** The three ways the browser branch declines to start a login, each saying what to do instead. */
+    /** The ways the browser branch declines to start a login, each saying what to do instead. */
     private fun refusalText(hook: LoginHookSpec, why: Refusal): String =
         when (why) {
+            Refusal.NO_COMMAND ->
+                "The ${hook.signInLabel} login command (${hook.loginCommand.substringBefore(' ')}) is not on " +
+                    "this session's PATH, so nothing was started and a sign-in still waiting was left " +
+                    "alone. Run ${hook.loginCommand} from a terminal where it resolves."
+            Refusal.DIED ->
+                "${hook.loginCommand} exited as soon as it started, so no browser will open. Start it in a " +
+                    "terminal to read why."
             Refusal.BAD_ARGS ->
                 "/login takes no arguments other than --label NAME (lowercase letters and digits, dot, " +
                     "dash, underscore; 48 characters at most). Nothing was started; the " +
@@ -276,13 +284,27 @@ internal object LoginHookScripts {
             appendLine("  elif [[ ${d}args =~ ${d}lre ]]; then label=\"$d{BASH_REMATCH[$LABEL_GROUP]}\"")
             appendLine(ELSE)
             appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.BAD_ARGS)))}")
-            appendLine("    exit 0")
+            appendLine(EXIT)
+            appendLine("  fi")
+            // The replacement is proven resolvable BEFORE the pending sign-in is cancelled, and proven
+            // to survive its first moment after: a hook that killed a working sign-in and then failed
+            // to start another, silently, was worse than the bind failure it replaced (review 2026-09-14).
+            val wrapper = shellSingleQuote(hook.loginCommand.substringBefore(' '))
+            appendLine("  if ! command -v $wrapper >/dev/null 2>&1; then")
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.NO_COMMAND)))}")
+            appendLine(EXIT)
             appendLine("  fi")
             append(LoginHookPending.cancelBlock(hook.loginCommand.substringBefore(' '), stuck))
             appendLine("  if [ -n \"${d}label\" ]; then")
             appendLine("    nohup ${hook.loginCommand} --label \"${d}label\" >/dev/null 2>&1 &")
             appendLine(ELSE)
             appendLine("    nohup ${hook.loginCommand} >/dev/null 2>&1 &")
+            appendLine("  fi")
+            appendLine("  spawned=$d!")
+            appendLine("  sleep 0.3")
+            appendLine("  if ! kill -0 \"${d}spawned\" 2>/dev/null && ! wait \"${d}spawned\"; then")
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.DIED)))}")
+            appendLine(EXIT)
             appendLine("  fi")
             appendLine("  if [ -n \"${d}restarted\" ]; then")
             appendLine("    printf '%s' ${shellSingleQuote(blockDecision(restartedText(hook)))}")

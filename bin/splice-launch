@@ -60,7 +60,7 @@ DANGEROUS="false"
 [ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS:-0}" = "1" ] && DANGEROUS="true"
 # Hand-paired with splice.core.SHIM_VERSION (gateway/core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-2"
+SPLICE_SHIM_VERSION="shim-3"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.3.2"
 

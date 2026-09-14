@@ -56,6 +56,11 @@ internal class McpSession(val id: String, val server: String, val initResult: Js
 internal class McpSessions(private val clock: HostClock) {
     private val sessions = ConcurrentHashMap<String, McpSession>()
 
+    /** When the last session on a server ended: a server with no session is idle from THEN, not
+     *  from forever, so the next 60 s sweep does not kill the process the next session would reuse
+     *  (review 2026-09-14: cross-session reuse is the point of hosting). */
+    private val ended = ConcurrentHashMap<String, Long>()
+
     /** A session on [server], minted with the child's [initResult]. */
     fun create(server: String, initResult: JsonObject): McpSession {
         val session = McpSession(UUID.randomUUID().toString(), server, initResult)
@@ -71,6 +76,7 @@ internal class McpSessions(private val clock: HostClock) {
         val session = get(server, id) ?: return null
         sessions.remove(session.id)
         session.stream.close()
+        ended[server] = clock.millis()
         return session
     }
 
@@ -81,6 +87,7 @@ internal class McpSessions(private val clock: HostClock) {
     fun forServer(server: String): List<McpSession> = sessions.values.filter { it.server == server }
 
     fun dropServer(server: String) {
+        ended.remove(server)
         forServer(server).forEach { s ->
             sessions.remove(s.id)
             s.stream.close()
@@ -91,8 +98,9 @@ internal class McpSessions(private val clock: HostClock) {
         forServer(server).forEach { it.offer(text) }
     }
 
-    /** Busy = some session streams, or some session spoke within [idleMillis]. */
-    fun busy(server: String, now: Long, idleMillis: Long): Boolean = forServer(server).any { it.busy(now, idleMillis) }
+    /** Busy = some session streams, some session spoke within [idleMillis], or the last one ended within it. */
+    fun busy(server: String, now: Long, idleMillis: Long): Boolean =
+        forServer(server).any { it.busy(now, idleMillis) } || ended[server]?.let { now - it < idleMillis } == true
 
     fun streaming(server: String): Boolean = forServer(server).any { it.openStreams.get() > 0 }
 

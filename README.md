@@ -237,7 +237,8 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 An OAuth head can hold several accounts of its kind and switch between them when one runs out.
 `splice login <head>` without `--label` always signs in the primary account in the file above,
 so a revoked primary is replaced in place; every further `splice login <head> --label <name>` lands
-beside it under `~/.config/splice/auth/<kind>/<name>.json` (its quota state in `<name>-quota.json`
+beside it under `~/.config/splice/auth/<kind>/<primary file>/<name>.json`, for the default primary
+`chatgpt-oauth/codex.json/<name>.json` (its quota state in `<name>-quota.json`
 next to it). `--label auto` derives the name from nothing personal: the ChatGPT plan plus a short
 hash of the account id, or `grok-2`, `kimi-3` by ordinal. A file is only ever used by the provider
 whose kind it carries inside; a mislabeled file is refused at boot, never silently used. A head
@@ -297,7 +298,9 @@ Every Claude Code session normally starts its own copy of every stdio MCP server
 splice starts each such server once, in the daemon, and serves it to every session over
 Streamable HTTP on loopback: each head's `.claude.json` is rewritten to point at the hosted URL
 while your own config file is never edited. A server whose command names a project directory or
-that depends on client roots keeps launching per session (its reason is on `/api/mcp`);
+that depends on client roots keeps launching per session (its reason is on `/api/mcp`); a hosted
+server runs in your home directory, so one that reads its working directory without naming it
+(`mcp-server-git` with no `--repository`) belongs in `mcp_hosting_exclude`;
 `http`/`sse`/`ws` servers pass through untouched. Hosted servers start on first use, are reaped
 when idle and evicted under memory pressure; a crash fails the pending calls honestly and the next
 call restarts the server. `[daemon] mcp_hosting = false` turns hosting off,

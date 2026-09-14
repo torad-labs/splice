@@ -108,7 +108,7 @@ class LoginCollisionTest {
             Files.writeString(primary, "{}")
             val spec = LoginCodex().spec("codex", primary, "auto")
             val label = OAuthAccountLabels.chatGpt("plus", "private-account-id")
-            val pool = Files.createDirectories(home.resolve("chatgpt-oauth"))
+            val pool = Files.createDirectories(home.resolve("chatgpt-oauth/codex.json"))
             val quota = pool.resolve("$label-quota.json")
             if (danglingQuota) {
                 Files.createSymbolicLink(quota, home.resolve("gone"))

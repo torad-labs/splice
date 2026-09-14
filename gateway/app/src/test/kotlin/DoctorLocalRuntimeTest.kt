@@ -48,6 +48,17 @@ class DoctorLocalRuntimeTest {
     }
 
     @Test
+    fun `a runtime whose model list does not answer is one WARN row, not a FAIL per model`() {
+        val listless = LocalHttp { _, url, _ ->
+            if (url.endsWith("/api/version")) LocalHttpReply(200, """{"version":"0.30.5"}""") else null
+        }
+        val checks = DoctorLocalRuntime(listless).localChecks(TopologyLoader.parse(toml), live = true)
+        assertEquals(listOf("local:ollama"), checks.map { it.name })
+        assertEquals(CheckStatus.WARN, checks.single().status)
+        assertTrue(checks.single().detail.contains("model list does not"), checks.single().detail)
+    }
+
+    @Test
     fun `only local providers are checked, rows answer for themselves, live rows appear only on request`() {
         val topology = TopologyLoader.parse(toml)
         val checks = DoctorLocalRuntime(up).localChecks(topology, live = false)

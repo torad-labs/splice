@@ -47,9 +47,9 @@ public class CompactionInstructions(
         val normalizedProjects = config.project.map { entry ->
             require(entry.path.isNotBlank()) { "compaction project path must not be blank" }
             require(entry.model == null || entry.model.isNotBlank()) { "compaction project model must not be blank" }
-            val path = Paths.get(entry.path).normalize()
-            require(path.isAbsolute) { "compaction project path must be absolute: ${entry.path}" }
-            path
+            // Resolved like file=: `~/` is the home directory and a relative path is under the
+            // topology's directory, so a tilde no longer throws out of the daemon's constructor.
+            resolvePath(entry.path)
         }
         val projectKeys = config.project.indices.map { index ->
             normalizedProjects[index] to config.project[index].model
@@ -106,7 +106,7 @@ public class CompactionInstructions(
         if (instructions != null) return Rule(instructions, scope, source)
         if (file == null) return null
 
-        val path = resolveFile(file)
+        val path = resolvePath(file)
         return Cancellables.runCatchingCancellable { readFile(path) }
             .fold(
                 onSuccess = { Rule(it, scope, "$source file:$path") },
@@ -120,7 +120,7 @@ public class CompactionInstructions(
             )
     }
 
-    private fun resolveFile(raw: String): Path {
+    private fun resolvePath(raw: String): Path {
         val expanded = if (raw.startsWith("~/")) {
             System.getProperty("user.home") + raw.substring(1)
         } else {

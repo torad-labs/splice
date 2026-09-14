@@ -38,6 +38,20 @@ class HostedServersTest {
     }
 
     @Test
+    fun `a server unbound between acquire and release still ends its reservation`() {
+        val servers = registry()
+        val a = servers.acquire("a")
+        servers.close("a", "swept mid-handshake")
+        assertTrue(!servers.release("a", a), "no longer bound")
+        assertTrue(!servers.reserved("a"))
+        val again = servers.acquire("a")
+        assertTrue(servers.reserved("a"))
+        assertTrue(!servers.release("a", again), "never launched, so not alive")
+        // With the leak, a's ghost reservation would exclude it from eviction and capacity would refuse b.
+        servers.acquire("b")
+    }
+
+    @Test
     fun `a reserved server is not evicted at capacity, a released one is`() {
         val servers = registry()
         val a = servers.acquire("a")

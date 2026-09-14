@@ -121,7 +121,13 @@ internal class ChatArm(
         // The HEAD's effective rows, not the provider's: a head context_window override and a picker
         // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
         val rows = probeInputs.effectiveRows(ctx.catalog)
-        val refused = probe.validate(rows, probe.models(runtime)).filterNot { it.ok }
+        val listed = probe.models(runtime, rows.keys)
+        if (listed == null) {
+            val where = "${runtime.kind.label} at ${providerCfg.baseUrl}"
+            log("[$key] local runtime $where answered but its model list did not; the head boots, rows unchecked\n")
+            return
+        }
+        val refused = probe.validate(rows, listed).filterNot { it.ok }
         check(refused.isEmpty()) {
             "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
                 refused.joinToString("; ") { "'${it.id}': ${it.reason}" }

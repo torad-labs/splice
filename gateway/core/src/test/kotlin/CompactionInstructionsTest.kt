@@ -11,6 +11,7 @@ import splice.core.compaction.CompactionProjectConfig
 import splice.core.compaction.CompactionScope
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.util.concurrent.Executors
 
 class CompactionInstructionsTest {
@@ -37,6 +38,23 @@ class CompactionInstructionsTest {
         assertEquals("project", resolver.resolve("other", root.resolve("src")).text)
         assertEquals("model", resolver.resolve("astra", tmp.resolve("elsewhere")).text)
         assertEquals("global", resolver.resolve("other", tmp.resolve("elsewhere")).text)
+    }
+
+    @Test
+    fun `a project path may start with a tilde or be relative to the topology directory`() {
+        val home = Paths.get(System.getProperty("user.home"))
+        val resolver = CompactionInstructions(
+            CompactionConfig(
+                project = listOf(
+                    CompactionProjectConfig("~/compaction-tilde-test", instructions = "home"),
+                    CompactionProjectConfig("relative-project", instructions = "relative"),
+                ),
+            ),
+            tmp,
+        )
+        assertEquals("home", resolver.resolve("astra", home.resolve("compaction-tilde-test/src")).text)
+        assertEquals("relative", resolver.resolve("astra", tmp.resolve("relative-project")).text)
+        assertNull(resolver.resolve("astra", tmp).text, "the topology directory itself matches neither")
     }
 
     @Test

@@ -81,18 +81,24 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
     private fun lmStudioShaped(body: JsonObject): Boolean =
         body["data"] != null && data(body).any { it["max_context_length"] != null }
 
-    public fun models(runtime: LocalRuntime): List<LocalModel> = when (runtime.kind) {
-        LocalRuntimeKind.LM_STUDIO -> data(get("$root/api/v0/models")).map { m ->
-            val loaded = JsonScalars.long(m, "loaded_context_length")
-            val max = JsonScalars.long(m, "max_context_length")
-            LocalModel(JsonScalars.strOrEmpty(m["id"]), loaded ?: max, JsonScalars.str(m, "state"))
+    /** The runtime's model list, or null when the list call itself did not answer — a runtime still
+     *  starting is not one that "lists nothing", and callers must not refuse every row for it
+     *  (review 2026-09-14). [only] bounds Ollama's per-model /api/show reads to the ids the caller
+     *  validates; the other listed ids come back without a window. */
+    public fun models(runtime: LocalRuntime, only: Set<String>? = null): List<LocalModel>? = when (runtime.kind) {
+        LocalRuntimeKind.LM_STUDIO -> get("$root/api/v0/models")?.let { body ->
+            data(body).map { m ->
+                val loaded = JsonScalars.long(m, "loaded_context_length")
+                val max = JsonScalars.long(m, "max_context_length")
+                LocalModel(JsonScalars.strOrEmpty(m["id"]), loaded ?: max, JsonScalars.str(m, "state"))
+            }
         }
-        LocalRuntimeKind.OLLAMA -> {
+        LocalRuntimeKind.OLLAMA -> get("$v1/models")?.let { body ->
             val running = ollamaRunning()
-            data(get("$v1/models")).map { m -> ollamaModel(JsonScalars.strOrEmpty(m["id"]), running) }
+            data(body).map { m -> ollamaModel(JsonScalars.strOrEmpty(m["id"]), running, only) }
         }
-        else -> data(get("$v1/models")).map { m ->
-            LocalModel(JsonScalars.strOrEmpty(m["id"]), JsonScalars.long(m, "max_model_len"))
+        else -> get("$v1/models")?.let { body ->
+            data(body).map { m -> LocalModel(JsonScalars.strOrEmpty(m["id"]), JsonScalars.long(m, "max_model_len")) }
         }
     }
 
@@ -169,7 +175,9 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
             ?.toMap()
             .orEmpty()
 
-    private fun ollamaModel(id: String, running: Map<String, Long>): LocalModel {
+    private fun ollamaModel(id: String, running: Map<String, Long>, only: Set<String>?): LocalModel {
+        // Unvalidated ids are listed without a window: no /api/show for models nobody configured.
+        if (only != null && id !in only) return LocalModel(id, null)
         val show = http("POST", "$root/api/show", buildJsonObject { put("model", id) }.toString())
             ?.takeIf { it.status == HTTP_OK }
             ?.let { parse(it.body) }

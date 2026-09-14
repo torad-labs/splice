@@ -115,8 +115,15 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         return OAuthLoginAccount(kind, primary = false, label = requestedLabel)
     }
 
-    public fun poolDir(kind: AuthKind.OAuth, primaryFile: Path): Path =
-        requireNotNull(primaryFile.parent) { "OAuth credential path has no parent: $primaryFile" }.resolve(kind.wire)
+    /** The pool of [primaryFile]: `<dir>/<kind>/<primary file name>/`. Keyed by the PRIMARY FILE, not
+     *  the kind alone, so two same-kind heads whose credentials sit in one directory (codex.json and
+     *  codex-work.json) never discover each other's labeled accounts or share a quota file; two heads
+     *  sharing one credential file share its pool, which is the same account. The whole file name,
+     *  extension included, so `codex` and `codex.json` cannot collide (review 2026-09-14). */
+    public fun poolDir(kind: AuthKind.OAuth, primaryFile: Path): Path {
+        val parent = requireNotNull(primaryFile.parent) { "OAuth credential path has no parent: $primaryFile" }
+        return parent.resolve(kind.wire).resolve(primaryFile.fileName.toString())
+    }
 
     /** Adds splice metadata without changing any provider-native credential field. */
     public fun decorated(kind: AuthKind.OAuth, label: String, providerJson: JsonObject): JsonObject =

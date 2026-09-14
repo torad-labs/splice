@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
 
 private const val ID = "id"
 private const val METHOD = "method"
@@ -41,7 +42,7 @@ internal class JsonRpcCodec(private val json: Json = Json { ignoreUnknownKeys = 
         }
     }
 
-    fun method(msg: JsonObject): String = (msg[METHOD] as? JsonPrimitive)?.content.orEmpty()
+    fun method(msg: JsonObject): String = JsonScalars.str(msg, METHOD).orEmpty()
 
     /** The message with its `id` replaced — the only mutation the host ever performs on a request. */
     fun withId(msg: JsonObject, id: JsonElement): JsonObject = buildJsonObject {

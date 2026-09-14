@@ -6,17 +6,10 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
-import splice.app.auth.OAuthAccountFiles
-import splice.core.auth.RefreshableAuthProvider
-import splice.core.topology.AuthKind
-import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
 import splice.spi.ProviderTuning
-import java.nio.file.Path
 import java.nio.file.Paths
 
 internal class GrokResponsesArm(
@@ -25,7 +18,7 @@ internal class GrokResponsesArm(
     private val grokRefresh: GrokRefresh,
 ) {
     private val quirksOverlay = QuirksOverlay()
-    private val accountFiles = OAuthAccountFiles()
+    private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
 
     // grok via the SuperGrok/X-Premium+ browser OAuth (~/.grok/auth.json, Bearer + refresh) — the
     // same Responses dialect + grok quirks, only the auth differs from the api-key path.
@@ -39,7 +32,7 @@ internal class GrokResponsesArm(
         val primaryPath = Paths.get(
             TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.grokAuthPath),
         )
-        val accounts = grokAccounts(ctx, primaryPath)
+        val accounts = grokAccounts.accounts(ctx, primaryPath)
         val auth = WiredAccounts.providerAccount(accounts).auth
         return Wired(
             GrokProvider(
@@ -63,27 +56,4 @@ internal class GrokResponsesArm(
             accounts,
         )
     }
-
-    private fun grokAccounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {
-        val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
-        return accountFiles.discover(AuthKind.GrokOAuth, primaryPath).map { file ->
-            WiredAccount(
-                label = file.label,
-                primary = file.primary,
-                auth = grokAuth(ctx, file.credentialFile, tokenUrl),
-                quotaFile = file.quotaFile,
-                credentialPresent = file.credentialPresent,
-            )
-        }
-    }
-
-    private fun grokAuth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
-        GrokAuthProvider(
-            authPath = path,
-            authCacheMs = ctx.cfg.authCacheMs,
-            refreshCall = { refreshToken -> grokRefresh.refresh(tokenUrl, refreshToken) },
-            prefetchScope = probeScope,
-            // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail.
-            log = HeadScopedLogs.headScopedLog(ctx.key, log),
-        )
 }

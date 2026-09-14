@@ -75,8 +75,9 @@
   home directory as `~`, every other path masked), an operator-authored name that is not a plain
   token (a provider or head key, a model id, a prefix) is omitted or aliased rather than shown,
   and `--with-logs` appends the last 500 daemon events reduced to their structure (timestamp,
-  tags, event, key=value pairs) with a count of the lines that were not daemon events. A
-  malformed flag prints usage and writes nothing. Nothing is uploaded.
+  tags, event, key=value pairs) with a count of the lines that were not daemon events; an MCP host
+  line keeps its server name as a safe token and its event head, so a report of a hosting problem
+  carries the hosting lines. A malformed flag prints usage and writes nothing. Nothing is uploaded.
 - **Automatic account switching when a provider's limits are hit.** `splice login <head> --label
   <name>` adds a second (third, ...) OAuth account of the same kind under
   `~/.config/splice/auth/<kind>/<primary file>/<name>.json` (`chatgpt-oauth/codex.json/work.json` for the default
@@ -149,6 +150,8 @@
   say so once. Equal or older is silent; no scheduled job, no live probe.
 
 ### Changed
+  The tracker remembers at most 4096 sessions and forgets the oldest first, so a daemon that
+  lives for months never grows on session ids.
 - **Code mode is out of beta and on by default for ChatGPT.** A `chatgpt-oauth` +
   `openai-responses` provider gets the bundled JavaScript runner and orchestration guidance with
   no config line; `code_mode = false` still turns it off, and every other provider shape stays off.

@@ -1,3 +1,5 @@
+// NEW: v0.4.0 FEATURES.md §7 — the custom compaction text on the anthropic passthrough wire, appended as one
+// text block to the last user message.
 package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonArray

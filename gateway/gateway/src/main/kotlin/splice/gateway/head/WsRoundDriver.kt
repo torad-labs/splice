@@ -18,6 +18,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.spi.Provider
 import splice.spi.WsRoundNeedsSse
+import splice.spi.WsRoundRunner
 
 internal class WsRoundDriver(
     private val provider: Provider,
@@ -30,6 +31,7 @@ internal class WsRoundDriver(
     suspend fun run(inputs: WsRoundInputs): TurnOutcome? {
         val runner = provider.wsRunner ?: return null
         val drive = inputs.drive
+        clearAccountBoundary(runner, drive)
         // CON-003 + DR-91: every exit below reports the round exactly once, INCLUDING a
         // cancellation that lands while credentials()/attempt() are in flight — the WS send may
         // already have advanced the runner's chaining state, and an unreported unwind left the
@@ -45,7 +47,7 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val accepted = provider.auth.credentials()
+            val accepted = (drive.account?.account?.auth ?: provider.auth).credentials()
                 ?.let { creds -> runner.attempt(inputs.bodyJson, drive.meta, drive.turnHeaders, creds) }
             if (accepted == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
@@ -130,5 +132,9 @@ internal class WsRoundDriver(
             // stays an incomplete child of turnJob and the turn cannot finish.
             roundJob?.complete()
         }
+    }
+
+    private fun clearAccountBoundary(runner: WsRoundRunner, drive: TurnDrive) {
+        if (drive.account?.cacheCold == true && drive.claimAccountBoundary()) runner.roundBypassed(drive.meta)
     }
 }

@@ -17,6 +17,7 @@ import kotlinx.serialization.json.put
 // to avoid a cross-module const import and satisfy detekt MagicNumber).
 private const val GATEWAY_CAPACITY_STATUS = 529
 private const val CONTENT_TOO_LARGE_STATUS = 413
+private const val RATE_LIMITED_STATUS = 429
 private const val INVALID_REQUEST_ERROR = "invalid_request_error"
 
 /** The admission plane's response shapes: one owner for all five wire terminals a request can meet
@@ -52,6 +53,14 @@ internal class AdmissionResponses {
             errorBodyJson(INVALID_REQUEST_ERROR, message),
             ContentType.Application.Json,
             HttpStatusCode.BadRequest,
+        )
+    }
+
+    suspend fun respondRateLimited(call: ApplicationCall, message: String) {
+        call.respondText(
+            errorBodyJson("rate_limit_error", message),
+            ContentType.Application.Json,
+            HttpStatusCode(RATE_LIMITED_STATUS, "Rate Limited"),
         )
     }
 

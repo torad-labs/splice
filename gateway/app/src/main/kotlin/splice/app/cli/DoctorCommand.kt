@@ -10,6 +10,7 @@ package splice.app.cli
 
 import splice.app.DaemonProbe
 import splice.app.TopologyLoader
+import splice.control.HeadAccountPoolView
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -20,7 +21,7 @@ import java.nio.file.Path
  *  carry no top-level functions): sections, rendering, and the verdict. The probe files it was
  *  already split across become constructed collaborators; every member keeps the old function's
  *  name so the diff at each call site is a receiver insertion. */
-internal class DoctorCommand {
+internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAccountPoolRead()) {
 
     private val probes = DoctorProbes()
 
@@ -30,6 +31,7 @@ internal class DoctorCommand {
     private val doctorRuntime = DoctorRuntime()
     private val config = DoctorConfigChecks()
     private val auth = DoctorAuth()
+    private val accountText = AccountPoolText()
 
     // ONE DoctorRuntime for the whole run: the daemon section's per-head rows and the runtime
     // section's own rows must read the same instrument, so the head checks receive the collaborator
@@ -44,6 +46,10 @@ internal class DoctorCommand {
 
     internal fun doctor(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
         val options = DoctorReportOptions(json = false, withLogs = false, out = null).parse(args)
+        if (options == null) {
+            System.err.println("splice doctor: unknown or malformed arguments ${args.joinToString(" ")}\n$DOCTOR_USAGE")
+            return false
+        }
         val run = collect(envReader, options.live)
         if (options.json) {
             val report = DoctorReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
@@ -74,18 +80,31 @@ internal class DoctorCommand {
         val topology = (topo as? DoctorTopology.Parsed)?.topology
         val port = AdminSupport.controlPort(topology, envReader)
         val snapshot = DaemonSnapshot(port, DaemonProbe.healthView(port))
+        val pools = if (snapshot.running) accountPools(port, envReader) else null
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
             "configuration" to guarded { config.configurationChecks(topo, configPath, live) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to guarded { auth.authChecks(topo, envReader, snapshot) },
+            // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
+            "accounts" to guarded { accountChecks(snapshot, pools) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
             "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader) },
         )
-        return DoctorRun(topology, sections)
+        return DoctorRun(topology, sections, pools.orEmpty())
     }
+
+    private fun accountChecks(snapshot: DaemonSnapshot, pools: Map<String, HeadAccountPoolView>?): List<DoctorCheck> =
+        when {
+            !snapshot.running -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (daemon not running)"))
+            pools == null -> listOf(
+                DoctorCheck(ACCOUNTS_CHECK, CheckStatus.WARN, "the daemon's /api/auth could not be read (mgmt key?)"),
+            )
+            pools.isEmpty() -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
+            else -> pools.map { (head, view) -> accountText.check(head, view) }
+        }
 
     // One crashing check must not kill the report (nor masquerade as healthy).
     private fun guarded(block: DoctorProbe): List<DoctorCheck> =
@@ -140,3 +159,4 @@ internal class DoctorCommand {
 }
 
 private val CLAUDE_VERSION = listOf("claude", "--version")
+private const val ACCOUNTS_CHECK = "accounts"

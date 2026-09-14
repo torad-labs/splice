@@ -1,3 +1,4 @@
+// NEW: v0.4.0 FEATURES.md §2 — a dotted numeric Claude Code version, compared by numeric component, never as text.
 package splice.core.client
 
 import java.math.BigInteger

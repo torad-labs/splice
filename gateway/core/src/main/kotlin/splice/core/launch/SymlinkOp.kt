@@ -1,3 +1,4 @@
+// NEW: v0.4.0 FEATURES.md §8 — the symlink primitive ClaudeConfigMaterializer links through, as a seam.
 // The symlink primitive ClaudeConfigMaterializer links through — a seam so the DR-67 safety
 // property is testable. Split from ClaudeConfigMaterializer.kt (concentration, 2026-09-13).
 package splice.core.launch

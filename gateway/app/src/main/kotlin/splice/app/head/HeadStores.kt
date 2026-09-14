@@ -8,12 +8,15 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.spi.AccountPool
 
 internal data class HeadStores(
     val usageStore: UsageStore,
     val compactStats: CompactStats,
     val perfStats: PerfStats,
     val quota: QuotaTracker,
+    val accountPool: AccountPool? = null,
+    val accountQuotas: Map<String, QuotaTracker> = emptyMap(),
     /** Per-session client windows (ClientWindows): written by the control plane's statusline
      *  route, read by the head's usage payload — one instance so both see the same sessions. */
     val clientWindows: ClientWindows = ClientWindows(),

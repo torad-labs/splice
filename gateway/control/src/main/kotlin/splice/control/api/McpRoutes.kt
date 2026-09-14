@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the Streamable HTTP face of the MCP host (MCP 2025-11-25):
+// NEW: v0.4.0 FEATURES.md §8 — the Streamable HTTP face of the MCP host (MCP 2025-11-25):
 // POST carries one JSON-RPC message and answers with JSON (initialize mints `Mcp-Session-Id`),
 // GET opens the server-to-client notification stream as text/event-stream, DELETE ends the
 // session. Everything protocol-shaped lives in McpHost; this file only speaks ktor.

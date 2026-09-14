@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): `/api/mcp` — eligibility straight from the planner (so the
+// NEW: v0.4.0 FEATURES.md §8 — `/api/mcp` — eligibility straight from the planner (so the
 // console shows the same reasons the materializer acted on) plus the live state of each hosted
 // process. Data for the later console; no rendering here.
 package splice.control.mcp

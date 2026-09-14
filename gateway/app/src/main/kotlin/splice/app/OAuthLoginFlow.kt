@@ -215,7 +215,7 @@ public object OAuthLoginFlow {
                 } else {
                     // DR-172: a 200 alone used to mean "signed in" here. The token check and the
                     // message now live together in one place, shared with the device flow.
-                    loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(bodyText))
+                    loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(bodyText), spec.account)
                 }
             }.getOrElse { e ->
                 println("splice: token exchange error: ${SafeFailureText.render(e)}")

@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the JSON-RPC 2.0 shapes the MCP host reads and writes. Kept
+// NEW: v0.4.0 FEATURES.md §8 — the JSON-RPC 2.0 shapes the MCP host reads and writes. Kept
 // separate from transport and process code so id remapping — the one place a bug silently
 // hands session A's answer to session B — is a handful of pure functions with their own tests.
 package splice.control.mcp

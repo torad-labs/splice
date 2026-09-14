@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): the entry point every client message goes through. HTTP-free by
+// NEW: v0.4.0 FEATURES.md §8 — the entry point every client message goes through. HTTP-free by
 // design — McpRoutes translates ktor calls into these methods — so the multiplexing contract (one
 // process per spec, one MCP session per client session, ids remapped, notifications fanned out,
 // idle reap, eviction at capacity) is tested without a socket.

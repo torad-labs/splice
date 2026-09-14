@@ -25,17 +25,38 @@
   `SendMessage` line per live session. Read-only; headless `claude -p` runs never register and the
   footer says so.
 - **`splice perf [--window 1h|24h|7d]` and `/api/perf/summary`.** Per head: p50/p95/max of time
-  before first byte, time streaming and total, outcomes by tag, failure share, retries and
-  refreshes, cache hit ratio, peak in-flight, and rows whose telemetry was dropped. The window is
-  clamped to what the rotated perf files hold and the response says so; empty data is reported as
-  empty, never as zero-latency traffic.
+  before first byte, time streaming and total, outcomes by tag, failure share overall and per
+  outcome tag (rows whose outcome cannot be read are shown as unattributed, never as failures),
+  retries and refreshes, cache hit ratio, peak in-flight, and a lower bound on the file-io writes
+  the daemon dropped inside the window (a dropped perf row is absent, so this is the evidence one
+  is missing; a restart whose counter catches up hides its drops). A window the rotated perf files
+  cannot reach back to is reported clamped, with how far they reach; a quiet window over files that
+  do reach past it is sparse traffic, not a clamp; no rows at all says so; a perf file that cannot
+  be read is reported as a read error with the coverage marked unknown, never as short retention.
+  Empty data is reported as empty, never as zero-latency traffic. Reads stream the
+  files, never hold a generation whole, and a rotation during the read is read again. `splice
+  perf` is read-only and refuses malformed flags.
+- **`/login` inside a head starts over, and can name an account.** A second `/login` while a
+  sign-in was still waiting for its browser callback used to die silently on the callback port
+  while the hook promised a browser; now the waiting sign-in is cancelled first and the reply
+  says so. `/login ` with a trailing space or `/login --label NAME` is intercepted like `/login`
+  (it no longer reaches the model as a prompt), and `--label NAME` rides through to `<head> login`,
+  so a second account of the head's kind can be signed in from inside the client. Any other
+  argument, or a label the CLI would refuse, is refused by the hook itself and nothing is started
+  (a bare login would sign the primary in again).
 - **`splice doctor --json [--with-logs] [--out FILE]`: a shareable, redacted report.** Schema
   version 1 carries the splice and Claude Code versions, OS and JVM, the topology's SHAPE
   (kinds, dialects, model ids and windows, quirk names, a host but never a URL with credentials),
-  every check with its fix, and the last 200 perf rows per head restricted to named numeric
-  fields. Emission is an allowlist: account ids, e-mails, tokens and working directories never
-  appear, home paths print as `~`, and `--with-logs` passes the last 500 daemon lines through the
-  same redaction. Nothing is uploaded.
+  every check with its fix, and the last 200 perf rows per head (across both perf file
+  generations) restricted to the named numeric fields, the compact and cache-cold flags, and
+  model, outcome and account as safe tokens. Emission is an
+  allowlist and every string still passes one redaction: account ids, e-mails, tokens, UUID-shaped
+  ids and working directories never appear, only splice's own and system paths survive (under the
+  home directory as `~`, every other path masked), an operator-authored name that is not a plain
+  token (a provider or head key, a model id, a prefix) is omitted or aliased rather than shown,
+  and `--with-logs` appends the last 500 daemon events reduced to their structure (timestamp,
+  tags, event, key=value pairs) with a count of the lines that were not daemon events. A
+  malformed flag prints usage and writes nothing. Nothing is uploaded.
 - **Automatic account switching when a provider's limits are hit.** `splice login <head> --label
   <name>` adds a second (third, ...) OAuth account of the same kind under
   `~/.config/splice/auth/<kind>/<name>.json`; the first login stays the primary in the file it always
@@ -47,6 +68,8 @@
   its perf row names the account. When every account is out the turn fails honestly, naming the
   earliest reset. A credential is only ever used by the kind it carries; a mislabeled file is refused.
   The status line, `splice status` and `splice doctor` name the account in use and the last switch.
+  Labeled credential files are read without following symlinks (a linked file is skipped, its
+  ordinal stays occupied), matching how they are written; the primary file is resolved as before.
 - **Custom compaction instructions.** `[compaction]` in `splice.toml` carries global text (inline
   or `file =`), `[[compaction.model]]` rows keyed by upstream model id and `[[compaction.project]]`
   rows keyed by absolute directory (optionally per model). The most specific scope replaces the

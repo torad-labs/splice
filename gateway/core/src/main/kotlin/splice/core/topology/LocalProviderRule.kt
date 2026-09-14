@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §10): what makes a provider "local" when the operator did not say —
+// NEW: v0.4.0 FEATURES.md §10 — what makes a provider "local" when the operator did not say —
 // the openai-chat dialect on a loopback address, which is how every user-managed runtime (Ollama
 // :11434, LM Studio :1234, vLLM :8000) is reached. Kept as a class so the rule has one home and
 // one test; the probe that talks to the runtime lives in the chat dialect.

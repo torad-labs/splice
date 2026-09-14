@@ -235,12 +235,21 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 ### More than one account per provider
 
 An OAuth head can hold several accounts of its kind and switch between them when one runs out.
-The first `splice login <head>` stays the primary account in the file above; every further
-`splice login <head> --label <name>` lands beside it under `~/.config/splice/auth/<kind>/<name>.json`
-(its quota state in `<name>-quota.json` next to it). Without `--label` the name is derived from
-nothing personal: the ChatGPT plan plus a short hash of the account id, or `grok-2`, `kimi-3` by
-ordinal. A file is only ever used by the provider whose kind it carries inside; a mislabeled file
-is refused at boot, never silently used.
+`splice login <head>` without `--label` always signs in the primary account in the file above,
+so a revoked primary is replaced in place; every further `splice login <head> --label <name>` lands
+beside it under `~/.config/splice/auth/<kind>/<name>.json` (its quota state in `<name>-quota.json`
+next to it). `--label auto` derives the name from nothing personal: the ChatGPT plan plus a short
+hash of the account id, or `grok-2`, `kimi-3` by ordinal. A file is only ever used by the provider
+whose kind it carries inside; a mislabeled file is refused at boot, never silently used. A head
+holding one account has no pool and behaves exactly as before: nothing extra on the status line,
+in `splice status` or in `splice doctor`. Inside a head, `/login` signs in the primary and
+`/login --label <name>` adds an account the same way; a `/login` while an earlier sign-in is still
+waiting for its browser cancels that one and starts over.
+
+The pool is yours to fill: every account in it must be one you own and are entitled to use under
+that provider's terms, and a pool does not lift a plan's limits, it only lets a session continue
+on another account you hold while one is exhausted. Sharing accounts, or pooling to get past
+limits a business plan sets, is between you and the provider; splice does not arbitrate it.
 
 Selection is sticky per session and decided only between turns. A session keeps the account it
 last used until the provider reports that account exhausted (a window at 100 %, or a 429 whose

@@ -14,8 +14,8 @@ public class Cli {
         val command = parser.parse(args) ?: run {
             System.err.println(
                 "usage: splice [setup|add <profile>|upgrade|status|sessions|perf|restart|dashboard|" +
-                    "login <head>|key <set|list|unset>|logs [--head <key>] [--tail N] [--follow]|" +
-                    "install|uninstall|init|doctor [--json]|daemon|version]",
+                    "login <head> [--label <name>]|key <set|list|unset>|logs [--head <key>] [--tail N] [--follow]|" +
+                    "install|uninstall|init|doctor [--json [--with-logs] [--out FILE]]|daemon|version]",
             )
             return 2
         }

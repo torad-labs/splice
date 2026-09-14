@@ -27,10 +27,14 @@ internal data class RetryPlan(
 
 internal enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
 
-internal class RetryRules(
-    private val maxRetries: Int,
-    private val cooldown: RateLimitCooldown,
-) {
+internal data class RateLimitTurn(
+    val cooldown: RateLimitCooldown,
+    val remainingBudgetMs: Long,
+    val backoffCeilingMs: Long,
+    val pooledAccount: Boolean,
+)
+
+internal class RetryRules(private val maxRetries: Int) {
     private val failureRules = FailureRules()
 
     /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
@@ -43,6 +47,7 @@ internal class RetryRules(
         failed: RetryOutcome.Failed,
         attempt: Int,
         refreshedOnce: Boolean,
+        rateLimit: RateLimitTurn,
     ): RetryPlan {
         // Grok Build: encrypted_content decrypt failures must not spin retries.
         if (failureRules.isEncryptedContentError(failed.status, failed.text)) {
@@ -64,7 +69,13 @@ internal class RetryRules(
             "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
                 failed.text.take(ERR_SNIPPET),
         )
-        return statusPlan(ctx, failed, attempt, refreshedOnce || refreshable)
+        return statusPlan(
+            ctx,
+            failed,
+            attempt,
+            refreshedOnce || refreshable,
+            rateLimit,
+        )
     }
 
     /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
@@ -73,9 +84,17 @@ internal class RetryRules(
         failed: RetryOutcome.Failed,
         attempt: Int,
         nextRefreshed: Boolean,
+        rateLimit: RateLimitTurn,
     ): RetryPlan {
         if (failed.status == RATE_LIMITED) {
-            return cooldown.rateLimitedPlan(failed.retryAfterMs, ctx.onRetry, nextRefreshed)
+            val canRetry = attempt < maxRetries - 1
+            return rateLimit.cooldown.rateLimitedPlan(
+                failed.retryAfterMs,
+                rateLimit,
+                canRetry,
+                ctx.onRetry,
+                nextRefreshed,
+            )
         }
         // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
         // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
@@ -85,14 +104,9 @@ internal class RetryRules(
         val retryable = isRetryableStatus(failed.status)
         if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
             ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
-            // UP-001: a retryable status (408/5xx — RATE_LIMITED already returned above) carrying
-            // the same long pushback means the same thing a 429 does — arm the SAME shared cooldown
-            // (clamped the same way, by the same method) so the next turn doesn't immediately
-            // hammer an upstream that just asked for a long backoff. A NON-retryable status
-            // (400/401/403/404/...) is that turn's own problem — arming the head-wide cooldown on
-            // it would synthesize 429s for every OTHER turn over an error that says nothing about
-            // rate limits.
-            if (retryable) cooldown.arm(pushback)
+            // UP-001: retryable 408/5xx pushback still protects followers on this account. Pool
+            // selection reads unavailableForMs(), not this fail-fast horizon, so it never switches.
+            if (retryable) rateLimit.cooldown.arm(pushback)
             return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
         val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
@@ -147,4 +161,4 @@ private val SERVER_ERRORS = SERVER_ERROR_MIN..SERVER_ERROR_MAX
 // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
 // Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback
 // holds a gate slot for a request nobody is waiting on anymore.
-private const val RETRY_AFTER_GIVE_UP_MS = 15_000L
+internal const val RETRY_AFTER_GIVE_UP_MS = 15_000L

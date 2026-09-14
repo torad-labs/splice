@@ -88,9 +88,9 @@ public class HeadServer(
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
-        // NF-01: the 429 cooldown lives on the long-lived UpstreamClient too — restart must be a
-        // real escape hatch from an armed horizon, not a no-op the operator discovers mid-outage.
-        deps.upstream.clearRateLimitCooldown()
+        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
+        // turns bypass the client-owned legacy cooldown, so reset every account instead.
+        deps.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
     }

@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -160,6 +161,8 @@ class KimiAuthProviderTest {
         assertEquals("rotated-access", onDisk["access_token"]?.jsonPrimitive?.content)
         assertEquals("rotated-refresh", onDisk["refresh_token"]?.jsonPrimitive?.content)
         assertEquals("${nowS + 3600}", onDisk["expires_at"]?.jsonPrimitive?.content)
+        assertFalse("splice_auth_kind" in onDisk)
+        assertFalse("splice_account_label" in onDisk)
     }
 
     // G17 two-tier: in the proactive window with a prefetch scope, the REQUEST never waits — the
@@ -571,7 +574,8 @@ class KimiSynthesizedExpiryTest {
             file,
             """{"access_token":"old-access","refresh_token":"old-refresh","expires_at":1,
                 "scope":"coding","token_type":"Bearer","expires_in":3600,
-                "device_id":"dev-123","vendor_future_field":{"nested":true}}""",
+                "device_id":"dev-123","vendor_future_field":{"nested":true},
+                "splice_auth_kind":"kimi-oauth","splice_account_label":"backup"}""",
         )
         val auth = KimiAuthProvider(
             authPath = file,
@@ -594,6 +598,8 @@ class KimiSynthesizedExpiryTest {
         assertEquals("new-refresh", onDisk["refresh_token"]!!.jsonPrimitive.content)
         assertEquals("dev-123", onDisk["device_id"]!!.jsonPrimitive.content, "foreign key must survive")
         assertTrue("vendor_future_field" in onDisk, "unknown vendor field must survive: $onDisk")
+        assertEquals("kimi-oauth", onDisk["splice_auth_kind"]!!.jsonPrimitive.content)
+        assertEquals("backup", onDisk["splice_account_label"]!!.jsonPrimitive.content)
         assertEquals("7200", onDisk["expires_in"]!!.jsonPrimitive.content, "rotation fields must replace")
     }
 

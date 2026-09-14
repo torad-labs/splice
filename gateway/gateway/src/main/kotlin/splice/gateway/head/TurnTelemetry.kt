@@ -6,6 +6,7 @@
 package splice.gateway.head
 
 import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -13,6 +14,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
+import splice.spi.AccountResetText
 import splice.spi.WatchdogFired
 import splice.spi.WatchdogHeld
 
@@ -39,8 +41,42 @@ internal class TurnTelemetry(
         drive.perf.mark(PerfKeys.TOTAL)
         val snap = drive.perf.snapshot()
         val session = drive.sessionTag()
-        perfStats.record(PerfRowMeta(drive.upstreamModel, outcomeTag, drive.meta.compact, session), snap)
+        val account = drive.account
+        perfStats.record(
+            PerfRowMeta(
+                drive.upstreamModel,
+                outcomeTag,
+                drive.meta.compact,
+                session,
+                account?.account?.label,
+                account?.cacheCold == true,
+            ),
+            snap,
+        )
+        account?.switch?.let { switched ->
+            log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
+        }
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
+    }
+
+    /** Records a pool refusal that happens after parsing but before a [TurnDrive] can exist. */
+    fun recordAccountExhausted(
+        meta: TurnMeta,
+        perf: TurnPerf,
+        t0: Long,
+        earliestResetEpochSeconds: Long?,
+    ) {
+        val outcome = "error:all-accounts-exhausted"
+        val reset = AccountResetText.format(earliestResetEpochSeconds)
+        val session = meta.sessionId?.take(SESSION_TAG_CHARS)
+        perf.mark(PerfKeys.TOTAL)
+        val snap = perf.snapshot()
+        perfStats.record(PerfRowMeta(meta.upstreamModel, outcome, meta.compact, session), snap)
+        log(
+            "[$headKey] turn ERROR all-accounts-exhausted compact=${meta.compact} " +
+                "latency=${clock() - t0}ms earliest_reset=$reset\n",
+        )
+        log(snap.perfLine(headKey, outcome, meta.compact, meta.upstreamModel, session))
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

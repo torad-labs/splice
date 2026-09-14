@@ -7,8 +7,11 @@
 package splice.app.cli
 
 import splice.app.provider.LocalProbeInputs
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
 import splice.dialect.chat.JdkLocalHttp
 import splice.dialect.chat.LocalHttp
@@ -19,9 +22,28 @@ import splice.dialect.chat.LocalRuntimeProbe
 private const val FIX_START = "start it (Ollama / LM Studio / vLLM), then re-run"
 private const val FIX_TOOLS = "a model without tool calls cannot drive Claude Code's tools"
 
+/** The per-head context_window override the daemon applies at boot (runtime config / env layer),
+ *  so doctor validates the SAME effective rows: HeadBuildInputs reads it through ConfigService.getConfig(key). */
+internal fun interface HeadWindowOverride {
+    operator fun invoke(topology: Topology, headKey: String): Long?
+}
+
+/** The SAME ConfigService the daemon builds (Daemon.kt): the global [defaults]/[daemon] layer AND the
+ *  per-head [heads.<key>.overrides] layer, so a window override tuned for one head reaches doctor
+ *  exactly as it reaches boot. */
+internal class ConfigHeadWindowOverride(private val env: EnvReader) : HeadWindowOverride {
+    override fun invoke(topology: Topology, headKey: String): Long? = ConfigService(
+        StatePaths(envReader = env),
+        headOverrides = TopologyKnobLayer(topology).configOverrides(),
+        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+        envReader = env,
+    ).getConfig(headKey).contextWindowOverride
+}
+
 internal class DoctorLocalRuntime(
     private val http: LocalHttp? = null,
     private val env: EnvReader = EnvReader(System::getenv),
+    private val override: HeadWindowOverride = ConfigHeadWindowOverride(env),
 ) {
     private val inputs = LocalProbeInputs()
 
@@ -30,10 +52,13 @@ internal class DoctorLocalRuntime(
             checks(key, provider, effectiveRows(topology, key), live)
         }
 
-    /** Every head on the provider contributes its effective rows; the widest window per id is checked. */
-    private fun effectiveRows(topology: Topology, key: String): Map<String, Long> = topology.heads.values
-        .filter { it.provider == key }
-        .flatMap { head -> inputs.effectiveRows(topology.providers.getValue(key).catalogFor(head)).entries }
+    /** Every head on the provider contributes its effective rows — the head's TOML window under the
+     *  daemon's own per-head override, exactly as boot builds the catalog; the widest window per id is checked. */
+    private fun effectiveRows(topology: Topology, key: String): Map<String, Long> = topology.heads
+        .filterValues { it.provider == key }
+        .flatMap { (headKey, head) ->
+            inputs.effectiveRows(topology.providers.getValue(key).catalogFor(head, override(topology, headKey))).entries
+        }
         .groupBy({ it.key }, { it.value })
         .mapValues { (_, windows) -> windows.max() }
 

@@ -78,10 +78,13 @@ if [ "$HEAD" = "splice" ]; then
   exec java -jar "$JAR" "$@"
 fi
 
-# `<command> login` runs the OAuth browser flow for this head directly (no daemon needed).
+# `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon
+# needed); the arguments after `login` go to the CLI unchanged (v0.4.0: --label signs in another
+# account of this head's kind).
 if [ "${1:-}" = "login" ]; then
   need_jar
-  exec java -jar "$JAR" login "$HEAD"
+  shift
+  exec java -jar "$JAR" login "$HEAD" "$@"
 fi
 
 health() { curl -sS -m 2 "${CONTROL}/health" 2>/dev/null || true; }

@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §10): the runtimes splice can name, and the one network seam the local
+// NEW: v0.4.0 FEATURES.md §10 — the runtimes splice can name, and the one network seam the local
 // runtime probe speaks through (with its JDK implementation, which carries the provider's headers).
 // Split from LocalRuntimeProbe.kt (concentration, 2026-09-13).
 package splice.dialect.chat

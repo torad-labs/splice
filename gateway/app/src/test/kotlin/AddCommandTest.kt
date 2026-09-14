@@ -17,6 +17,9 @@ import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 
+private const val HOUR_MS = 3_600_000L
+private const val TOKENS = """{"tokens":{"access_token":"a","refresh_token":"r"}}"""
+
 class AddCommandTest {
 
     private val env = EnvReader { name -> if (name == "FW_API_KEY") "k" else null }
@@ -39,9 +42,9 @@ class AddCommandTest {
 
     private fun command(http: AddHttp, login: Boolean = true, daemonUp: Boolean = false) = AddCommand(
         checks = AddChecks(http),
-        login = { key, _, _ ->
+        login = { key, provider, _ ->
             if (login) {
-                Files.writeString(authFile("chatgpt-oauth"), "{}")
+                Files.writeString(authFile(provider.auth.kind), TOKENS)
                 installed += "login:$key"
             }
             login
@@ -136,5 +139,102 @@ class AddCommandTest {
         assertEquals("gpt-5.6-sol", topology.heads.getValue("codex").pinnedModel)
         assertEquals(listOf("login:codex", "codex"), installed)
         assertEquals(1, restarted, "the daemon was up and --yes accepted the restart")
+    }
+
+    @Test
+    fun `a model list the endpoint cannot serve refuses the add instead of trusting the rows`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val noList = fwRoutes.filterKeys { !it.endsWith("/models") }
+        val args = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
+            listOf("--model", "m:1000", "--yes")
+        assertFalse(runBlocking { command(http(noList)).add(args, env) })
+        assertEquals(before, Files.readString(config()))
+        assertTrue(installed.isEmpty())
+    }
+
+    @Test
+    fun `an oauth file without token material still requires a sign-in`(@TempDir home: Path) = withHome(home) {
+        val before = starter()
+        Files.writeString(authFile("chatgpt-oauth"), "{}")
+        val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
+        assertFalse(runBlocking { command(http(routes), login = false).add(listOf("codex", "--yes"), env) })
+        assertEquals(before, Files.readString(config()))
+        assertTrue(runBlocking { command(http(routes)).add(listOf("codex", "--yes"), env) })
+        assertEquals(listOf("login:codex", "codex"), installed, "the gutted file did not stand in for a sign-in")
+    }
+
+    @Test
+    fun `--live on a browser-oauth profile is refused before anything is asked`(@TempDir home: Path) =
+        withHome(home) {
+            val before = starter()
+            val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
+            assertFalse(runBlocking { command(http(routes)).add(listOf("codex", "--live", "--yes"), env) })
+            assertEquals(before, Files.readString(config()))
+            assertTrue(installed.isEmpty(), "no sign-in ran for a refused flag")
+        }
+
+    @Test
+    fun `a kimi file with only an access token requires a sign-in, one with a refresh token is accepted`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val routes = mapOf("GET https://api.kimi.com/coding" to "{}")
+        Files.writeString(authFile("kimi-oauth"), """{"access_token":"dead"}""")
+        assertFalse(runBlocking { command(http(routes), login = false).add(listOf("kimi", "--yes"), env) })
+        assertEquals(before, Files.readString(config()))
+        Files.writeString(authFile("kimi-oauth"), """{"access_token":"a","refresh_token":"r","expires_at":1}""")
+        assertTrue(runBlocking { command(http(routes), login = false).add(listOf("kimi", "--yes"), env) })
+        val kimi = TopologyLoader.parse(Files.readString(config())).providers.getValue("kimi")
+        assertEquals("kimi-oauth", kimi.auth.kind)
+        assertEquals(listOf("kimi"), installed, "no sign-in ran: the flat kimi file is refreshable")
+    }
+
+    @Test
+    fun `a chatgpt file with token fields under a decoy object and an empty tokens object requires a sign-in`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val decoy = """{"metadata":{"access_token":"a","refresh_token":"r"},"tokens":{}}"""
+        Files.writeString(authFile("chatgpt-oauth"), decoy)
+        val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
+        assertFalse(runBlocking { command(http(routes), login = false).add(listOf("codex", "--yes"), env) })
+        assertEquals(before, Files.readString(config()))
+    }
+
+    @Test
+    fun `a grok file with an expired token and no refresh requires a sign-in, a future expiry is accepted`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        starter()
+        val routes = mapOf("GET https://api.x.ai/v1" to "{}")
+        Files.writeString(authFile("grok-oauth"), """{"tokens":{"access_token":"a"},"expires":1}""")
+        assertFalse(runBlocking { command(http(routes), login = false).add(listOf("grok", "--yes"), env) })
+        val ahead = System.currentTimeMillis() + HOUR_MS
+        Files.writeString(authFile("grok-oauth"), """{"tokens":{"access_token":"a"},"expires":$ahead}""")
+        assertTrue(runBlocking { command(http(routes), login = false).add(listOf("grok", "--yes"), env) })
+        assertEquals(listOf("grok"), installed)
+    }
+
+    @Test
+    fun `the claude profile lands with no credential of its own`(@TempDir home: Path) = withHome(home) {
+        starter()
+        val routes = mapOf("GET https://api.anthropic.com" to "{}")
+        assertTrue(runBlocking { command(http(routes), login = false).add(listOf("claude", "--yes"), env) })
+        val topology = TopologyLoader.parse(Files.readString(config()))
+        assertEquals("client", topology.providers.getValue("claude-splice").auth.kind)
+        assertEquals("claude-splice", topology.heads.getValue("claude-splice").claude.command)
+        assertEquals(listOf("claude-splice"), installed, "no sign-in, the wrapper linked")
+    }
+
+    @Test
+    fun `a command equal to a head whose command is omitted is refused`(@TempDir home: Path) = withHome(home) {
+        val implicit = starter().replace("command = \"claude-openrouter\"\n", "")
+        Files.writeString(config(), implicit)
+        val collide = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
+            listOf("--model", "m:1000", "--command", "openrouter", "--yes")
+        assertFalse(runBlocking { command(http(fwRoutes)).add(collide, env) })
+        assertEquals(implicit, Files.readString(config()))
     }
 }

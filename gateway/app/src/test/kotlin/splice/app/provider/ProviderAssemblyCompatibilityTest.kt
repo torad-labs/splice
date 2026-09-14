@@ -2,6 +2,8 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -11,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.SignInPlanner
 import splice.app.TokenUrlRefreshCall
+import splice.app.auth.OAuthAccountFiles
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
@@ -115,6 +118,24 @@ class ProviderAssemblyCompatibilityTest {
     }
 
     @Test
+    fun `chat assembly carries static headers into turn headers`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val ctx = fixture.context("api-key", Dialect.OPENAI_CHAT)
+        val wired = fixture.assembly.buildProvider(
+            ctx.copy(
+                providerCfg = ctx.providerCfg.copy(
+                    extraHeaders = mapOf("X-Tenant" to "tenant-a", "authorization" to "wrong"),
+                ),
+            ),
+        )
+
+        val headers = wired.provider.extraHeaders(Credentials.ApiKey("secret"))
+        assertEquals("tenant-a", headers["X-Tenant"])
+        assertEquals("text/event-stream", headers["Accept"])
+        assertFalse(headers.keys.any { it.equals("Authorization", ignoreCase = true) })
+    }
+
+    @Test
     fun `ChatGPT assembly reads each resolved provider auth file`(@TempDir tmp: Path) = runTest {
         val fixture = Fixture(tmp, backgroundScope)
         for (name in listOf("baseline", "code_mode")) {
@@ -132,6 +153,39 @@ class ProviderAssemblyCompatibilityTest {
             val credentials = wired.auth.credentials() as? Credentials.Bearer
             assertEquals(Credentials.Bearer("synthetic-$name", name), credentials)
         }
+    }
+
+    @Test
+    fun `ChatGPT assembly discovers legacy primary and labeled accounts`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val primaryFile = tmp.resolve("auth.json")
+        Files.writeString(
+            primaryFile,
+            """{"tokens":{"access_token":"synthetic-primary","account_id":"primary-id"}}""",
+        )
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.ChatgptOAuth,
+            primaryFile,
+            "backup",
+            Json.parseToJsonElement(
+                """{"tokens":{"access_token":"synthetic-backup","account_id":"backup-id"}}""",
+            ).jsonObject,
+        )
+        val ctx = fixture.context(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES)
+        val wired = fixture.assembly.buildProvider(
+            ctx.copy(
+                providerCfg = ctx.providerCfg.copy(
+                    auth = ctx.providerCfg.auth.copy(file = primaryFile.toString()),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("primary", "backup"), wired.accounts.map(WiredAccount::label))
+        assertEquals(wired.accounts.single(WiredAccount::primary).auth, wired.auth)
+        assertEquals(
+            Credentials.Bearer("synthetic-backup", "backup-id"),
+            wired.accounts.single { it.label == "backup" }.auth.credentials(),
+        )
     }
 
     @Test

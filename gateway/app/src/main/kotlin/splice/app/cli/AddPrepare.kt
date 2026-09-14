@@ -16,6 +16,7 @@ private const val FIRST_HEAD_PORT = 3099
 private const val DEFAULT_WINDOW = 128_000L
 private const val MAX_PROMPTED_MODELS = 8
 private val KEY_RE = Regex("[a-z0-9][a-z0-9-]*")
+private const val OPENAI_CHAT_DIALECT = "openai-chat"
 private val VALUE_RE = Regex("[^\"\\\\\\p{Cntrl}]+")
 
 /** Everything decided before the first side effect. */
@@ -45,7 +46,7 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
             command = args.command ?: profile.command.ifEmpty { "claude-$key" },
             models = models(args, profile),
         )
-        val problem = keyProblem(resolved, current, key) ?: valueProblem(resolved)
+        val problem = keyProblem(resolved, current, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
         val appended = if (problem == null) profiles.toml(resolved, key, nextPort(current)) else ""
         val parsed = if (problem == null) checks.parses(existing + appended) else Result.failure(AddRefused(problem))
         return parsed.fold(
@@ -85,9 +86,20 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
     private fun keyProblem(profile: AddProfile, current: Topology, key: String): String? = when {
         !KEY_RE.matches(key) -> "--name is required for '${profile.name}' (lowercase letters, digits, dashes)"
         key in current.providers || key in current.heads -> "'$key' is already configured — pick another --name"
-        current.heads.values.any { (it.claude.command ?: "") == profile.command } ->
+        // A head with no explicit command launches as its own key (Topology.resolveHeadKeys), so that is
+        // the name a new command must not take either.
+        current.heads.any { (headKey, head) -> (head.claude.command ?: headKey) == profile.command } ->
             "command '${profile.command}' already belongs to a head"
         else -> null
+    }
+
+    /** `--live` speaks plain HTTP with a splice-held key; a browser-OAuth or client-auth profile has
+     *  no such turn to run, and a flag that would silently do nothing is refused instead. */
+    private fun liveProblem(args: AddArgs, profile: AddProfile): String? = when {
+        !args.live || profile.dialect == OPENAI_CHAT_DIALECT -> null
+        else ->
+            "--live is only supported for api-key profiles; '${profile.name}' is exercised by its first launch, " +
+                "then splice doctor — drop --live"
     }
 
     /** [profile] here is the resolved one: base URL, command and models already filled in. */

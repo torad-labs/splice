@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §4): `/api/sessions` — the registry as JSON, read on every request
+// NEW: v0.4.0 FEATURES.md §4 — `/api/sessions` — the registry as JSON, read on every request
 // (Claude Code rewrites the files as sessions come and go). Read-only: no socket is ever opened.
 package splice.control.api
 

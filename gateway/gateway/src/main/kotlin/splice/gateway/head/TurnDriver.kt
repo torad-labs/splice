@@ -19,6 +19,8 @@ package splice.gateway.head
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.CancellationException
 import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.turn.TurnMeta
 import splice.spi.Provider
 import splice.spi.RetryNotice
 
@@ -136,9 +138,20 @@ internal class TurnDriver(
      *  Node predecessor served them by collecting the terminal object). See [CollectTurn]. */
     suspend fun collect(call: ApplicationCall, inputs: TurnInputs) = collectTurn.collect(call, inputs)
 
+    /** Emits the refusal telemetry that precedes drive construction when no account is selectable. */
+    fun recordAccountExhausted(
+        meta: TurnMeta,
+        perf: TurnPerf,
+        t0: Long,
+        earliestResetEpochSeconds: Long?,
+    ) = telemetry.recordAccountExhausted(meta, perf, t0, earliestResetEpochSeconds)
+
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */
-    internal fun resetHealth() = health.reset()
+    internal fun resetHealth() {
+        health.reset()
+        deps.accountPool?.reset()
+    }
 
     /** Head stop: end the detached compactions this head still drives; the scope stays usable for
      *  the restart (TurnStreamer.stopDetached). */

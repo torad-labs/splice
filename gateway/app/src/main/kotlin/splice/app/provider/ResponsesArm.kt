@@ -6,8 +6,11 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
 import splice.app.TopologyLoader
+import splice.app.auth.OAuthAccountFiles
 import splice.app.codemode.JvmCodeModeRuntime
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
+import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeBridgeConfig
@@ -17,6 +20,7 @@ import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.spi.ProviderTuning
+import java.nio.file.Path
 import java.nio.file.Paths
 
 internal class ResponsesArm(
@@ -28,6 +32,7 @@ internal class ResponsesArm(
     private val apiKeyResponsesArm: ApiKeyResponsesArm,
 ) {
     private val quirksOverlay = QuirksOverlay()
+    private val accountFiles = OAuthAccountFiles()
 
     internal fun responsesProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
@@ -38,16 +43,11 @@ internal class ResponsesArm(
         val cfg = ctx.cfg
         return when (providerCfg.auth.kind) {
             CHATGPT_OAUTH -> {
-                // Refresh hits the OAuth ISSUER's token endpoint (auth.openai.com), not the API base_url.
-                val tokenUrl = CodexOAuthEndpoints.tokenUrl(System::getenv)
-                val auth = CodexAuthProvider(
-                    authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath)),
-                    authCacheMs = cfg.authCacheMs,
-                    refreshCall = { rt -> refreshCall(tokenUrl, rt) },
-                    prefetchScope = probeScope,
-                    // JW-03: [<headKey>] first, so [codex-auth] refresh lines reach the head's tail
-                    log = HeadScopedLogs.headScopedLog(key, log),
+                val primaryPath = Paths.get(
+                    TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath),
                 )
+                val accounts = codexAccounts(ctx, primaryPath)
+                val auth = WiredAccounts.providerAccount(accounts).auth
                 Wired(
                     CodexProvider(
                         tuning = ProviderTuning(
@@ -72,12 +72,37 @@ internal class ResponsesArm(
                         codeModeBridge = codeModeBridge(ctx),
                     ),
                     auth,
+                    accounts,
                 )
             }
             GROK_OAUTH -> grokResponsesArm.grokOAuthProvider(ctx, label)
             else -> apiKeyResponsesArm.apiKeyResponsesProvider(ctx, label)
         }
     }
+
+    private fun codexAccounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {
+        // Refresh hits the OAuth ISSUER's token endpoint (auth.openai.com), not the API base_url.
+        val tokenUrl = CodexOAuthEndpoints.tokenUrl(System::getenv)
+        return accountFiles.discover(AuthKind.ChatgptOAuth, primaryPath).map { file ->
+            WiredAccount(
+                label = file.label,
+                primary = file.primary,
+                auth = codexAuth(ctx, file.credentialFile, tokenUrl),
+                quotaFile = file.quotaFile,
+                credentialPresent = file.credentialPresent,
+            )
+        }
+    }
+
+    private fun codexAuth(ctx: ProviderBuild, path: Path, tokenUrl: String): RefreshableAuthProvider =
+        CodexAuthProvider(
+            authPath = path,
+            authCacheMs = ctx.cfg.authCacheMs,
+            refreshCall = { refreshToken -> refreshCall(tokenUrl, refreshToken) },
+            prefetchScope = probeScope,
+            // JW-03: [<headKey>] first, so [codex-auth] refresh lines reach the head's tail.
+            log = HeadScopedLogs.headScopedLog(ctx.key, log),
+        )
 
     private fun codeModeBridge(ctx: ProviderBuild): CodexCodeModeBridge? =
         if (ctx.providerCfg.codeModeEnabled) {

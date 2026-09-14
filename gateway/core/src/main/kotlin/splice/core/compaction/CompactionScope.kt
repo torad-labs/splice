@@ -1,3 +1,4 @@
+// NEW: v0.4.0 FEATURES.md §7 — the [compaction] table of splice.toml as data.
 package splice.core.compaction
 
 import kotlinx.serialization.Serializable

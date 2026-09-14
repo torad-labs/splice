@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): a forwarded request waiting for the child, and where the child's
+// NEW: v0.4.0 FEATURES.md §8 — a forwarded request waiting for the child, and where the child's
 // unsolicited notifications go. Split from HostedServer.kt (concentration, 2026-09-13).
 package splice.control.mcp
 

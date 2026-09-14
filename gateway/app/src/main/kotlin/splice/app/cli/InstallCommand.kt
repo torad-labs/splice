@@ -53,12 +53,15 @@ internal class InstallCommand {
  * promotion — measured, it was masking exactly this one declaration and nothing else.
  */
 internal fun interface CommandFactory {
-    operator fun invoke(args: Array<String>): Command
+    /** Null when the verb's own arguments do not parse (the caller prints usage). */
+    operator fun invoke(args: Array<String>): Command?
 }
 
 // FILE SCOPE ON PURPOSE: the parse table (verb -> factory) is built ONCE for the process rather than
 // per parse. A map keeps parse() at trivial complexity (no 10-arm `when`, which would trip
 // CyclomaticComplexMethod). The COMMANDS are the sealed type; this is just parsing.
+private const val LABEL_FLAG = "--label"
+
 private val verbs: Map<String, CommandFactory> = mapOf(
     "doctor" to CommandFactory { a -> Command.Doctor(a.drop(1)) },
     "version" to CommandFactory { Command.Version },
@@ -66,7 +69,14 @@ private val verbs: Map<String, CommandFactory> = mapOf(
     "init" to CommandFactory { Command.Init },
     "install" to CommandFactory { a -> Command.Install(a.getOrNull(1)) },
     "uninstall" to CommandFactory { a -> Command.Uninstall(a.getOrNull(1)) },
-    "login" to CommandFactory { a -> Command.Login(a.getOrNull(1)) },
+    // `login <head> [--label <name>]` (v0.4.0, FEATURES.md §11): the value after the flag, wherever it sits.
+    "login" to CommandFactory { a ->
+        val flag = a.indexOf(LABEL_FLAG)
+        val label = if (flag > 0) a.getOrNull(flag + 1) else null
+        val positional = a.filterIndexed { i, _ -> i > 0 && (flag < 1 || i != flag && i != flag + 1) }
+        // A bare --label is a mistake, not an unlabeled login: the parse fails and usage prints.
+        if (flag > 0 && label == null) null else Command.Login(positional.firstOrNull(), label)
+    },
     "setup" to CommandFactory { Command.Setup },
     "add" to CommandFactory { a -> Command.Add(a.drop(1)) },
     "upgrade" to CommandFactory { a -> Command.Upgrade(a.drop(1)) },

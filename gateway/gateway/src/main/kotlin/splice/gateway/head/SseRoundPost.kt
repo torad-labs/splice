@@ -21,15 +21,21 @@ internal class SseRoundPost(
 ) {
     suspend fun post(inputs: WsRoundInputs): TurnOutcome {
         val drive = inputs.drive
+        val account = drive.account?.account
+        val activeQuota = drive.quota ?: quota
         return upstream.post(
             PostContext(
                 url = provider.upstreamUrl,
-                auth = provider.auth,
-                extraHeaders = { creds -> provider.extraHeaders(creds) + drive.turnHeaders },
+                auth = account?.auth ?: provider.auth,
+                extraHeaders = { creds ->
+                    (account?.extraHeaders?.invoke(creds) ?: provider.extraHeaders(creds)) + drive.turnHeaders
+                },
                 onRetry = onRetry,
                 perf = drive.perf,
                 clientFrameEmitted = inputs.frameEmittedThisRound,
                 amendBodyOnFailure = provider::amendBodyOnFailure,
+                rateLimitCooldown = account?.cooldown,
+                remainingTurnWait = drive.remainingTurnWait,
             ),
             inputs.bodyJson,
         ) { resp ->
@@ -38,7 +44,7 @@ internal class SseRoundPost(
             usageStore.persistRateLimit { name -> resp.header(name) }
             // Quota windows the same way: Anthropic's unified family on a passthrough head, the
             // x-codex family on a Codex round. Most upstreams carry neither; then nothing moves.
-            quota?.observe { name -> resp.header(name) }
+            activeQuota?.observe { name -> resp.header(name) }
             consume.consume(inputs, resp)
         }
     }

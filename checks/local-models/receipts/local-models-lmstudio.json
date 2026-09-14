@@ -1,0 +1,99 @@
+{
+  "kind": "local-models-e2e",
+  "at": "2026-09-13T21:49:32Z",
+  "jar_sha256": "8e109233adfec189e3f572835f4913a9d96e11ce2d8b4fa625da66e6d8eef23e",
+  "vllm": {
+    "tested": false,
+    "documented": "checks/local-models/README.md"
+  },
+  "runtime": {
+    "runtime": "LM Studio",
+    "version": "llmster v0.0.24+1",
+    "model": "qwen/qwen3-4b",
+    "quantization": "Q4_K_M",
+    "card_context_length": 32768,
+    "num_ctx": null,
+    "served_context_length": 8192,
+    "warm_load_s": 0.1,
+    "capabilities": [
+      "tool_use"
+    ]
+  },
+  "context_limit": {
+    "declared": 8192,
+    "served": 8192,
+    "card": 32768
+  },
+  "boot": {
+    "good_head": {
+      "key": "lmstudio",
+      "port": 3198,
+      "healthy": true,
+      "authKind": "api-key"
+    },
+    "refused": {
+      "lmstudio-unlisted": "[2026-09-13 16:49:33] [lmstudio-unlisted][boot] SKIPPED (build failed): local runtime LM Studio at http://localhost:1234/v1 refuses 'nope:latest': not listed by the runtime (listed: qwen/qwen3-4b, text-embedding-nomic-embed-text-v1.5)",
+      "lmstudio-overclaim": "[2026-09-13 16:49:33] [lmstudio-overclaim][boot] SKIPPED (build failed): local runtime LM Studio at http://localhost:1234/v1 refuses 'qwen/qwen3-4b': declares context_window 65536, runtime serves 8192"
+    },
+    "up_line": "[2026-09-13 16:49:33] [daemon] up: control :3196, heads [lmstudio] DEGRADED=[lmstudio-unlisted, lmstudio-overclaim]"
+  },
+  "head_model": "claude-lmstudio--qwen/qwen3-4b",
+  "streaming": {
+    "head": "lmstudio",
+    "model": "claude-lmstudio--qwen/qwen3-4b",
+    "ok": true,
+    "ttfb_ms": 64,
+    "first_delta_ms": 86,
+    "total_ms": 1301,
+    "max_gap_ms": 22,
+    "events": 263,
+    "deltas": 255,
+    "keepalive_comments": 0,
+    "chunks_with_events": 263,
+    "violations": []
+  },
+  "cancellation": {
+    "deltas_before_cancel": 1,
+    "next_turn_s": 2.3,
+    "next_turn_text": "Okay, the user wants me to reply with the single word \"OK\". Let me make sure I u",
+    "head_outcome": [
+      "error:conn-reset"
+    ],
+    "runtime_evidence": "LM Studio keeps no journal; the head's client-gone row and the prompt next turn are the evidence"
+  },
+  "tool_continuity": {
+    "tool_use_id": "zaePkfHC5iAlnnNaUeFUqRzNaivFCA88",
+    "input": {
+      "city": "Lisbon"
+    },
+    "first_stop_reason": "tool_use",
+    "second_stop_reason": "end_turn",
+    "second_text": "Lisbon is currently experiencing sunny weather with a temperature of 22 degrees Celsius and a light breeze. \ud83c\udf24\ufe0f"
+  },
+  "doctor": {
+    "local:lmstudio": {
+      "status": "ok",
+      "detail": "LM Studio at http://localhost:1234/v1 lists 2 model(s): qwen/qwen3-4b (ctx 8192), text-embedding-nomic-embed-text-v1.5 (ctx 2048)"
+    },
+    "local:lmstudio/qwen/qwen3-4b": {
+      "status": "ok",
+      "detail": "listed; serves 8192 >= declared 8192"
+    },
+    "local:lmstudio-unlisted": {
+      "status": "ok",
+      "detail": "LM Studio at http://localhost:1234/v1 lists 2 model(s): qwen/qwen3-4b (ctx 8192), text-embedding-nomic-embed-text-v1.5 (ctx 2048)"
+    },
+    "local:lmstudio-unlisted/nope:latest": {
+      "status": "fail",
+      "detail": "not listed by the runtime (listed: qwen/qwen3-4b, text-embedding-nomic-embed-text-v1.5)"
+    },
+    "local:lmstudio-overclaim": {
+      "status": "ok",
+      "detail": "LM Studio at http://localhost:1234/v1 lists 2 model(s): qwen/qwen3-4b (ctx 8192), text-embedding-nomic-embed-text-v1.5 (ctx 2048)"
+    },
+    "local:lmstudio-overclaim/qwen/qwen3-4b": {
+      "status": "fail",
+      "detail": "declares context_window 65536, runtime serves 8192"
+    }
+  }
+}

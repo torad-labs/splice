@@ -1,11 +1,13 @@
 // NEW (G3+G4a-c): retry-policy pins against the reference-harness survey — ALL 5xx retry except
-// 501; 408 retries; 429 arms a shared cooldown and terminates without amplifying a retry wave;
-// other 4xx are terminal. Retry-After seconds set the shared cooldown horizon. MockEngine — no network.
+// 501; 408 retries; 429 arms a shared cooldown and non-pooled turns terminate without amplifying a
+// retry wave; pooled turns may briefly retry the same account. MockEngine — no network.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -15,13 +17,23 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.spi.ElapsedNow
 import splice.spi.PostContext
+import splice.spi.RateLimitCooldown
+import splice.spi.RemainingTurnWait
 import splice.spi.RetryAfter
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 import splice.spi.Waiter
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class UpstreamClientRetryPolicyTest {
 
@@ -118,19 +130,72 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `429 retry-after sets cooldown without consuming a retry budget`() = runTest {
+    fun `non-pooled bare 429 gives up without sleeping inside a 900 second budget`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
             calls.incrementAndGet()
-            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "7"))
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf())
         }
-        val client = clientOver(engine, capture, clock = { 0L })
+        val client = UpstreamClient(
+            firstByteTimeoutMs = 5_000L,
+            totalTimeoutMs = 900_000L,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) },
+            clock = ElapsedNow { 0L },
+        )
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertTrue(capture.minDelays.isEmpty())
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "a follower inside Retry-After must not reach upstream")
+    }
+
+    @Test
+    fun `waitable 429 retries the same account while followers fail fast`() = runTest {
+        val calls = AtomicInteger()
+        val elapsed = AtomicLong()
+        val backoffStarted = CompletableDeferred<Unit>()
+        val resumeBackoff = CompletableDeferred<Unit>()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) {
+                respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
+            } else {
+                respond("fine", HttpStatusCode.OK, headersOf())
+            }
+        }
+        val cooldown = RateLimitCooldown(ElapsedNow(elapsed::get))
+        val client = UpstreamClient(
+            firstByteTimeoutMs = 5_000L,
+            totalTimeoutMs = 5_000L,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            backoff = { _, minDelayMs ->
+                backoffStarted.complete(Unit)
+                resumeBackoff.await()
+                elapsed.addAndGet(minDelayMs)
+            },
+            clock = ElapsedNow(elapsed::get),
+        )
+        fun context() = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            rateLimitCooldown = cooldown,
+            remainingTurnWait = RemainingTurnWait { 5_000L },
+        )
+        val observer = async { client.post(context(), "{}") { "ok" } }
+        backoffStarted.await()
+
+        val follower = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
+        assertEquals(1, calls.get(), "a follower must not multiply the waitable retry")
+        assertTrue(follower.body.contains("cooldown"))
+        resumeBackoff.complete(Unit)
+
+        assertEquals("ok", observer.await())
+        assertEquals(2, calls.get(), "the observing turn retries after its wait on the same credential")
+        assertEquals(0L, cooldown.unavailableForMs())
     }
 
     @Test
@@ -149,19 +214,24 @@ class UpstreamClientRetryPolicyTest {
         // DR-47: seconds*1000 past Long.MAX wrapped NEGATIVE, which read as "tiny pushback" — the
         // give-up branch never fired, the curve retried on a negative floor, and the cooldown armed
         // an already-expired horizon. Saturation turns it into the absurd-pushback case above: one
-        // attempt, shared cooldown armed at the NF-01 ceiling.
+        // attempt, with follower protection clamped at the NF-01 ceiling.
+        var elapsed = 0L
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
             calls.incrementAndGet()
             respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "9223372036854775808"))
         }
-        val client = clientOver(engine, capture, clock = { 0L })
+        val client = clientOver(engine, capture, clock = { elapsed })
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "saturated pushback must give up, not retry on a wrapped-negative floor")
         assertTrue(capture.minDelays.isEmpty())
+        assertEquals(120_000L, client.rateLimitedForMs)
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "a 5xx carrying the same pushback arms the shared cooldown (UP-001)")
+        assertEquals(1, calls.get(), "a retryable 5xx pushback must protect followers")
+        elapsed += 121_000L
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get(), "the bounded follower protection must expire")
     }
 
     @Test
@@ -257,7 +327,7 @@ class UpstreamClientRetryPolicyTest {
         }
         val client = clientOver(engine, clock = { now })
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
+        assertEquals(1, calls.get(), "non-pooled 429s preserve the one-attempt exit")
         assertThrows<UpstreamFailed> { postOnce(client) } // zero-length horizon: straight upstream
         assertEquals(2, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
@@ -336,10 +406,8 @@ class UpstreamClientRetryPolicyTest {
         assertEquals(2, calls.get())
     }
 
-    // UP-001 (review 2026-08-15): the pushback-arms-cooldown branch used to fire for ANY status
-    // carrying a long Retry-After, not just the rate-limit-adjacent ones — a 403 with Retry-After
-    // could arm the head-wide cooldown and synthesize 429s for every OTHER turn over an error that
-    // says nothing about rate limits. Paired with the 429/503 case below (isRetryableStatus's set).
+    // UP-001: Retry-After on a non-retryable non-429 governs that request only. Retryable 408/5xx
+    // still arm local follower protection, without writing account-selection unavailability.
     @Test
     fun `UP-001 - a non-retryable 403 with a long retry-after does not arm the shared cooldown`() = runTest {
         val calls = AtomicInteger()
@@ -354,19 +422,6 @@ class UpstreamClientRetryPolicyTest {
         // proven not-wedged: the very next call reaches upstream immediately, no fail-fast
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get())
-    }
-
-    @Test
-    fun `UP-001 - a retryable 503 with a long retry-after DOES arm the shared cooldown`() = runTest {
-        val calls = AtomicInteger()
-        val engine = MockEngine {
-            calls.incrementAndGet()
-            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "30"))
-        }
-        val client = clientOver(engine, clock = { 0L })
-        assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
-        assertTrue(client.rateLimitedForMs > 0L, "a retryable status must arm the shared cooldown, same as 429")
     }
 
     @Test
@@ -439,6 +494,229 @@ class UpstreamClientRetryPolicyTest {
                 waited >= (base * 0.9).toLong() && waited <= (base * 1.1).toLong(),
                 "dns attempt $attempt waited ${waited}ms, outside the +/-10% band around ${base}ms: ${waiter.waits}",
             )
+        }
+    }
+}
+
+class UpstreamClientTransportBudgetTest {
+    @Test
+    fun `transport waits must fit both budgets including the worst case jitter`() = runTest {
+        for (kind in FailureKind.entries) {
+            for (remaining in listOf(100L, kind.ceilingMs)) {
+                for (postLimited in listOf(false, true)) {
+                    val fixture = Fixture(kind, totalTimeoutMs = if (postLimited) remaining else 5_000L)
+                    if (!postLimited) fixture.elapsed = 5_000L - remaining
+
+                    val failure = assertThrows<Exception> { fixture.post() }
+
+                    fixture.assertFailure(failure)
+                    assertEquals(1, fixture.calls.get())
+                    assertTrue(fixture.waits.isEmpty())
+                    assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                    assertEquals(
+                        if (kind == FailureKind.POST_SEND) 1L else null,
+                        fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES],
+                    )
+                    assertTrue(fixture.notices.first().startsWith(kind.noticeLabel))
+                    assertEquals(
+                        "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining ${remaining}ms budget",
+                        fixture.notices.last(),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a later round cannot restart a spent or nearly spent transport wait budget`() = runTest {
+        for (kind in FailureKind.entries) {
+            for (remaining in listOf(0L, 100L)) {
+                val fixture = Fixture(kind)
+                fixture.failuresLeft = 0
+                fixture.consumeOnAttemptMs = 5_000L - remaining
+                assertEquals("ok", fixture.post())
+                fixture.failuresLeft = 1
+                fixture.consumeOnAttemptMs = 0L
+
+                val failure = assertThrows<Exception> { fixture.post() }
+
+                assertTrue(fixture.waits.isEmpty())
+                if (remaining == 0L) {
+                    assertEquals(1, fixture.calls.get(), "the second round must not reach upstream")
+                    assertTrue(failure is UpstreamFailed)
+                    assertEquals(
+                        "{\"detail\":\"Upstream turn wait budget exhausted\"}",
+                        (failure as UpstreamFailed).body,
+                    )
+                    assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                    assertEquals("upstream turn wait budget exhausted before attempt 1/3", fixture.notices.single())
+                } else {
+                    fixture.assertFailure(failure)
+                    assertEquals(2, fixture.calls.get(), "the second round may try once but must not retry")
+                    assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                    assertEquals(
+                        "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 100ms budget",
+                        fixture.notices.last(),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `transport and stream failures spending the last outer milliseconds never sleep`() = runTest {
+        for (kind in FailureKind.entries) {
+            for (stream in listOf(false, true)) {
+                val fixture = Fixture(kind)
+                fixture.elapsed = 4_900L
+                fixture.consumeOnAttemptMs = 100L
+                fixture.failuresLeft = if (stream) 0 else 1
+
+                val failure = assertThrows<Exception> {
+                    if (stream) fixture.postWithTornStream() else fixture.post()
+                }
+
+                fixture.assertFailure(failure)
+                assertEquals(1, fixture.calls.get())
+                assertTrue(fixture.waits.isEmpty())
+                assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                assertEquals(
+                    "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 0ms budget",
+                    fixture.notices.last(),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `transport retries still succeed when the entire jitter band fits`() = runTest {
+        for (kind in FailureKind.entries) {
+            val fixture = Fixture(kind)
+            fixture.elapsed = 5_000L - kind.ceilingMs - 1L
+
+            assertEquals("ok", fixture.post())
+
+            assertEquals(2, fixture.calls.get())
+            assertTrue(fixture.waits.single() in 1L..kind.ceilingMs)
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertTrue(fixture.notices.single().startsWith(kind.noticeLabel))
+        }
+    }
+
+    @Test
+    fun `stream reissues refuse an unfitting wait and preserve the original failure`() = runTest {
+        for (kind in FailureKind.entries) {
+            val fixture = Fixture(kind)
+            fixture.elapsed = 4_900L
+            fixture.failuresLeft = 0
+
+            val failure = assertThrows<Exception> { fixture.postWithTornStream() }
+
+            fixture.assertFailure(failure)
+            assertEquals(1, fixture.calls.get())
+            assertTrue(fixture.waits.isEmpty())
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
+            assertTrue(fixture.notices.first().startsWith("stream torn before first client frame, reissue 1/2:"))
+            assertEquals(
+                "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 100ms budget",
+                fixture.notices.last(),
+            )
+        }
+    }
+
+    @Test
+    fun `stream reissues still succeed when the wait fits`() = runTest {
+        for (kind in FailureKind.entries) {
+            val fixture = Fixture(kind)
+            fixture.elapsed = 5_000L - kind.ceilingMs - 1L
+            fixture.failuresLeft = 0
+
+            assertEquals("ok", fixture.postWithTornStream())
+
+            assertEquals(2, fixture.calls.get())
+            assertTrue(fixture.waits.single() in 1L..kind.ceilingMs)
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertTrue(fixture.notices.single().startsWith("stream torn before first client frame, reissue 1/2:"))
+        }
+    }
+
+    private enum class FailureKind(val ceilingMs: Long, val noticeLabel: String = "transport ") {
+        DNS(1_100L),
+        WRAPPED_DNS(1_100L),
+        CONNECT(220L),
+        POST_SEND(220L, "transport-possible-duplicate "),
+        ;
+
+        fun error(): Exception = when (this) {
+            DNS -> UnresolvedAddressException()
+            WRAPPED_DNS -> IOException("resolver failed", UnknownHostException("unavailable"))
+            CONNECT -> ConnectException("refused")
+            POST_SEND -> SocketException("reset")
+        }
+    }
+
+    private class Fixture(kind: FailureKind, totalTimeoutMs: Long = 5_000L) {
+        var elapsed = 0L
+        var consumeOnAttemptMs = 0L
+        var failuresLeft = 1
+        val failure = kind.error()
+        val calls = AtomicInteger()
+        val notices = mutableListOf<String>()
+        val waits = mutableListOf<Long>()
+        val perf = TurnPerf { 0L }
+        private val auth = object : RefreshableAuthProvider {
+            override suspend fun credentials(): Credentials = Credentials.Bearer("test")
+            override suspend fun refresh(): Credentials? = null
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
+        }
+        private val engine = MockEngine {
+            calls.incrementAndGet()
+            elapsed += consumeOnAttemptMs
+            if (failuresLeft > 0) {
+                failuresLeft -= 1
+                throw failure
+            }
+            respond("fine", HttpStatusCode.OK, headersOf())
+        }
+        private val client = UpstreamClient(
+            firstByteTimeoutMs = 5_000L,
+            totalTimeoutMs = totalTimeoutMs,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            waiter = Waiter { ms ->
+                waits.add(ms)
+                elapsed += ms
+            },
+            clock = ElapsedNow { elapsed },
+        )
+        private val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = auth,
+            extraHeaders = { emptyMap() },
+            onRetry = { notices.add(it) },
+            perf = perf,
+            remainingTurnWait = RemainingTurnWait { 5_000L - elapsed },
+        )
+
+        fun assertFailure(actual: Exception) {
+            assertEquals(failure::class, actual::class)
+            assertEquals(failure.message, actual.message)
+            // Coroutine stack recovery may wrap the throwable, but must retain the original cause.
+            assertTrue(generateSequence<Throwable>(actual) { it.cause }.any { it === failure })
+        }
+
+        suspend fun post(): String = client.post(context, "{}") { "ok" }
+
+        suspend fun postWithTornStream(): String {
+            var torn = true
+            return client.post(context.copy(clientFrameEmitted = { false }), "{}") {
+                if (torn) {
+                    torn = false
+                    throw failure
+                }
+                "ok"
+            }
         }
     }
 }

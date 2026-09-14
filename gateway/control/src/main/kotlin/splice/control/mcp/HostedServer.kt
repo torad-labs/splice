@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §8): one child MCP server process, spoken to over newline-delimited
+// NEW: v0.4.0 FEATURES.md §8 — one child MCP server process, spoken to over newline-delimited
 // JSON-RPC on its stdio, shared by any number of client sessions. The host initializes the child
 // ONCE with its own identity; every client session later receives that cached handshake. Request
 // ids are remapped per call so two sessions using the same client-side id can never collide, and

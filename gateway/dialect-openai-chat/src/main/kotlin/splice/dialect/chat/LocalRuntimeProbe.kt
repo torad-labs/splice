@@ -1,4 +1,4 @@
-// NEW (v0.4.0, FEATURES.md §10): the questions splice asks a user-managed local runtime, and
+// NEW: v0.4.0 FEATURES.md §10 — the questions splice asks a user-managed local runtime, and
 // nothing else — which runtime it is, which models it lists, how much context each carries, and
 // (only when the operator asks, doctor --live) whether one tiny request streams and calls a tool.
 // splice never downloads a model or manages the runtime's lifecycle; it validates what the

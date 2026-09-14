@@ -39,6 +39,8 @@ public class StatuslineRenderer(
     /** Where each post's (session_id, context_window_size) is recorded for an env-governed row, so
      *  the head can scale THAT session's counts against the window it really runs with. */
     private val clientWindows: ClientWindows? = null,
+    /** Secret-free live account state; safe on the unauthenticated statusline route. */
+    private val accountPool: HeadAccountPoolSource? = null,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -71,12 +73,26 @@ public class StatuslineRenderer(
         true,
     )
 
-    public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
+    public fun render(
+        stdinJson: String,
+        usage: HeadUsageSource?,
+        warnPct: Int,
+        warnTokens5h: Long,
+        sessionId: String? = null,
+    ): String {
         val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
         windowLearner.learn(root)
         val snapshot = usage?.snapshot()
-        val segments = listOfNotNull(modelSegment(root), bars.costSegment(root)) +
-            bars.limitSegments(root, snapshot?.quota) +
+        val pool = accountPool?.view(sessionId)
+        val account = pool?.selectedAccount()
+        val selectedQuota = pool?.selectedQuota()
+        val limitsRoot = if (selectedQuota == null) root else JsonObject(root - "rate_limits")
+        val switchReason = pool?.lastSwitch?.takeIf { it.to == account?.label }?.reason
+        val accountText = account?.let { selected ->
+            switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
+        }
+        val segments = listOfNotNull(modelSegment(root), accountText, bars.costSegment(root)) +
+            bars.limitSegments(limitsRoot, selectedQuota ?: snapshot?.quota) +
             listOfNotNull(
                 contextSegment(root),
                 cacheSegment(root),

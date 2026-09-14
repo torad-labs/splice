@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.InflightRead
 import splice.app.cli.JdkUpgradeFetch
 import splice.app.cli.UpgradeCommand
 import splice.app.cli.UpgradeDaemon
@@ -21,6 +22,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 
 private const val STOCK = "#!/bin/sh\necho stock\n"
@@ -32,7 +34,9 @@ class UpgradeCommandTest {
     private val calls = mutableListOf<List<String>>()
     private var unitRestarts = 0
     private var verbRestarts = 0
-    private var inflightAnswers = ArrayDeque<Int>()
+    private var inflightAnswers = ArrayDeque<InflightRead>()
+    private var inflightAfter: InflightRead = InflightRead.NoDaemon
+    private var reportedVersion = "9.9.9"
 
     /** [unitJar] is what the fake user unit's ExecStart names; null = no unit supervises this install. */
     private fun process(gh: Int = 0, unitJar: Path? = null) = UpgradeProcess { cmd, _ ->
@@ -51,7 +55,7 @@ class UpgradeCommandTest {
     }
 
     private fun java(cmd: List<String>) = when {
-        cmd.last() == "version" -> UpgradeExit(0, "splice 9.9.9\n")
+        cmd.last() == "version" -> UpgradeExit(0, "splice $reportedVersion\n")
         cmd.contains("doctor") -> UpgradeExit(0, "{}")
         else -> UpgradeExit(0, "")
     }
@@ -72,17 +76,19 @@ class UpgradeCommandTest {
         fetch: UpgradeFetch = JdkUpgradeFetch(),
         gh: Int = 0,
         supervised: Boolean = false,
+        maxWaitMs: Long = 60_000,
     ): UpgradeCommand {
         val env = env(home, base)
         val unitJar = home.resolve("share/splice.jar").takeIf { supervised }
         val daemon = UpgradeDaemon(
             process(unitJar = unitJar),
-            { inflightAnswers.removeFirstOrNull() },
+            { inflightAnswers.removeFirstOrNull() ?: inflightAfter },
             restartVerb = {
                 verbRestarts++
                 true
             },
             pollMs = 1,
+            maxWaitMs = maxWaitMs,
         )
         return UpgradeCommand(
             env = env,
@@ -139,6 +145,23 @@ class UpgradeCommandTest {
 
     private fun assertIntact(files: Map<Path, ByteArray>) =
         files.forEach { (path, bytes) -> assertTrue(bytes.contentEquals(Files.readAllBytes(path)), "$path changed") }
+
+    @Test
+    fun `a version that is not a normalized SemVer segment never becomes a path`(@TempDir home: Path) {
+        flatInstall(home)
+        reportedVersion = "current"
+        assertFalse(command(home, release(home)).upgrade(emptyList()))
+        assertEquals(0, stagingDirs(home), "the staged candidate was discarded")
+        assertEquals(emptySet<String>(), releaseDirs(home), "no directory named after the bad version line")
+        reportedVersion = "9.9.9"
+        assertFalse(command(home, release(home)).upgrade(listOf("--to", "../x")))
+        assertFalse(Files.exists(home.resolve("share/x")), "--to never escaped releases/")
+        assertEquals(0, stagingDirs(home), "a refused --to never fetched anything")
+    }
+
+    private fun releaseDirs(home: Path): Set<String> = Files.list(home.resolve("share/releases")).use { entries ->
+        entries.filter { Files.isDirectory(it) }.map { it.fileName.toString() }.toList().toSet()
+    }
 
     private fun read(home: Path, name: String): String = Files.readString(home.resolve("share").resolve(name))
 
@@ -199,7 +222,7 @@ class UpgradeCommandTest {
         val intact = flatInstall(home, shim = PATCHED)
         pristine(home)
         val base = release(home)
-        inflightAnswers = ArrayDeque(listOf(2, 1, 0))
+        inflightAnswers = ArrayDeque(listOf(InflightRead.Count(2), InflightRead.Count(1), InflightRead.Count(0)))
         val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9")) }
         assertTrue(ok, out)
         assertTrue(out.contains("kept") && out.contains("+echo patched"), out)
@@ -213,5 +236,71 @@ class UpgradeCommandTest {
         assertEquals(PATCHED, read(home, "splice-launch"), "still kept")
         assertEquals(0 to 2, unitRestarts to verbRestarts, "no unit names this install's jar: the verb restarts")
         assertIntact(intact)
+    }
+
+    @Test
+    fun `an in-flight count that cannot be read never activates`(@TempDir home: Path) {
+        val intact = flatInstall(home)
+        inflightAnswers = ArrayDeque(listOf(InflightRead.Count(2)))
+        inflightAfter = InflightRead.Unknown("timeout")
+        val cmd = command(home, release(home), maxWaitMs = 50)
+        val (ok, out) = captured { cmd.upgrade(listOf("--to", "v9.9.9")) }
+        assertFalse(ok, out)
+        assertTrue(out.contains("in-flight count unknown"), out)
+        assertFalse(Files.isSymbolicLink(home.resolve("share/splice.jar")), "nothing was activated")
+        assertEquals(0, unitRestarts + verbRestarts)
+        assertTrue(Files.isDirectory(home.resolve("share/releases/9.9.9")), "the candidate stays staged")
+        assertIntact(intact)
+    }
+
+    @Test
+    fun `a release whose jar reports another version than --to is refused and leaves no staging`(
+        @TempDir home: Path,
+    ) {
+        flatInstall(home)
+        reportedVersion = "9.9.8"
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9")) }
+        assertFalse(ok, out)
+        assertTrue(out.contains("reporting 9.9.8"), out)
+        assertFalse(Files.exists(home.resolve("share/releases/9.9.9")))
+        assertFalse(Files.exists(home.resolve("share/releases/9.9.8")))
+        assertEquals(0, stagingDirs(home))
+        assertEquals("old-jar", read(home, "splice.jar"))
+    }
+
+    @Test
+    fun `a verification failure after the jar was fetched leaves no staging either`(@TempDir home: Path) {
+        flatInstall(home)
+        val shimOnly = mapOf("splice.jar" to "new-jar".toByteArray(), "splice-launch" to "x".toByteArray())
+        val (ok, out) = captured { command(home, release(home, sums = shimOnly)).upgrade(listOf("--to", "v9.9.9")) }
+        assertFalse(ok, out)
+        assertTrue(out.contains("sha256 verification FAILED for splice-launch"), out)
+        assertEquals(0, stagingDirs(home))
+        assertEquals("old-jar", read(home, "splice.jar"))
+    }
+
+    @Test
+    fun `a failed wrapper refresh activates nothing and restores every pointer`(@TempDir home: Path) {
+        val intact = flatInstall(home)
+        pristine(home)
+        val share = home.resolve("share")
+        val perms = Files.getPosixFilePermissions(share)
+        Files.setPosixFilePermissions(share, PosixFilePermissions.fromString("r-x------"))
+        try {
+            val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9")) }
+            assertFalse(ok, out)
+            assertTrue(out.contains("0.3.2 restored") || out.contains("staging failed"), out)
+        } finally {
+            Files.setPosixFilePermissions(share, perms)
+        }
+        assertFalse(Files.isSymbolicLink(home.resolve("share/splice.jar")), "the live jar is untouched")
+        assertEquals("old-jar", read(home, "splice.jar"))
+        assertEquals(STOCK, read(home, "splice-launch"))
+        assertEquals(0, unitRestarts + verbRestarts)
+        assertIntact(intact)
+    }
+
+    private fun stagingDirs(home: Path): Long = Files.list(home.resolve("share/releases")).use { entries ->
+        entries.filter { it.fileName.toString().startsWith(".staging") }.count()
     }
 }

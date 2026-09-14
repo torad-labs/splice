@@ -63,7 +63,7 @@ public class UpstreamClient(
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody)
     private val cooldown = RateLimitCooldown(clock)
-    private val retryRules = RetryRules(maxRetries, cooldown)
+    private val retryRules = RetryRules(maxRetries)
     private val reissueRules = ReissueRules()
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
@@ -158,7 +158,14 @@ public class UpstreamClient(
             )
             retryRules.giveUp(state.lastErr)
         }
-        cooldown.failFastIfArmed(ctx.onRetry)
+        if (turnWaitExhausted(ctx)) {
+            ctx.onRetry(
+                "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
+            )
+            if (state.lastErr != null) retryRules.giveUp(state.lastErr)
+            throw UpstreamFailed(TURN_WAIT_EXHAUSTED_BODY)
+        }
+        activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
         val creds = ctx.requireAuth()
         ctx.markAttempt()
         var streamHandedOff = false
@@ -217,7 +224,7 @@ public class UpstreamClient(
                     "${e::class.simpleName} ${e.message.orEmpty().take(ERR_SNIPPET)}",
             )
             ctx.markRetry()
-            ctx.timedBackoff { transportFailures.backoffTransportError(e, state.attempt, dnsBackoff, backoff) }
+            applyTransportBackoff(e, ctx, state.attempt, t0)
             return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
         }
         val phase = transportFailures.rethrowUnlessRetryableTransport(
@@ -232,7 +239,7 @@ public class UpstreamClient(
         )
         if (phase == TransportFailurePhase.POST_SEND) ctx.markPostSendRetry()
         ctx.markRetry()
-        ctx.timedBackoff { transportFailures.backoffTransportError(e, state.attempt, dnsBackoff, backoff) }
+        applyTransportBackoff(e, ctx, state.attempt, t0)
         state.attempt += 1
         return LoopStep.Continue
     }
@@ -253,13 +260,59 @@ public class UpstreamClient(
             )
             retryRules.giveUp(state.lastErr)
         }
+        val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
+        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr)
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
     }
 
+    /** Both transport paths budget the curve before sleeping and preserve the original failure. */
+    private suspend fun applyTransportBackoff(e: Throwable, ctx: PostContext, attempt: Int, t0: Long) {
+        val plannedDelayMs = if (transportFailures.isDnsFailureTransport(e)) {
+            retryBackoffCeilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_BACKOFF_MAX_MS)
+        } else {
+            retryBackoffCeilingMs(attempt)
+        }
+        if (!backoffFits(ctx, t0, plannedDelayMs)) throw e
+        ctx.timedBackoff { transportFailures.backoffTransportError(e, attempt, dnsBackoff, backoff) }
+    }
+
+    private fun backoffFits(ctx: PostContext, t0: Long, plannedDelayMs: Long): Boolean {
+        val remainingMs = remainingBudgetMs(ctx, t0)
+        val fits = plannedDelayMs < remainingMs
+        if (!fits) {
+            ctx.onRetry(
+                "upstream backoff up to ${plannedDelayMs}ms does not fit the remaining ${remainingMs}ms budget",
+            )
+        }
+        return fits
+    }
+
     /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
     private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
+
+    private fun turnWaitExhausted(ctx: PostContext): Boolean =
+        ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) == 0L
+
+    private fun remainingBudgetMs(ctx: PostContext, t0: Long): Long {
+        val postRemainingMs = (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
+        val turnRemainingMs = ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) ?: postRemainingMs
+        return minOf(postRemainingMs, turnRemainingMs)
+    }
+
+    /** Conservative ceiling of the shipped generic or DNS jittered curve. */
+    private fun retryBackoffCeilingMs(
+        attempt: Int,
+        baseMs: Long = RETRY_BACKOFF_BASE_MS,
+        maxMs: Long = RETRY_BACKOFF_MAX_MS,
+    ): Long {
+        var currentMs = baseMs
+        repeat(attempt.coerceAtLeast(0)) {
+            currentMs = if (currentMs > maxMs / 2) maxMs else currentMs * 2
+        }
+        return currentMs * RETRY_BACKOFF_JITTER_NUMERATOR / RETRY_BACKOFF_JITTER_DENOMINATOR
+    }
 
     /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
     private suspend fun <T> planStep(
@@ -268,7 +321,18 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<T> {
-        val plan = retryRules.planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
+        val plan = retryRules.planRetry(
+            ctx,
+            outcome,
+            state.attempt,
+            state.refreshedOnce,
+            RateLimitTurn(
+                cooldown = activeCooldown(ctx),
+                remainingBudgetMs = remainingBudgetMs(ctx, t0),
+                backoffCeilingMs = retryBackoffCeilingMs(state.attempt),
+                pooledAccount = ctx.rateLimitCooldown != null,
+            ),
+        )
         state.refreshedOnce = plan.refreshedOnce
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
@@ -276,8 +340,19 @@ public class UpstreamClient(
             RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr)
         }
     }
+
+    private fun activeCooldown(ctx: PostContext): RateLimitCooldown = ctx.rateLimitCooldown ?: cooldown
 }
 
 // The width of an upstream error quoted into a retry notice. Read here and by RetryPolicy.kt's
 // give-up / attempt notices, which quote the same failure text.
 internal const val ERR_SNIPPET = 160
+
+// Mirror UpstreamTransport's generic and DNS defaults so opaque backoff seams can be budgeted before they run.
+private const val RETRY_BACKOFF_BASE_MS = 200L
+private const val RETRY_BACKOFF_MAX_MS = 10_000L
+private const val DNS_BACKOFF_BASE_MS = 1_000L
+private const val DNS_BACKOFF_MAX_MS = 4_000L
+private const val RETRY_BACKOFF_JITTER_NUMERATOR = 11L
+private const val RETRY_BACKOFF_JITTER_DENOMINATOR = 10L
+private const val TURN_WAIT_EXHAUSTED_BODY = "{\"detail\":\"Upstream turn wait budget exhausted\"}"

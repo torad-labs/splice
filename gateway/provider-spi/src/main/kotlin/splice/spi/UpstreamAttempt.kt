@@ -19,6 +19,11 @@ import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 
+/** Remaining whole-turn wait budget at the instant retry policy asks. */
+public fun interface RemainingTurnWait {
+    public operator fun invoke(): Long
+}
+
 /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument).
  *  Callers construct this and pass it to [UpstreamClient.post]. */
 public data class PostContext(
@@ -29,6 +34,10 @@ public data class PostContext(
     val perf: TurnPerf? = null,
     val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
     val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
+    /** Selected account's cooldown; null preserves the client's legacy single-account cooldown. */
+    val rateLimitCooldown: RateLimitCooldown? = null,
+    /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
+    val remainingTurnWait: RemainingTurnWait? = null,
 ) {
     internal fun markRetry() {
         perf?.add(PerfKeys.RETRIES, 1)

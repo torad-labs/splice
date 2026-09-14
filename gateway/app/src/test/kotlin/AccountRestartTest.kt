@@ -105,19 +105,77 @@ class AccountRestartTest {
     }
 
     @Test
-    fun `a malformed pooled credential exposes only an authored outer message`() {
-        val store = OAuthAccountFiles()
+    fun `a malformed pool file is skipped with one safe diagnostic and valid accounts survive`() {
+        val logs = mutableListOf<String>()
+        val store = OAuthAccountFiles(log = logs::add)
         val primary = dir.resolve("codex.json")
+        Files.writeString(primary, "{}")
+        store.writeLabeled(AuthKind.ChatgptOAuth, primary, "work", JsonObject(emptyMap()))
         val pool = store.poolDir(AuthKind.ChatgptOAuth, primary)
-        Files.createDirectories(pool)
-        Files.writeString(pool.resolve("private-account.json"), "{private-secret")
+        val stray = pool.resolve("notes.json")
+        Files.writeString(stray, "{private-secret")
+        Files.createSymbolicLink(pool.resolve("linked.json"), stray)
 
-        val failure = assertThrows<IllegalArgumentException> {
-            store.discover(AuthKind.ChatgptOAuth, primary)
-        }
+        val accounts = store.discover(AuthKind.ChatgptOAuth, primary)
 
-        assertEquals("invalid chatgpt-oauth OAuth account file", failure.message)
-        assertFalse(failure.message.orEmpty().contains("private"))
+        assertEquals(listOf("primary", "work"), accounts.map { it.label })
+        assertEquals(listOf("splice: skipped OAuth pool file notes.json (not a credential)\n"), logs)
+        assertEquals("{private-secret", Files.readString(stray))
+        assertTrue(Files.isSymbolicLink(pool.resolve("linked.json")))
+        assertFalse(logs.joinToString("").contains("private-secret"))
+        assertFalse(logs.joinToString("").contains(dir.toString()))
+    }
+
+    @Test
+    fun `JSON without a declared kind is skipped without printing its contents`() {
+        val logs = mutableListOf<String>()
+        val store = OAuthAccountFiles(log = logs::add)
+        val primary = dir.resolve("codex.json")
+        val pool = Files.createDirectories(store.poolDir(AuthKind.ChatgptOAuth, primary))
+        val documents = mapOf(
+            "notes.json" to """{"access_token":"private-secret"}""",
+            "array.json" to "[]",
+            "scalar.json" to "false",
+            "null.json" to """{"splice_auth_kind":null}""",
+        )
+        documents.forEach { (name, content) -> Files.writeString(pool.resolve(name), content) }
+
+        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, primary).map { it.label })
+
+        val expected = documents.keys.sorted().map { "splice: skipped OAuth pool file $it (not a credential)\n" }
+        assertEquals(expected, logs)
+        documents.forEach { (name, content) -> assertEquals(content, Files.readString(pool.resolve(name))) }
+    }
+
+    @Test
+    fun `a stray file with an unsafe name is skipped without exposing the name`() {
+        val logs = mutableListOf<String>()
+        val store = OAuthAccountFiles(log = logs::add)
+        val primary = dir.resolve("codex.json")
+        val pool = Files.createDirectories(store.poolDir(AuthKind.ChatgptOAuth, primary))
+        Files.writeString(pool.resolve("private@example.com.json"), "{}")
+
+        assertEquals(listOf("primary"), store.discover(AuthKind.ChatgptOAuth, primary).map { it.label })
+
+        assertEquals(listOf("splice: skipped OAuth pool file <unsafe filename> (not a credential)\n"), logs)
+        assertFalse(logs.joinToString("").contains("private@example.com"))
+    }
+
+    @Test
+    fun `a declared credential with mismatched filename remains refused`() {
+        val logs = mutableListOf<String>()
+        val store = OAuthAccountFiles(log = logs::add)
+        val primary = dir.resolve("codex.json")
+        val pool = Files.createDirectories(store.poolDir(AuthKind.ChatgptOAuth, primary))
+        Files.writeString(
+            pool.resolve("work.json"),
+            """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"personal"}""",
+        )
+
+        val failure = assertThrows<IllegalArgumentException> { store.discover(AuthKind.ChatgptOAuth, primary) }
+
+        assertEquals("pooled OAuth account file does not match its filename", failure.message)
+        assertTrue(logs.isEmpty())
     }
 
     @Test

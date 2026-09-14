@@ -33,6 +33,8 @@ internal data class LoginHookSpec(
     /** True when this head can capture a bare token pasted into the prompt box. Decides the whole
      *  shape of /login for an api-key head — see [LoginHookScripts.loginHookScript]. */
     val canCapturePaste: Boolean,
+    /** The head's topology key: a sign-in started as `splice login <key>` must be found too. */
+    val headKey: String = "",
 )
 
 internal object LoginHookScripts {
@@ -302,7 +304,8 @@ internal object LoginHookScripts {
             appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.NO_COMMAND)))}")
             appendLine(EXIT)
             appendLine("  fi")
-            append(LoginHookPending.cancelBlock(hook.loginCommand.substringBefore(' '), stuck, foreign))
+            val words = listOf(hook.loginCommand.substringBefore(' '), hook.headKey)
+            append(LoginHookPending.cancelBlock(words, stuck, foreign))
             val origin = LoginHookPending.ORIGIN_MARKER
             appendLine("  if [ -n \"${d}label\" ]; then")
             appendLine("    $origin nohup ${hook.loginCommand} --label \"${d}label\" >/dev/null 2>&1 &")

@@ -91,6 +91,7 @@ public class ClaudeConfigMaterializer(
                 viaBrowser = spec.signInViaBrowser,
                 tokenCapture = spec.tokenCapture,
                 loginOutcomeFile = spec.loginOutcomeFile,
+                headKey = spec.headKey,
             ),
             if (spec.advertiseKeySetup && spec.tokenCapture != null) {
                 LoginInterception.keySetupAdvertiser(spec.configDir, spec.tokenCapture, spec.loginCommand)

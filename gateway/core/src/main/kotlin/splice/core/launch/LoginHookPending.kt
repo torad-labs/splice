@@ -7,7 +7,8 @@
 // therefore a process that, read from /proc on Linux, satisfies all of: (1) its executable
 // (/proc/PID/exe) is a binary named java; (2) argv[1] is -jar and argv[2] is that same resolved
 // jar path, resolved here by the same expression in the same environment the hook will spawn the
-// next login from; (3) argv[3] is login and argv[4] is the head word. Fixed positions, no search:
+// next login from; (3) argv[3] is login and argv[4] is a head word — the wrapper
+// word the shim passes, or the topology key `splice login <key>` accepts. Fixed positions, no search:
 // a JVM launched in class mode, or a JVM whose own application arguments carry `-jar ... login
 // <head>`, is not ours. argv[0] is caller-supplied and is not consulted. pgrep only pre-filters.
 // The liveness re-check is the same identity read, so a zombie (empty cmdline) counts as gone.
@@ -33,10 +34,12 @@ internal object LoginHookPending {
      *  did not start is waiting, else cancels the hook's own (TERM, up to 2 s, then KILL, up to
      *  1 s); sets `restarted=1` when something was cancelled, or prints [stuckDecision] (a complete
      *  `printf` line) and exits when it would not die. Two-space indented: it lands inside an `if`. */
-    fun cancelBlock(headWord: String, stuckDecision: String, foreignDecision: String): String {
+    fun cancelBlock(headWords: List<String>, stuckDecision: String, foreignDecision: String): String {
         val d = "$"
-        val head = headWord.replace(PENDING_ERE_META) { "\\" + it.value }
-        val prefilter = shellSingleQuote("-jar .+ login $head( |$)")
+        val words = headWords.filter { it.isNotBlank() }.distinct()
+        val heads = words.joinToString("|") { w -> w.replace(PENDING_ERE_META) { "\\" + it.value } }
+        val prefilter = shellSingleQuote("-jar .+ login ($heads)( |$)")
+        val isHead = words.joinToString(" || ") { "[ \"$d{argv[4]}\" = ${shellSingleQuote(it)} ]" }
         val alive = "[ -n \"$d(login_pids hook)\" ]"
         return buildString {
             appendLine("  login_pids() {")
@@ -49,9 +52,7 @@ internal object LoginHookPending {
             appendLine("      [ \"$d{exe##*/}\" = java ] || continue")
             appendLine("      [ \"$d{#argv[@]}\" -ge 5 ] || continue")
             appendLine("      [ \"$d{argv[1]}\" = -jar ] && [ \"$d{argv[2]}\" = \"${d}jar\" ] || continue")
-            appendLine(
-                "      [ \"$d{argv[3]}\" = login ] && [ \"$d{argv[4]}\" = ${shellSingleQuote(headWord)} ] || continue",
-            )
+            appendLine("      [ \"$d{argv[3]}\" = login ] && { $isHead; } || continue")
             appendLine("      origin=other")
             appendLine("      grep -qzx '$ORIGIN_MARKER' \"/proc/${d}pid/environ\" 2>/dev/null && origin=hook")
             appendLine("      [ \"${d}origin\" = \"$d{1}\" ] && printf '%s\\n' \"${d}pid\"")

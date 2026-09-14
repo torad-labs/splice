@@ -47,6 +47,9 @@ public data class LaunchSpec(
     /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
      *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
     val loginOutcomeFile: String = "",
+    /** The head's topology key ("codex"): `splice login <key>` and `<wrapper> login` name the same
+     *  sign-in, and the /login hook must find it under either spelling (review 2026-09-14). */
+    val headKey: String = "",
     val policy: ClaudePolicy,
     val port: Int,
     /** Per-install local gateway credential; shared with the head's inbound verifier. */

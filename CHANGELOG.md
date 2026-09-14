@@ -98,6 +98,8 @@
   left alone, never killed and replaced by a primary login. An input whose top-level prompt cannot
   be read is refused with the same "no prompt string" reason on an api-key head as on a browser
   head, instead of being answered as a bare `/login`.
+  A sign-in started as `splice login <key>` is found under that spelling too (the hook matches the
+  wrapper word or the head key), so it is named and left alone, or cancelled when the hook started it.
 - **`splice doctor --json [--with-logs] [--out FILE]`: a shareable, redacted report.** Schema
   version 1 carries the splice and Claude Code versions, OS and JVM, the topology's SHAPE
   (kinds, dialects, model ids and windows, quirk names, a host but never a URL with credentials),
@@ -114,6 +116,9 @@
   carries the hosting lines. A malformed flag prints usage and writes nothing. Nothing is uploaded.
   Per-turn daemon log lines keep their `compact=` and `model=` pairs in the report (the event head
   had swallowed the first key, leaving every turn line empty).
+  A JSON-quoted credential key (`"refresh_token": "..."`, `"api_key": "..."`) in free text is
+  masked like a bare one, quotes and structure kept, so a short quoted secret no longer slips past
+  every shape pass.
 - **Automatic account switching when a provider's limits are hit.** `splice login <head> --label
   <name>` adds a second (third, ...) OAuth account of the same kind under
   `~/.config/splice/auth/<kind>/<primary file>/<name>.json` (`chatgpt-oauth/codex.json/work.json` for the default

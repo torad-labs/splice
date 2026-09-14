@@ -43,4 +43,13 @@ class SessionsRoutesTest {
         assertEquals("unknown head", bare["head"]?.jsonPrimitive?.content)
         assertEquals("gone", bare["availability"]?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun `a registry directory that cannot be listed carries an error beside the empty list`(@TempDir dir: Path) {
+        val file = Files.writeString(dir.resolve("sessions"), "not a directory")
+        val registry = SessionRegistry(sessionsDir = file, headOf = { null }, clock = { now })
+        val body = Json.parseToJsonElement(SessionsRoutes(registry).sessionsJson()).jsonObject
+        assertTrue(body["sessions"]!!.jsonArray.isEmpty())
+        assertTrue(body["error"]!!.jsonPrimitive.content.contains("sessions"), body.toString())
+    }
 }

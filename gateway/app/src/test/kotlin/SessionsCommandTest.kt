@@ -105,6 +105,17 @@ class SessionsCommandTest {
         assertEquals(setOf(".claude", "bad.toml"), entries, "no starter config was materialized")
     }
 
+    @Test
+    fun `a registry directory that cannot be listed is said, never read as no sessions`(@TempDir dir: Path) {
+        val file = Files.writeString(dir.resolve("sessions"), "not a directory")
+        val registry = SessionRegistry(sessionsDir = file, headOf = { null }, clock = { now })
+        var ok = true
+        val out = capture { SessionsCommand().sessions({ null }, registry) { now }.also { ok = it } }
+        assertFalse(ok, "an unreadable registry is not a successful listing")
+        assertTrue(out.contains("could not be listed"), out)
+        assertFalse(out.contains("no registered sessions"), out)
+    }
+
     private fun capture(block: () -> Boolean): String {
         val buf = ByteArrayOutputStream()
         val original = System.out

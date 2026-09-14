@@ -13,6 +13,7 @@ import splice.app.cli.UpgradeCommand
 import splice.app.cli.UpgradeDaemon
 import splice.app.cli.UpgradeExit
 import splice.app.cli.UpgradeFetch
+import splice.app.cli.UpgradeFetchFailed
 import splice.app.cli.UpgradeLayout
 import splice.app.cli.UpgradeProcess
 import splice.app.cli.UpgradeRelease
@@ -20,8 +21,10 @@ import splice.app.cli.UpgradeWrapper
 import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 
@@ -381,5 +384,41 @@ class UpgradeCommandTest {
 
     private fun stagingDirs(home: Path): Long = Files.list(home.resolve("share/releases")).use { entries ->
         entries.filter { it.fileName.toString().startsWith(".staging") }.count()
+    }
+
+    @Test
+    fun `a fetch that fails is refused by its class, an absent asset by its absence`(@TempDir home: Path) {
+        flatInstall(home)
+        val remote = "https://example.invalid/releases/download/v9.9.9"
+        val forbidden = UpgradeFetch { throw UpgradeFetchFailed("HTTP 403 (forbidden)") }
+        val (ok, out) = captured { command(home, remote, fetch = forbidden).upgrade(emptyList()) }
+        assertFalse(ok)
+        assertTrue(out.contains("fetching sha256sums.txt from $remote failed: HTTP 403 (forbidden)"), out)
+        assertFalse(out.contains("no sha256sums.txt at"), "a refusal is not an absence: $out")
+        val empty = Files.createDirectories(home.resolve("empty")).toUri().toString().trimEnd('/')
+        val (absent, out2) = captured { command(home, empty).upgrade(emptyList()) }
+        assertFalse(absent)
+        assertTrue(out2.contains("no sha256sums.txt at $empty"), out2)
+        assertEquals("old-jar", read(home, "splice.jar"))
+        assertEquals(0, stagingDirs(home))
+    }
+
+    @Test
+    fun `a second upgrade while one holds the install lock is refused before it fetches anything`(
+        @TempDir home: Path,
+    ) {
+        flatInstall(home)
+        val lockFile = Files.createDirectories(home.resolve("share/releases")).resolve(".upgrade.lock")
+        FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+            channel.lock().use {
+                val (ok, out) = captured { command(home, release(home)).upgrade(emptyList()) }
+                assertFalse(ok)
+                assertTrue(out.contains("another splice upgrade is running"), out)
+                assertEquals(0, stagingDirs(home), "refused before fetching")
+                assertEquals("old-jar", read(home, "splice.jar"))
+            }
+        }
+        assertTrue(command(home, release(home)).upgrade(emptyList()), "the lock is free again")
+        assertEquals("9.9.9", link(home, "current"))
     }
 }

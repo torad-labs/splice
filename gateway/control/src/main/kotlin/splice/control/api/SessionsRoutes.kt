@@ -15,8 +15,11 @@ internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; go
 
 public class SessionsRoutes(private val registry: SessionRegistry) {
     public fun sessionsJson(): String = buildJsonObject {
+        val listing = registry.list()
         put("note", HEADLESS_NOTE)
-        put("sessions", buildJsonArray { registry.read().forEach { add(row(it)) } })
+        // An unreadable directory is not an empty one: the error rides beside the (empty) list.
+        listing.error?.let { put("error", it) }
+        put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it)) } })
     }.toString()
 
     private fun row(s: SessionRecord) = buildJsonObject {

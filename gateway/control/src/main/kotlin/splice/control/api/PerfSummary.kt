@@ -68,6 +68,7 @@ public class PerfSummary(private val clock: WallClock = WallClock { System.curre
             put("covers_ms", minOf(coverage.coveredMs, window.ms))
             coverage.note()?.let { put("note", it) }
             read.readError?.let { put("read_error", it) }
+            if (read.skipped > 0) put("skipped_lines", read.skipped)
             if (inWindow.isNotEmpty()) metrics(inWindow, read.dropsBefore).forEach { (k, v) -> put(k, v) }
         }
     }
@@ -77,13 +78,22 @@ public class PerfSummary(private val clock: WallClock = WallClock { System.curre
         // A row stamped in the future (a clock step) covers nothing; coverage never reads negative.
         val covered = oldest?.let { (now - it).coerceAtLeast(0L) } ?: 0L
         val known = read.readError == null
-        return Coverage(oldest != null, covered, known, known && oldest != null && covered < window.ms)
+        val clamped = known && oldest != null && covered < window.ms
+        return Coverage(oldest != null, covered, known, clamped, read.skipped)
     }
 
-    private inner class Coverage(val held: Boolean, val coveredMs: Long, val known: Boolean, val clamped: Boolean) {
+    private inner class Coverage(
+        val held: Boolean,
+        val coveredMs: Long,
+        val known: Boolean,
+        val clamped: Boolean,
+        val skipped: Int,
+    ) {
         fun note(): String? = when {
             !known && !held -> "no perf rows read; a generation could not be read, coverage unknown"
             !known -> "a generation could not be read: ${span(coveredMs)} of rows read, coverage unknown"
+            // Every line was rejected: the file is broken (or written by something else), not idle.
+            !held && skipped > 0 -> "no valid perf rows read; $skipped unparseable lines skipped"
             !held -> "no perf rows recorded yet"
             clamped -> "the perf files hold ${span(coveredMs)} of rows, less than the window"
             else -> null

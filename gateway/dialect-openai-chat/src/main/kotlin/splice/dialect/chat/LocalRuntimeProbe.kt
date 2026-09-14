@@ -174,13 +174,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
         }
         val reply = http("POST", "$v1/chat/completions", body.toString())
             ?: return LocalLiveProbe(false, false, "no answer from $v1/chat/completions")
-        if (reply.status != HTTP_OK) {
-            return LocalLiveProbe(false, false, "HTTP ${reply.status}: ${reply.body.take(LIVE_DETAIL_CHARS)}")
-        }
-        val streams = reply.body.lineSequence().any { it.startsWith("data: ") }
-        val toolCalls = reply.body.contains("\"tool_calls\"") && reply.body.contains("\"ping\"")
-        val detail = "streamed=$streams tool_calls=$toolCalls (${reply.body.length} bytes)"
-        return LocalLiveProbe(streams, toolCalls, detail)
+        return LocalLiveReading().read(reply)
     }
 
     /** `/api/ps`: the window each LOADED model was given, by name. */
@@ -222,7 +216,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
         put(
             "function",
             buildJsonObject {
-                put("name", "ping")
+                put("name", PING_TOOL)
                 put("description", "Answers pong.")
                 put(
                     "parameters",
@@ -250,4 +244,4 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
 // whole budget inside <think> and the probe reported tool_calls=false for a model that calls tools
 // fine through the head (live, 2026-09-13).
 private const val LIVE_MAX_TOKENS = 1024
-private const val LIVE_DETAIL_CHARS = 200
+internal const val PING_TOOL = "ping"

@@ -363,8 +363,18 @@ RELEASE_DIR="${SHARE_DIR}/releases/${JAR_VERSION}"
 CURRENT_LINK="${SHARE_DIR}/releases/current"
 # The release that was current becomes `previous`, so the first `splice upgrade --rollback` after
 # an install.sh run has somewhere to go instead of skipping a version (review 2026-09-14).
+# `ln -sfn` into a REAL directory named previous succeeds by linking inside it, so the link is
+# read back: a pointer that did not land is said, and the archive stays best effort (review 2026-09-14).
+link_previous() {
+  ln -sfn "$1" "${SHARE_DIR}/releases/previous" || true
+  if [ "$(readlink "${SHARE_DIR}/releases/previous" 2>/dev/null)" != "$1" ]; then
+    echo "splice: warning: ${SHARE_DIR}/releases/previous is not a link to $1 (something else is in its way);" \
+      "splice upgrade --rollback has no target until it is removed" >&2
+    return 1
+  fi
+}
 if [ -L "$CURRENT_LINK" ] && [ "$(readlink "$CURRENT_LINK")" != "$JAR_VERSION" ]; then
-  ln -sfn "$(readlink "$CURRENT_LINK")" "${SHARE_DIR}/releases/previous" || true
+  link_previous "$(readlink "$CURRENT_LINK")" || true
 elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
   # A flat install (before 0.4.0) is being replaced: its jar and shim are still in hand as the
   # backups, so record them under their version and make them `previous` — otherwise the first
@@ -375,7 +385,7 @@ elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
     OLD_DIR="${SHARE_DIR}/releases/${OLD_VERSION}"
     if mkdir -p "$OLD_DIR" && cp -p "$JAR_BACKUP" "$OLD_DIR/splice.jar" &&
       { [ "$HAD_SHIM" != 1 ] || cp -p "$SHIM_BACKUP" "$OLD_DIR/splice-launch"; } &&
-      ln -sfn "$OLD_VERSION" "${SHARE_DIR}/releases/previous"; then
+      link_previous "$OLD_VERSION"; then
       echo "splice: previous release $OLD_VERSION kept at $OLD_DIR (splice upgrade --rollback target)"
     fi
   fi

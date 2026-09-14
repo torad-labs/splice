@@ -40,11 +40,7 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
         val current = TopologyLoader.loadOrMaterialize(path)
         val existing = Files.readString(path).trimEnd('\n') + "\n"
         val key = args.name ?: profile.headKey
-        val resolved = profile.copy(
-            baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
-            command = args.command ?: profile.command.ifEmpty { "claude-$key" },
-            models = modelRows.resolve(args, profile),
-        )
+        val resolved = resolved(args, profile, key) ?: return null
         val problem = keyProblem(resolved, current, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
         val appended = if (problem == null) profiles.toml(resolved, key, nextPort(current)) else ""
         val parsed = if (problem == null) checks.parses(existing + appended) else Result.failure(AddRefused(problem))
@@ -67,6 +63,19 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
                 null
             },
         )
+    }
+
+    /** The profile with the operator's flags and model rows applied, or null after the refusal was
+     *  printed (a prompted window never became valid). */
+    private fun resolved(args: AddArgs, profile: AddProfile, key: String): AddProfile? = try {
+        profile.copy(
+            baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
+            command = args.command ?: profile.command.ifEmpty { "claude-$key" },
+            models = modelRows.resolve(args, profile),
+        )
+    } catch (refused: AddRefused) {
+        println("splice add: ${refused.message}")
+        null
     }
 
     private fun usage(): AddCandidate? {
@@ -118,4 +127,4 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
 }
 
 /** A refusal decided before the candidate was parsed; its message is the whole explanation. */
-private class AddRefused(message: String) : RuntimeException(message)
+internal class AddRefused(message: String) : RuntimeException(message)

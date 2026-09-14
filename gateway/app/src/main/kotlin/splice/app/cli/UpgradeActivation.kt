@@ -33,6 +33,7 @@ internal class UpgradeActivation(
             layout.current to layout.pointedVersion(layout.current)?.let(Path::of),
         )
         val liveBefore = if (Files.isSymbolicLink(layout.liveJar)) Files.readSymbolicLink(layout.liveJar) else null
+        val hadShim = Files.exists(layout.liveShim)
         var previousShim: Path? = null
         Cancellables.runCatchingCancellable {
             previousShim = wrapper.activate(
@@ -45,7 +46,7 @@ internal class UpgradeActivation(
             point(layout.current, Path.of(version))
             point(layout.liveJar, layout.share.relativize(dir.resolve(JAR_ASSET)))
         }.getOrElse { e ->
-            val failed = restore(links, liveBefore, previousShim)
+            val failed = restore(links, liveBefore, previousShim, hadShim)
             val why = "activating $version failed (${SafeFailureText.render(e)})"
             throw UpgradeRefused(if (failed.isEmpty()) "$why; $from restored" else "$why; recovery FAILED for $failed")
         }
@@ -54,7 +55,7 @@ internal class UpgradeActivation(
 
     /** Puts every pointer back, continuing past a step that fails; returns the names it could NOT
      *  restore, so the operator is told to run doctor instead of trusting the metadata. */
-    private fun restore(links: Map<Path, Path?>, liveBefore: Path?, shim: Path?): List<String> {
+    private fun restore(links: Map<Path, Path?>, liveBefore: Path?, shim: Path?, hadShim: Boolean): List<String> {
         val failed = mutableListOf<String>()
         links.forEach { (link, target) ->
             attempt(failed, link.fileName.toString()) {
@@ -68,6 +69,10 @@ internal class UpgradeActivation(
             attempt(failed, layout.liveShim.fileName.toString()) {
                 Files.copy(shim, layout.liveShim, StandardCopyOption.REPLACE_EXISTING)
             }
+        } else if (!hadShim) {
+            // No shim before this activation: the one the wrapper wrote is the new release's, and a
+            // half-activated install must not keep it (review 2026-09-14).
+            attempt(failed, layout.liveShim.fileName.toString()) { Files.deleteIfExists(layout.liveShim) }
         }
         return failed
     }

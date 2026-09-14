@@ -16,5 +16,8 @@ class CommandParserTest {
         assertEquals(Command.Login("claudex", "work"), parser.parse(arrayOf("login", "--label", "work", "claudex")))
         assertEquals(Command.Login(null, "work"), parser.parse(arrayOf("login", "--label", "work")))
         assertEquals(null, parser.parse(arrayOf("login", "claudex", "--label")), "a bare --label is refused")
+        val twice = arrayOf("login", "claudex", "--label", "work", "--label", "other")
+        assertEquals(null, parser.parse(twice), "a second --label is refused, not dropped")
+        assertEquals(null, parser.parse(arrayOf("login", "claudex", "extra")), "a second word is refused")
     }
 }

@@ -11,6 +11,11 @@
   appends the provider and head tables through a sibling temp file and one rename. Anything that
   stops the flow leaves the previous file byte-identical, and a command line it cannot mean (an
   unknown flag, a flag without its value, a second word) is refused with the usage, never swallowed.
+  A model id may itself carry colons (`--model qwen3:4b:32768` is the id `qwen3:4b`); a window that
+  is not a positive number is refused. The config is read again right before the rename, so a file
+  edited while the sign-in and checks ran is left alone and the command says to rerun; and when the
+  daemon restart that was asked for fails, the command exits non-zero (the head is saved and
+  `splice restart` is named) instead of printing a launch line for a head the daemon does not serve.
 - **`splice upgrade [--to vX] [--now] [--rollback]`.** Fetches and verifies a release exactly as
   `install.sh` does (sha256 against `sha256sums.txt`, GitHub build-provenance attestation through
   an authenticated `gh`), stages it under `~/.local/share/splice/releases/<version>/`, runs the
@@ -44,7 +49,9 @@
   (it no longer reaches the model as a prompt), and `--label NAME` rides through to `<head> login`,
   so a second account of the head's kind can be signed in from inside the client. Any other
   argument, or a label the CLI would refuse, is refused by the hook itself and nothing is started
-  (a bare login would sign the primary in again).
+  (a bare login would sign the primary in again). The receipt for a labeled sign-in says the
+  account is saved beside the primary and joins the pool after `splice restart`; only an unlabeled
+  sign-in is "using the new credentials", because that is the only one this session switches to.
 - **`splice doctor --json [--with-logs] [--out FILE]`: a shareable, redacted report.** Schema
   version 1 carries the splice and Claude Code versions, OS and JVM, the topology's SHAPE
   (kinds, dialects, model ids and windows, quirk names, a host but never a URL with credentials),
@@ -87,7 +94,10 @@
   crash fails pending calls honestly and the next call restarts the server, never replaying tool
   operations. `[daemon] mcp_hosting = false` turns it off, `mcp_hosting_exclude` keeps named
   servers per session; `/api/mcp` shows eligibility and ownership. Measured on the reference
-  machine's own MCP set with four parallel sessions (`checks/mcp-host/bench.py`).
+  machine's own MCP set with four parallel sessions (`checks/mcp-host/bench.py`). A client that
+  falls a full buffer (256) of notifications behind on its stream loses the stale backlog, never the
+  fact that its lists may have changed: the backlog collapses to the three `list_changed`
+  notifications plus the newest one, so the client re-lists once it catches up.
 - **Local models are first-class on the `openai-chat` dialect.** A provider on a loopback
   `base_url` is local by default (`local = true|false` overrides). At boot and in doctor splice asks
   the runtime what it serves (Ollama `/api/version`, `/v1/models`, `/api/show`, `/api/ps`; LM Studio

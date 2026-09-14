@@ -74,8 +74,10 @@ private val verbs: Map<String, CommandFactory> = mapOf(
         val flag = a.indexOf(LABEL_FLAG)
         val label = if (flag > 0) a.getOrNull(flag + 1) else null
         val positional = a.filterIndexed { i, _ -> i > 0 && (flag < 1 || i != flag && i != flag + 1) }
-        // A bare --label is a mistake, not an unlabeled login: the parse fails and usage prints.
-        if (flag > 0 && label == null) null else Command.Login(positional.firstOrNull(), label)
+        // A bare --label, a second --label or a second positional is a mistake, not an unlabeled
+        // login: the parse fails and usage prints, nothing is silently dropped.
+        val malformed = flag > 0 && label == null || a.count { it == LABEL_FLAG } > 1 || positional.size > 1
+        if (malformed) null else Command.Login(positional.firstOrNull(), label)
     },
     "setup" to CommandFactory { Command.Setup },
     "add" to CommandFactory { a -> Command.Add(a.drop(1)) },

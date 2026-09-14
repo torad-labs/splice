@@ -28,6 +28,10 @@ public data class PerfRowsWindow(
      *  files keep was read whole. Absence is not an error; a permission or I/O failure is, and the
      *  summary carries it instead of presenting a broken instrument as short retention. */
     val readError: String? = null,
+    /** Lines parsed and rejected (not JSON, no top-level unquoted ts): tolerated one by one, but a
+     *  generation that yields ONLY such lines is a broken file, not an idle head, and the summary
+     *  says so instead of "no rows recorded yet" (review 2026-09-14). */
+    val skipped: Int = 0,
 )
 
 /** The rows recorded at or after [sinceMs] with the evidence the summary needs about them. */

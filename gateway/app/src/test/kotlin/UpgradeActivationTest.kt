@@ -85,4 +85,24 @@ class UpgradeActivationTest {
         assertTrue(refused.reason.contains("current"), "names the pointer it could not put back: ${refused.reason}")
         assertFalse(refused.reason.contains("restored"), refused.reason)
     }
+
+    @Test
+    fun `an activation that began without a live shim removes the one it wrote when it fails`(@TempDir home: Path) {
+        val layout = layout(home)
+        Files.delete(layout.liveShim)
+        var liveFailed = false
+        val failLive = LinkPointer { link, targetPath ->
+            if (link == layout.liveJar && !liveFailed) {
+                liveFailed = true
+                throw IOException("disk full")
+            }
+            layout.point(link, targetPath)
+        }
+        val refused = assertThrows<UpgradeRefused> {
+            UpgradeActivation(layout, wrapper(), failLive).activate("9.9.9", "0.3.2")
+        }
+        assertTrue(refused.reason.contains("0.3.2 restored"), refused.reason)
+        assertFalse(Files.exists(layout.liveShim), "no shim before, no shim after: the new release's is not kept")
+        assertEquals("0.3.2", target(layout.current))
+    }
 }

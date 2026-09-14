@@ -220,4 +220,32 @@ class LocalRuntimeProbeTest {
         assertFalse(p.streams || p.toolCalls, p.detail)
         assertFalse(LocalRuntimeProbe("http://localhost:1/v1", http(emptyMap())).live("m").streams)
     }
+
+    @Test
+    fun `a tool call is proven by shape, and a non-200 reply shows its status class, never its body`() {
+        val lying = "data: {\"error\":{\"message\":\"tool_calls are not supported; ping ignored\"}}\n\ndata: [DONE]\n"
+        val error = LocalRuntimeProbe("http://localhost:1/v1", http(mapOf("POST /v1/chat/completions" to lying)))
+            .live("m")
+        assertTrue(error.streams, error.detail)
+        assertFalse(error.toolCalls, "an error chunk naming tool_calls and ping is not a call: " + error.detail)
+        val other = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"name\":\"pong\"}}]}}]}\n"
+        assertFalse(
+            LocalRuntimeProbe("http://localhost:1/v1", http(mapOf("POST /v1/chat/completions" to other))).live("m")
+                .toolCalls,
+            "a call to another tool is not the requested call",
+        )
+        val plain = """{"choices":[{"message":{"tool_calls":[{"function":{"name":"ping","arguments":"{}"}}]}}]}"""
+        val unstreamed = LocalRuntimeProbe("http://localhost:1/v1", http(mapOf("POST /v1/chat/completions" to plain)))
+            .live("m")
+        assertTrue(unstreamed.toolCalls && !unstreamed.streams, unstreamed.detail)
+        val secret = "Authorization: Bearer sk-live-SECRET /home/marcos/private \u001b[31m"
+        val refused = LocalRuntimeProbe(
+            "http://localhost:1/v1",
+            LocalHttp { _, _, _ -> LocalHttpReply(401, """{"error":"$secret"}""") },
+        ).live("m")
+        assertFalse(refused.streams || refused.toolCalls)
+        assertTrue(refused.detail.startsWith("HTTP 401 (credential refused"), refused.detail)
+        assertFalse(refused.detail.contains("SECRET") || refused.detail.contains("private"), refused.detail)
+        assertFalse(refused.detail.contains("\u001b"), refused.detail)
+    }
 }

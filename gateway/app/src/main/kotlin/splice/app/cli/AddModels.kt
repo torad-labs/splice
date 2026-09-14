@@ -6,6 +6,7 @@ package splice.app.cli
 
 private const val DEFAULT_WINDOW = 128_000L
 private const val MAX_PROMPTED_MODELS = 8
+private const val WINDOW_ATTEMPTS = 3
 
 /** A TOML value `splice add` will write bare: no quote, no backslash, no control character. */
 internal val addValuePattern = Regex("[^\"\\\\\\p{Cntrl}]+")
@@ -39,9 +40,21 @@ internal class AddModelRows(private val prompt: AddPrompter) {
         while (typed.size < MAX_PROMPTED_MODELS) {
             val id = prompt("model id (blank when done):", "")
             if (id.isEmpty()) break
-            val window = prompt("context window for $id:", DEFAULT_WINDOW.toString()).toLongOrNull()
-            typed += AddModel(id, id, window ?: DEFAULT_WINDOW)
+            typed += AddModel(id, id, window(id))
         }
         return typed
+    }
+
+    /** A blank answer takes the default (the prompter returns it); "32k", a decimal or a number past
+     *  Long is asked again, never silently 128000 — the endpoint's model list does not validate a
+     *  window, so a wrong one would be saved (review 2026-09-14). Three misses refuse the add. */
+    private fun window(id: String): Long {
+        repeat(WINDOW_ATTEMPTS) {
+            val answer = prompt("context window for $id:", DEFAULT_WINDOW.toString())
+            val window = answer.toLongOrNull()
+            if (window != null && window > 0) return window
+            println("  context window for $id must be a positive integer (tokens), not '$answer'")
+        }
+        throw AddRefused("context window for $id must be a positive integer (tokens)")
     }
 }

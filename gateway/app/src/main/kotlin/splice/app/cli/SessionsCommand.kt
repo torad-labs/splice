@@ -45,13 +45,15 @@ internal class SessionsCommand {
         val home = Paths.get(System.getProperty("user.home")).toString()
         println("${BOLD}splice sessions$RESET $DIM— Claude Code sessions registered in ~/.claude/sessions$RESET")
         println()
-        val rows = registry.read()
-        if (rows.isEmpty()) println("  $DIM–  no registered sessions$RESET")
+        val listing = registry.list()
+        val rows = listing.sessions
+        listing.error?.let { println("  $RED✗$RESET the registry could not be listed: ${clean(it)}") }
+        if (rows.isEmpty() && listing.error == null) println("  $DIM–  no registered sessions$RESET")
         rows.forEach { s -> printRow(s, home, now()) }
         println()
         println("  ${DIM}gone = the process exited · stale = alive, no registry update for 30 min · $RESET")
         println("  ${DIM}headless `claude -p` runs never register here$RESET")
-        return true
+        return listing.error == null
     }
 
     private fun printRow(s: SessionRecord, home: String, now: Long) {

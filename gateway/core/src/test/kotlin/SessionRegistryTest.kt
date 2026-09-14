@@ -1,5 +1,6 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.sessions.PidIdentity
@@ -139,5 +140,16 @@ class SessionRegistryTest {
         val rows = registry(dir, alive = setOf(31L, 32L)).read()
         assertEquals(listOf(32L, 31L), rows.map { it.pid })
         assertEquals("uds:/run/user/1000/cc-socks/31.sock", rows[1].address)
+    }
+
+    @Test
+    fun `a directory that cannot be listed is an error, a missing one is genuinely no sessions`(@TempDir dir: Path) {
+        val file = Files.writeString(dir.resolve("sessions"), "not a directory")
+        val blocked = registry(file, alive = emptySet()).list()
+        assertTrue(blocked.sessions.isEmpty())
+        assertTrue(checkNotNull(blocked.error).contains("sessions"), "names the directory: ${blocked.error}")
+        val absent = registry(dir.resolve("never"), alive = emptySet()).list()
+        assertTrue(absent.sessions.isEmpty())
+        assertNull(absent.error, "absence is quiet")
     }
 }

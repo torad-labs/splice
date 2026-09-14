@@ -11,6 +11,8 @@ import splice.dialect.chat.LocalHttp
 import splice.dialect.chat.LocalHttpReply
 import java.nio.file.Path
 
+private const val PING_CALL = "{\"function\":{\"name\":\"ping\"}}"
+
 class DoctorLocalRuntimeTest {
 
     private val toml = """
@@ -42,7 +44,7 @@ class DoctorLocalRuntimeTest {
             url.endsWith("/api/show") && method == "POST" ->
                 LocalHttpReply(200, """{"model_info":{"qwen3.context_length":40960}}""")
             url.endsWith("/chat/completions") ->
-                LocalHttpReply(200, "data: {\"tool_calls\":[{\"function\":{\"name\":\"ping\"}}]}\n")
+                LocalHttpReply(200, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[$PING_CALL]}}]}\n")
             else -> null
         }
     }

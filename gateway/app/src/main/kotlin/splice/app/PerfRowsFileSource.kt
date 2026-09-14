@@ -95,6 +95,7 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
     private inner class Scan(private val sinceMs: Long) {
         val rows = ArrayList<PerfRow>()
         val errors = ArrayList<String>()
+        private var skipped = 0
 
         /** The minimum valid top-level timestamp seen (physical order is not a retention premise). */
         private var oldest: Long? = null
@@ -111,8 +112,12 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
                 if (dropsField.containsMatchIn(line)) candidate(Baseline(raw = line))
                 return
             }
-            val obj = parse(line) ?: return
-            val ts = timestamp(obj) ?: return
+            val obj = parse(line)
+            val ts = obj?.let(::timestamp)
+            if (obj == null || ts == null) {
+                skipped += 1
+                return
+            }
             oldest = minOf(oldest ?: ts, ts)
             if (ts >= sinceMs) rows += row(ts, obj) else drops(obj)?.let { candidate(Baseline(drops = it)) }
         }
@@ -140,6 +145,7 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
             oldestHeldTs = oldest,
             dropsBefore = before.asReversed().firstNotNullOfOrNull { it.drops ?: it.raw?.let(::parse)?.let(::drops) },
             readError = (errors + listOfNotNull(rotated)).takeIf { it.isNotEmpty() }?.joinToString("; "),
+            skipped = skipped,
         )
 
         private fun parse(line: String): JsonObject? =

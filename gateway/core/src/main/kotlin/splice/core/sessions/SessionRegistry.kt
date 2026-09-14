@@ -12,8 +12,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 private const val DEFAULT_STALE_MS = 30L * 60L * 1000L
@@ -23,6 +25,11 @@ private const val DEFAULT_STALE_MS = 30L * 60L * 1000L
 private const val MAX_RECORD_BYTES = 64L shl 10
 
 public enum class SessionAvailability { LIVE, STALE, GONE }
+
+/** Every readable registration, and why the directory could not be enumerated when it could not:
+ *  a missing directory is genuinely no sessions, a permission failure or a file in its place is
+ *  not, and both callers say which (review 2026-09-14). */
+public data class SessionListing(val sessions: List<SessionRecord>, val error: String? = null)
 
 public data class SessionRecord(
     val pid: Long?,
@@ -78,11 +85,16 @@ public class SessionRegistry(
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Every readable registration, newest activity first. */
-    public fun read(): List<SessionRecord> = entries().mapNotNull(::record).sortedByDescending { it.updatedAt ?: 0L }
+    public fun read(): List<SessionRecord> = list().sessions
 
-    private fun entries(): List<Path> = Cancellables
-        .runCatchingCancellable { Files.newDirectoryStream(sessionsDir, "*.json").use { it.toList() } }
-        .getOrDefault(emptyList())
+    /** [read] plus the enumeration failure, when the directory exists but could not be listed. */
+    public fun list(): SessionListing {
+        val entries = Cancellables
+            .runCatchingCancellable { Files.newDirectoryStream(sessionsDir, "*.json").use { it.toList() } }
+        val error = entries.exceptionOrNull()?.takeUnless { it is NoSuchFileException }
+        val records = entries.getOrDefault(emptyList()).mapNotNull(::record).sortedByDescending { it.updatedAt ?: 0L }
+        return SessionListing(records, error?.let { "$sessionsDir: ${SafeFailureText.render(it)}" })
+    }
 
     private fun record(file: Path): SessionRecord? {
         val obj = Cancellables

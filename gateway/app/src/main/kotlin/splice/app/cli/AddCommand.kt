@@ -9,6 +9,7 @@ package splice.app.cli
 import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
@@ -62,14 +63,18 @@ internal class AddCommand(
     /** The only write: a sibling temp file, then ONE rename — the previous file is intact until then.
      *  The candidate was built from [AddCandidate.existing]; a sign-in and the checks ran since, so the
      *  file is read again first and a change in between (an editor, a second `splice add`) refuses the
-     *  write instead of being overwritten by a rename. */
+     *  write instead of being overwritten by a rename. A file that cannot be read again (deleted,
+     *  replaced by something unreadable) is refused the same way: the candidate was built from a file
+     *  that existed, so a rename that recreated it would write stale content (review 2026-09-14). */
     private fun save(c: AddCandidate): Boolean {
         // Normalized the way the candidate's `existing` was (one trailing newline), or a config saved
         // without one would be "changed" on every run and never written (review 2026-09-14).
-        val current = Cancellables.runCatchingCancellable { Files.readString(c.path) }.getOrNull()
-            ?.let { it.trimEnd('\n') + "\n" }
-        if (current != null && current != c.existing) {
-            println("  $RED✗$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} changed while this add was running — rerun")
+        val stale = Cancellables.runCatchingCancellable { Files.readString(c.path).trimEnd('\n') + "\n" }.fold(
+            onSuccess = { if (it == c.existing) null else "changed while this add was running — rerun" },
+            onFailure = { "could not be read again (${SafeFailureText.render(it)}) — nothing written" },
+        )
+        if (stale != null) {
+            println("  $RED✗$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} $stale")
             return false
         }
         val tmp = c.path.resolveSibling(c.path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")

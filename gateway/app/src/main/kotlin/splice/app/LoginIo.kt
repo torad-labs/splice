@@ -140,16 +140,17 @@ internal class LoginIo {
 
     /** THE RECEIPT (2026-08-01). /login runs detached, so stdout is lost; one line on disk is
      *  the only channel the head's /login hook can read back. Written for both outcomes. */
-    internal fun writeLoginOutcome(headKey: String, ok: Boolean) {
-        LoginOutcomeFile.write(
-            StatePaths().stateDir,
-            headKey,
-            if (ok) {
-                "signed in — this session is using the new credentials."
-            } else {
-                "sign-in did not complete. Run `$headKey login` in a terminal to see why."
-            },
-        )
+    internal fun writeLoginOutcome(headKey: String, ok: Boolean, label: String? = null) {
+        LoginOutcomeFile.write(StatePaths().stateDir, headKey, outcomeText(headKey, ok, label))
+    }
+
+    /** A labeled account is discovered when the head is assembled (ManagedHeadFactory), so it is on
+     *  disk now and in the pool after the next restart: the receipt says that, never "using". */
+    internal fun outcomeText(headKey: String, ok: Boolean, label: String?): String = when {
+        ok && label != null ->
+            "signed in as '$label' — saved beside the primary; it joins this head's pool after `splice restart`."
+        ok -> "signed in — this session is using the new credentials."
+        else -> "sign-in did not complete. Run `$headKey login` in a terminal to see why."
     }
 
     // Masked read into ~/.config/splice/keys.toml — the key never hits shell history, ps, or a

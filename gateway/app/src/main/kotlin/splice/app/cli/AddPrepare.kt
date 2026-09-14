@@ -109,6 +109,7 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
             profile.baseUrl.isNullOrEmpty() -> "--base-url is required for '${profile.name}'"
             profile.models.isEmpty() -> "no models: pass --model <id>:<context_window> (repeatable)"
             quoted -> "model ids must not contain quotes"
+            profile.models.any { it.contextWindow <= 0 } -> "context windows must be positive: --model ID:WINDOW"
             !VALUE_RE.matches(profile.baseUrl) || !VALUE_RE.matches(profile.command) -> "values must not contain quotes"
             else -> null
         }
@@ -117,8 +118,11 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
     /** `--model id:window` rows, else the profile's own, else what the operator types in (TTY only). */
     private fun models(args: AddArgs, profile: AddProfile): List<AddModel> {
         val given = args.models.map { spec ->
-            val id = spec.substringBefore(':')
-            AddModel(id, id, spec.substringAfter(':', "").toLongOrNull() ?: DEFAULT_WINDOW)
+            // A model id may itself carry colons (ollama: qwen3:4b), so the window is the LAST segment
+            // and only when it is a number; a non-positive number is refused below, never defaulted.
+            val window = spec.substringAfterLast(':', "").toLongOrNull()
+            val id = if (window == null) spec else spec.substringBeforeLast(':')
+            AddModel(id, id, window ?: DEFAULT_WINDOW)
         }
         if (given.isNotEmpty() || profile.models.isNotEmpty()) return given.ifEmpty { profile.models }
         val typed = mutableListOf<AddModel>()

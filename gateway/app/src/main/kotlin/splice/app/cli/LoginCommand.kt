@@ -40,7 +40,7 @@ internal class LoginCommand {
         }
         val ok = runLoginFlow(headKey, provider, topology, label)
         if (!ok) println("splice: login for '$headKey' did not complete.")
-        loginIo.writeLoginOutcome(headKey, ok)
+        loginIo.writeLoginOutcome(headKey, ok, label)
         return ok
     }
 

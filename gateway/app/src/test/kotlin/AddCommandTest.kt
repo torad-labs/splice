@@ -19,6 +19,7 @@ import java.nio.file.Path
 
 private const val HOUR_MS = 3_600_000L
 private const val TOKENS = """{"tokens":{"access_token":"a","refresh_token":"r"}}"""
+private const val EDIT = "\n# edited meanwhile\n"
 
 class AddCommandTest {
 
@@ -40,13 +41,20 @@ class AddCommandTest {
         routes["$method $url"]?.let { AddHttpReply(200, it) }
     }
 
-    private fun command(http: AddHttp, login: Boolean = true, daemonUp: Boolean = false) = AddCommand(
+    private fun command(
+        http: AddHttp,
+        login: Boolean = true,
+        daemonUp: Boolean = false,
+        restartOk: Boolean = true,
+        editConfigDuringLogin: Boolean = false,
+    ) = AddCommand(
         checks = AddChecks(http),
         login = { key, provider, _ ->
             if (login) {
                 Files.writeString(authFile(provider.auth.kind), TOKENS)
                 installed += "login:$key"
             }
+            if (editConfigDuringLogin) Files.writeString(config(), Files.readString(config()) + EDIT)
             login
         },
         install = { key, _ ->
@@ -55,7 +63,7 @@ class AddCommandTest {
         },
         restart = {
             restarted += 1
-            true
+            restartOk
         },
         daemonUp = { daemonUp },
         prompt = { _, default -> default },
@@ -156,6 +164,37 @@ class AddCommandTest {
         assertEquals("gpt-5.6-sol", topology.heads.getValue("codex").pinnedModel)
         assertEquals(listOf("login:codex", "codex"), installed)
         assertEquals(1, restarted, "the daemon was up and --yes accepted the restart")
+    }
+
+    @Test
+    fun `a config edited while the sign-in ran is not overwritten, and a failed restart is not a success`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
+        val racing = command(http(routes), daemonUp = true, editConfigDuringLogin = true)
+        assertFalse(runBlocking { racing.add(listOf("codex", "--yes"), env) }, "the write is refused")
+        assertEquals(before + EDIT, Files.readString(config()), "the edit survives, not the add")
+        Files.writeString(config(), before)
+        val failing = command(http(routes), daemonUp = true, restartOk = false)
+        assertFalse(runBlocking { failing.add(listOf("codex", "--yes"), env) }, "asked-for restart failed")
+        assertTrue(Files.readString(config()).contains("[heads.codex]"), "but the head is saved for splice restart")
+    }
+
+    @Test
+    fun `a model id may carry colons and the window is the last segment, a non-positive window is refused`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val routes = fwRoutes + ("GET http://localhost:1/v1/models" to """{"data":[{"id":"qwen3:4b"},{"id":"m"}]}""")
+        val base = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1", "--yes")
+        assertFalse(runBlocking { command(http(routes)).add(base + "--model" + "m:0", env) })
+        assertFalse(runBlocking { command(http(routes)).add(base + "--model" + "m:-1", env) })
+        assertEquals(before, Files.readString(config()), "nothing written for a non-positive window")
+        val two = base + "--model" + "qwen3:4b:32768" + "--model" + "qwen3:4b"
+        assertTrue(runBlocking { command(http(routes)).add(two, env) })
+        val models = TopologyLoader.parse(Files.readString(config())).providers.getValue("fw").models
+        assertEquals(listOf("qwen3:4b" to 32_768L, "qwen3:4b" to 128_000L), models.map { it.id to it.contextWindow })
     }
 
     @Test

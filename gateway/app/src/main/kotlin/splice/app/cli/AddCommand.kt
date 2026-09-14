@@ -30,14 +30,9 @@ internal class AddCommand(
         val candidate = prepare.candidate(parsed, env) ?: return false
         val title = "${BOLD}splice add ${candidate.args.profile}$RESET"
         println("$title $DIM— '${candidate.key}' as $CYAN${candidate.command}$RESET")
-        val ok = authenticate(candidate, env) && verified(candidate, env)
-        if (ok) {
-            save(candidate)
-            finish(candidate, env)
-        } else {
-            println("${YELLOW}nothing written$RESET — ${candidate.path} is unchanged")
-        }
-        return ok
+        val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
+        if (!ok) println("${YELLOW}nothing written$RESET — ${candidate.path} is unchanged")
+        return ok && finish(candidate, env)
     }
 
     private suspend fun authenticate(c: AddCandidate, env: EnvReader): Boolean = when {
@@ -64,15 +59,27 @@ internal class AddCommand(
         return results.all { it.ok }
     }
 
-    /** The only write: a sibling temp file, then ONE rename — the previous file is intact until then. */
-    private fun save(c: AddCandidate) {
+    /** The only write: a sibling temp file, then ONE rename — the previous file is intact until then.
+     *  The candidate was built from [AddCandidate.existing]; a sign-in and the checks ran since, so the
+     *  file is read again first and a change in between (an editor, a second `splice add`) refuses the
+     *  write instead of being overwritten by a rename. */
+    private fun save(c: AddCandidate): Boolean {
+        val current = Cancellables.runCatchingCancellable { Files.readString(c.path) }.getOrNull()
+        if (current != null && current != c.existing) {
+            println("  $RED✗$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} changed while this add was running — rerun")
+            return false
+        }
         val tmp = c.path.resolveSibling(c.path.fileName.toString() + ".add-${ProcessHandle.current().pid()}.tmp")
         Files.writeString(tmp, c.existing + c.appended)
         Files.move(tmp, c.path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         println("  $GREEN✓$RESET ${"saved".padEnd(ADD_PAD)} ${c.path} (+[providers.${c.key}], +[heads.${c.key}])")
+        return true
     }
 
-    private fun finish(c: AddCandidate, env: EnvReader) {
+    /** True when the head is reachable as printed: not running (comes up on first launch), restarted,
+     *  or deliberately left for `splice restart`. A restart that was asked for and failed is false, and
+     *  the footer says what to run instead of a Launch line that would not work yet. */
+    private fun finish(c: AddCandidate, env: EnvReader): Boolean {
         val linked = Cancellables.runCatchingCancellable { install(c.key, env) }.getOrDefault(false)
         if (!linked) {
             val fix = "${CYAN}splice install ${c.key}$RESET"
@@ -80,14 +87,20 @@ internal class AddCommand(
         }
         val port = AdminSupport.controlPort(c.topology, env)
         val daemonLabel = "daemon".padEnd(ADD_PAD)
-        when {
-            !daemonUp(port) -> println("  $daemonLabel not running — '${c.key}' comes up on first launch")
+        val activated = when {
+            !daemonUp(port) -> true.also { println("  $daemonLabel not running — '${c.key}' comes up on first launch") }
             c.args.yes || confirm("Restart the daemon so '${c.key}' comes up now?", default = true) -> restart()
-            else -> println("  $daemonLabel restart later with: ${CYAN}splice restart$RESET")
+            else -> true.also { println("  $daemonLabel restart later with: ${CYAN}splice restart$RESET") }
         }
         println()
-        println("  Launch      $CYAN${c.command}$RESET")
+        if (activated) {
+            println("  Launch      $CYAN${c.command}$RESET")
+        } else {
+            val then = "run ${CYAN}splice restart$RESET, then $CYAN${c.command}$RESET"
+            println("  $RED✗$RESET $daemonLabel restart failed — the head is saved; $then")
+        }
         println("  Checkup     ${CYAN}splice doctor$RESET $DIM— anything wrong prints its fix$RESET")
+        return activated
     }
 
     private fun confirm(question: String, default: Boolean): Boolean =

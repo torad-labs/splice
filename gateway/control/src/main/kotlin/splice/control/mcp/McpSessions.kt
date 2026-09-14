@@ -5,7 +5,6 @@ package splice.control.mcp
 
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.util.UUID
@@ -14,10 +13,28 @@ import java.util.concurrent.atomic.AtomicInteger
 
 private const val STREAM_BUFFER = 256
 
+/** What a client that fell [STREAM_BUFFER] notifications behind must not miss: that the lists it
+ *  caches may have changed. The dropped backlog is replaced by these, so a `tools/list_changed`
+ *  that was queued is never lost silently — the client re-lists once it catches up. */
+private val LIST_INVALIDATIONS = listOf("tools", "prompts", "resources").map { kind ->
+    """{"jsonrpc":"2.0","method":"notifications/$kind/list_changed"}"""
+}
+
 /** One client session on one hosted server; the stream channel carries the child's notifications. */
 internal class McpSession(val id: String, val server: String, val initResult: JsonObject) {
-    val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.DROP_OLDEST)
+    val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.SUSPEND)
     val openStreams = AtomicInteger()
+
+    /** Queue a notification; when the client is a full buffer behind, the stale backlog collapses to
+     *  the list invalidations plus this one instead of silently dropping the oldest. */
+    fun offer(text: String) {
+        if (stream.trySend(text).isSuccess) return
+        while (stream.tryReceive().isSuccess) {
+            // the backlog is stale: whatever it said, the invalidations below cover it
+        }
+        LIST_INVALIDATIONS.forEach { stream.trySend(it) }
+        stream.trySend(text)
+    }
 
     /** The version the child negotiated at this session's initialize; later requests must name it. The
      *  child's answer, verbatim: the server picks the protocol version (MCP: a client that cannot
@@ -71,7 +88,7 @@ internal class McpSessions(private val clock: HostClock) {
     }
 
     fun fanOut(server: String, text: String) {
-        forServer(server).forEach { it.stream.trySendBlocking(text) }
+        forServer(server).forEach { it.offer(text) }
     }
 
     /** Busy = some session streams, or some session spoke within [idleMillis]. */

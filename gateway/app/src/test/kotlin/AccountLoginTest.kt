@@ -27,6 +27,15 @@ class AccountLoginTest {
     lateinit var dir: Path
 
     @Test
+    fun `the labeled login receipt says saved-for-restart, never using`() {
+        val labeled = LoginIo().outcomeText("claudex", ok = true, label = "work")
+        assertTrue(labeled.contains("signed in as 'work'") && labeled.contains("splice restart"), labeled)
+        assertFalse(labeled.contains("using"), "the labeled account is not what this session uses: $labeled")
+        assertTrue(LoginIo().outcomeText("claudex", ok = true, label = null).contains("using the new credentials"))
+        assertTrue(LoginIo().outcomeText("claudex", ok = false, label = "work").contains("claudex login"))
+    }
+
+    @Test
     fun `first login keeps the provider native legacy primary`() {
         val primary = dir.resolve("grok.json")
         val account = OAuthAccountFiles().loginAccount(AuthKind.GrokOAuth, primary, requestedLabel = null)

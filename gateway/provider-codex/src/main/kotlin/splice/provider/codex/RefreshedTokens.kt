@@ -33,5 +33,13 @@ public class CodexQuirks {
         // would send x-openai-internal-codex-responses-lite to every openai-responses endpoint.
         responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
         responsesLiteHeader = "x-openai-internal-codex-responses-lite",
+        // Codex Spark drops reasoning.summary (openai/codex#31846). Byte-identical to the old
+        // dialect default; only this profile carries it.
+        summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),
+        // gpt-5.4-mini's ceiling is xhigh — the ChatGPT backend 400s effort=max (observed
+        // 2026-07-19). Bare substring mini is a quality residual, not a leak: an operator who
+        // repoints this head's base_url at another backend inherits the clamp. Byte-identity
+        // keeps the pattern; anchoring it would stop clamping non gpt-prefixed mini ids.
+        effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
     )
 }

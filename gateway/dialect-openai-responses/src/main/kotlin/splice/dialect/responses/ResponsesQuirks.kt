@@ -13,9 +13,13 @@ public data class ResponsesQuirks(
     val cacheKeyStrategy: CacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
     val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
     val supportsSummary: Boolean = true,
-    val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
-    /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
-    val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
+    /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
+     *  on its own quirks — a dialect default would hide summary on every id that merely
+     *  contains the fragment (V4-29). */
+    val summaryRejectModelRegex: Regex? = null,
+    /** Null omits the clamp. A vendor whose models 400 on effort=max sets the pattern on
+     *  its own quirks — a dialect default of mini matched google/gemini-2.5-pro (V4-29). */
+    val effortMaxRejectModelRegex: Regex? = null,
     /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
      *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
      *  Lite turns (compaction included): instructions ride as a developer input item (top-level field

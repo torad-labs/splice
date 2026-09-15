@@ -163,7 +163,7 @@ public class UpstreamClient(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
             if (state.lastErr != null) retryRules.giveUp(state.lastErr)
-            throw UpstreamFailed(TURN_WAIT_EXHAUSTED_BODY)
+            throw UpstreamTurnWaitExhausted()
         }
         activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
         val creds = ctx.requireAuth()
@@ -328,8 +328,6 @@ public class UpstreamClient(
             state.refreshedOnce,
             RateLimitTurn(
                 cooldown = activeCooldown(ctx),
-                remainingBudgetMs = remainingBudgetMs(ctx, t0),
-                backoffCeilingMs = retryBackoffCeilingMs(state.attempt),
                 pooledAccount = ctx.rateLimitCooldown != null,
             ),
         )
@@ -355,4 +353,3 @@ private const val DNS_BACKOFF_BASE_MS = 1_000L
 private const val DNS_BACKOFF_MAX_MS = 4_000L
 private const val RETRY_BACKOFF_JITTER_NUMERATOR = 11L
 private const val RETRY_BACKOFF_JITTER_DENOMINATOR = 10L
-private const val TURN_WAIT_EXHAUSTED_BODY = "{\"detail\":\"Upstream turn wait budget exhausted\"}"

@@ -1,16 +1,19 @@
 // PORT-OF: splice/spi/UpstreamClient.kt (UpstreamAuthMissing, StreamTornBeforeClient, UpstreamFailed) @ 3879c4c — invariants unchanged: same package, so every `import splice.spi.UpstreamFailed` in the tree resolves untouched.
 //
-// The upstream call's THROWN vocabulary — the three exceptions the retry loop, the cooldown and
-// the turn driver end a turn with.
+// The upstream call's THROWN vocabulary — transport, authentication, HTTP failure and local
+// whole-turn exhaustion signals shared by the retry loop and the turn driver.
 //
 // Here rather than beside the loop because after the HD-25 split no single file owns them any
 // more: [UpstreamFailed] is thrown by RetryPolicy.kt's give-up AND by RateLimitCooldown.kt's
 // fail-fast, [StreamTornBeforeClient] is thrown by WsRoundRunner.kt and by :gateway's turn driver,
-// and only [UpstreamAuthMissing] is still raised by UpstreamClient.kt itself. Same package, so
-// every existing `import splice.spi.UpstreamFailed` resolves unchanged.
+// while [UpstreamAuthMissing] and [UpstreamTurnWaitExhausted] are raised by UpstreamClient.kt itself.
+// Same package, so every existing `import splice.spi.UpstreamFailed` resolves unchanged.
 package splice.spi
 
 public class UpstreamAuthMissing : RuntimeException("no upstream credentials")
+
+/** The whole-turn cap expired before a request; no upstream HTTP response exists to classify. */
+public class UpstreamTurnWaitExhausted : RuntimeException("upstream turn wait budget exhausted")
 
 /** G5 reachability (review 2026-07-19): a transport tear BEFORE any client frame, rethrown by the
  *  turn driver THROUGH the translators (whose catch lists deliberately swallow IOException into

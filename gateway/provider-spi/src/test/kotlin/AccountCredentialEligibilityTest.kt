@@ -1,3 +1,4 @@
+// NEW: V4-10 timed credential recovery, evidence reconciliation, and stale-callback ownership.
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

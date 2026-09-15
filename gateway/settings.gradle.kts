@@ -25,6 +25,7 @@ include(
     ":provider-codex",
     ":provider-grok",
     ":provider-kimi",
+    ":provider-muse",
     ":provider-openai",
     ":gateway",
     ":control",

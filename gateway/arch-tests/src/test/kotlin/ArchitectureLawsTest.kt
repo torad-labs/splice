@@ -18,7 +18,7 @@ import java.io.File
 private val PORT_SCOPE_MODULES = listOf(
     "core", "provider-spi", "dialect-openai-responses", "dialect-openai-chat",
     "dialect-anthropic-passthrough", "provider-codex", "provider-grok", "provider-openai",
-    "provider-kimi", "gateway", "control", "app", "fir-checks",
+    "provider-kimi", "provider-muse", "gateway", "control", "app", "fir-checks",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
@@ -121,6 +121,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":provider-codex" to ADAPTER_BASE + ":dialect-openai-responses",
     ":provider-grok" to ADAPTER_BASE + ":dialect-openai-responses",
     ":provider-kimi" to ADAPTER_BASE + ":dialect-anthropic-passthrough",
+    ":provider-muse" to ADAPTER_BASE + ":dialect-anthropic-passthrough",
     ":provider-openai" to ADAPTER_BASE + setOf(":dialect-openai-responses", ":dialect-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":gateway" to ADAPTER_BASE + DIALECTS,

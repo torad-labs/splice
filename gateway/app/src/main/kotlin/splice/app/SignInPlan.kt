@@ -9,6 +9,7 @@ import splice.app.provider.CHATGPT_OAUTH
 import splice.app.provider.CLIENT
 import splice.app.provider.GROK_OAUTH
 import splice.app.provider.KIMI_OAUTH
+import splice.app.provider.MUSE_OAUTH
 import splice.core.launch.TokenCaptureSpec
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -49,6 +50,7 @@ internal class SignInPlanner {
             CHATGPT_OAUTH -> oauthSignIn(wrapper, "Codex (ChatGPT)")
             GROK_OAUTH -> oauthSignIn(wrapper, "Grok (xAI)")
             KIMI_OAUTH -> oauthSignIn(wrapper, "Kimi (Moonshot)")
+            MUSE_OAUTH -> oauthSignIn(wrapper, "Muse (Meta)")
             API_KEY -> apiKeySignIn(providerCfg, head, command, key)
             // A client-auth head has NO splice-run sign-in, and the command must be EMPTY — not a
             // plausible-looking one. A non-blank command makes LoginInterception.wire plant splice's

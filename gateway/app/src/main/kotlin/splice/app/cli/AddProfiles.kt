@@ -10,6 +10,7 @@ private const val WINDOW_262K = 262_144L
 private const val WINDOW_272K = 272_000L
 private const val WINDOW_400K = 400_000L
 private const val WINDOW_500K = 500_000L
+private const val WINDOW_1M = 1_000_000L
 
 /** One model row; [slot] is the Claude model slot a passthrough head maps it to (fable/opus/...). */
 internal data class AddModel(val id: String, val label: String, val contextWindow: Long, val slot: String? = null)
@@ -71,6 +72,19 @@ internal class AddProfiles {
             models = listOf(
                 AddModel("k3-256k", "Kimi K3 256k", WINDOW_262K),
                 AddModel("kimi-for-coding", "Kimi for Coding", WINDOW_262K),
+            ),
+        ),
+        AddProfile(
+            name = "muse",
+            summary = "Meta Muse subscription over the Anthropic wire (device sign-in)",
+            dialect = "anthropic-passthrough",
+            authKind = "muse-oauth",
+            baseUrl = "https://api.meta.ai",
+            headKey = "muse",
+            command = "claude-muse",
+            models = listOf(
+                AddModel("muse-spark-1.3[1m]", "Muse Spark 1.3", WINDOW_1M),
+                AddModel("muse-spark-1.2[1m]", "Muse Spark 1.2", WINDOW_1M),
             ),
         ),
         AddProfile(

@@ -4,7 +4,7 @@
 # zero-config OpenRouter API-key starter instead. Adding a provider/head requires a daemon restart.
 #
 # The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
-# or Kimi subscription. They are unofficial: they reuse each vendor CLI's public OAuth client
+# Kimi, or Muse subscription. They are unofficial: they reuse each vendor CLI's public OAuth client
 # identity, which no vendor documents for third parties. Use them at your own risk.
 # A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
 
@@ -292,6 +292,30 @@ id = "kimi-for-coding-highspeed"
 label = "Kimi K2.7 Code (highspeed)"
 context_window = 262144
 
+# ── EXPERIMENTAL OPT-IN: Muse device-flow OAuth (minted subscription key) ───────
+# api.meta.ai speaks the Anthropic Messages wire. Browser device login:
+# `claude-muse login` (RFC 8628 — enter a code, no loopback redirect). The account
+# token is not an inference credential; login mints the subscription key into the
+# splice auth file. No extra_headers: MusePassthroughArm sends Authorization and
+# splice's User-Agent only (live capture 2026-09-15: x-api-version is not required).
+[providers.muse]
+dialect = "anthropic-passthrough"
+base_url = "https://api.meta.ai"
+# EXPERIMENTAL: reuses the Muse Code CLI's public OAuth client identity — NOT a
+# vendor-documented third-party integration. The credential is splice's OWN:
+# ~/.config/splice/auth/muse.json, written by `claude-muse login`. Set
+# file = "~/.config/muse/auth.json" ONLY to share the Muse Code CLI's session.
+auth = { kind = "muse-oauth" }
+[[providers.muse.models]]
+id = "muse-spark-1.3[1m]"
+label = "Muse Spark 1.3"
+# EXACTLY 1e6 — Claude Code hardcodes 1e6 for any id matching /\[1m\]/i.
+context_window = 1000000
+[[providers.muse.models]]
+id = "muse-spark-1.2[1m]"
+label = "Muse Spark 1.2"
+context_window = 1000000
+
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
 # `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
@@ -394,6 +418,17 @@ maxInflight = "8"
 # kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
 # codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
 upstreamTimeoutMs = "2400000"
+
+[heads.claude-muse]
+provider = "muse"
+port = 3105                    # 3103 is fireworks; 3104 is claude-splice
+discovery_prefix = "claude-muse--"
+pinned_model = "muse-spark-1.3[1m]"
+# All four Claude Code slots map to Spark 1.3 so background titling / --model haiku stay served.
+models = [{ id = "muse-spark-1.3[1m]", slot = "opus" }, { id = "muse-spark-1.3[1m]", slot = "sonnet" }, { id = "muse-spark-1.3[1m]", slot = "haiku" }, { id = "muse-spark-1.3[1m]", slot = "fable" }]
+context_window = 1000000
+[heads.claude-muse.claude]
+command = "claude-muse"
 
 # ── Claude on the CLIENT's OWN login (the "no shortcuts" head) ───────────────────
 # The only head whose upstream is Anthropic itself, and the only one where splice holds NO

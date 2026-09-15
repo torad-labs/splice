@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# claude-muse — launches Claude Code against the claude-muse head via the splice daemon.
+# The installed version is an argv[0] symlink to splice-launch; this is the in-repo entry.
+exec env SPLICE_HEAD=claude-muse "$(dirname "$0")/splice-launch" "$@"

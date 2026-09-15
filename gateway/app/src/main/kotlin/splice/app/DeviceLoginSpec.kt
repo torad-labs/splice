@@ -6,6 +6,11 @@ package splice.app
 import splice.app.auth.OAuthLoginAccount
 import java.nio.file.Path
 
+/** Runs after a successful credential write; the default is a no-op so kimi stays unchanged. */
+public fun interface DeviceLoginFinalizer {
+    public suspend operator fun invoke(authPath: Path, account: OAuthLoginAccount?)
+}
+
 /** Everything the device flow needs for one provider's login (built by LoginCommand per head). */
 public data class DeviceLoginSpec(
     val head: String,
@@ -13,9 +18,10 @@ public data class DeviceLoginSpec(
     val deviceAuthUrl: String,
     val tokenUrl: String,
     val authPath: Path,
-    /** X-Msh-* device identity headers sent on both OAuth calls. */
+    /** Extra identity headers on both OAuth calls; LoginIo already sends Accept application/json. */
     val identityHeaders: Map<String, String>,
     /** token-endpoint success body → the auth.json content to persist. */
     val toAuthJson: AuthJsonFromResponse,
     val account: OAuthLoginAccount? = null,
+    val afterPersist: DeviceLoginFinalizer = DeviceLoginFinalizer { _, _ -> },
 )

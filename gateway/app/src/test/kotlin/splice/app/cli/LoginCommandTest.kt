@@ -1,5 +1,11 @@
 package splice.app.cli
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,6 +19,9 @@ import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.provider.muse.MuseMintAttempt
+import splice.provider.muse.MuseMintMode
+import splice.provider.muse.MuseSubscriptionKey
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -44,6 +53,18 @@ class LoginCommandTest {
         val path = LoginCommand().oauthAuthPath(provider)
         assertEquals(Paths.get(TopologyLoader.expandHome("~/.config/splice/auth/grok.json")), path)
         assertFalse(path.endsWith(Paths.get(".grok", "auth.json")))
+    }
+
+    @Test
+    fun `muse oauth login defaults to the splice-owned file, never the Muse Code CLI's`() {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.meta.ai",
+            auth = AuthConfig("muse-oauth"),
+        )
+        val path = LoginCommand().oauthAuthPath(provider)
+        assertEquals(Paths.get(TopologyLoader.expandHome("~/.config/splice/auth/muse.json")), path)
+        assertFalse(path.endsWith(Paths.get("muse", "auth.json")))
     }
 
     @Test
@@ -153,6 +174,88 @@ class LoginCommandTest {
         assertFalse(
             printed.contains("OPENROUTER_API_KEY"),
             "the PROVIDER key must never name the var — that is the DR-97 defect:\n$printed",
+        )
+    }
+
+    @Test
+    fun `muse spec keeps access token and schema and mints after persist`(@TempDir tmp: Path) {
+        val primary = tmp.resolve("muse.json")
+        Files.writeString(primary, "{}")
+        val granted = MuseMintAttempt.Granted(
+            MuseSubscriptionKey(
+                "minted-key-fake",
+                buildJsonObject { put("user_email", JsonPrimitive("ops@example.invalid")) },
+            ),
+        )
+        val muse = LoginMuse { _, mode ->
+            assertEquals(MuseMintMode.ONBOARD, mode)
+            granted
+        }
+        val spec = muse.spec("claude-muse", primary)
+        assertEquals("1031625952748946", spec.clientId)
+        assertTrue(spec.identityHeaders.isEmpty())
+        assertEquals("{}", spec.toAuthJson("{}"))
+        val written = spec.toAuthJson(
+            """{"access_token":"acct-token-fake","token_type":"Bearer","schema":"v1"}""",
+        )
+        assertTrue(written.contains("acct-token-fake"))
+        assertTrue(written.contains("\"schema\""))
+        assertTrue(LoginIo().persistIfSignedIn(primary, written, spec.account))
+        kotlinx.coroutines.runBlocking { spec.afterPersist(primary, spec.account) }
+        val onDisk = Json.parseToJsonElement(Files.readString(primary)).jsonObject
+        assertEquals("acct-token-fake", onDisk.getValue("access_token").jsonPrimitive.content)
+        assertEquals("minted-key-fake", onDisk.getValue("api_key").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `muse failed mint leaves a valid-but-unminted credential`(@TempDir tmp: Path) {
+        val path = tmp.resolve("muse-unminted.json")
+        val spec = LoginMuse { _, _ -> MuseMintAttempt.Denied("no-key") }.spec("claude-muse", path)
+        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
+        val unminted = Json.parseToJsonElement(Files.readString(path)).jsonObject
+        assertEquals("acct-token-fake", unminted.getValue("access_token").jsonPrimitive.content)
+        assertEquals(null, unminted["api_key"])
+    }
+
+    @Test
+    fun `muse labels reserve like kimi`(@TempDir tmp: Path) {
+        val primary = tmp.resolve("muse.json")
+        Files.writeString(primary, "{}")
+        val explicit = LoginMuse().spec("claude-muse", primary, "work")
+        try {
+            val automatic = LoginMuse().spec("claude-muse", primary, "auto")
+            try {
+                assertEquals("work", requireNotNull(explicit.account).resolvedLabel())
+                assertEquals("muse-2", requireNotNull(automatic.account).resolvedLabel())
+            } finally {
+                automatic.account?.releaseReservation()
+            }
+        } finally {
+            explicit.account?.releaseReservation()
+        }
+    }
+
+    @Test
+    fun `example config muse head has no extra headers and uses port 3105`() {
+        var dir = Paths.get("").toAbsolutePath()
+        var toml: String? = null
+        repeat(4) {
+            val candidate = dir.resolve("config").resolve("splice.example.toml")
+            if (toml == null && Files.exists(candidate)) toml = Files.readString(candidate)
+            dir = dir.parent ?: dir
+        }
+        val topology = TopologyLoader.parse(requireNotNull(toml) { "example toml missing" })
+        val head = topology.heads.getValue("claude-muse")
+        val muse = topology.providers.getValue(head.provider)
+        assertEquals("muse-oauth", muse.auth.kind)
+        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, muse.dialect)
+        assertTrue(muse.staticHeaders.isEmpty())
+        assertEquals(3105, head.port)
+        assertEquals("claude-muse--", head.discoveryPrefix)
+        assertEquals(
+            listOf("opus", "sonnet", "haiku", "fable"),
+            head.models.orEmpty().mapNotNull { it.slot },
         )
     }
 }

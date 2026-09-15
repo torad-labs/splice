@@ -8,8 +8,51 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialFileIdentity
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
+import splice.spi.AccountCredentialIdentitySource.CredentialPresence
+import splice.spi.AccountQuotaSource
+import splice.spi.ElapsedNow
+import splice.spi.PoolAccount
+import splice.spi.RateLimitCooldown
+import java.util.concurrent.atomic.AtomicInteger
 
 class AccountCredentialEligibilityTest {
+    @Test
+    fun `one reconciliation requests one combined credential observation`() {
+        val observations = AtomicInteger()
+        val auth = object : RefreshableAuthProvider, AccountCredentialIdentitySource {
+            override suspend fun credentials(): Credentials = Credentials.Bearer("secret", "account")
+            override suspend fun refresh(): Credentials = credentials()
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
+            override fun credentialIdentity(): CredentialFileIdentity? = error("split identity observation used")
+            override fun credentialPresence(): CredentialPresence = error("split presence observation used")
+            override fun credentialEvidence(): CredentialEvidence {
+                observations.incrementAndGet()
+                return CredentialEvidence(
+                    CredentialFileIdentity(1L, 1L),
+                    CredentialPresence.PRESENT,
+                )
+            }
+        }
+        val account = PoolAccount(
+            label = "primary",
+            primary = true,
+            auth = auth,
+            quota = AccountQuotaSource { null },
+            cooldown = RateLimitCooldown(ElapsedNow { 0L }),
+        )
+        observations.set(0)
+
+        account.credentialStatus(1_000_000L)
+
+        assertEquals(1, observations.get())
+    }
+
     @Test
     fun `terminal 401 holds only future selections and reports auth state separately`() {
         val fixture = AccountPoolTest.Fixture()
@@ -128,6 +171,25 @@ class AccountCredentialEligibilityTest {
         pool.select("failed-probe").markCredentialUnavailable()
         view = pool.view(null).accounts.single { it.primary }
         assertEquals(600_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+    }
+
+    @Test
+    fun `unknown evidence preserves a hold until one later replacement observation recovers`() {
+        val fixture = AccountPoolTest.Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val backup = fixture.account("plus-a")
+        val pool = fixture.pool(primary, backup)
+        pool.select("failed").markCredentialUnavailable()
+        fixture.hideCredentialIdentity(primary)
+
+        val held = pool.view(null).accounts.single { it.primary }
+        assertEquals("terminal_401", held.authExclusionReason)
+        assertSame(backup, pool.select("while-unknown").account)
+
+        fixture.rotateCredential(primary)
+
+        assertSame(primary, pool.select("after-replacement").account)
+        assertEquals(null, pool.view(null).accounts.single { it.primary }.authExclusionReason)
     }
 
     @Test

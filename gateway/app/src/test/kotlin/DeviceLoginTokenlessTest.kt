@@ -15,8 +15,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.BrowserOpener
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
+import splice.app.LoginIo
 import splice.app.auth.OAuthLoginAccount
 import splice.app.cli.LoginKimi
 import splice.spi.Waiter
@@ -28,6 +30,16 @@ import java.nio.file.Path
 
 class DeviceLoginTokenlessTest {
 
+    /** Replaces browser process creation entirely; false also exercises the manual-URL fallback. */
+    private class RecordingBrowserOpener : BrowserOpener {
+        val urls = mutableListOf<String>()
+
+        override fun open(url: String): Boolean {
+            urls.add(url)
+            return false
+        }
+    }
+
     /** A loopback device-flow provider: a valid device authorization, then [tokenBody] on poll. */
     private fun serving(tokenBody: String, expiresIn: Long = 30, interval: Long = 0): HttpServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -36,7 +48,7 @@ class DeviceLoginTokenlessTest {
             // thing under test; the injected waiter makes the interval a no-op regardless.
             val body = """
                 {"user_code":"ABCD-EFGH","device_code":"dev-code",
-                 "verification_uri":"http://127.0.0.1/verify","verification_uri_complete":"",
+                 "verification_uri":"http://127.0.0.1:${server.address.port}/verify","verification_uri_complete":"",
                  "expires_in":$expiresIn,"interval":$interval}
             """.trimIndent().toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -74,11 +86,17 @@ class DeviceLoginTokenlessTest {
     ): Pair<Boolean, String> {
         val savedOut = System.out
         val out = ByteArrayOutputStream()
+        val browser = RecordingBrowserOpener()
         return try {
             System.setOut(PrintStream(out, true))
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
-            runBlocking { DeviceLoginFlow.run(specFor(server, authPath, account), waiter = waiter) } to out.toString()
+            val ok = runBlocking {
+                DeviceLoginFlow.run(specFor(server, authPath, account), waiter, LoginIo(browser))
+            }
+            assertEquals(listOf("http://127.0.0.1:${server.address.port}/verify"), browser.urls)
+            assertTrue(out.toString().contains("open the URL above to finish signing in"))
+            ok to out.toString()
         } finally {
             System.setOut(savedOut)
             server.stop(0)
@@ -101,6 +119,7 @@ class DeviceLoginTokenlessTest {
         Files.writeString(primary, "{}")
         val firstAccount = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
         val server = serving("{}")
+        val browser = RecordingBrowserOpener()
         val waiterEntered = CompletableDeferred<Unit>()
         val releaseWaiter = CompletableDeferred<Unit>()
         val running = async(Dispatchers.Default) {
@@ -110,6 +129,7 @@ class DeviceLoginTokenlessTest {
                     waiterEntered.complete(Unit)
                     releaseWaiter.await()
                 },
+                loginIo = LoginIo(browser),
             )
         }
         try {
@@ -123,6 +143,7 @@ class DeviceLoginTokenlessTest {
 
             releaseWaiter.complete(Unit)
             assertFalse(running.await())
+            assertEquals(listOf("http://127.0.0.1:${server.address.port}/verify"), browser.urls)
             val afterAbort = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
             try {
                 assertEquals("kimi-2", afterAbort.resolvedLabel(), "aborting the flow must release its lease")

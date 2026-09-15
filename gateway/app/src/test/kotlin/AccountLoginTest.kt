@@ -1,3 +1,4 @@
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -5,6 +6,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -53,7 +56,7 @@ class AccountLoginTest {
     }
 
     @Test
-    fun `missing credential polling stays quiet while unknown identity failures remain visible`() {
+    fun `credential polling is quiet while auth operations retain missing and unknown diagnostics`() = runTest {
         val paths = listOf(
             dir.resolve("codex-missing.json"),
             dir.resolve("grok-missing.json"),
@@ -70,24 +73,70 @@ class AccountLoginTest {
 
         repeat(3) {
             sources.forEach { source ->
-                assertNull(source.credentialIdentity())
-                assertEquals(CredentialPresence.MISSING, source.credentialPresence())
+                val evidence = source.credentialEvidence()
+                assertNull(evidence.identity)
+                assertEquals(CredentialPresence.MISSING, evidence.presence)
             }
         }
-        val missingLogs = logs.toList()
+        assertTrue(logs.isEmpty(), "missing credential polling logged: $logs")
+        providers.forEach { it.describe() }
+        assertEquals(sources.size, logs.count { it.contains("invalid_grant latch check skipped") })
         logs.clear()
 
         paths.forEachIndexed { index, path ->
             Files.createSymbolicLink(path, dir.resolve("absent-target-$index"))
         }
         sources.forEach { source ->
-            assertNull(source.credentialIdentity())
-            assertEquals(CredentialPresence.UNKNOWN, source.credentialPresence())
+            val evidence = source.credentialEvidence()
+            assertNull(evidence.identity)
+            assertEquals(CredentialPresence.UNKNOWN, evidence.presence)
+        }
+        assertTrue(logs.isEmpty(), "unknown credential polling logged: $logs")
+
+        providers.forEach { it.describe() }
+        assertEquals(sources.size, logs.count { it.contains("invalid_grant latch check skipped") })
+        logs.clear()
+        providers.forEach { assertNull(it.refresh()) }
+        assertEquals(sources.size, logs.count { it.contains("credential file read failed") })
+    }
+
+    @Test
+    fun `symlink target creation and replacement update credential identity without poll logs`() {
+        val paths = listOf(
+            dir.resolve("codex-symlink.json"),
+            dir.resolve("grok-symlink.json"),
+            dir.resolve("kimi-symlink.json"),
+        )
+        val targets = paths.indices.map { index -> dir.resolve("credential-target-$index") }
+        val logs = mutableListOf<String>()
+        val log = LogSink { logs.add(it) }
+        val sources = listOf<AccountCredentialIdentitySource>(
+            CodexAuthProvider(paths[0], 0L, refreshCall = RefreshCall { error("unused") }, log = log),
+            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, log = log),
+            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, log = log),
+        )
+        paths.indices.forEach { index -> Files.createSymbolicLink(paths[index], targets[index]) }
+        assertTrue(
+            sources.all { it.credentialEvidence().presence == CredentialPresence.UNKNOWN },
+            "dangling symlinks must remain unknown",
+        )
+
+        targets.forEach { Files.writeString(it, "{}") }
+        val initialIdentities = sources.map { source ->
+            val evidence = source.credentialEvidence()
+            assertNotNull(evidence.identity)
+            assertEquals(CredentialPresence.PRESENT, evidence.presence)
+            evidence.identity
         }
 
-        assertEquals(sources.size, logs.size)
-        assertTrue(logs.all { it.contains("invalid_grant latch check skipped") }, logs.toString())
-        assertTrue(missingLogs.isEmpty(), "expected missing credentials were logged: $missingLogs")
+        targets.forEach { Files.writeString(it, "{\"replacement\":true}") }
+        sources.zip(initialIdentities).forEach { (source, initialIdentity) ->
+            val replacement = source.credentialEvidence()
+            assertNotNull(replacement.identity)
+            assertNotEquals(initialIdentity, replacement.identity)
+            assertEquals(CredentialPresence.PRESENT, replacement.presence)
+        }
+        assertTrue(logs.isEmpty(), "symlink credential polling logged: $logs")
     }
 
     @Test

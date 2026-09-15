@@ -31,11 +31,12 @@ import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
+import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
 
 private const val LOG_TAG = "kimi-auth"
@@ -184,19 +185,12 @@ public class KimiAuthProvider(
     override suspend fun describe(): AuthDescription =
         store.describe(oauth.kimiAuthIdentityOrNull(authPath, log), invalidGrantLatch)
 
-    override fun credentialIdentity(): CredentialFileIdentity? =
-        if (credentialPresence() == CredentialPresence.MISSING) {
-            null
-        } else {
-            oauth.kimiAuthIdentityOrNull(authPath, log)
-        }
+    override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 
-    override fun credentialPresence(): CredentialPresence = when {
-        Files.isRegularFile(authPath) -> CredentialPresence.PRESENT
-        Files.notExists(authPath) && Files.notExists(authPath, LinkOption.NOFOLLOW_LINKS) ->
-            CredentialPresence.MISSING
-        else -> CredentialPresence.UNKNOWN
-    }
+    override fun credentialPresence(): CredentialPresence = credentialEvidence().presence
+
+    override fun credentialEvidence(): CredentialEvidence =
+        CredentialFileEvidenceReader.read(authPath)
 
     // Atomic 0600 credential write — routes to the shared primitive, mirroring the private member
     // CodexAuthProvider/GrokAuthProvider already carry.

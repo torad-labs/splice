@@ -30,9 +30,11 @@ import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintHolds
 import splice.provider.muse.MuseSubscriptionKey
+import splice.spi.ProcessDispatchers
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
 
 private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
@@ -61,6 +63,7 @@ class MuseAuthProviderFixesTest {
         clock: WallClock = WallClock(System::currentTimeMillis),
         authCacheMs: Long = 30_000L,
         prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
+        flightContext: CoroutineContext = ProcessDispatchers().background(),
         mint: MuseKeyMintCall,
     ): MuseAuthProvider = MuseAuthProvider(
         authPath = file,
@@ -69,6 +72,7 @@ class MuseAuthProviderFixesTest {
         mintCall = mint,
         authCacheMs = authCacheMs,
         prefetchScope = prefetchScope,
+        flightContext = flightContext,
     )
 
     @Test
@@ -272,7 +276,7 @@ class MuseAuthProviderFixesTest {
         val calls = AtomicInteger()
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file) { _, _ ->
+        val auth = provider(file, flightContext = coroutineContext) { _, _ ->
             calls.incrementAndGet()
             entered.complete(Unit)
             proceed.await()
@@ -366,7 +370,7 @@ class MuseAuthProviderFixesTest {
         val calls = AtomicInteger()
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file) { _, _ ->
+        val auth = provider(file, flightContext = coroutineContext) { _, _ ->
             calls.incrementAndGet()
             entered.complete(Unit)
             proceed.await()
@@ -389,7 +393,7 @@ class MuseAuthProviderFixesTest {
         val calls = AtomicInteger()
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file) { _, _ ->
+        val auth = provider(file, flightContext = coroutineContext) { _, _ ->
             val n = calls.incrementAndGet()
             if (n == 1) {
                 entered.complete(Unit)
@@ -401,12 +405,11 @@ class MuseAuthProviderFixesTest {
         }
         val poll = launch { auth.usageFields() }
         entered.await()
-        authFile(tempDir, accessToken = "token-b", apiKey = "key-b")
-        val refresh = launch { auth.refresh() }
-        repeat(100) { yield() }
+        assertEquals(1, calls.get(), "refresh must not start until the poll mint has entered")
         proceed.complete(Unit)
         poll.join()
-        refresh.join()
+        authFile(tempDir, accessToken = "token-b", apiKey = "key-b")
+        auth.refresh()
         assertNull(auth.describe().fields["account_token"])
         assertEquals("key-b", (auth.credentials() as Credentials.Bearer).token)
         assertEquals(2, calls.get())

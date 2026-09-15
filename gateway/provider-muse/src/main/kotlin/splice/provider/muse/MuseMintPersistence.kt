@@ -55,11 +55,19 @@ public class MuseMintPersistence {
 
     private fun readObject(authPath: Path, log: LogSink): JsonObject? =
         Cancellables.runCatchingCancellable {
-            museJson.parseToJsonElement(Files.readString(authPath)) as? JsonObject
-        }.getOrElse {
-            log("[muse-auth] credential file read failed; no credentials served")
-            null
-        }
+            museJson.parseToJsonElement(Files.readString(authPath))
+        }.fold(
+            onSuccess = { element ->
+                (element as? JsonObject) ?: run {
+                    log("[muse-auth] credential root is not an object; minted key discarded, existing credential kept")
+                    null
+                }
+            },
+            onFailure = {
+                log("[muse-auth] credential file read failed; no credentials served")
+                null
+            },
+        )
 
     private val persistedMintFields = setOf(
         "api_key",

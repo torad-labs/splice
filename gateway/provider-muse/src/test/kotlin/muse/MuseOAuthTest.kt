@@ -247,32 +247,17 @@ class MuseOAuthTest {
 
     @Test
     fun `plan-tier rejection is a muse-only veto and is not an auth-body failure`() {
-        val rules = splice.spi.FailureRules()
+        val samples = splice.spi.AuthFailureBodies()
         assertTrue(oauth.isPlanTierRejection("plan limit exceeded"))
         assertFalse(oauth.isPlanTierRejection("unauthenticated:bad-credentials"))
-        AUTH_BODY_CORPUS.forEach { body ->
-            assertEquals(rules.isAuthFailureBody(body), oauth.isAuthFailureBody(body), body)
+        samples.positives.forEach { body ->
+            assertTrue(oauth.isAuthFailureBody(body), body)
+        }
+        samples.negatives.forEach { body ->
+            assertFalse(oauth.isAuthFailureBody(body), body)
         }
     }
 }
-
-private val AUTH_BODY_CORPUS = listOf(
-    "unauthenticated",
-    "unauthenticated:bad-credentials",
-    "bad-credentials",
-    "token invalid",
-    "token is invalid",
-    "token expired",
-    "token is expired",
-    "access token could not be validated",
-    "oauth token could not be validated",
-    "oauth2 token could not be validated",
-    "",
-    "plan limit exceeded",
-    "permission denied",
-    "quota exceeded",
-    "tokens invalid",
-)
 
 private val ACTIVE_RESPONSE = Json.parseToJsonElement(
     """{"api_key":"muse-key","is_subs_active":true,"subs_tier_id":"pro",

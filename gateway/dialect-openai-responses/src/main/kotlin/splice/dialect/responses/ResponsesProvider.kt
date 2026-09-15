@@ -74,16 +74,18 @@ public abstract class ResponsesProvider(
         )
     }
 
-    /** Every responses provider, not just Codex: the lite BODY is gated on
-     *  [ResponsesQuirks.responsesLiteModelRegex], and the matching header must ride with it.
-     *  codex-rs sends this marker; compaction included — lite is a property of the model, so a
-     *  compaction built without the header would share no prefix with the session's lite turns. */
-    private fun liteHeader(meta: TurnMeta): Map<String, String> =
-        if (quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
-            mapOf("x-openai-internal-codex-responses-lite" to "true")
+    /** The lite header rides only when this provider declared both [ResponsesQuirks.responsesLiteHeader]
+     *  and a matching [ResponsesQuirks.responsesLiteModelRegex]. Compaction included — lite is a
+     *  property of the model, so a compaction built without the header would share no prefix with
+     *  the session's lite turns. */
+    private fun liteHeader(meta: TurnMeta): Map<String, String> {
+        val name = quirks.responsesLiteHeader ?: return emptyMap()
+        return if (quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
+            mapOf(name to "true")
         } else {
             emptyMap()
         }
+    }
 
     final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
         turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))

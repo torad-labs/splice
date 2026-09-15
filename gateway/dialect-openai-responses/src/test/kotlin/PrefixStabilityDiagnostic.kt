@@ -30,7 +30,10 @@ import splice.dialect.responses.ResponsesStableIds
 
 private val stableIds = ResponsesStableIds()
 
-private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val CODEX = ResponsesQuirks(
+    providerTag = "claudex",
+    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+)
 
 private fun opts(lookup: (String) -> List<String>?) = BuildOptions(
     compact = false,

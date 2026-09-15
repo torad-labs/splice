@@ -22,9 +22,14 @@ public data class ResponsesQuirks(
      *  omitted), tools ride as an additional_tools input item (top-level field omitted),
      *  parallel_tool_calls defaults to false (splice omitting it left the backend default parallel ON
      *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
-     *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
-     *  backend (direct probe 2026-07-19: 200, correct tool call). */
-    val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+     *  and the lite header named by [responsesLiteHeader] rides. Shape accepted by the live
+     *  backend (direct probe 2026-07-19: 200, correct tool call). Null (the default) means this
+     *  provider does not speak responses-lite; only the provider that owns the ChatGPT marker
+     *  sets both the regex and the header name. */
+    val responsesLiteModelRegex: Regex? = null,
+    /** Header name emitted on lite turns when [responsesLiteModelRegex] matches. Null omits it.
+     *  Travels with the regex so a third-party endpoint cannot inherit a ChatGPT-internal marker. */
+    val responsesLiteHeader: String? = null,
     /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
      *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
     val emitEmptyLiteInstructions: Boolean = false,

@@ -29,5 +29,9 @@ public class CodexQuirks {
         // riding the wire (json_schema.rs parse_tool_input_schema), so gpt-5.6 only ever trains
         // its expectations against normalized shapes. Splice mirrors that on this head only.
         normalizeToolSchemas = true,
+        // ChatGPT-internal lite marker: only this provider declares the pair. A dialect default
+        // would send x-openai-internal-codex-responses-lite to every openai-responses endpoint.
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+        responsesLiteHeader = "x-openai-internal-codex-responses-lite",
     )
 }

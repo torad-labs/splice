@@ -194,7 +194,12 @@ public class CodexAuthProvider(
 
     override suspend fun describe(): AuthDescription = describeAuth.describe()
 
-    override fun credentialIdentity(): CredentialFileIdentity? = authFile.codexAuthIdentityOrNull(authPath, log)
+    override fun credentialIdentity(): CredentialFileIdentity? =
+        if (credentialPresence() == CredentialPresence.MISSING) {
+            null
+        } else {
+            authFile.codexAuthIdentityOrNull(authPath, log)
+        }
 
     override fun credentialPresence(): CredentialPresence = when {
         Files.isRegularFile(authPath) -> CredentialPresence.PRESENT

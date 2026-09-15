@@ -29,8 +29,6 @@ internal enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
 
 internal data class RateLimitTurn(
     val cooldown: RateLimitCooldown,
-    val remainingBudgetMs: Long,
-    val backoffCeilingMs: Long,
     val pooledAccount: Boolean,
 )
 

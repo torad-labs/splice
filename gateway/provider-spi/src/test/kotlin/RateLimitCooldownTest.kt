@@ -22,6 +22,7 @@ import splice.spi.RetryDecision
 import splice.spi.RetryNotice
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
+import splice.spi.UpstreamTurnWaitExhausted
 import splice.spi.Waiter
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -34,12 +35,7 @@ class RateLimitCooldownTest {
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = 15_000L,
-            turn = RateLimitTurn(
-                cooldown,
-                remainingBudgetMs = 20_000L,
-                backoffCeilingMs = 220L,
-                pooledAccount = true,
-            ),
+            turn = RateLimitTurn(cooldown, pooledAccount = true),
             canRetry = true,
             onRetry = RetryNotice(notices::add),
             nextRefreshed = false,
@@ -63,7 +59,7 @@ class RateLimitCooldownTest {
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = 1_000L,
-            turn = RateLimitTurn(cooldown, remainingBudgetMs = 100L, backoffCeilingMs = 220L, pooledAccount = true),
+            turn = RateLimitTurn(cooldown, pooledAccount = true),
             canRetry = true,
             onRetry = RetryNotice(notices::add),
             nextRefreshed = false,
@@ -83,12 +79,7 @@ class RateLimitCooldownTest {
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = 15_001L,
-            turn = RateLimitTurn(
-                cooldown,
-                remainingBudgetMs = 900_000L,
-                backoffCeilingMs = 220L,
-                pooledAccount = true,
-            ),
+            turn = RateLimitTurn(cooldown, pooledAccount = true),
             canRetry = true,
             onRetry = RetryNotice {},
             nextRefreshed = false,
@@ -137,12 +128,7 @@ class RateLimitCooldownTest {
 
         cooldown.rateLimitedPlan(
             pushbackMs = 86_400_000L,
-            turn = RateLimitTurn(
-                cooldown,
-                remainingBudgetMs = 900_000L,
-                backoffCeilingMs = 220L,
-                pooledAccount = true,
-            ),
+            turn = RateLimitTurn(cooldown, pooledAccount = true),
             canRetry = true,
             onRetry = RetryNotice(notices::add),
             nextRefreshed = false,
@@ -160,12 +146,7 @@ class RateLimitCooldownTest {
 
         cooldown.rateLimitedPlan(
             pushbackMs = null,
-            turn = RateLimitTurn(
-                cooldown,
-                remainingBudgetMs = 1L,
-                backoffCeilingMs = 220L,
-                pooledAccount = true,
-            ),
+            turn = RateLimitTurn(cooldown, pooledAccount = true),
             canRetry = false,
             onRetry = RetryNotice {},
             nextRefreshed = false,
@@ -192,7 +173,7 @@ class RateLimitCooldownBudgetTest {
     }
 
     @Test
-    fun `a spent outer turn budget refuses attempt one with authored text`() = runTest {
+    fun `a spent outer turn budget refuses attempt one with typed local expiry`() = runTest {
         val calls = AtomicInteger()
         val notices = mutableListOf<String>()
         val engine = MockEngine {
@@ -214,10 +195,10 @@ class RateLimitCooldownBudgetTest {
             onRetry = RetryNotice(notices::add),
         )
 
-        val failure = assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+        val failure = assertThrows<UpstreamTurnWaitExhausted> { client.post(context, "{}") { "unreachable" } }
 
         assertEquals(0, calls.get())
-        assertTrue(failure.body.contains("turn wait budget exhausted"), failure.body)
+        assertEquals("upstream turn wait budget exhausted", failure.message)
         assertEquals(listOf("upstream turn wait budget exhausted before attempt 1/3"), notices)
     }
 
@@ -424,12 +405,12 @@ class RateLimitCooldownOuterTurnTest {
             )
 
             assertEquals("ok", client.post(context, "{}") { "ok" })
-            val failure = assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
 
             if (leftAfterFirstRound == 0L) {
+                assertThrows<UpstreamTurnWaitExhausted> { client.post(context, "{}") { "unreachable" } }
                 assertEquals(1, calls.get(), "round two must make zero calls after the turn cap is spent")
-                assertEquals("{\"detail\":\"Upstream turn wait budget exhausted\"}", failure.body)
             } else {
+                val failure = assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
                 assertEquals(2, calls.get(), "round two may attempt once but cannot spend a new retry budget")
                 assertEquals(503, failure.status)
                 assertEquals("round two unavailable", failure.body)

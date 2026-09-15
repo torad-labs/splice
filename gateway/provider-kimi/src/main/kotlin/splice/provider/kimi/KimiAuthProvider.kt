@@ -184,7 +184,12 @@ public class KimiAuthProvider(
     override suspend fun describe(): AuthDescription =
         store.describe(oauth.kimiAuthIdentityOrNull(authPath, log), invalidGrantLatch)
 
-    override fun credentialIdentity(): CredentialFileIdentity? = oauth.kimiAuthIdentityOrNull(authPath, log)
+    override fun credentialIdentity(): CredentialFileIdentity? =
+        if (credentialPresence() == CredentialPresence.MISSING) {
+            null
+        } else {
+            oauth.kimiAuthIdentityOrNull(authPath, log)
+        }
 
     override fun credentialPresence(): CredentialPresence = when {
         Files.isRegularFile(authPath) -> CredentialPresence.PRESENT

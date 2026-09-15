@@ -7,7 +7,6 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
-import splice.app.KimiRefresh
 import splice.app.TokenUrlRefreshCall
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
@@ -26,13 +25,12 @@ internal class ProviderAssembly(
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
     private val museArm: MusePassthroughArm = MusePassthroughArm(log),
+    private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
 ) {
     private val grokRefresh = GrokRefresh()
-    private val kimiRefresh = KimiRefresh()
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
-    private val kimiOAuth = KimiOAuth(probeScope, log, kimiRefresh)
-    private val passthroughArm = PassthroughArm(statePaths, passthroughAssembly, kimiOAuth)
+    private val passthroughArm = PassthroughArm(passthroughAssembly)
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh)
     private val apiKeyResponsesArm = ApiKeyResponsesArm()
     private val responsesArm = ResponsesArm(
@@ -51,13 +49,18 @@ internal class ProviderAssembly(
         requireCompatibleAuth(ctx)
         val label = ctx.head.claude.command ?: ctx.key
         if (ctx.providerCfg.auth.kind == MUSE_OAUTH) return museArm.museOauthProvider(ctx, label)
+        if (ctx.providerCfg.auth.kind == KIMI_OAUTH) return kimiArm.kimiOauthProvider(ctx, label)
         return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesArm.responsesProvider(ctx, label)
             Dialect.OPENAI_CHAT -> chatArm.chatProvider(ctx, label)
-            // anthropic-passthrough: Kimi owns its Moonshot quirks and identity under OAuth or
-            // API-key auth; every other compatible API-key vendor starts neutral and declares its
-            // own wire facts in TOML.
-            Dialect.ANTHROPIC_PASSTHROUGH -> passthroughArm.passthroughProvider(ctx, label)
+            // anthropic-passthrough: provider id kimi (not client) is the Moonshot api-key path.
+            // CLIENT stays on PassthroughArm so a kimi-named client head does not grow X-Msh headers.
+            Dialect.ANTHROPIC_PASSTHROUGH ->
+                if (ctx.head.provider == "kimi" && ctx.providerCfg.auth.kind != CLIENT) {
+                    kimiArm.kimiApiKeyProvider(ctx, label)
+                } else {
+                    passthroughArm.passthroughProvider(ctx, label)
+                }
         }
     }
 

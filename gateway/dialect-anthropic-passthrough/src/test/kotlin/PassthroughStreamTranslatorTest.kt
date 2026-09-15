@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
 import splice.spi.BufferCapacity
@@ -43,7 +43,7 @@ private class Rec : WireSink {
     override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) { calls.add("rawDelta:$delta") }
 }
 
-private val KIMI = PassthroughQuirksDefaults().kimi("kimi")
+private val KIMI = KimiProfileFixture().kimi("kimi")
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 private fun ctx() = PassthroughTurnContext({ false }, { null }, 180_000, 900_000)

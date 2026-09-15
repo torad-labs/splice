@@ -1,6 +1,6 @@
-// NEW: result of the token endpoint's refresh POST (only the fields we persist). Split
-// from CodexAuthProvider.kt so the refresh ladder is not billed for a field group
-// (concentration HIGH, 2026-08-19).
+// NEW: typealias to splice.spi.RefreshedTokens plus the Codex quirk profile. The data class moved
+// to provider-spi in V4-18 so TokenUrlRefreshCall is not typed on one vendor; CodexQuirks stays
+// here so in-module call sites do not move.
 package splice.provider.codex
 
 import splice.dialect.responses.ResponsesQuirks

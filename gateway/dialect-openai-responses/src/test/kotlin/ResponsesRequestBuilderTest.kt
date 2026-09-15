@@ -17,7 +17,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
-import splice.dialect.responses.EffortLadder
+import splice.dialect.responses.GrokEffortFixture
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
@@ -31,7 +31,7 @@ private val CODEX = ResponsesQuirks(providerTag = "claudex", emitEmptyLiteInstru
 private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
     cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
-    effortLadder = EffortLadder.GROK,
+    effortVocabulary = GrokEffortFixture(),
     supportsSummary = true,
     summaryRejectModelRegex = null,
     emitToolChoice = true,

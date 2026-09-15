@@ -248,9 +248,16 @@ class ChatRequestBuilderTest {
         // the upstream model — an unknown vendor must never see an enum it may reject.
         val withBudget = """{"model":"m","messages":[{"role":"user","content":"hard"}],
             "thinking":{"type":"enabled","budget_tokens":64000}}"""
-        assertEquals("xhigh", build(withBudget, model = "grok-4.6")["reasoning_effort"]?.jsonPrimitive?.content)
-        assertEquals("high", build(withBudget, model = "grok-4.5")["reasoning_effort"]?.jsonPrimitive?.content)
-        assertEquals("high", build(withBudget, model = "deepseek-reasoner")["reasoning_effort"]?.jsonPrimitive?.content)
+        val grok = ChatQuirks(
+            providerTag = "claude-grok",
+            xhighModels = Regex("grok-4\\.(?:[6-9]|[1-9]\\d)"),
+        )
+        val xhigh = build(withBudget, quirks = grok, model = "grok-4.6")
+        assertEquals("xhigh", xhigh["reasoning_effort"]?.jsonPrimitive?.content)
+        val older = build(withBudget, quirks = grok, model = "grok-4.5")
+        assertEquals("high", older["reasoning_effort"]?.jsonPrimitive?.content)
+        val other = build(withBudget, model = "deepseek-reasoner")
+        assertEquals("high", other["reasoning_effort"]?.jsonPrimitive?.content)
     }
 
     @Test

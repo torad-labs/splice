@@ -15,7 +15,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
+import splice.provider.kimi.KimiQuirks
 
 private fun provider(quirks: QuirksConfig) = ProviderConfig(
     dialect = Dialect.ANTHROPIC_PASSTHROUGH,
@@ -28,7 +28,7 @@ class PassthroughQuirksOverlayTest {
 
     private val assembly = QuirksOverlay()
 
-    private val kimiBase = PassthroughQuirksDefaults().kimi("kimi")
+    private val kimiBase = KimiQuirks().kimi("kimi")
 
     // Without the isNotEmpty guard this yields an EMPTY allowlist, and the builder then drops every
     // content block of every message — the upstream receives an empty conversation, with no error

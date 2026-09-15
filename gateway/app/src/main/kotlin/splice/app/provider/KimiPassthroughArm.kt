@@ -1,5 +1,4 @@
 // NEW: Kimi owns its passthrough headers, Moonshot quirks base, and device-identity wiring.
-// PassthroughQuirksDefaults.kimi stays in the dialect until V4-20; this arm only selects it.
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
@@ -8,8 +7,8 @@ import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.dialect.passthrough.IdentityHeaders
-import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.provider.kimi.KimiDeviceIdentity
+import splice.provider.kimi.KimiQuirks
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.spi.CredentialHeaders
 import java.nio.file.Paths
@@ -37,7 +36,7 @@ internal class KimiPassthroughArm(
             ctx = ctx,
             label = label,
             auth = default.auth,
-            base = PassthroughQuirksDefaults().kimi(ctx.key),
+            base = KimiQuirks().kimi(ctx.key),
             baseHeaders = KIMI_BASE_HEADERS,
             identityHeaders = IdentityHeaders(default.identity::headers),
         )
@@ -70,7 +69,7 @@ internal class KimiPassthroughArm(
                 ctx = ctx,
                 label = label,
                 auth = auth,
-                base = PassthroughQuirksDefaults().kimi(key),
+                base = KimiQuirks().kimi(key),
                 baseHeaders = KIMI_BASE_HEADERS,
                 identityHeaders = IdentityHeaders(identity::headers),
             ),

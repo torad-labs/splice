@@ -7,6 +7,9 @@
 package splice.app.cli
 
 import splice.app.provider.LocalProbeInputs
+import splice.app.provider.local.LocalModel
+import splice.app.provider.local.LocalRuntime
+import splice.app.provider.local.LocalRuntimeProbe
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.ProviderConfig
@@ -15,9 +18,6 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
 import splice.dialect.chat.JdkLocalHttp
 import splice.dialect.chat.LocalHttp
-import splice.dialect.chat.LocalModel
-import splice.dialect.chat.LocalRuntime
-import splice.dialect.chat.LocalRuntimeProbe
 
 private const val FIX_START = "start it (Ollama / LM Studio / vLLM), then re-run"
 private const val FIX_TOOLS = "a model without tool calls cannot drive Claude Code's tools"

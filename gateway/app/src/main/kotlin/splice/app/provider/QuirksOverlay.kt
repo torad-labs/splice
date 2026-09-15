@@ -14,16 +14,11 @@ import splice.dialect.responses.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ToolDeferralPolicy
+import splice.provider.grok.GrokQuirks
 
 private const val MIN_TOOL_SURFACE_FLOOR = 1
 private const val MAX_TOOL_SEARCH_LIMIT = 50
 private const val MAX_TOOL_SEARCH_ROUNDS = 5
-
-// DR-155: xAI's documented and ENFORCED minimum image edge. Its verbatim HTTP 400 body is "Image
-// dimensions 1x1 are too small. Both width and height must be at least 8 pixels." — six of those,
-// each costing a whole claude-grok turn, are what the DR-152 soak captured. GrokProvider carries the
-// same number for the same vendor on the Responses dialect.
-private const val XAI_MIN_IMAGE_EDGE_PX = 8
 
 /**
  * Declared TOML -> effective dialect quirk profile, for all three dialects. Every member is a pure
@@ -66,15 +61,22 @@ internal class QuirksOverlay {
         // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed 2026-07-19:
         // 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank the 07-18 chat-dialect
         // attempt). Unknown api-key vendors keep the bare quirks.
+        // xhigh is model-gated (grok-4.6+), not auth-kind-gated: an OpenRouter chat head on a grok
+        // model must keep sending xhigh. The regex lives on GrokQuirks; unknown model ids never match.
+        val grok = GrokQuirks()
+        val xhigh = grok.xhighModels()
         val base = if (providerCfg.auth.kind == GROK_OAUTH) {
             ChatQuirks(
                 providerTag = key,
                 sessionCacheKeyPrefix = label,
                 emitUsageInStream = true,
-                minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
+                // DR-155: the enforced xAI image-edge floor is a vendor fact, so the chat profile
+                // reads the number provider-grok owns rather than re-declaring it here.
+                minImageEdgePx = grok.defaultQuirks().minImageEdgePx,
+                xhighModels = xhigh,
             )
         } else {
-            ChatQuirks(providerTag = key)
+            ChatQuirks(providerTag = key, xhighModels = xhigh)
         }
         return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
     }

@@ -41,7 +41,7 @@ internal class TurnEnding(
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
                 telemetry.recordPerf(drive, "error:unexpected")
                 health.local() // internal gateway bug (e.g. bad base_url parse)
-                drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error — retry")
+                drive.emitter.emitError(ErrorType.API_ERROR, "splice: internal gateway error — retry")
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked
         }

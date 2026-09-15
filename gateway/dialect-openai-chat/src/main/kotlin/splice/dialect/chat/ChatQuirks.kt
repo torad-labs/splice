@@ -32,6 +32,8 @@ public data class ChatQuirks(
      * DR-152 soak. See [splice.core.media.ImageFloor] for why every unknown forwards.
      */
     val minImageEdgePx: Int? = null,
+    /** Models that accept reasoning_effort=xhigh. null = never emit xhigh (unknown vendors). */
+    val xhighModels: Regex? = null,
 ) {
     /** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
      *  keeps the provider's own default (see [emitReasoningEffort]). A member rather than the

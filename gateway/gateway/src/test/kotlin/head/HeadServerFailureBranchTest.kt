@@ -215,7 +215,7 @@ class HeadServerFailureBranchTest {
             val sse = turn(headPort, "basic")
             assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
             assertTrue(sse.contains("api_error"), sse)
-            assertTrue(sse.contains("claudex: internal gateway error — retry"), sse)
+            assertTrue(sse.contains("splice: internal gateway error — retry"), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             val scoped = logs.drop(before)
             assertTrue(

@@ -1,4 +1,4 @@
-// NEW: kimi OAuth yields Credentials.ApiKey(x-api-key); the old Bearer-only probe recorded nothing.
+// NEW: forHead dispatch per auth kind, shared Bearer GET, and the five-minute poller cadence.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -7,14 +7,35 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.provider.ProviderBuild
 import splice.app.quota.BearerGetProbe
+import splice.app.quota.CodexQuotaProbe
+import splice.app.quota.GrokQuotaProbe
+import splice.app.quota.KimiQuotaParser
+import splice.app.quota.KimiQuotaProbe
+import splice.app.quota.MuseMintProbe
 import splice.app.quota.QUOTA_POLL_INTERVAL_MS
-import splice.app.quota.QuotaParsers
+import splice.app.quota.QuotaParse
+import splice.app.quota.QuotaProbes
+import splice.app.quota.UsageFields
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.topology.AuthConfig
+import splice.core.topology.Dialect
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
+import splice.core.turn.WatchdogBudget
 import splice.core.util.WallClock
+import java.nio.file.Path
+import kotlin.time.Duration.Companion.seconds
 
 class QuotaProbesTest {
 
@@ -77,8 +98,43 @@ class QuotaProbesTest {
         assertEquals(5 * 60 * 1000L, QUOTA_POLL_INTERVAL_MS)
     }
 
-    private class QuotaParseAdapter : splice.app.quota.QuotaParse {
-        private val parsers = QuotaParsers()
-        override fun parse(body: kotlinx.serialization.json.JsonObject, now: Long) = parsers.kimi(body, now)
+    @Test
+    fun `forHead dispatches one probe class per auth kind`(@TempDir tmp: Path) {
+        val probes = QuotaProbes(HttpClient(MockEngine { respond("{}", HttpStatusCode.OK) }))
+        val auth = FixedAuth(Credentials.Bearer("tok"))
+        assertTrue(probes.forHead(ctx(tmp, "chatgpt-oauth"), auth) is CodexQuotaProbe)
+        assertTrue(probes.forHead(ctx(tmp, "kimi-oauth"), auth) is KimiQuotaProbe)
+        assertTrue(probes.forHead(ctx(tmp, "grok-oauth"), auth) is GrokQuotaProbe)
+        assertNull(probes.forHead(ctx(tmp, "muse-oauth"), auth), "muse without UsageFields is refused")
+        val fields = UsageFields { null }
+        assertTrue(probes.forHead(ctx(tmp, "muse-oauth"), auth, fields) is MuseMintProbe)
+        assertNull(probes.forHead(ctx(tmp, "api-key"), auth))
+    }
+
+    private fun ctx(tmp: Path, kind: String): ProviderBuild {
+        val state = StatePaths(baseOverride = tmp.resolve("state"))
+        val config = ConfigService(state, envReader = { null })
+        return ProviderBuild(
+            key = "head",
+            head = HeadConfig(provider = "p", port = 3100, discoveryPrefix = "claude-p--", pinnedModel = "m"),
+            providerCfg = ProviderConfig(
+                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+                baseUrl = "https://api.example.test/backend-api/codex",
+                auth = AuthConfig(kind = kind),
+            ),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-p--",
+                models = listOf(ModelEntry(id = "m", contextWindow = 200_000)),
+                defaultContextWindow = 200_000,
+            ),
+            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            cfg = config.getConfig("head"),
+            loginCommand = "login",
+        )
+    }
+
+    private class QuotaParseAdapter : QuotaParse {
+        private val parsers = KimiQuotaParser()
+        override fun parse(body: kotlinx.serialization.json.JsonObject, now: Long) = parsers.parse(body, now)
     }
 }

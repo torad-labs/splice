@@ -5,6 +5,7 @@
 // by the control plane (statusline, /api/usage).
 package splice.gateway.usage
 
+import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.QuotaHeaders
 import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaSnapshot
@@ -14,14 +15,16 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import splice.spi.QuotaHeaderFamily
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
 public class QuotaTracker(
     private val file: Path,
-    clock: WallClock = WallClock(System::currentTimeMillis),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
+    private val extraFamily: QuotaHeaderFamily? = null,
 ) {
     private val codec = QuotaJson()
     private val headers = QuotaHeaders(clock)
@@ -40,7 +43,8 @@ public class QuotaTracker(
     /** Upstream response headers of the round that just completed. A no-op for the common case
      *  of an upstream that sends neither family. */
     public fun observe(header: HeaderLookup) {
-        headers.fromUpstream { name -> header(name) }?.let(::record)
+        val read = QuotaHeaderRead { name -> header(name) }
+        (headers.fromUpstream(read) ?: extraFamily?.snapshot(read, clock))?.let(::record)
     }
 
     /** What every client response carries so Claude Code's rate_limits show this head's windows. */

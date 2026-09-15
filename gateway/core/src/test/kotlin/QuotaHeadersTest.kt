@@ -1,7 +1,6 @@
 // NEW: quota windows on the wire, both directions (see QuotaHeaders). The client side is pinned to
 // what Claude Code reads: utilization as a 0..1 fraction, reset as epoch seconds, plus the status
-// header. The upstream side covers Anthropic's unified family and the x-codex family, including the
-// reset spellings and the millisecond epoch one vendor sends.
+// header. The upstream side covers Anthropic's unified family; vendor families live on QuotaHeaderFamily.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -59,30 +58,13 @@ class QuotaHeadersTest {
     }
 
     @Test
-    fun `the x-codex family sorts windows by length and accepts both reset spellings`() {
+    fun `fromUpstream ignores the x-codex family`() {
         val plus = mapOf(
             "x-codex-primary-used-percent" to "31.5",
             "x-codex-primary-window-minutes" to "300",
-            "x-codex-primary-reset-after-seconds" to "3600",
-            "x-codex-secondary-used-percent" to "12",
-            "x-codex-secondary-window-minutes" to "10080",
-            "x-codex-secondary-reset-at" to "1788500000000",
-            "x-codex-plan-type" to "plus",
         )
-        val snapshot = headers.fromUpstream(read(plus))!!
-        assertEquals(31.5, snapshot.fiveHour!!.usedPercent, 1e-9)
-        assertEquals(now / 1000 + 3600, snapshot.fiveHour!!.resetsAt, "reset-after-seconds is relative to now")
-        assertEquals(12.0, snapshot.sevenDay!!.usedPercent, 1e-9)
-        assertEquals(1_788_500_000L, snapshot.sevenDay!!.resetsAt, "a millisecond epoch is normalized to seconds")
-        assertEquals("plus", snapshot.plan)
-
-        // A Pro plan's only window is weekly and called "primary": it lands in the 7d slot.
-        val weeklyOnly = mapOf("x-codex-primary-used-percent" to "30", "x-codex-primary-window-minutes" to "10080")
-        val pro = headers.fromUpstream(read(weeklyOnly))!!
-        assertNull(pro.fiveHour)
-        assertEquals(30.0, pro.sevenDay!!.usedPercent, 1e-9)
-        val perMinute = headers.fromUpstream(read(mapOf("x-ratelimit-limit-tokens" to "1000")))
-        assertNull(perMinute, "per-minute families are not quota windows")
+        assertNull(headers.fromUpstream(read(plus)))
+        assertNull(headers.fromUpstream(read(mapOf("x-ratelimit-limit-tokens" to "1000"))))
     }
 
     @Test

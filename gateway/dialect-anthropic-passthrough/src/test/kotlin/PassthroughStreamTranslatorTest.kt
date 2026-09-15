@@ -937,3 +937,37 @@ class PassthroughBlockEvictionTest {
         )
     }
 }
+
+// V4-16: unknown SSE types (e.g. Muse response.subscription_usage on Responses, never observed on
+// /v1/messages) are log-dropped once per stream. Own class: the primary translator test is at
+// detekt LargeClass.
+class PassthroughUnknownEventDropTest {
+
+    @Test
+    fun `unknown SSE event types are log-dropped once per stream`() = runTest {
+        val logs = mutableListOf<String>()
+        val ctx = PassthroughTurnContext({ false }, { null }, 180_000, 900_000, log = { logs.add(it) })
+        val unknown = ev(
+            """{"type":"response.subscription_usage","subscription":{"tier":"opaque",""" +
+                """"window":{"used_percent":1}}}""",
+        )
+        val events = listOf(
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            unknown,
+            ev("""{"type":"ping"}"""),
+            unknown,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        val sink = Rec()
+        val outcome = PassthroughStreamTranslator(ctx, KIMI).driveTurn(events.asFlow(), sink)
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertEquals("hi", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals(1, logs.size, "two unknown frames must log once: $logs")
+        assertTrue(logs.single().contains("response.subscription_usage"), logs.single())
+        assertTrue(logs.single().contains("kimi"), logs.single())
+        assertTrue(sink.calls.none { it.contains("subscription") }, sink.calls.toString())
+    }
+}

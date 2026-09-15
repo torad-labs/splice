@@ -6,7 +6,9 @@ package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.spi.WireSink
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Dispatches one upstream Anthropic SSE frame to its owning collaborators. This translator only
  *  READS the upstream terminal discriminators to drive the WireSink (which has no terminal verbs)
@@ -15,10 +17,13 @@ internal class PassthroughEventRouter(
     private val blocks: PassthroughBlockRegistry,
     private val terminal: PassthroughTerminalState,
     private val usage: PassthroughUsage,
+    private val log: LogSink,
+    private val providerTag: String,
 ) {
+    private val unknownLogged = AtomicBoolean(false)
 
     internal suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        when (JsonScalars.strOrEmpty(evt["type"])) {
+        when (val type = JsonScalars.strOrEmpty(evt["type"])) {
             "message_start" -> usage.harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
             "content_block_start" -> blocks.onBlockStart(evt, sink)
             "content_block_delta" -> blocks.onBlockDelta(evt, sink)
@@ -28,7 +33,14 @@ internal class PassthroughEventRouter(
             // ast-grep-ignore: kt-l3-sole-wire-terminals — reading upstream discriminator, not emitting
             "message_stop" -> terminal.finished = true
             "error" -> onError(evt)
-            else -> Unit // ping / unknown events are ignored
+            else -> dropUnknown(type)
+        }
+    }
+
+    private fun dropUnknown(type: String) {
+        if (type == "ping") return
+        if (unknownLogged.compareAndSet(false, true)) {
+            log("[$providerTag] dropping unknown SSE event type '$type'\n")
         }
     }
 

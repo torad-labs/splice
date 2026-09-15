@@ -130,21 +130,28 @@ public data class ProviderConfig(
             ) { "client auth cannot configure Authorization or x-api-key in extra_headers" }
         }
         if (quirks.codeMode == true) {
-            require(claudexShaped) {
-                "code_mode is only supported with auth.kind = '${AuthKind.ChatgptOAuth.wire}' " +
-                    "and dialect = 'openai-responses'"
-            }
+            require(codeModeShape) { codeModeRefusal() }
         }
     }
 
-    /** ChatGPT OAuth over the Responses dialect — the one shape the code-mode bridge speaks. */
-    private val claudexShaped: Boolean
-        get() = auth.kind == AuthKind.ChatgptOAuth.wire && dialect == Dialect.OPENAI_RESPONSES
+    /** True when this provider's auth kind declares code mode on this dialect in the registry. */
+    private val codeModeShape: Boolean
+        get() = AuthKindRegistry.from(auth.kind)?.codeModeDialect == dialect
 
-    /** Code mode graduated in 0.4.0 (Marcos, 2026-09-13): ON by default for the claudex shape,
+    /** Code mode graduated in 0.4.0 (Marcos, 2026-09-13): ON by default for the registry shape,
      *  `code_mode = false` still turns it off, and every other provider shape stays off. */
     public val codeModeEnabled: Boolean
-        get() = quirks.codeMode ?: claudexShaped
+        get() = quirks.codeMode ?: codeModeShape
+
+    private fun codeModeRefusal(): String {
+        val named = AuthKindRegistry.knownKinds()
+            .filter { it.codeModeDialect != null }
+            .joinToString("; ") { kind ->
+                val dialectName = DialectWires.name(checkNotNull(kind.codeModeDialect))
+                "auth.kind = '${kind.wire}' and dialect = '$dialectName'"
+            }
+        return "code_mode is only supported with $named"
+    }
 
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }

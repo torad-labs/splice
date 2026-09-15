@@ -18,6 +18,12 @@ public enum class Dialect {
     ANTHROPIC_PASSTHROUGH,
 }
 
+/** Wire spelling of [Dialect]: the @SerialName on the enum, not a second table. */
+public object DialectWires {
+    public fun name(dialect: Dialect): String =
+        Dialect.serializer().descriptor.getElementName(dialect.ordinal)
+}
+
 @Serializable
 public data class AuthConfig(
     val kind: String,

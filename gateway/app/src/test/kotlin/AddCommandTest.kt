@@ -226,6 +226,11 @@ class AddCommandTest {
         )
         val out = capture { assertFalse(runBlocking { refused.add(args, env) }) }
         assertTrue(out.contains("must be a positive integer"), out)
+        assertTrue(
+            out.contains("splice add: context window for m must be a positive integer (tokens)"),
+            out,
+        )
+        assertTrue(!out.contains("withheld"), out)
         assertEquals(before, Files.readString(config()), "nothing written")
     }
 

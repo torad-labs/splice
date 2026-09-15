@@ -63,20 +63,10 @@ internal class QuirksOverlay {
         // attempt). Unknown api-key vendors keep the bare quirks.
         // xhigh is model-gated (grok-4.6+), not auth-kind-gated: an OpenRouter chat head on a grok
         // model must keep sending xhigh. The regex lives on GrokQuirks; unknown model ids never match.
-        val grok = GrokQuirks()
-        val xhigh = grok.xhighModels()
         val base = if (providerCfg.auth.kind == GROK_OAUTH) {
-            ChatQuirks(
-                providerTag = key,
-                sessionCacheKeyPrefix = label,
-                emitUsageInStream = true,
-                // DR-155: the enforced xAI image-edge floor is a vendor fact, so the chat profile
-                // reads the number provider-grok owns rather than re-declaring it here.
-                minImageEdgePx = grok.defaultQuirks().minImageEdgePx,
-                xhighModels = xhigh,
-            )
+            GrokChatQuirks().profile(key, label)
         } else {
-            ChatQuirks(providerTag = key, xhighModels = xhigh)
+            ChatQuirks(providerTag = key, xhighModels = GrokQuirks().xhighModels())
         }
         return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
     }

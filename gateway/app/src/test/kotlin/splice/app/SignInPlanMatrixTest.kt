@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.LoginKimi
+import splice.app.cli.StatusTable
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
@@ -161,7 +161,7 @@ class SignInPlanMatrixTest {
     @Test
     fun `Muse backend label names Meta rather than guessing from its wire dialect`() {
         val cfg = providerCfg("muse-oauth").copy(dialect = Dialect.ANTHROPIC_PASSTHROUGH)
-        assertEquals("Meta Muse", LoginKimi().backendLabel(cfg))
+        assertEquals("Meta Muse", StatusTable().backendLabel(cfg))
     }
 
     @Test

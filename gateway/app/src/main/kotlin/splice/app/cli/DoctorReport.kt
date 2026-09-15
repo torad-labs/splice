@@ -27,9 +27,6 @@ import java.time.Instant
 private const val SCHEMA_VERSION = 1
 private const val VERSION = "version"
 
-/** What a JVM/OS property may look like in the report: a bounded plain token, else omitted. */
-private val SYSTEM_VALUE = Regex("^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,63}$")
-private const val OMITTED = "<omitted>"
 internal class DoctorReport(
     envReader: EnvReader = EnvReader(System::getenv),
     private val claudeVersion: ClaudeVersionRead,
@@ -67,24 +64,19 @@ internal class DoctorReport(
         return run.sections.flatMap { it.second }.none { it.status == CheckStatus.FAIL }
     }
 
-    /** A system property is overridable on the JVM command line: it passes the same redaction as
-     *  every other string and is emitted only when it is a bounded plain token. */
-    private fun system(key: String): String =
-        System.getProperty(key)?.let(redaction::text)?.takeIf { SYSTEM_VALUE.matches(it) } ?: OMITTED
-
     internal fun build(run: DoctorRun, withLogs: Boolean): JsonObject = buildJsonObject {
         put("schema_version", SCHEMA_VERSION)
         put("generated_at", Instant.now().toString())
         putJsonObject("splice") { put(VERSION, GATEWAY_VERSION) }
         putJsonObject("claude_code") { put(VERSION, redaction.text(claudeVersion())) }
         putJsonObject("os") {
-            put("name", system("os.name"))
-            put(VERSION, system("os.version"))
-            put("arch", system("os.arch"))
+            put("name", files.systemProperty("os.name"))
+            put(VERSION, files.systemProperty("os.version"))
+            put("arch", files.systemProperty("os.arch"))
         }
         putJsonObject("jvm") {
-            put(VERSION, system("java.version"))
-            put("vendor", system("java.vendor"))
+            put(VERSION, files.systemProperty("java.version"))
+            put("vendor", files.systemProperty("java.vendor"))
         }
         val names = SafeNames(redaction, run.topology, run.accountPools)
         val shape = DoctorReportShape(redaction, names)

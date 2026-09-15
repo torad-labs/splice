@@ -17,6 +17,8 @@ import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
+import splice.provider.codex.CodexLegacyKnobs
+import splice.provider.grok.GrokLegacyKnobs
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -34,18 +36,15 @@ internal class HeadBuildInputs(
         provider: ProviderConfig,
         cfg: SpliceConfig,
     ): HeadConfig = when (provider.auth.kind) {
-        CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
-        GROK_OAUTH -> head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
+        CHATGPT_OAUTH -> CodexLegacyKnobs().remapHead(head, cfg.port, cfg.pinnedModel)
+        GROK_OAUTH -> GrokLegacyKnobs().remapHead(head, cfg.grokPort, cfg.grokModel)
         else -> head
     }
 
     internal fun resolveProviderConfig(provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
         when (provider.auth.kind) {
-            CHATGPT_OAUTH -> provider.copy(
-                baseUrl = cfg.chatgptApiBase,
-                auth = provider.auth.copy(file = cfg.codexAuthPath),
-            )
-            GROK_OAUTH -> provider.copy(baseUrl = cfg.xaiApiBase)
+            CHATGPT_OAUTH -> CodexLegacyKnobs().remapProvider(provider, cfg.chatgptApiBase, cfg.codexAuthPath)
+            GROK_OAUTH -> GrokLegacyKnobs().remapProvider(provider, cfg.xaiApiBase)
             else -> provider
         }
 

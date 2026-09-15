@@ -10,8 +10,10 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.dialect.chat.ChatQuirks
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
+import splice.provider.grok.GrokQuirks
 import java.nio.file.Path
 
 internal class GrokAccountWiring(
@@ -43,4 +45,15 @@ internal class GrokAccountWiring(
             // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail.
             log = HeadScopedLogs.headScopedLog(ctx.key, log),
         )
+}
+
+/** grok-oauth chat dialect profile — xAI floor, session cache prefix, usage frames, xhigh models. */
+internal class GrokChatQuirks {
+    fun profile(key: String, label: String): ChatQuirks = ChatQuirks(
+        providerTag = key,
+        sessionCacheKeyPrefix = label,
+        emitUsageInStream = true,
+        minImageEdgePx = GrokQuirks().defaultQuirks().minImageEdgePx,
+        xhighModels = GrokQuirks().xhighModels(),
+    )
 }

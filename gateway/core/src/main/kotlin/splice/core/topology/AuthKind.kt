@@ -21,6 +21,7 @@ public sealed class AuthKind(
     public val wire: String,
     public val defaultAuthFile: String?,
     public val isOAuth: Boolean,
+    public val signInLabel: String,
 ) {
     /** OAuth schemes: a browser/device login mints a credential file. [authFile] is
      *  the splice-owned default for the kind — non-null here, so the legacy knobs and every arm can
@@ -32,13 +33,15 @@ public sealed class AuthKind(
         public val authFile: String,
         public val nativeAppFile: String,
         public val nativeApp: String,
-    ) : AuthKind(wire, authFile, isOAuth = true)
+        signInLabel: String,
+    ) : AuthKind(wire, authFile, isOAuth = true, signInLabel)
 
     public data object ChatgptOAuth : OAuth(
         "chatgpt-oauth",
         "~/.config/splice/auth/codex.json",
         "~/.codex/auth.json",
         "Codex CLI / ChatGPT app",
+        "Codex (ChatGPT)",
     )
 
     public data object GrokOAuth : OAuth(
@@ -46,6 +49,7 @@ public sealed class AuthKind(
         "~/.config/splice/auth/grok.json",
         "~/.grok/auth.json",
         "Grok CLI",
+        "Grok (xAI)",
     )
 
     // DR-98: the null here claimed a "provider-computed path", but nothing computes one — every
@@ -59,6 +63,7 @@ public sealed class AuthKind(
         "~/.config/splice/auth/kimi.json",
         "~/.kimi/credentials/kimi-code.json",
         "Kimi CLI",
+        "Kimi (Moonshot)",
     )
 
     public data object MuseOAuth : OAuth(
@@ -66,12 +71,35 @@ public sealed class AuthKind(
         "~/.config/splice/auth/muse.json",
         "~/.config/muse/auth.json",
         "Muse Code",
+        "Muse (Meta)",
     )
 
     /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
      *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
      *  splice can run — which is why it is not an OAuth kind and has no default auth file. */
-    public data object Client : AuthKind("client", null, isOAuth = false)
+    public data object Client : AuthKind("client", null, isOAuth = false, "Claude (client's own login)")
+}
+
+/** Api-key heads stay unregistered on AuthKind; these rows are the known provider ids for /login UX. */
+public data class ApiKeyProviderRow(
+    public val id: String,
+    public val label: String,
+    public val tokenPattern: String?,
+    public val aliases: Set<String> = emptySet(),
+)
+
+public object ApiKeyProviderRegistry {
+
+    private val ROWS: List<ApiKeyProviderRow> = listOf(
+        ApiKeyProviderRow("openrouter", "OpenRouter", "sk-or-[A-Za-z0-9_-]{20,}"),
+        ApiKeyProviderRow("moonshot", "Moonshot", null),
+        ApiKeyProviderRow("fireworks", "Fireworks", null),
+        ApiKeyProviderRow("openai", "OpenAI", null),
+        ApiKeyProviderRow("xai", "xAI", null, aliases = setOf("grok")),
+    )
+
+    public fun row(id: String): ApiKeyProviderRow? =
+        ROWS.firstOrNull { it.id == id || id in it.aliases }
 }
 
 /** The lookup half of [AuthKind] — the "registry" this file's header names. A named object since

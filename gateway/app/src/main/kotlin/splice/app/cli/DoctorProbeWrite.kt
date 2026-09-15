@@ -14,27 +14,6 @@ import java.nio.file.Paths
 
 private val OUTCOME_TAG = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
-/** The probe's BYTE write, as a named seam (the [WrapperClaim] precedent, and a fun interface
- *  rather than a raw lambda type for the same reason that one is).
- *
- *  DR-171 redo, on codex-splice's review: creating the file and writing bytes into it are two
- *  different claims, and this probe makes the second one — its non-access remedy is `df`, which is
- *  advice about SPACE. Metadata can succeed where data cannot (ENOSPC, a quota, a failing device),
- *  so an exclusive create alone would report INFO over a directory that cannot actually take a
- *  byte. Nothing could prove the write survived the DR-171 port while it was an unmockable direct
- *  call — the mutant that deleted it passed every arm — so the seam exists to make that property
- *  testable, not to make the probe configurable. */
-internal fun interface ProbeWrite {
-    operator fun invoke(probe: Path, content: String)
-}
-
-/** The production write. */
-internal object FileProbeWrite : ProbeWrite {
-    override fun invoke(probe: Path, content: String) {
-        Files.writeString(probe, content)
-    }
-}
-
 /** The writability probe as a constructed collaborator rather than a free function (Kotlin style
  *  law, 2026-08-15: main sources carry no top-level functions). Stateless — doctor builds one and
  *  asks it; the member keeps the old function's name so every historical grep still lands. */

@@ -31,13 +31,14 @@ import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
 import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
+import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.CredentialLock
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
 import splice.spi.SingleFlight
 import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.time.Instant
 
@@ -194,19 +195,12 @@ public class CodexAuthProvider(
 
     override suspend fun describe(): AuthDescription = describeAuth.describe()
 
-    override fun credentialIdentity(): CredentialFileIdentity? =
-        if (credentialPresence() == CredentialPresence.MISSING) {
-            null
-        } else {
-            authFile.codexAuthIdentityOrNull(authPath, log)
-        }
+    override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 
-    override fun credentialPresence(): CredentialPresence = when {
-        Files.isRegularFile(authPath) -> CredentialPresence.PRESENT
-        Files.notExists(authPath) && Files.notExists(authPath, LinkOption.NOFOLLOW_LINKS) ->
-            CredentialPresence.MISSING
-        else -> CredentialPresence.UNKNOWN
-    }
+    override fun credentialPresence(): CredentialPresence = credentialEvidence().presence
+
+    override fun credentialEvidence(): CredentialEvidence =
+        CredentialFileEvidenceReader.read(authPath)
 
     // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
 

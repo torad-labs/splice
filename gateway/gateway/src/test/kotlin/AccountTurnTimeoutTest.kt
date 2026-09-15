@@ -78,6 +78,7 @@ class AccountTurnTimeoutTest {
                 0L,
             )
             assertTrue(rig.post.post(inputs) is TurnOutcome.Success)
+            assertEquals(0L, drive.perf.snapshot().marks[PerfKeys.STREAM_END])
             // The prior POST completed; this next POST has attempt zero but no whole-turn budget left.
             rig.expire()
             val callsBeforeContinuation = rig.calls
@@ -98,6 +99,7 @@ class AccountTurnTimeoutTest {
             assertFalse(actual.providerReported)
             assertNull(actual.partial, "whole-turn expiry must not offer another continuation")
             assertEquals(attemptsBeforeContinuation, drive.perf.snapshot().counters[PerfKeys.ATTEMPTS])
+            assertEquals(30_000L, drive.perf.snapshot().marks[PerfKeys.STREAM_END])
             val actualTag = drive.pipeline.finishStream(rig.terminal, actual, drive.meta, 30_000L)
             val expectedTag = drive.pipeline.finishStream(expectedTerminal, expected, drive.meta, 30_000L)
             assertEquals("failure:overloaded_error", actualTag)
@@ -116,6 +118,7 @@ class AccountTurnTimeoutTest {
         val mock = MockChatGptUpstream()
         val calls: Int get() = mock.upstreamBodies.size
         private var remainingMs = 30_000L
+        private var elapsedMs = 0L
         private val auth = object : RefreshableAuthProvider {
             override suspend fun credentials(): Credentials = Credentials.Bearer("test")
             override suspend fun refresh(): Credentials? = null
@@ -174,6 +177,7 @@ class AccountTurnTimeoutTest {
 
         fun expire() {
             remainingMs = 0L
+            elapsedMs = 30_000L
         }
 
         suspend fun drive(): TurnDrive = TurnDrive(
@@ -195,7 +199,7 @@ class AccountTurnTimeoutTest {
             pipeline = pipeline,
             t0 = 0L,
             upstreamModel = "gpt-5.6-sol",
-            perf = TurnPerf { 0L },
+            perf = TurnPerf { elapsedMs },
             turnHeaders = emptyMap(),
             signals = RunnerSignals(),
             channel = ClientChannel(

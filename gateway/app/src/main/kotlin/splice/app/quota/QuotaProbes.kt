@@ -34,6 +34,7 @@ internal class QuotaProbes(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val parsers = QuotaParsers()
+    private val museQuota = MuseQuota()
 
     fun forHead(ctx: ProviderBuild, auth: AuthProvider): QuotaProbe? {
         val base = ctx.providerCfg.baseUrl
@@ -41,6 +42,7 @@ internal class QuotaProbes(
             "chatgpt-oauth" -> probe(codexUsageUrl(base), auth) { obj, now -> parsers.codex(obj, now) }
             "kimi-oauth" -> probe(base.trimEnd('/') + "/v1/usages", auth) { obj, now -> parsers.kimi(obj, now) }
             "grok-oauth" -> probe(GROK_BILLING_URL, auth) { obj, now -> parsers.grok(obj, now) }
+            "muse-oauth" -> museQuota.probe(auth, clock)
             else -> null
         }
     }
@@ -68,17 +70,29 @@ internal class BearerGetProbe(
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun probe(): QuotaSnapshot? {
-        val creds = auth.credentials() as? Credentials.Bearer ?: return null
+        val creds = auth.credentials() ?: return null
+        val authHeaders = credentialHeaders(creds) ?: return null
         val resp = client.get(url) {
-            header("Authorization", "Bearer ${creds.token}")
+            authHeaders.forEach { (name, value) -> header(name, value) }
             header("Accept", "application/json")
-            creds.accountId?.let { header("ChatGPT-Account-Id", it) }
             header("x-grok-client-mode", "cli")
             header("x-grok-client-version", GROK_CLIENT_VERSION)
             header("X-XAI-Token-Auth", "xai-grok-cli")
         }
-        if (resp.status.value != HTTP_OK) return null
-        return parse.parse(json.parseToJsonElement(resp.bodyAsText()).jsonObject, clock())
+        return if (resp.status.value != HTTP_OK) {
+            null
+        } else {
+            parse.parse(json.parseToJsonElement(resp.bodyAsText()).jsonObject, clock())
+        }
+    }
+
+    private fun credentialHeaders(creds: Credentials): Map<String, String>? = when (creds) {
+        is Credentials.Bearer -> buildMap {
+            put("Authorization", "Bearer ${creds.token}")
+            creds.accountId?.let { put("ChatGPT-Account-Id", it) }
+        }
+        is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
+        Credentials.ClientForwarded -> null
     }
 }
 

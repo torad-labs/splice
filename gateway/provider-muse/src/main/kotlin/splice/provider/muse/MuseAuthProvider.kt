@@ -1,6 +1,7 @@
 // NEW: Muse persisted inference-key provider with bounded re-mint holds and safe persistence.
 package splice.provider.muse
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.auth.AuthDescription
@@ -60,6 +61,49 @@ public class MuseAuthProvider(
         }
     }
 
+    /**
+     * Poller-only mint for `subs_usage`. Does not persist. Obeys the same holds as [refresh]:
+     * a live hold is a null with no POST; 429 and inactive verdicts record those holds.
+     */
+    public suspend fun usageFields(): JsonObject? =
+        Cancellables.runCatchingCancellable {
+            CredentialLock.withLock(authPath, log = lockLog) {
+                val snapshot = store.read() ?: return@withLock null
+                val held = invalidAccountLatch.isLatched(snapshot.identity) || holds.suppresses(snapshot)
+                if (held) return@withLock null
+                val accessToken = snapshot.accessToken ?: return@withLock null
+                val attempt = Cancellables.runCatchingCancellable {
+                    mintCall(accessToken, MuseMintMode.REFRESH)
+                }.getOrElse {
+                    log("[muse-auth] key mint transport failed")
+                    return@withLock null
+                }
+                when (attempt) {
+                    is MuseMintAttempt.Granted -> attempt.key.fields
+                    is MuseMintAttempt.InvalidAccountToken -> {
+                        invalidAccountToken(accessToken, allowChangedTokenRetry = false)
+                        null
+                    }
+                    is MuseMintAttempt.SubscriptionRequired -> {
+                        subscriptionRequired(snapshot, attempt)
+                        null
+                    }
+                    is MuseMintAttempt.RateLimited -> {
+                        rateLimited(snapshot, attempt)
+                        null
+                    }
+                    is MuseMintAttempt.Denied -> {
+                        holds.recordRetry(snapshot, MAX_MINT_HOLD_MS)
+                        log("[muse-auth] key mint denied; retry held for 60 minutes")
+                        null
+                    }
+                }
+            }
+        }.getOrElse {
+            log("[muse-auth] credential lock unavailable; usage probe skipped")
+            null
+        }
+
     override fun allowRefreshAfterFailure(status: Int, body: String): Boolean = status == AUTH_FAILURE_STATUS
 
     override suspend fun describe(): AuthDescription {
@@ -112,7 +156,11 @@ public class MuseAuthProvider(
                 invalidAccountToken(accessToken, allowChangedTokenRetry)
             is MuseMintAttempt.SubscriptionRequired -> subscriptionRequired(snapshot, attempt)
             is MuseMintAttempt.RateLimited -> rateLimited(snapshot, attempt)
-            is MuseMintAttempt.Denied -> denied(snapshot)
+            is MuseMintAttempt.Denied -> {
+                holds.recordRetry(snapshot, MAX_MINT_HOLD_MS)
+                log("[muse-auth] key mint denied; retry held for 60 minutes")
+                null
+            }
         }
     }
 
@@ -190,9 +238,4 @@ public class MuseAuthProvider(
         return null
     }
 
-    private fun denied(snapshot: MuseCredentialSnapshot): Credentials? {
-        holds.recordRetry(snapshot, MAX_MINT_HOLD_MS)
-        log("[muse-auth] key mint denied; retry held for 60 minutes")
-        return null
-    }
 }

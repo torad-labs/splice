@@ -395,6 +395,73 @@ class MuseAuthProviderTest {
         assertEquals("coalesced-key", (auth.credentials() as Credentials.Bearer).token)
     }
 
+    @Test
+    fun `usageFields returns mint fields without persisting the key`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir)
+        val before = Files.readString(file)
+        val calls = AtomicInteger()
+        val auth = provider(file) { _, _ ->
+            calls.incrementAndGet()
+            MuseMintAttempt.Granted(subscriptionKey("must-not-be-written"))
+        }
+
+        val fields = auth.usageFields()
+        assertEquals(1, calls.get())
+        val weekly = fields!!.getValue("subs_usage").jsonObject.getValue("weekly").jsonObject
+        val used = weekly.getValue("used_percent").jsonPrimitive.content.toDouble()
+        assertEquals(12.0, used, 1e-9)
+        assertEquals(before, Files.readString(file))
+        assertEquals("persisted-key", (auth.credentials() as Credentials.Bearer).token)
+    }
+
+    @Test
+    fun `usageFields obeys an existing rate hold with no POST`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir)
+        val calls = AtomicInteger()
+        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
+            calls.incrementAndGet()
+            MuseMintAttempt.RateLimited()
+        }
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        assertNull(auth.usageFields())
+        assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `usageFields 429 records the retry hold so refresh does not POST`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir)
+        val before = Files.readString(file)
+        val calls = AtomicInteger()
+        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
+            calls.incrementAndGet()
+            MuseMintAttempt.RateLimited(DEFAULT_RATE_HOLD_MS)
+        }
+        assertNull(auth.usageFields())
+        assertEquals(1, calls.get())
+        assertEquals(before, Files.readString(file))
+        repeat(10) { assertNull(auth.refresh()) }
+        assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `usageFields inactive records the hold without persisting`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir)
+        val before = Files.readString(file)
+        val calls = AtomicInteger()
+        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
+            calls.incrementAndGet()
+            MuseMintAttempt.SubscriptionRequired("https://www.meta.ai/")
+        }
+        assertNull(auth.usageFields())
+        assertEquals(1, calls.get())
+        assertEquals(before, Files.readString(file))
+        assertNull(auth.credentials())
+        assertEquals("inactive", auth.describe().fields["subscription"])
+        repeat(10) { assertNull(auth.usageFields()) }
+        assertEquals(1, calls.get())
+    }
+
     @Nested
     inner class ConcurrentStateIsolation {
         @Test

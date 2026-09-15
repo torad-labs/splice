@@ -19,18 +19,20 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
     internal fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
         // No compaction pin, on any provider (2026-09-05): a compaction inherits the session's
         // effort or the reasoning mismatch invalidates the whole prompt-cache prefix.
-        if (body.thinking?.disabled == true && quirks.effortLadder == EffortLadder.CODEX) return null
+        if (body.thinking?.disabled == true && quirks.effortVocabulary.omitWhenDisabled()) return null
         var effort = looseFields.looseEffort(raw)
         if (effort == null) {
             // v27: the /effort picker (budget) WINS over the config/env fallback
             val budgetEffort = body.thinking
                 ?.takeIf { !it.disabled }
                 ?.budgetTokens
-                ?.let { effortRules.effortFromBudget(it, quirks.effortLadder) }
-            effort = budgetEffort ?: effortRules.normalizeEffort(opts.configEffort, quirks.effortLadder) ?: "high"
+                ?.let { effortRules.effortFromBudget(it, quirks.effortVocabulary) }
+            effort = budgetEffort
+                ?: effortRules.normalizeEffort(opts.configEffort, quirks.effortVocabulary)
+                ?: "high"
         }
         effort = effortRules.flooredForVisibility(effort, opts.showReasoning)
-        effort = effortRules.flooredForGrok(effort, quirks.effortLadder)
+        effort = effortRules.flooredForVendor(effort, quirks.effortVocabulary)
         return effortRules.clampedForModelCeiling(effort, opts.upstreamModel, quirks.effortMaxRejectModelRegex)
     }
 

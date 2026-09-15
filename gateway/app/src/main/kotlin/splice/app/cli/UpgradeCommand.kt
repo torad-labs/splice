@@ -13,7 +13,6 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import kotlin.io.path.deleteRecursively
 
 private const val STILL_BUSY = "turns still in flight after the wait — rerun with --now to restart anyway"
 
@@ -50,13 +49,13 @@ internal class UpgradeCommand(
         val version = staged(base, staging, a.to)
         val installed = layout.installedVersion()
         if (version == installed) {
-            discard(staging)
+            layout.discard(staging)
             println("  ${"version".padEnd(UPGRADE_PAD)} $version is already installed")
             return true
         }
         layout.ensureCurrentRecorded()
         val dir = layout.versionDir(version)
-        discard(dir)
+        layout.discard(dir)
         if (!Files.isDirectory(staging)) {
             throw UpgradeRefused("the staged release at $staging disappeared (another upgrade running?); rerun")
         }
@@ -67,7 +66,7 @@ internal class UpgradeCommand(
             return false
         }
         activation.activate(version, installed)
-        layout.prunable().forEach(::discard)
+        layout.prunable().forEach(layout::discard)
         return finish(version)
     }
 
@@ -92,22 +91,11 @@ internal class UpgradeCommand(
         return try {
             val version = Cancellables.runCatchingCancellable { release.stage(base, staging) }
                 .getOrElse { e -> throw UpgradeRefused("staging failed: ${SafeFailureText.render(e)}") }
-            matched(version, requested)
+            layout.confirmVersion(version, requested)
         } catch (refused: UpgradeRefused) {
-            discard(staging)
+            layout.discard(staging)
             throw refused
         }
-    }
-
-    /** The jar's own version line must be a plain semver segment (versionDir refuses anything else,
-     *  so no path is ever built from it) and must confirm --to when one was given. */
-    private fun matched(version: String, requested: String?): String {
-        layout.versionDir(version)
-        val wanted = requested?.removePrefix("v")
-        if (wanted != null && wanted != version) {
-            throw UpgradeRefused("release $requested delivered a jar reporting $version — refusing to activate it")
-        }
-        return version
     }
 
     private fun finish(version: String): Boolean {
@@ -124,10 +112,5 @@ internal class UpgradeCommand(
         println()
         daemon.doctor(java, layout.liveJar)
         return restarted
-    }
-
-    @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    private fun discard(path: Path) {
-        if (Files.exists(path)) path.deleteRecursively()
     }
 }

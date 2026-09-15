@@ -5,7 +5,6 @@ package splice.dialect.responses
 
 import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
-import splice.core.turn.TurnMeta
 
 // TurnOptionsDeps lives in TurnOptionsDeps.kt (concentration, 2026-08-19).
 
@@ -67,15 +66,6 @@ internal class ResponsesTurnOptions(
             toolSurfaceOpen = deps.toolSurfaceLatch.open,
         )
     }
-
-    /** codex-rs sends this marker header for responses-lite (5.6-family) turns — every turn on
-     *  such a model, compaction included (mirrors the builder's lite gate). */
-    fun liteHeaders(meta: TurnMeta): Map<String, String> =
-        if (deps.quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
-            mapOf("x-openai-internal-codex-responses-lite" to "true")
-        } else {
-            emptyMap()
-        }
 
     fun showOn(): Boolean = !deps.showReasoning.isOff
 }

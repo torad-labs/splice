@@ -69,31 +69,31 @@ internal class PassthroughThinking(
         sink.put(OUTPUT_CONFIG, buildJsonObject { put("effort", effort) })
     }
 
-    /** Kimi effort ladder — vocab is low|high|max (NO medium). Compact turns take the SAME
-     *  derivation as session turns (inherit; v27) unless a pin is explicitly configured.
+    /** Effort for TurnMeta when thinking is absent, and the wire rung when thinking is present.
      *
-     *  PT-002 (scoped after review): a turn with NO `thinking` config AT ALL — the common shape of
-     *  a Claude Code compaction call, even on a session that runs its regular turns with real
-     *  thinking — falls back to the configured default effort, ONLY when it is already one of
-     *  Kimi's own three literal rungs (never a fuzzy floor/ceiling mapping of a foreign
-     *  vocabulary). That fallback can only ever inform [TurnMeta.effort]: [putThinking] omits BOTH
-     *  `thinking` and `output_config` when `thinking` is absent, so it never reaches kimi's wire.
+     *  Compact turns take the SAME derivation as session turns (inherit; v27) unless a pin is
+     *  explicitly configured.
      *
-     *  A turn that DOES send `thinking` but omits `budget_tokens` is a DIFFERENT shape — it reaches
-     *  the wire via `output_config.effort`, so it keeps the pre-existing unconditional EFFORT_MAX
-     *  no matter what [configEffort] is set to (KIMI BYTE-IDENTITY: kimi's built request bytes are
-     *  frozen for every request shape).
+     *  PT-002: a turn with NO thinking config AT ALL — the common shape of a Claude Code compaction
+     *  call — falls back through [PassthroughEffortLadder.fallbackEffort]. That value can only ever
+     *  inform TurnMeta.effort: [putThinking] omits BOTH thinking and output_config when thinking is
+     *  absent, so it never reaches the wire. When quirks.effortRungs is null there is no vendor
+     *  ladder: the trimmed config token rides (or MAX if absent). When rungs are set, an unrecognized
+     *  configEffort falls to the cheapest rung (SCH-006), never silently to MAX.
      *
-     *  SCH-006: an unrecognized-but-set [configEffort] (e.g. "medium" — a valid rung for another
-     *  provider sharing the same EFFORT knob, see CODEX_REASONING_EFFORT) used to fall all the way
-     *  through to EFFORT_MAX — a silent cost ESCALATION for a realistic multi-provider config. See
-     *  [PassthroughEffortLadder.fallbackEffort]: it now falls to the cheapest rung instead (never
-     *  pricier than whatever the operator asked for) and logs the substitution once per builder
-     *  lifetime, not once per turn. */
+     *  A turn that DOES send thinking but omits budget_tokens is a DIFFERENT shape — it reaches
+     *  the wire via output_config.effort, so it keeps the pre-existing unconditional EFFORT_MAX
+     *  no matter what configEffort is set to (KIMI BYTE-IDENTITY for the kimi profile). */
     fun effortLadder(typed: AnthropicRequest): String {
         // PT-002: the ONLY branch [configEffort] can reach — see this function's KDoc for why.
         val thinking = typed.thinking
-            ?: return effortRules.fallbackEffort(configEffort, quirks.providerTag, configEffortFallbackWarned, log)
+            ?: return effortRules.fallbackEffort(
+                configEffort,
+                quirks.providerTag,
+                configEffortFallbackWarned,
+                log,
+                quirks.effortRungs,
+            )
         return effortRules.budgetEffort(thinking.budgetTokens)
     }
 }

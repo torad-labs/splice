@@ -1,3 +1,5 @@
+package splice.app.provider.local
+
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -5,10 +7,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.dialect.chat.LocalHttp
 import splice.dialect.chat.LocalHttpReply
-import splice.dialect.chat.LocalModel
-import splice.dialect.chat.LocalRuntime
-import splice.dialect.chat.LocalRuntimeKind
-import splice.dialect.chat.LocalRuntimeProbe
 
 /** models() is null only when the list call fails; these routes always answer it. */
 private fun LocalRuntimeProbe.listed(runtime: LocalRuntime) = checkNotNull(models(runtime))

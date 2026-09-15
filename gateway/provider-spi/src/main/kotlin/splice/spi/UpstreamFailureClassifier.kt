@@ -121,7 +121,7 @@ public object UpstreamFailureClassifier {
             return ExtractResult.Gateway(
                 ClassifiedFailure(
                     type,
-                    "ChatGPT backend $status (gateway)",
+                    "upstream $status (gateway)",
                     transient = status != null && status >= SERVER_ERROR_FLOOR,
                 ),
             )

@@ -4,13 +4,14 @@
 // mentions tool_calls and ping is not a call. A non-200 reply is described by its status class and
 // size only — the body is the runtime's and can echo headers, paths or terminal controls into the
 // doctor. Split from LocalRuntimeProbe.kt (review 2026-09-14).
-package splice.dialect.chat
+package splice.app.provider.local
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.dialect.chat.LocalHttpReply
 
 private const val HTTP_OK = 200
 private const val HTTP_BAD_REQUEST = 400

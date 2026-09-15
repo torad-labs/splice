@@ -17,13 +17,6 @@ private const val LIVE_TIMEOUT_S = 120L
 /** The one request that is a real turn (LocalRuntimeProbe.live); every other POST is a probe. */
 private const val LIVE_PATH = "/chat/completions"
 
-public enum class LocalRuntimeKind(public val label: String) {
-    OLLAMA("Ollama"),
-    LM_STUDIO("LM Studio"),
-    VLLM("vLLM"),
-    OPENAI_COMPATIBLE("OpenAI-compatible"),
-}
-
 public data class LocalHttpReply(val status: Int, val body: String)
 
 /** The one seam to the network: GET or POST a URL, or null when the runtime is unreachable. */

@@ -609,6 +609,7 @@ expect = {
     "chatgpt-oauth": ["open this URL to sign in", "https://auth.openai.com"],
     "grok-oauth": ["open this URL to sign in", "https://"],
     "kimi-oauth": ["login error", "could not start device login", "enter this code"],
+    "muse-oauth": ["login error", "could not start device login", "enter this code"],
     "api-key": ["pipe it instead", "splice key set"],
     "client": ["no browser login for that kind"],
 }

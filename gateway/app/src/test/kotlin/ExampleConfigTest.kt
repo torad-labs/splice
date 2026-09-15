@@ -68,7 +68,7 @@ class ExampleConfigTest {
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
         assertEquals(
-            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-splice"),
+            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-muse", "claude-splice"),
             topology.heads.keys,
         )
         assertEquals(3096, topology.daemon.controlPort)

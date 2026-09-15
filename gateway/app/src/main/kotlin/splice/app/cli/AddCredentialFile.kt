@@ -35,6 +35,7 @@ internal class AddCredentialFile(private val json: Json = Json { ignoreUnknownKe
         return when {
             material.access.isNullOrEmpty() ->
                 "the stored credential holds no access token where $kind keeps it — $SIGN_IN"
+            kind == AuthKind.MuseOAuth.wire -> null
             !material.refresh.isNullOrEmpty() -> null
             material.expiresAtMs != null && material.expiresAtMs > nowMs -> null
             else -> "the stored credential holds no refresh token and no expiry still ahead — $SIGN_IN"
@@ -58,6 +59,7 @@ internal class AddCredentialFile(private val json: Json = Json { ignoreUnknownKe
             JsonScalars.str(root, REFRESH_TOKEN),
             JsonScalars.long(root, "expires_at")?.let(CredentialExpiry::epochSecondsToMs),
         )
+        AuthKind.MuseOAuth.wire -> TokenMaterial(JsonScalars.str(root, ACCESS_TOKEN), null, null)
         else -> null
     }
 

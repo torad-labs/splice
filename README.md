@@ -2,7 +2,7 @@
 
 # splice
 
-**Type `claudex` instead of `claude` — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your ChatGPT, Grok, or Kimi subscription, on loopback.**
+**Type `claudex` instead of `claude` — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your ChatGPT, Grok, Kimi, or Muse subscription, on loopback.**
 
 [Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Providers](#provider-support) · [Trade-offs](#why-you-might-not-want-splice) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
 
@@ -13,12 +13,12 @@
 
 </div>
 
-splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`, …). Provider-native reasoning remains visible as thinking blocks; splice does not synthesize or mirror a reasoning summary into the transcript.
+splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude-openrouter`, …). Provider-native reasoning remains visible as thinking blocks; splice does not synthesize or mirror a reasoning summary into the transcript.
 
 ## Not affiliated
 
 > [!IMPORTANT]
-> splice is an independent, personal project. It is **not affiliated with, endorsed by, or sponsored by** Anthropic, OpenAI, xAI, Moonshot, or OpenRouter. All product names and trademarks belong to their respective owners.
+> splice is an independent, personal project. It is **not affiliated with, endorsed by, or sponsored by** Anthropic, OpenAI, xAI, Moonshot, Meta, or OpenRouter. All product names and trademarks belong to their respective owners.
 > Anthropic identifies routing Claude Code to non-Claude models through a custom gateway as **unsupported**. splice is exactly that kind of gateway; use it with that in mind, at your own risk. No warranty: see [License](#license), and [why you might not want splice](#why-you-might-not-want-splice).
 
 When something is wrong, `splice doctor` names the exact fix:
@@ -35,7 +35,7 @@ Long coding-agent sessions bleed tokens and lose the thread. splice goes after b
 
 What you get:
 
-- [x] A [wrapper command per backend](#quick-start): `claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`
+- [x] A [wrapper command per backend](#quick-start): `claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-muse`, `claude-openrouter`
 - [x] [Heads that see each other](#heads-that-see-each-other): every wrapper's sessions register in one shared list, so a session on one backend can find, message and orchestrate a session on another with Claude Code's own `ListAgents` and `SendMessage`
 - [x] [Provider-native reasoning display](#reasoning), without synthetic transcript mirrors
 - [x] Cache-warm compaction on the session's own model and effort
@@ -156,7 +156,7 @@ An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over th
 
 `install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor`, so the install ends with a checked report.
 
-**splice was built for ChatGPT, Grok, and Kimi subscriptions.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
+**splice was built for ChatGPT, Grok, Kimi, and Muse subscriptions.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`, `claude-muse login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
 
 For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice; splice stores no Claude credential. Use Claude Code's own `/login` inside that head.
 
@@ -166,7 +166,7 @@ Admin verbs go through the `splice` command:
 splice status         # per-head status
 splice doctor         # check the whole install; every failing check prints its fix
 splice doctor --json  # the same as a redacted, shareable report (--with-logs, --out FILE, --live)
-splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|claude|api-key)
+splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|muse|claude|api-key)
 splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
@@ -174,7 +174,7 @@ splice restart        # restart the daemon with this shell's environment
 splice dashboard      # open the control dashboard (loopback :3096)
 splice init           # write the supported OpenRouter API-key starter topology
 splice install --all  # (re)link the wrapper commands
-<head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi)
+<head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi, claude-muse)
 ```
 
 `splice add` asks only for what a profile cannot know (a base URL and models for a generic
@@ -219,7 +219,7 @@ shell's environment; `splice doctor` detects this state explicitly. Keys in
 
 Each of these is a **password-equivalent secret**: anything that can read the file (or the environment variable) can spend against your account. Keep files `600`, never commit them, never paste them.
 
-Splice signs in on its own. Each OAuth head keeps its own credential file under `~/.config/splice/auth/`, written by `splice login <head>`, and it may be a different account from the one the vendor's own CLI or desktop app uses. The native apps' files (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`) are never read unless you name one in `auth.file`. Sharing a file with the native app is a trap: a refresh rotates the refresh token, so the app and splice invalidate each other's session, and the head has no credential while the other side rewrites the file. `splice doctor` warns when a head still names one.
+Splice signs in on its own. Each OAuth head keeps its own credential file under `~/.config/splice/auth/`, written by `splice login <head>`, and it may be a different account from the one the vendor's own CLI or desktop app uses. The native apps' files (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`, `~/.config/muse/auth.json`) are never read unless you name one in `auth.file`. Sharing a file with the native app is a trap: a refresh rotates the refresh token, so the app and splice invalidate each other's session, and the head has no credential while the other side rewrites the file. `splice doctor` warns when a head still names one.
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
@@ -227,6 +227,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
 | grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
 | kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
+| muse (Meta) | `muse-oauth` | `~/.config/splice/auth/muse.json` | splice's own device-flow account token plus minted inference key (`claude-muse login`); the Muse Code CLI file only by explicit `auth.file` |
 | OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
 | Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
 | splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |
@@ -273,6 +274,7 @@ records each switch once under `[<head>]`.
 | codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |
 | grok (xAI) | `grok-oauth` | **Primary** — unofficial, at your own risk |
 | kimi (Moonshot) | `kimi-oauth` | **Primary** — unofficial, at your own risk |
+| muse (Meta) | `muse-oauth` | **Primary** — unofficial, at your own risk |
 | Local runtimes (Ollama, LM Studio, vLLM) | `api-key` on a loopback `base_url` | **Supported** — user-managed; rows validated against what the runtime serves |
 
 The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for. They are also **unofficial**: they authenticate by reusing the public OAuth client identity of each vendor's own CLI, not a documented third-party integration, and a vendor could object or break them at any time. Use them at your own risk. The **api-key** routes are ordinary pay-per-token API access with none of that ambiguity, and make the best zero-config starter.
@@ -379,7 +381,7 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ```
 gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
 config/        splice.example.toml — the sample multi-provider topology
-bin/           splice-launch (the installed wrapper) + claudex (the codex-head entry)
+bin/           splice-launch (the installed wrapper) + claudex / claude-muse (in-repo head entries)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 checks/        the local gate and the live harnesses (docker e2e, local models, MCP hosting bench)
 webui/         React 19 + Vite + Zustand dashboard, single-file build

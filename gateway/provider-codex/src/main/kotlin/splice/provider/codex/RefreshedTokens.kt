@@ -5,12 +5,8 @@ package splice.provider.codex
 
 import splice.dialect.responses.ResponsesQuirks
 
-/** Result of the token endpoint's refresh POST (only the fields we persist). */
-public data class RefreshedTokens(
-    val accessToken: String?,
-    val refreshToken: String?,
-    val idToken: String?,
-)
+/** Same shape as splice.spi.RefreshedTokens; kept so in-module call sites do not move this row. */
+public typealias RefreshedTokens = splice.spi.RefreshedTokens
 
 /** Holder for the codex quirk profile. Split from CodexProvider.kt (concentration, 2026-08-19)
  *  so the provider is not billed for a second column-0 type. Same-package. */

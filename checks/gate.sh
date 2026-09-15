@@ -131,6 +131,21 @@ run "config-guard selftest" bash checks/config-guard-selftest.sh
 # another eight days (DR-139) — a hand sweep closes the instance, a checker closes the class.
 run "safe-failure-render" python3 checks/config/safe-failure-render.py check .
 run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
+# V4-29: a non-null default on a SHARED dialect's quirks is inherited by every provider that does
+# not override it, so a vendor fact parked there rides to other vendors' endpoints. Two defects
+# shipped in v0.3.2 that way: codex's internal lite marker went to any api-key responses head
+# pinned to a gpt-6 id (V4-28), and a bare `mini` effort clamp caught google/gemini-2.5-pro by
+# substring (V4-29). Fields are enumerated by parsing every shared *Quirks primary constructor on
+# disk, so a field added tomorrow is in scope without editing the checker; there is no allowlist.
+run "shared-quirks no vendor defaults" python3 checks/config/shared-quirks-no-vendor-defaults.py check .
+run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defaults.py --selftest
+# V4-30: the conventional-type vocabulary lives once, in the checks/pr-title.sh the next leg runs.
+# CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted to include `release` and
+# `codex`, types the org gate rejects — the exact divergence pr-title.sh's own header describes as
+# fixed history. Denominator is `git ls-files`, so an untracked sidecar or editor backup cannot red
+# the gate; a second copy must be tracked to reach main.
+run "one conventional type list" python3 checks/config/one-conventional-type-list.py check .
+run "one conventional type list selftest" bash checks/one-conventional-type-list-selftest.sh
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.

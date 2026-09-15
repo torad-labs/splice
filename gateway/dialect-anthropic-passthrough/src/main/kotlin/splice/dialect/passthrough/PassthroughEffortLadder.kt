@@ -9,18 +9,11 @@ package splice.dialect.passthrough
 import splice.core.util.LogSink
 import java.util.concurrent.atomic.AtomicBoolean
 
-// Kimi effort ladder vocab — top-level (not a class member) because PassthroughEffortLadder is a
-// separate collaborator sized against detekt's TooManyFunctions budget.
 private const val EFFORT_LOW = "low"
 private const val EFFORT_HIGH = "high"
 private const val EFFORT_MAX = "max"
 private const val HIGH_BUDGET_FLOOR = 8_192L
 private const val MAX_BUDGET_FLOOR = 24_576L
-
-// internal + camelCase (TopLevelPropertyNaming exempts only private SCREAMING_CASE):
-// PassthroughQuirks.init is the second reader (DR-121) — the config-time vocabulary wall for
-// compact_effort must be the SAME set the ladder emits, or the two drift.
-internal val kimiEfforts = setOf(EFFORT_LOW, EFFORT_HIGH, EFFORT_MAX)
 
 internal class PassthroughEffortLadder {
 
@@ -35,25 +28,34 @@ internal class PassthroughEffortLadder {
     }
 
     /** SCH-006's unrecognized-configEffort fallback. An effort value valid for another provider's
-     *  vocab (CODEX_REASONING_EFFORT's "medium") but not one of kimi's own {low, high, max} rungs
-     *  must never silently ESCALATE to the priciest rung — it falls to the CHEAPEST one instead
-     *  (never pricier than whatever the operator actually asked for), and the substitution is
-     *  logged ONCE per builder lifetime via [warned] (an AtomicBoolean owned by the calling builder
-     *  instance, not by this type) rather than once per turn. */
+     *  vocab (CODEX_REASONING_EFFORT's medium) but not one of this profile's rungs must never
+     *  silently ESCALATE to the priciest rung — it falls to the CHEAPEST one instead (never pricier
+     *  than whatever the operator actually asked for), and the substitution is logged ONCE per
+     *  builder lifetime via [warned] rather than once per turn. Rungs come from the quirks profile
+     *  (cheapest first). null rungs means no vendor ladder: the trimmed token rides, or MAX when
+     *  absent. */
     fun fallbackEffort(
         configEffort: String?,
         providerTag: String,
         warned: AtomicBoolean,
         log: LogSink,
+        rungs: List<String>?,
     ): String {
         val trimmed = configEffort?.trim()?.lowercase() ?: return EFFORT_MAX
-        if (trimmed in kimiEfforts) return trimmed
-        if (warned.compareAndSet(false, true)) {
-            log(
-                "[$providerTag] configured effort '$trimmed' is not a kimi rung (low|high|max) — " +
-                    "using '$EFFORT_LOW' instead of silently escalating to '$EFFORT_MAX'\n",
-            )
+        return when {
+            rungs == null -> trimmed
+            trimmed in rungs -> trimmed
+            else -> {
+                val cheapest = rungs.firstOrNull() ?: EFFORT_LOW
+                if (warned.compareAndSet(false, true)) {
+                    log(
+                        "[$providerTag] configured effort '$trimmed' is not a vendor rung " +
+                            "(${rungs.joinToString("|")}) — using '$cheapest' instead of silently " +
+                            "escalating to '$EFFORT_MAX'\n",
+                    )
+                }
+                cheapest
+            }
         }
-        return EFFORT_LOW
     }
 }

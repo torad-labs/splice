@@ -15,7 +15,7 @@
 //   LM Studio GET /api/v0/models -> data[].max_context_length (+ loaded_context_length when loaded)
 //   vLLM      GET /v1/models -> data[].max_model_len
 //   other     GET /v1/models only; context unknown, so a declared window is trusted but reported as such
-package splice.dialect.chat
+package splice.app.provider.local
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -28,6 +28,8 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.dialect.chat.JdkLocalHttp
+import splice.dialect.chat.LocalHttp
 
 private const val HTTP_OK = 200
 

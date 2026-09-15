@@ -37,8 +37,8 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughRequestBuilder
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
@@ -47,7 +47,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** KIMI's deformation set — see the CH-2 note in the file header. */
-private val KIMI_QUIRKS = PassthroughQuirksDefaults().kimi("kimi")
+private val KIMI_QUIRKS = KimiProfileFixture().kimi("kimi")
 
 private val GOLDEN_DIR: Path = Path.of("src", "test", "resources", "goldens")
 private val JSON = Json {

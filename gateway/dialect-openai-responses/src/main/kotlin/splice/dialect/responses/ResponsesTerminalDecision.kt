@@ -31,7 +31,7 @@ internal class ResponsesTerminalDecision(
             // Success that dispatches garbage.
             TurnOutcome.Failure(
                 ErrorType.API_ERROR,
-                "ChatGPT backend: $it in tool call — retry",
+                "upstream: $it in tool call — retry",
                 providerReported = true,
             )
         } ?: state.upstreamFailure?.let {
@@ -40,7 +40,7 @@ internal class ResponsesTerminalDecision(
             // must not re-POST the identical full context merely because API_ERROR is a wide bucket.
             TurnOutcome.Failure(
                 it.type,
-                "ChatGPT backend: ${it.message}",
+                "upstream: ${it.message}",
                 providerReported = true,
                 partial = if (it.transient) payload.partialOrNull(state) else null,
             )
@@ -65,7 +65,7 @@ internal class ResponsesTerminalDecision(
         state.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
             TurnOutcome.Failure(
                 ErrorType.API_ERROR,
-                "ChatGPT backend: model refused — $it",
+                "upstream: model refused — $it",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
             )
         }
@@ -79,7 +79,7 @@ internal class ResponsesTerminalDecision(
         if (state.contentFiltered) {
             TurnOutcome.Failure(
                 ErrorType.API_ERROR,
-                "ChatGPT backend: generation stopped by content filter",
+                "upstream: generation stopped by content filter",
                 providerReported = true,
             )
         } else {
@@ -92,7 +92,7 @@ internal class ResponsesTerminalDecision(
         } else {
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,
-                "claudex: upstream stream ended without response.completed (truncated); retry",
+                "splice: upstream stream ended without response.completed (truncated); retry",
                 partial = payload.partialOrNull(state),
             )
         }
@@ -118,7 +118,7 @@ internal class ResponsesTerminalDecision(
         }
         return TurnOutcome.Failure(
             ErrorType.OVERLOADED,
-            "claudex: upstream stream stalled ($why) — aborted; retry",
+            "splice: upstream stream stalled ($why) — aborted; retry",
             partial = when (fired) {
                 is WatchdogFired.Idle -> payload.partialOrNull(state)
                 is WatchdogFired.TotalCap -> null

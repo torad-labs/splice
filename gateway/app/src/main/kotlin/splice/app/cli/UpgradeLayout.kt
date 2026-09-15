@@ -11,6 +11,7 @@ import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import kotlin.io.path.deleteRecursively
 
 internal const val JAR_ASSET = "splice.jar"
 internal const val SHIM_ASSET = "splice-launch"
@@ -99,5 +100,21 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
     private fun liveStaging(name: String): Boolean {
         val pid = name.removePrefix(STAGING_PREFIX).takeIf { name.startsWith(STAGING_PREFIX) }?.toLongOrNull()
         return pid != null && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+    }
+
+    @OptIn(kotlin.io.path.ExperimentalPathApi::class)
+    fun discard(path: Path) {
+        if (Files.exists(path)) path.deleteRecursively()
+    }
+
+    /** The jar's own version line must be a plain semver segment (versionDir refuses anything else)
+     *  and must confirm --to when one was given. */
+    fun confirmVersion(version: String, requested: String?): String {
+        versionDir(version)
+        val wanted = requested?.removePrefix("v")
+        if (wanted != null && wanted != version) {
+            throw UpgradeRefused("release $requested delivered a jar reporting $version — refusing to activate it")
+        }
+        return version
     }
 }

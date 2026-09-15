@@ -13,11 +13,11 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.passthrough.BuiltPassthroughRequest
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughRequestBuilder
 
-private val PASS = PassthroughQuirksDefaults().kimi("kimi")
+private val PASS = KimiProfileFixture().kimi("kimi")
 
 /** The inverted defaults: a faithful passthrough, which is what the claude head rides. */
 private val NEUTRAL = PassthroughQuirks(providerTag = "claude-splice")
@@ -329,7 +329,7 @@ class PassthroughRequestBuilderTest {
     //
     // Every assertion here is a deformation that would be WRONG against api.anthropic.com. They are
     // the claude head's actual contract (campaign claude-head, CH-2): kimi opts into the deformations
-    // via PassthroughQuirksDefaults().kimi(), and a head that declares nothing gets its bytes forwarded as sent.
+    // via KimiProfileFixture().kimi(), and a head that declares nothing gets its bytes forwarded as sent.
 
     @Test
     fun `neutral preserves cache_control everywhere kimi strips it`() {

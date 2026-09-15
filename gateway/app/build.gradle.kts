@@ -40,6 +40,8 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":gateway")))
+    testImplementation(testFixtures(project(":dialect-openai-responses")))
+    testImplementation(testFixtures(project(":dialect-anthropic-passthrough")))
 }
 
 application {

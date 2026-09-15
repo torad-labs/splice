@@ -50,7 +50,7 @@ internal class StreamPromote(
                 log("[gateway] empty-turn shape compact=true ${outcome.outputShape}\n")
                 emitter.emitError(
                     ErrorType.API_ERROR,
-                    "claudex: compact returned no content from model — retry (upstream ${outcome.outputShape})",
+                    "splice: compact returned no content from model — retry (upstream ${outcome.outputShape})",
                 )
                 PromoteVerdict("empty_compact")
             }
@@ -69,7 +69,7 @@ internal class StreamPromote(
                 log("[gateway] empty-turn shape compact=false ${outcome.outputShape}\n")
                 emitter.emitError(
                     ErrorType.API_ERROR,
-                    "claudex: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
+                    "splice: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
                 )
                 PromoteVerdict("empty_model")
             }

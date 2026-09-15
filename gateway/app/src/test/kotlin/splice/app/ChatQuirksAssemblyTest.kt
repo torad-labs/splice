@@ -71,6 +71,14 @@ class ChatQuirksAssemblyTest {
         assertEquals("claude-grok", q.providerTag)
     }
 
+    @Test
+    fun `xhighModels is wired on every chat auth kind from GrokQuirks`() {
+        val expected = GrokQuirks().xhighModels().pattern
+        for (kind in listOf("grok-oauth", "api-key", "custom", "client")) {
+            assertEquals(expected, chat(kind).xhighModels?.pattern, kind)
+        }
+    }
+
     // The OTHER dialect's denominator, enumerated from the source rather than from suspicion: three
     // classes construct a ResponsesQuirks profile in this tree, and every one of them gets a
     // disposition here. :app is the only module that can see all three at once, which is why they

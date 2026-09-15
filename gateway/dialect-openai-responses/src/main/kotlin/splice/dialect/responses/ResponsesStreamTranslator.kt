@@ -39,7 +39,7 @@ import java.io.IOException
 import java.util.concurrent.CancellationException
 
 // NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
-private const val RUNAWAY_GUARD_MESSAGE = "ChatGPT backend: response exceeded max buffered size — aborting"
+private const val RUNAWAY_GUARD_MESSAGE = "upstream: response exceeded max buffered size — aborting"
 
 public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : StreamTranslator {
 

@@ -15,7 +15,7 @@ public class ChatRequestBuilder(
 ) {
     private val wire = ChatWireMapper(quirks)
     private val assembler = ChatRequestAssembler(quirks, wire)
-    private val effortTiers = ChatEffortTiers()
+    private val effortTiers = ChatEffortTiers(quirks.xhighModels)
 
     public fun build(
         body: AnthropicRequest,

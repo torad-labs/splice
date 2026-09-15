@@ -32,7 +32,7 @@ private fun meta(compact: Boolean) = TurnMeta(
     budgetTokens = null,
 )
 
-private val stalled = TurnOutcome.Failure(ErrorType.OVERLOADED, "claudex: upstream stream stalled — aborted; retry")
+private val stalled = TurnOutcome.Failure(ErrorType.OVERLOADED, "splice: upstream stream stalled — aborted; retry")
 
 class TurnLineWatchdogVerdictTest {
 

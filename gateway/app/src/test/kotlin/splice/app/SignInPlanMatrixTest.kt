@@ -19,7 +19,10 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.cli.StatusTable
+import splice.core.topology.ApiKeyProviderRegistry
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -90,11 +93,43 @@ class SignInPlanMatrixTest {
         assertEquals("OPENROUTER_API_KEY", openrouter.tokenCapture?.envVar)
         assertTrue(openrouter.tokenCapture!!.tokenPattern.startsWith("sk-or-"))
 
-        for (vendor in listOf("fireworks", "openai", "moonshot")) {
+        ApiKeyProviderRegistry.rows().filter { it.tokenPattern == null }.forEach { row ->
             assertNull(
-                planner.signInPlan(providerCfg(API_KEY), head(vendor, "claude-$vendor"), vendor).tokenCapture,
-                "$vendor has no pinned token shape — guessing one risks capturing ordinary prose",
+                planner.signInPlan(providerCfg(API_KEY), head(row.id, "claude-${row.id}"), row.id).tokenCapture,
+                "${row.id} has no pinned token shape — guessing one risks capturing ordinary prose",
             )
+        }
+    }
+
+    @Test
+    fun `every registry label reaches the plan and only openrouter has a token pattern`() {
+        assertEquals(
+            setOf("openrouter", "moonshot", "fireworks", "openai", "xai"),
+            ApiKeyProviderRegistry.rows().map { it.id }.toSet(),
+        )
+        assertEquals(
+            setOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth", "client"),
+            AuthKindRegistry.knownKinds().map { it.wire }.toSet(),
+        )
+        val patterned = ApiKeyProviderRegistry.rows().filter { it.tokenPattern != null }
+        assertEquals(1, patterned.size)
+        assertEquals("openrouter", patterned.single().id)
+        ApiKeyProviderRegistry.rows().forEach { row ->
+            val plan = planner.signInPlan(providerCfg(API_KEY), head(row.id, "claude-${row.id}"), row.id)
+            assertEquals(row.label, plan.label, row.id)
+        }
+        AuthKindRegistry.knownKinds().forEach { kind ->
+            val dialect = when (kind) {
+                is AuthKind.Client, is AuthKind.KimiOAuth, is AuthKind.MuseOAuth ->
+                    Dialect.ANTHROPIC_PASSTHROUGH
+                else -> Dialect.OPENAI_RESPONSES
+            }
+            val plan = planner.signInPlan(
+                providerCfg(kind.wire).copy(dialect = dialect),
+                head(kind.wire, "claude-${kind.wire}"),
+                kind.wire,
+            )
+            assertEquals(kind.signInLabel, plan.label, kind.wire)
         }
     }
 

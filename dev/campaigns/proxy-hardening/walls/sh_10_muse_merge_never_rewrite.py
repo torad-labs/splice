@@ -4,7 +4,7 @@
 
 The Kimi detector already traces local values and private forwards to the atomic 0600 write.
 Reuse that detector rather than fork its parser; retain Kimi's live scan and selftest unchanged.
-MuseAuthProvider.kt owns Muse's persist. The app's HTTP and assembly files are not write targets.
+MuseMintPersistence.kt owns Muse's persist write. The app's HTTP and assembly files are not write targets.
 """
 from __future__ import annotations
 
@@ -15,11 +15,13 @@ import sh_10_kimi_merge_never_rewrite as kimi
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 CORE = ROOT / "gateway/core/src/main/kotlin/splice/core/auth/CredentialJson.kt"
-MUSE = ROOT / "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseAuthProvider.kt"
+MUSE = ROOT / "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt"
 
 
 def detect(core: str | None, muse: str | None) -> list[str]:
     """Run the same dataflow check on Muse; comments are not credential writes or merges."""
+    if muse is None:
+        return ["MuseMintPersistence.kt missing — refusing to pass vacuously"]
     return [
         problem.replace("Kimi", "Muse").replace("kimi", "muse")
         for problem in kimi.detect(kimi.code_only(core), kimi.code_only(muse))
@@ -29,7 +31,7 @@ def detect(core: str | None, muse: str | None) -> list[str]:
 def selftest() -> int:
     kimi_status = kimi.selftest()
     merged = """
-        class MuseAuthProvider {
+        class MuseMintPersistence {
             private fun persistCredential(replacements: JsonObject) {
                 val onDisk = readCredentialJson()
                 val merged = CredentialJson.mergedCredentialJson(onDisk, replacements)
@@ -47,10 +49,16 @@ def selftest() -> int:
     renamed = merged.replace("val merged =", "val credentialFile =").replace(
         "merged.toString()", "credentialFile.toString()",
     )
+    filtered = merged.replace(
+        "SecureFile.writeAtomic0600(authPath, merged.toString())",
+        "val filtered = merged.filterKeys { it == \"api_key\" }\n"
+        "                SecureFile.writeAtomic0600(authPath, filtered.toString())",
+    )
     cases = (
         ("merged Muse credential reaches the atomic write", kimi.CORE_OK, merged, False),
         ("Muse local rename keeps the merged value", kimi.CORE_OK, renamed, False),
         ("dead Muse merge with fresh replacements persisted", kimi.CORE_OK, fresh, True),
+        ("filtered merged Muse object is not the persist value", kimi.CORE_OK, filtered, True),
         ("Muse bypasses the atomic 0600 write", kimi.CORE_OK, unsafe, True),
         ("Muse merge exists only in a comment", kimi.CORE_OK, comment_only, True),
         ("Muse has no shared merge primitive", None, merged, True),
@@ -58,12 +66,15 @@ def selftest() -> int:
         ("Muse persist target is empty", kimi.CORE_OK, "", True),
     )
     failures = [label for label, core, source, expected in cases if bool(detect(core, source)) != expected]
+    missing = detect(kimi.CORE_OK, None)
+    if missing != ["MuseMintPersistence.kt missing — refusing to pass vacuously"]:
+        failures.append("missing-target names MuseMintPersistence.kt")
     if failures:
         print("SH-10 MUSE SELFTEST FAIL:")
         for failure in failures:
             print("  " + failure)
         return 1
-    print("SH-10 MUSE SELFTEST OK — merged writes pass; fresh, unsafe, comment-only and missing targets fail")
+    print("SH-10 MUSE SELFTEST OK — merged writes pass; fresh, filtered, unsafe, comment-only and missing targets fail")
     return kimi_status
 
 

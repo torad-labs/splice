@@ -29,6 +29,7 @@ import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
+import splice.core.topology.DialectWires
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
@@ -67,7 +68,7 @@ class ProviderAssemblyCompatibilityTest {
                 if (dialect in allowedDialects) {
                     assertDoesNotThrow(
                         { fixture.assembly.buildProvider(ctx) },
-                        "${kind.wire} must remain supported on ${dialectWire(dialect)}",
+                        "${kind.wire} must remain supported on ${DialectWires.name(dialect)}",
                     )
                     accepted += 1
                 } else {
@@ -77,7 +78,7 @@ class ProviderAssemblyCompatibilityTest {
                     val message = error.message.orEmpty()
                     assertTrue(message.contains(ctx.key), message)
                     assertTrue(message.contains(kind.wire), message)
-                    assertTrue(message.contains(dialectWire(dialect)), message)
+                    assertTrue(message.contains(DialectWires.name(dialect)), message)
                     rejected += 1
                 }
             }
@@ -103,7 +104,7 @@ class ProviderAssemblyCompatibilityTest {
             assertTrue(message.contains(ctx.key), message)
             assertTrue(message.contains(kind.wire), message)
             assertTrue(message.contains(ctx.head.provider), message)
-            assertTrue(message.contains(dialectWire(ctx.providerCfg.dialect)), message)
+            assertTrue(message.contains(DialectWires.name(ctx.providerCfg.dialect)), message)
         }
     }
 
@@ -121,7 +122,7 @@ class ProviderAssemblyCompatibilityTest {
                     Dialect.OPENAI_CHAT -> wired.provider is OpenAiChatProvider
                     Dialect.ANTHROPIC_PASSTHROUGH -> wired.provider is PassthroughProvider
                 }
-                assertTrue(correctDialectProvider, "$kind must stay on ${dialectWire(dialect)}")
+                assertTrue(correctDialectProvider, "$kind must stay on ${DialectWires.name(dialect)}")
             }
         }
     }
@@ -445,11 +446,5 @@ class ProviderAssemblyCompatibilityTest {
                 loginCommand = "test login",
             )
         }
-    }
-
-    private fun dialectWire(dialect: Dialect): String = when (dialect) {
-        Dialect.OPENAI_RESPONSES -> "openai-responses"
-        Dialect.OPENAI_CHAT -> "openai-chat"
-        Dialect.ANTHROPIC_PASSTHROUGH -> "anthropic-passthrough"
     }
 }

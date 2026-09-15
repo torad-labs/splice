@@ -6,17 +6,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
-import splice.core.auth.CredentialJson
 import splice.core.auth.Credentials
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
-import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.spi.AccountCredentialIdentitySource
 import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
@@ -41,27 +37,21 @@ public class MuseAuthProvider(
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
     private val store = MuseCredentialStore(authPath, log, clock)
     private val singleFlight = SingleFlight<Credentials?>()
+    private val mintFlight = SingleFlight<MintFlightResult>()
     private val invalidAccountLatch = InvalidGrantLatch()
     private val holds = MuseMintHolds(clock)
     private val oauth = MuseOAuth()
-    private val persistedMintFields = setOf(
-        "api_key",
-        "access_token",
-        "is_subs_active",
-        "require_payment",
-        "action_url",
-        "require_payment_action_url",
-        "subs_tier_id",
-        "subs_tier_name",
-        "subs_usage",
-    )
+    private val mintPersistence = MuseMintPersistence()
     private val lockPathText = authPath.resolveSibling("${authPath.fileName}.lock").toString()
     private val lockLog = LogSink { message ->
         log(message.replace(lockPathText, "<muse-credential-lock>"))
     }
 
     init {
-        prefetchScope?.coroutineContext?.get(Job)?.invokeOnCompletion { singleFlight.close() }
+        prefetchScope?.coroutineContext?.get(Job)?.invokeOnCompletion {
+            singleFlight.close()
+            mintFlight.close()
+        }
     }
 
     override suspend fun credentials(): Credentials? {
@@ -137,9 +127,15 @@ public class MuseAuthProvider(
         snapshot: MuseCredentialSnapshot,
         allowChangedTokenRetry: Boolean = true,
     ): Credentials? {
-        val attempt = mintOrHold(accessToken, snapshot) ?: return null
+        val attempt = attemptFor(accessToken, snapshot) ?: return null
         return when (attempt) {
-            is MuseMintAttempt.Granted -> granted(accessToken, attempt)
+            is MuseMintAttempt.Granted ->
+                if (persistGranted(accessToken, attempt.key)) {
+                    holds.clear()
+                    Credentials.Bearer(attempt.key.apiKey)
+                } else {
+                    null
+                }
             is MuseMintAttempt.InvalidAccountToken ->
                 invalidAccountToken(accessToken, allowChangedTokenRetry)
             is MuseMintAttempt.SubscriptionRequired,
@@ -153,7 +149,7 @@ public class MuseAuthProvider(
         accessToken: String,
         snapshot: MuseCredentialSnapshot,
     ): JsonObject? {
-        val attempt = mintOrHold(accessToken, snapshot) ?: return null
+        val attempt = attemptFor(accessToken, snapshot) ?: return null
         return when (attempt) {
             is MuseMintAttempt.Granted -> attempt.key.fields["subs_usage"] as? JsonObject
             is MuseMintAttempt.InvalidAccountToken -> {
@@ -170,53 +166,48 @@ public class MuseAuthProvider(
         }
     }
 
-    private suspend fun granted(accessToken: String, attempt: MuseMintAttempt.Granted): Credentials? =
-        if (persistGranted(accessToken, attempt.key)) {
-            holds.clear()
-            Credentials.Bearer(attempt.key.apiKey)
+    private suspend fun attemptFor(
+        accessToken: String,
+        snapshot: MuseCredentialSnapshot,
+    ): MuseMintAttempt? {
+        val flown = mintOrHold(accessToken, snapshot)
+        return if (flown.forToken(accessToken, snapshot)) {
+            flown.attempt
         } else {
-            null
+            mintOrHold(accessToken, snapshot, coalesce = false).attempt
         }
+    }
 
     private suspend fun mintOrHold(
         accessToken: String,
         snapshot: MuseCredentialSnapshot,
-    ): MuseMintAttempt? =
-        Cancellables.runCatchingCancellable {
-            mintCall(accessToken, MuseMintMode.REFRESH)
-        }.getOrElse {
-            log("[muse-auth] key mint transport failed")
-            store.clearCache()
-            holds.recordRetry(snapshot, DEFAULT_RATE_HOLD_MS)
-            null
+        coalesce: Boolean = true,
+    ): MintFlightResult {
+        val mint = suspend {
+            val attempt = Cancellables.runCatchingCancellable {
+                mintCall(accessToken, MuseMintMode.REFRESH)
+            }.getOrElse {
+                log("[muse-auth] key mint transport failed")
+                store.clearCache()
+                holds.recordRetry(snapshot, DEFAULT_RATE_HOLD_MS)
+                null
+            }
+            MintFlightResult(accessToken, snapshot.identity, attempt)
         }
+        return if (coalesce) mintFlight.run { mint() } else mint()
+    }
 
     private suspend fun persistGranted(expectedAccessToken: String, key: MuseSubscriptionKey): Boolean {
-        val current = store.read() ?: return false
-        if (current.accessToken != expectedAccessToken) {
-            log("[muse-auth] credential changed while key mint was in flight — minted key discarded")
-            return false
-        }
-        val replacements = buildJsonObject {
-            key.fields.forEach { (name, value) ->
-                if (name in persistedMintFields) put(name, value)
-            }
-            put("api_key", JsonPrimitive(key.apiKey))
-            put("access_token", JsonPrimitive(expectedAccessToken))
-        }
-        val merged = CredentialJson.mergedCredentialJson(current.fields, replacements)
-        val persisted = Cancellables.runCatchingCancellable {
-            currentCoroutineContext().ensureActive()
-            SecureFile.writeAtomic0600(authPath, merged.toString())
-            store.clearCache()
-        }
-        return persisted.fold(
-            onSuccess = { true },
-            onFailure = {
-                log("[muse-auth] failed to persist the minted key; existing credential retained")
-                false
-            },
+        val ctx = currentCoroutineContext()
+        val ok = mintPersistence.persistGranted(
+            authPath,
+            expectedAccessToken,
+            key,
+            log,
+            MuseMintWriteGuard { ctx.ensureActive() },
         )
+        if (ok) store.clearCache()
+        return ok
     }
 
     private suspend fun invalidAccountToken(
@@ -261,4 +252,13 @@ public class MuseAuthProvider(
         store.clearCache()
         return null
     }
+}
+
+private data class MintFlightResult(
+    val accessToken: String,
+    val identity: CredentialFileIdentity?,
+    val attempt: MuseMintAttempt?,
+) {
+    fun forToken(token: String, snapshot: MuseCredentialSnapshot): Boolean =
+        accessToken == token && identity == snapshot.identity
 }

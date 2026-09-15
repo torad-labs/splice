@@ -13,7 +13,10 @@ package splice.spi
 public class FailureRules {
     /** Does this upstream failure warrant the single-flight token refresh? */
     internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
-        status == UNAUTHORIZED || (status == FORBIDDEN && authBodyRe.containsMatchIn(body))
+        status == UNAUTHORIZED || (status == FORBIDDEN && isAuthFailureBody(body))
+
+    /** 403-body classifier (grok 2026-07-18): plan/permission 403s must not look like auth. */
+    public fun isAuthFailureBody(body: String): Boolean = authBodyRe.containsMatchIn(body)
 
     /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. PUBLIC because the
      *  RC-4 amend gate must key off the SAME predicate as this GIVE_UP classification (review

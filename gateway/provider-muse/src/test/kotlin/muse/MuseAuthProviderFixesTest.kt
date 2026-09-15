@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
@@ -35,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
+private const val HANG_BACKSTOP_S = 60L
 
 class MuseAuthProviderFixesTest {
 
@@ -263,6 +265,7 @@ class MuseAuthProviderFixesTest {
         assertEquals(1, calls.get())
     }
 
+    @Timeout(HANG_BACKSTOP_S)
     @Test
     fun `two concurrent refreshes coalesce to one mint`(@TempDir tempDir: Path) = runTest {
         val file = authFile(tempDir)
@@ -330,6 +333,105 @@ class MuseAuthProviderFixesTest {
         proceed.complete(Unit)
         assertNull(refresh.await())
         assertFalse(Files.exists(file))
+    }
+
+    @Test
+    fun `usageFields Granted does not clear an inactive verdict`(@TempDir tempDir: Path) = runTest {
+        var nowMs = 0L
+        val file = authFile(tempDir)
+        val calls = AtomicInteger()
+        val auth = provider(file, clock = WallClock { nowMs }) { _, _ ->
+            calls.incrementAndGet()
+            if (nowMs == 0L) {
+                MuseMintAttempt.SubscriptionRequired("https://www.meta.ai/")
+            } else {
+                MuseMintAttempt.Granted(usageKey("must-not-unlock"))
+            }
+        }
+        assertNull(auth.usageFields())
+        assertEquals(1, calls.get())
+        assertEquals("inactive", auth.describe().fields["subscription"])
+        nowMs = MAX_MINT_HOLD_MS + 1
+        val fields = auth.usageFields()
+        assertEquals(2, calls.get())
+        assertTrue(fields != null)
+        assertNull(auth.credentials())
+        assertEquals("inactive", auth.describe().fields["subscription"])
+    }
+
+    @Timeout(HANG_BACKSTOP_S)
+    @Test
+    fun `a concurrent poll tick and refresh produce one mint`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir)
+        val calls = AtomicInteger()
+        val entered = CompletableDeferred<Unit>()
+        val proceed = CompletableDeferred<Unit>()
+        val auth = provider(file) { _, _ ->
+            calls.incrementAndGet()
+            entered.complete(Unit)
+            proceed.await()
+            MuseMintAttempt.Granted(usageKey("shared-mint"))
+        }
+        val refresh = launch { auth.refresh() }
+        val poll = launch { auth.usageFields() }
+        entered.await()
+        repeat(100) { yield() }
+        proceed.complete(Unit)
+        refresh.join()
+        poll.join()
+        assertEquals(1, calls.get())
+    }
+
+    @Timeout(HANG_BACKSTOP_S)
+    @Test
+    fun `a poll mint for token A does not latch a refresh on token B`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir, accessToken = "token-a", apiKey = "key-a")
+        val calls = AtomicInteger()
+        val entered = CompletableDeferred<Unit>()
+        val proceed = CompletableDeferred<Unit>()
+        val auth = provider(file) { _, _ ->
+            val n = calls.incrementAndGet()
+            if (n == 1) {
+                entered.complete(Unit)
+                proceed.await()
+                MuseMintAttempt.InvalidAccountToken
+            } else {
+                MuseMintAttempt.Granted(usageKey("key-b"))
+            }
+        }
+        val poll = launch { auth.usageFields() }
+        entered.await()
+        authFile(tempDir, accessToken = "token-b", apiKey = "key-b")
+        val refresh = launch { auth.refresh() }
+        repeat(100) { yield() }
+        proceed.complete(Unit)
+        poll.join()
+        refresh.join()
+        assertNull(auth.describe().fields["account_token"])
+        assertEquals("key-b", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(2, calls.get())
+    }
+
+    @Test
+    fun `unknown mint-body fields drop while on-disk unknowns survive`(@TempDir tempDir: Path) = runTest {
+        val file = authFile(tempDir, extra = ",\"vendor_future_field\":{\"nested\":true}")
+        val auth = provider(file) { _, _ ->
+            MuseMintAttempt.Granted(
+                MuseSubscriptionKey(
+                    apiKey = "new-key",
+                    fields = Json.parseToJsonElement(
+                        """{"api_key":"new-key","is_subs_active":true,"require_payment":false,
+                            "future_vendor_flag":true,
+                            "subs_usage":{"weekly":{"used_percent":1,"resets_at":1}}}""",
+                    ).jsonObject,
+                ),
+            )
+        }
+        auth.refresh()
+        val written = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        assertEquals("new-key", written["api_key"]?.jsonPrimitive?.content)
+        assertTrue(written.containsKey("vendor_future_field"))
+        assertFalse(written.containsKey("future_vendor_flag"))
     }
 
     private fun usageKey(apiKey: String): MuseSubscriptionKey = MuseSubscriptionKey(

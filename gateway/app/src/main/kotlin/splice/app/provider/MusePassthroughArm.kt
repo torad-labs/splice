@@ -2,6 +2,7 @@
 // The shared passthrough arm remains unchanged; only minted keys authenticate Muse inference.
 package splice.app.provider
 
+import kotlinx.coroutines.CoroutineScope
 import splice.app.MuseRefresh
 import splice.core.GATEWAY_VERSION
 import splice.core.util.LogSink
@@ -14,10 +15,11 @@ private val SSE_HEADERS = mapOf("Accept" to "text/event-stream")
 
 internal class MusePassthroughArm(
     log: LogSink,
+    probeScope: CoroutineScope,
     mintCall: MuseKeyMintCall = MuseRefresh(),
 ) {
     private val passthroughAssembly = PassthroughAssembly()
-    private val museOAuth = MuseOAuth(log, mintCall)
+    private val museOAuth = MuseOAuth(probeScope, log, mintCall)
 
     internal fun museOauthProvider(ctx: ProviderBuild, label: String): Wired {
         val accounts = museOAuth.museOauthAccounts(ctx)

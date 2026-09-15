@@ -24,7 +24,7 @@ internal class ProviderAssembly(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
-    private val museArm: MusePassthroughArm = MusePassthroughArm(log),
+    private val museArm: MusePassthroughArm = MusePassthroughArm(log, probeScope),
     private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
 ) {
     private val grokRefresh = GrokRefresh()

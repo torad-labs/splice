@@ -39,6 +39,15 @@ class MuseOAuthTest {
     }
 
     @Test
+    fun `login parse of a body without expires_in uses the 600s default`() {
+        assertEquals(
+            MuseOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
+            oauth.parseMuseDeviceAuthorization("""{"user_code":"A","device_code":"B"}""").expiresInS,
+        )
+        assertEquals(600L, MuseOAuthEndpoints.DEFAULT_EXPIRES_IN_S)
+    }
+
+    @Test
     fun `device forms are client-only then the encoded device grant`() {
         assertEquals(
             "client_id=${MuseOAuthEndpoints.CLIENT_ID}",
@@ -141,18 +150,15 @@ class MuseOAuthTest {
             """{"api_key":"key","is_subs_active":true,"require_payment":false,
                 "action_url":"https://meta.com/subscribe/private"}""",
         )
-        assertTrue(actionOnly is MuseMintAttempt.SubscriptionRequired)
-        assertEquals("https://meta.com/", (actionOnly as MuseMintAttempt.SubscriptionRequired).actionUrl)
+        assertTrue(actionOnly is MuseMintAttempt.Granted)
+        assertEquals("key", (actionOnly as MuseMintAttempt.Granted).key.apiKey)
 
         val paymentActionOnly = oauth.parseMuseKeyResponse(
             """{"api_key":"key","is_subs_active":true,"require_payment":false,
                 "require_payment_action_url":"https://www.meta.com/subscribe/private"}""",
         )
-        assertTrue(paymentActionOnly is MuseMintAttempt.SubscriptionRequired)
-        assertEquals(
-            "https://www.meta.com/",
-            (paymentActionOnly as MuseMintAttempt.SubscriptionRequired).actionUrl,
-        )
+        assertTrue(paymentActionOnly is MuseMintAttempt.Granted)
+        assertEquals("key", (paymentActionOnly as MuseMintAttempt.Granted).key.apiKey)
     }
 
     @Test
@@ -220,6 +226,14 @@ class MuseOAuthTest {
             """{"is_subs_active":false,"require_payment":false}""",
         ) as MuseMintAttempt.SubscriptionRequired
         assertNull(absent.actionUrl)
+    }
+
+    @Test
+    fun `plan-tier rejection is a muse-only veto and is not an auth-body failure`() {
+        assertTrue(oauth.isPlanTierRejection("plan limit exceeded"))
+        assertFalse(oauth.isPlanTierRejection("unauthenticated:bad-credentials"))
+        assertTrue(oauth.isAuthFailureBody("unauthenticated:bad-credentials"))
+        assertFalse(oauth.isAuthFailureBody("plan limit exceeded"))
     }
 }
 

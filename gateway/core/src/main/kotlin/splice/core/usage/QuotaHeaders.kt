@@ -3,9 +3,8 @@
 // as a 0..1 fraction, reset as epoch seconds), which is what its own status line and /usage draw.
 // Splice writes every response Claude Code sees, so a Codex, Kimi or Grok head can carry the same
 // headers Anthropic sends, and the client shows the head's real windows without knowing there is a
-// proxy. FROM the upstream: Anthropic's own unified family on a passthrough head, or the x-codex
-// family a Codex round answers with (used-percent / window-minutes / reset-at or reset-after-seconds
-// per primary/secondary window), sorted into slots by length like every other source.
+// proxy. FROM the upstream: Anthropic's own unified family on a passthrough head. Vendor families
+// (x-codex-*) live behind QuotaHeaderFamily in the owning provider module.
 package splice.core.usage
 
 import splice.core.util.WallClock
@@ -18,8 +17,6 @@ public fun interface QuotaHeaderRead {
 }
 
 public class QuotaHeaders(private val clock: WallClock) {
-    private val slots = QuotaSlots()
-
     /** The headers Claude Code reads. Empty for an empty snapshot; carries `-status: allowed` with
      *  any window because the client keys its warning state off that header too. */
     public fun forClient(snapshot: QuotaSnapshot): Map<String, String> {
@@ -37,9 +34,8 @@ public class QuotaHeaders(private val clock: WallClock) {
         out["$UNIFIED-$abbr-reset"] = reset.toString()
     }
 
-    /** Anthropic's unified family first (a passthrough head relays Anthropic's own numbers), else
-     *  the x-codex family; null when the response carries neither. */
-    public fun fromUpstream(header: QuotaHeaderRead): QuotaSnapshot? = unified(header) ?: codex(header)
+    /** Anthropic's unified family; null when the response does not carry it. */
+    public fun fromUpstream(header: QuotaHeaderRead): QuotaSnapshot? = unified(header)
 
     private fun unified(h: QuotaHeaderRead): QuotaSnapshot? {
         val five = unifiedWindow(h, "5h", FIVE_HOURS_SECONDS)
@@ -53,23 +49,7 @@ public class QuotaHeaders(private val clock: WallClock) {
         return QuotaWindow(utilization * PERCENT, reset, seconds)
     }
 
-    private fun codex(h: QuotaHeaderRead): QuotaSnapshot? {
-        val windows = listOfNotNull(
-            codexWindow(h, "primary", FIVE_HOURS_SECONDS),
-            codexWindow(h, "secondary", SEVEN_DAYS_SECONDS),
-        )
-        return if (windows.isEmpty()) null else slots.snapshot(windows, h("x-codex-plan-type"), clock())
-    }
-
-    private fun codexWindow(h: QuotaHeaderRead, which: String, defaultSeconds: Long): QuotaWindow? {
-        val used = h("x-codex-$which-used-percent")?.toDoubleOrNull() ?: return null
-        val minutes = h("x-codex-$which-window-minutes")?.toLongOrNull()
-        val resetAt = h("x-codex-$which-reset-at")?.toDoubleOrNull()?.let(::epochSeconds)
-            ?: h("x-codex-$which-reset-after-seconds")?.toLongOrNull()?.let { clock() / MILLIS + it }
-        return QuotaWindow(used, resetAt, minutes?.let { it * SECONDS_PER_MINUTE } ?: defaultSeconds)
-    }
-
-    /** Providers disagree on seconds vs millis for an epoch; anything past year 2286 in seconds is millis. */
+    /** Providers disagree on seconds vs millis; anything past year 2286 in seconds is millis. */
     private fun epochSeconds(value: Double): Long =
         if (value > EPOCH_MILLIS_FLOOR) (value / MILLIS).toLong() else value.toLong()
 }
@@ -77,5 +57,4 @@ public class QuotaHeaders(private val clock: WallClock) {
 private const val UNIFIED = "anthropic-ratelimit-unified"
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L
-private const val SECONDS_PER_MINUTE = 60L
 private const val EPOCH_MILLIS_FLOOR = 10_000_000_000.0

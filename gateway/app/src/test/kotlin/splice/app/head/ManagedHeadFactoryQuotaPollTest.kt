@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.SignInPlanner
@@ -29,6 +30,8 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
+import splice.gateway.usage.HeaderLookup
+import splice.gateway.usage.QuotaTracker
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -130,5 +133,29 @@ class ManagedHeadFactoryQuotaPollTest {
         factory.assembleHead(ctx, controlPort = 3098)
 
         assertEquals(2, starts)
+    }
+
+    @Test
+    fun `the factory tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("codex-headers"))
+        val captured = mutableListOf<QuotaTracker>()
+        val factory = factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, tracker -> captured += tracker },
+        )
+        factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
+        val tracker = captured.single()
+        tracker.observe(
+            HeaderLookup { name ->
+                mapOf(
+                    "x-codex-primary-used-percent" to "14",
+                    "x-codex-primary-window-minutes" to "300",
+                    "x-codex-primary-reset-at" to "1788010000",
+                )[name]
+            },
+        )
+        assertNotNull(tracker.snapshot()?.fiveHour)
+        assertEquals(14.0, tracker.snapshot()!!.fiveHour!!.usedPercent, 1e-9)
     }
 }

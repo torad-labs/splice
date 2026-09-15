@@ -9,6 +9,7 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.gateway.usage.HeaderLookup
 import splice.gateway.usage.QuotaTracker
+import splice.provider.codex.CodexQuotaHeaderFamily
 import java.nio.file.Path
 
 class QuotaTrackerTest {
@@ -17,7 +18,12 @@ class QuotaTrackerTest {
     lateinit var dir: Path
 
     private val now = 1_788_000_000_000L
-    private fun tracker() = QuotaTracker(dir.resolve("codex-quota.json"), WallClock { now }, LogSink { })
+    private fun tracker() = QuotaTracker(
+        dir.resolve("codex-quota.json"),
+        WallClock { now },
+        LogSink { },
+        extraFamily = CodexQuotaHeaderFamily(),
+    )
 
     @Test
     fun `x-codex headers on a round become unified headers on the next client response, and survive a restart`() {

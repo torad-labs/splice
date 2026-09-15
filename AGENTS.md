@@ -140,12 +140,13 @@ Green means all of them. A wall block means fix the code, not the wall — never
 
 ## PR titles are linted; branch commits are not
 
-`.github/workflows/pr-title.yml` enforces Conventional Commits on the **PR title** via a REQUIRED
-check. Allowed types, and this is the complete list:
+The org-injected PR-title gate enforces Conventional Commits on the **PR title** via a REQUIRED
+check. This repo used to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The
+allowed types live once, in `checks/pr-title.sh`.
 
-    feat  fix  docs  test  build  ci  chore  perf  refactor  revert  release  codex
+    bash checks/pr-title.sh "feat(scope): subject"
 
-Scope optional (`fix(walls): ...`). Anything else fails `lint` and blocks the merge.
+Scope optional (`fix(walls): ...`). Anything else fails the org check and blocks the merge.
 
 WHY THIS IS EASY TO GET WRONG THREE TIMES IN A ROW (it happened, 2026-07-28/29): branch commit
 messages are NOT linted, so `harden(walls):` and `verify(x):` write and review fine locally, and the
@@ -162,7 +163,7 @@ and which one is not reliably predictable from the PR (#66 had 3 commits and use
 PRACTICAL RULE, and it costs nothing: make the BRANCH COMMIT SUBJECT use an allowed type too. Then
 whichever source the squash picks, `main` is compliant. Do not rely on the title check alone.
 
-Pick the type from the list above BEFORE opening the PR. `gh pr create --body ...` bypasses
+Pick the type by running that script BEFORE opening the PR. `gh pr create --body ...` bypasses
 `.github/PULL_REQUEST_TEMPLATE.md`, so the template's reminder never reaches an agent — this section
 is the one that does.
 

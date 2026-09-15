@@ -63,6 +63,7 @@ internal class RetryRules(private val maxRetries: Int) {
                 !refreshedOnce
         if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
         if (refreshable && TurnPerfTiming.timedOr(ctx.perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
+            ctx.authRefreshObserver()
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
         }
         ctx.onRetry(

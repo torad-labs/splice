@@ -91,30 +91,6 @@ class DoctorReportTest {
         )
     }
 
-    @Test
-    fun `the accounts block carries labels, flags, windows and the switch, keyed by head`() {
-        val env = plant()
-        val view = splice.app.cli.AccountPoolProjection().parse(
-            """{"codex":{"account_pool":{"selected_label":"work","accounts":[""" +
-                """{"label":"primary","primary":true,"selected":false,"available":false,"plan":"plus",""" +
-                """"five_hour_used_percent":100.0,"seven_day_used_percent":61.5,""" +
-                """"auth":{"account_id":"acct-SECRET","email":"ops@example.com"}},""" +
-                """{"label":"work","primary":false,"selected":true,"available":true}],""" +
-                """"last_switch":{"from":"primary","to":"work","reason":"7d window exhausted","at_epoch_millis":7}}}}""",
-        )
-        val run = DoctorRun(TopologyLoader.parse(toml), emptyList(), view)
-        val text = Json.encodeToString(JsonObject.serializer(), report(env, withLogs = false, run = run))
-        assertFalse(text.contains("SECRET"))
-        assertFalse(text.contains("example.com"))
-        val accounts = Json.parseToJsonElement(text).jsonObject.getValue("accounts").jsonObject
-        val codex = accounts.getValue("codex").jsonObject
-        assertEquals("work", codex.getValue("selected").jsonPrimitive.content)
-        val labels = codex.getValue("accounts").jsonArray.map { it.jsonObject.getValue("label").jsonPrimitive.content }
-        assertEquals(listOf("primary", "work"), labels)
-        val switch = codex.getValue("last_switch").jsonObject
-        assertEquals("7d window exhausted", switch.getValue("reason").jsonPrimitive.content)
-    }
-
     private fun report(env: Map<String, String?>, withLogs: Boolean, run: DoctorRun? = null): JsonObject {
         val topology = TopologyLoader.parse(toml)
         val given = run

@@ -67,6 +67,8 @@ internal class HeadAccountPools {
                 sevenDayUsedPercent = account.sevenDayUsedPercent,
                 sevenDayResetEpochSeconds = account.sevenDayResetEpochSeconds,
                 credentialPresent = account.credentialPresent,
+                authExcludedUntilEpochMillis = account.authExcludedUntilEpochMillis,
+                authExclusionReason = account.authExclusionReason,
             )
         },
         lastSwitch = view.lastSwitch?.let { switch ->

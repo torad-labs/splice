@@ -60,12 +60,12 @@ public class AccountPool(
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
         val prior = previous ?: primary?.let { SessionAccount(it.label, null) }
-        val moved = prior?.takeIf { it.label != chosen.label }?.let {
-            AccountSwitch(it.label, chosen.label, switchReason(it.label, chosen, at), at)
+        val moved = prior?.takeIf { it.label != chosen.account.label }?.let {
+            AccountSwitch(it.label, chosen.account.label, switchReason(it.label, chosen.account, at), at)
         }
         moved?.let(headLastSwitch::set)
-        val selection = AccountSelection(chosen, moved)
-        val session = SessionAccount(chosen.label, moved ?: previous?.lastSwitch)
+        val selection = AccountSelection(chosen.account, moved, chosen.lease)
+        val session = SessionAccount(chosen.account.label, moved ?: previous?.lastSwitch)
         return selection to session
     }
 
@@ -88,18 +88,30 @@ public class AccountPool(
         accounts.forEach {
             it.cooldown.clear()
             it.cooldown.clearUnavailable()
+            it.resetCredentialAvailability()
         }
     }
 
-    private fun choose(previousLabel: String?, at: Long): PoolAccount {
+    private fun choose(previousLabel: String?, at: Long): ChosenAccount {
         val previous = previousLabel?.let(byLabel::get)
         val primary = checkNotNull(primary)
         val prefersPrimary = previous == null || previous !== primary
-        if (prefersPrimary && available(primary, at)) return primary
-        if (previous?.let { available(it, at) } == true) return previous
-        val candidates = accounts.filter { available(it, at) }
-        if (candidates.isEmpty()) throw AllAccountsExhausted(earliestReset(at))
-        return candidates.minWith(compareBy<PoolAccount>(::sevenDayUsed).thenBy { it.label })
+        val primaryChoice = primary.takeIf { prefersPrimary }?.let { acquireIfAvailable(it, at) }
+        if (primaryChoice != null) return primaryChoice
+        val previousChoice = previous?.let { acquireIfAvailable(it, at) }
+        if (previousChoice != null) return previousChoice
+        val candidates = accounts.sortedWith(compareBy<PoolAccount>(::sevenDayUsed).thenBy { it.label })
+        for (candidate in candidates) {
+            val choice = acquireIfAvailable(candidate, at)
+            if (choice != null) return choice
+        }
+        throw AllAccountsExhausted(earliestReset(at))
+    }
+
+    private fun acquireIfAvailable(account: PoolAccount, at: Long): ChosenAccount? {
+        if (!available(account, at)) return null
+        val lease = account.acquireCredential(at, now) ?: return null
+        return ChosenAccount(account, lease)
     }
 
     private fun switchReason(previousLabel: String, chosen: PoolAccount, at: Long): String {
@@ -125,12 +137,17 @@ public class AccountPool(
         val cooldownSeconds = remaining / MS_PER_SECOND + extraSecond
         val epochSeconds = at / MS_PER_SECOND
         val cooldownReset = epochSeconds + cooldownSeconds
-        return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }).maxOrNull()
+        val authReset = account.credentialStatus(at).excludedUntilEpochMillis?.let { millis ->
+            val seconds = millis / MS_PER_SECOND
+            val rounded = millis % MS_PER_SECOND > 0L && seconds < Long.MAX_VALUE
+            seconds + if (rounded) 1L else 0L
+        }
+        return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset).maxOrNull()
     }
 
     private fun available(account: PoolAccount, at: Long): Boolean {
         val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
-        if (!account.credentialPresent || runtimeUnavailable) return false
+        if (!account.credentialStatus(at).selectable || runtimeUnavailable) return false
         val snapshot = account.quota.snapshot() ?: return true
         return !exhausted(snapshot.fiveHour, at) && !exhausted(snapshot.sevenDay, at)
     }
@@ -140,6 +157,7 @@ public class AccountPool(
 
     private fun accountView(account: PoolAccount, selected: String?, at: Long): AccountView {
         val snapshot = account.quota.snapshot()
+        val credential = account.credentialStatus(at)
         return AccountView(
             label = account.label,
             primary = account.primary,
@@ -150,7 +168,9 @@ public class AccountPool(
             sevenDayUsedPercent = snapshot?.sevenDay?.usedPercent,
             sevenDayResetEpochSeconds = snapshot?.sevenDay?.resetsAt,
             available = available(account, at),
-            credentialPresent = account.credentialPresent,
+            credentialPresent = credential.credentialPresent,
+            authExcludedUntilEpochMillis = credential.excludedUntilEpochMillis,
+            authExclusionReason = credential.reason,
         )
     }
 
@@ -159,6 +179,11 @@ public class AccountPool(
         val reset = window.resetsAt ?: return false
         return reset * MS_PER_SECOND > at
     }
+
+    private data class ChosenAccount(
+        val account: PoolAccount,
+        val lease: AccountCredentialEligibility.Lease,
+    )
 
     private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?)
 }

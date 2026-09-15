@@ -9,10 +9,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
@@ -347,15 +350,13 @@ class AccountPoolTest {
         assertEquals("secret", (primary.auth.credentials() as Credentials.Bearer).token)
     }
 
-    private class Fixture {
+    internal class Fixture {
         val now = AtomicReference(1_000_000L)
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()
+        private val identities = mutableMapOf<PoolAccount, AtomicReference<CredentialFileIdentity?>>()
+        private val presences = mutableMapOf<PoolAccount, AtomicReference<CredentialPresence>>()
         private var elapsed = 0L
-        private val auth = object : RefreshableAuthProvider {
-            override suspend fun credentials(): Credentials = Credentials.Bearer("secret", "private-account-id")
-            override suspend fun describe(): AuthDescription = AuthDescription(true, "test", mapOf("token" to "***"))
-            override suspend fun refresh(): Credentials = credentials()
-        }
+        private var revision = 1L
 
         fun pool(vararg accounts: PoolAccount): AccountPool = AccountPool(accounts.toList(), AccountNow(now::get))
 
@@ -366,8 +367,29 @@ class AccountPoolTest {
             weekly: Double = 0.0,
             reset: Long? = 2_000L,
             credentialPresent: Boolean = true,
+            credentialIdentityKnown: Boolean = true,
         ): PoolAccount {
             val quota = AtomicReference(quota(five, weekly, reset))
+            val identity = AtomicReference(
+                CredentialFileIdentity(revision++, 100L).takeIf {
+                    credentialPresent && credentialIdentityKnown
+                },
+            )
+            val presence = AtomicReference(
+                when {
+                    !credentialPresent -> CredentialPresence.MISSING
+                    credentialIdentityKnown -> CredentialPresence.PRESENT
+                    else -> CredentialPresence.UNKNOWN
+                },
+            )
+            val auth = object : RefreshableAuthProvider, AccountCredentialIdentitySource {
+                override suspend fun credentials(): Credentials = Credentials.Bearer("secret", "private-account-id")
+                override suspend fun describe(): AuthDescription =
+                    AuthDescription(true, "test", mapOf("token" to "***"))
+                override suspend fun refresh(): Credentials = credentials()
+                override fun credentialIdentity(): CredentialFileIdentity? = identity.get()
+                override fun credentialPresence(): CredentialPresence = presence.get()
+            }
             return PoolAccount(
                 label = label,
                 primary = primary,
@@ -375,7 +397,11 @@ class AccountPoolTest {
                 quota = AccountQuotaSource(quota::get),
                 cooldown = RateLimitCooldown(ElapsedNow { elapsed }),
                 credentialPresent = credentialPresent,
-            ).also { quotas[it] = quota }
+            ).also {
+                quotas[it] = quota
+                identities[it] = identity
+                presences[it] = presence
+            }
         }
 
         fun setQuota(account: PoolAccount, quota: QuotaSnapshot) {
@@ -384,6 +410,25 @@ class AccountPoolTest {
 
         fun advanceElapsed(ms: Long) {
             elapsed += ms
+        }
+
+        fun advanceWall(ms: Long) {
+            now.set(now.get() + ms)
+        }
+
+        fun rotateCredential(account: PoolAccount) {
+            identities.getValue(account).set(CredentialFileIdentity(revision++, 100L))
+            presences.getValue(account).set(CredentialPresence.PRESENT)
+        }
+
+        fun hideCredentialIdentity(account: PoolAccount): CredentialFileIdentity {
+            presences.getValue(account).set(CredentialPresence.UNKNOWN)
+            return checkNotNull(identities.getValue(account).getAndSet(null))
+        }
+
+        fun restoreCredentialIdentity(account: PoolAccount, identity: CredentialFileIdentity) {
+            identities.getValue(account).set(identity)
+            presences.getValue(account).set(CredentialPresence.PRESENT)
         }
 
         fun quota(five: Double = 0.0, weekly: Double = 0.0, reset: Long? = 2_000L): QuotaSnapshot = QuotaSnapshot(

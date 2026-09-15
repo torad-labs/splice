@@ -56,6 +56,8 @@ public data class HeadAccountView(
     val sevenDayUsedPercent: Double?,
     val sevenDayResetEpochSeconds: Long?,
     val credentialPresent: Boolean = true,
+    val authExcludedUntilEpochMillis: Long? = null,
+    val authExclusionReason: String? = null,
 )
 
 public data class HeadAccountSwitchView(

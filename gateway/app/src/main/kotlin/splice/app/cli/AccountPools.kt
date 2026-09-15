@@ -59,6 +59,11 @@ internal class AccountPoolProjection {
 
     // SignInPlanner's portable wrapper shape: these keys become text and bare login arguments.
     private val headKey = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
+    private val authExclusionReasons = setOf(
+        "terminal_401",
+        "credential_missing",
+        "recovery_probe_in_flight",
+    )
 
     fun parse(body: String): Map<String, HeadAccountPoolView> =
         json.parseToJsonElement(body).jsonObject.mapNotNull { (head, value) ->
@@ -85,6 +90,7 @@ internal class AccountPoolProjection {
 
     private fun account(a: JsonObject): HeadAccountView? {
         val label = label(a, "label") ?: return null
+        val authExclusion = authExclusion(a)
         return HeadAccountView(
             label = label,
             primary = JsonScalars.str(a, "primary") == "true",
@@ -96,7 +102,16 @@ internal class AccountPoolProjection {
             sevenDayUsedPercent = JsonScalars.str(a, "seven_day_used_percent")?.toDoubleOrNull(),
             sevenDayResetEpochSeconds = JsonScalars.long(a, "seven_day_reset_epoch_seconds"),
             credentialPresent = credentialPresent(a),
+            authExcludedUntilEpochMillis = authExclusion.first,
+            authExclusionReason = authExclusion.second,
         )
+    }
+
+    private fun authExclusion(a: JsonObject): Pair<Long?, String?> {
+        val reason = JsonScalars.str(a, "auth_exclusion_reason")
+            ?.takeIf(authExclusionReasons::contains)
+            ?: return null to null
+        return JsonScalars.long(a, "auth_excluded_until_epoch_millis") to reason
     }
 
     /** Older daemons exposed presence only in masked auth; absent on both means legacy-present. */

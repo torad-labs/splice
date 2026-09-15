@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.LoginIo
 import splice.app.TopologyLoader
+import splice.core.config.StatePaths
+import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -41,6 +44,24 @@ class LoginCommandTest {
         val path = LoginCommand().oauthAuthPath(provider)
         assertEquals(Paths.get(TopologyLoader.expandHome("~/.config/splice/auth/grok.json")), path)
         assertFalse(path.endsWith(Paths.get(".grok", "auth.json")))
+    }
+
+    @Test
+    fun `automatic account receipt names the persisted label instead of auto`(@TempDir tmp: Path) {
+        val primary = tmp.resolve("kimi.json")
+        Files.writeString(primary, "{}")
+        val account = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
+        assertTrue(LoginIo().persistIfSignedIn(primary, """{"access_token":"kimi-secret"}""", account))
+        val savedHome = System.getProperty("user.home")
+        System.setProperty("user.home", tmp.toString())
+        try {
+            LoginIo().writeLoginOutcome("kimi", ok = true, account = account)
+            val receipt = requireNotNull(LoginOutcomeFile.consume(StatePaths().stateDir, "kimi"))
+            assertTrue(receipt.contains("signed in as 'kimi-2'"), receipt)
+            assertFalse(receipt.contains("'auto'"), receipt)
+        } finally {
+            System.setProperty("user.home", savedHome)
+        }
     }
 
     // DR-97: the masked prompt must derive its var from the HEAD key — the daemon reads

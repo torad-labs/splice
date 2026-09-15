@@ -99,11 +99,10 @@ public class RateLimitCooldown public constructor(private val clock: ElapsedNow)
         )
     }
 
-    /** A waitable pooled 429 keeps the selected account and arms only its local follower horizon:
-     *  concurrent sessions fail fast during that short wait instead of switching to an idle backup.
-     *  Non-pooled turns preserve the legacy one-attempt exit. Only a provider-supplied wait beyond
-     *  the fixed interactive ceiling removes an account from later selection; an exhausted turn budget
-     *  cannot evict a healthy account. Local 429 protection is not provider quota. */
+    /** Every request that observes a 429 terminates instead of joining a synchronized retry wave.
+     *  The shared local horizon protects followers that have not reached upstream yet. Only a
+     *  provider-supplied wait beyond the fixed interactive ceiling removes a pooled account from
+     *  later selection; a short or missing wait never evicts it and never invents a provider reset. */
     internal fun rateLimitedPlan(
         pushbackMs: Long?,
         turn: RateLimitTurn,
@@ -113,15 +112,8 @@ public class RateLimitCooldown public constructor(private val clock: ElapsedNow)
     ): RetryPlan {
         val pushback = pushbackMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
         noticeClamp(pushback, onRetry)
-        val plannedDelayMs = maxOf(pushback, turn.backoffCeilingMs)
-        val fitsTurn = plannedDelayMs < turn.remainingBudgetMs
-        val fitsInteractive = plannedDelayMs <= RETRY_AFTER_GIVE_UP_MS
-        val retrySameAccount = turn.pooledAccount && canRetry
-        val delayFits = fitsTurn && fitsInteractive
-        if (retrySameAccount && delayFits) {
-            arm(pushback)
-            onRetry("429 backoff up to ${plannedDelayMs}ms fits the remaining turn budget; retrying same account")
-            return RetryPlan(RetryDecision.BACKOFF, nextRefreshed, pushback)
+        if (canRetry) {
+            onRetry("429 observed with retry budget remaining; giving up to avoid a synchronized retry wave")
         }
         val providerWaitExceeded = pushbackMs != null && pushback > RETRY_AFTER_GIVE_UP_MS
         if (turn.pooledAccount && providerWaitExceeded) {

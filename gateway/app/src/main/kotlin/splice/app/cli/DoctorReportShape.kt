@@ -93,6 +93,8 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("selected", a.selected)
         put("available", a.available)
         put("credential_present", a.credentialPresent)
+        put("auth_excluded_until_epoch_millis", a.authExcludedUntilEpochMillis)
+        put("auth_exclusion_reason", a.authExclusionReason?.let(redaction::text))
         put("plan", a.plan?.let(names::token))
         put("five_hour_used_percent", a.fiveHourUsedPercent)
         put("five_hour_reset_epoch_seconds", a.fiveHourResetEpochSeconds)

@@ -31,6 +31,7 @@ class AccountStatusTest {
         {"claudex":{"kind":"chatgpt-oauth","login":"automated","present":true,
           "account_pool":{"selected_label":"work","accounts":[
             {"label":"primary","primary":true,"selected":false,"available":false,"plan":"plus",
+             "auth_excluded_until_epoch_millis":1700000300000,"auth_exclusion_reason":"terminal_401",
              "five_hour_used_percent":100.0,"five_hour_reset_epoch_seconds":1800000000,
              "seven_day_used_percent":61.5,"seven_day_reset_epoch_seconds":1800100000,
              "auth":{"kind":"chatgpt-oauth","present":true,"account_id":"acct-SECRET","email":"ops@example.com"}},
@@ -50,6 +51,10 @@ class AccountStatusTest {
         assertEquals(listOf("primary", "work"), view.accounts.map { it.label })
         assertEquals(61.5, view.accounts[0].sevenDayUsedPercent)
         assertEquals(1800000000L, view.accounts[0].fiveHourResetEpochSeconds)
+        assertEquals(1_700_000_300_000L, view.accounts[0].authExcludedUntilEpochMillis)
+        assertEquals("terminal_401", view.accounts[0].authExclusionReason)
+        assertEquals(null, view.accounts[1].authExcludedUntilEpochMillis)
+        assertEquals(null, view.accounts[1].authExclusionReason)
         assertEquals("7d window exhausted", view.lastSwitch?.reason)
         assertTrue(view.accounts.all { it.credentialPresent }, "older payloads preserve legacy presence")
         assertFalse(view.toString().contains("SECRET"))
@@ -105,6 +110,19 @@ class AccountStatusTest {
             assertTrue(check.detail.contains("primary credential missing"), check.detail)
             assertEquals("splice login claudex", check.fix)
         }
+    }
+
+    @Test
+    fun `projection drops unknown auth exclusion reasons with their orphaned horizon`() {
+        val payload = """{"head":{"account_pool":{"accounts":[{"label":"primary",
+            "auth_excluded_until_epoch_millis":1700000300000,
+            "auth_exclusion_reason":"private provider body"}]}}}"""
+
+        val account = AccountPoolProjection().parse(payload).getValue("head").accounts.single()
+
+        assertEquals(null, account.authExcludedUntilEpochMillis)
+        assertEquals(null, account.authExclusionReason)
+        assertFalse(account.toString().contains("private provider body"))
     }
 
     @Test

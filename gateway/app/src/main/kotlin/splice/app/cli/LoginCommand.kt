@@ -11,6 +11,7 @@ import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
 import splice.app.auth.OAuthAccountRefused
+import splice.app.auth.OAuthLoginAccount
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -38,10 +39,10 @@ internal class LoginCommand {
             println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
             return false
         }
-        val ok = runLoginFlow(headKey, provider, topology, label)
-        if (!ok) println("splice: login for '$headKey' did not complete.")
-        loginIo.writeLoginOutcome(headKey, ok, label)
-        return ok
+        val result = runLoginAttempt(headKey, provider, topology, label)
+        if (!result.ok) println("splice: login for '$headKey' did not complete.")
+        loginIo.writeLoginOutcome(headKey, result.ok, result.account)
+        return result.ok
     }
 
     // kimi uses the RFC 8628 device flow (no loopback); codex/grok use the browser-loopback flow;
@@ -52,28 +53,41 @@ internal class LoginCommand {
         provider: ProviderConfig,
         topology: Topology,
         label: String? = null,
-    ): Boolean = try {
+    ): Boolean = runLoginAttempt(headKey, provider, topology, label).ok
+
+    private suspend fun runLoginAttempt(
+        headKey: String,
+        provider: ProviderConfig,
+        topology: Topology,
+        label: String?,
+    ): LoginResult = try {
         when (provider.auth.kind) {
-            "kimi-oauth" -> DeviceLoginFlow.run(
-                kimi.spec(headKey, oauthAuthPath(provider), label),
-            )
+            "kimi-oauth" -> {
+                val spec = kimi.spec(headKey, oauthAuthPath(provider), label)
+                LoginResult(DeviceLoginFlow.run(spec), spec.account)
+            }
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
             "api-key" -> if (label == null) {
-                loginIo.apiKeyLogin(headKey, provider)
+                LoginResult(loginIo.apiKeyLogin(headKey, provider))
             } else {
                 println("splice: --label is only supported for OAuth heads")
-                false
+                LoginResult(false)
             }
-            else -> specFor(headKey, topology, label)?.let { OAuthLoginFlow.run(it) } ?: false
+            else -> {
+                val spec = specFor(headKey, topology, label)
+                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow.run(spec), spec.account)
+            }
         }
     } catch (e: OAuthAccountRefused) {
         println("splice: ${e.reason}")
-        false
+        LoginResult(false)
     } catch (e: IllegalArgumentException) {
         println("splice: ${SafeFailureText.render(e)}")
-        false
+        LoginResult(false)
     }
+
+    private data class LoginResult(val ok: Boolean, val account: OAuthLoginAccount? = null)
 
     private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
         if (headArg != null) {

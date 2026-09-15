@@ -144,6 +144,22 @@
   The status line, `splice status` and `splice doctor` name the account in use and the last switch.
   Labeled credential files are read without following symlinks (a linked file is skipped, its
   ordinal stays occupied), matching how they are written; the primary file is resolved as before.
+  A terminal authentication rejection (401) excludes only future turns from that account, never the
+  turn it was issued on; the exclusion lifts at once on an evidence-backed re-login (the credential
+  file changed) and otherwise admits one timed recovery probe after holds of 5, 10, 20, 40 and 60
+  minutes (60 minutes at most). Unknown file-stat evidence preserves the hold and its failure
+  count; a stale success cannot clear a newer credential generation; cancellation and a failed
+  startup release the probe. Auth exclusion is separate from rate-limit state and is shown in
+  account status, `splice doctor` and the control JSON. Every observed 429 gives up that request
+  without an in-request wait; followers fail fast; a short or missing pushback never reselects the
+  account; a bare 429 protects the account locally for 20 s without inventing a provider reset, and
+  only a supplied wait over 15 s excludes future selections (transport re-probes stay capped at
+  120 s, provider reset reporting at seven days; real quota exhaustion respects its actual reset).
+  Kimi automatic and explicit labels share cross-process login leases: a concurrent login to the
+  same label is refused, a re-login may replace its credential, cancellation frees the lease, and
+  validation precedes lock-directory creation; the login receipt names the label actually
+  persisted, collision suffix included. Admission with every account exhausted is a local health
+  failure with zero upstream calls and carries an IMF-fixdate `Retry-After` only for a known reset.
 - **Custom compaction instructions.** `[compaction]` in `splice.toml` carries global text (inline
   or `file =`), `[[compaction.model]]` rows keyed by upstream model id and `[[compaction.project]]`
   rows keyed by absolute directory (optionally per model). The most specific scope replaces the

@@ -91,6 +91,8 @@ internal class AccountPoolJson {
                         put("selected", account.selected)
                         put("available", account.available)
                         put("credential_present", account.credentialPresent)
+                        put("auth_excluded_until_epoch_millis", account.authExcludedUntilEpochMillis)
+                        put("auth_exclusion_reason", account.authExclusionReason)
                         put("plan", account.plan)
                         put("five_hour_used_percent", account.fiveHourUsedPercent)
                         put("five_hour_reset_epoch_seconds", account.fiveHourResetEpochSeconds)

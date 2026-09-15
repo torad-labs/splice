@@ -64,6 +64,36 @@ class AccountSurfacesTest {
     }
 
     @Test
+    fun `auth projection reports auth exclusion separately from generic availability`() {
+        val held = poolView().let { pool ->
+            pool.copy(
+                accounts = pool.accounts.map { account ->
+                    if (account.primary) {
+                        account.copy(
+                            available = false,
+                            authExcludedUntilEpochMillis = 1_700_000_300_000L,
+                            authExclusionReason = "terminal_401",
+                        )
+                    } else {
+                        account.copy(available = false)
+                    }
+                },
+            )
+        }
+        val payload = buildJsonObject { AccountPoolJson().write(this, held) }
+        val accounts = payload["account_pool"]!!.jsonObject["accounts"]!!.jsonArray
+        val primary = accounts.first().jsonObject
+        val rateLimited = accounts.last().jsonObject
+
+        assertEquals("1700000300000", primary["auth_excluded_until_epoch_millis"]?.jsonPrimitive?.content)
+        assertEquals("terminal_401", primary["auth_exclusion_reason"]?.jsonPrimitive?.content)
+        assertTrue("auth_excluded_until_epoch_millis" in rateLimited)
+        assertTrue("auth_exclusion_reason" in rateLimited)
+        assertEquals("null", rateLimited["auth_excluded_until_epoch_millis"].toString())
+        assertEquals("null", rateLimited["auth_exclusion_reason"].toString())
+    }
+
+    @Test
     fun `statusline names the selected account and uses its quota for the session`() {
         var seenSession: String? = null
         val source = HeadAccountPoolSource { sessionId ->

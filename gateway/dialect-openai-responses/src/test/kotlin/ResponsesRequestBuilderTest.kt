@@ -27,7 +27,11 @@ import splice.dialect.responses.ToolDeferralPolicy
 
 private val stableIds = ResponsesStableIds()
 
-private val CODEX = ResponsesQuirks(providerTag = "claudex", emitEmptyLiteInstructions = true)
+private val CODEX = ResponsesQuirks(
+    providerTag = "claudex",
+    emitEmptyLiteInstructions = true,
+    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+)
 private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
     cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,

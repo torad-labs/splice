@@ -1,8 +1,4 @@
-// NEW: the lite header rides every responses provider gated on quirks.responsesLiteModelRegex,
-// including OpenAiResponsesProvider with OpenAiQuirks (V4-20 F3). Lives here, not in the dialect:
-// a dialect must not depend on a concrete provider (HD-11).
-package openai
-
+// NEW: V4-28 — the lite header is a declared pair, not a dialect default.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -25,32 +21,55 @@ import kotlin.time.Duration.Companion.seconds
 class LiteHeaderEveryProviderTest {
 
     @Test
+    fun `a codex-shaped quirk pair on gpt-6 still emits the lite header`() {
+        val built = provider(
+            ResponsesQuirks(
+                providerTag = "claudex",
+                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                responsesLiteHeader = "x-openai-internal-codex-responses-lite",
+            ),
+        ).buildTurn(body("gpt-6"), compact = false, sessionId = "s")
+        assertEquals("true", built.extraHeaders["x-openai-internal-codex-responses-lite"])
+    }
+
+    @Test
+    fun `an api-key openai head pinned to openai slash gpt-6 emits nothing`() {
+        val built = provider(OpenAiQuirks().defaultQuirks())
+            .buildTurn(body("openai/gpt-6"), compact = false, sessionId = "s")
+        assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
+    }
+
+    @Test
+    fun `a grok-shaped quirk profile does not emit the lite header`() {
+        val built = provider(ResponsesQuirks(providerTag = "claude-grok"))
+            .buildTurn(body("grok-4.6"), compact = false, sessionId = "s")
+        assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
+    }
+
+    @Test
+    fun `OpenAiQuirks default carries no lite regex or header`() {
+        val quirks = OpenAiQuirks().defaultQuirks()
+        assertNull(quirks.responsesLiteModelRegex)
+        assertNull(quirks.responsesLiteHeader)
+    }
+
+    @Test
     fun `OpenAiQuirks uses the dialect DefaultEffortVocabulary`() {
         assertTrue(OpenAiQuirks().defaultQuirks().effortVocabulary is DefaultEffortVocabulary)
     }
 
     @Test
-    fun `a gpt-6 turn on OpenAiResponsesProvider sends the lite header`() {
-        val built = provider().buildTurn(body("gpt-6"), compact = false, sessionId = "s")
-        assertEquals("true", built.extraHeaders["x-openai-internal-codex-responses-lite"])
-    }
-
-    @Test
-    fun `a non-lite model omits the header`() {
-        val built = provider().buildTurn(body("gpt-4o"), compact = false, sessionId = "s")
+    fun `a lite regex without a header name emits no lite header`() {
+        val built = provider(
+            ResponsesQuirks(
+                providerTag = "claudex",
+                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+            ),
+        ).buildTurn(body("gpt-6"), compact = false, sessionId = "s")
         assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
     }
 
-    @Test
-    fun `nulling the quirks lite regex drops the header on gpt-6`() {
-        val built = provider(OpenAiQuirks().defaultQuirks().copy(responsesLiteModelRegex = null))
-            .buildTurn(body("gpt-6"), compact = false, sessionId = "s")
-        assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
-    }
-
-    private fun provider(
-        quirks: ResponsesQuirks = OpenAiQuirks().defaultQuirks(),
-    ) = OpenAiResponsesProvider(
+    private fun provider(quirks: ResponsesQuirks) = OpenAiResponsesProvider(
         tuning = ProviderTuning(
             key = "openai",
             label = "openai",
@@ -61,7 +80,7 @@ class LiteHeaderEveryProviderTest {
             ),
             pinnedModel = "gpt-6",
             auth = LiteAuth,
-            baseUrl = "https://api.openai.com/v1",
+            baseUrl = "https://example.invalid/v1",
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         showReasoning = ReasoningDisplayParser.from("text"),

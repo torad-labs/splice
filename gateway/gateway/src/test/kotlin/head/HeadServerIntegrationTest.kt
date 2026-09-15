@@ -1,5 +1,5 @@
 // PORT-OF: the end-to-end message tests from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — a real
-// HeadServer (CodexProvider + mock ChatGPT upstream) exercised over HTTP: SSE wire frames for
+// HeadServer (TestResponsesProvider + mock ChatGPT upstream) exercised over HTTP: SSE wire frames for
 // streamed turns, /health + /v1/models shapes, the honest-failure paths, count_tokens NOT
 // burning a turn, promote-to-text + mirror on a compact-shaped answer. This is the P3-HEAD gate
 // that arms the idle/prefill/refresh scenarios the reader+machine suite deferred.
@@ -17,6 +17,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -40,7 +41,6 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -86,7 +86,7 @@ class HeadServerIntegrationTest {
     @BeforeAll
     fun setUp() = runTest {
         tmp = Files.createTempDirectory("head-it")
-        val provider = CodexProvider(
+        val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -228,7 +228,7 @@ class HeadServerIntegrationTest {
     // every dialect contract suite, this whole suite and the provider-spi transport suites stayed
     // GREEN. This arm reads the request the mock DECODED off the socket
     // (MockChatGptUpstream.upstreamBodies — zstd-inflated, exactly what the ChatGPT backend would
-    // parse) and compares the WHOLE body to the canonical production bytes of a "basic" codex turn.
+    // parse) and compares the WHOLE body to the canonical bytes of a basic TestResponsesProvider turn.
     // Pinned as literal bytes on purpose: the closed ResponsesRequest DTO makes field order =
     // declaration order, so a reordered field, a dropped `stream:true`, or a Chat-only knob leaking
     // in all go RED here. Update the pin only after reading the diff.
@@ -249,16 +249,13 @@ class HeadServerIntegrationTest {
             .joinToString("") { "%02x".format(it) }.take(CACHE_KEY_HEX)
         val expected = """
             |{"model":"gpt-5.6-sol",
-            |"input":[{"role":"developer","content":"You are a test. SCENARIO:basic"},{"role":"user","content":"go"}],
+            |"input":[{"role":"user","content":"go"}],
             |"store":false,
             |"stream":true,
             |"include":["reasoning.encrypted_content"],
             |"prompt_cache_key":"$cacheKey",
-            |"instructions":"",
-            |"parallel_tool_calls":false,
-            |"reasoning":{"effort":"high","summary":"detailed","context":"all_turns"},
-            |"text":{"verbosity":"low"},
-            |"client_metadata":{"client":"splice","thread_id":"$cacheKey"},
+            |"instructions":"You are a test. SCENARIO:basic",
+            |"reasoning":{"effort":"high","summary":"detailed"},
             |"stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}
         """.trimMargin().lines().joinToString("")
         assertEquals(expected, body)
@@ -280,6 +277,12 @@ class HeadServerIntegrationTest {
     @Test
     fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
         val before = logs.size
+        val jsonl = tmp.resolve("perf.jsonl")
+        val beforeRows = if (Files.exists(jsonl)) {
+            Files.readString(jsonl).trim().lines().count { it.isNotBlank() }
+        } else {
+            0
+        }
         messages("basic")
         val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
         assertTrue(perfLine != null, "expected a perf line in the log, got: $logs")
@@ -290,10 +293,13 @@ class HeadServerIntegrationTest {
         for (field in expectedFields) {
             assertTrue(perfLine!!.contains(field), "perf line missing $field: $perfLine")
         }
-        val rows = Files.readString(tmp.resolve("perf.jsonl")).trim().lines()
-        assertTrue(rows.isNotEmpty(), "expected at least one perf JSONL row")
-        val last = rows.last()
-        assertTrue(last.contains("\"outcome\":\"ok\"") && last.contains("\"total\":"), "bad row: $last")
+        val rows = Files.readString(jsonl).trim().lines().filter { it.isNotBlank() }
+        val mine = rows.drop(beforeRows)
+        assertTrue(mine.isNotEmpty(), "expected a new perf JSONL row after this turn")
+        assertTrue(
+            mine.any { it.contains("\"outcome\":\"ok\"") && it.contains("\"total\":") },
+            "bad rows from this turn: $mine",
+        )
     }
 
     @Test

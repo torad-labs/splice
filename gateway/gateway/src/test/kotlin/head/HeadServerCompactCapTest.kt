@@ -26,6 +26,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.test.runTest
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -46,7 +47,6 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -76,7 +76,7 @@ class HeadServerCompactCapTest {
     private fun head(port: Int, watchdog: WatchdogBudget): HeadServer {
         val tmp = Files.createTempDirectory("head-compact-cap")
         return HeadServer(
-            provider = CodexProvider(
+            provider = TestResponsesProvider(
                 tuning = ProviderTuning(
                     key = "codex",
                     label = "claudex",

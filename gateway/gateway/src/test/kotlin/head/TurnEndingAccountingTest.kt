@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -50,7 +51,6 @@ import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
 import splice.spi.Provider
@@ -142,7 +142,7 @@ class TurnEndingAccountingTest {
         tmp = Files.createTempDirectory("turn-ending-acct")
     }
 
-    private fun provider(): Provider = CodexProvider(
+    private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",

@@ -55,7 +55,7 @@ internal class BearerGetProbe(
     private val auth: AuthProvider,
     private val parse: QuotaParse,
     private val clock: WallClock,
-    private val extraHeaders: Map<String, String> = mapOf("Accept" to "application/json"),
+    private val extraHeaders: Map<String, String> = emptyMap(),
 ) : QuotaProbe {
     private val json = Json { ignoreUnknownKeys = true }
 

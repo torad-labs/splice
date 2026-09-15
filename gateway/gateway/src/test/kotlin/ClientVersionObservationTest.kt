@@ -6,6 +6,7 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -29,7 +30,6 @@ import splice.gateway.head.RequestBodyReader
 import splice.gateway.head.TurnPreparation
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -79,7 +79,7 @@ class ClientVersionObservationTest {
         )
     }
 
-    private fun provider() = CodexProvider(
+    private fun provider() = TestResponsesProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",

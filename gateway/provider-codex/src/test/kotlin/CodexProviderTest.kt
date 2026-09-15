@@ -126,6 +126,20 @@ class CodexProviderTest {
     }
 
     @Test
+    fun `codex production profile sends sequential_cutoff summary delivery`() {
+        val built = provider(accountIdHeader = false).buildTurn(
+            deferrableTurnBody(),
+            compact = false,
+            sessionId = "s1",
+        )
+        assertEquals(
+            "sequential_cutoff",
+            built.requestBody["stream_options"]?.jsonObject
+                ?.get("reasoning_summary_delivery")?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
     fun `codex production profile suppresses an exact within-item summary repeat`() = runTest {
         val codex = provider(accountIdHeader = false)
         val built = codex.buildTurn(deferrableTurnBody(), compact = false, sessionId = "s1")

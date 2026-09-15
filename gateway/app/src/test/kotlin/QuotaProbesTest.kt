@@ -99,6 +99,30 @@ class QuotaProbesTest {
     }
 
     @Test
+    fun `BearerGetProbe extraHeaders default carries no vendor headers`() = runTest {
+        var accept: String? = null
+        var extras: Map<String, String>? = null
+        val engine = MockEngine { request ->
+            accept = request.headers["Accept"]
+            extras = listOf(
+                "x-grok-client-mode",
+                "x-grok-client-version",
+                "X-XAI-Token-Auth",
+            ).mapNotNull { n -> request.headers[n]?.let { n to it } }.toMap()
+            respond("{}", HttpStatusCode.OK)
+        }
+        BearerGetProbe(
+            client = HttpClient(engine),
+            url = "https://api.example.test/usage",
+            auth = FixedAuth(Credentials.Bearer("tok")),
+            parse = QuotaParseAdapter(),
+            clock = WallClock { now },
+        ).probe()
+        assertEquals("*/*", accept)
+        assertEquals(emptyMap<String, String>(), extras)
+    }
+
+    @Test
     fun `forHead dispatches one probe class per auth kind`(@TempDir tmp: Path) {
         val probes = QuotaProbes(HttpClient(MockEngine { respond("{}", HttpStatusCode.OK) }))
         val auth = FixedAuth(Credentials.Bearer("tok"))

@@ -1,7 +1,6 @@
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
 
@@ -57,9 +56,12 @@ class CodeModeConfigTest {
             val error = assertThrows(IllegalArgumentException::class.java) {
                 TopologyLoader.parse(topology(kind, dialect, codeMode = true))
             }
-            assertTrue(error.message.orEmpty().contains("code_mode"), "$label: ${error.message}")
-            assertTrue(error.message.orEmpty().contains("chatgpt-oauth"), "$label: ${error.message}")
-            assertTrue(error.message.orEmpty().contains("openai-responses"), "$label: ${error.message}")
+            assertEquals(
+                "code_mode is only supported with auth.kind = 'chatgpt-oauth' " +
+                    "and dialect = 'openai-responses'",
+                error.message,
+                label,
+            )
         }
     }
 }

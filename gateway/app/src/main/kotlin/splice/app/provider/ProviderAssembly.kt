@@ -12,6 +12,7 @@ import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
+import splice.core.topology.DialectWires
 import splice.core.util.LogSink
 
 /**
@@ -67,7 +68,7 @@ internal class ProviderAssembly(
         val provider = ctx.head.provider
         require(isCompatible(kind, dialect, provider)) {
             "head '${ctx.key}' has incompatible auth kind '${kind.wire}' " +
-                "for provider '$provider' and dialect '${dialectWire(dialect)}'"
+                "for provider '$provider' and dialect '${DialectWires.name(dialect)}'"
         }
     }
 
@@ -77,11 +78,5 @@ internal class ProviderAssembly(
         AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
         AuthKind.MuseOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "muse"
         AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
-    }
-
-    private fun dialectWire(dialect: Dialect): String = when (dialect) {
-        Dialect.OPENAI_RESPONSES -> "openai-responses"
-        Dialect.OPENAI_CHAT -> "openai-chat"
-        Dialect.ANTHROPIC_PASSTHROUGH -> "anthropic-passthrough"
     }
 }

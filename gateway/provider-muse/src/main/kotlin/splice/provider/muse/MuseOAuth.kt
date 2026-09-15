@@ -81,7 +81,7 @@ public class MuseOAuth {
             ?: return MuseMintAttempt.Denied("key response missing subscription state")
         val actionUrl = actionUrl(obj)
         val paymentBlocked = !subscription.first || subscription.second
-        return if (paymentBlocked || actionUrl != null) {
+        return if (paymentBlocked) {
             MuseMintAttempt.SubscriptionRequired(safeActionOrigin(actionUrl))
         } else {
             JsonScalars.strIfString(obj["api_key"])
@@ -110,6 +110,11 @@ public class MuseOAuth {
         JsonScalars.strIfString(obj["action_url"]).takeIf(String::isNotBlank)
             ?: JsonScalars.strIfString(obj["require_payment_action_url"]).takeIf(String::isNotBlank)
 
+    public fun isPlanTierRejection(body: String): Boolean =
+        body.lowercase().contains("plan limit")
+
+    public fun isAuthFailureBody(body: String): Boolean = AUTH_FAILURE_BODY.containsMatchIn(body)
+
     internal fun safeActionOrigin(raw: String?): String? {
         val uri = raw?.let { Cancellables.runCatchingCancellable { URI.create(it) }.getOrNull() } ?: return null
         val host = uri.host?.lowercase() ?: return null
@@ -120,3 +125,8 @@ public class MuseOAuth {
 }
 
 internal val museJson: Json = Json { ignoreUnknownKeys = true }
+private val AUTH_FAILURE_BODY = Regex(
+    "unauthenticated|bad-credentials|token (is )?(invalid|expired)|" +
+        "(access|oauth2?) token could not be validated",
+    RegexOption.IGNORE_CASE,
+)

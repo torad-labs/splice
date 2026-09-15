@@ -332,6 +332,21 @@ class ProviderAssemblyCompatibilityTest {
     }
 
     @Test
+    fun `kimi-named api-key carries X-Msh and kimi-named client does not`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val apiKey = fixture.assembly.buildProvider(
+            fixture.context("api-key", Dialect.ANTHROPIC_PASSTHROUGH, provider = "kimi"),
+        )
+        val apiKeyHeaders = apiKey.provider.extraHeaders(Credentials.ApiKey("secret"))
+        assertEquals("splice", apiKeyHeaders["X-Msh-Platform"])
+        val client = fixture.assembly.buildProvider(
+            fixture.context(AuthKind.Client.wire, Dialect.ANTHROPIC_PASSTHROUGH, provider = "kimi"),
+        )
+        val clientHeaders = client.provider.extraHeaders(Credentials.ApiKey("secret"))
+        assertFalse(clientHeaders.containsKey("X-Msh-Platform"))
+    }
+
+    @Test
     fun `code mode rejects non ChatGPT responses at construction`() {
         val unsupported = listOf(
             "ChatGPT wrong dialect" to (AuthKind.ChatgptOAuth.wire to Dialect.OPENAI_CHAT),
@@ -389,6 +404,7 @@ class ProviderAssemblyCompatibilityTest {
             refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
             museArm = MusePassthroughArm(
                 log = {},
+                probeScope = scope,
                 mintCall = MuseKeyMintCall { _, _ ->
                     museMintCalls += 1
                     MuseMintAttempt.Denied("test-denied")

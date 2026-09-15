@@ -6,6 +6,7 @@ import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
@@ -21,8 +22,28 @@ internal data class MuseCredentialSnapshot(
 internal class MuseCredentialStore(
     private val authPath: Path,
     private val log: LogSink,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    fun read(): MuseCredentialSnapshot? {
+    @Volatile private var cache: Cache? = null
+
+    fun clearCache() {
+        cache = null
+    }
+
+    fun read(authCacheMs: Long = 0L): MuseCredentialSnapshot? {
+        if (authCacheMs > 0L) {
+            val identity = CredentialFileEvidenceReader.read(authPath).identity
+            cache?.let { cached ->
+                val fresh = cached.identity == identity && identity != null
+                if (fresh && clock() - cached.loadedAt < authCacheMs) return cached.snapshot
+            }
+        }
+        val snapshot = readFromDisk() ?: return null
+        if (authCacheMs > 0L) cache = Cache(snapshot, snapshot.identity, clock())
+        return snapshot
+    }
+
+    private fun readFromDisk(): MuseCredentialSnapshot? {
         val before = CredentialFileEvidenceReader.read(authPath)
         if (before.presence == CredentialPresence.MISSING) return null
         val decoded = Cancellables.runCatchingCancellable {
@@ -55,3 +76,9 @@ internal class MuseCredentialStore(
         )
     }
 }
+
+private data class Cache(
+    val snapshot: MuseCredentialSnapshot,
+    val identity: CredentialFileIdentity?,
+    val loadedAt: Long,
+)

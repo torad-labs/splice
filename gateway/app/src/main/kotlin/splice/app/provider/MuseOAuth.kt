@@ -2,6 +2,7 @@
 // No Moonshot device identity or expiry prefetch: the account token is used only for key exchange.
 package splice.app.provider
 
+import kotlinx.coroutines.CoroutineScope
 import splice.app.TopologyLoader
 import splice.app.auth.OAuthAccountFiles
 import splice.core.auth.RefreshableAuthProvider
@@ -23,7 +24,11 @@ internal data class MuseOAuthAccount(
 )
 
 /** Discovery follows the same primary/backup policy as the other splice-owned OAuth pools. */
-internal class MuseOAuth(private val log: LogSink, private val mintCall: MuseKeyMintCall) {
+internal class MuseOAuth(
+    private val probeScope: CoroutineScope,
+    private val log: LogSink,
+    private val mintCall: MuseKeyMintCall,
+) {
     private val accountFiles = OAuthAccountFiles()
 
     internal fun museOauthAccounts(ctx: ProviderBuild): List<MuseOAuthAccount> {
@@ -38,6 +43,8 @@ internal class MuseOAuth(private val log: LogSink, private val mintCall: MuseKey
                     authPath = file.credentialFile,
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                     mintCall = mintCall,
+                    authCacheMs = ctx.cfg.authCacheMs,
+                    prefetchScope = probeScope,
                 ),
                 quotaFile = file.quotaFile,
                 credentialPresent = file.credentialPresent,

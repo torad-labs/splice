@@ -81,23 +81,34 @@ class QuotaPollerTest {
 
     @Test
     fun `a malformed vendor date does not kill the poller`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger()
         val fields = UsageFields {
             Json.parseToJsonElement(
                 """{"weekly":{"used_percent":1,"resets_at":"not-a-date"}}""",
             ).jsonObject
         }
-        val probe = MuseMintProbe(fields, MuseQuotaParser(), WallClock { 1_788_000_000_000L })
+        val inner = MuseMintProbe(fields, MuseQuotaParser(), WallClock { 1_788_000_000_000L })
+        val probe = CountingProbe(inner, calls)
         val logs = mutableListOf<String>()
         val tracker = QuotaTracker(tmp.resolve("quota.json"), WallClock { 0L }, LogSink { })
+        val scope = kotlinx.coroutines.CoroutineScope(
+            StandardTestDispatcher(testScheduler) + SupervisorJob() +
+                CoroutineExceptionHandler { _, _ -> },
+        )
         val poller = QuotaPoller(
-            scope = this,
+            scope = scope,
             head = "muse",
             probe = probe,
             tracker = tracker,
             log = logs::add,
+            intervalMs = 1_000,
+            clock = WallClock { 0L },
         )
-        poller.pollOnce()
+        poller.start()
+        advanceTimeBy(2_000)
+        poller.stop()
         assertTrue(logs.none { it.contains("loop died") }, "$logs")
+        assertEquals(2, calls.get())
         assertEquals(1.0, tracker.snapshot()!!.sevenDay!!.usedPercent, 1e-9)
         assertNull(tracker.snapshot()!!.sevenDay!!.resetsAt)
     }
@@ -114,6 +125,16 @@ class QuotaPollerTest {
             calls.incrementAndGet()
             check(false) { "always dies" }
             return null
+        }
+    }
+
+    private class CountingProbe(
+        private val inner: QuotaProbe,
+        private val calls: AtomicInteger,
+    ) : QuotaProbe {
+        override suspend fun probe(): QuotaSnapshot? {
+            calls.incrementAndGet()
+            return inner.probe()
         }
     }
 }

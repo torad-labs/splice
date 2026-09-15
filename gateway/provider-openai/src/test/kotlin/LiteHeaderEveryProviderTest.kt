@@ -51,6 +51,8 @@ class LiteHeaderEveryProviderTest {
         val quirks = OpenAiQuirks().defaultQuirks()
         assertNull(quirks.responsesLiteModelRegex)
         assertNull(quirks.responsesLiteHeader)
+        assertNull(quirks.summaryRejectModelRegex)
+        assertNull(quirks.effortMaxRejectModelRegex)
     }
 
     @Test

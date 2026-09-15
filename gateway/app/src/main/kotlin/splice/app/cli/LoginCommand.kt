@@ -1,7 +1,7 @@
 // NEW: `splice login <head>` — resolves the head's provider from the topology and runs the right
 // OAuth browser flow (codex = ChatGPT, grok = xAI SuperGrok). Both write their CLI-compatible
 // auth.json (~/.codex/auth.json, ~/.grok/auth.json), so a subsequent `claudex` / `claude-grok`
-// launch is authenticated. Vendor spec builders live in LoginCodex/LoginGrok/LoginKimi
+// launch is authenticated. Vendor spec builders live in LoginCodex/LoginGrok/LoginKimi/LoginMuse
 // (concentration HIGH, 2026-08-19). :app is wall-exempt for println.
 package splice.app.cli
 
@@ -28,6 +28,7 @@ internal class LoginCommand {
     private val codex = LoginCodex()
     private val grok = LoginGrok()
     private val kimi = LoginKimi()
+    private val muse = LoginMuse()
     private val loginIo = LoginIo()
 
     internal suspend fun login(headArg: String?, label: String? = null): Boolean {
@@ -64,6 +65,10 @@ internal class LoginCommand {
         when (provider.auth.kind) {
             "kimi-oauth" -> {
                 val spec = kimi.spec(headKey, oauthAuthPath(provider), label)
+                LoginResult(DeviceLoginFlow.run(spec), spec.account)
+            }
+            "muse-oauth" -> {
+                val spec = muse.spec(headKey, oauthAuthPath(provider), label)
                 LoginResult(DeviceLoginFlow.run(spec), spec.account)
             }
             // DR-97: the HEAD key, not the provider key — the daemon reads

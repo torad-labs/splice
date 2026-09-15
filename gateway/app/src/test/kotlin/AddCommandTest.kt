@@ -312,6 +312,24 @@ class AddCommandTest {
     }
 
     @Test
+    fun `a muse file with an account token is accepted even without a minted key`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        val before = starter()
+        val routes = mapOf("GET https://api.meta.ai" to "{}")
+        Files.writeString(authFile("muse-oauth"), "{}")
+        assertFalse(runBlocking { command(http(routes), login = false).add(listOf("muse", "--yes"), env) })
+        assertEquals(before, Files.readString(config()))
+        Files.writeString(authFile("muse-oauth"), """{"access_token":"acct-token-fake"}""")
+        assertTrue(runBlocking { command(http(routes), login = false).add(listOf("muse", "--yes"), env) })
+        val topology = TopologyLoader.parse(Files.readString(config()))
+        assertEquals("muse-oauth", topology.providers.getValue("muse").auth.kind)
+        assertEquals("https://api.meta.ai", topology.providers.getValue("muse").baseUrl)
+        assertEquals("claude-muse", topology.heads.getValue("muse").claude.command)
+        assertEquals(listOf("muse"), installed, "no sign-in ran: the account token is enough")
+    }
+
+    @Test
     fun `a chatgpt file with token fields under a decoy object and an empty tokens object requires a sign-in`(
         @TempDir home: Path,
     ) = withHome(home) {

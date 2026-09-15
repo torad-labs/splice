@@ -191,7 +191,7 @@ probe_bearer() { # auth_kind -> bearer on stdout; rc=1 "skip this head", rc=2 ha
     client)
       [ -n "${SPLICE_E2E_CLIENT_TOKEN:-}" ] || return 1
       printf '%s' "$SPLICE_E2E_CLIENT_TOKEN" ;;
-    chatgpt-oauth|grok-oauth|kimi-oauth|api-key)
+    chatgpt-oauth|grok-oauth|kimi-oauth|muse-oauth|api-key)
       printf '%s' "$MGMT" ;;
     *)
       echo "FATAL: unrecognized authKind '$1' — refusing to probe. A head whose auth kind this" >&2

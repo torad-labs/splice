@@ -156,17 +156,24 @@ public object DeviceLoginFlow {
         loginIo: LoginIo,
     ): PollStep {
         val body = resp.bodyAsText()
-        if (resp.status.isSuccess()) {
-            // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
-            // body with no access token ended the poll as a SUCCESS over an empty credential.
-            val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body), spec.account)
-            return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
-        }
+        if (resp.status.isSuccess()) return persistPollSuccess(spec, body, loginIo)
         if (resp.status.value >= HTTP_SERVER_ERROR_FLOOR) {
             println("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return PollStep.Stop(Outcome.ABORT)
         }
-        return when (loginIo.errorCode(body)) {
+        return classifyPollError(body, intervalS, loginIo)
+    }
+
+    private suspend fun persistPollSuccess(spec: DeviceLoginSpec, body: String, loginIo: LoginIo): PollStep {
+        // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
+        // body with no access token ended the poll as a SUCCESS over an empty credential.
+        val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body), spec.account)
+        if (signedIn) runAfterPersist(spec)
+        return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
+    }
+
+    private fun classifyPollError(body: String, intervalS: Long, loginIo: LoginIo): PollStep =
+        when (loginIo.errorCode(body)) {
             "authorization_pending" -> PollStep.Wait(intervalS)
             "slow_down" -> PollStep.Wait(intervalS + SLOW_DOWN_INCREMENT_S)
             "expired_token" -> PollStep.Stop(Outcome.EXPIRED)
@@ -178,6 +185,12 @@ public object DeviceLoginFlow {
                 println("splice: login failed: ${loginIo.sanitize(body)}")
                 PollStep.Stop(Outcome.ABORT)
             }
+        }
+
+    // One dispatch: a failed finalizer prints and leaves the just-written credential in place.
+    private suspend fun runAfterPersist(spec: DeviceLoginSpec) {
+        Cancellables.runCatchingCancellable { spec.afterPersist(spec.authPath, spec.account) }.onFailure { e ->
+            println("splice: post-login step failed: ${SafeFailureText.render(e)}")
         }
     }
 

@@ -1,7 +1,7 @@
 # Head e2e checks
 
 Full-stack end-to-end tests over **every configured head** (`claudex`, `claude-grok`,
-`claude-kimi`, `openrouter`, …). Heads are discovered from the running daemon (`/api/heads`), so a
+`claude-kimi`, `claude-muse`, `openrouter`, …). Heads are discovered from the running daemon (`/api/heads`), so a
 head added to `~/.config/splice/splice.toml` is exercised here with zero harness edits. Discovery
 is the only roster — the harness keeps no hardcoded list of heads it expects to exist.
 
@@ -37,7 +37,7 @@ buffers the whole reply into one flush fails even if the bytes are correct), plu
 TTFB, first-delta, total, and max inter-event gap. Also a `count_tokens` sanity call.
 
 **Tier 2 — tmux TUI drive**: launches the head's real Claude Code wrapper (`claudex`,
-`claude-grok`, `claude-kimi`, …) inside an isolated tmux server (`-L splice-e2e`), auto-answers
+`claude-grok`, `claude-kimi`, `claude-muse`, …) inside an isolated tmux server (`-L splice-e2e`), auto-answers
 first-run prompts, sends two live prompts, asserts the answers render, then runs an oracle over
 the head's perf JSONL (`~/.claude-codex/state/<head>-perf.jsonl`) for the drive window. A head
 that is not logged in is reported SKIP, never FAIL.

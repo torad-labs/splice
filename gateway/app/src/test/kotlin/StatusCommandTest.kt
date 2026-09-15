@@ -170,5 +170,6 @@ class BackendLabelTest {
         assertEquals("xAI Grok", kimi.backendLabel(provider("grok-oauth", Dialect.OPENAI_RESPONSES)))
         assertEquals("Anthropic (your login)", kimi.backendLabel(provider("client", Dialect.ANTHROPIC_PASSTHROUGH)))
         assertEquals("OpenAI-compatible", kimi.backendLabel(provider("api-key", Dialect.OPENAI_CHAT)))
+        assertEquals("Meta Muse", kimi.backendLabel(provider("muse-oauth", Dialect.ANTHROPIC_PASSTHROUGH)))
     }
 }

@@ -111,8 +111,8 @@ cancelled setup leaves the previous configuration usable.
 **Resolved 2026-09-13:**
 - Profiles are exactly the auth-kind/dialect pairs `Topology.kt` already validates, no new
   provider: `chatgpt-oauth` + `openai-responses` (Claudex), `claude` passthrough, `kimi-oauth`,
-  `grok-oauth`, `api-key` + `openai-chat` (OpenRouter and any OpenAI-compatible endpoint,
-  which is also the local-model path of section 10).
+  `muse-oauth` + `anthropic-passthrough` (claude-muse), `grok-oauth`, `api-key` + `openai-chat`
+  (OpenRouter and any OpenAI-compatible endpoint, which is also the local-model path of section 10).
 - Local checks run always and spend nothing: TOML validation, credential file present and
   unexpired, base URL reachable, model list fetched where the dialect has one. The only live
   check is one short turn on the chosen model, offered as a yes/no step and skipped by default.

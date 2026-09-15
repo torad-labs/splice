@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.SignInPlanner
@@ -16,6 +17,9 @@ import splice.app.auth.OAuthAccountFiles
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.quota.CodexQuotaProbe
+import splice.app.quota.MuseMintProbe
+import splice.app.quota.QuotaProbe
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -136,7 +140,7 @@ class ManagedHeadFactoryQuotaPollTest {
     }
 
     @Test
-    fun `the factory tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
+    fun `the factory no-accounts tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("codex-headers"))
         val captured = mutableListOf<QuotaTracker>()
         val factory = factory(
@@ -145,7 +149,55 @@ class ManagedHeadFactoryQuotaPollTest {
             StartQuotaPoller { _, _, tracker -> captured += tracker },
         )
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
-        val tracker = captured.single()
+        assertCodexRound(captured.single())
+    }
+
+    @Test
+    fun `the factory account-pool tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("codex-pool-headers"))
+        val ctx = build(statePaths, quotaPoll = "auto")
+        val primaryFile = Path.of(checkNotNull(ctx.providerCfg.auth.file))
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.ChatgptOAuth,
+            primaryFile,
+            "backup",
+            buildJsonObject {},
+        )
+        val captured = mutableListOf<QuotaTracker>()
+        val factory = factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, tracker -> captured += tracker },
+        )
+        factory.assembleHead(ctx, controlPort = 3098)
+        assertEquals(2, captured.size)
+        captured.forEach(::assertCodexRound)
+    }
+
+    @Test
+    fun `chatgpt assembly starts a codex probe and muse assembly starts a mint probe`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val chatgptPaths = StatePaths(baseOverride = tmp.resolve("chatgpt-probe"))
+        val chatgptProbes = mutableListOf<QuotaProbe>()
+        factory(
+            chatgptPaths,
+            backgroundScope,
+            StartQuotaPoller { _, probe, _ -> chatgptProbes += probe },
+        ).assembleHead(build(chatgptPaths, quotaPoll = "auto"), controlPort = 3098)
+        assertTrue(chatgptProbes.single() is CodexQuotaProbe)
+
+        val musePaths = StatePaths(baseOverride = tmp.resolve("muse-probe"))
+        val museProbes = mutableListOf<QuotaProbe>()
+        factory(
+            musePaths,
+            backgroundScope,
+            StartQuotaPoller { _, probe, _ -> museProbes += probe },
+        ).assembleHead(museBuild(musePaths), controlPort = 3106)
+        assertTrue(museProbes.single() is MuseMintProbe)
+    }
+
+    private fun assertCodexRound(tracker: QuotaTracker) {
         tracker.observe(
             HeaderLookup { name ->
                 mapOf(
@@ -157,5 +209,32 @@ class ManagedHeadFactoryQuotaPollTest {
         )
         assertNotNull(tracker.snapshot()?.fiveHour)
         assertEquals(14.0, tracker.snapshot()!!.fiveHour!!.usedPercent, 1e-9)
+    }
+
+    private fun museBuild(statePaths: StatePaths): ProviderBuild {
+        val model = ModelEntry(id = "muse", contextWindow = 200_000)
+        return ProviderBuild(
+            key = "muse",
+            head = HeadConfig(
+                provider = "muse",
+                port = 3106,
+                discoveryPrefix = "claude-muse--",
+                pinnedModel = model.id,
+                claude = ClaudeWrapperConfig(command = "muse", configDir = statePaths.stateDir.toString()),
+            ),
+            providerCfg = ProviderConfig(
+                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+                baseUrl = "https://api.meta.ai",
+                auth = AuthConfig(kind = "muse-oauth", file = statePaths.stateDir.resolve("muse.json").toString()),
+            ),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-muse--",
+                models = listOf(model),
+                defaultContextWindow = model.contextWindow,
+            ),
+            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to "auto")).getConfig(),
+            loginCommand = "muse login",
+        )
     }
 }

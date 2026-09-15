@@ -36,6 +36,26 @@ class GrokQuotaProbeTest {
     }
 
     @Test
+    fun `grok used_percent is not clamped`() {
+        assertEquals(
+            150.0,
+            parser.parse(
+                obj("""{"config":{"creditUsagePercent":150.0}}"""),
+                now,
+            )!!.sevenDay!!.usedPercent,
+            1e-9,
+        )
+        assertEquals(
+            -5.0,
+            parser.parse(
+                obj("""{"config":{"creditUsagePercent":-5.0}}"""),
+                now,
+            )!!.sevenDay!!.usedPercent,
+            1e-9,
+        )
+    }
+
+    @Test
     fun `a malformed period end is ignored`() {
         val s = parser.parse(
             obj(

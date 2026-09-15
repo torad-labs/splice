@@ -102,13 +102,29 @@ class QuotaProbesTest {
     fun `forHead dispatches one probe class per auth kind`(@TempDir tmp: Path) {
         val probes = QuotaProbes(HttpClient(MockEngine { respond("{}", HttpStatusCode.OK) }))
         val auth = FixedAuth(Credentials.Bearer("tok"))
-        assertTrue(probes.forHead(ctx(tmp, "chatgpt-oauth"), auth) is CodexQuotaProbe)
-        assertTrue(probes.forHead(ctx(tmp, "kimi-oauth"), auth) is KimiQuotaProbe)
-        assertTrue(probes.forHead(ctx(tmp, "grok-oauth"), auth) is GrokQuotaProbe)
-        assertNull(probes.forHead(ctx(tmp, "muse-oauth"), auth), "muse without UsageFields is refused")
+        assertTrue(probes.forHead(ctx(tmp, "chatgpt-oauth"), auth, null) is CodexQuotaProbe)
+        assertTrue(probes.forHead(ctx(tmp, "kimi-oauth"), auth, null) is KimiQuotaProbe)
+        assertTrue(probes.forHead(ctx(tmp, "grok-oauth"), auth, null) is GrokQuotaProbe)
+        assertNull(probes.forHead(ctx(tmp, "muse-oauth"), auth, null), "muse without UsageFields is refused")
         val fields = UsageFields { null }
         assertTrue(probes.forHead(ctx(tmp, "muse-oauth"), auth, fields) is MuseMintProbe)
-        assertNull(probes.forHead(ctx(tmp, "api-key"), auth))
+        assertNull(probes.forHead(ctx(tmp, "api-key"), auth, null))
+    }
+
+    @Test
+    fun `forHead kimi and codex probes carry no xAI headers`(@TempDir tmp: Path) = runTest {
+        val captured = mutableListOf<Map<String, String>>()
+        val engine = MockEngine { request ->
+            val names = listOf("x-grok-client-mode", "x-grok-client-version", "X-XAI-Token-Auth")
+            captured += names.mapNotNull { n -> request.headers[n]?.let { n to it } }.toMap()
+            respond("{}", HttpStatusCode.OK)
+        }
+        val probes = QuotaProbes(HttpClient(engine))
+        val auth = FixedAuth(Credentials.Bearer("tok"))
+        probes.forHead(ctx(tmp, "chatgpt-oauth"), auth, null)!!.probe()
+        probes.forHead(ctx(tmp, "kimi-oauth"), auth, null)!!.probe()
+        assertEquals(2, captured.size)
+        assertTrue(captured.all { it.isEmpty() })
     }
 
     private fun ctx(tmp: Path, kind: String): ProviderBuild {

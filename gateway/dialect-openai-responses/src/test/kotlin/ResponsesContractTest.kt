@@ -31,6 +31,10 @@ private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = Respon
     normalizeToolSchemas = true,
     toolSurface = toolSurface,
     responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+    // Mirrored from CodexQuirks (V4-31): dialect no longer defaults these, so a
+    // provider-neutral lite opt-in omits them. This profile must declare them.
+    liteTextVerbosity = "low",
+    sendClientMetadata = true,
 )
 
 class ResponsesContractTest {

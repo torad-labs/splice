@@ -33,6 +33,12 @@ public class CodexQuirks {
         // would send x-openai-internal-codex-responses-lite to every openai-responses endpoint.
         responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
         responsesLiteHeader = "x-openai-internal-codex-responses-lite",
+        // codex-cli 0.145.0 sends text.verbosity=low on lite turns. Byte-identical to the old
+        // dialect default; only this profile carries it.
+        liteTextVerbosity = "low",
+        // client_metadata identifies splice on lite turns (session_id, thread_id). Byte-identical
+        // to the old dialect default; only this profile carries it.
+        sendClientMetadata = true,
         // Codex Spark drops reasoning.summary (openai/codex#31846). Byte-identical to the old
         // dialect default; only this profile carries it.
         summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),

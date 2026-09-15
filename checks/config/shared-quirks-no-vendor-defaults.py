@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""V4-29 — shared dialect quirks must not default a vendor fact.
+"""V4-31 — shared dialect quirks must not default a vendor fact.
 
 THE CLASS. A non-null default on ResponsesQuirks or ChatQuirks that is a model-id
-regex, an HTTP header name, or a vendor host is inherited by every provider that
-does not override it. V4-20 moved ChatQuirks.xhighModels to GrokQuirks. V4-28
-moved the lite regex and lite header to CodexQuirks. This wall closes the class
-so the next one cannot land as a dialect default.
+regex, an HTTP header name, a vendor host, or a lite-gated measured wire byte is
+inherited by every provider that does not override it. V4-20 moved
+ChatQuirks.xhighModels to GrokQuirks. V4-28 moved the lite regex and lite header
+to CodexQuirks. V4-29 moved spark/mini reject regexes to CodexQuirks. V4-31 moved
+liteTextVerbosity and sendClientMetadata to CodexQuirks. This wall closes the
+class so the next one cannot land as a dialect default.
 
 SCOPE. Shared types are the *Quirks data classes under gateway/dialect-*/src/main.
 Per-vendor types (CodexQuirks, GrokQuirks, OpenAiQuirks and their kin under
@@ -19,20 +21,12 @@ editing this checker. The field list is not an allowlist this file types.
 
 DISPOSITION. Every parsed field is classified: required (no default), clean-null
 (default null — the exemplary shape for a vendor-shaped knob), clean-unshaped
-(a default that is not a model id, header name, or vendor host), or FAIL (a
-vendor-shaped non-null default, named). Absence is not a disposition. There is
-no exemption table; a vendor-shaped default that must stay is a bug in the type
-boundary, not a reason to write a blank pass.
+(a default that is not a model id, header name, vendor host, or lite-gated
+measured wire byte), or FAIL (a vendor-shaped non-null default, named). Absence
+is not a disposition. There is no exemption table; a vendor-shaped default that
+must stay is a bug in the type boundary, not a reason to write a blank pass.
 
 NOT CAUGHT, and why.
-
-  liteTextVerbosity defaults to low from a codex-cli 0.145.0 measurement.
-  sendClientMetadata defaults to true. Both are lite-gated, so they are latent
-  rather than live, and neither is a model id, header name, or vendor host.
-  This wall's class is vendor IDENTITY leaking across backends, not vendor
-  wire-behavior. What would catch them: a wall on lite-gated defaults that
-  encode a measured vendor wire byte — the class V4-28 already moved for the
-  lite header pair.
 
   effortVocabulary defaults to DefaultEffortVocabulary(). That type's own
   header says it is dialect-owned, not a vendor fact; grok supplies
@@ -55,10 +49,21 @@ NOT CAUGHT, and why.
   Knob.kt is also a different syntax (enum entries, not a *Quirks data
   class constructor), so it is outside this parser by construction.
 
+  liteParallelToolCalls defaults to false. It is lite-gated and the false
+  was measured (codex-rs gates model parallel with !use_responses_lite), but
+  false is the omit: ResponsesRequestAssembler sends the field only when
+  quirks.liteParallelToolCalls is true. A future lite opt-in that does not
+  override it inherits off — it loses a behaviour it never had rather than
+  silently gaining a vendor one. Fail-safe, same class as
+  Knob.FOLD_REASONING_MODELS. A true default WOULD fail this wall (a measured
+  on-value). What would catch the day the assembler gate inverts so false
+  means on: a wall that reads the consumer polarity, not the default token.
+
 SELFTEST. --selftest injects fixtures. RED on a synthetic Regex/header/host
-default. GREEN on the compliant form (null vendor-shaped knobs, plus the
-boring extra field that defaults to null). A vendor *Quirks file under
-provider-* with a Regex default is not in scope.
+or lite-gated measured-wire-byte default. GREEN on the compliant form (null
+vendor-shaped knobs, false/omit lite booleans, plus the boring extra field
+that defaults to null). A vendor *Quirks file under provider-* with a Regex
+default is not in scope.
 """
 from __future__ import annotations
 
@@ -243,15 +248,36 @@ def vendor_shaped(name: str, type_text: str, default: str | None) -> str | None:
     return None
 
 
+def lite_gated_wire_byte(name: str, default: str | None) -> str | None:
+    """A lite-gated default that encodes a measured vendor wire byte.
+
+    Name contains lite (responsesLite*, liteTextVerbosity, emitEmptyLiteInstructions,
+    liteParallelToolCalls) or is sendClientMetadata, which is lite-gated without the
+    prefix. false and null are omit, not a measured byte.
+    """
+    if default is None or is_null_default(default):
+        return None
+    if default.strip() == "false":
+        return None
+    if "lite" not in name.lower() and name != "sendClientMetadata":
+        return None
+    return "lite-wire-byte"
+
+
 def classify(name: str, type_text: str, default: str | None) -> tuple[str, str]:
     """Return (kind, detail) where kind is required, clean-null, clean-unshaped, or fail."""
-    shape = vendor_shaped(name, type_text, default)
+    identity = vendor_shaped(name, type_text, default)
+    lite = lite_gated_wire_byte(name, default)
+    shape = identity or lite
     if default is None:
         return "required", "no default"
     if is_null_default(default):
         return "clean-null", "null default" + (f" ({shape})" if shape else "")
     if shape is None:
-        return "clean-unshaped", "default is not a model id, header name, or vendor host"
+        return "clean-unshaped", (
+            "default is not a model id, header name, vendor host, or lite-gated "
+            "measured wire byte"
+        )
     return "fail", f"{shape} default: {default}"
 
 
@@ -296,6 +322,9 @@ public data class ResponsesQuirks(
     val summaryRejectModelRegex: Regex? = null,
     val effortMaxRejectModelRegex: Regex? = null,
     val responsesLiteHeader: String? = null,
+    val liteTextVerbosity: String? = null,
+    val sendClientMetadata: Boolean = false,
+    val liteParallelToolCalls: Boolean = false,
     val minImageEdgePx: Int? = null,
     val extra: String? = null,
 )
@@ -322,6 +351,27 @@ public data class ResponsesQuirks(
 )
 """
 
+LITE_VERBOSITY_VIOLATION = """
+public data class ResponsesQuirks(
+    val providerTag: String,
+    val liteTextVerbosity: String? = "low",
+)
+"""
+
+METADATA_VIOLATION = """
+public data class ResponsesQuirks(
+    val providerTag: String,
+    val sendClientMetadata: Boolean = true,
+)
+"""
+
+PARALLEL_ON_VIOLATION = """
+public data class ResponsesQuirks(
+    val providerTag: String,
+    val liteParallelToolCalls: Boolean = true,
+)
+"""
+
 VENDOR_FILE = """
 public data class CodexQuirks(
     val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
@@ -342,6 +392,15 @@ def selftest() -> int:
     host_hits = check_source("host", HOST_VIOLATION)
     if not any("baseUrl" in hit for hit in host_hits):
         failures.append("synthetic vendor-host default must be RED by field name")
+    verbosity_hits = check_source("verbosity", LITE_VERBOSITY_VIOLATION)
+    if not any("liteTextVerbosity" in hit for hit in verbosity_hits):
+        failures.append("synthetic liteTextVerbosity default must be RED by field name")
+    metadata_hits = check_source("metadata", METADATA_VIOLATION)
+    if not any("sendClientMetadata" in hit for hit in metadata_hits):
+        failures.append("synthetic sendClientMetadata true default must be RED by field name")
+    parallel_on = check_source("parallel-on", PARALLEL_ON_VIOLATION)
+    if not any("liteParallelToolCalls" in hit for hit in parallel_on):
+        failures.append("synthetic liteParallelToolCalls true default must be RED by field name")
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         dialect = root / "gateway/dialect-openai-responses/src/main/kotlin"
@@ -363,9 +422,10 @@ def selftest() -> int:
             print("  " + failure)
         return 1
     print(
-        "shared-quirks-no-vendor-defaults SELFTEST OK — null vendor knobs and a boring "
-        "null extra are green; Regex, header-name and vendor-host defaults are red by "
-        "name; a provider-codex CodexQuirks Regex is out of scope"
+        "shared-quirks-no-vendor-defaults SELFTEST OK — null vendor knobs, false/omit "
+        "lite booleans, and a boring null extra are green; Regex, header-name, "
+        "vendor-host, and lite-gated measured-wire-byte defaults are red by name; a "
+        "provider-codex CodexQuirks Regex is out of scope"
     )
     return 0
 

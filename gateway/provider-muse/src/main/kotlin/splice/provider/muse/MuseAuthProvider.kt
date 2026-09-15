@@ -19,8 +19,10 @@ import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
 import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.CredentialLock
+import splice.spi.ProcessDispatchers
 import splice.spi.SingleFlight
 import java.nio.file.Path
+import kotlin.coroutines.CoroutineContext
 
 private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
@@ -34,10 +36,11 @@ public class MuseAuthProvider(
     private val mintCall: MuseKeyMintCall,
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
     private val prefetchScope: CoroutineScope? = null,
+    flightContext: CoroutineContext = ProcessDispatchers().background(),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
     private val store = MuseCredentialStore(authPath, log, clock)
-    private val singleFlight = SingleFlight<Credentials?>()
-    private val mintFlight = SingleFlight<MintFlightResult>()
+    private val singleFlight = SingleFlight<Credentials?>(flightContext)
+    private val mintFlight = SingleFlight<MintFlightResult>(flightContext)
     private val invalidAccountLatch = InvalidGrantLatch()
     private val holds = MuseMintHolds(clock)
     private val oauth = MuseOAuth()

@@ -421,11 +421,11 @@ upstreamTimeoutMs = "2400000"
 
 [heads.claude-muse]
 provider = "muse"
-port = 3105                    # 3103 is fireworks; 3104 is claude-splice
+port = 3106                    # 3103 is fireworks; 3104 is claude-splice; 3105 is commented ollama
 discovery_prefix = "claude-muse--"
 pinned_model = "muse-spark-1.3[1m]"
-# All four Claude Code slots map to Spark 1.3 so background titling / --model haiku stay served.
-models = [{ id = "muse-spark-1.3[1m]", slot = "opus" }, { id = "muse-spark-1.3[1m]", slot = "sonnet" }, { id = "muse-spark-1.3[1m]", slot = "haiku" }, { id = "muse-spark-1.3[1m]", slot = "fable" }]
+# No models line: Spark 1.3 is the only catalog model worth pinning, and four slots on one id
+# is illegal (head model list contains duplicates). The head keeps the provider-wide surface.
 context_window = 1000000
 [heads.claude-muse.claude]
 command = "claude-muse"

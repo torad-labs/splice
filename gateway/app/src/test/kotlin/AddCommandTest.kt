@@ -311,8 +311,14 @@ class AddCommandTest {
         assertEquals(before, Files.readString(config()))
         Files.writeString(authFile("kimi-oauth"), """{"access_token":"a","refresh_token":"r","expires_at":1}""")
         assertTrue(runBlocking { command(http(routes), login = false).add(listOf("kimi", "--yes"), env) })
-        val kimi = TopologyLoader.parse(Files.readString(config())).providers.getValue("kimi")
+        val topology = TopologyLoader.parse(Files.readString(config()))
+        val kimi = topology.providers.getValue("kimi")
+        val kimiHead = topology.heads.getValue("kimi")
+        kimi.catalogFor(kimiHead)
         assertEquals("kimi-oauth", kimi.auth.kind)
+        assertEquals("k3-256k", kimiHead.pinnedModel)
+        assertEquals(null, kimiHead.models)
+        assertEquals(262_144L, kimiHead.contextWindow)
         assertEquals(listOf("kimi"), installed, "no sign-in ran: the flat kimi file is refreshable")
     }
 
@@ -328,9 +334,14 @@ class AddCommandTest {
         Files.writeString(authFile("muse-oauth"), """{"access_token":"acct-token-fake"}""")
         assertTrue(runBlocking { command(http(routes), login = false).add(listOf("muse", "--yes"), env) })
         val topology = TopologyLoader.parse(Files.readString(config()))
+        val museHead = topology.heads.getValue("muse")
+        topology.providers.getValue("muse").catalogFor(museHead)
         assertEquals("muse-oauth", topology.providers.getValue("muse").auth.kind)
         assertEquals("https://api.meta.ai", topology.providers.getValue("muse").baseUrl)
-        assertEquals("claude-muse", topology.heads.getValue("muse").claude.command)
+        assertEquals("claude-muse", museHead.claude.command)
+        assertEquals("muse-spark-1.3[1m]", museHead.pinnedModel)
+        assertEquals(null, museHead.models)
+        assertEquals(1_000_000L, museHead.contextWindow)
         assertEquals(listOf("muse"), installed, "no sign-in ran: the account token is enough")
     }
 

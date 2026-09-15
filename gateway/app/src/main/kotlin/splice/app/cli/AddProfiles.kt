@@ -12,8 +12,13 @@ private const val WINDOW_400K = 400_000L
 private const val WINDOW_500K = 500_000L
 private const val WINDOW_1M = 1_000_000L
 
-/** One model row; [slot] is the Claude model slot a passthrough head maps it to (fable/opus/...). */
-internal data class AddModel(val id: String, val label: String, val contextWindow: Long, val slot: String? = null)
+/** One model row; [slots] are the Claude model slots a passthrough head maps it to (fable/opus/...). */
+internal data class AddModel(
+    val id: String,
+    val label: String,
+    val contextWindow: Long,
+    val slots: List<String> = emptyList(),
+)
 
 internal data class AddProfile(
     val name: String,
@@ -71,6 +76,7 @@ internal class AddProfiles {
             command = "claude-kimi",
             models = listOf(
                 AddModel("k3-256k", "Kimi K3 256k", WINDOW_262K),
+                AddModel("k3[1m]", "Kimi K3 (1M)", WINDOW_1M),
                 AddModel("kimi-for-coding", "Kimi for Coding", WINDOW_262K),
             ),
         ),
@@ -96,10 +102,10 @@ internal class AddProfiles {
             headKey = "claude-splice",
             command = "claude-splice",
             models = listOf(
-                AddModel("claude-fable-5", "Claude Fable 5", WINDOW_200K, "fable"),
-                AddModel("claude-opus-5", "Claude Opus 5", WINDOW_200K, "opus"),
-                AddModel("claude-sonnet-5", "Claude Sonnet 5", WINDOW_200K, "sonnet"),
-                AddModel("claude-haiku-4-5", "Claude Haiku 4.5", WINDOW_200K, "haiku"),
+                AddModel("claude-fable-5", "Claude Fable 5", WINDOW_200K, listOf("fable")),
+                AddModel("claude-opus-5", "Claude Opus 5", WINDOW_200K, listOf("opus")),
+                AddModel("claude-sonnet-5", "Claude Sonnet 5", WINDOW_200K, listOf("sonnet")),
+                AddModel("claude-haiku-4-5", "Claude Haiku 4.5", WINDOW_200K, listOf("haiku")),
             ),
             providerExtra = listOf("""extra_headers = { anthropic-version = "2023-06-01" }"""),
         ),
@@ -146,26 +152,34 @@ internal class AddProfiles {
                 "context_window = ${m.contextWindow}",
             )
         }
-        val slotted = models.filter { it.slot != null }
+        val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
+        val pinned = models.first()
         val head = listOf(
             "",
             "[heads.$key]",
             "provider = \"$key\"",
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
-            "pinned_model = \"${models.first().id}\"",
-        ) + slotLines(slotted, models) + listOf("[heads.$key.claude]", "command = \"${profile.command}\"")
+            "pinned_model = \"${pinned.id}\"",
+        ) + headExtras(mappings, pinned.contextWindow) + listOf(
+            "[heads.$key.claude]",
+            "command = \"${profile.command}\"",
+        )
         return (provider + head).joinToString("\n") + "\n"
     }
 
-    /** A passthrough head maps its rows onto Claude's model slots and declares the shared window. */
-    private fun slotLines(slotted: List<AddModel>, models: List<AddModel>): List<String> = if (slotted.isEmpty()) {
-        emptyList()
-    } else {
-        listOf(
-            "models = [" + slotted.joinToString { "{ id = \"${it.id}\", slot = \"${it.slot}\" }" } + "]",
-            "context_window = ${models.maxOf { it.contextWindow }}",
-        )
+    /** Head-wide window is the pinned row's ceiling, never the catalog max. Slot mappings are
+     *  omitted when the profile has none, so the head keeps the provider-wide surface. */
+    private fun headExtras(mappings: List<Pair<String, String>>, pinnedWindow: Long): List<String> {
+        val window = listOf("context_window = $pinnedWindow")
+        return if (mappings.isEmpty()) {
+            window
+        } else {
+            listOf(
+                "models = [" +
+                    mappings.joinToString { (id, slot) -> "{ id = \"$id\", slot = \"$slot\" }" } + "]",
+            ) + window
+        }
     }
 }
 

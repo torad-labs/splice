@@ -20,18 +20,20 @@ import splice.app.auth.AUTO
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthLoginAccount
 import splice.app.auth.OAuthLoginReservation
-import splice.core.auth.CredentialJson
 import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.core.util.SecureFile
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintMode
+import splice.provider.muse.MuseMintPersistence
 import splice.provider.muse.MuseOAuth
 import splice.provider.muse.MuseOAuthEndpoints
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.coroutines.cancellation.CancellationException
 
 internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
 
@@ -40,6 +42,7 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
     private val accountFiles = OAuthAccountFiles()
     private val loginReservations = OAuthLoginReservation()
     private val authJson = AuthJsonFromResponse { body -> museAuthJson(body) }
+    private val mintPersistence = MuseMintPersistence()
 
     internal fun spec(head: String, authPath: Path, label: String? = null): DeviceLoginSpec {
         val planned = accountFiles.loginAccount(AuthKind.MuseOAuth, authPath, label)
@@ -113,10 +116,36 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
 
     private suspend fun mintAfterLogin(authPath: Path, account: OAuthLoginAccount?) {
         val target = writtenPath(authPath, account)
-        val current = readObject(target) ?: return
-        val access = JsonScalars.strIfString(current["access_token"]).takeIf(String::isNotBlank) ?: return
-        when (val attempt = mint(access, MuseMintMode.ONBOARD)) {
-            is MuseMintAttempt.Granted -> persistMinted(target, current, access, attempt)
+        val current = readObject(target)
+        if (current == null) {
+            println("splice: muse key mint skipped: credential missing after login")
+            return
+        }
+        val access = JsonScalars.strIfString(current["access_token"]).takeIf(String::isNotBlank)
+        if (access == null) {
+            println("splice: muse key mint skipped: account token missing")
+            return
+        }
+        val attempt = mintAttempt(access) ?: return
+        applyAttempt(target, access, attempt)
+    }
+
+    private suspend fun mintAttempt(access: String): MuseMintAttempt? {
+        val outcome = runCatching { mint(access, MuseMintMode.ONBOARD) }
+        val failure = outcome.exceptionOrNull() ?: return outcome.getOrThrow()
+        when (failure) {
+            is CancellationException -> throw failure
+            is Error -> throw failure
+            is java.io.IOException ->
+                println("splice: muse key mint failed: ${SafeFailureText.render(failure)}")
+            else -> println("splice: muse key mint failed: ${SafeFailureText.render(failure)}")
+        }
+        return null
+    }
+
+    private fun applyAttempt(target: Path, access: String, attempt: MuseMintAttempt) {
+        when (attempt) {
+            is MuseMintAttempt.Granted -> persistMinted(target, access, attempt)
             is MuseMintAttempt.InvalidAccountToken ->
                 println("splice: muse key mint failed: account token rejected")
             is MuseMintAttempt.SubscriptionRequired -> {
@@ -130,25 +159,9 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
         }
     }
 
-    private fun persistMinted(
-        target: Path,
-        current: JsonObject,
-        access: String,
-        attempt: MuseMintAttempt.Granted,
-    ) {
-        val replacements = buildJsonObject {
-            attempt.key.fields.forEach { (name, value) ->
-                if (name != "splice_auth_kind" && name != "splice_account_label") put(name, value)
-            }
-            put("api_key", JsonPrimitive(attempt.key.apiKey))
-            put("access_token", JsonPrimitive(access))
-        }
-        val merged = CredentialJson.mergedCredentialJson(current, replacements)
-        Cancellables.runCatchingCancellable {
-            SecureFile.writeAtomic0600(target, merged.toString())
-        }.onFailure {
-            println("splice: muse key mint succeeded but the key could not be stored")
-        }
+    private fun persistMinted(target: Path, access: String, attempt: MuseMintAttempt.Granted) {
+        val stored = mintPersistence.persistGranted(target, access, attempt.key, LogSink { println(it) })
+        if (!stored) println("splice: muse key mint succeeded but the key could not be stored")
     }
 
     private fun writtenPath(authPath: Path, account: OAuthLoginAccount?): Path {

@@ -6,8 +6,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -237,7 +239,7 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `example config muse head has no extra headers and uses port 3105`() {
+    fun `example config muse head has no extra headers and uses port 3106`() {
         var dir = Paths.get("").toAbsolutePath()
         var toml: String? = null
         repeat(4) {
@@ -251,12 +253,149 @@ class LoginCommandTest {
         assertEquals("muse-oauth", muse.auth.kind)
         assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, muse.dialect)
         assertTrue(muse.staticHeaders.isEmpty())
-        assertEquals(3105, head.port)
+        assertEquals(3106, head.port)
         assertEquals("claude-muse--", head.discoveryPrefix)
-        assertEquals(
-            listOf("opus", "sonnet", "haiku", "fable"),
-            head.models.orEmpty().mapNotNull { it.slot },
+        assertEquals(null, head.models)
+        muse.catalogFor(head)
+    }
+
+    @Test
+    fun `kimi and muse device forms are wire-identical aside from client id`(@TempDir tmp: Path) {
+        val kimiPath = tmp.resolve("kimi.json")
+        val musePath = tmp.resolve("muse.json")
+        Files.writeString(kimiPath, "{}")
+        Files.writeString(musePath, "{}")
+        val kimi = LoginKimi().spec("kimi", kimiPath)
+        val muse = LoginMuse().spec("claude-muse", musePath)
+        try {
+            val placeholder = "CLIENT"
+            fun canon(form: String, id: String) = form.replace(id, placeholder)
+            assertEquals(
+                canon(kimi.deviceAuthForm(kimi.clientId), kimi.clientId),
+                canon(muse.deviceAuthForm(muse.clientId), muse.clientId),
+            )
+            assertEquals(
+                canon(kimi.tokenPollForm("DEV123", kimi.clientId), kimi.clientId),
+                canon(muse.tokenPollForm("DEV123", muse.clientId), muse.clientId),
+            )
+            assertEquals(1800L, kimi.parseDeviceAuth("""{"user_code":"A","device_code":"B"}""").expiresInS)
+            assertEquals(600L, muse.parseDeviceAuth("""{"user_code":"A","device_code":"B"}""").expiresInS)
+        } finally {
+            kimi.account?.releaseReservation()
+            muse.account?.releaseReservation()
+        }
+    }
+
+    @Test
+    fun `muse login-end mint stays ONBOARD on relogin`(@TempDir tmp: Path) {
+        val path = tmp.resolve("muse.json")
+        Files.writeString(path, """{"access_token":"old","api_key":"held-key"}""")
+        val modes = mutableListOf<MuseMintMode>()
+        val spec = LoginMuse { _, mode ->
+            modes += mode
+            MuseMintAttempt.Denied("held")
+        }.spec("claude-muse", path)
+        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
+        assertEquals(listOf(MuseMintMode.ONBOARD), modes)
+    }
+
+    @Test
+    fun `muse labeled pool mint writes the key beside the untouched primary`(@TempDir tmp: Path) {
+        val primary = tmp.resolve("muse.json")
+        Files.writeString(primary, """{"access_token":"primary-secret"}""")
+        val granted = MuseMintAttempt.Granted(
+            MuseSubscriptionKey("pool-key-fake", buildJsonObject { }),
         )
+        val spec = LoginMuse { _, mode ->
+            assertEquals(MuseMintMode.ONBOARD, mode)
+            granted
+        }.spec("claude-muse", primary, "work")
+        try {
+            assertTrue(
+                LoginIo().persistIfSignedIn(primary, """{"access_token":"backup-acct"}""", spec.account),
+            )
+            kotlinx.coroutines.runBlocking { spec.afterPersist(primary, spec.account) }
+            assertEquals("""{"access_token":"primary-secret"}""", Files.readString(primary))
+            val pooled = tmp.resolve("muse-oauth/muse.json/work.json")
+            val onDisk = Json.parseToJsonElement(Files.readString(pooled)).jsonObject
+            assertEquals("backup-acct", onDisk.getValue("access_token").jsonPrimitive.content)
+            assertEquals("pool-key-fake", onDisk.getValue("api_key").jsonPrimitive.content)
+        } finally {
+            spec.account?.releaseReservation()
+        }
+    }
+
+    @Test
+    fun `a throwing muse mint after persist does not fail the login`(@TempDir tmp: Path) {
+        val path = tmp.resolve("muse.json")
+        val spec = LoginMuse { _, _ -> error("mint exploded") }.spec("claude-muse", path)
+        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertDoesNotThrow {
+            kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
+        }
+        val onDisk = Json.parseToJsonElement(Files.readString(path)).jsonObject
+        assertEquals("acct-token-fake", onDisk.getValue("access_token").jsonPrimitive.content)
+        assertNull(onDisk["api_key"])
+    }
+
+    @Test
+    fun `muse pre-mint bailouts print a reason`(@TempDir tmp: Path) {
+        val missing = tmp.resolve("missing-muse.json")
+        val spec = LoginMuse { _, _ -> error("must not mint") }.spec("claude-muse", missing)
+        val missingOut = java.io.ByteArrayOutputStream()
+        val saved = System.out
+        System.setOut(java.io.PrintStream(missingOut))
+        try {
+            assertDoesNotThrow {
+                kotlinx.coroutines.runBlocking { spec.afterPersist(missing, spec.account) }
+            }
+        } finally {
+            System.setOut(saved)
+        }
+        assertTrue(
+            missingOut.toString().contains("splice: muse key mint skipped: credential missing after login"),
+            missingOut.toString(),
+        )
+        val empty = tmp.resolve("empty-muse.json")
+        Files.writeString(empty, """{"token_type":"Bearer"}""")
+        val emptyOut = java.io.ByteArrayOutputStream()
+        System.setOut(java.io.PrintStream(emptyOut))
+        try {
+            assertDoesNotThrow {
+                kotlinx.coroutines.runBlocking { spec.afterPersist(empty, spec.account) }
+            }
+        } finally {
+            System.setOut(saved)
+        }
+        assertTrue(
+            emptyOut.toString().contains("splice: muse key mint skipped: account token missing"),
+            emptyOut.toString(),
+        )
+    }
+
+    @Test
+    fun `muse spec parse of a body without expires_in uses 600s`(@TempDir tmp: Path) {
+        val spec = LoginMuse().spec("claude-muse", tmp.resolve("muse.json"))
+        try {
+            val auth = spec.parseDeviceAuth("""{"user_code":"A","device_code":"B"}""")
+            assertEquals(600L, auth.expiresInS)
+        } finally {
+            spec.account?.releaseReservation()
+        }
+    }
+
+    @Test
+    fun `an IOException from muse mint after persist does not fail the login`(@TempDir tmp: Path) {
+        val path = tmp.resolve("muse.json")
+        val spec = LoginMuse { _, _ -> throw java.io.IOException("disk") }.spec("claude-muse", path)
+        assertTrue(LoginIo().persistIfSignedIn(path, """{"access_token":"acct-token-fake"}""", spec.account))
+        assertDoesNotThrow {
+            kotlinx.coroutines.runBlocking { spec.afterPersist(path, spec.account) }
+        }
+        val onDisk = Json.parseToJsonElement(Files.readString(path)).jsonObject
+        assertEquals("acct-token-fake", onDisk.getValue("access_token").jsonPrimitive.content)
+        assertNull(onDisk["api_key"])
     }
 }
 

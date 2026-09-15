@@ -366,7 +366,17 @@ class AccountHeadBoundaryTest {
 
     @Test
     fun `portable head names retain existing case dots underscores and hyphens`() {
-        for (head in listOf("claudex", "claude", "grok", "kimi", "Head.Prod_2-v1", "0", "h".repeat(80))) {
+        for (head in listOf(
+            "claudex",
+            "claude",
+            "grok",
+            "kimi",
+            "muse",
+            "claude-muse",
+            "Head.Prod_2-v1",
+            "0",
+            "h".repeat(80),
+        )) {
             val payload = """{${JsonPrimitive(head)}:{"account_pool":{"accounts":[]}}}"""
             assertEquals(setOf(head), AccountPoolProjection().parse(payload).keys)
         }

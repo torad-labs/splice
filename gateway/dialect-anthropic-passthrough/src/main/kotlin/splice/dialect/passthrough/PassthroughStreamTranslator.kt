@@ -45,7 +45,7 @@ public class PassthroughStreamTranslator(
     private val blocks = PassthroughBlockRegistry(ctx, quirks, channels)
     private val terminal = PassthroughTerminalState(quirks, blocks)
     private val usage = PassthroughUsage()
-    private val router = PassthroughEventRouter(blocks, terminal, usage)
+    private val router = PassthroughEventRouter(blocks, terminal, usage, ctx.log, quirks.providerTag)
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {

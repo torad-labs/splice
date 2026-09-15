@@ -7,4 +7,5 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":provider-spi"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(testFixtures(project(":provider-spi")))
 }

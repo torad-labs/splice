@@ -25,7 +25,6 @@ import splice.spi.Waiter
 
 public object DeviceLoginFlow {
 
-    private val loginIo = LoginIo()
     private val kimiOAuth = KimiOAuth()
     private val authClients = AuthHttpClientFactory()
 
@@ -54,10 +53,14 @@ public object DeviceLoginFlow {
      *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
      *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
      *  constructor; the default is the production behaviour, and LoginCommand passes nothing. */
-    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean {
+    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean =
+        run(spec, waiter, LoginIo())
+
+    /** Per-call I/O keeps tests off the real browser without mutating the shared flow object. */
+    internal suspend fun run(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Boolean {
         var restarts = 0
         while (true) {
-            when (attempt(spec, waiter)) {
+            when (attempt(spec, waiter, loginIo)) {
                 Outcome.SUCCESS -> return true
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
@@ -71,13 +74,13 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter): Outcome {
+    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Outcome {
         val client = authClients.create()
         return try {
             Cancellables.runCatchingCancellable {
-                val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT
-                announce(spec, auth)
-                poll(client, spec, auth, waiter)
+                val auth = requestDeviceAuth(client, spec, loginIo) ?: return@runCatchingCancellable Outcome.ABORT
+                announce(spec, auth, loginIo)
+                poll(client, spec, auth, waiter, loginIo)
             }.getOrElse { e ->
                 println("splice: login error: ${SafeFailureText.render(e)}")
                 Outcome.ABORT
@@ -87,7 +90,11 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun requestDeviceAuth(client: HttpClient, spec: DeviceLoginSpec): KimiDeviceAuthorization? {
+    private suspend fun requestDeviceAuth(
+        client: HttpClient,
+        spec: DeviceLoginSpec,
+        loginIo: LoginIo,
+    ): KimiDeviceAuthorization? {
         val resp = client.post(spec.deviceAuthUrl) {
             loginIo.formHeaders(this, spec.identityHeaders)
             setBody(kimiOAuth.kimiDeviceAuthorizationForm(spec.clientId))
@@ -100,7 +107,7 @@ public object DeviceLoginFlow {
         return kimiOAuth.parseKimiDeviceAuthorization(body)
     }
 
-    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization) {
+    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization, loginIo: LoginIo) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
         println("")
         println("  splice: sign in to ${spec.head} — enter this code in your browser:")
@@ -117,13 +124,16 @@ public object DeviceLoginFlow {
         spec: DeviceLoginSpec,
         auth: KimiDeviceAuthorization,
         waiter: Waiter,
+        loginIo: LoginIo,
     ): Outcome {
         var intervalS = auth.intervalS
         val deadline = CredentialExpiry.expiryFromNowMs(System.currentTimeMillis(), auth.expiresInS)
         while (System.currentTimeMillis() < deadline) {
             waiter.wait(intervalS.coerceIn(0L, MAX_POLL_INTERVAL_S) * MS_PER_S)
-            val resp = Cancellables.runCatchingCancellable { postToken(client, spec, auth.deviceCode) }.getOrNull()
-            val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS)
+            val resp = Cancellables.runCatchingCancellable {
+                postToken(client, spec, auth.deviceCode, loginIo)
+            }.getOrNull()
+            val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS, loginIo)
             when (step) {
                 is PollStep.Stop -> return step.outcome
                 is PollStep.Wait -> intervalS = step.intervalS
@@ -133,7 +143,12 @@ public object DeviceLoginFlow {
     }
 
     // authorization_pending keeps the interval; slow_down bumps it permanently; the rest are terminal.
-    private suspend fun classifyPoll(resp: HttpResponse, spec: DeviceLoginSpec, intervalS: Long): PollStep {
+    private suspend fun classifyPoll(
+        resp: HttpResponse,
+        spec: DeviceLoginSpec,
+        intervalS: Long,
+        loginIo: LoginIo,
+    ): PollStep {
         val body = resp.bodyAsText()
         if (resp.status.isSuccess()) {
             // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
@@ -160,7 +175,12 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun postToken(client: HttpClient, spec: DeviceLoginSpec, deviceCode: String): HttpResponse =
+    private suspend fun postToken(
+        client: HttpClient,
+        spec: DeviceLoginSpec,
+        deviceCode: String,
+        loginIo: LoginIo,
+    ): HttpResponse =
         client.post(spec.tokenUrl) {
             loginIo.formHeaders(this, spec.identityHeaders)
             setBody(kimiOAuth.kimiTokenPollForm(deviceCode, spec.clientId))

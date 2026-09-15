@@ -7,12 +7,15 @@
 // path with nothing exercising it is exactly the unearned claim this campaign keeps finding.
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.BrowserOpener
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
+import splice.app.LoginIo
 import splice.spi.Waiter
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -22,6 +25,16 @@ import java.nio.file.Path
 
 class DeviceLoginTokenlessTest {
 
+    /** Replaces browser process creation entirely; false also exercises the manual-URL fallback. */
+    private class RecordingBrowserOpener : BrowserOpener {
+        val urls = mutableListOf<String>()
+
+        override fun open(url: String): Boolean {
+            urls.add(url)
+            return false
+        }
+    }
+
     /** A loopback device-flow provider: a valid device authorization, then [tokenBody] on poll. */
     private fun serving(tokenBody: String, expiresIn: Long = 30, interval: Long = 0): HttpServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -30,7 +43,7 @@ class DeviceLoginTokenlessTest {
             // thing under test; the injected waiter makes the interval a no-op regardless.
             val body = """
                 {"user_code":"ABCD-EFGH","device_code":"dev-code",
-                 "verification_uri":"http://127.0.0.1/verify","verification_uri_complete":"",
+                 "verification_uri":"http://127.0.0.1:${server.address.port}/verify","verification_uri_complete":"",
                  "expires_in":$expiresIn,"interval":$interval}
             """.trimIndent().toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -66,7 +79,11 @@ class DeviceLoginTokenlessTest {
             System.setOut(PrintStream(out, true))
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
-            runBlocking { DeviceLoginFlow.run(specFor(server, authPath), waiter = waiter) } to out.toString()
+            val browser = RecordingBrowserOpener()
+            val ok = runBlocking { DeviceLoginFlow.run(specFor(server, authPath), waiter, LoginIo(browser)) }
+            assertEquals(listOf("http://127.0.0.1:${server.address.port}/verify"), browser.urls)
+            assertTrue(out.toString().contains("open the URL above to finish signing in"))
+            ok to out.toString()
         } finally {
             System.setOut(savedOut)
             server.stop(0)

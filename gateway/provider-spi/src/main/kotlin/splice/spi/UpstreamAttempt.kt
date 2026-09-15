@@ -24,6 +24,11 @@ public fun interface RemainingTurnWait {
     public operator fun invoke(): Long
 }
 
+/** Observes a credential refresh only after the provider persisted usable credentials. */
+public fun interface AuthRefreshObserver {
+    public operator fun invoke()
+}
+
 /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument).
  *  Callers construct this and pass it to [UpstreamClient.post]. */
 public data class PostContext(
@@ -38,6 +43,7 @@ public data class PostContext(
     val rateLimitCooldown: RateLimitCooldown? = null,
     /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
     val remainingTurnWait: RemainingTurnWait? = null,
+    val authRefreshObserver: AuthRefreshObserver = AuthRefreshObserver {},
 ) {
     internal fun markRetry() {
         perf?.add(PerfKeys.RETRIES, 1)

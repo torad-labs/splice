@@ -54,7 +54,13 @@ public object DeviceLoginFlow {
      *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
      *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
      *  constructor; the default is the production behaviour, and LoginCommand passes nothing. */
-    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean {
+    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean = try {
+        runAttempts(spec, waiter)
+    } finally {
+        spec.account?.releaseReservation()
+    }
+
+    private suspend fun runAttempts(spec: DeviceLoginSpec, waiter: Waiter): Boolean {
         var restarts = 0
         while (true) {
             when (attempt(spec, waiter)) {

@@ -1,13 +1,11 @@
 // NEW (G3+G4a-c): retry-policy pins against the reference-harness survey — ALL 5xx retry except
-// 501; 408 retries; 429 arms a shared cooldown and non-pooled turns terminate without amplifying a
-// retry wave; pooled turns may briefly retry the same account. MockEngine — no network.
+// 501; 408 retries; every 429 observation terminates after arming shared follower protection.
+// MockEngine — no network.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -19,6 +17,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.spi.AuthRefreshObserver
 import splice.spi.ElapsedNow
 import splice.spi.PostContext
 import splice.spi.RateLimitCooldown
@@ -33,7 +32,6 @@ import java.net.SocketException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 
 class UpstreamClientRetryPolicyTest {
 
@@ -120,6 +118,40 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
+    fun `a successful reactive refresh reports exactly one positive auth outcome`() = runTest {
+        val calls = AtomicInteger()
+        val refreshes = AtomicInteger()
+        val observed = AtomicInteger()
+        val auth = object : RefreshableAuthProvider {
+            override suspend fun credentials(): Credentials = Credentials.Bearer("token")
+            override suspend fun refresh(): Credentials {
+                refreshes.incrementAndGet()
+                return credentials()
+            }
+
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
+        }
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) {
+                respond("unauthorized", HttpStatusCode.Unauthorized, headersOf())
+            } else {
+                respond("ok", HttpStatusCode.OK, headersOf())
+            }
+        }
+        val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = auth,
+            extraHeaders = { emptyMap() },
+            authRefreshObserver = AuthRefreshObserver { observed.incrementAndGet() },
+        )
+
+        assertEquals("ok", clientOver(engine).post(context, "{}") { "ok" })
+        assertEquals(2, calls.get())
+        assertEquals(1, refreshes.get())
+        assertEquals(1, observed.get())
+    }
+
+    @Test
     fun `failed response body is capped before classification`() = runTest {
         val engine = MockEngine {
             respond("x".repeat(100_000), HttpStatusCode.BadRequest, headersOf())
@@ -153,48 +185,44 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `waitable 429 retries the same account while followers fail fast`() = runTest {
+    fun `waitable 429 gives up while followers fail fast`() = runTest {
         val calls = AtomicInteger()
-        val elapsed = AtomicLong()
-        val backoffStarted = CompletableDeferred<Unit>()
-        val resumeBackoff = CompletableDeferred<Unit>()
+        val waiter = RecordingWaiter()
+        val notices = mutableListOf<String>()
         val engine = MockEngine {
-            if (calls.incrementAndGet() == 1) {
-                respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
-            } else {
-                respond("fine", HttpStatusCode.OK, headersOf())
-            }
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
         }
-        val cooldown = RateLimitCooldown(ElapsedNow(elapsed::get))
+        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
         val client = UpstreamClient(
             firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 5_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            backoff = { _, minDelayMs ->
-                backoffStarted.complete(Unit)
-                resumeBackoff.await()
-                elapsed.addAndGet(minDelayMs)
-            },
-            clock = ElapsedNow(elapsed::get),
+            waiter = waiter,
+            clock = ElapsedNow { 0L },
         )
         fun context() = PostContext(
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
+            onRetry = { notices.add(it) },
             rateLimitCooldown = cooldown,
             remainingTurnWait = RemainingTurnWait { 5_000L },
         )
-        val observer = async { client.post(context(), "{}") { "ok" } }
-        backoffStarted.await()
+
+        val observer = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
+        assertEquals(429, observer.status)
+        assertEquals("slow down", observer.body)
+        assertEquals(1, calls.get(), "the observing turn must not retry after receiving 429")
+        assertTrue(waiter.waits.isEmpty(), "the observing turn must not schedule a retry wait")
+        assertTrue(notices.any { it.contains("giving up to avoid a synchronized retry wave") })
 
         val follower = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
-        assertEquals(1, calls.get(), "a follower must not multiply the waitable retry")
+        assertEquals(1, calls.get(), "a follower must fail fast without reaching upstream")
         assertTrue(follower.body.contains("cooldown"))
-        resumeBackoff.complete(Unit)
-
-        assertEquals("ok", observer.await())
-        assertEquals(2, calls.get(), "the observing turn retries after its wait on the same credential")
+        assertTrue(waiter.waits.isEmpty(), "neither the observer nor its follower may wait")
+        assertEquals(1_000L, cooldown.remainingMs())
         assertEquals(0L, cooldown.unavailableForMs())
     }
 

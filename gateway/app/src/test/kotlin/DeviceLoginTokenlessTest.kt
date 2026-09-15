@@ -6,13 +6,19 @@
 // behaviour (a tokenless 200 is now ABORT rather than SUCCESS), and a behaviour change in a login
 // path with nothing exercising it is exactly the unearned claim this campaign keeps finding.
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
+import splice.app.auth.OAuthLoginAccount
+import splice.app.cli.LoginKimi
 import splice.spi.Waiter
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -45,7 +51,7 @@ class DeviceLoginTokenlessTest {
         return server
     }
 
-    private fun specFor(server: HttpServer, authPath: Path) = DeviceLoginSpec(
+    private fun specFor(server: HttpServer, authPath: Path, account: OAuthLoginAccount? = null) = DeviceLoginSpec(
         head = "probe",
         clientId = "cid",
         deviceAuthUrl = "http://127.0.0.1:${server.address.port}/device",
@@ -57,16 +63,22 @@ class DeviceLoginTokenlessTest {
             val token = Regex(""""access_token"\s*:\s*"([^"]*)"""").find(body)?.groupValues?.get(1).orEmpty()
             """{"access_token":"$token"}"""
         },
+        account = account,
     )
 
-    private fun runFlow(server: HttpServer, authPath: Path, waiter: Waiter = Waiter { }): Pair<Boolean, String> {
+    private fun runFlow(
+        server: HttpServer,
+        authPath: Path,
+        waiter: Waiter = Waiter { },
+        account: OAuthLoginAccount? = null,
+    ): Pair<Boolean, String> {
         val savedOut = System.out
         val out = ByteArrayOutputStream()
         return try {
             System.setOut(PrintStream(out, true))
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
-            runBlocking { DeviceLoginFlow.run(specFor(server, authPath), waiter = waiter) } to out.toString()
+            runBlocking { DeviceLoginFlow.run(specFor(server, authPath, account), waiter = waiter) } to out.toString()
         } finally {
             System.setOut(savedOut)
             server.stop(0)
@@ -81,6 +93,47 @@ class DeviceLoginTokenlessTest {
         assertFalse(ok, "a token endpoint that issued nothing did not sign anyone in")
         assertFalse(Files.exists(authPath), "no credential file may be created: $printed")
         assertFalse(printed.contains("credentials written"), "nothing may be reported as written: $printed")
+    }
+
+    @Test
+    fun `an aborted Kimi flow holds its ordinal while running then releases it`(@TempDir tmp: Path) = runBlocking {
+        val primary = tmp.resolve("kimi.json")
+        Files.writeString(primary, "{}")
+        val firstAccount = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
+        val server = serving("{}")
+        val waiterEntered = CompletableDeferred<Unit>()
+        val releaseWaiter = CompletableDeferred<Unit>()
+        val running = async(Dispatchers.Default) {
+            DeviceLoginFlow.run(
+                specFor(server, primary, firstAccount),
+                waiter = Waiter {
+                    waiterEntered.complete(Unit)
+                    releaseWaiter.await()
+                },
+            )
+        }
+        try {
+            waiterEntered.await()
+            val whileRunning = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
+            try {
+                assertEquals("kimi-3", whileRunning.resolvedLabel(), "kimi-2 must stay leased before consent")
+            } finally {
+                whileRunning.releaseReservation()
+            }
+
+            releaseWaiter.complete(Unit)
+            assertFalse(running.await())
+            val afterAbort = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
+            try {
+                assertEquals("kimi-2", afterAbort.resolvedLabel(), "aborting the flow must release its lease")
+            } finally {
+                afterAbort.releaseReservation()
+            }
+        } finally {
+            releaseWaiter.complete(Unit)
+            running.cancel()
+            server.stop(0)
+        }
     }
 
     @Test

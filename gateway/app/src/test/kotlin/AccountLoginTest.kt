@@ -16,8 +16,17 @@ import splice.app.auth.OAuthAccountRefused
 import splice.app.cli.LoginCodex
 import splice.app.cli.LoginGrok
 import splice.app.cli.LoginKimi
+import splice.core.auth.RefreshCall
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.config.StatePaths
+import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.AuthKind
+import splice.provider.codex.CodexAuthProvider
+import splice.provider.grok.GrokAuthProvider
+import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity
+import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
@@ -25,6 +34,21 @@ import java.util.Base64
 class AccountLoginTest {
     @TempDir
     lateinit var dir: Path
+
+    @Test
+    fun `pooled OAuth providers expose conservative credential file evidence`() {
+        val paths = listOf(dir.resolve("codex.json"), dir.resolve("grok.json"), dir.resolve("kimi.json"))
+        val providers = listOf<RefreshableAuthProvider>(
+            CodexAuthProvider(paths[0], 0L, refreshCall = RefreshCall { error("unused") }),
+            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }),
+            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }),
+        )
+        val sources = providers.map { it as AccountCredentialIdentitySource }
+
+        assertTrue(sources.all { it.credentialPresence() == CredentialPresence.MISSING })
+        paths.forEach { Files.writeString(it, "{}") }
+        assertTrue(sources.all { it.credentialPresence() == CredentialPresence.PRESENT })
+    }
 
     @Test
     fun `the labeled login receipt says saved-for-restart, never using`() {
@@ -186,7 +210,7 @@ class AccountLoginTest {
     }
 
     @Test
-    fun `codex auto label derives plan and account hash after token shaping`() {
+    fun `codex auto receipt names the persisted collision suffix after token shaping`() {
         val primary = dir.resolve("codex.json")
         Files.writeString(primary, "{}")
         val account = requireNotNull(LoginCodex().spec("codex", primary, "auto").account)
@@ -199,13 +223,111 @@ class AccountLoginTest {
         val token = "header.$payload.signature"
         val authJson = """{"tokens":{"access_token":"$token","account_id":"private-account-id"}}"""
         val expected = OAuthAccountLabels.chatGpt("Plus", "private-account-id")
+        val persisted = "$expected-2"
+        val pool = OAuthAccountFiles().poolDir(AuthKind.ChatgptOAuth, primary)
+        Files.createDirectories(pool)
+        Files.writeString(pool.resolve("$expected-quota.json"), "{}")
 
         assertTrue(LoginIo().persistIfSignedIn(primary, authJson, account))
-
-        val pool = OAuthAccountFiles().poolDir(AuthKind.ChatgptOAuth, primary)
-        assertTrue(Files.exists(pool.resolve("$expected.json")))
+        assertTrue(Files.exists(pool.resolve("$persisted.json")))
+        assertFalse(Files.exists(pool.resolve("$expected.json")))
         assertFalse(Files.exists(pool.resolve("auto.json")))
         assertFalse(expected.contains("private-account-id"))
+
+        val savedHome = System.getProperty("user.home")
+        System.setProperty("user.home", dir.toString())
+        try {
+            LoginIo().writeLoginOutcome("codex", ok = true, account = account)
+            val receipt = requireNotNull(LoginOutcomeFile.consume(StatePaths().stateDir, "codex"))
+            assertTrue(receipt.contains("signed in as '$persisted'"), receipt)
+            assertFalse(receipt.contains("'auto'"), receipt)
+        } finally {
+            System.setProperty("user.home", savedHome)
+        }
+    }
+
+    @Test
+    fun `Kimi explicit labels lease the same namespace as automatic ordinals`() {
+        val primary = dir.resolve("kimi.json")
+        Files.writeString(primary, "{}")
+        val explicit = LoginKimi().spec("kimi", primary, "kimi-2")
+        try {
+            val automatic = LoginKimi().spec("kimi", primary, "auto")
+            try {
+                assertEquals("kimi-2", requireNotNull(explicit.account).resolvedLabel())
+                assertEquals("kimi-3", requireNotNull(automatic.account).resolvedLabel())
+            } finally {
+                automatic.account?.releaseReservation()
+            }
+        } finally {
+            explicit.account?.releaseReservation()
+        }
+    }
+
+    @Test
+    fun `Kimi explicit relogin replaces its credential while refusing a simultaneous owner`() {
+        val primary = dir.resolve("kimi.json")
+        Files.writeString(primary, "{}")
+        val store = OAuthAccountFiles()
+        store.writeLabeled(
+            AuthKind.KimiOAuth,
+            primary,
+            "work",
+            JsonObject(mapOf("access_token" to JsonPrimitive("old-secret"))),
+        )
+        val first = LoginKimi().spec("kimi", primary, "work")
+        try {
+            val refused = assertThrows<OAuthAccountRefused> {
+                LoginKimi().spec("kimi", primary, "work")
+            }
+            assertEquals("OAuth account label already has a login in progress", refused.reason)
+            assertTrue(
+                LoginIo().persistIfSignedIn(
+                    primary,
+                    """{"access_token":"replacement-secret"}""",
+                    requireNotNull(first.account),
+                ),
+            )
+            val saved = Json.parseToJsonElement(
+                Files.readString(store.poolDir(AuthKind.KimiOAuth, primary).resolve("work.json")),
+            ).jsonObject
+            assertEquals("replacement-secret", saved["access_token"]?.jsonPrimitive?.content)
+        } finally {
+            first.account?.releaseReservation()
+        }
+    }
+
+    @Test
+    fun `refused first automatic Kimi login creates no reservation directory`() {
+        val primary = dir.resolve("kimi.json")
+        val store = OAuthAccountFiles()
+
+        val refused = assertThrows<OAuthAccountRefused> {
+            LoginKimi().spec("kimi", primary, "auto")
+        }
+
+        assertTrue(refused.reason.contains("without --label first"))
+        assertFalse(Files.exists(store.poolDir(AuthKind.KimiOAuth, primary).resolve(".login-locks")))
+    }
+
+    @Test
+    fun `concurrent Kimi automatic logins reserve distinct ordinals before device consent`() {
+        val primary = dir.resolve("kimi.json")
+        Files.writeString(primary, "{}")
+        val first = LoginKimi().spec("kimi", primary, "auto")
+        val second = LoginKimi().spec("kimi", primary, "auto")
+        val firstAccount = requireNotNull(first.account)
+        val secondAccount = requireNotNull(second.account)
+
+        assertEquals(listOf("kimi-2", "kimi-3"), listOf(firstAccount.resolvedLabel(), secondAccount.resolvedLabel()))
+        assertTrue(LoginIo().persistIfSignedIn(primary, """{"access_token":"first-secret"}""", firstAccount))
+        assertTrue(LoginIo().persistIfSignedIn(primary, """{"access_token":"second-secret"}""", secondAccount))
+
+        val pool = OAuthAccountFiles().poolDir(AuthKind.KimiOAuth, primary)
+        val firstSaved = Json.parseToJsonElement(Files.readString(pool.resolve("kimi-2.json"))).jsonObject
+        val secondSaved = Json.parseToJsonElement(Files.readString(pool.resolve("kimi-3.json"))).jsonObject
+        assertEquals("first-secret", firstSaved["access_token"]?.jsonPrimitive?.content)
+        assertEquals("second-secret", secondSaved["access_token"]?.jsonPrimitive?.content)
     }
 
     @Test

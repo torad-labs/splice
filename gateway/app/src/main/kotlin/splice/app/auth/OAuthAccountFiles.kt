@@ -4,12 +4,14 @@ package splice.app.auth
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.topology.AuthKind
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicReference
 
 internal const val FIELD_KIND = "splice_auth_kind"
 internal const val FIELD_LABEL = "splice_account_label"
@@ -49,7 +51,28 @@ public data class OAuthLoginAccount(
     val tokenDerivedLabel: Boolean = false,
     val identity: OAuthAccountIdentity? = null,
 ) {
+    private val reservation = AtomicReference<OAuthLoginReservation.Lease?>(null)
+    private val writtenLabel = AtomicReference<String?>(null)
+
     public fun resolvedLabel(authJson: JsonObject? = null): String? = label ?: defaultLabel?.invoke(authJson)
+
+    internal fun holdReservation(lease: OAuthLoginReservation.Lease) {
+        check(reservation.compareAndSet(null, lease)) { "OAuth login account already owns a reservation" }
+    }
+
+    internal fun recordPersistedLabel(label: String) {
+        writtenLabel.set(label)
+    }
+
+    internal fun persistedLabel(): String? = writtenLabel.get()
+
+    internal fun releaseReservation() {
+        val lease = reservation.getAndSet(null) ?: return
+        Cancellables.discard(
+            Cancellables.runCatchingCleanup(lease::close),
+            "an OAuth ordinal lease is process-local cleanup after its login completes",
+        )
+    }
 }
 
 /** The persisted destination and any retained quota that required a different token-derived label. */

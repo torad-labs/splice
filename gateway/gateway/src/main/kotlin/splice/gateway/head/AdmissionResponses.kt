@@ -7,11 +7,17 @@
 package splice.gateway.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 // Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its own const
 // to avoid a cross-module const import and satisfy detekt MagicNumber).
@@ -23,6 +29,9 @@ private const val INVALID_REQUEST_ERROR = "invalid_request_error"
 /** The admission plane's response shapes: one owner for all five wire terminals a request can meet
  *  before a turn exists (400, 401, 408, 413, 529). No instance state; pure response shaping. */
 internal class AdmissionResponses {
+    private val retryAfterFormat = DateTimeFormatter.ofPattern("EEE, dd MMM uuuu HH:mm:ss 'GMT'", Locale.US)
+        .withZone(ZoneOffset.UTC)
+
     // Relocated from a HeadServer member so respondAtCapacity shares one body builder; pure JSON
     // shaping with no instance state (review 2026-07-22 round 3).
     private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
@@ -56,13 +65,17 @@ internal class AdmissionResponses {
         )
     }
 
-    suspend fun respondRateLimited(call: ApplicationCall, message: String) {
+    suspend fun respondRateLimited(call: ApplicationCall, message: String, resetEpochSeconds: Long?) {
+        resetEpochSeconds?.let { call.response.header(HttpHeaders.RetryAfter, retryAfterDate(it)) }
         call.respondText(
             errorBodyJson("rate_limit_error", message),
             ContentType.Application.Json,
             HttpStatusCode(RATE_LIMITED_STATUS, "Rate Limited"),
         )
     }
+
+    private fun retryAfterDate(resetEpochSeconds: Long): String =
+        retryAfterFormat.format(Instant.ofEpochSecond(resetEpochSeconds))
 
     suspend fun respondTooLarge(call: ApplicationCall, limit: Int) {
         call.respondText(

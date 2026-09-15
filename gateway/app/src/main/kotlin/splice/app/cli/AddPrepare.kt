@@ -74,6 +74,10 @@ internal class AddPrepare(private val checks: AddChecks, private val prompt: Add
             models = modelRows.resolve(args, profile),
         )
     } catch (refused: AddRefused) {
+        // SAFE-RENDER-EXEMPT[2026-09-15]: AddRefused is constructed only by splice with a fixed
+        // operator sentence, never from upstream or file content. The single construction site is
+        // AddModels.kt line 58 (a context window must be a positive integer in tokens). The
+        // exemption stops being true the day an AddRefused is built from a caught throwable.
         println("splice add: ${refused.message}")
         null
     }

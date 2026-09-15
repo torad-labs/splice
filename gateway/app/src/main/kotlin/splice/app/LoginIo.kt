@@ -105,12 +105,18 @@ internal class LoginIo {
             return null
         }
         val files = OAuthAccountFiles(loginJson)
-        if (!account.tokenDerivedLabel) return files.writeLabeled(account.kind, path, label, parsed)
-        val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
-        written.retainedQuota?.let { quota ->
-            println("splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}")
+        val target = if (!account.tokenDerivedLabel) {
+            files.writeLabeled(account.kind, path, label, parsed)
+        } else {
+            val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
+            written.retainedQuota?.let { quota ->
+                println("splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}")
+            }
+            written.file
         }
-        return written.file
+        account.recordPersistedLabel(target.fileName.toString().removeSuffix(".json"))
+        account.releaseReservation()
+        return target
     }
 
     /** DR-172 gap (2026-09-01): the codex and grok login specs hand this the ON-DISK shape their
@@ -140,8 +146,9 @@ internal class LoginIo {
 
     /** THE RECEIPT (2026-08-01). /login runs detached, so stdout is lost; one line on disk is
      *  the only channel the head's /login hook can read back. Written for both outcomes. */
-    internal fun writeLoginOutcome(headKey: String, ok: Boolean, label: String? = null) {
-        LoginOutcomeFile.write(StatePaths().stateDir, headKey, outcomeText(headKey, ok, label))
+    internal fun writeLoginOutcome(headKey: String, ok: Boolean, account: OAuthLoginAccount? = null) {
+        val persistedLabel = if (ok) account?.persistedLabel() else null
+        LoginOutcomeFile.write(StatePaths().stateDir, headKey, outcomeText(headKey, ok, persistedLabel))
     }
 
     /** A labeled account is discovered when the head is assembled (ManagedHeadFactory), so it is on

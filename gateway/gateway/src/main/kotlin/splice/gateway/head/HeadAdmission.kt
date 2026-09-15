@@ -66,32 +66,38 @@ internal class HeadAdmission(
                 if (!prepared.recording.isComplete) admitted.slot.release()
                 driver.replay(call, prepared)
             }
-            is Preparation.Ready -> {
-                val account = try {
-                    deps.accountPool?.select(prepared.built.meta.sessionId)
-                } catch (e: AllAccountsExhausted) {
-                    driver.recordAccountExhausted(
-                        prepared.built.meta,
-                        admitted.perf,
-                        admitted.t0,
-                        e.earliestResetEpochSeconds,
-                    )
-                    responses.respondRateLimited(call, e.message.orEmpty())
-                    return
-                }
-                val inputs = TurnInputs(
-                    prepared.built,
-                    admitted.slot,
-                    admitted.t0,
-                    admitted.perf,
-                    slotHandedOff = admitted.handedOff,
-                    account = account,
-                    quota = account?.account?.label?.let(deps.accountQuotas::get) ?: deps.quota,
-                )
-                // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
-                // (Claude Code's internal non-stream calls, served by collecting the same machinery).
-                if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
-            }
+            is Preparation.Ready -> serveReady(call, prepared, admitted)
+        }
+    }
+
+    private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
+        val account = try {
+            deps.accountPool?.select(prepared.built.meta.sessionId)
+        } catch (e: AllAccountsExhausted) {
+            driver.recordAccountExhausted(
+                prepared.built.meta,
+                admitted.perf,
+                admitted.t0,
+                e.earliestResetEpochSeconds,
+            )
+            responses.respondRateLimited(call, e.message.orEmpty(), e.earliestResetEpochSeconds)
+            return
+        }
+        try {
+            val inputs = TurnInputs(
+                prepared.built,
+                admitted.slot,
+                admitted.t0,
+                admitted.perf,
+                slotHandedOff = admitted.handedOff,
+                account = account,
+                quota = account?.account?.label?.let(deps.accountQuotas::get) ?: deps.quota,
+            )
+            // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
+            // (Claude Code's internal non-stream calls, served by collecting the same machinery).
+            if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
+        } finally {
+            if (!admitted.handedOff.get()) account?.releaseCredentialProbe()
         }
     }
 }

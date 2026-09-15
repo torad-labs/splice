@@ -6,6 +6,7 @@ package splice.gateway.head
 import splice.core.turn.TurnOutcome
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.spi.AuthRefreshObserver
 import splice.spi.PostContext
 import splice.spi.Provider
 import splice.spi.RetryNotice
@@ -21,7 +22,8 @@ internal class SseRoundPost(
 ) {
     suspend fun post(inputs: WsRoundInputs): TurnOutcome {
         val drive = inputs.drive
-        val account = drive.account?.account
+        val selection = drive.account
+        val account = selection?.account
         val activeQuota = drive.quota ?: quota
         return upstream.post(
             PostContext(
@@ -29,7 +31,9 @@ internal class SseRoundPost(
                 auth = account?.auth ?: provider.auth,
                 extraHeaders = { creds ->
                     // The account's headers ride ON TOP of the provider's, never instead of them.
-                    provider.extraHeaders(creds) + account?.extraHeaders?.invoke(creds).orEmpty() + drive.turnHeaders
+                    provider.extraHeaders(creds) +
+                        account?.extraHeaders?.invoke(creds).orEmpty() +
+                        drive.turnHeaders
                 },
                 onRetry = onRetry,
                 perf = drive.perf,
@@ -37,6 +41,7 @@ internal class SseRoundPost(
                 amendBodyOnFailure = provider::amendBodyOnFailure,
                 rateLimitCooldown = account?.cooldown,
                 remainingTurnWait = drive.remainingTurnWait,
+                authRefreshObserver = AuthRefreshObserver { selection?.markCredentialRefreshSucceeded() },
             ),
             inputs.bodyJson,
         ) { resp ->

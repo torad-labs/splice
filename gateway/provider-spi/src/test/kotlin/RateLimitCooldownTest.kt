@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class RateLimitCooldownTest {
     @Test
-    fun `pooled 429 at the interactive ceiling retries the same account`() {
+    fun `pooled 429 at the interactive ceiling terminates the observed request wave`() {
         var elapsed = 1_000L
         val notices = mutableListOf<String>()
         val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
@@ -45,10 +45,13 @@ class RateLimitCooldownTest {
             nextRefreshed = false,
         )
 
-        assertEquals(RetryDecision.BACKOFF, plan.decision)
+        assertEquals(RetryDecision.GIVE_UP, plan.decision)
         assertEquals(15_000L, cooldown.remainingMs())
         assertEquals(0L, cooldown.unavailableForMs())
-        assertTrue(notices.single().contains("retrying same account"))
+        assertEquals(
+            listOf("429 observed with retry budget remaining; giving up to avoid a synchronized retry wave"),
+            notices,
+        )
         elapsed += 15_000L
         assertEquals(0L, cooldown.remainingMs())
     }
@@ -251,6 +254,39 @@ class RateLimitCooldownBudgetTest {
         assertTrue(waiter.waits.isEmpty())
         assertEquals(1L, perf.snapshot().counters[PerfKeys.RETRIES])
         assertTrue(notices.contains("upstream backoff up to 220ms does not fit the remaining 100ms budget"))
+    }
+
+    @Test
+    fun `a short pooled 429 never enters retry backoff`() = runTest {
+        val calls = AtomicInteger()
+        val waiter = RecordingWaiter()
+        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
+        }
+        val client = UpstreamClient(
+            firstByteTimeoutMs = 5_000L,
+            totalTimeoutMs = 60_000L,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            waiter = waiter,
+            clock = ElapsedNow { 0L },
+        )
+        val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            rateLimitCooldown = cooldown,
+            remainingTurnWait = RemainingTurnWait { 20_000L },
+        )
+
+        assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+
+        assertEquals(1, calls.get())
+        assertTrue(waiter.waits.isEmpty(), "the observed 429 must not schedule a synchronized retry")
+        assertEquals(1_000L, cooldown.remainingMs())
+        assertEquals(0L, cooldown.unavailableForMs())
     }
 
     @Test

@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -29,11 +30,14 @@ import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
+import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.CredentialLock
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
 import splice.spi.SingleFlight
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.time.Instant
 
@@ -66,7 +70,7 @@ public class CodexAuthProvider(
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
-) : RefreshableAuthProvider {
+) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
@@ -189,6 +193,15 @@ public class CodexAuthProvider(
     }
 
     override suspend fun describe(): AuthDescription = describeAuth.describe()
+
+    override fun credentialIdentity(): CredentialFileIdentity? = authFile.codexAuthIdentityOrNull(authPath, log)
+
+    override fun credentialPresence(): CredentialPresence = when {
+        Files.isRegularFile(authPath) -> CredentialPresence.PRESENT
+        Files.notExists(authPath) && Files.notExists(authPath, LinkOption.NOFOLLOW_LINKS) ->
+            CredentialPresence.MISSING
+        else -> CredentialPresence.UNKNOWN
+    }
 
     // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
 

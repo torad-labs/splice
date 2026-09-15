@@ -16,6 +16,7 @@
 // splice.gateway.round; ClientChannel.kt, TurnWiring.kt in splice.gateway.wire.
 package splice.gateway.head
 
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.CancellationException
 import splice.core.perf.PerfKeys
@@ -23,6 +24,8 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.spi.Provider
 import splice.spi.RetryNotice
+import splice.spi.UpstreamAuthMissing
+import splice.spi.UpstreamFailed
 
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
 internal class TurnDriver(
@@ -127,10 +130,24 @@ internal class TurnDriver(
     ) {
         try {
             failures.catchingTurnFailure { oneDrive.driveOneTurn(drive, pingClient) }
-                .onFailure { e -> ending.emitFailure(drive, e) }
+                .onFailure { e ->
+                    recordCredentialFailure(drive, e)
+                    ending.emitFailure(drive, e)
+                }
         } catch (e: CancellationException) {
             cancellationSeal.sealAndStamp(drive, seal, e)
             throw e
+        } finally {
+            if (drive.emitter.endedCleanly) drive.account?.markTurnSucceeded()
+            drive.account?.releaseCredentialProbe()
+        }
+    }
+
+    private fun recordCredentialFailure(drive: TurnDrive, failure: Throwable) {
+        when {
+            failure is UpstreamAuthMissing -> drive.account?.markCredentialMissing()
+            failure is UpstreamFailed && failure.status == HttpStatusCode.Unauthorized.value ->
+                drive.account?.markCredentialUnavailable()
         }
     }
 
@@ -144,7 +161,10 @@ internal class TurnDriver(
         perf: TurnPerf,
         t0: Long,
         earliestResetEpochSeconds: Long?,
-    ) = telemetry.recordAccountExhausted(meta, perf, t0, earliestResetEpochSeconds)
+    ) {
+        health.local()
+        telemetry.recordAccountExhausted(meta, perf, t0, earliestResetEpochSeconds)
+    }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */

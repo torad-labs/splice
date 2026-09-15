@@ -8,14 +8,17 @@ package splice.app.cli
 
 import splice.app.DeviceLoginSpec
 import splice.app.LoginIo
+import splice.app.auth.AUTO
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthLoginAccount
+import splice.app.auth.OAuthLoginReservation
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuth
@@ -28,6 +31,7 @@ internal class LoginKimi {
     private val env: EnvReader = EnvReader(System::getenv)
     private val loginIo = LoginIo()
     private val accountFiles = OAuthAccountFiles()
+    private val loginReservations = OAuthLoginReservation()
 
     // Class member is fine here: doctor no longer builds this type to reach
     // isClientAuth, so the Regex is compiled once per status()/kimi-login, not
@@ -35,20 +39,44 @@ internal class LoginKimi {
     private val ansi = Regex("\\u001B\\[[0-9;]*m")
 
     internal fun spec(head: String, authPath: Path, label: String? = null): DeviceLoginSpec {
-        val account = accountFiles.loginAccount(AuthKind.KimiOAuth, authPath, label)
-        val identity = KimiDeviceIdentity(deviceIdPath = deviceIdPath(authPath, account))
-        return DeviceLoginSpec(
-            head = head,
-            clientId = KimiOAuthEndpoints.CLIENT_ID,
-            deviceAuthUrl = KimiOAuthEndpoints.deviceAuthorizationUrl(env),
-            tokenUrl = KimiOAuthEndpoints.tokenUrl(env),
-            authPath = authPath,
-            identityHeaders = identity.headers(),
-            toAuthJson = { body ->
-                oauth.kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString()
-            },
-            account = account,
-        )
+        val planned = accountFiles.loginAccount(AuthKind.KimiOAuth, authPath, label)
+        val poolDir = accountFiles.poolDir(AuthKind.KimiOAuth, authPath)
+        val reservation = when {
+            planned.primary -> null
+            label == AUTO -> loginReservations.reserveOrdinal(AuthKind.KimiOAuth, poolDir)
+            else -> loginReservations.reserveLabel(poolDir, requireNotNull(planned.label))
+        }
+        val account = if (label == AUTO) {
+            planned.copy(label = requireNotNull(reservation).label, defaultLabel = null, tokenDerivedLabel = false)
+        } else {
+            planned
+        }
+        var handedOff = false
+        try {
+            reservation?.let(account::holdReservation)
+            val identity = KimiDeviceIdentity(deviceIdPath = deviceIdPath(authPath, account))
+            val spec = DeviceLoginSpec(
+                head = head,
+                clientId = KimiOAuthEndpoints.CLIENT_ID,
+                deviceAuthUrl = KimiOAuthEndpoints.deviceAuthorizationUrl(env),
+                tokenUrl = KimiOAuthEndpoints.tokenUrl(env),
+                authPath = authPath,
+                identityHeaders = identity.headers(),
+                toAuthJson = { body ->
+                    oauth.kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString()
+                },
+                account = account,
+            )
+            handedOff = true
+            return spec
+        } finally {
+            if (!handedOff) {
+                Cancellables.discard(
+                    Cancellables.runCatchingCleanup { reservation?.close() },
+                    "a Kimi ordinal reservation is released when login spec construction fails",
+                )
+            }
+        }
     }
 
     private fun deviceIdPath(authPath: Path, account: OAuthLoginAccount): Path = if (account.primary) {

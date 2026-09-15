@@ -10,13 +10,17 @@ import splice.core.topology.AuthKindRegistry
 
 class AuthKindDefaultsTest {
 
-    private val nativeAppFiles =
-        listOf("~/.codex/auth.json", "~/.grok/auth.json", "~/.kimi/credentials/kimi-code.json")
+    private val nativeAppFiles = listOf(
+        "~/.codex/auth.json",
+        "~/.grok/auth.json",
+        "~/.kimi/credentials/kimi-code.json",
+        "~/.config/muse/auth.json",
+    )
 
     @Test
     fun `every OAuth kind defaults to a splice-owned credential file, never the native app's`() {
         val oauth = AuthKindRegistry.knownKinds().filterIsInstance<AuthKind.OAuth>()
-        assertEquals(3, oauth.size, "the registry's OAuth kinds")
+        assertEquals(4, oauth.size, "the registry's OAuth kinds")
         oauth.forEach { kind ->
             assertTrue(kind.authFile.startsWith("~/.config/splice/auth/"), "${kind.wire}: ${kind.authFile}")
             assertFalse(kind.authFile in nativeAppFiles, "${kind.wire} must not share the native app's file")
@@ -26,6 +30,19 @@ class AuthKindDefaultsTest {
             assertFalse(kind.nativeAppFile == kind.authFile)
         }
         assertEquals(oauth.size, oauth.map { it.authFile }.toSet().size, "one file per kind")
+    }
+
+    @Test
+    fun `Muse registers its own credential and records the native file only for doctor`() {
+        val kind = AuthKindRegistry.from("muse-oauth")
+        assertTrue(kind is AuthKind.OAuth, "muse-oauth must be registered, not only match the OAuth suffix")
+        val oauth = kind as AuthKind.OAuth
+        assertEquals("muse-oauth", oauth.wire)
+        assertEquals("~/.config/splice/auth/muse.json", oauth.authFile)
+        assertEquals("~/.config/splice/auth/muse.json", AuthKindRegistry.defaultAuthFileFor(oauth.wire))
+        assertEquals("~/.config/muse/auth.json", oauth.nativeAppFile)
+        assertEquals("Muse Code", oauth.nativeApp)
+        assertTrue(oauth.isOAuth)
     }
 
     @Test

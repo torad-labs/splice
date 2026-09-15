@@ -135,6 +135,7 @@ internal class LoginKimi {
             AuthKind.ChatgptOAuth -> "codex / ChatGPT"
             AuthKind.GrokOAuth -> "xAI Grok"
             AuthKind.KimiOAuth -> "Moonshot Kimi"
+            AuthKind.MuseOAuth -> "Meta Muse"
             AuthKind.Client -> "Anthropic (your login)"
             // Unregistered kinds — api-key, or an operator's custom scheme, which AuthKind.kt
             // deliberately leaves unregistered. The wire dialect is then the only evidence there

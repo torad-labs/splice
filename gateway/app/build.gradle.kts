@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))
     implementation(project(":provider-kimi"))
+    implementation(project(":provider-muse"))
     implementation(project(":provider-openai"))
     implementation(project(":gateway"))
     implementation(project(":control"))

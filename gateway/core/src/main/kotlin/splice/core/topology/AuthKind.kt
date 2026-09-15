@@ -22,7 +22,7 @@ public sealed class AuthKind(
     public val defaultAuthFile: String?,
     public val isOAuth: Boolean,
 ) {
-    /** OAuth schemes: a browser/device login mints a refresh-capable credential file. [authFile] is
+    /** OAuth schemes: a browser/device login mints a credential file. [authFile] is
      *  the splice-owned default for the kind — non-null here, so the legacy knobs and every arm can
      *  read it without a fallback literal of their own (header, 2026-09-05). [nativeAppFile] is the
      *  vendor's own CLI/app credential file: never a default, known so doctor can name a config
@@ -61,6 +61,13 @@ public sealed class AuthKind(
         "Kimi CLI",
     )
 
+    public data object MuseOAuth : OAuth(
+        "muse-oauth",
+        "~/.config/splice/auth/muse.json",
+        "~/.config/muse/auth.json",
+        "Muse Code",
+    )
+
     /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
      *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
      *  splice can run — which is why it is not an OAuth kind and has no default auth file. */
@@ -72,8 +79,13 @@ public sealed class AuthKind(
  *  same bodies, same tolerance for an operator's custom kind (null, never a throw). */
 public object AuthKindRegistry {
 
-    private val KNOWN: List<AuthKind> =
-        listOf(AuthKind.ChatgptOAuth, AuthKind.GrokOAuth, AuthKind.KimiOAuth, AuthKind.Client)
+    private val KNOWN: List<AuthKind> = listOf(
+        AuthKind.ChatgptOAuth,
+        AuthKind.GrokOAuth,
+        AuthKind.KimiOAuth,
+        AuthKind.MuseOAuth,
+        AuthKind.Client,
+    )
 
     /** The registered schemes. Exposed so compatibility matrices derive their denominator from the
      *  registry rather than maintaining a second list that can silently omit a new kind. */

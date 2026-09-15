@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.cli.LoginKimi
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
@@ -51,6 +52,7 @@ class SignInPlanMatrixTest {
             "chatgpt-oauth" to head("codex", "claudex"),
             "grok-oauth" to head("xai", "claude-grok"),
             "kimi-oauth" to head("kimi", "claude-kimi"),
+            "muse-oauth" to head("muse", "claude-muse"),
             API_KEY to head("openrouter", "claude-openrouter"), // known token shape
             API_KEY to head("fireworks", "claude-fireworks"), // NO known token shape
         )
@@ -72,6 +74,7 @@ class SignInPlanMatrixTest {
         assertTrue(planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", "claudex"), "codex").viaBrowser)
         assertTrue(planner.signInPlan(providerCfg("grok-oauth"), head("xai", "claude-grok"), "xai").viaBrowser)
         assertTrue(planner.signInPlan(providerCfg("kimi-oauth"), head("kimi", "claude-kimi"), "kimi").viaBrowser)
+        assertTrue(planner.signInPlan(providerCfg("muse-oauth"), head("muse", "claude-muse"), "muse").viaBrowser)
         assertFalse(
             planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter").viaBrowser,
             "an api-key head has no browser flow — claiming one is what produced the dead-end prompt",
@@ -108,7 +111,7 @@ class SignInPlanMatrixTest {
     /** An OAuth head never captures pastes: its secret never appears in the prompt box at all. */
     @Test
     fun `oauth kinds never enable paste capture`() {
-        for (kind in listOf("chatgpt-oauth", "grok-oauth", "kimi-oauth")) {
+        for (kind in listOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth")) {
             assertNull(
                 planner.signInPlan(providerCfg(kind), head("p", "claude-p"), "p").tokenCapture,
                 "$kind signs in through the browser — there is no token to paste",
@@ -122,6 +125,7 @@ class SignInPlanMatrixTest {
             "chatgpt-oauth" to "codex",
             "grok-oauth" to "xai",
             "kimi-oauth" to "kimi",
+            "muse-oauth" to "muse",
         )
         val invalid = listOf("/usr/bin/claudex", "./claudex", "claude grok", "claude;evil", "", "-claudex")
 
@@ -140,6 +144,24 @@ class SignInPlanMatrixTest {
     fun `oauth wrapper falls back to the topology key when command is absent`() {
         val plan = planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", null), "codex")
         assertEquals("codex login", plan.command)
+    }
+
+    @Test
+    fun `Muse sign-in names Meta and derives the command from the head`() {
+        val cfg = providerCfg("muse-oauth").copy(dialect = Dialect.ANTHROPIC_PASSTHROUGH)
+        for (wrapper in listOf("claude-muse", "muse-work", null)) {
+            val plan = planner.signInPlan(cfg, head("muse", wrapper), "muse-head")
+            assertEquals("${wrapper ?: "muse-head"} login", plan.command)
+            assertEquals("Muse (Meta)", plan.label)
+            assertTrue(plan.viaBrowser)
+            assertNull(plan.tokenCapture)
+        }
+    }
+
+    @Test
+    fun `Muse backend label names Meta rather than guessing from its wire dialect`() {
+        val cfg = providerCfg("muse-oauth").copy(dialect = Dialect.ANTHROPIC_PASSTHROUGH)
+        assertEquals("Meta Muse", LoginKimi().backendLabel(cfg))
     }
 
     @Test

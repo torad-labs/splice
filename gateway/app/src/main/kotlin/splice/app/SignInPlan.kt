@@ -1,34 +1,18 @@
 // NEW: what sign-in surface a head gets — the /login command + UX wording, and for api-key
 // heads the bare-token capture spec (factored out of Daemon.kt, detekt LargeClass).
 // OAuth heads get the browser flow; api-key heads get the masked-prompt wording plus — only for
-// providers with a known, prose-safe token shape — the capture hook. The OAuth kind constants
-// live in splice.app.provider.AuthKinds (2026-08-17 decomposition); API_KEY is only needed here.
+// providers with a known, prose-safe token shape — the capture hook. Labels and token patterns
+// live on AuthKind / ApiKeyProviderRegistry rows (V4-21).
 package splice.app
 
-import splice.app.provider.CHATGPT_OAUTH
-import splice.app.provider.CLIENT
-import splice.app.provider.GROK_OAUTH
-import splice.app.provider.KIMI_OAUTH
-import splice.app.provider.MUSE_OAUTH
 import splice.core.launch.TokenCaptureSpec
+import splice.core.topology.ApiKeyProviderRegistry
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 
 internal const val API_KEY = "api-key"
-
-// Display labels for api-key providers (the /login UX + capture-hook reasons).
-private val API_KEY_LABELS = mapOf(
-    "openrouter" to "OpenRouter",
-    "moonshot" to "Moonshot",
-    "fireworks" to "Fireworks",
-    "openai" to "OpenAI",
-)
-
-// Bare-token capture patterns (bash ERE, matched as the WHOLE prompt). Only shapes that cannot
-// collide with ordinary prose get an entry — everything else falls back to masked login only.
-private val API_KEY_TOKEN_PATTERNS = mapOf(
-    "openrouter" to "sk-or-[A-Za-z0-9_-]{20,}",
-)
 
 private val PORTABLE_WRAPPER_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -46,22 +30,14 @@ internal class SignInPlanner {
     internal fun signInPlan(providerCfg: ProviderConfig, head: HeadConfig, key: String): SignInPlan {
         val wrapper = head.claude.command ?: key
         val command = "$wrapper login"
-        return when (providerCfg.auth.kind) {
-            CHATGPT_OAUTH -> oauthSignIn(wrapper, "Codex (ChatGPT)")
-            GROK_OAUTH -> oauthSignIn(wrapper, "Grok (xAI)")
-            KIMI_OAUTH -> oauthSignIn(wrapper, "Kimi (Moonshot)")
-            MUSE_OAUTH -> oauthSignIn(wrapper, "Muse (Meta)")
-            API_KEY -> apiKeySignIn(providerCfg, head, command, key)
-            // A client-auth head has NO splice-run sign-in, and the command must be EMPTY — not a
-            // plausible-looking one. A non-blank command makes LoginInterception.wire plant splice's
-            // own /login into this head's config dir plus a UserPromptSubmit hook, and that flow ends
-            // at `<command> login`, which for this kind prints "no browser login for that kind" and
-            // fails forever. On the ONE head that keeps the client's native /login enabled, that is a
-            // decoy competing with the door that actually works. Empty also drops TurnDriver's
-            // "— run: <command>" clause from a 401, so the upstream's own message stands instead of an
-            // instruction that cannot succeed.
-            CLIENT -> SignInPlan("", "Claude (client's own login)", viaBrowser = false, tokenCapture = null)
-            else -> SignInPlan("", "", viaBrowser = true, tokenCapture = null)
+        return when (val kind = AuthKindRegistry.from(providerCfg.auth.kind)) {
+            is AuthKind.OAuth -> oauthSignIn(wrapper, kind.signInLabel)
+            AuthKind.Client -> SignInPlan("", kind.signInLabel, viaBrowser = false, tokenCapture = null)
+            null -> if (providerCfg.auth.kind == API_KEY) {
+                apiKeySignIn(providerCfg, head, command, key)
+            } else {
+                SignInPlan("", "", viaBrowser = true, tokenCapture = null)
+            }
         }
     }
 
@@ -74,12 +50,13 @@ internal class SignInPlanner {
 
     /** The api-key branch, split out so [signInPlan] stays under detekt's complexity ceiling. */
     private fun apiKeySignIn(providerCfg: ProviderConfig, head: HeadConfig, command: String, key: String): SignInPlan {
-        val label = API_KEY_LABELS[head.provider] ?: head.provider
+        val row = ApiKeyProviderRegistry.row(head.provider)
+        val label = row?.label ?: head.provider
         // Capture only where the token shape is KNOWN and unambiguous (v1: OpenRouter). The token
         // SHAPE is the provider's; the env var is the HEAD's (DR-97) — every daemon arm and doctor
         // read effectiveApiKeyEnv(ctx.key), and a provider-key derivation stored the captured key
         // under a var nothing reads (login success, head 401s, doctor "not set").
-        val capture = API_KEY_TOKEN_PATTERNS[head.provider]?.let { pattern ->
+        val capture = row?.tokenPattern?.let { pattern ->
             TokenCaptureSpec(providerCfg.auth.effectiveApiKeyEnv(key), pattern, label)
         }
         // EVERY head keeps /login — each one has its own sign-in path, and being in the topology is

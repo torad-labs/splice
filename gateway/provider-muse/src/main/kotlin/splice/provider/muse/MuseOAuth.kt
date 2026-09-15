@@ -8,6 +8,7 @@ import kotlinx.serialization.json.booleanOrNull
 import splice.core.util.Cancellables
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
+import splice.spi.FailureRules
 import java.net.URI
 
 public object MuseOAuthEndpoints {
@@ -113,7 +114,7 @@ public class MuseOAuth {
     public fun isPlanTierRejection(body: String): Boolean =
         body.lowercase().contains("plan limit")
 
-    public fun isAuthFailureBody(body: String): Boolean = AUTH_FAILURE_BODY.containsMatchIn(body)
+    public fun isAuthFailureBody(body: String): Boolean = FailureRules().isAuthFailureBody(body)
 
     internal fun safeActionOrigin(raw: String?): String? {
         val uri = raw?.let { Cancellables.runCatchingCancellable { URI.create(it) }.getOrNull() } ?: return null
@@ -125,8 +126,3 @@ public class MuseOAuth {
 }
 
 internal val museJson: Json = Json { ignoreUnknownKeys = true }
-private val AUTH_FAILURE_BODY = Regex(
-    "unauthenticated|bad-credentials|token (is )?(invalid|expired)|" +
-        "(access|oauth2?) token could not be validated",
-    RegexOption.IGNORE_CASE,
-)

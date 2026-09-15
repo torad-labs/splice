@@ -57,8 +57,13 @@ private fun requestOf(
 ): AnthropicRequest = AnthropicRequest(model = "m", messages = messages, tools = tools, toolChoice = toolChoice)
 
 private val POLICY = ToolDeferralPolicy()
-private val QUIRKS_OFF = ResponsesQuirks(providerTag = "t")
-private val QUIRKS_ON = ResponsesQuirks(providerTag = "t", toolSurface = POLICY)
+private val LITE_MODELS = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE)
+private val QUIRKS_OFF = ResponsesQuirks(providerTag = "t", responsesLiteModelRegex = LITE_MODELS)
+private val QUIRKS_ON = ResponsesQuirks(
+    providerTag = "t",
+    toolSurface = POLICY,
+    responsesLiteModelRegex = LITE_MODELS,
+)
 
 class ToolSurfaceTest {
 
@@ -135,7 +140,11 @@ class ToolSurfaceTest {
         val builtinTask = ToolDefinition(name = "Task")
         val body = requestOf(mcpTools(10) + builtins(15) + builtinTask)
         val policy = ToolDeferralPolicy(defer = setOf("Task"))
-        val quirks = ResponsesQuirks(providerTag = "t", toolSurface = policy)
+        val quirks = ResponsesQuirks(
+            providerTag = "t",
+            toolSurface = policy,
+            responsesLiteModelRegex = LITE_MODELS,
+        )
         val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.deferred.any { it.name == "Task" })
     }
@@ -145,7 +154,11 @@ class ToolSurfaceTest {
         val forcedEager = ToolDefinition(name = "mcp__exa__web_search_exa")
         val body = requestOf(mcpTools(10) + builtins(16) + forcedEager)
         val policy = ToolDeferralPolicy(eager = setOf("mcp__exa__web_search_exa"))
-        val quirks = ResponsesQuirks(providerTag = "t", toolSurface = policy)
+        val quirks = ResponsesQuirks(
+            providerTag = "t",
+            toolSurface = policy,
+            responsesLiteModelRegex = LITE_MODELS,
+        )
         val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.eager.any { it.name == "mcp__exa__web_search_exa" })
         assertFalse(partition.deferred.any { it.name == "mcp__exa__web_search_exa" })
@@ -176,7 +189,11 @@ class ToolSurfaceTest {
     fun `degenerate config never empties the eager set`() {
         val body = requestOf(mcpTools(20))
         val policy = ToolDeferralPolicy(deferPrefixes = listOf(""))
-        val quirks = ResponsesQuirks(providerTag = "t", toolSurface = policy)
+        val quirks = ResponsesQuirks(
+            providerTag = "t",
+            toolSurface = policy,
+            responsesLiteModelRegex = LITE_MODELS,
+        )
         val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.eager.isNotEmpty())
         assertTrue(partition.deferred.isEmpty())

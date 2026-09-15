@@ -180,7 +180,13 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             replayReasoning = InjectPriorReasoning(false),
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
         )
-        val request = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "test", emitEmptyLiteInstructions = true))
+        val request = ResponsesRequestBuilder(
+            ResponsesQuirks(
+                providerTag = "test",
+                emitEmptyLiteInstructions = true,
+                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+            ),
+        )
             .build(body.typed, body.raw, options).req
         return body to built("gpt-6-astra", lite = true).copy(requestBody = request)
     }

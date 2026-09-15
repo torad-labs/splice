@@ -52,6 +52,7 @@ class ResponsesCodeModeProjectionTest {
             ResponsesQuirks(
                 providerTag = "test",
                 toolSurface = ToolDeferralPolicy(minDeferred = 1),
+                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
             ),
         )
         val cold = build(builder, request(history = false))

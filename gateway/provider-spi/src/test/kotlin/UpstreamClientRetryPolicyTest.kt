@@ -25,6 +25,7 @@ import splice.spi.RemainingTurnWait
 import splice.spi.RetryAfter
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
+import splice.spi.UpstreamTurnWaitExhausted
 import splice.spi.Waiter
 import java.io.IOException
 import java.net.ConnectException
@@ -571,11 +572,7 @@ class UpstreamClientTransportBudgetTest {
                 assertTrue(fixture.waits.isEmpty())
                 if (remaining == 0L) {
                     assertEquals(1, fixture.calls.get(), "the second round must not reach upstream")
-                    assertTrue(failure is UpstreamFailed)
-                    assertEquals(
-                        "{\"detail\":\"Upstream turn wait budget exhausted\"}",
-                        (failure as UpstreamFailed).body,
-                    )
+                    assertTrue(failure is UpstreamTurnWaitExhausted)
                     assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
                     assertEquals("upstream turn wait budget exhausted before attempt 1/3", fixture.notices.single())
                 } else {

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -21,6 +22,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
 import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.AuthKind
+import splice.core.util.LogSink
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.kimi.KimiAuthProvider
@@ -48,6 +50,44 @@ class AccountLoginTest {
         assertTrue(sources.all { it.credentialPresence() == CredentialPresence.MISSING })
         paths.forEach { Files.writeString(it, "{}") }
         assertTrue(sources.all { it.credentialPresence() == CredentialPresence.PRESENT })
+    }
+
+    @Test
+    fun `missing credential polling stays quiet while unknown identity failures remain visible`() {
+        val paths = listOf(
+            dir.resolve("codex-missing.json"),
+            dir.resolve("grok-missing.json"),
+            dir.resolve("kimi-missing.json"),
+        )
+        val logs = mutableListOf<String>()
+        val log = LogSink { logs.add(it) }
+        val providers = listOf<RefreshableAuthProvider>(
+            CodexAuthProvider(paths[0], 0L, refreshCall = RefreshCall { error("unused") }, log = log),
+            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, log = log),
+            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, log = log),
+        )
+        val sources = providers.map { it as AccountCredentialIdentitySource }
+
+        repeat(3) {
+            sources.forEach { source ->
+                assertNull(source.credentialIdentity())
+                assertEquals(CredentialPresence.MISSING, source.credentialPresence())
+            }
+        }
+        val missingLogs = logs.toList()
+        logs.clear()
+
+        paths.forEachIndexed { index, path ->
+            Files.createSymbolicLink(path, dir.resolve("absent-target-$index"))
+        }
+        sources.forEach { source ->
+            assertNull(source.credentialIdentity())
+            assertEquals(CredentialPresence.UNKNOWN, source.credentialPresence())
+        }
+
+        assertEquals(sources.size, logs.size)
+        assertTrue(logs.all { it.contains("invalid_grant latch check skipped") }, logs.toString())
+        assertTrue(missingLogs.isEmpty(), "expected missing credentials were logged: $missingLogs")
     }
 
     @Test

@@ -160,6 +160,12 @@
   validation precedes lock-directory creation; the login receipt names the label actually
   persisted, collision suffix included. Admission with every account exhausted is a local health
   failure with zero upstream calls and carries an IMF-fixdate `Retry-After` only for a known reset.
+  A turn whose upstream wait budget runs out before its next request is issued ends in the same
+  overloaded terminal the stream watchdog uses (same wording, no continuation partial), never as a
+  cancellation, and makes no further upstream call. A missing pool credential no longer logs the
+  refresh latch diagnostic on every status poll; the `Retry-After` header and the body text share
+  one normalized reset instant (four-digit HTTP years), so a hostile provider reset can no longer
+  turn an honest 429 into a 500.
 - **Custom compaction instructions.** `[compaction]` in `splice.toml` carries global text (inline
   or `file =`), `[[compaction.model]]` rows keyed by upstream model id and `[[compaction.project]]`
   rows keyed by absolute directory (optionally per model). The most specific scope replaces the

@@ -14,7 +14,7 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.time.Instant
+import splice.spi.AccountResetText
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -75,7 +75,7 @@ internal class AdmissionResponses {
     }
 
     private fun retryAfterDate(resetEpochSeconds: Long): String =
-        retryAfterFormat.format(Instant.ofEpochSecond(resetEpochSeconds))
+        retryAfterFormat.format(AccountResetText.normalizedInstant(resetEpochSeconds))
 
     suspend fun respondTooLarge(call: ApplicationCall, limit: Int) {
         call.respondText(

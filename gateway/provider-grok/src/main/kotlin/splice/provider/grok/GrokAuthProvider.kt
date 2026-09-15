@@ -258,7 +258,12 @@ public class GrokAuthProvider(
 
     override suspend fun describe(): AuthDescription = authFile.describe()
 
-    override fun credentialIdentity(): CredentialFileIdentity? = authFile.grokAuthIdentityOrNull(authPath, log)
+    override fun credentialIdentity(): CredentialFileIdentity? =
+        if (credentialPresence() == CredentialPresence.MISSING) {
+            null
+        } else {
+            authFile.grokAuthIdentityOrNull(authPath, log)
+        }
 
     override fun credentialPresence(): CredentialPresence = when {
         Files.isRegularFile(authPath) -> CredentialPresence.PRESENT

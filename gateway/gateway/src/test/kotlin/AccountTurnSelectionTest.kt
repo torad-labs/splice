@@ -36,6 +36,7 @@ import splice.provider.codex.CodexProvider
 import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
+import splice.spi.AccountResetText
 import splice.spi.InflightGate
 import splice.spi.PoolAccount
 import splice.spi.ProcessElapsedNow
@@ -181,6 +182,30 @@ class AccountTurnSelectionTest {
         } finally {
             rig.close()
         }
+    }
+
+    @Test
+    fun `oversized exhausted reset stays rate limited with a formatter-safe Retry-After`() = runTest {
+        val rig = AccountTurnRig()
+        try {
+            rig.start()
+            val oversizedReset = Long.MAX_VALUE - 10_000_000_000_000_000L
+            rig.exhaustAll(oversizedReset)
+
+            val response = rig.messages()
+
+            assertEquals(HttpStatusCode.TooManyRequests, response.status)
+            assertEquals("Fri, 31 Dec 9999 23:59:59 GMT", response.headers["Retry-After"])
+            assertTrue(response.bodyAsText().contains("earliest reset is 9999-12-31T23:59:59Z"))
+            assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `reset text clamps below the four digit wire date range`() {
+        assertEquals("0000-01-01T00:00:00Z", AccountResetText.format(Long.MIN_VALUE))
     }
 
     @Test

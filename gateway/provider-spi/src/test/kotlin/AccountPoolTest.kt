@@ -90,7 +90,7 @@ class AccountPoolTest {
 
         val plan = primary.cooldown.rateLimitedPlan(
             pushbackMs = 1_000L,
-            turn = RateLimitTurn(primary.cooldown, 100L, 220L, pooledAccount = true),
+            turn = RateLimitTurn(primary.cooldown, pooledAccount = true),
             canRetry = true,
             onRetry = RetryNotice {},
             nextRefreshed = false,

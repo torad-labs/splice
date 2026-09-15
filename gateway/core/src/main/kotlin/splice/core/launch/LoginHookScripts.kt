@@ -40,8 +40,9 @@ internal data class LoginHookSpec(
 internal object LoginHookScripts {
 
     // ── generated-script safety (review 2026-08-28, PR 99) ────────────────────────────────────
-    // Every value spliced below is OPERATOR-AUTHORED — signInLabel is API_KEY_LABELS[provider] ?:
-    // provider, loginCommand is "${claude.command ?: key} login", envVar is auth.env — and it lands
+    // Every value spliced below is OPERATOR-AUTHORED — signInLabel is AuthKind.signInLabel or the
+    // ApiKeyProviderRegistry row label (else the provider id), loginCommand is
+    // "${claude.command ?: key} login", envVar is auth.env — and it lands
     // in a bash script LoginInterception chmods 0700 as a UserPromptSubmit hook, which bash parses
     // on every prompt for that head. Not a privilege boundary (the operator's daemon already runs as
     // their uid), but robustness in an artifact nobody ever opens: an apostrophe used to end the

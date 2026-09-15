@@ -1,7 +1,8 @@
 // NEW (review 2026-08-28, PR 99): the generated login/capture/advertiser hooks are bash scripts
 // LoginInterception chmods 0700 and Claude Code executes on every prompt for a head — and every
-// UX string in them is operator-authored (signInLabel is API_KEY_LABELS[provider] ?: provider,
-// loginCommand is "${claude.command ?: key} login", envVar is the documented auth.env knob).
+// UX string in them is operator-authored (signInLabel is AuthKind.signInLabel or the
+// ApiKeyProviderRegistry row label, else the provider id; loginCommand is
+// "${claude.command ?: key} login", envVar is the documented auth.env knob).
 //
 // Nothing executed these scripts before, so the two layers they have to satisfy were both unproven:
 // an apostrophe in a label ended the single-quoted shell word early and handed the rest of the line

@@ -1,4 +1,5 @@
-// NEW: grok-oauth legacy HUD knobs (grokPort / grokModel / xaiApiBase / grokAuthPath).
+// NEW: grok-oauth legacy HUD knobs (grokPort / grokModel / xaiApiBase). grokAuthPath is not
+// remapped here — GrokResponsesArm reads providerCfg.auth.file, else cfg.grokAuthPath.
 package splice.provider.grok
 
 import splice.core.topology.HeadConfig

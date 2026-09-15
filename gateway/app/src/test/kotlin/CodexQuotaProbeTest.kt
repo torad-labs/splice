@@ -51,6 +51,18 @@ class CodexQuotaProbeTest {
     }
 
     @Test
+    fun `codex used_percent is not clamped`() {
+        val body = obj(
+            """{"plan_type":"plus","rate_limit":{
+               "primary_window":{"used_percent":150,"limit_window_seconds":18000},
+               "secondary_window":{"used_percent":-5,"limit_window_seconds":604800}}}""",
+        )
+        val s = parser.parse(body, now)!!
+        assertEquals(150.0, s.fiveHour!!.usedPercent, 1e-9)
+        assertEquals(-5.0, s.sevenDay!!.usedPercent, 1e-9)
+    }
+
+    @Test
     fun `codex body reset_at at 1e11 and above is milliseconds`() {
         val body = obj(
             """{"plan_type":"plus","rate_limit":{

@@ -32,7 +32,7 @@ internal class QuotaProbes(
     private val client: HttpClient,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    fun forHead(ctx: ProviderBuild, auth: AuthProvider, usageFields: UsageFields? = null): QuotaProbe? {
+    fun forHead(ctx: ProviderBuild, auth: AuthProvider, usageFields: UsageFields?): QuotaProbe? {
         val base = ctx.providerCfg.baseUrl
         return when (ctx.providerCfg.auth.kind) {
             "chatgpt-oauth" -> CodexQuotaProbe(client, base, auth, clock)

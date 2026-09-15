@@ -37,6 +37,13 @@ internal fun interface StartQuotaPoller {
     operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker)
 }
 
+/** Observes the primary quota tracker at assembly so a test can see which tracker was wired.
+ *  The production body is a no-op and nothing in production consumes the callback — unlike
+ *  [StartQuotaPoller], whose default starts a real [QuotaPoller]. */
+internal fun interface OnPrimaryQuota {
+    operator fun invoke(tracker: QuotaTracker)
+}
+
 internal class ManagedHeadFactory(
     private val statePaths: StatePaths,
     private val providerAssembly: ProviderAssembly,
@@ -49,6 +56,7 @@ internal class ManagedHeadFactory(
     private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker ->
         QuotaPoller(probeScope, head, probe, tracker, log).start()
     },
+    private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
@@ -62,6 +70,7 @@ internal class ManagedHeadFactory(
         val primaryQuota = wired.accounts.singleOrNull { it.primary }
             ?.let { accountQuotas.getValue(it.label) }
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
+        onPrimaryQuota(primaryQuota)
         val stores = HeadStores(
             usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
             compactStats = CompactStats(statePaths.compactStatsFile(key)),

@@ -34,6 +34,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
 import mock.RecordingSink2
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -71,7 +72,6 @@ import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
-import splice.provider.codex.CodexProvider
 import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
@@ -235,11 +235,11 @@ private class ThrowingStartTerminal(
     override fun abandon() = Unit
 }
 
-/** A real codex provider with ONE member swapped. Interface delegation, not subclassing:
- *  CodexProvider is final and wsRunner is a final override, and delegating keeps every other
- *  behaviour (buildTurn, the stream translator, the SSE path) genuinely real. */
+/** A real responses provider with ONE member swapped. Interface delegation, not subclassing:
+ *  TestResponsesProvider is final and wsRunner is a final override, and delegating keeps every
+ *  other behaviour (buildTurn, the stream translator, the SSE path) genuinely real. */
 private class ScriptedWsProvider(
-    private val inner: CodexProvider,
+    private val inner: TestResponsesProvider,
     private val runner: WsRoundRunner,
 ) : Provider by inner {
     override val wsRunner: WsRoundRunner get() = runner
@@ -266,7 +266,7 @@ class WsRoundDriverTest {
     private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
     private fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
-        CodexProvider(
+        TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",

@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
 import mock.RecordingSink2
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -54,7 +55,6 @@ import splice.gateway.usage.OutputClamp
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
-import splice.provider.codex.CodexProvider
 import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
@@ -103,7 +103,7 @@ class SseRoundConsumeTest {
         mock.stop()
     }
 
-    private fun provider(): Provider = CodexProvider(
+    private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",

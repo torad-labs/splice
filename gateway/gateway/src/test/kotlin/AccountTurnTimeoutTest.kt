@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -42,7 +43,6 @@ import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.UsagePayloadBuilder
-import splice.provider.codex.CodexProvider
 import splice.spi.ClientFrameEmitted
 import splice.spi.ElapsedNow
 import splice.spi.InflightGate
@@ -132,7 +132,7 @@ class AccountTurnTimeoutTest {
             client = client,
             clock = ElapsedNow { 0L },
         )
-        val provider = CodexProvider(
+        val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",

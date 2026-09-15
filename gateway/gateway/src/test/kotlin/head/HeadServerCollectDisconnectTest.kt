@@ -12,6 +12,7 @@ package head
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -33,7 +34,6 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -60,7 +60,7 @@ class HeadServerCollectDisconnectTest {
     fun setUp() = runBlocking {
         tmp = Files.createTempDirectory("head-collect-disconnect")
         head = HeadServer(
-            provider = CodexProvider(
+            provider = TestResponsesProvider(
                 tuning = ProviderTuning(
                     key = "codex",
                     label = "claudex",

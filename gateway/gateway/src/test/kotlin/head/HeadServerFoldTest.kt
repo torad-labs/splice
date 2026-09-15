@@ -1,5 +1,5 @@
 // PORT-analog of HeadServerIntegrationTest for reasoning-continuation folding (codex 518n-2): a real
-// HeadServer (CodexProvider with a fold config + mock ChatGPT upstream) driven over HTTP. Pins:
+// HeadServer (TestResponsesProvider with a fold config + mock ChatGPT upstream) driven over HTTP. Pins:
 // fold-and-continue (a truncated round + a clean round fold into ONE downstream response, the
 // truncated output discarded, usage summed, the continuation marker in the round-2 upstream body);
 // the continuation cap (the head stops and emits the last round honestly); and passthrough parity
@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import mock.MockChatGptUpstream
 import mock.SUMMARY_SECTION_A
 import mock.SUMMARY_SECTION_B
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -43,7 +44,6 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -88,7 +88,7 @@ class HeadServerFoldTest {
     @BeforeAll
     fun setUp() = runTest {
         tmp = Files.createTempDirectory("head-fold")
-        val provider = CodexProvider(
+        val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -225,7 +225,7 @@ class HeadServerFoldTest {
      *  → abandon, and already-sealed → nothing — are indistinguishable from the wire alone, and a CI
      *  failure with log = {} costs a whole diagnostic round trip to tell them apart (2026-09-06). */
     private fun tightCapHead(gate: InflightGate, capPort: Int, log: (String) -> Unit = {}): HeadServer = HeadServer(
-        provider = CodexProvider(
+        provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -258,7 +258,7 @@ class HeadServerFoldTest {
      *  only thing that can fire is the mid-stream idle watchdog. The fold head above cannot express
      *  this — its 3s idle is longer than the stall is useful for. */
     private fun stallHead(stallPort: Int): HeadServer = HeadServer(
-        provider = CodexProvider(
+        provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",

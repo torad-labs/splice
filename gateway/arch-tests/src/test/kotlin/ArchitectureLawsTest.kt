@@ -144,8 +144,10 @@ private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
     (":provider-openai" to ":gateway") to
         "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as provider-grok.",
     (":gateway" to ":provider-codex") to
-        "pre-existing, 2026-08-16, tracked for removal — gateway's tests construct a CONCRETE " +
-        "provider (testImplementation); the seam should be a provider-spi fake.",
+        "pre-existing, 2026-08-16, tracked for removal — two :gateway tests still compile " +
+        "against provider-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
+        "CodexCodeModeReanchorTest CodexCodeModeBridge); other gateway tests now use " +
+        "TestResponsesProvider.",
 )
 
 class ArchitectureLawsTest {

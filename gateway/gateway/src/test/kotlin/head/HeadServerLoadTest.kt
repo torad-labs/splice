@@ -24,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -44,7 +45,6 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -208,7 +208,7 @@ class HeadServerLoadTest {
             defaultContextWindow = 272000,
         )
         head = HeadServer(
-            provider = CodexProvider(
+            provider = TestResponsesProvider(
                 tuning = ProviderTuning(
                     key = "codex",
                     label = "claudex",

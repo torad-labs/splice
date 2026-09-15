@@ -45,6 +45,7 @@ class ManagedHeadFactoryQuotaPollTest {
         statePaths: StatePaths,
         scope: CoroutineScope,
         startQuotaPoller: StartQuotaPoller,
+        onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
     ): ManagedHeadFactory {
         val log = LogSink { }
         val config = ConfigService(statePaths)
@@ -68,6 +69,7 @@ class ManagedHeadFactoryQuotaPollTest {
             probeScope = scope,
             log = log,
             startQuotaPoller = startQuotaPoller,
+            onPrimaryQuota = onPrimaryQuota,
         )
     }
 
@@ -140,7 +142,7 @@ class ManagedHeadFactoryQuotaPollTest {
     }
 
     @Test
-    fun `the factory no-accounts tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
+    fun `the factory primary-account tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("codex-headers"))
         val captured = mutableListOf<QuotaTracker>()
         val factory = factory(
@@ -172,6 +174,32 @@ class ManagedHeadFactoryQuotaPollTest {
         factory.assembleHead(ctx, controlPort = 3098)
         assertEquals(2, captured.size)
         captured.forEach(::assertCodexRound)
+    }
+
+    @Test
+    fun `the empty-accounts fallback tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("api-key-headers"))
+        val ctx = apiKeyBuild(statePaths)
+        val wired = ProviderAssembly(
+            statePaths,
+            backgroundScope,
+            LogSink { },
+            TokenUrlRefreshCall { _, _ -> error("refresh must not run during assembly") },
+        ).buildProvider(ctx)
+        assertTrue(
+            wired.accounts.isEmpty(),
+            "this arm covers the empty-accounts fallback; if an api-key head grows accounts the test must move",
+        )
+        var starts = 0
+        val captured = mutableListOf<QuotaTracker>()
+        factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, _ -> starts += 1 },
+            OnPrimaryQuota { captured += it },
+        ).assembleHead(ctx, controlPort = 3100)
+        assertEquals(0, starts)
+        assertCodexRound(captured.single())
     }
 
     @Test
@@ -209,6 +237,33 @@ class ManagedHeadFactoryQuotaPollTest {
         )
         assertNotNull(tracker.snapshot()?.fiveHour)
         assertEquals(14.0, tracker.snapshot()!!.fiveHour!!.usedPercent, 1e-9)
+    }
+
+    private fun apiKeyBuild(statePaths: StatePaths): ProviderBuild {
+        val model = ModelEntry(id = "gpt-4.1", contextWindow = 200_000)
+        return ProviderBuild(
+            key = "openai",
+            head = HeadConfig(
+                provider = "openai",
+                port = 3100,
+                discoveryPrefix = "claude-openai--",
+                pinnedModel = model.id,
+                claude = ClaudeWrapperConfig(command = "openai", configDir = statePaths.stateDir.toString()),
+            ),
+            providerCfg = ProviderConfig(
+                dialect = Dialect.OPENAI_RESPONSES,
+                baseUrl = "https://api.openai.com/v1",
+                auth = AuthConfig(kind = "api-key"),
+            ),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-openai--",
+                models = listOf(model),
+                defaultContextWindow = model.contextWindow,
+            ),
+            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to "auto")).getConfig(),
+            loginCommand = "openai login",
+        )
     }
 
     private fun museBuild(statePaths: StatePaths): ProviderBuild {

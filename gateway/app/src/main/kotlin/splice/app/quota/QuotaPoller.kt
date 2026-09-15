@@ -67,20 +67,20 @@ internal class QuotaPoller(
     }
 
     private fun superviseCompletion(launched: Job, cause: Throwable?) {
-        val benign = cause == null || cause is kotlinx.coroutines.CancellationException
-        if (benign) return
+        if (cause == null || cause is kotlinx.coroutines.CancellationException) return
         val n = synchronized(lifecycle) {
             if (stopped || job !== launched) return
             recordRestart()
         }
+        val why = SafeFailureText.render(cause)
         if (n <= MAX_RESTARTS) {
-            log("[$head][quota] loop died: $cause — restarting ($n/$MAX_RESTARTS)\n")
+            log("[$head][quota] loop died: $why — restarting ($n/$MAX_RESTARTS)\n")
             synchronized(lifecycle) {
                 if (!stopped && job === launched) launchSupervised()
             }
         } else {
             log(
-                "[$head][quota] loop died: $cause — restart budget exhausted " +
+                "[$head][quota] loop died: $why — restart budget exhausted " +
                     "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
             )
         }

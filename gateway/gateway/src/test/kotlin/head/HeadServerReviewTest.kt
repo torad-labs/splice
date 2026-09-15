@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -47,7 +48,6 @@ import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -92,7 +92,7 @@ class HeadServerReviewTest {
         matGate: RequestMaterializationGate,
         ratelimitFile: Path,
     ): HeadServer {
-        val provider = CodexProvider(
+        val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",

@@ -56,10 +56,16 @@ public class MuseOAuth {
     )
 
     public fun parseMuseDeviceAuthorization(responseBody: String): MuseDeviceAuthorization {
-        val obj = parseObject(responseBody) ?: JsonObject(emptyMap())
+        val obj = parseObject(responseBody)
+            ?: throw IllegalArgumentException("muse device authorization response was not JSON")
+        val userCode = JsonScalars.strIfString(obj["user_code"])
+        val deviceCode = JsonScalars.strIfString(obj["device_code"])
+        require(userCode.isNotBlank() && deviceCode.isNotBlank()) {
+            "muse device authorization response missing user_code or device_code"
+        }
         return MuseDeviceAuthorization(
-            userCode = JsonScalars.strIfString(obj["user_code"]),
-            deviceCode = JsonScalars.strIfString(obj["device_code"]),
+            userCode = userCode,
+            deviceCode = deviceCode,
             verificationUri = JsonScalars.strIfString(obj["verification_uri"]),
             verificationUriComplete = JsonScalars.strIfString(obj["verification_uri_complete"]),
             expiresInS = JsonScalars.long(obj, "expires_in") ?: MuseOAuthEndpoints.DEFAULT_EXPIRES_IN_S,

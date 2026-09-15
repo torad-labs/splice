@@ -19,6 +19,7 @@ import splice.app.BrowserOpener
 import splice.app.DeviceAuthForm
 import splice.app.DeviceAuthParse
 import splice.app.DeviceAuthorization
+import splice.app.DeviceLoginFinalizer
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
 import splice.app.LoginIo
@@ -68,7 +69,12 @@ class DeviceLoginTokenlessTest {
         return server
     }
 
-    private fun specFor(server: HttpServer, authPath: Path, account: OAuthLoginAccount? = null): DeviceLoginSpec {
+    private fun specFor(
+        server: HttpServer,
+        authPath: Path,
+        account: OAuthLoginAccount? = null,
+        afterPersist: DeviceLoginFinalizer = DeviceLoginFinalizer { _, _ -> },
+    ): DeviceLoginSpec {
         val oauth = KimiOAuth()
         return DeviceLoginSpec(
             head = "probe",
@@ -96,6 +102,7 @@ class DeviceLoginTokenlessTest {
             },
             tokenPollForm = TokenPollForm { code, id -> oauth.kimiTokenPollForm(code, id) },
             account = account,
+            afterPersist = afterPersist,
         )
     }
 
@@ -104,6 +111,7 @@ class DeviceLoginTokenlessTest {
         authPath: Path,
         waiter: Waiter = Waiter { },
         account: OAuthLoginAccount? = null,
+        afterPersist: DeviceLoginFinalizer = DeviceLoginFinalizer { _, _ -> },
     ): Pair<Boolean, String> {
         val savedOut = System.out
         val out = ByteArrayOutputStream()
@@ -113,7 +121,7 @@ class DeviceLoginTokenlessTest {
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
             val ok = runBlocking {
-                DeviceLoginFlow.run(specFor(server, authPath, account), waiter, LoginIo(browser))
+                DeviceLoginFlow.run(specFor(server, authPath, account, afterPersist), waiter, LoginIo(browser))
             }
             assertEquals(listOf("http://127.0.0.1:${server.address.port}/verify"), browser.urls)
             assertTrue(out.toString().contains("open the URL above to finish signing in"))
@@ -214,6 +222,45 @@ class DeviceLoginTokenlessTest {
         assertTrue(ok, printed)
         assertTrue(waits.isNotEmpty(), "the poll must have waited at least once")
         assertTrue(waits.all { it in 0L..MAX_POLL_WAIT_MS }, "every wait must be bounded and non-negative: $waits")
+    }
+
+    @Test
+    fun `a successful device login invokes the post-persist finalizer`(@TempDir tmp: Path) {
+        val authPath = tmp.resolve("auth.json")
+        var ran = 0
+        val (ok, printed) = runFlow(
+            serving("""{"access_token":"tok_device"}"""),
+            authPath,
+            afterPersist = DeviceLoginFinalizer { _, _ -> ran += 1 },
+        )
+        assertTrue(ok, printed)
+        assertEquals(1, ran, printed)
+    }
+
+    @Test
+    fun `a tokenless 200 does not invoke the post-persist finalizer`(@TempDir tmp: Path) {
+        val authPath = tmp.resolve("auth.json")
+        var ran = 0
+        val (ok, printed) = runFlow(
+            serving("{}"),
+            authPath,
+            afterPersist = DeviceLoginFinalizer { _, _ -> ran += 1 },
+        )
+        assertFalse(ok, printed)
+        assertEquals(0, ran, printed)
+    }
+
+    @Test
+    fun `a throwing finalizer still yields SUCCESS`(@TempDir tmp: Path) {
+        val authPath = tmp.resolve("auth.json")
+        val (ok, printed) = runFlow(
+            serving("""{"access_token":"tok_device"}"""),
+            authPath,
+            afterPersist = DeviceLoginFinalizer { _, _ -> throw java.io.IOException("finalizer") },
+        )
+        assertTrue(ok, printed)
+        assertTrue(Files.exists(authPath), printed)
+        assertTrue(printed.contains("post-login step failed"), printed)
     }
 }
 

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.provider.muse.MuseMintAttempt
@@ -36,6 +37,22 @@ class MuseOAuthTest {
             "https://api.meta.ai/muse-code/key",
             MuseOAuthEndpoints.KEY_URL,
         )
+    }
+
+    @Test
+    fun `unparseable device authorization is a named error`() {
+        val err = assertThrows(IllegalArgumentException::class.java) {
+            oauth.parseMuseDeviceAuthorization("not-json")
+        }
+        assertTrue(err.message?.contains("was not JSON") == true, err.message)
+    }
+
+    @Test
+    fun `empty device authorization codes are a named error`() {
+        val err = assertThrows(IllegalArgumentException::class.java) {
+            oauth.parseMuseDeviceAuthorization("{}")
+        }
+        assertTrue(err.message?.contains("missing user_code or device_code") == true, err.message)
     }
 
     @Test

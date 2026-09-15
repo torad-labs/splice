@@ -43,10 +43,17 @@ public data class ResponsesQuirks(
      *  not proven task-efficiency parity. JavaScript callback batching is a separate mechanism;
      *  the client's explicit parallel-disable choice still wins over this knob. */
     val liteParallelToolCalls: Boolean = false,
-    /** codex parity: `text.verbosity` on lite turns. codex-cli 0.145.0 sends "low"; null omits. */
-    val liteTextVerbosity: String? = "low",
-    /** codex parity: send a client_metadata block identifying SPLICE (never codex). Off = omitted. */
-    val sendClientMetadata: Boolean = true,
+    /** Null omits `text.verbosity` on lite turns. A vendor-measured value (codex-cli 0.145.0
+     *  sends "low") belongs on that vendor's profile — a dialect default would ride to every
+     *  backend that later opts into the lite pair (V4-31). */
+    val liteTextVerbosity: String? = null,
+    /** Off omits the client_metadata block. On sends client=splice plus optional session_id
+     *  and thread_id — no token, no install id, no operator identity. A backend can correlate
+     *  turns of one splice session and knows it is talking to splice rather than Codex.
+     *  That is honest identification, not impersonation, and not a user-privacy leak. The
+     *  measured on-value belongs on the vendor profile that wants it (V4-31). Boolean, not
+     *  Boolean?: false is the omit (`!quirks.sendClientMetadata` in ResponsesClientHints). */
+    val sendClientMetadata: Boolean = false,
     /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
      *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
      *  until an operator opts in, and with it off no WebSocket is ever constructed. */

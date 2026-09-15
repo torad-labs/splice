@@ -1,5 +1,6 @@
 // NEW: V4-28 — the lite header is a declared pair, not a dialect default.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -53,6 +54,8 @@ class LiteHeaderEveryProviderTest {
         assertNull(quirks.responsesLiteHeader)
         assertNull(quirks.summaryRejectModelRegex)
         assertNull(quirks.effortMaxRejectModelRegex)
+        assertNull(quirks.liteTextVerbosity)
+        assertFalse(quirks.sendClientMetadata)
     }
 
     @Test

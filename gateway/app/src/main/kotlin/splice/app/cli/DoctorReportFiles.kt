@@ -39,4 +39,35 @@ internal class DoctorReportFiles(private val redaction: DoctorRedaction) {
         Files.exists(generation, LinkOption.NOFOLLOW_LINKS) -> "$label: dangling symlink"
         else -> null
     }
+
+    /** A system property is overridable on the JVM command line: it passes the same redaction as
+     *  every other string and is emitted only when it is a bounded plain token. */
+    fun systemProperty(key: String): String =
+        System.getProperty(key)?.let(redaction::text)?.takeIf { SYSTEM_VALUE.matches(it) } ?: OMITTED
+}
+
+/** What a JVM/OS property may look like in the report: a bounded plain token, else omitted. */
+private val SYSTEM_VALUE = Regex("^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,63}$")
+private const val OMITTED = "<omitted>"
+
+/** The probe's BYTE write, as a named seam (the [WrapperClaim] precedent, and a fun interface
+ *  rather than a raw lambda type for the same reason that one is). Split out of DoctorProbeWrite
+ *  so that file stays out of HIGH.
+ *
+ *  DR-171 redo, on codex-splice's review: creating the file and writing bytes into it are two
+ *  different claims, and this probe makes the second one — its non-access remedy is `df`, which is
+ *  advice about SPACE. Metadata can succeed where data cannot (ENOSPC, a quota, a failing device),
+ *  so an exclusive create alone would report INFO over a directory that cannot actually take a
+ *  byte. Nothing could prove the write survived the DR-171 port while it was an unmockable direct
+ *  call — the mutant that deleted it passed every arm — so the seam exists to make that property
+ *  testable, not to make the probe configurable. */
+internal fun interface ProbeWrite {
+    operator fun invoke(probe: Path, content: String)
+}
+
+/** The production write. */
+internal object FileProbeWrite : ProbeWrite {
+    override fun invoke(probe: Path, content: String) {
+        Files.writeString(probe, content)
+    }
 }

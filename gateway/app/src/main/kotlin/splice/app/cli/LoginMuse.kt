@@ -9,9 +9,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.app.AuthJsonFromResponse
+import splice.app.DeviceAuthForm
+import splice.app.DeviceAuthParse
+import splice.app.DeviceAuthorization
 import splice.app.DeviceLoginFinalizer
 import splice.app.DeviceLoginSpec
 import splice.app.MuseRefresh
+import splice.app.TokenPollForm
 import splice.app.auth.AUTO
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthLoginAccount
@@ -61,6 +65,9 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
                 authPath = authPath,
                 identityHeaders = emptyMap(),
                 toAuthJson = authJson,
+                deviceAuthForm = DeviceAuthForm { oauth.museDeviceAuthorizationForm(it) },
+                parseDeviceAuth = DeviceAuthParse(::deviceAuth),
+                tokenPollForm = TokenPollForm { code, id -> oauth.museTokenPollForm(code, id) },
                 account = account,
                 afterPersist = DeviceLoginFinalizer { path, acct -> mintAfterLogin(path, acct) },
             )
@@ -74,6 +81,18 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
                 )
             }
         }
+    }
+
+    private fun deviceAuth(body: String): DeviceAuthorization {
+        val parsed = oauth.parseMuseDeviceAuthorization(body)
+        return DeviceAuthorization(
+            userCode = parsed.userCode,
+            deviceCode = parsed.deviceCode,
+            verificationUri = parsed.verificationUri,
+            verificationUriComplete = parsed.verificationUriComplete,
+            expiresInS = parsed.expiresInS,
+            intervalS = parsed.intervalS,
+        )
     }
 
     private fun museAuthJson(responseBody: String): String {

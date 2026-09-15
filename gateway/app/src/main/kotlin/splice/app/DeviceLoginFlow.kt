@@ -1,10 +1,11 @@
-// NEW: RFC 8628 device-authorization login (kimi / Moonshot) — the no-loopback counterpart to
-// OAuthLoginFlow. POST device_authorization → print the user_code + verification URL, open the
-// browser → poll the token endpoint until the user approves. State machine per the verified kimi
-// contract: authorization_pending keeps polling; slow_down bumps the interval PERMANENTLY (+5s);
-// expired_token restarts the WHOLE flow (bounded to 2 restarts); access_denied / >=500 abort; the
-// device_authorization expires_in is the overall deadline. Credentials persist through the shared
-// atomic-0600 writeCredentialFile. :app is wall-exempt for println + a bounded runBlocking bridge.
+// NEW: RFC 8628 device-authorization login — the no-loopback counterpart to OAuthLoginFlow.
+// Vendor-neutral: LoginKimi / LoginMuse supply DeviceLoginSpec. POST device_authorization → print
+// the user_code + verification URL, open the browser → poll the token endpoint until the user
+// approves. State machine per the verified kimi contract: authorization_pending keeps polling;
+// slow_down bumps the interval PERMANENTLY (+5s); expired_token restarts the WHOLE flow (bounded
+// to 2 restarts); access_denied / >=500 abort; the device_authorization expires_in is the overall
+// deadline. Credentials persist through the shared atomic-0600 writeCredentialFile. :app is
+// wall-exempt for println + a bounded runBlocking bridge.
 package splice.app
 
 import io.ktor.client.HttpClient
@@ -16,8 +17,6 @@ import io.ktor.http.isSuccess
 import splice.core.auth.CredentialExpiry
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import splice.provider.kimi.KimiDeviceAuthorization
-import splice.provider.kimi.KimiOAuth
 import splice.spi.ProcessWaiter
 import splice.spi.Waiter
 
@@ -25,7 +24,6 @@ import splice.spi.Waiter
 
 public object DeviceLoginFlow {
 
-    private val kimiOAuth = KimiOAuth()
     private val authClients = AuthHttpClientFactory()
 
     private const val MAX_EXPIRED_RESTARTS = 2
@@ -100,20 +98,20 @@ public object DeviceLoginFlow {
         client: HttpClient,
         spec: DeviceLoginSpec,
         loginIo: LoginIo,
-    ): KimiDeviceAuthorization? {
+    ): DeviceAuthorization? {
         val resp = client.post(spec.deviceAuthUrl) {
             loginIo.formHeaders(this, spec.identityHeaders)
-            setBody(kimiOAuth.kimiDeviceAuthorizationForm(spec.clientId))
+            setBody(spec.deviceAuthForm(spec.clientId))
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
             println("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return null
         }
-        return kimiOAuth.parseKimiDeviceAuthorization(body)
+        return spec.parseDeviceAuth(body)
     }
 
-    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization, loginIo: LoginIo) {
+    private fun announce(spec: DeviceLoginSpec, auth: DeviceAuthorization, loginIo: LoginIo) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
         println("")
         println("  splice: sign in to ${spec.head} — enter this code in your browser:")
@@ -128,7 +126,7 @@ public object DeviceLoginFlow {
     private suspend fun poll(
         client: HttpClient,
         spec: DeviceLoginSpec,
-        auth: KimiDeviceAuthorization,
+        auth: DeviceAuthorization,
         waiter: Waiter,
         loginIo: LoginIo,
     ): Outcome {
@@ -202,6 +200,6 @@ public object DeviceLoginFlow {
     ): HttpResponse =
         client.post(spec.tokenUrl) {
             loginIo.formHeaders(this, spec.identityHeaders)
-            setBody(kimiOAuth.kimiTokenPollForm(deviceCode, spec.clientId))
+            setBody(spec.tokenPollForm(deviceCode, spec.clientId))
         }
 }

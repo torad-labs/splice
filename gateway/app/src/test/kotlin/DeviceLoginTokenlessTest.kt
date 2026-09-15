@@ -16,11 +16,16 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.BrowserOpener
+import splice.app.DeviceAuthForm
+import splice.app.DeviceAuthParse
+import splice.app.DeviceAuthorization
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
 import splice.app.LoginIo
+import splice.app.TokenPollForm
 import splice.app.auth.OAuthLoginAccount
 import splice.app.cli.LoginKimi
+import splice.provider.kimi.KimiOAuth
 import splice.spi.Waiter
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -63,20 +68,36 @@ class DeviceLoginTokenlessTest {
         return server
     }
 
-    private fun specFor(server: HttpServer, authPath: Path, account: OAuthLoginAccount? = null) = DeviceLoginSpec(
-        head = "probe",
-        clientId = "cid",
-        deviceAuthUrl = "http://127.0.0.1:${server.address.port}/device",
-        tokenUrl = "http://127.0.0.1:${server.address.port}/token",
-        authPath = authPath,
-        identityHeaders = emptyMap(),
-        // The permissive mapping the affected providers use: an absent token becomes "".
-        toAuthJson = { body ->
-            val token = Regex(""""access_token"\s*:\s*"([^"]*)"""").find(body)?.groupValues?.get(1).orEmpty()
-            """{"access_token":"$token"}"""
-        },
-        account = account,
-    )
+    private fun specFor(server: HttpServer, authPath: Path, account: OAuthLoginAccount? = null): DeviceLoginSpec {
+        val oauth = KimiOAuth()
+        return DeviceLoginSpec(
+            head = "probe",
+            clientId = "cid",
+            deviceAuthUrl = "http://127.0.0.1:${server.address.port}/device",
+            tokenUrl = "http://127.0.0.1:${server.address.port}/token",
+            authPath = authPath,
+            identityHeaders = emptyMap(),
+            // The permissive mapping the affected providers use: an absent token becomes "".
+            toAuthJson = { body ->
+                val token = Regex(""""access_token"\s*:\s*"([^"]*)"""").find(body)?.groupValues?.get(1).orEmpty()
+                """{"access_token":"$token"}"""
+            },
+            deviceAuthForm = DeviceAuthForm { oauth.kimiDeviceAuthorizationForm(it) },
+            parseDeviceAuth = DeviceAuthParse { body ->
+                val parsed = oauth.parseKimiDeviceAuthorization(body)
+                DeviceAuthorization(
+                    userCode = parsed.userCode,
+                    deviceCode = parsed.deviceCode,
+                    verificationUri = parsed.verificationUri,
+                    verificationUriComplete = parsed.verificationUriComplete,
+                    expiresInS = parsed.expiresInS,
+                    intervalS = parsed.intervalS,
+                )
+            },
+            tokenPollForm = TokenPollForm { code, id -> oauth.kimiTokenPollForm(code, id) },
+            account = account,
+        )
+    }
 
     private fun runFlow(
         server: HttpServer,

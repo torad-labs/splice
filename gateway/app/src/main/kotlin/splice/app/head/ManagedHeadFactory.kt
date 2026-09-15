@@ -14,10 +14,13 @@ import splice.app.UsageStoreSource
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
+import splice.app.quota.MuseAuthUsageFields
 import splice.app.quota.QuotaPoller
 import splice.app.quota.QuotaProbe
 import splice.app.quota.QuotaProbes
+import splice.app.quota.UsageFields
 import splice.control.ManagedHead
+import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
@@ -26,6 +29,8 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.provider.codex.CodexQuotaHeaderFamily
+import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider
 
 internal fun interface StartQuotaPoller {
@@ -56,7 +61,7 @@ internal class ManagedHeadFactory(
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary }
             ?.let { accountQuotas.getValue(it.label) }
-            ?: QuotaTracker(statePaths.quotaFile(key))
+            ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         val stores = HeadStores(
             usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
             compactStats = CompactStats(statePaths.compactStatsFile(key)),
@@ -112,7 +117,7 @@ internal class ManagedHeadFactory(
     private fun accountQuotas(key: String, wired: Wired): Map<String, QuotaTracker> =
         wired.accounts.associate { account ->
             val file = if (account.primary) statePaths.quotaFile(key) else account.quotaFile
-            account.label to QuotaTracker(file)
+            account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily())
         }
 
     private fun startQuotaPollers(
@@ -125,15 +130,18 @@ internal class ManagedHeadFactory(
         // Subscription heads have a usage endpoint. Every OAuth account gets its own persisted
         // snapshot and poller; non-pooled heads retain the legacy single tracker path.
         if (wired.accounts.isEmpty()) {
-            quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
+            quotaProbes.forHead(ctx, wired.auth, usageFields(wired.auth))?.let { probe ->
                 startQuotaPoller(ctx.key, probe, stores.quota)
             }
             return
         }
         wired.accounts.forEach { account ->
-            quotaProbes.forHead(ctx, account.auth)?.let { probe ->
+            quotaProbes.forHead(ctx, account.auth, usageFields(account.auth))?.let { probe ->
                 startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label))
             }
         }
     }
+
+    private fun usageFields(auth: AuthProvider): UsageFields? =
+        (auth as? MuseAuthProvider)?.let(::MuseAuthUsageFields)
 }

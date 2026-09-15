@@ -32,8 +32,19 @@ public class QuotaSlots {
         val seven = windows.firstOrNull { (it.windowSeconds ?: 0L) > FIVE_HOUR_SLOT_MAX_SECONDS }
         return QuotaSnapshot(five, seven, plan, now)
     }
+
+    /**
+     * Sanctioned exception: a window the provider names weekly and puts no duration on the wire
+     * gets windowSeconds from resets_at minus now. If that remaining span is still within the
+     * five-hour ceiling (the week is about to roll), it still occupies the seven-day slot — the
+     * name is the duration the wire omitted.
+     */
+    public fun weeklyWindowSeconds(resetsAt: Long?, nowMillis: Long): Long {
+        val remaining = resetsAt?.minus(nowMillis / 1000L) ?: return SEVEN_DAYS_SECONDS
+        return if (remaining > FIVE_HOUR_SLOT_MAX_SECONDS) remaining else SEVEN_DAYS_SECONDS
+    }
 }
 
 public const val FIVE_HOURS_SECONDS: Long = 5 * 3600L
 public const val SEVEN_DAYS_SECONDS: Long = 7 * 24 * 3600L
-private const val FIVE_HOUR_SLOT_MAX_SECONDS: Long = 6 * 3600L
+public const val FIVE_HOUR_SLOT_MAX_SECONDS: Long = 6 * 3600L

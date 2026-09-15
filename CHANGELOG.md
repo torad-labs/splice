@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+- **The device-login test no longer opens browser tabs.** `DeviceLoginTokenlessTest` fed the login
+  flow a fake device response and the flow opened its verification URL in the operator's real
+  browser (`xdg-open`), four tabs on `http://127.0.0.1/verify` per run. The browser opener is now a
+  seam on the login I/O helper with the operating-system process as its default; the test injects a
+  recording opener and pins the exact URL and the manual fallback line instead.
+
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 
 ### Fixed

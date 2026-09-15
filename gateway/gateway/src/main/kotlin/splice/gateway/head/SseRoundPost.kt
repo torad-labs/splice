@@ -4,6 +4,7 @@
 package splice.gateway.head
 
 import kotlinx.coroutines.flow.emptyFlow
+import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
@@ -67,7 +68,9 @@ internal class SseRoundPost(
                 watchdogFired = { totalCap },
                 clientGone = { drive.channel.clientGone.get() },
             )
-            provider.streamTranslator(drive.meta, signals).driveTurn(emptyFlow(), inputs.sink)
+            val outcome = provider.streamTranslator(drive.meta, signals).driveTurn(emptyFlow(), inputs.sink)
+            drive.perf.mark(PerfKeys.STREAM_END)
+            outcome
         }
     }
 }

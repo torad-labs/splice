@@ -1,7 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §11 — one account chosen once at the turn boundary.
 package splice.spi
 
-import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
 import java.time.Instant
@@ -17,21 +16,6 @@ public object AccountLabelPolicy {
 /** Reads one account's latest provider quota without coupling the SPI to gateway persistence. */
 public fun interface AccountQuotaSource {
     public fun snapshot(): QuotaSnapshot?
-}
-
-/** Reads persisted credential evidence without exposing credential material to account policy. */
-public fun interface AccountCredentialIdentitySource {
-    /** Null means the revision could not be observed; [credentialPresence] classifies why. */
-    public fun credentialIdentity(): CredentialFileIdentity?
-
-    /** Conservative evidence when no revision was observable. Existing implementations remain unknown. */
-    public fun credentialPresence(): CredentialPresence = CredentialPresence.UNKNOWN
-
-    public enum class CredentialPresence {
-        PRESENT,
-        MISSING,
-        UNKNOWN,
-    }
 }
 
 /** Epoch time seam used to compare provider reset timestamps without a process-global clock in policy code. */

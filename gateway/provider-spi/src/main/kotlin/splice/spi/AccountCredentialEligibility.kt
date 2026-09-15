@@ -2,7 +2,12 @@
 package splice.spi
 
 import splice.core.auth.CredentialFileIdentity
-import splice.spi.AccountCredentialIdentitySource.CredentialPresence
+import splice.core.util.Cancellables
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -13,6 +18,64 @@ private const val FIRST_AUTH_HOLD_MS = 300_000L
 private const val MAX_AUTH_HOLD_MS = 3_600_000L
 private const val MAX_AUTH_FAILURE_COUNT = 5
 private val nextProbeToken = AtomicLong()
+
+/** Reads persisted credential evidence without exposing credential material to account policy. */
+public fun interface AccountCredentialIdentitySource {
+    /** Null means the revision could not be observed; [credentialPresence] classifies why. */
+    public fun credentialIdentity(): CredentialFileIdentity?
+
+    /** Conservative evidence when no revision was observable. Existing implementations remain unknown. */
+    public fun credentialPresence(): CredentialPresence = CredentialPresence.UNKNOWN
+
+    /** One typed observation for account reconciliation. File-backed providers override this directly. */
+    public fun credentialEvidence(): CredentialEvidence {
+        val identity = credentialIdentity()
+        val presence = if (identity == null) credentialPresence() else CredentialPresence.PRESENT
+        return CredentialEvidence(identity, presence)
+    }
+
+    public enum class CredentialPresence {
+        PRESENT,
+        MISSING,
+        UNKNOWN,
+    }
+
+    public data class CredentialEvidence(
+        public val identity: CredentialFileIdentity?,
+        public val presence: CredentialPresence,
+    ) {
+        init {
+            require(identity == null || presence == CredentialPresence.PRESENT) {
+                "credential identity requires present evidence"
+            }
+        }
+    }
+
+    /** Quietly reads one conservative credential-file observation for account reconciliation. */
+    public object CredentialFileEvidenceReader {
+        public fun read(path: Path): CredentialEvidence =
+            Cancellables.runCatchingCancellable {
+                val attributes = Files.readAttributes(path, "basic:isRegularFile,lastModifiedTime,size")
+                if (attributes["isRegularFile"] != true) return@runCatchingCancellable unknown()
+                val modifiedAt = (attributes.getValue("lastModifiedTime") as FileTime).toMillis()
+                val size = attributes.getValue("size") as Long
+                CredentialEvidence(CredentialFileIdentity(modifiedAt, size), CredentialPresence.PRESENT)
+            }.getOrElse { failure -> CredentialEvidence(null, presence(path, failure)) }
+
+        private fun presence(path: Path, failure: Throwable): CredentialPresence =
+            if (failure is NoSuchFileException && entryMissing(path)) {
+                CredentialPresence.MISSING
+            } else {
+                CredentialPresence.UNKNOWN
+            }
+
+        private fun entryMissing(path: Path): Boolean =
+            Cancellables.runCatchingCancellable { Files.notExists(path, LinkOption.NOFOLLOW_LINKS) }
+                .fold(onSuccess = { it }, onFailure = { false })
+
+        private fun unknown(): CredentialEvidence = CredentialEvidence(null, CredentialPresence.UNKNOWN)
+    }
+}
 
 internal class AccountCredentialEligibility(
     identitySource: AccountCredentialIdentitySource?,
@@ -174,36 +237,36 @@ internal class AccountCredentialEligibility(
         }
 
         fun observe(): Observation {
-            val identity = source?.credentialIdentity()
-            val presence = when {
-                identity != null -> CredentialPresence.PRESENT
-                source == null -> CredentialPresence.UNKNOWN
-                else -> source.credentialPresence()
-            }
-            return Observation(identity, presence)
+            val observed = source?.credentialEvidence()
+            return Observation(
+                observed?.identity,
+                observed?.presence ?: AccountCredentialIdentitySource.CredentialPresence.UNKNOWN,
+            )
         }
     }
 
     private data class Observation(
         val identity: CredentialFileIdentity?,
-        val presence: CredentialPresence,
+        val presence: AccountCredentialIdentitySource.CredentialPresence,
     ) {
         fun initialPresence(configured: Boolean): Boolean = when {
             identity != null -> true
-            presence == CredentialPresence.PRESENT -> true
-            presence == CredentialPresence.MISSING -> false
+            presence == AccountCredentialIdentitySource.CredentialPresence.PRESENT -> true
+            presence == AccountCredentialIdentitySource.CredentialPresence.MISSING -> false
             else -> configured
         }
 
         fun reconciled(current: State): State = when {
             identity != null -> current.observeIdentity(identity)
-            presence == CredentialPresence.PRESENT -> current.observePresent()
-            presence == CredentialPresence.MISSING -> current.observeMissing()
+            presence == AccountCredentialIdentitySource.CredentialPresence.PRESENT -> current.observePresent()
+            presence == AccountCredentialIdentitySource.CredentialPresence.MISSING -> current.observeMissing()
             else -> current
         }
 
-        fun refreshed(current: State): State =
-            if (presence == CredentialPresence.MISSING) current.observeMissing() else current.recovered(identity)
+        fun refreshed(current: State): State = when (presence) {
+            AccountCredentialIdentitySource.CredentialPresence.MISSING -> current.observeMissing()
+            else -> current.recovered(identity)
+        }
     }
 
     private data class State(

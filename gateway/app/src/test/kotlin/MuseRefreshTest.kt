@@ -115,20 +115,65 @@ class MuseRefreshTest {
     }
 
     @Test
-    fun `401 and 403 reject the account token without retrying or echoing response`() = runTest {
-        for (status in listOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden)) {
-            var calls = 0
-            val engine = MockEngine {
-                calls += 1
-                respond("private-response", status)
-            }
-            HttpClient(engine).use { client ->
-                val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
-                assertTrue(result is MuseMintAttempt.InvalidAccountToken)
-                assertFalse(result.toString().contains("private-response"))
-            }
-            assertEquals(1, calls)
+    fun `401 and auth-body 403 reject the account token without retrying or echoing response`() = runTest {
+        var unauthorizedCalls = 0
+        val unauthorizedEngine = MockEngine {
+            unauthorizedCalls += 1
+            respond("private-response", HttpStatusCode.Unauthorized)
         }
+        HttpClient(unauthorizedEngine).use { client ->
+            val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
+            assertTrue(result is MuseMintAttempt.InvalidAccountToken)
+            assertFalse(result.toString().contains("private-response"))
+        }
+        assertEquals(1, unauthorizedCalls)
+
+        var forbiddenCalls = 0
+        val forbiddenEngine = MockEngine {
+            forbiddenCalls += 1
+            respond("unauthenticated:bad-credentials", HttpStatusCode.Forbidden)
+        }
+        HttpClient(forbiddenEngine).use { client ->
+            val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
+            assertTrue(result is MuseMintAttempt.InvalidAccountToken)
+        }
+        assertEquals(1, forbiddenCalls)
+    }
+
+    @Test
+    fun `a plan 403 on the mint is denied without latching the account token`() = runTest {
+        val engine = MockEngine { respond("plan limit exceeded", HttpStatusCode.Forbidden) }
+        HttpClient(engine).use { client ->
+            val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
+            assertTrue(result is MuseMintAttempt.Denied)
+        }
+    }
+
+    @Test
+    fun `a second mint through one MuseRefresh client still succeeds`() = runTest {
+        var calls = 0
+        val engine = MockEngine {
+            calls += 1
+            respond(active, HttpStatusCode.OK)
+        }
+        HttpClient(engine).use { client ->
+            val refresh = MuseRefresh()
+            val first = refresh.refresh(
+                endpoint,
+                "account-token",
+                MuseMintMode.REFRESH,
+                client,
+            )
+            val second = refresh.refresh(
+                endpoint,
+                "account-token",
+                MuseMintMode.REFRESH,
+                client,
+            )
+            assertTrue(first is MuseMintAttempt.Granted)
+            assertTrue(second is MuseMintAttempt.Granted)
+        }
+        assertEquals(2, calls)
     }
 
     @Test

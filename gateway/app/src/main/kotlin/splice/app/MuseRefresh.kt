@@ -50,12 +50,14 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
             val body = if (mode == MuseMintMode.ONBOARD) """{"onboard":true}""" else "{}"
             setBody(TextContent(body, ContentType.Application.Json))
         }
+        val body = response.bodyAsText()
         when {
             response.status == HttpStatusCode.TooManyRequests ->
                 MuseMintAttempt.RateLimited(retryAfterMs(response.headers["Retry-After"]))
-            response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
+            response.status == HttpStatusCode.Unauthorized -> MuseMintAttempt.InvalidAccountToken
+            response.status == HttpStatusCode.Forbidden && oauth.isAuthFailureBody(body) ->
                 MuseMintAttempt.InvalidAccountToken
-            response.status.isSuccess() -> oauth.parseMuseKeyResponse(response.bodyAsText())
+            response.status.isSuccess() -> oauth.parseMuseKeyResponse(body)
             else -> MuseMintAttempt.Denied("key mint failed (HTTP ${response.status.value})")
         }
     }

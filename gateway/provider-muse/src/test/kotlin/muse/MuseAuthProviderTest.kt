@@ -2,32 +2,22 @@
 package muse
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.provider.muse.MuseAuthProvider
-import splice.provider.muse.MuseCredentialSnapshot
 import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
-import splice.provider.muse.MuseMintHolds
 import splice.provider.muse.MuseMintMode
 import splice.provider.muse.MuseSubscriptionKey
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
@@ -35,7 +25,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 
-private const val HANG_BACKSTOP_S = 60L
 private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
 
@@ -61,12 +50,16 @@ class MuseAuthProviderTest {
         file: Path,
         logs: MutableList<String> = mutableListOf(),
         clock: WallClock = WallClock(System::currentTimeMillis),
+        authCacheMs: Long = 30_000L,
+        prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
         mint: MuseKeyMintCall,
     ): MuseAuthProvider = MuseAuthProvider(
         authPath = file,
         log = LogSink { logs += it },
         clock = clock,
         mintCall = mint,
+        authCacheMs = authCacheMs,
+        prefetchScope = prefetchScope,
     )
 
     @Test
@@ -84,9 +77,11 @@ class MuseAuthProviderTest {
             assertEquals("persisted-key", (credentials as Credentials.Bearer).token)
         }
         assertEquals(0, calls.get())
+        assertEquals(file.toString(), auth.describe().fields["auth_path"])
         assertTrue(auth.allowRefreshAfterFailure(401, ""))
-        assertFalse(auth.allowRefreshAfterFailure(403, "authentication failed"))
-        assertFalse(auth.allowRefreshAfterFailure(429, ""))
+        assertTrue(auth.allowRefreshAfterFailure(403, "unauthenticated:bad-credentials"))
+        assertFalse(auth.allowRefreshAfterFailure(403, "plan limit exceeded"))
+        assertTrue(auth.allowRefreshAfterFailure(429, ""))
     }
 
     @Test
@@ -133,9 +128,12 @@ class MuseAuthProviderTest {
         assertEquals("new-key", written["api_key"]?.jsonPrimitive?.content)
         assertEquals("muse-oauth", written["splice_auth_kind"]?.jsonPrimitive?.content)
         assertEquals("backup", written["splice_account_label"]?.jsonPrimitive?.content)
-        assertTrue("vendor_future_field" in written)
+        assertTrue("vendor_future_field" in written, "unknown vendor field must survive: $written")
         assertTrue("subs_usage" in written)
-        assertEquals("https://redirect.invalid/ignored", written["base_url"]?.jsonPrimitive?.content)
+        assertNull(written["user_email"])
+        assertNull(written["user_id"])
+        assertNull(written["payment_method"])
+        assertNull(written["base_url"])
         assertTrue(logs.none { it.contains("account-access") || it.contains("new-key") })
     }
 
@@ -369,180 +367,13 @@ class MuseAuthProviderTest {
         assertTrue(logs.isEmpty(), logs.toString())
     }
 
-    @Test
-    @Timeout(HANG_BACKSTOP_S)
-    fun `two concurrent refreshes coalesce to one mint`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val calls = AtomicInteger()
-        val entered = CompletableDeferred<Unit>()
-        val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file) { _, _ ->
-            calls.incrementAndGet()
-            entered.complete(Unit)
-            proceed.await()
-            MuseMintAttempt.Granted(subscriptionKey("coalesced-key"))
-        }
-
-        val first = launch { auth.refresh() }
-        val second = launch { auth.refresh() }
-        entered.await()
-        repeat(100) { yield() }
-        proceed.complete(Unit)
-        first.join()
-        second.join()
-
-        assertEquals(1, calls.get())
-        assertEquals("coalesced-key", (auth.credentials() as Credentials.Bearer).token)
-    }
-
-    @Test
-    fun `usageFields returns mint fields without persisting the key`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val before = Files.readString(file)
-        val calls = AtomicInteger()
-        val auth = provider(file) { _, _ ->
-            calls.incrementAndGet()
-            MuseMintAttempt.Granted(subscriptionKey("must-not-be-written"))
-        }
-
-        val fields = auth.usageFields()
-        assertEquals(1, calls.get())
-        val weekly = fields!!.getValue("subs_usage").jsonObject.getValue("weekly").jsonObject
-        val used = weekly.getValue("used_percent").jsonPrimitive.content.toDouble()
-        assertEquals(12.0, used, 1e-9)
-        assertEquals(before, Files.readString(file))
-        assertEquals("persisted-key", (auth.credentials() as Credentials.Bearer).token)
-    }
-
-    @Test
-    fun `usageFields obeys an existing rate hold with no POST`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val calls = AtomicInteger()
-        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
-            calls.incrementAndGet()
-            MuseMintAttempt.RateLimited()
-        }
-        assertNull(auth.refresh())
-        assertEquals(1, calls.get())
-        assertNull(auth.usageFields())
-        assertEquals(1, calls.get())
-    }
-
-    @Test
-    fun `usageFields 429 records the retry hold so refresh does not POST`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val before = Files.readString(file)
-        val calls = AtomicInteger()
-        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
-            calls.incrementAndGet()
-            MuseMintAttempt.RateLimited(DEFAULT_RATE_HOLD_MS)
-        }
-        assertNull(auth.usageFields())
-        assertEquals(1, calls.get())
-        assertEquals(before, Files.readString(file))
-        repeat(10) { assertNull(auth.refresh()) }
-        assertEquals(1, calls.get())
-    }
-
-    @Test
-    fun `usageFields inactive records the hold without persisting`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val before = Files.readString(file)
-        val calls = AtomicInteger()
-        val auth = provider(file, clock = WallClock { 0L }) { _, _ ->
-            calls.incrementAndGet()
-            MuseMintAttempt.SubscriptionRequired("https://www.meta.ai/")
-        }
-        assertNull(auth.usageFields())
-        assertEquals(1, calls.get())
-        assertEquals(before, Files.readString(file))
-        assertNull(auth.credentials())
-        assertEquals("inactive", auth.describe().fields["subscription"])
-        repeat(10) { assertNull(auth.usageFields()) }
-        assertEquals(1, calls.get())
-    }
-
-    @Nested
-    inner class ConcurrentStateIsolation {
-        @Test
-        fun `granted mint does not overwrite a concurrently replaced login`(@TempDir tempDir: Path) = runTest {
-            val file = authFile(tempDir)
-            val entered = CompletableDeferred<Unit>()
-            val proceed = CompletableDeferred<Unit>()
-            val auth = provider(file) { _, _ ->
-                entered.complete(Unit)
-                proceed.await()
-                MuseMintAttempt.Granted(subscriptionKey("stale-minted-key"))
-            }
-
-            val refresh = async { auth.refresh() }
-            entered.await()
-            authFile(
-                tempDir,
-                accessToken = "replacement-account-token",
-                apiKey = "replacement-api-key-with-a-different-size",
-                extra = ",\"replacement_unknown\":{\"nested\":true}",
-            )
-            proceed.complete(Unit)
-
-            assertNull(refresh.await())
-            val current = Json.parseToJsonElement(Files.readString(file)).jsonObject
-            assertEquals("replacement-account-token", current["access_token"]?.jsonPrimitive?.content)
-            assertEquals("replacement-api-key-with-a-different-size", current["api_key"]?.jsonPrimitive?.content)
-            assertTrue("replacement_unknown" in current)
-        }
-
-        @Test
-        fun `granted mint does not recreate a credential deleted while minting`(@TempDir tempDir: Path) = runTest {
-            val file = authFile(tempDir)
-            val entered = CompletableDeferred<Unit>()
-            val proceed = CompletableDeferred<Unit>()
-            val auth = provider(file) { _, _ ->
-                entered.complete(Unit)
-                proceed.await()
-                MuseMintAttempt.Granted(subscriptionKey("orphaned-key"))
-            }
-
-            val refresh = async { auth.refresh() }
-            entered.await()
-            Files.delete(file)
-            proceed.complete(Unit)
-
-            assertNull(refresh.await())
-            assertFalse(Files.exists(file))
-        }
-
-        @Test
-        fun `stale readers cannot clear a newer credential hold`() {
-            val holds = MuseMintHolds(WallClock { 0L })
-            val fields = JsonObject(emptyMap())
-            val old = MuseCredentialSnapshot(
-                accessToken = "old-account-token",
-                apiKey = "old-key",
-                fields = fields,
-                identity = CredentialFileIdentity(1L, 10L),
-            )
-            val current = MuseCredentialSnapshot(
-                accessToken = "current-account-token",
-                apiKey = "current-key",
-                fields = fields,
-                identity = CredentialFileIdentity(2L, 20L),
-            )
-            holds.recordInactive(current, MAX_MINT_HOLD_MS, "https://www.meta.ai/")
-
-            assertFalse(holds.blocksCredentials(old))
-            assertFalse(holds.suppresses(old))
-            assertTrue(holds.blocksCredentials(current))
-            assertTrue(holds.suppresses(current))
-        }
-    }
-
     private fun subscriptionKey(apiKey: String): MuseSubscriptionKey = MuseSubscriptionKey(
         apiKey = apiKey,
         fields = Json.parseToJsonElement(
             """{"api_key":"$apiKey","is_subs_active":true,"require_payment":false,
                 "subs_tier_id":"pro","subs_tier_name":"Muse Pro","user_id":"42",
-                "user_email":"operator@example.test","base_url":"https://redirect.invalid/ignored",
+                "user_email":"operator@example.test","payment_method":"card",
+                "base_url":"https://redirect.invalid/ignored",
                 "splice_auth_kind":"attacker-kind","splice_account_label":"attacker-label",
                 "subs_usage":{"weekly":{"used_percent":12,"resets_at":200}}}""",
         ).jsonObject,

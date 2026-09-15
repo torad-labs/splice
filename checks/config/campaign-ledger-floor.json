@@ -40,7 +40,7 @@
     "rows": 0
   },
   "proxy-hardening/walls/wall_registry.toml": {
-    "lines": 463,
+    "lines": 464,
     "rows": 88
   },
   "reasoning-cache.toml": {
@@ -48,8 +48,8 @@
     "rows": 6
   },
   "v0.4.0.toml": {
-    "lines": 683,
-    "rows": 16
+    "lines": 756,
+    "rows": 21
   },
   "ws-transport.toml": {
     "lines": 125,

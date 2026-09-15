@@ -25,6 +25,7 @@ internal class ProviderAssembly(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
+    private val museArm: MusePassthroughArm = MusePassthroughArm(log),
 ) {
     private val grokRefresh = GrokRefresh()
     private val kimiRefresh = KimiRefresh()
@@ -49,6 +50,7 @@ internal class ProviderAssembly(
     internal fun buildProvider(ctx: ProviderBuild): Wired {
         requireCompatibleAuth(ctx)
         val label = ctx.head.claude.command ?: ctx.key
+        if (ctx.providerCfg.auth.kind == MUSE_OAUTH) return museArm.museOauthProvider(ctx, label)
         return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesArm.responsesProvider(ctx, label)
             Dialect.OPENAI_CHAT -> chatArm.chatProvider(ctx, label)
@@ -76,6 +78,7 @@ internal class ProviderAssembly(
         AuthKind.ChatgptOAuth -> dialect == Dialect.OPENAI_RESPONSES
         AuthKind.GrokOAuth -> dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.OPENAI_CHAT
         AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
+        AuthKind.MuseOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "muse"
         AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
     }
 

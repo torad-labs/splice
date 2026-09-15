@@ -32,7 +32,7 @@
     "rows": 88
   },
   "proxy-hardening/oracle/expectations.toml": {
-    "lines": 246,
+    "lines": 250,
     "rows": 0
   },
   "proxy-hardening/walls/law_registry.toml": {
@@ -48,8 +48,8 @@
     "rows": 6
   },
   "v0.4.0.toml": {
-    "lines": 756,
-    "rows": 21
+    "lines": 1259,
+    "rows": 31
   },
   "ws-transport.toml": {
     "lines": 125,

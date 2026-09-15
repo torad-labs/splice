@@ -246,6 +246,28 @@
   ran against; the daemon reads the client version from the `User-Agent` already on every request,
   and when a session's Claude Code is newer than that, doctor, `splice status` and the status line
   say so once. Equal or older is silent; no scheduled job, no live probe.
+- **`claude-muse`: a head on a Meta Muse Code subscription.** `splice login claude-muse` runs the
+  RFC 8628 device flow against auth.meta.com (client id 1031625952748946) and writes
+  `~/.config/splice/auth/muse.json`, then mints the inference key with one
+  `POST https://api.meta.ai/muse-code/key`. The account token is not itself an inference
+  credential, so the mint runs at the end of the login and the first turn never waits on it; a
+  mint that fails leaves a signed-in file behind instead of failing the login, and the next
+  refresh mints. The head speaks Anthropic Messages at `https://api.meta.ai/v1/messages` through
+  the anthropic-passthrough dialect and sends the minted key as a bearer plus splice's own user
+  agent and nothing else: the `x-api-version` header every other harness sends is required
+  nowhere on this wire, which a capture of the real Muse client through a reverse proxy settled
+  on 2026-09-15. `splice add muse` writes the provider and head tables with `muse-spark-1.3[1m]`
+  and `muse-spark-1.2[1m]` at a 1,000,000 window, and the example config carries
+  `[heads.claude-muse]`. Like every other OAuth head it owns its credential file, never the Muse
+  CLI's, and that file is merged rather than rewritten, so a key minted at runtime cannot drop the
+  fields the login wrote. A rate-limited mint is held for at least a minute instead of retried, a
+  mint still in flight when the daemon stops writes nothing afterwards, and a re-login while the
+  usage poller is minting cannot be mistaken for a rejected credential.
+- **Muse subscription usage on the status line and in doctor.** Meta publishes no usage endpoint
+  (`/muse-code/usage`, `/subscription`, `/quota`, `/entitlements`, `/me` and `/account` all
+  answer 404), so the allowance rides in the mint response as `subs_usage`: the five-hour window
+  and the weekly window come from a poll on the quota poller's own cadence, never from the
+  request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
   The tracker remembers at most 4096 sessions and forgets the oldest first, so a daemon that
@@ -256,6 +278,56 @@
   no config line; `code_mode = false` still turns it off, and every other provider shape stays off.
   A single tool result over the 64 KiB text frame that admission used to reject is now truncated
   at admission behind a `[truncated N chars]` marker and the turn completes.
+- **Errors the client sees name splice, not another vendor's product.** A stream that ends without
+  its completion event, a refused or failed upstream response and a context-overflow refusal used
+  to reach Claude Code prefixed `claudex:` or attributed to the `ChatGPT backend`, on every head
+  including the ones that have nothing to do with ChatGPT. They now read `splice:` and `upstream:`.
+  The proxy-hardening oracle carries the new bytes with dated authority lines; the recordings
+  themselves are untouched.
+- **Each head owns its code path.** The vendor tables that had accumulated in the shared dialects
+  moved into the module that owns the vendor: kimi's quirk profile into provider-kimi, grok's
+  profile, its xhigh model regex and the enforced xAI image-edge floor into provider-grok, the
+  effort tables behind a seam in provider-spi, and the local-runtime probe out of the chat dialect
+  entirely. The passthrough, responses and chat dialects now know no vendor, and a new head is a
+  new provider module plus one dispatch line rather than an edit inside a shared file. The wire is
+  unchanged for every existing head: the codex lite header keeps its single emission site and its
+  model gate, codex effort normalisation and budget floors are identical input by input, and
+  grok's and kimi's tables are byte-identical.
+
+### Fixed
+
+- **The kimi usage probe never ran.** The shared bearer probe required `Credentials.Bearer`
+  while the kimi provider yields `Credentials.ApiKey` with an `x-api-key` header, so the poller
+  recorded no window for a kimi head at all. The probe now sends whatever headers the credential
+  carries, and each head's probe is pinned by a test that asserts the exact header map.
+- **Every codex and kimi quota probe carried xAI's headers.** `x-grok-client-mode`,
+  `x-grok-client-version` and `X-XAI-Token-Auth` were built into the shared probe, so they rode
+  on requests to ChatGPT and to Moonshot as well. Each head now owns its probe, its URL and its
+  parser, and the shared part is vendor-blind by construction; the codex header order is back to
+  the one proven against the live backend.
+- **A malformed reset date killed the quota poller.** A vendor window whose `resets_at` did not
+  parse threw past the poller's own error handling and ended the loop for the daemon's lifetime,
+  with no bar and no log after it. The date parse is caught per vendor, and the poll loop carries
+  the same completion guard the auth probe loop uses: it restarts up to five times in ten minutes
+  and says so.
+- **Api-key responses heads sent ChatGPT's internal lite marker, and the whole lite request body
+  with it.** The responses-lite model regex defaulted to `gpt-5.6|gpt-6` on the shared dialect, so
+  an OpenRouter head pinned to `openai/gpt-6` or `openai/gpt-6-mini` (or any id containing those substrings) emitted
+  `x-openai-internal-codex-responses-lite` on every turn, compaction included, and built the
+  ChatGPT-internal lite input: tools as an `additional_tools` item, empty top-level `instructions`,
+  plus `parallel_tool_calls`, `reasoning.context` `all_turns`, `text.verbosity` and
+  `client_metadata`. Grok heads were never affected in practice — their ids are `grok-4.5` and
+  `grok-4.6`, which do not contain those substrings — but they inherited the same default and
+  would have the day a grok id matched. The regex and the header name are now a pair a provider
+  must declare together; only the ChatGPT/codex profile sets them. A third-party endpoint no
+  longer inherits the marker or the lite body. After upgrading, an OpenRouter head on
+  `openai/gpt-6` sends a non-lite request: `instructions` at top level, tools not in
+  `additional_tools`, and those extra fields dropped.
+- **An api-key head on a Gemini id silently refused effort max, and any id containing spark lost
+  its reasoning summaries.** Pinning `google/gemini-2.5-pro` (or any model id containing `mini`)
+  made `effort` `max` clamp without a word; pinning a spark-named model dropped reasoning
+  summaries. Both shipped in 0.3.0 and are present in released v0.3.2. The clamp and the drop now
+  apply only to the vendor they were written for.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

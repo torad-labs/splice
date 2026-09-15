@@ -103,11 +103,13 @@ class SignInPlanMatrixTest {
 
     @Test
     fun `every registry label reaches the plan and only openrouter has a token pattern`() {
-        assertEquals(
+        assertRegistryIds(
+            "api-key registry",
             setOf("openrouter", "moonshot", "fireworks", "openai", "xai"),
             ApiKeyProviderRegistry.rows().map { it.id }.toSet(),
         )
-        assertEquals(
+        assertRegistryIds(
+            "auth-kind registry",
             setOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth", "client"),
             AuthKindRegistry.knownKinds().map { it.wire }.toSet(),
         )
@@ -131,6 +133,12 @@ class SignInPlanMatrixTest {
             )
             assertEquals(kind.signInLabel, plan.label, kind.wire)
         }
+    }
+
+    private fun assertRegistryIds(what: String, expected: Set<String>, actual: Set<String>) {
+        val missing = (expected - actual).sorted()
+        val unexpected = (actual - expected).sorted()
+        assertEquals(expected, actual, "$what missing=$missing unexpected=$unexpected")
     }
 
     /** DR-97: the DAEMON derives the api-key env from the HEAD key — effectiveApiKeyEnv(ctx.key)

@@ -7,9 +7,12 @@
 package splice.gateway.head
 
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.header
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.perf.TurnPerf
+import splice.core.util.WallClock
+import splice.spi.AccountResetText
 import splice.spi.AllAccountsExhausted
 import splice.spi.InflightGate
 import java.util.concurrent.atomic.AtomicBoolean
@@ -22,6 +25,10 @@ internal class HeadAdmission(
     private val preparation: TurnPreparation,
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
+    /** V4-50 reads a WALL instant because a reset is a calendar fact the client must be told in
+     *  epoch seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. Defaulted so no
+     *  construction site changes, injectable so the refusal is testable without sleeping. */
+    private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     suspend fun handleMessages(call: ApplicationCall) {
         if (!clientAuth.authorize(call) || !admission.acceptingOrRespond(call)) return
@@ -70,7 +77,68 @@ internal class HeadAdmission(
         }
     }
 
+    /** V4-50: A RATE-LIMITED TURN IS REFUSED HERE, BEFORE A RESPONSE IS COMMITTED — which is the
+     *  whole point, and why this could never be fixed by rewording anything.
+     *
+     *  The armed cooldown has always been discovered deep inside the drive
+     *  (UpstreamClient.post -> failFastIfArmed). By then TurnStreamer has called respondTextWriter,
+     *  the 200 and the SSE headers are on the wire, and the only refusal still expressible is an
+     *  `event: error` frame. Claude Code's retry-until-reset fires on an APIError with status 429
+     *  and reads the reset off THAT response's headers; a frame inside a 200 is not an APIError, so
+     *  none of it runs and the turn simply dies. Three separate operator reports in one day were all
+     *  this, and all three were mistaken for a wording problem.
+     *
+     *  So the check moves UP to admission, ahead of the drive, where a status line is still ours to
+     *  write — and answers through the SAME [AdmissionResponses.respondRateLimited] the pooled
+     *  AllAccountsExhausted path below has always used. This is an UNGATING, not a new terminal:
+     *  that shape is proven on the pooled path, and a single-account head could simply never reach
+     *  it. The same pooled/unpooled split disabled captureProviderReset (V4-47) and markUnavailable,
+     *  which is the actual defect class here — a head with one account took every penalty of the
+     *  cooldown and was denied every recovery path it had.
+     *
+     *  THE DEADLINE IS THE PROVIDER'S, NEVER THE GATEWAY'S. [UpstreamClient.rateLimitedForMs] is
+     *  splice's own follower protection, clamped to 120s; telling a client to return then, when the
+     *  provider said 88 minutes, just buys another 429. Retry-After carries the provider reset or
+     *  nothing at all — an absent header leaves the client its own backoff, which is strictly better
+     *  than a confident wrong number.
+     *
+     *  NEVER-BELOW-STATUS-QUO: nothing armed, nothing changes — the turn takes the identical path it
+     *  did before. A turn that is ALREADY streaming when the limit lands still ends in an error
+     *  frame, because its 200 is genuinely spent by then; that is today's behaviour and out of scope
+     *  here. */
+    private suspend fun refuseIfRateLimited(call: ApplicationCall): Boolean {
+        val armedMs = deps.upstream.rateLimitedForMs
+        if (armedMs <= 0L) return false
+        val providerResetMs = deps.upstream.providerResetForMs
+        val resetEpochSeconds =
+            providerResetMs.takeIf { it > 0L }?.let { (wallClock() + it) / MILLIS_PER_SECOND }
+        // V4-51's seam: the refusal states `rejected` and carries the plain
+        // anthropic-ratelimit-unified-reset, which is the member Claude Code reads off a 429 to
+        // decide when to come back. Without this the same response would assert `allowed` while
+        // refusing the turn — splice contradicting itself in two headers of the same reply.
+        deps.quota?.clientHeadersRejected(resetEpochSeconds)?.forEach { (name, value) ->
+            call.response.header(name, value)
+        }
+        responses.respondRateLimited(call, rateLimitedMessage(armedMs, resetEpochSeconds), resetEpochSeconds)
+        return true
+    }
+
+    /** Names BOTH horizons, because they are different facts and the operator needs both: when the
+     *  provider says the quota returns, and how long this gateway is holding its own retries. A
+     *  message that reported only the gateway's 120s cooldown read as "back in two minutes" against
+     *  an 88-minute reset. */
+    private fun rateLimitedMessage(armedMs: Long, resetEpochSeconds: Long?): String {
+        val holding = "this gateway is holding retries for " +
+            "${(armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND}s to avoid a retry wave"
+        if (resetEpochSeconds == null) {
+            return "Rate limit exceeded — the upstream named no reset time, so $holding."
+        }
+        return "Rate limit exceeded until ${AccountResetText.format(resetEpochSeconds)} " +
+            "(the upstream's own reset); $holding."
+    }
+
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
+        if (refuseIfRateLimited(call)) return
         val account = try {
             deps.accountPool?.select(prepared.built.meta.sessionId)
         } catch (e: AllAccountsExhausted) {
@@ -101,3 +169,5 @@ internal class HeadAdmission(
         }
     }
 }
+
+private const val MILLIS_PER_SECOND = 1000L

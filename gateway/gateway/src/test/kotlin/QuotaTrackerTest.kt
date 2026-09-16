@@ -88,4 +88,43 @@ class QuotaTrackerTest {
             }
         }
     }
+
+    // V4-51: the refusal variant that V4-50's admission-side 429 consumes.
+    @Test
+    fun `a rejected refusal states rejected and the plain reset, snapshot or no snapshot`() {
+        val t = tracker()
+        // With NO tracked snapshot: the refusal is still stated, because on a refusal the deadline
+        // IS the message and the window members are optional.
+        val blind = t.clientHeadersRejected(1_788_030_000L)
+        assertEquals("rejected", blind["anthropic-ratelimit-unified-status"])
+        assertEquals("1788030000", blind["anthropic-ratelimit-unified-reset"])
+        assertEquals(
+            emptyMap<String, String>(),
+            t.clientHeaders(),
+            "the ALLOWED variant is untouched by the refused one",
+        )
+
+        val codex = mapOf(
+            "x-codex-primary-used-percent" to "14",
+            "x-codex-primary-window-minutes" to "300",
+            "x-codex-primary-reset-at" to "1788010000",
+            "x-codex-secondary-used-percent" to "42",
+            "x-codex-secondary-window-minutes" to "10080",
+            "x-codex-secondary-reset-at" to "1788500000",
+        )
+        t.observe(HeaderLookup { codex[it] })
+        val withWindows = t.clientHeadersRejected(1_788_030_000L)
+        assertEquals("rejected", withWindows["anthropic-ratelimit-unified-status"])
+        assertEquals("1788030000", withWindows["anthropic-ratelimit-unified-reset"])
+        assertEquals(
+            "0.1400",
+            withWindows["anthropic-ratelimit-unified-5h-utilization"],
+            "the windows ride along: the deadline says WHEN, the window says WHY",
+        )
+        assertEquals(
+            "allowed",
+            t.clientHeaders()["anthropic-ratelimit-unified-status"],
+            "and the allowed path is unmoved by a refusal having been built",
+        )
+    }
 }

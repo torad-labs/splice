@@ -93,6 +93,11 @@ internal class RetryRules(private val maxRetries: Int) {
                 canRetry,
                 ctx.onRetry,
                 nextRefreshed,
+                // V4-47: the failure TEXT, because the provider's own reset lives in the 429 body
+                // ("resets at <ISO8601>" / resets_at) and a fail-fast turn never reaches upstream to
+                // learn it. ARM TIME is the only point where that fact and the cooldown are both in
+                // scope, so it is captured here or nowhere.
+                body = failed.text,
             )
         }
         // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the

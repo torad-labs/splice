@@ -76,6 +76,12 @@ public class UpstreamClient(
      *  WHY a head is failing fast (NF-10/JW-11 read this). */
     public val rateLimitedForMs: Long get() = cooldown.remainingMs()
 
+    /** V4-50: how long the PROVIDER says it stays limited (0 when unknown) — the operator's real
+     *  deadline, which is a different number from [rateLimitedForMs]. That one is splice's own
+     *  follower-protection horizon, clamped to MAX_RATE_LIMIT_COOLDOWN_MS; this one is the reset the
+     *  429 body actually named, and it is the only one worth telling a client to come back at. */
+    public val providerResetForMs: Long get() = cooldown.providerUnavailableForMs()
+
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries
      * and one single-flight 401 refresh. The credentials [ctx] supplies are written onto the

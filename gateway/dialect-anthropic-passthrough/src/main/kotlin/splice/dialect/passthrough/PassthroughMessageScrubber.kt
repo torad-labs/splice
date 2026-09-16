@@ -10,13 +10,28 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+import java.util.concurrent.ConcurrentHashMap
 
 internal class PassthroughMessageScrubber(
     private val quirks: PassthroughQuirks,
     private val cache: PassthroughCacheControl,
     private val names: ToolNameShortener = ToolNameShortener(),
+    /** The anomaly channel for [PassthroughQuirks.blockAllowlist]. An allowlist drop is CONTENT
+     *  LOSS with no other symptom: the upstream answers normally about the text it did receive, so
+     *  a pasted screenshot or an attached document simply has no effect and nothing anywhere says
+     *  why. The response path has carried two such channels since PT-001 and DR-142; the request
+     *  path had none, which is how six of DeepSeek's nine accepted block types stayed dropped for a
+     *  whole campaign (wall kt-no-println). */
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
+
+    /** One line per dropped TYPE for the life of the head, never per block: tools and attachments
+     *  re-ride every turn, so an unlatched line would repeat per block per turn. Same idiom as
+     *  ToolNameShortener.fullLogged and the translator's two latches. */
+    private val droppedLogged = ConcurrentHashMap.newKeySet<String>()
 
     fun scrubMessages(messages: JsonElement): JsonArray {
         val arr = messages as? JsonArray ?: return buildJsonArray { }
@@ -42,9 +57,21 @@ internal class PassthroughMessageScrubber(
     /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
         val type = JsonScalars.strOrEmpty(block["type"])
-        quirks.blockAllowlist?.let { if (type !in it) return null }
+        quirks.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
         if (isEmptyThinking(type, block)) return null
         return rebuildBlock(block, type)
+    }
+
+    /** Drops the block, reporting its type once. An allowlist is only ever as good as the evidence
+     *  it was derived from, and the honest way to hold that is to say out loud what it is costing. */
+    private fun dropDisallowed(type: String): JsonObject? {
+        if (droppedLogged.add(type)) {
+            log(
+                "[${quirks.providerTag}] content block '$type' is absent from this head's " +
+                    "block_allowlist — dropped from the request, so the upstream never sees it\n",
+            )
+        }
+        return null
     }
 
     /** A whitespace-only thinking block that carries no signature holds nothing worth keeping. */

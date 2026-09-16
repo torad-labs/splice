@@ -11,6 +11,10 @@
     "lines": 262,
     "rows": 13
   },
+  "cli-wizard.toml": {
+    "lines": 88,
+    "rows": 9
+  },
   "drift-repair.toml": {
     "lines": 3037,
     "rows": 189
@@ -48,7 +52,7 @@
     "rows": 6
   },
   "v0.4.0.toml": {
-    "lines": 1259,
+    "lines": 1303,
     "rows": 31
   },
   "ws-transport.toml": {

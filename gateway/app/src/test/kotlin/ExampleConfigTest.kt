@@ -67,10 +67,7 @@ class ExampleConfigTest {
     @Test
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(
-            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-muse", "claude-splice"),
-            topology.heads.keys,
-        )
+        assertEquals(DOCUMENTED_HEADS, topology.heads.keys)
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
@@ -546,3 +543,16 @@ class ExampleConfigTest {
         }
     }
 }
+
+// FILE SCOPE: the documented head roster, hoisted out of the assertion so adding a head does not
+// grow a class already at detekt's LargeClass bound.
+private val DOCUMENTED_HEADS = setOf(
+    "claudex",
+    "claude-grok",
+    "openrouter",
+    "fireworks",
+    "claude-kimi",
+    "claude-muse",
+    "claude-deepseek",
+    "claude-splice",
+)

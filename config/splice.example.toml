@@ -430,6 +430,50 @@ context_window = 1000000
 [heads.claude-muse.claude]
 command = "claude-muse"
 
+# ── EXPERIMENTAL OPT-IN: DeepSeek over its own Anthropic-format endpoint ────────
+# DeepSeek publish an Anthropic Messages-compatible route, so this is the same dialect
+# the OAuth heads use — only the key differs. Unlike those, this is a DOCUMENTED
+# third-party integration with an ordinary API key, not a reused vendor CLI identity.
+# `x-api-key` is fully supported; `anthropic-version` and `anthropic-beta` are ignored
+# rather than rejected, so no header shaping is needed.
+[providers.deepseek]
+dialect = "anthropic-passthrough"
+base_url = "https://api.deepseek.com/anthropic"
+auth = { kind = "api-key", env = "DEEPSEEK_API_KEY" }
+[providers.deepseek.quirks]
+# Exactly what DeepSeek's compatibility table marks Supported. redacted_thinking is the
+# one that matters: DR-118 forwards it VERBATIM because Anthropic requires it back
+# unchanged, so without this allowlist every replayed signed-thinking turn would carry a
+# block DeepSeek reject. Also absent and rejected: image, document, search_result,
+# mcp_tool_use, mcp_tool_result, container_upload, code_execution_tool_result.
+block_allowlist = ["text", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"]
+# cache_control is ignored upstream — sending it is pure wire weight.
+strip_cache_control = true
+[[providers.deepseek.models]]
+# deepseek-flash serves DeepSeek-V4.1-Flash. DeepSeek's own docs say it surpassed V4 Pro
+# on performance, cost AND speed, so it takes the opus slot: the name suggests pro is the
+# strong row and the vendor's evidence says otherwise.
+id = "deepseek-flash"
+label = "DeepSeek V4.1 Flash"
+context_window = 1000000
+[[providers.deepseek.models]]
+id = "deepseek-v4-pro"
+label = "DeepSeek V4 Pro"
+context_window = 1000000
+
+[heads.claude-deepseek]
+provider = "deepseek"
+port = 3107                    # 3106 is claude-muse above
+discovery_prefix = "claude-deepseek--"
+pinned_model = "deepseek-flash"
+# One slot per id: the head model list rejects a repeated id, and two slots on one id emit
+# two rows with the same id. DeepSeek publish two ids, so haiku and fable go undeclared and
+# take the documented honest 400 rather than a duplicated picker row.
+models = [{ id = "deepseek-flash", slot = "opus" }, { id = "deepseek-v4-pro", slot = "sonnet" }]
+context_window = 1000000
+[heads.claude-deepseek.claude]
+command = "claude-deepseek"
+
 # ── Claude on the CLIENT's OWN login (the "no shortcuts" head) ───────────────────
 # The only head whose upstream is Anthropic itself, and the only one where splice holds NO
 # credential: `kind = "client"` forwards the caller's own Authorization / x-api-key /

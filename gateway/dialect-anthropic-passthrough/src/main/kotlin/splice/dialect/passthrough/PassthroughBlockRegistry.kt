@@ -25,6 +25,7 @@ internal class PassthroughBlockRegistry(
     private val ctx: PassthroughTurnContext,
     private val quirks: PassthroughQuirks,
     private val prose: PassthroughProseChannels,
+    private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
     private val blocks = HashMap<Int, Block>()
@@ -69,7 +70,12 @@ internal class PassthroughBlockRegistry(
                 hasToolUse = true
                 Block(
                     Kind.TOOL,
-                    sink.openTool(JsonScalars.strOrEmpty(cb?.get("id")), JsonScalars.strOrEmpty(cb?.get("name"))),
+                    // V4-32: put the operator's own tool name back. The model answers with the name it was
+                    // GIVEN; Claude Code dispatches on the name it SENT. Unshortened names pass through.
+                    sink.openTool(
+                        JsonScalars.strOrEmpty(cb?.get("id")),
+                        names.restore(JsonScalars.strOrEmpty(cb?.get("name"))),
+                    ),
                 )
             }
             // DR-118: encrypted reasoning must SURVIVE the proxy — Claude Code replays assistant

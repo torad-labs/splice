@@ -39,10 +39,11 @@ import java.util.concurrent.CancellationException
 public class PassthroughStreamTranslator(
     private val ctx: PassthroughTurnContext,
     private val quirks: PassthroughQuirks,
+    names: ToolNameShortener = ToolNameShortener(),
 ) : StreamTranslator {
 
     private val channels = PassthroughProseChannels()
-    private val blocks = PassthroughBlockRegistry(ctx, quirks, channels)
+    private val blocks = PassthroughBlockRegistry(ctx, quirks, channels, names)
     private val terminal = PassthroughTerminalState(quirks, blocks)
     private val usage = PassthroughUsage()
     private val router = PassthroughEventRouter(blocks, terminal, usage, ctx.log, quirks.providerTag)

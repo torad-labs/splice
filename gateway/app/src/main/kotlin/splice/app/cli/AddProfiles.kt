@@ -23,13 +23,21 @@ private const val OPENAI_CHAT = "openai-chat"
 // V4-35: the content blocks DeepSeek's Anthropic-compatibility table marks Supported.
 // Everything absent here — redacted_thinking, image, document, search_result, mcp_tool_use,
 // mcp_tool_result, container_upload, code_execution_tool_result — they reject.
+// ORACLE 2026-09-16: NOT a reading of DeepSeek's compatibility table — the table says what is
+// SUPPORTED, which is a different claim from what is REJECTED, and reading the first as the second
+// is how image and document spent a campaign being dropped. This is the endpoint's own accepted set,
+// read out of its deserializer by POSTing an unknown variant: it answers `unknown variant X,
+// expected one of ...` and names all nine. Re-probe rather than edit from docs.
 private val DEEPSEEK_BLOCKS = listOf(
     "text",
-    "thinking",
+    "tool_reference",
+    "image",
+    "document",
+    "server_tool_use",
     "tool_use",
     "tool_result",
-    "server_tool_use",
     "web_search_tool_result",
+    "thinking",
 ).joinToString { block -> "\"" + block + "\"" }
 
 /** One model row; [slots] are the Claude model slots a passthrough head maps it to (fable/opus/...). */

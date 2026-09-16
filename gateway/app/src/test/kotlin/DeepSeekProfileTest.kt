@@ -117,22 +117,30 @@ class DeepSeekProfileTest {
 
 private const val PORT = 3107
 private const val WALK_UP = 4
+
+/** Absent from the endpoint's own accepted-variant list, so each of these 400s the request. */
 private val REJECTED = listOf(
     "redacted_thinking",
-    "image",
-    "document",
     "search_result",
     "mcp_tool_use",
     "mcp_tool_result",
     "container_upload",
     "code_execution_tool_result",
 )
+
+/** All nine the deserializer names. image and document are load-bearing: they were dropped from
+ *  every request until 2026-09-16, which is multimodal input and every attached file silently
+ *  going nowhere, so they are pinned here by name rather than left to the list's length. */
 private val SUPPORTED = listOf(
     "text",
-    "thinking",
+    "tool_reference",
+    "image",
+    "document",
+    "server_tool_use",
     "tool_use",
     "tool_result",
     "web_search_tool_result",
+    "thinking",
 )
 private val DAEMON_BLOCK = """
     [daemon]

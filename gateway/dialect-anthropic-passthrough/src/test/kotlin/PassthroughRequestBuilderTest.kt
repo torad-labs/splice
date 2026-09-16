@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.core.util.LogSink
 import splice.dialect.passthrough.BuiltPassthroughRequest
 import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
@@ -415,5 +416,36 @@ class PassthroughRequestBuilderTest {
         // cost). Only the adaptive rewrite (kimi) owns the omit-on-disabled rule.
         assertEquals("disabled", req["thinking"]!!.jsonObject["type"]?.jsonPrimitive?.content)
         assertNull(req["output_config"])
+    }
+
+    @Test
+    fun `an allowlist drop is reported, once per type, rather than losing content in silence`() {
+        // The wall for the DeepSeek scar: its allowlist was derived from a SUPPORTED table rather
+        // than from the endpoint's rejected set, so `image` and `document` were stripped from every
+        // request for a whole campaign. Nothing failed -- the upstream answered normally about the
+        // text it did receive, so a pasted screenshot simply had no effect. A drop is content loss
+        // with no other symptom, and this asserts it cannot happen quietly again.
+        val lines = mutableListOf<String>()
+        val builder = PassthroughRequestBuilder(PASS, null, LogSink { message -> lines += message })
+        val body = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","messages":[{"role":"user","content":[
+                {"type":"document","source":{"type":"text","media_type":"text/plain","data":"d"}},
+                {"type":"document","source":{"type":"text","media_type":"text/plain","data":"e"}},
+                {"type":"search_result","source":"https://x.test","title":"t","content":[]},
+                {"type":"text","text":"go"}]}]}""",
+        )
+        val req = builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false).req
+
+        // The drop itself is unchanged behaviour: kimi's allowlist carries neither type.
+        assertEquals(listOf("text"), req.blockTypes(0))
+
+        val dropped = lines.filter { "block_allowlist" in it }
+        assertEquals(2, dropped.size, "one line per dropped TYPE, not per block: $dropped")
+        assertTrue(dropped.any { "'document'" in it }, "the dropped type must be named: $dropped")
+        assertTrue(dropped.any { "'search_result'" in it }, "the dropped type must be named: $dropped")
+
+        // Attachments re-ride every turn, so an unlatched line would repeat per block per turn.
+        builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
+        assertEquals(2, lines.count { "block_allowlist" in it }, "the report must latch per type")
     }
 }

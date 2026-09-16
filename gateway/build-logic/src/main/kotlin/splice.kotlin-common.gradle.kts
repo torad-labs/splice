@@ -54,6 +54,17 @@ tasks.withType<Test>().configureEach {
     // per-connection state, so the 1000-stream CEILING test needs the extra heap. Real load is tens
     // of streams (far under 1g either way); this only funds the stress ceiling.
     maxHeapSize = "2g"
+    // HERMETIC HOME. splice resolves its key store and credential files from SPLICE_CONFIG, then
+    // XDG_CONFIG_HOME, then $HOME/.config (KeyStorePath.defaultPath, whose own comment already
+    // promises "test rigs stay hermetic"). Nothing pointed those at the rig, so any test asserting
+    // a credential is ABSENT read the OPERATOR's real ~/.config/splice/keys.toml: StatusCommandTest
+    // and MultiProviderDaemonTest's DR-81 both failed on this machine against a genuine stored
+    // OPENROUTER_API_KEY while passing on every machine without one. A suite that measures the
+    // developer's home instead of its own fixtures is worse than red -- it is red somewhere else.
+    val testHome = layout.buildDirectory.dir("test-home").get().asFile
+    doFirst { testHome.resolve("config").mkdirs() }
+    environment("XDG_CONFIG_HOME", testHome.resolve("config").absolutePath)
+    systemProperty("user.home", testHome.absolutePath)
     // A CI failure must carry its assertion MESSAGE, not only "AssertionFailedError at X.kt:274".
     // Gradle's default prints the location alone, so the two CI-only failures of the perf
     // telemetry integration arm (runs 33608202738 and 33928312116) left no way to read what was

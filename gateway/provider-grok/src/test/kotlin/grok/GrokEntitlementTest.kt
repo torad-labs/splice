@@ -6,6 +6,7 @@
 package grok
 
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -63,6 +64,15 @@ class GrokEntitlementTest {
         assertTrue(sentence?.contains("https://x.ai/topup?ref=splice") == true, sentence)
         // splice invents no URL: without one in the body, the sentence still names the cause.
         assertFalse(oauth.entitlementSentence(spendingLimit)?.contains("https://") == true)
+
+        // A link that is NOT the vendor's never rides. The body of a 403 is attacker-influenced in
+        // the general case and was echoed verbatim until 2026-09-16: any https url matched, so a
+        // redirect carrying a token in its query would have been printed to the operator.
+        val foreign = """{"code":"spending-limit","top_up":"https://evil.test/x?token=abc"}"""
+        val foreignSentence = oauth.entitlementSentence(foreign)
+        assertNotNull(foreignSentence, "the body is still a recognised entitlement rejection")
+        assertFalse(foreignSentence!!.contains("evil.test"), foreignSentence)
+        assertFalse(foreignSentence.contains("token=abc"), foreignSentence)
     }
 
     // ── rule 1: a 403 on a fresh credential is never an expiry ────────────────────────────

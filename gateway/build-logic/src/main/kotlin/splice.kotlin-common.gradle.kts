@@ -67,7 +67,7 @@ tasks.withType<Test>().configureEach {
     // NO REAL BROWSER. SystemBrowserOpener refuses while this is set, so a test that reaches a real
     // OAuth sign-in fails by name instead of opening a login page on the operator's desktop and
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
-    environment("SPLICE_NO_SYSTEM_BROWSER", "1")
+    systemProperty("splice.noSystemBrowser", "1")
     systemProperty("user.home", testHome.absolutePath)
     // A CI failure must carry its assertion MESSAGE, not only "AssertionFailedError at X.kt:274".
     // Gradle's default prints the location alone, so the two CI-only failures of the perf

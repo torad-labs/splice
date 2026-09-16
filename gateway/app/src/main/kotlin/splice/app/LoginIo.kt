@@ -28,8 +28,10 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 /** Set by the shared Gradle test task. Its presence means "you are inside the suite", and the
- *  system browser refuses rather than opening a window on the operator's desktop. */
-private const val NO_SYSTEM_BROWSER = "SPLICE_NO_SYSTEM_BROWSER"
+ *  system browser refuses rather than opening a window on the operator's desktop. A system PROPERTY
+ *  rather than an env var: `System.getenv` is walled to core/config (kt-no-system-getenv), and a
+ *  guard that exists only for the test JVM has no business on the layered config path anyway. */
+private const val NO_SYSTEM_BROWSER = "splice.noSystemBrowser"
 
 /** Opens a login URL; tests record the request without starting an operating-system process. */
 internal fun interface BrowserOpener {
@@ -47,7 +49,7 @@ private class SystemBrowserOpener : BrowserOpener {
      *  The guard is set by the shared Gradle test task, so any future test reaching this path fails
      *  loudly and names itself instead of opening a window on someone's desktop. */
     override fun open(url: String): Boolean {
-        if (System.getenv(NO_SYSTEM_BROWSER) != null) {
+        if (System.getProperty(NO_SYSTEM_BROWSER) != null) {
             error(
                 "a test reached the real system browser (host=${host(url)}); inject a BrowserOpener " +
                     "fake, or override the flow's login seam (SetupCommand.loginHead)",

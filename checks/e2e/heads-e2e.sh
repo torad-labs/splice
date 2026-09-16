@@ -61,7 +61,9 @@ PASS=(); FAIL=(); SKIP=()
 note()  { printf '%s\n' "$*" >&2; }
 pass()  { PASS+=("$1"); note "  ✓ $1"; }
 fail()  { FAIL+=("$1: $2"); note "  ✗ $1 — $2"; }
-skip()  { SKIP+=("$1: $2"); note "  - $1 SKIP — $2"; }
+# ⊘ not ✓ or -: a skip used to look like a quiet pass in a long log, which is how
+# muse was skipped all campaign. The word SKIP is in the live line, not only the summary.
+skip()  { SKIP+=("$1: $2"); note "  ⊘ SKIP $1 — $2"; }
 
 # request-byte contract receipt (#924 Phase 1). On a tier-1 200, drop a receipt beside the goldens.
 # The FULL binding — sha256 of the exact UPSTREAM request bytes the head sent, checked against
@@ -402,6 +404,29 @@ print(f"{len(ok)} ok rows / 0 unrecovered non-ok, slowest total={worst}ms, "
 PY
 }
 
+# Operator 2026-09-15: claude-muse 400d with "name must be at most 64 characters, got 68".
+# The live offender was this composed MCP tool name. Tier 2 used to launch in an empty
+# mktemp dir, so the session never carried an operator-shaped tool surface. Planting this
+# name into the scratch dir is the cheapest honest stand-in that does not depend on which
+# plugins happen to be installed. Length is load-bearing: keep it over 64.
+OVERLONG_TOOL_NAME="mcp__plugin_desktop-commander_desktop-commander__read_process_output"
+OVERLONG_MCP_SERVER="plugin_desktop-commander_desktop-commander"
+OVERLONG_MCP_TOOL="read_process_output"
+
+plant_overlong_mcp() { # scratch_dir — writes .mcp.json whose composed tool name is OVERLONG_TOOL_NAME
+  local scratch="$1"
+  cat > "$scratch/.mcp.json" <<JSON
+{
+  "mcpServers": {
+    "$OVERLONG_MCP_SERVER": {
+      "command": "python3",
+      "args": ["-c", "raise SystemExit(0)"]
+    }
+  }
+}
+JSON
+}
+
 tier2() {
   local key="$1" label="$2" auth_kind="${3:-}" sess="e2e-$1" scratch start_ms rc
   if ! command -v "$label" >/dev/null 2>&1; then
@@ -415,6 +440,7 @@ tier2() {
     note "    NOTE: client-auth head — these 2 turns bill YOUR personal Anthropic subscription, not a splice credential"
   fi
   scratch="$(mktemp -d "/tmp/splice-e2e-$key.XXXXXX")"
+  plant_overlong_mcp "$scratch"
   # MILLISECONDS, not seconds. `$(date +%s) * 1000` truncates to the second, so any row written
   # earlier in that same second falls inside the window — and under `--tier all` the gap between
   # tier 1's own perf row and this line is one count_tokens curl plus a mktemp, tens of ms. That
@@ -509,6 +535,9 @@ tmux -L "$TMUX_SOCK" list-sessions >/dev/null 2>&1 || tmux -L "$TMUX_SOCK" kill-
 note ""
 note "── e2e summary ──"
 note "  pass: ${#PASS[@]}  fail: ${#FAIL[@]}  skip: ${#SKIP[@]}"
+if [ ${#SKIP[@]} -ne 0 ]; then
+  note "  ⚠ ${#SKIP[@]} skipped — a skip is not a pass"
+fi
 for s in "${SKIP[@]:-}"; do [ -n "$s" ] && note "  SKIP $s"; done
 for f in "${FAIL[@]:-}"; do [ -n "$f" ] && note "  FAIL $f"; done
 [ ${#FAIL[@]} -eq 0 ]

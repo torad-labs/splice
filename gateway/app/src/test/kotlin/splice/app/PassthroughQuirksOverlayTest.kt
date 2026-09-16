@@ -83,6 +83,38 @@ class PassthroughQuirksOverlayTest {
         assertEquals(false, quirks.stripCacheControl)
         assertEquals(false, quirks.mfjsSanitize)
         assertEquals(false, quirks.synthesizeSignatures)
+        assertEquals(false, quirks.reanchorPrefill)
         assertNull(quirks.blockAllowlist)
+    }
+
+    // V4-41: reanchor_prefill selects the continuation SHAPE — PREFILL (kimi and deepseek, both
+    // measured) or RESTART-ONLY (everything unmeasured, plus muse, which rejects a prefill outright
+    // with invalid_request_error). It is a per-vendor fact exactly like block_allowlist, so it
+    // overlays the same way and is pinned at the same seam.
+    @Test
+    fun `reanchor_prefill absent keeps the base profile`() {
+        val kimi = assembly.passthroughQuirks(provider(QuirksConfig()), kimiBase)
+        assertEquals(true, kimi.reanchorPrefill, "absent must keep kimi's measured PREFILL base")
+
+        val neutral = PassthroughQuirks(providerTag = "claude-splice")
+        assertEquals(false, assembly.passthroughQuirks(provider(QuirksConfig()), neutral).reanchorPrefill)
+    }
+
+    @Test
+    fun `reanchor_prefill wins in BOTH directions over the base`() {
+        // The FALSE direction matters most: it is how a head sharing a base that says true is held
+        // back to RESTART-ONLY, and RESTART-ONLY is the floor an unmeasured vendor must never drop
+        // below. Pinning only the true direction would let a one-sided overlay ship.
+        val neutral = PassthroughQuirks(providerTag = "claude-splice")
+        assertEquals(
+            true,
+            assembly.passthroughQuirks(provider(QuirksConfig(reanchorPrefill = true)), neutral).reanchorPrefill,
+            "declared true must win over a base that says false",
+        )
+        assertEquals(
+            false,
+            assembly.passthroughQuirks(provider(QuirksConfig(reanchorPrefill = false)), kimiBase).reanchorPrefill,
+            "declared false must win over a base that says true",
+        )
     }
 }

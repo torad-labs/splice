@@ -91,6 +91,7 @@ internal class QuirksOverlay {
             },
             stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.stripCacheControl,
             synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.synthesizeSignatures,
+            reanchorPrefill = providerCfg.quirks.reanchorPrefill ?: base.reanchorPrefill,
         )
 
     /** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill

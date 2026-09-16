@@ -142,6 +142,10 @@ internal class AddProfileCatalog {
                 "block_allowlist = [" + DEEPSEEK_BLOCKS + "]",
                 "# cache_control is ignored upstream, so sending it is pure wire weight.",
                 "strip_cache_control = true",
+                "# A truncated stream is resumed by re-POSTing with the partial answer appended as a",
+                "# trailing assistant message; MEASURED 2026-09-16, this endpoint continues from that",
+                "# instead of restarting. Off by default because muse 400s on the same shape.",
+                "reanchor_prefill = true",
             ),
         ),
         AddProfile(

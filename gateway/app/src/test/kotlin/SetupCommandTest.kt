@@ -31,7 +31,7 @@ class SetupCommandTest {
     fun `headless setup writes the captured pre-campaign topology`(@TempDir home: Path) {
         val topology = withHome(home) {
             seedShim(home)
-            runBlocking { SetupCommand().setup() }
+            runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
             Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
         }
         assertEquals(HEADLESS_ORACLE, topology)
@@ -45,6 +45,7 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    loginHead = NO_REAL_LOGIN,
                     frame = WizardFrame(
                         out = StringBuilder(),
                         ask = ConfirmPrompt { _, _ ->
@@ -69,6 +70,7 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    loginHead = NO_REAL_LOGIN,
                     frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
                     choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
                     spinner = Spinner(StringBuilder(), tty = false),
@@ -89,7 +91,7 @@ class SetupCommandTest {
         val log = captureStdout {
             withHome(home) {
                 seedShim(home)
-                runBlocking { SetupCommand().setup() }
+                runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
             }
         }
         assertTrue("Launch" in log)
@@ -103,7 +105,7 @@ class SetupCommandTest {
     fun `starter topology keeps OpenRouter key hygiene`(@TempDir home: Path) {
         val topology = withHome(home) {
             seedShim(home)
-            runBlocking { SetupCommand().setup() }
+            runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
             Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
         }
         assertTrue("env = \"OPENROUTER_API_KEY\"" in topology)
@@ -157,6 +159,7 @@ class SetupCommandTest {
             val before = Files.readString(path)
             runBlocking {
                 SetupCommand(
+                    loginHead = NO_REAL_LOGIN,
                     frame = WizardFrame(
                         out = StringBuilder(),
                         ask = ConfirmPrompt { _, _ -> false },
@@ -177,6 +180,7 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    loginHead = NO_REAL_LOGIN,
                     frame = WizardFrame(out = StringBuilder(), ask = ConfirmPrompt { _, d -> d }),
                     choose = { _, _ -> SelectOutcome.Cancelled },
                     spinner = Spinner(StringBuilder(), tty = false),
@@ -198,6 +202,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
                         pickHeads = HeadPicker { options, _ ->
                             offered += options.map { it.value }
@@ -226,6 +231,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         addProfile = ProfileAdd { name ->
                             added += name
                             true
@@ -248,6 +254,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         pickHeads = HeadPicker { _, _ ->
                             MultiSelectOutcome.Chosen(listOf("codex", "grok", "kimi"))
                         },
@@ -270,6 +277,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("codex", "kimi")) },
                         addProfile = ProfileAdd { true },
                         restart = DaemonRestart {
@@ -290,6 +298,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
                         pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("muse", "deepseek")) },
                         detect = { emptyFacts() },
@@ -309,6 +318,7 @@ class SetupCommandTest {
                 seedGrok(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
                         pickHeads = HeadPicker { options, _ ->
                             offered += options.map { it.value }
@@ -330,6 +340,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth", "muse-oauth")) },
                         hasConsole = { true },
                         pickHeads = HeadPicker { _, selected ->
@@ -352,6 +363,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth")) },
                         hasConsole = { false },
                         pickHeads = HeadPicker { _, selected ->
@@ -373,6 +385,7 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        loginHead = NO_REAL_LOGIN,
                         pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(wanted) },
                         addProfile = ProfileAdd { name ->
                             added += name
@@ -394,6 +407,7 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    loginHead = NO_REAL_LOGIN,
                     frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
                     choose = { _, _ -> SelectOutcome.Chosen(pick) },
                     spinner = Spinner(StringBuilder(), tty = false),
@@ -486,6 +500,13 @@ class SetupCommandTest {
         }
     }
 }
+
+/** The wizard's sign-in step. Left at its default, it runs a REAL OAuth login: on 2026-09-16 that
+ *  opened accounts.x.ai in the operator's browser on every `:app:test` and then blocked in
+ *  awaitCode for a callback that could never arrive, which read for a day as the daemon demanding a
+ *  sign-in. Every construction here passes this instead, and LoginIo's wall now fails any test that
+ *  forgets. */
+private val NO_REAL_LOGIN: suspend (String) -> Boolean = { true }
 
 private val HEADLESS_ORACLE = """
 [daemon]

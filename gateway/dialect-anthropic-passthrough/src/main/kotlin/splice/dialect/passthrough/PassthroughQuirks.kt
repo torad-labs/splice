@@ -61,4 +61,7 @@ public data class PassthroughQuirks(
     val dropServerToolBlocks: Boolean = false,
     /** Ordered cheapest-first effort rungs the ladder may emit. null = no vendor ladder (neutral). */
     val effortRungs: List<String>? = null,
+    /** V4-32: cap on tool `name` length, 0 = no cap. Muse's endpoint enforces 64 where
+     *  Anthropic's does not; every other head leaves this off and nothing is rewritten. */
+    val toolNameCap: Int = 0,
 )

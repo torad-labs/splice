@@ -139,6 +139,11 @@ run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
 # disk, so a field added tomorrow is in scope without editing the checker; there is no allowlist.
 run "shared-quirks no vendor defaults" python3 checks/config/shared-quirks-no-vendor-defaults.py check .
 run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defaults.py --selftest
+# CW-9: stty and raw-mode entry exist only inside TerminalMode.raw. A widget that
+# invokes stty on its own can leave the tty raw after SIGINT. Selftest is in-process
+# (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.
+run "terminal-restore bracketed" python3 checks/config/terminal-restore-bracketed.py check .
+run "terminal-restore selftest" python3 checks/config/terminal-restore-bracketed.py --selftest
 # V4-30: the conventional-type vocabulary lives once, in the checks/pr-title.sh the next leg runs.
 # CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted to include `release` and
 # `codex`, types the org gate rejects — the exact divergence pr-title.sh's own header describes as

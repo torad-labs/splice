@@ -102,10 +102,10 @@ class SignInPlanMatrixTest {
     }
 
     @Test
-    fun `every registry label reaches the plan and only openrouter has a token pattern`() {
+    fun `every registry label reaches the plan and only pinned-shape vendors have a token pattern`() {
         assertRegistryIds(
             "api-key registry",
-            setOf("openrouter", "moonshot", "fireworks", "openai", "xai"),
+            setOf("openrouter", "deepseek", "moonshot", "fireworks", "openai", "xai"),
             ApiKeyProviderRegistry.rows().map { it.id }.toSet(),
         )
         assertRegistryIds(
@@ -113,9 +113,12 @@ class SignInPlanMatrixTest {
             setOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth", "client"),
             AuthKindRegistry.knownKinds().map { it.wire }.toSet(),
         )
+        // DeepSeek joined openrouter 2026-09-15: its key is a FIXED shape, `sk-` plus exactly 32
+        // lowercase alphanumerics, pinned from trufflehog's live-verified detector and corroborated
+        // against a real stored key's measured length and charset. A vendor whose shape is only
+        // "starts with sk-" stays null — that collides with OpenAI and with ordinary prose.
         val patterned = ApiKeyProviderRegistry.rows().filter { it.tokenPattern != null }
-        assertEquals(1, patterned.size)
-        assertEquals("openrouter", patterned.single().id)
+        assertEquals(setOf("openrouter", "deepseek"), patterned.map { it.id }.toSet())
         ApiKeyProviderRegistry.rows().forEach { row ->
             val plan = planner.signInPlan(providerCfg(API_KEY), head(row.id, "claude-${row.id}"), row.id)
             assertEquals(row.label, plan.label, row.id)

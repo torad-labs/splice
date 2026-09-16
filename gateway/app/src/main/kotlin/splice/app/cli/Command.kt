@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.app.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 
@@ -43,6 +44,11 @@ public sealed class Command {
     /** v0.4.0 (FEATURES.md §1): `splice add <profile> [...]` — a second provider without editing TOML. */
     public data class Add(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(runBlocking { AddCommand().add(args) })
+    }
+
+    /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
+    public data class AddModel(val args: List<String> = emptyList()) : Command() {
+        override fun run(): Int = outcomeExitCode(AddModelVerb().add(TopologyLoader.configPath()))
     }
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */

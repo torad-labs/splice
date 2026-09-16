@@ -105,6 +105,14 @@ public object ApiKeyProviderRegistry {
 
     private val ROWS: List<ApiKeyProviderRow> = listOf(
         ApiKeyProviderRow("openrouter", "OpenRouter", "sk-or-[A-Za-z0-9_-]{20,}"),
+        // DeepSeek keys are a FIXED shape: `sk-` plus exactly 32 lowercase alphanumerics, 35 total.
+        // Pinned from two independent sources, not from a doc that only said "starts with sk-":
+        // trufflehog's DeepSeek detector carries `\b(sk-[a-z0-9]{32})\b` and verifies it live against
+        // api.deepseek.com/user/balance, and the operator's own stored key measures 35 with a
+        // 32-character lower-plus-digit body. Tighter than OpenRouter's open-ended `{20,}`, and the
+        // capture regex is quote-anchored to the WHOLE prompt, so a key discussed in prose is safe.
+        // Erring tight fails SAFE: no capture only means the head falls back to `claude-deepseek login`.
+        ApiKeyProviderRow("deepseek", "DeepSeek", "sk-[a-z0-9]{32}"),
         ApiKeyProviderRow("moonshot", "Moonshot", null),
         ApiKeyProviderRow("fireworks", "Fireworks", null),
         ApiKeyProviderRow("openai", "OpenAI", null),

@@ -4,6 +4,19 @@
 // 2026-09-14).
 package splice.app.cli
 
+import splice.app.TopologyLoader
+import splice.app.cli.prompt.KeyReader
+import splice.app.cli.prompt.MultiSelectOutcome
+import splice.app.cli.prompt.MultiSelectPrompt
+import splice.app.cli.prompt.SelectOption
+import splice.app.cli.prompt.SelectOutcome
+import splice.app.cli.prompt.SelectPrompt
+import splice.app.cli.prompt.TerminalMode
+import splice.core.topology.Topology
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+
 private const val DEFAULT_WINDOW = 128_000L
 private const val MAX_PROMPTED_MODELS = 8
 private const val WINDOW_ATTEMPTS = 3
@@ -57,4 +70,70 @@ internal class AddModelRows(private val prompt: AddPrompter) {
         }
         throw AddRefused("context window for $id must be a positive integer (tokens)")
     }
+}
+
+/** V4-34: add OpenRouter model rows through the prompt toolkit, never a hand-rolled readline. */
+internal class AddModelVerb(
+    private val select: SelectPrompt = SelectPrompt(
+        KeyReader(System.`in`),
+        TerminalMode(),
+        System.out,
+    ),
+    private val multi: MultiSelectPrompt = MultiSelectPrompt(
+        KeyReader(System.`in`),
+        TerminalMode(),
+        System.out,
+    ),
+) {
+    fun add(path: Path): Boolean {
+        val existing = Files.readString(path)
+        val planned = plan(TopologyLoader.loadOrMaterialize(path)) ?: return false
+        if (planned.models.isEmpty()) return false
+        write(path, existing, planned)
+        return true
+    }
+
+    private fun plan(topology: Topology): Planned? {
+        val profile = AddProfiles().find("openrouter") ?: return null
+        val heads = topology.heads.filter { it.value.provider == profile.headKey }.keys.toList()
+        if (heads.isEmpty()) return null
+        return pick(profile, topology, heads)
+    }
+
+    private fun pick(profile: AddProfile, topology: Topology, heads: List<String>): Planned? {
+        val headPick = select.ask("Which head?", heads.map { SelectOption(it, it) }, 0)
+        val headKey = (headPick as? SelectOutcome.Chosen)?.value ?: return null
+        val providerKey = topology.heads.getValue(headKey).provider
+        val present = topology.providers.getValue(providerKey).models.map { it.id }.toSet()
+        val remaining = profile.models.filter { it.id !in present }
+        val ids = if (remaining.isEmpty()) {
+            emptyList()
+        } else {
+            val picked = multi.ask(
+                "Add OpenRouter models",
+                remaining.map { SelectOption(it.id, it.label, it.id) },
+                initiallySelected = emptySet(),
+                minimum = 0,
+            )
+            (picked as? MultiSelectOutcome.Chosen)?.values ?: return null
+        }
+        return Planned(providerKey, remaining.filter { it.id in ids })
+    }
+
+    private fun write(path: Path, existing: String, planned: Planned) {
+        val key = planned.providerKey
+        val extra = planned.models.flatMap { model ->
+            listOf(
+                "[[providers.$key.models]]",
+                "id = \"${model.id}\"",
+                "label = \"${model.label}\"",
+                "context_window = ${model.contextWindow}",
+            )
+        }.joinToString("\n", prefix = "\n", postfix = "\n")
+        val tmp = path.resolveSibling(path.fileName.toString() + ".add-model-${ProcessHandle.current().pid()}.tmp")
+        Files.writeString(tmp, existing.trimEnd('\n') + extra)
+        Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    private data class Planned(val providerKey: String, val models: List<AddModel>)
 }

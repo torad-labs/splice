@@ -60,6 +60,36 @@ internal class TurnTelemetry(
     }
 
     /** Records a pool refusal that happens after parsing but before a [TurnDrive] can exist. */
+    /** V4-55: the admission-side rate-limit refusal (HeadAdmission.refuseIfRateLimited), mirroring
+     *  [recordAccountExhausted] because it is the same KIND of event — a turn refused locally,
+     *  before any upstream call — and the two must be equally visible. Review of V4-50 found the
+     *  refusal wrote NOTHING: no perf row, no journal line. That is the precise blindness that made
+     *  three operator reports in one day unfalsifiable, sitting on the path built to answer them.
+     *
+     *  BOTH horizons are logged because they are different facts and only one is the operator's:
+     *  provider_reset is when the quota actually returns, gateway_hold is how long splice is holding
+     *  its own retries. A line carrying only the second reads as "back in two minutes" against an
+     *  88-minute reset. */
+    fun recordRateLimited(
+        meta: TurnMeta,
+        perf: TurnPerf,
+        t0: Long,
+        resetEpochSeconds: Long?,
+        armedMs: Long,
+    ) {
+        val outcome = "error:rate-limited"
+        val reset = AccountResetText.format(resetEpochSeconds)
+        val session = meta.sessionId?.take(SESSION_TAG_CHARS)
+        perf.mark(PerfKeys.TOTAL)
+        val snap = perf.snapshot()
+        perfStats.record(PerfRowMeta(meta.upstreamModel, outcome, meta.compact, session), snap)
+        log(
+            "[$headKey] turn ERROR rate-limited compact=${meta.compact} " +
+                "latency=${clock() - t0}ms provider_reset=$reset gateway_hold=${armedMs}ms\n",
+        )
+        log(snap.perfLine(headKey, outcome, meta.compact, meta.upstreamModel, session))
+    }
+
     fun recordAccountExhausted(
         meta: TurnMeta,
         perf: TurnPerf,

@@ -279,6 +279,23 @@ class HeadServerCapacityTest {
             refused.headers["Retry-After"],
             "the refusal must carry the PROVIDER's reset as Retry-After — that is the deadline the client sleeps on",
         )
+        // V4-55: the refusal must also LEAVE A TRACE. Review of V4-50 found it wrote no perf row
+        // and no journal line, so a refused turn did not exist in splice's own telemetry — the
+        // exact blindness that made three operator reports of this failure unfalsifiable in one
+        // day, on the path built to answer them. The perf file is the assertable half here
+        // (this head discards the journal with log = {}); the append is best-effort on a bounded
+        // file lane, so it is polled rather than read once.
+        val perfFile = tmp.resolve("perf.jsonl")
+        var recorded = false
+        repeat(40) {
+            if (!recorded) {
+                recorded = Files.exists(perfFile) &&
+                    Files.readString(perfFile).contains("error:rate-limited")
+                if (!recorded) Thread.sleep(50)
+            }
+        }
+        assertTrue(recorded, "the refusal must record a perf row; a refused turn with no trace is unfalsifiable")
+
         upstreamClient.clearRateLimitCooldown()
         Thread.sleep(700) // Netty warmup before the next test reuses the port
     }

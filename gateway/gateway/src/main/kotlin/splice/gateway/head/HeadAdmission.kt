@@ -106,7 +106,11 @@ internal class HeadAdmission(
      *  did before. A turn that is ALREADY streaming when the limit lands still ends in an error
      *  frame, because its 200 is genuinely spent by then; that is today's behaviour and out of scope
      *  here. */
-    private suspend fun refuseIfRateLimited(call: ApplicationCall): Boolean {
+    private suspend fun refuseIfRateLimited(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: Admitted,
+    ): Boolean {
         val armedMs = deps.upstream.rateLimitedForMs
         if (armedMs <= 0L) return false
         val providerResetMs = deps.upstream.providerResetForMs
@@ -119,6 +123,10 @@ internal class HeadAdmission(
         deps.quota?.clientHeadersRejected(resetEpochSeconds)?.forEach { (name, value) ->
             call.response.header(name, value)
         }
+        // V4-55: recorded BEFORE responding, mirroring the pooled sibling below. A refusal that
+        // leaves no perf row and no journal line is a turn that, from splice's own telemetry, never
+        // happened — which is how three reports of this exact failure went unfalsifiable in a day.
+        driver.recordRateLimited(prepared.built.meta, admitted.perf, admitted.t0, resetEpochSeconds, armedMs)
         responses.respondRateLimited(call, rateLimitedMessage(armedMs, resetEpochSeconds), resetEpochSeconds)
         return true
     }
@@ -138,7 +146,7 @@ internal class HeadAdmission(
     }
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
-        if (refuseIfRateLimited(call)) return
+        if (refuseIfRateLimited(call, prepared, admitted)) return
         val account = try {
             deps.accountPool?.select(prepared.built.meta.sessionId)
         } catch (e: AllAccountsExhausted) {

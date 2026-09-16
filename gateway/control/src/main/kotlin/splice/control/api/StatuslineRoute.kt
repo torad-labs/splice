@@ -20,6 +20,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.control.HeadSessionPerfSource
+import splice.control.ManagedHead
+import splice.control.SessionCost
+import splice.control.SessionCostSource
 import splice.control.StatuslineRenderer
 import splice.core.config.ConfigService
 import splice.core.version.ClientVersionTracker
@@ -64,6 +68,7 @@ internal class StatuslineRoute(
                 catalog = managed.catalog,
                 clientWindows = managed.clientWindows,
                 accountPool = managed.accountPool,
+                sessionCost = sessionCostOf(managed),
             )
         }
         val sessionId = sessionId(stdin)
@@ -71,6 +76,16 @@ internal class StatuslineRoute(
         val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }
+
+    /** V4-37: the per-session cost, when this head can price one at all.
+     *
+     *  `perf` is typed [splice.control.HeadPerfSource] and the session-aware reader is its SIBLING
+     *  interface, so this bridge is a checked cast. A head whose perf source cannot answer per
+     *  session — every test double, and any future sink that keeps no session column — renders the
+     *  client's own number, exactly as today. The head-level rate override is null here because the
+     *  TOML field that populates it is stage two (HeadConfig, V4-36's file). */
+    private fun sessionCostOf(managed: ManagedHead): SessionCostSource? =
+        (managed.perf as? HeadSessionPerfSource)?.let { perf -> SessionCost(perf, managed.catalog) }
 
     private fun sessionId(stdin: String): String? = runCatching {
         json.parseToJsonElement(stdin).jsonObject["session_id"]?.jsonPrimitive?.contentOrNull

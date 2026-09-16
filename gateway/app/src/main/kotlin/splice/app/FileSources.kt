@@ -5,6 +5,7 @@ package splice.app
 import splice.control.CompactView
 import splice.control.HeadCompactSource
 import splice.control.HeadPerfSource
+import splice.control.HeadSessionPerfSource
 import splice.control.HeadUsageSource
 import splice.control.QuotaView
 import splice.control.QuotaWindowView
@@ -43,6 +44,10 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
     }
 }
 
-public class PerfStatsSource(private val stats: PerfStats) : HeadPerfSource {
+public class PerfStatsSource(private val stats: PerfStats) : HeadPerfSource, HeadSessionPerfSource {
     override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
+
+    /** V4-37: the same rows narrowed to one session — what the statusline's cost segment sums. */
+    override fun tailNumericFor(sessionId: String): List<Map<String, Long>> =
+        stats.tailNumericFor(sessionId)
 }

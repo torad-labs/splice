@@ -6,12 +6,14 @@
 package splice.provider.openai
 
 import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.dialect.chat.ChatCompactionTail
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatStreamTranslator
+import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
 import splice.spi.BuiltTurn
 import splice.spi.Provider
@@ -31,6 +33,7 @@ public class OpenAiChatProvider(
 
     private val builder = ChatRequestBuilder(quirks, showReasoning)
     private val compactionTail = ChatCompactionTail()
+    private val systemPrompt = ChatSystemPrompt()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -40,6 +43,9 @@ public class OpenAiChatProvider(
 
     override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
         turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
+
+    override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
+        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         ChatStreamTranslator(

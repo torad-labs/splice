@@ -39,6 +39,12 @@ public data class TurnMeta(
      *  compact turns use null text for the untouched client default and empty text for opt-out. */
     val compactionInstructions: String? = null,
     val compactionInstructionsSource: String? = null,
+    /** The head's standing system prompt and its provenance (mode, and the file when one backs it)
+     *  on every turn it was placed on — unlike the compaction pair above, which is compact-only.
+     *  Both stay null for a head that configures none, and for a dialect that could not place it
+     *  (the source then carries the " (not applied)" suffix). */
+    val systemPrompt: String? = null,
+    val systemPromptSource: String? = null,
     /** sha256 of the provider body before any compaction tail: what a compaction retry is matched on
      *  (CompactionReplay), so a tail resolved differently on the retry cannot miss the recording. */
     val compactionRequestHash: String? = null,

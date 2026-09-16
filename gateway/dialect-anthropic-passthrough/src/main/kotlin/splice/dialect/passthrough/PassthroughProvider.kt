@@ -15,6 +15,7 @@ package splice.dialect.passthrough
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.spi.BuiltTurn
@@ -47,8 +48,13 @@ public class PassthroughProvider(
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 
-    private val builder = PassthroughRequestBuilder(quirks, configEffort)
+    // V4-32: one instance per head. The builder shortens into it, every stream translator this
+    // provider makes restores out of it, so a name rewritten on the way out is recoverable on
+    // the way back for the life of the head. Off (cap 0) for every head but Muse.
+    private val toolNames = ToolNameShortener(quirks.toolNameCap)
+    private val builder = PassthroughRequestBuilder(quirks, configEffort, names = toolNames)
     private val compactionTail = PassthroughCompactionTail()
+    private val systemPrompt = PassthroughSystemPrompt()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -64,6 +70,9 @@ public class PassthroughProvider(
     override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
         turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
 
+    override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
+        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
+
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         PassthroughStreamTranslator(
             PassthroughTurnContext(
@@ -73,6 +82,7 @@ public class PassthroughProvider(
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
             ),
             quirks,
+            names = toolNames,
         )
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {

@@ -8,6 +8,7 @@
 package splice.dialect.responses
 
 import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
@@ -44,6 +45,7 @@ public abstract class ResponsesProvider(
 
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
     private val compactionTail = ResponsesCompactionTail()
+    private val systemPrompt = ResponsesSystemPrompt()
     private val parts = ResponsesParts(
         ResponsesPartsInput(
             tuning = tuning,
@@ -89,6 +91,9 @@ public abstract class ResponsesProvider(
 
     final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
         turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
+
+    final override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
+        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         parts.turnSeams.streamTranslator(meta, signals)

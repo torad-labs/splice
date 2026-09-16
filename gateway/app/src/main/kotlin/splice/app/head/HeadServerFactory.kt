@@ -16,6 +16,8 @@ import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
 import splice.spi.InflightGate
 import splice.spi.Provider
+import java.nio.file.Path
+import java.nio.file.Paths
 
 internal class HeadServerFactory(
     private val config: ConfigService,
@@ -23,6 +25,9 @@ internal class HeadServerFactory(
     private val log: LogSink,
     private val compactionTail: CompactionTail = CompactionTail(),
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    /** The topology's directory: a relative `system_prompt_file` under [splice.core.topology.HeadConfig]
+     *  resolves against it, the same rule `[compaction] file =` follows (V4-36). */
+    private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
 ) {
     private val upstreamFactory = UpstreamFactory()
     private val requestMaterializationGate = RequestMaterializationGate()
@@ -62,6 +67,11 @@ internal class HeadServerFactory(
                 accountQuotas = stores.accountQuotas,
                 clientWindows = stores.clientWindows,
                 compactionTail = compactionTail,
+                // Per HEAD, resolved once here from its own [heads.KEY] entry: a standing prompt is
+                // a property of the head, not of the model or the project a session runs in. This
+                // constructor is where a missing system_prompt_file becomes a load-time config
+                // error rather than a prompt that silently never rides.
+                systemPrompt = ctx.head.systemPromptFor(key, configDir),
                 clientVersions = clientVersions,
                 log = log,
                 requestMaterializationGate = requestMaterializationGate,

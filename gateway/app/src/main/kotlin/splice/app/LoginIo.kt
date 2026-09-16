@@ -27,13 +27,41 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
+/** Set by the shared Gradle test task. Its presence means "you are inside the suite", and the
+ *  system browser refuses rather than opening a window on the operator's desktop. */
+private const val NO_SYSTEM_BROWSER = "SPLICE_NO_SYSTEM_BROWSER"
+
 /** Opens a login URL; tests record the request without starting an operating-system process. */
 internal fun interface BrowserOpener {
     fun open(url: String): Boolean
 }
 
 private class SystemBrowserOpener : BrowserOpener {
-    override fun open(url: String): Boolean = Cancellables.runCatchingCancellable {
+
+    /** WALL (2026-09-16). A TEST must never launch the operator's browser. SetupCommandTest
+     *  constructed SetupCommand without overriding its loginHead seam, so the wizard ran a REAL
+     *  grok OAuth login on every `:app:test`: it opened accounts.x.ai in the operator's Chrome,
+     *  bound the loopback callback port, and then blocked in awaitCode for a code that could never
+     *  arrive. For a full day that read as the DAEMON re-prompting for sign-in — the operator saw a
+     *  login page appear again and again with no turn behind it — and it was the build all along.
+     *  The guard is set by the shared Gradle test task, so any future test reaching this path fails
+     *  loudly and names itself instead of opening a window on someone's desktop. */
+    override fun open(url: String): Boolean {
+        if (System.getenv(NO_SYSTEM_BROWSER) != null) {
+            error(
+                "a test reached the real system browser (host=${host(url)}); inject a BrowserOpener " +
+                    "fake, or override the flow's login seam (SetupCommand.loginHead)",
+            )
+        }
+        return launch(url)
+    }
+
+    /** Host only — an authorize URL carries the PKCE challenge and state, which never belong in a
+     *  failure message or a log. */
+    private fun host(url: String): String =
+        Cancellables.runCatchingCancellable { java.net.URI(url).host }.getOrNull() ?: "unknown"
+
+    private fun launch(url: String): Boolean = Cancellables.runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)

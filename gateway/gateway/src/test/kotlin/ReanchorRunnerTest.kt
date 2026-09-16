@@ -855,3 +855,57 @@ class RoundStrategyUsageObservationTest {
         assertTrue(h.finished is TurnOutcome.Success, "the direct path still finishes normally")
     }
 }
+
+/** V4-41 follow-up: the routing change must not be observable on the HAPPY path.
+ *
+ *  RoundStrategy picks its branch on `reanchor == null && toolSearch == null`, so wiring a re-anchor
+ *  controller moves EVERY anthropic-passthrough turn — including the ones that succeed on round one —
+ *  off the single-round branch and onto ReanchorRunner. That is a live change for the OAuth heads,
+ *  kimi, muse and deepseek on the success path and not only the failure path, and reading the two
+ *  branches as equivalent is not the same as measuring it. This pins the observable output: the SSE
+ *  bytes the client actually receives, and the outcome finishTurn is handed. The controller counts
+ *  its own consultations so a routing that quietly starts consulting it cannot pass either. */
+class RoundRoutingEquivalenceTest {
+
+    @Test
+    fun `a first-round Success is byte-identical with and without a re-anchor controller`() = runTest {
+        var consulted = 0
+        val controller = ReanchorController { _ ->
+            consulted++
+            continuationBody()
+        }
+        val success = TurnOutcome.Success(
+            hasToolUse = false,
+            incomplete = false,
+            usage = Usage(outputTokens = 5),
+        )
+
+        val plain = Harness()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = plain.emitter,
+            signals = plain.signals(),
+            postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
+            postRound = { success },
+            finish = { plain.finish(it) },
+            toolSearch = null,
+        ).run(continuationBody(), fold = null, reanchor = null)
+
+        val wired = Harness()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = wired.emitter,
+            signals = wired.signals(),
+            postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
+            postRound = { success },
+            finish = { wired.finish(it) },
+            toolSearch = null,
+        ).run(continuationBody(), fold = null, reanchor = controller)
+
+        assertEquals(plain.frames, wired.frames, "the client must see identical SSE bytes on a first-round Success")
+        assertEquals(plain.finished, wired.finished, "finishTurn must be handed the same outcome")
+        assertEquals(0, consulted, "a first-round Success must never consult the controller at all")
+    }
+}

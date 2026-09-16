@@ -88,6 +88,14 @@ public data class QuirksConfig(
     @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean? = null,
     /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
     @SerialName("strip_sampling_params") val stripSamplingParams: Boolean? = null,
+    /** V4-41: may a mid-stream re-anchor resume this upstream by APPENDING the salvaged answer as a
+     *  trailing assistant message? A VENDOR FACT, so it is measured per provider and never assumed:
+     *  deepseek and kimi continue from such a prefill (probed 2026-09-16), while muse 400s on it
+     *  outright — "assistant prefill is not supported by this server" — which would turn a retryable
+     *  overloaded_error into an invalid_request_error the client will NOT retry. ABSENT = off, so an
+     *  unmeasured vendor keeps exactly today's behaviour (the whole-stream restart still applies when
+     *  nothing visible was salvaged) and measurement is what earns the upgrade. */
+    @SerialName("reanchor_prefill") val reanchorPrefill: Boolean? = null,
 ) {
     init {
         require(compactEffort == null) {

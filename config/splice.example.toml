@@ -258,6 +258,15 @@ auth = { kind = "kimi-oauth" }
 #   strip_cache_control   — Kimi rejects cache_control markers (no prompt caching to lose here)
 #   synthesize_signatures — Kimi never signs thinking blocks and Claude Code discards unsigned ones
 #   map_thinking_adaptive — Kimi takes adaptive thinking + output_config.effort, not budget_tokens
+#   reanchor_prefill      — may a mid-stream re-anchor resume a TRUNCATED stream by re-POSTing with
+#                           the partial answer appended as a trailing assistant message? A VENDOR
+#                           FACT: probe it, never assume it. Kimi and DeepSeek continue from such a
+#                           prefill (measured 2026-09-16); muse 400s on the shape outright, which
+#                           would turn a retryable overloaded_error into an invalid_request_error
+#                           the client will NOT retry. DEFAULTS OFF, so an unprobed vendor keeps
+#                           today's ending and measurement is what earns the resume. Kimi's own
+#                           value rides its built-in profile, so it is not repeated in the table
+#                           below; declare it yourself for any other passthrough provider.
 quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true, map_thinking_adaptive = true, block_allowlist = ["text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"] }
 # Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
 # exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.

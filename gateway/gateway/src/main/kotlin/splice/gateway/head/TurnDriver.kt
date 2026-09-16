@@ -156,6 +156,19 @@ internal class TurnDriver(
     suspend fun collect(call: ApplicationCall, inputs: TurnInputs) = collectTurn.collect(call, inputs)
 
     /** Emits the refusal telemetry that precedes drive construction when no account is selectable. */
+    /** V4-55: same local-health treatment as [recordAccountExhausted] — a rate-limit refusal is a
+     *  local admission outcome, not an upstream failure, so it must not colour upstream health. */
+    fun recordRateLimited(
+        meta: TurnMeta,
+        perf: TurnPerf,
+        t0: Long,
+        resetEpochSeconds: Long?,
+        armedMs: Long,
+    ) {
+        health.local()
+        telemetry.recordRateLimited(meta, perf, t0, resetEpochSeconds, armedMs)
+    }
+
     fun recordAccountExhausted(
         meta: TurnMeta,
         perf: TurnPerf,

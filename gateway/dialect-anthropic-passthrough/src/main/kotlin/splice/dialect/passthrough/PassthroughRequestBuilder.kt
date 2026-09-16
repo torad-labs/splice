@@ -41,7 +41,7 @@ internal class PassthroughRequestBuilder(
     // the stream translator shares it and can restore what was shortened here.
     private val cache = PassthroughCacheControl(quirks.stripCacheControl)
     private val fields = PassthroughFieldCopier(quirks, cache)
-    private val messages = PassthroughMessageScrubber(quirks, cache, names)
+    private val messages = PassthroughMessageScrubber(quirks, cache, names, log)
     private val tools = PassthroughToolSanitizer(quirks, cache, names)
     private val thinking = PassthroughThinking(quirks, configEffort, log, cache)
     private val turnMeta = PassthroughTurnMeta()

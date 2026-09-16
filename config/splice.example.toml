@@ -441,12 +441,15 @@ dialect = "anthropic-passthrough"
 base_url = "https://api.deepseek.com/anthropic"
 auth = { kind = "api-key", env = "DEEPSEEK_API_KEY" }
 [providers.deepseek.quirks]
-# Exactly what DeepSeek's compatibility table marks Supported. redacted_thinking is the
-# one that matters: DR-118 forwards it VERBATIM because Anthropic requires it back
-# unchanged, so without this allowlist every replayed signed-thinking turn would carry a
-# block DeepSeek reject. Also absent and rejected: image, document, search_result,
+# The endpoint's OWN accepted set, read out of its deserializer by POSTing an unknown
+# variant (it replies `unknown variant X, expected one of ...`). Derived that way on
+# purpose: the published compatibility table says what is SUPPORTED, which is not the same
+# claim as what is REJECTED, and treating the first as the second silently dropped `image`
+# and `document` from every request for a whole campaign. redacted_thinking is the entry
+# that earns the allowlist: DR-118 forwards it VERBATIM because Anthropic require it back
+# unchanged, and this endpoint rejects it. Also genuinely absent: search_result,
 # mcp_tool_use, mcp_tool_result, container_upload, code_execution_tool_result.
-block_allowlist = ["text", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"]
+block_allowlist = ["text", "tool_reference", "image", "document", "server_tool_use", "tool_use", "tool_result", "web_search_tool_result", "thinking"]
 # cache_control is ignored upstream — sending it is pure wire weight.
 strip_cache_control = true
 [[providers.deepseek.models]]

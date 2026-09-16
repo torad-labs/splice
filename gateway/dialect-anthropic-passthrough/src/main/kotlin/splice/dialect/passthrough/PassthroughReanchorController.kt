@@ -142,4 +142,12 @@ private val THINKING_OFF: JsonObject = buildJsonObject { put(THINKING_TYPE, THIN
 private const val DEFAULT_MAX_CONTINUATIONS: Int = 5
 
 // FILE SCOPE ON PURPOSE: one shared immutable set, read once per failure classification.
-private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR)
+//
+// V4-57 adds RATE_LIMIT. A limit met after the first frame arrives as 200 + an SSE
+// rate_limit_error and the client only auto-retries on HTTP status 429, so refusing to continue
+// left that turn with no automatic recovery at all. Continuing is enough ON ITS OWN here — the
+// re-POST is answered by a provider that is still limiting with a genuine pre-stream 429 carrying
+// Retry-After headers, the one place a pushback is machine-readable; the pre-stream path already
+// owns that decision (V4-48's short wait, and an honest 429 the client can retry on past the
+// ceiling). No pushback is invented at this layer, because the wire never carried one to it.
+private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR, ErrorType.RATE_LIMIT)

@@ -243,6 +243,33 @@ class PassthroughReanchorTest {
     }
 
     @Test
+    fun `a mid-stream rate limit continues, because the re-POST is where a real 429 becomes readable`() {
+        // V4-57. A rate limit met AFTER the first frame arrives as 200 + an SSE rate_limit_error, and
+        // the client's recovery trigger is HTTP status 429 — so a turn that dead-ends here has no
+        // automatic recovery at all and the operator must continue it by hand.
+        //
+        // Continuing is the right answer, and the wait it needs is NOT owed by this seam. Retrying
+        // re-POSTs, and a provider still limiting answers THAT with a genuine pre-stream 429 carrying
+        // Retry-After headers — the one place a pushback is machine-readable. The pre-stream path
+        // already knows what to do with it, including V4-48's short-wait branch; and a reset longer
+        // than the interactive ceiling gives up with a real 429, which the client CAN retry on. So
+        // the recovery is bought without inventing a pushback the wire never carried.
+        //
+        // What this must NOT become: a continuation whose every round is a blind re-POST. The
+        // attempt budget below is the bound, shared with OVERLOADED rather than special-cased.
+        val limited = round(body(), partial(bodyText = "1"), type = ErrorType.RATE_LIMIT)
+        assertNotNull(controller.continuationForFailure(limited))
+    }
+
+    @Test
+    fun `a rate limit past the attempt budget still stops`() {
+        // Pinned from both sides like the budget itself: RATE_LIMIT earns continuation on the same
+        // terms as every other retryable type, so the ceiling that bounds OVERLOADED bounds it too.
+        val limited = round(body(), partial(bodyText = "1"), attempt = 5, type = ErrorType.RATE_LIMIT)
+        assertNull(controller.continuationForFailure(limited))
+    }
+
+    @Test
     fun `the controller never mutates the request body it was handed`() {
         // A controller that edits its input corrupts the very retry it exists to serve: the same
         // JsonObject is the turn's request, re-read by every later round in this turn. Byte-compared

@@ -87,14 +87,23 @@ public class RateLimitCooldown public constructor(private val clock: ElapsedNow)
 
     /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
      *  thrown BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
-     *  upstream request. The remaining wait rides in the message for the operator's grep. */
+     *  upstream request. The remaining wait rides in the message for the operator's grep.
+     *
+     *  V4-46: the body names the GATEWAY's interval and stops there, deliberately. This turn never
+     *  reached upstream, so it cannot know the provider's reset; the old wording ("gateway cooldown,
+     *  retry in Ns") read as an instruction to retry in Ns, which invited a retry that cannot
+     *  succeed while crowding out the real cause (a weekly quota wall resets in days, not seconds).
+     *  Two quantities had one sentence. Carrying the provider reset forward is a separate change —
+     *  it must be captured at ARM time, the only place both the 429 body and this cooldown are in
+     *  scope — so this message claims nothing it cannot support. */
     public fun failFastIfArmed(onRetry: RetryNotice) {
         val remainingMs = rateLimitedUntilMs.get() - clock()
         if (remainingMs <= 0) return
         onRetry("rate-limit cooldown active (${remainingMs}ms remaining) — failing fast, no upstream attempt")
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
         throw UpstreamFailed(
-            """{"detail":"Rate limit exceeded — gateway cooldown, retry in ${waitS}s"}""",
+            """{"detail":"Rate limit exceeded — this gateway is holding retries for ${waitS}s """ +
+                """to avoid a retry wave"}""",
             RATE_LIMITED,
         )
     }
@@ -111,6 +120,17 @@ public class RateLimitCooldown public constructor(private val clock: ElapsedNow)
         nextRefreshed: Boolean,
     ): RetryPlan {
         val pushback = pushbackMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
+        // V4-46: the INSTRUMENT, and it must fire on every 429, not only the clamped ones. The
+        // header's value was previously logged only when it exceeded the ceiling (noticeClamp), so a
+        // short armed cooldown could not be attributed to a short Retry-After or to the 20s default
+        // — and that attribution is exactly what decides whether the fix is "honour a short
+        // Retry-After" or "stop arming by default". ABSENT is the whole point of the line: it is the
+        // only place the header's presence and the armed value appear together.
+        val header = pushbackMs?.let { "${it}ms" } ?: "ABSENT"
+        onRetry(
+            "429 rate limit: Retry-After header $header, " +
+                "arming ${minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)}ms follower protection",
+        )
         noticeClamp(pushback, onRetry)
         if (canRetry) {
             onRetry("429 observed with retry budget remaining; giving up to avoid a synchronized retry wave")

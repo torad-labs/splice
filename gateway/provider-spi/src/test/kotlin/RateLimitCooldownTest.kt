@@ -5,6 +5,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -45,7 +46,10 @@ class RateLimitCooldownTest {
         assertEquals(15_000L, cooldown.remainingMs())
         assertEquals(0L, cooldown.unavailableForMs())
         assertEquals(
-            listOf("429 observed with retry budget remaining; giving up to avoid a synchronized retry wave"),
+            listOf(
+                "429 rate limit: Retry-After header 15000ms, arming 15000ms follower protection",
+                "429 observed with retry budget remaining; giving up to avoid a synchronized retry wave",
+            ),
             notices,
         )
         elapsed += 15_000L
@@ -154,6 +158,97 @@ class RateLimitCooldownTest {
 
         assertEquals(0L, cooldown.unavailableForMs())
         assertEquals(20_000L, cooldown.remainingMs())
+    }
+
+    // V4-46: the INSTRUMENT. It fires on every 429, so a short armed cooldown can be attributed to a
+    // short Retry-After or to the 20s default — the distinction the clamp-only line lost, and the one
+    // that decides whether the fix honours a short Retry-After or stops arming by default.
+    @Test
+    fun `the arming line names the Retry-After header and distinguishes absent from present`() {
+        val notices = mutableListOf<String>()
+        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+
+        cooldown.rateLimitedPlan(
+            pushbackMs = null,
+            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            canRetry = false,
+            onRetry = RetryNotice(notices::add),
+            nextRefreshed = false,
+        )
+        cooldown.rateLimitedPlan(
+            pushbackMs = 19_000L,
+            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            canRetry = false,
+            onRetry = RetryNotice(notices::add),
+            nextRefreshed = false,
+        )
+
+        assertTrue(
+            notices.any { it == "429 rate limit: Retry-After header ABSENT, arming 20000ms follower protection" },
+            notices.toString(),
+        )
+        assertTrue(
+            notices.any { it == "429 rate limit: Retry-After header 19000ms, arming 19000ms follower protection" },
+            notices.toString(),
+        )
+    }
+
+    // V4-46: the fail-fast body names the GATEWAY interval and claims nothing about the provider. A
+    // fail-fast turn never reached upstream, so it cannot know the provider reset; the old wording
+    // read as an instruction to retry in Ns, inviting a retry that cannot succeed while crowding out
+    // the real cause (a weekly quota wall resets in days, not seconds).
+    @Test
+    fun `a fail-fast 429 attributes the wait to the gateway and stays silent about the provider`() {
+        var elapsed = 1_000L
+        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        cooldown.arm(19_000L)
+        elapsed += 1_000L
+
+        val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
+
+        assertEquals(429, failure.status)
+        assertTrue(failure.body.contains("this gateway is holding retries for 18s"), failure.body)
+        assertFalse(failure.body.contains("provider"), "no provider reset is knowable here: ${failure.body}")
+        assertFalse(failure.body.contains("retry in"), "the old wording read as an instruction: ${failure.body}")
+    }
+
+    // V4-46: THE FIXTURE IS THE LIVE EPISODE, not a constructed one. claude-muse, 2026-09-16:
+    // 07:46:30 a real 429 whose body said the usage window resets five hours later, Retry-After
+    // 488000ms clamped to 120000ms follower protection; then 07:47:02, 07:47:36 and 07:48:15, three
+    // turns that never reached upstream and were told to retry in 88s, 54s and 15s. The operator
+    // tried three times across two minutes, saw a SMALLER number each time, and read the countdown as
+    // a retry schedule while the head was dead for five more hours. The message invited exactly the
+    // retry it could not satisfy, and the stepping gaps below reproduce his 88/54/15 exactly.
+    @Test
+    fun `the live muse episode shrinking gateway countdown must not read as a retry schedule`() {
+        var elapsed = 0L
+        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+
+        cooldown.rateLimitedPlan(
+            pushbackMs = 488_000L,
+            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            canRetry = false,
+            onRetry = RetryNotice {},
+            nextRefreshed = false,
+        )
+        assertEquals(120_000L, cooldown.remainingMs(), "the armed horizon clamps; the provider reset does not")
+
+        val bodies = mutableListOf<String>()
+        listOf(32_000L, 34_000L, 39_000L).forEach { gap ->
+            elapsed += gap
+            bodies += assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }.body
+        }
+
+        // The countdown shrinks across the episode, which is what made it read as a schedule.
+        assertTrue(bodies[0].contains("for 88s"), bodies[0])
+        assertTrue(bodies[1].contains("for 54s"), bodies[1])
+        assertTrue(bodies[2].contains("for 15s"), bodies[2])
+        // ...and no turn may present that number as when the PROVIDER will accept a retry.
+        bodies.forEach { body ->
+            assertTrue(body.contains("this gateway is holding retries"), body)
+            assertFalse(body.contains("provider"), "the provider reset is hours away and unknowable here: $body")
+            assertFalse(body.contains("retry in"), "an invitation to retry is what he acted on: $body")
+        }
     }
 }
 

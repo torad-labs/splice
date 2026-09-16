@@ -66,7 +66,15 @@ echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
 # in under a second, with the regeneration remedy attached. Selftest guards the checker itself.
 run "catalog metadata sync" python3 checks/catalog-metadata-sync.py
 run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
-run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
+# --no-build-cache is CORRECTNESS here, not paranoia. Kotlin's compile-avoidance ABI snapshot does
+# not track `internal` members, so changing an `internal fun interface`'s method signature does not
+# invalidate the dependent test-compile task. Measured 2026-09-16: after renaming PulseScheduler's
+# parameter type, `clean check` restored BOTH :app:compileKotlin and :app:compileTestKotlin
+# FROM-CACHE from different source states and SpinnerTest died with AbstractMethodError against a
+# signature the test had never been compiled for. The same hole can hand back a false GREEN. A gate
+# of record must never measure a mixture of two source states; the cache is the one input that can
+# make it do so, so the gate of record does not use it.
+run "gradle clean check" bash -c 'cd gateway && ./gradlew --no-build-cache clean check'
 run "ast-grep walls" npm run --silent gate:rules
 # The walls leg above proves the routed rules pass; it cannot prove they are ALL routed. .rules/kotlin
 # sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a

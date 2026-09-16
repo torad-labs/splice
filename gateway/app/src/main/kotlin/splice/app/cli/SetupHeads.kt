@@ -6,6 +6,7 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
+import splice.app.cli.prompt.ConsolePresence
 import splice.app.cli.prompt.MultiSelectOutcome
 import splice.app.cli.prompt.SelectOption
 import splice.app.cli.prompt.WizardFrame

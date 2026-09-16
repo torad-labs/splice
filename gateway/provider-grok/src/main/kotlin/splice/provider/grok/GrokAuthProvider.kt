@@ -55,6 +55,10 @@ import java.time.Instant
 
 private const val LOG_TAG = "grok-auth"
 
+/** The one status whose auth meaning xAI overloads (expiry AND billing), so the one status a
+ *  freshness judgement can arbitrate. See allowRefreshAfterFailure. */
+private const val FORBIDDEN_STATUS = 403
+
 // SH-02(b): CLIProxyAPI's refreshIneffectiveBackoff value — long enough to stop a tight
 // success/re-check loop, short enough that a genuinely recovering endpoint retries soon.
 private const val REFRESH_INEFFECTIVE_BACKOFF_MS = 30_000L
@@ -112,6 +116,10 @@ public class GrokAuthProvider(
     private fun synthesizeExpiry(mtimeMs: Long, nowMs: Long): Long =
         CredentialExpiry.synthesizedExpiryMs(mtimeMs, nowMs)
     private val authFile = GrokAuthDescribe(authPath, authJson, invalidGrantLatch, log, refreshCall)
+
+    /** RULE 3's sentence builder. Stateless, so one instance is enough (see GrokOAuth's file-scope
+     *  Json comment for why the parser it shares is file scope rather than per-instance). */
+    private val oauth = GrokOAuth()
 
     init {
         // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
@@ -176,6 +184,47 @@ public class GrokAuthProvider(
 
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+
+    /**
+     * RULE 1, the structural half (2026-09-16 operator report: the grok login page kept reopening).
+     *
+     * A 403 on a credential that is DEMONSTRABLY FINE cannot be an expiry, whatever the body says.
+     * This class owns that fact: readSnapshot always yields an expiry, synthesizing one off the
+     * file's mtime when the file lost it (G18). Vetoing the refresh here kills the whole class at
+     * once — no refresh, no dead credential, no sign-in, no browser — and it needs no vendor
+     * strings, so the NEXT unrecognised 403 code is covered too.
+     *
+     * NEVER BELOW STATUS QUO: a token at or inside the proactive window is NOT demonstrably fine,
+     * so a genuine expiry still refreshes exactly as it did before and the 2026-07-18 grok-dead-head
+     * incident (xAI reports an expired token as 403, not 401) does not regress. An unreadable
+     * snapshot proves nothing either, so it falls through to the old behaviour as well.
+     *
+     * RULE 3 appears here only as a SENTENCE: a recognised entitlement body is logged with its cause
+     * and the vendor's own top-up link. Those strings never reach the decision below.
+     *
+     * A block body with a local, not a helper: this class sits at detekt's function budget (14
+     * non-override functions; TooManyFunctions flags at 15), and overrides are exempt.
+     */
+    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean {
+        // 403 ONLY. xAI reports an expired token as 403, which is what makes a freshness judgement
+        // meaningful here; a 401 is the server contradicting the file, and a revoked token can 401
+        // while the file still reads hours out — vetoing that refresh would serve a dead token and
+        // REGRESS, not protect. The only statuses reaching this call are 401 and 403 (the transport
+        // consults the veto solely for `isAuthRefreshableFailure`), so this is the whole surface.
+        if (status != FORBIDDEN_STATUS) return true
+        val expiresAtMs = authJson.readSnapshot(authCacheMs)?.expiresAtMs
+        val demonstrablyFresh = expiresAtMs != null && expiresAtMs - clock() >= PROACTIVE_WINDOW_MS
+        if (demonstrablyFresh) {
+            val sentence = oauth.entitlementSentence(body)
+                ?: "body not recognised as an entitlement rejection"
+            log(
+                "[$LOG_TAG] upstream $status on a credential valid for another " +
+                    "${(expiresAtMs - clock()) / MS_PER_S}s — not an expiry, so NO refresh and no " +
+                    "sign-in. $sentence",
+            )
+        }
+        return !demonstrablyFresh
+    }
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.

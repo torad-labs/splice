@@ -16,14 +16,45 @@ public fun interface QuotaHeaderRead {
     public operator fun invoke(name: String): String?
 }
 
+/** The three values `anthropic-ratelimit-unified-status` may carry. Taken from the client binary
+ *  (claude 2.1.257), which matches on all three and carries the literal `unified-status: rejected`
+ *  — so splice asserting `allowed` unconditionally was not a client limitation but ours. */
+public enum class QuotaStatus(public val wire: String) {
+    ALLOWED("allowed"),
+    WARNING("allowed_warning"),
+    REJECTED("rejected"),
+}
+
 public class QuotaHeaders(private val clock: WallClock) {
     /** The headers Claude Code reads. Empty for an empty snapshot; carries `-status: allowed` with
-     *  any window because the client keys its warning state off that header too. */
-    public fun forClient(snapshot: QuotaSnapshot): Map<String, String> {
+     *  any window because the client keys its warning state off that header too.
+     *
+     *  [status] and [resetEpochSeconds] exist so a REFUSAL can be stated on the same family — and
+     *  the DEFAULT is deliberately today's exact bytes, so every response that passes neither
+     *  parameter is unchanged down to the key order. Passing [QuotaStatus.ALLOWED] explicitly is
+     *  NOT the same as passing nothing when the snapshot is empty: an explicit status is always
+     *  written, because a refusal has to be stated even when no window is known.
+     *
+     *  [resetEpochSeconds] writes the PLAIN `anthropic-ratelimit-unified-reset`, which is a
+     *  different member from the per-window `-5h-reset` and `-7d-reset` above and is the one Claude
+     *  Code's withRetry actually reads off a 429 (getRateLimitResetDelayMs). WHY A PLAIN RESET
+     *  EXISTS AT ALL: a 429 is not a quota bar, it is a DEADLINE. The window members describe how
+     *  full a bucket is; this one says when to come back, and a client that has just been refused
+     *  needs the second and not the first. */
+    public fun forClient(
+        snapshot: QuotaSnapshot,
+        status: QuotaStatus? = null,
+        resetEpochSeconds: Long? = null,
+    ): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         clientWindow(out, "5h", snapshot.fiveHour)
         clientWindow(out, "7d", snapshot.sevenDay)
-        if (out.isNotEmpty()) out["$UNIFIED-status"] = "allowed"
+        if (status != null) {
+            out["$UNIFIED-status"] = status.wire
+        } else if (out.isNotEmpty()) {
+            out["$UNIFIED-status"] = QuotaStatus.ALLOWED.wire
+        }
+        resetEpochSeconds?.let { out["$UNIFIED-reset"] = it.toString() }
         return out
     }
 

@@ -14,6 +14,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.WallClock
 import splice.spi.ElapsedNow
 import splice.spi.PostContext
 import splice.spi.RateLimitCooldown
@@ -25,6 +26,7 @@ import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 import splice.spi.UpstreamTurnWaitExhausted
 import splice.spi.Waiter
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 class RateLimitCooldownTest {
@@ -42,18 +44,19 @@ class RateLimitCooldownTest {
             nextRefreshed = false,
         )
 
-        assertEquals(RetryDecision.GIVE_UP, plan.decision)
-        assertEquals(15_000L, cooldown.remainingMs())
+        // V4-48 REVERSED THIS ROW'S ORIGINAL POLICY, deliberately: at the ceiling, and with budget
+        // left, a 429 now takes the same BACKOFF branch a 408 or 5xx pushback has always taken.
+        assertEquals(RetryDecision.BACKOFF, plan.decision)
+        assertEquals(15_000L, plan.minDelayMs, "the wait is the provider's own pushback, not a curve")
+        assertEquals(0L, cooldown.remainingMs(), "waiting it out must NOT arm follower protection")
         assertEquals(0L, cooldown.unavailableForMs())
         assertEquals(
             listOf(
-                "429 rate limit: Retry-After header 15000ms, arming 15000ms follower protection",
-                "429 observed with retry budget remaining; giving up to avoid a synchronized retry wave",
+                "429 rate limit: Retry-After header 15000ms at or under the 15000ms interactive " +
+                    "ceiling, budget remaining; waiting it out",
             ),
             notices,
         )
-        elapsed += 15_000L
-        assertEquals(0L, cooldown.remainingMs())
     }
 
     @Test
@@ -69,10 +72,11 @@ class RateLimitCooldownTest {
             nextRefreshed = false,
         )
 
-        assertEquals(RetryDecision.GIVE_UP, plan.decision)
+        assertEquals(RetryDecision.BACKOFF, plan.decision)
+        assertEquals(1_000L, plan.minDelayMs)
         assertEquals(0L, cooldown.unavailableForMs())
         assertEquals(0L, cooldown.providerUnavailableForMs())
-        assertEquals(1_000L, cooldown.remainingMs())
+        assertEquals(0L, cooldown.remainingMs(), "the wait path leaves the head unarmed")
         assertTrue(notices.none { it.contains("account unavailable") })
     }
 
@@ -250,6 +254,106 @@ class RateLimitCooldownTest {
             assertFalse(body.contains("retry in"), "an invitation to retry is what he acted on: $body")
         }
     }
+
+    // V4-47: THE LIVE EPISODE AGAIN, and this time the provider DOES name its reset. claude-muse,
+    // 2026-09-16 13:34:32 — Retry-After 5301000ms clamped to 120s, body naming a window reset 88
+    // MINUTES out at 20:02:52Z. The operator was told to retry in 120s and retried into the same 429
+    // four times. The body must now name the provider's own horizon and say the wait will not help.
+    @Test
+    fun `the live muse episode names the provider reset so 120s cannot read as a retry schedule`() {
+        var elapsed = 0L
+        val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
+        val cooldown = RateLimitCooldown(ElapsedNow { elapsed }, WallClock { wall })
+        val body = """{"error":{"message":"Subscription quota exhausted. Your usage window resets """ +
+            """at 2026-09-16T20:02:52Z","type":"rate_limit_error"},"type":"error"}"""
+
+        cooldown.rateLimitedPlan(
+            pushbackMs = 5_301_000L,
+            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            canRetry = false,
+            onRetry = RetryNotice {},
+            nextRefreshed = false,
+            body = body,
+        )
+
+        assertEquals(120_000L, cooldown.remainingMs(), "the ARMED horizon still clamps at 120s")
+        assertEquals(23_300_000L, cooldown.providerUnavailableForMs(), "the body reset is 6h28m20s out")
+
+        // No clock advance before reading the body: the cooldown is armed to 120s, so the
+        // remaining is still 120s and the provider instant is exactly the one the body named.
+        val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
+
+        assertTrue(failure.body.contains("this gateway is holding retries"), failure.body)
+        assertTrue(failure.body.contains("holding retries for 120s"), failure.body)
+        assertTrue(
+            failure.body.contains("2026-09-16T20:02:52Z"),
+            "the provider horizon must be named on the WALL base, not the elapsed one: ${failure.body}",
+        )
+        assertTrue(failure.body.contains("waiting will not help"), failure.body)
+    }
+
+    // V4-47's defect: markUnavailable was the ONLY writer of the provider reset and it fires only for
+    // POOLED turns over the 15s ceiling — so on a single-account head, which is every head the
+    // operator runs, the reset was never recorded at all.
+    @Test
+    fun `a single-account head records the provider reset where markUnavailable never fired`() {
+        val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
+        val cooldown = RateLimitCooldown(ElapsedNow { 0L }, WallClock { wall })
+
+        cooldown.rateLimitedPlan(
+            pushbackMs = 5_301_000L,
+            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            canRetry = false,
+            onRetry = RetryNotice {},
+            nextRefreshed = false,
+            body = """{"error":{"message":"resets at 2026-09-16T20:02:52Z"}}""",
+        )
+
+        assertEquals(0L, cooldown.unavailableForMs(), "a single-account head is never evicted")
+        assertEquals(23_300_000L, cooldown.providerUnavailableForMs(), "but its reset IS recorded")
+    }
+
+    @Test
+    fun `the reset is read from every spelling the vendors use`() {
+        val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
+
+        fun captured(body: String): Long {
+            val cooldown = RateLimitCooldown(ElapsedNow { 0L }, WallClock { wall })
+            cooldown.rateLimitedPlan(
+                pushbackMs = 5_301_000L,
+                turn = RateLimitTurn(cooldown, pooledAccount = false),
+                canRetry = false,
+                onRetry = RetryNotice {},
+                nextRefreshed = false,
+                body = body,
+            )
+            return cooldown.providerUnavailableForMs()
+        }
+
+        assertEquals(23_300_000L, captured("""{"message":"usage window resets at 2026-09-16T20:02:52Z"}"""))
+        assertEquals(3_600_000L, captured("""{"resets_at":${wall / 1_000 + 3_600}}"""), "epoch seconds")
+        assertEquals(3_600_000L, captured("""{"resets_in_seconds":3600}"""), "a duration is already a delay")
+        assertEquals(0L, captured("""{"detail":"Rate limit exceeded"}"""), "a bare body names nothing")
+    }
+
+    @Test
+    fun `a body naming no reset keeps the V4-46 wording and still claims nothing`() {
+        val cooldown = RateLimitCooldown(ElapsedNow { 0L }, WallClock { 0L })
+        cooldown.rateLimitedPlan(
+            pushbackMs = 5_301_000L,
+            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            canRetry = false,
+            onRetry = RetryNotice {},
+            nextRefreshed = false,
+            body = """{"detail":"Rate limit exceeded"}""",
+        )
+        assertEquals(0L, cooldown.providerUnavailableForMs())
+
+        val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
+
+        assertTrue(failure.body.contains("this gateway is holding retries"), failure.body)
+        assertFalse(failure.body.contains("provider"), "no provider horizon is known: ${failure.body}")
+    }
 }
 
 class RateLimitCooldownBudgetTest {
@@ -332,8 +436,13 @@ class RateLimitCooldownBudgetTest {
         assertTrue(notices.contains("upstream backoff up to 220ms does not fit the remaining 100ms budget"))
     }
 
+    // V4-48 REVERSED THIS. It used to assert that a short pooled 429 never enters retry backoff —
+    // 1 call, no wait, the cooldown armed. A short pushback now takes the same BACKOFF branch a 408
+    // or 5xx has always taken, so it WAITS and RETRIES instead of giving up, and it does NOT arm the
+    // follower horizon (arming would fail every other turn on the head for the interval this one is
+    // waiting out). The name moved with the assertion so it cannot keep claiming the old policy.
     @Test
-    fun `a short pooled 429 never enters retry backoff`() = runTest {
+    fun `a short pooled 429 now waits and retries instead of giving up`() = runTest {
         val calls = AtomicInteger()
         val waiter = RecordingWaiter()
         val cooldown = RateLimitCooldown(ElapsedNow { 0L })
@@ -359,9 +468,10 @@ class RateLimitCooldownBudgetTest {
 
         assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
 
-        assertEquals(1, calls.get())
-        assertTrue(waiter.waits.isEmpty(), "the observed 429 must not schedule a synchronized retry")
-        assertEquals(1_000L, cooldown.remainingMs())
+        assertEquals(3, calls.get(), "a short 429 now spends the retry budget it always had")
+        // The WAITS do not arm; the FINAL give-up does, exactly as the 5xx branch arms only in its
+        // give-up case. So the horizon is the last pushback, not the sum of the waits.
+        assertEquals(1_000L, cooldown.remainingMs(), "the final give-up arms; the waits in between do not")
         assertEquals(0L, cooldown.unavailableForMs())
     }
 

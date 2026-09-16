@@ -186,7 +186,7 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `waitable 429 gives up while followers fail fast`() = runTest {
+    fun `a waitable 429 is waited out, then followers fail fast`() = runTest {
         val calls = AtomicInteger()
         val waiter = RecordingWaiter()
         val notices = mutableListOf<String>()
@@ -215,17 +215,18 @@ class UpstreamClientRetryPolicyTest {
         val observer = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
         assertEquals(429, observer.status)
         assertEquals("slow down", observer.body)
-        assertEquals(1, calls.get(), "the observing turn must not retry after receiving 429")
-        assertTrue(waiter.waits.isEmpty(), "the observing turn must not schedule a retry wait")
-        assertTrue(notices.any { it.contains("giving up to avoid a synchronized retry wave") })
+        // V4-48: a pushback at or under the 15s ceiling is WAITED OUT and retried, not surrendered.
+        assertEquals(3, calls.get(), "a short 429 is retried, not surrendered")
+        assertTrue(waiter.waits.isNotEmpty(), "the pushback is waited out rather than skipped")
 
+        val waitsAfterObserver = waiter.waits.size
         val follower = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
-        assertEquals(1, calls.get(), "a follower must fail fast without reaching upstream")
+        assertEquals(3, calls.get(), "a follower must fail fast without reaching upstream")
         // V4-46: STRICTER than the word it replaced. The follower body must identify the GATEWAY as
         // the holder of the interval — that is the property the row guarantees — where the old
         // contains("cooldown") merely pinned a vocabulary word.
         assertTrue(follower.body.contains("this gateway is holding retries"), follower.body)
-        assertTrue(waiter.waits.isEmpty(), "neither the observer nor its follower may wait")
+        assertEquals(waitsAfterObserver, waiter.waits.size, "a follower fails fast; only the observer waited")
         assertEquals(1_000L, cooldown.remainingMs())
         assertEquals(0L, cooldown.unavailableForMs())
     }
@@ -358,10 +359,13 @@ class UpstreamClientRetryPolicyTest {
             )
         }
         val client = clientOver(engine, clock = { now })
+        // V4-48: a zero-length pushback is still a pushback, so the turn spends its retry budget on
+        // it — but a past date must still ARM NOTHING, which is NF-04's actual claim and is what the
+        // second turn proves: nothing carried over, so it reaches upstream again.
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "non-pooled 429s preserve the one-attempt exit")
-        assertThrows<UpstreamFailed> { postOnce(client) } // zero-length horizon: straight upstream
-        assertEquals(2, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
+        assertEquals(3, calls.get(), "a zero-length backoff spends the retry budget, not the exit")
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(6, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
 
     // Shared 429 cooldown (2026-07-19 storm): one post's rate-limit discovery teaches the whole

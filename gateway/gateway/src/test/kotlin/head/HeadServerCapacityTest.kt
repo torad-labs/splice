@@ -18,9 +18,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
+import mock.RATE_LIMITED_STATUS
 import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -223,6 +225,61 @@ class HeadServerCapacityTest {
         assertTrue(upstreamClient.rateLimitedForMs > 0L, "the 429 should have armed the cooldown")
         head.restart()
         assertEquals(0L, upstreamClient.rateLimitedForMs, "restart must clear the armed horizon")
+        Thread.sleep(700) // Netty warmup before the next test reuses the port
+    }
+
+    // V4-50: the turn AFTER the horizon is armed is the one the operator kept reporting. The test
+    // above pins the FIRST turn, which reaches upstream and is relayed as a 200 + SSE error frame
+    // because its response is already committed — that stays true and is asserted there. This one
+    // pins the SECOND turn, which never reaches upstream at all: it is refused at admission, where
+    // a status line is still ours to write.
+    //
+    // WHY THE STATUS IS THE ASSERTION AND NOT THE MESSAGE. Claude Code's retry-until-reset fires on
+    // an APIError with status 429 and reads the deadline off that response; an error frame inside a
+    // 200 is not an APIError, so before this row the client had nothing to retry on no matter how
+    // the text was worded. Three operator reports in one day were this, and each was first
+    // mistaken for a wording problem.
+    //
+    // RETRY-AFTER IS ALSO END-TO-END PROOF OF V4-47: the header is written only from a provider
+    // reset, and the only place that reset exists is the 429 body this scenario sends
+    // ({"detail":"Rate limit exceeded","resets_in_seconds":60}). If the capture regressed to
+    // reading the gateway's own clamped horizon, or stopped parsing the body, this assertion is
+    // what fails.
+    @Test
+    fun `an armed cooldown refuses the next turn with a real 429 carrying the provider deadline`() = runBlocking {
+        upstreamClient.clearRateLimitCooldown()
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    "system":"You are a test. SCENARIO:quota429",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+        assertTrue(upstreamClient.rateLimitedForMs > 0L, "precondition: the first turn must arm the horizon")
+
+        val refused = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    "messages":[{"role":"user","content":"again"}]}""",
+            )
+        }
+        assertEquals(
+            RATE_LIMITED_STATUS,
+            refused.status.value,
+            "an armed head must refuse with a real 429, not a 200 carrying an error frame",
+        )
+        val body = refused.bodyAsText()
+        assertTrue(
+            body.contains("rate_limit_error"),
+            "the refusal keeps the Anthropic error shape, got: ${body.take(200)}",
+        )
+        assertNotNull(
+            refused.headers["Retry-After"],
+            "the refusal must carry the PROVIDER's reset as Retry-After — that is the deadline the client sleeps on",
+        )
+        upstreamClient.clearRateLimitCooldown()
         Thread.sleep(700) // Netty warmup before the next test reuses the port
     }
 }

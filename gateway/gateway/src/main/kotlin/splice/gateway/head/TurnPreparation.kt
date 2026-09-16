@@ -128,7 +128,7 @@ internal class TurnPreparation(
         // was: the meta then says so instead of claiming instructions the wire never carried.
         val applied = effective?.tailText == null || tailed.requestBody != base.requestBody
         val hash = if (compact) replay.bodyHash(base.requestBody.toString()) else null
-        return effective?.let { eff ->
+        val withTail = effective?.let { eff ->
             tailed.copy(
                 meta = tailed.meta.copy(
                     compactionInstructions = if (applied) eff.text else null,
@@ -137,6 +137,25 @@ internal class TurnPreparation(
                 ),
             )
         } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
+        // AFTER the tail, so the compaction request hash and its applied check keep reading the
+        // provider body BEFORE any tail — a retry must still match its recording byte for byte.
+        return applySystemPrompt(withTail)
+    }
+
+    /** The head's standing prompt rides on EVERY turn (not only compact ones), at its own seam.
+     *  Same honesty rule as the compaction tail above: a dialect that could not place the prompt
+     *  returns the request as it was, and the meta then says so instead of claiming text the wire
+     *  never carried. */
+    private fun applySystemPrompt(turn: BuiltTurn): BuiltTurn {
+        val prompt = deps.systemPrompt.resolve() ?: return turn
+        val prompted = provider.withSystemPrompt(turn, prompt.text, prompt.mode)
+        val applied = prompted.requestBody != turn.requestBody
+        return prompted.copy(
+            meta = prompted.meta.copy(
+                systemPrompt = if (applied) prompt.text else null,
+                systemPromptSource = if (applied) prompt.source else "${prompt.source} (not applied)",
+            ),
+        )
     }
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn

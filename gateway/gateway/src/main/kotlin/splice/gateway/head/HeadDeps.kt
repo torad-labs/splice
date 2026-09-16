@@ -8,6 +8,7 @@
 package splice.gateway.head
 
 import splice.core.model.ClientWindows
+import splice.core.prompt.HeadSystemPrompt
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -52,6 +53,10 @@ public data class HeadDeps(
      *  (the control plane records; the usage payload reads). One per head, shared with ManagedHead. */
     val clientWindows: ClientWindows = ClientWindows(),
     val compactionTail: CompactionTail = CompactionTail(),
+    /** V4-36: this head's standing system prompt, resolved by HeadServerFactory from its own
+     *  [splice.core.topology.HeadConfig] at head construction. The default resolves nothing, so a
+     *  head that configures no prompt keeps today's request bytes exactly. */
+    val systemPrompt: HeadSystemPrompt = HeadSystemPrompt(),
     /** Daemon-wide Claude Code version observations; production injects one instance into every head. */
     val clientVersions: ClientVersionTracker = ClientVersionTracker(),
     val log: LogSink,

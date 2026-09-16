@@ -41,6 +41,11 @@ public class StatuslineRenderer(
     private val clientWindows: ClientWindows? = null,
     /** Secret-free live account state; safe on the unauthenticated statusline route. */
     private val accountPool: HeadAccountPoolSource? = null,
+    /** V4-37: this session's spend, computed from the head's own token counts against rates declared
+     *  in TOML — instead of the client's `total_cost_usd`, which Claude Code prices with an Anthropic
+     *  card because it believes it is talking to Anthropic (a measured ~20x high on every
+     *  non-Anthropic head). Null = render the client's number, byte-identically to before. */
+    private val sessionCost: SessionCostSource? = null,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -90,7 +95,12 @@ public class StatuslineRenderer(
         val accountText = account?.let { selected ->
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
-        val segments = listOfNotNull(modelSegment(root), accountText, bars.costSegment(root)) +
+        val modelId = blob.str(blob.obj(root, "model")?.get("id"))
+        val segments = listOfNotNull(
+            modelSegment(root),
+            accountText,
+            bars.costSegment(root, sessionCost?.usdFor(sessionId, modelId)),
+        ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
             listOfNotNull(
                 contextSegment(root),

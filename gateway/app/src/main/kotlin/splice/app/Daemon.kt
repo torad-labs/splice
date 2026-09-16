@@ -79,15 +79,16 @@ public class Daemon(
     // directly to pin that each head resolves against getConfig(key) — see HeadBuildInputs' KDoc.
     // Inferred so this file does not name HeadBuildInputs (concentration, 2026-08-19).
     internal val buildInputs get() = controlPlane.buildInputs
+
+    // The directory a relative `file =` / `system_prompt_file =` resolves against: the topology's
+    // own directory, so a config kept beside its text files moves as one unit.
+    private val topologyDir = topologyPath?.parent ?: TopologyLoader.configPath().parent
     private val compactionTail = CompactionTail(
-        CompactionInstructions(
-            topology.compaction,
-            topologyPath?.parent ?: TopologyLoader.configPath().parent,
-            log = log,
-        ),
+        CompactionInstructions(topology.compaction, topologyDir, log = log),
         SessionProject(),
     )
-    private val headServerFactory = HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions)
+    private val headServerFactory =
+        HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions, topologyDir)
     private val launchSpecFactory = LaunchSpecFactory(
         topology,
         controlPlane.signInPlanner,

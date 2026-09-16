@@ -33,6 +33,12 @@ public data class ModelEntry(
     val label: String = "",
     val description: String = "",
     @SerialName("context_window") val contextWindow: Long,
+    /** V4-37: this model's rate card, USD per million tokens, declared in the provider's TOML.
+     *  Absent = the head declares no rates for this model, and the statusline falls back to the
+     *  client's own total_cost_usd exactly as it does today. A head-level card overrides this one
+     *  (see TokenCost.ratesFor) — the case that needs it is two heads on ONE provider billed
+     *  differently. */
+    val rates: ModelRates? = null,
 )
 
 @Serializable

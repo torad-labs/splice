@@ -10,6 +10,7 @@ import splice.dialect.passthrough.PassthroughQuirks
 import splice.provider.muse.MuseKeyMintCall
 import splice.spi.CredentialHeaders
 
+private const val MUSE_TOOL_NAME_CAP = 64
 private val MUSE_BASE_HEADERS = mapOf("User-Agent" to "splice/$GATEWAY_VERSION")
 private val SSE_HEADERS = mapOf("Accept" to "text/event-stream")
 
@@ -28,7 +29,9 @@ internal class MusePassthroughArm(
             ctx = ctx,
             label = label,
             auth = default.auth,
-            base = PassthroughQuirks(providerTag = ctx.key),
+            // V4-32: api.meta.ai rejects a tool name over 64 characters where Anthropic accepts
+            // it, and Claude Code's MCP names run past 80. Muse is the only head that needs this.
+            base = PassthroughQuirks(providerTag = ctx.key, toolNameCap = MUSE_TOOL_NAME_CAP),
             baseHeaders = MUSE_BASE_HEADERS,
         )
         val headers = SSE_HEADERS + MUSE_BASE_HEADERS + ctx.providerCfg.staticHeaders

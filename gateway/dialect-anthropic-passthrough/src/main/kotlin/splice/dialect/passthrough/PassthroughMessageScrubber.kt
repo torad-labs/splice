@@ -15,6 +15,7 @@ import splice.core.util.JsonScalars
 internal class PassthroughMessageScrubber(
     private val quirks: PassthroughQuirks,
     private val cache: PassthroughCacheControl,
+    private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
     fun scrubMessages(messages: JsonElement): JsonArray {
@@ -58,6 +59,9 @@ internal class PassthroughMessageScrubber(
             when {
                 key == CACHE_CONTROL && quirks.stripCacheControl -> Unit
                 key == CONTENT && type == TYPE_TOOL_RESULT -> put(CONTENT, scrubContent(value))
+                // V4-32: a replayed tool_use must shorten to the SAME string its declaration
+                // did, or the upstream sees a call naming a tool it was never offered.
+                key == NAME && type == TYPE_TOOL_USE -> put(NAME, names.shorten(JsonScalars.strOrEmpty(value)))
                 else -> put(key, cache.stripCacheControl(value))
             }
         }

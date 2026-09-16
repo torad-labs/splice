@@ -16,3 +16,8 @@ internal const val CONTENT = "content"
 internal const val CACHE_CONTROL = "cache_control"
 internal const val TYPE_THINKING = "thinking"
 internal const val TYPE_TOOL_RESULT = "tool_result"
+
+// V4-32: the two call sites that rewrite a tool name — the tool declaration and a replayed
+// tool_use block — must agree on both spellings or the rewrite is only half applied.
+internal const val TYPE_TOOL_USE = "tool_use"
+internal const val NAME = "name"

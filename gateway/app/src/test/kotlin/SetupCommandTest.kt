@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.AddProfiles
 import splice.app.cli.DaemonRestart
 import splice.app.cli.HeadPicker
+import splice.app.cli.HeadSignIn
 import splice.app.cli.ProfileAdd
 import splice.app.cli.SetupCommand
 import splice.app.cli.SetupFacts
@@ -506,7 +507,7 @@ class SetupCommandTest {
  *  awaitCode for a callback that could never arrive, which read for a day as the daemon demanding a
  *  sign-in. Every construction here passes this instead, and LoginIo's wall now fails any test that
  *  forgets. */
-private val NO_REAL_LOGIN: suspend (String) -> Boolean = { true }
+private val NO_REAL_LOGIN = HeadSignIn { true }
 
 private val HEADLESS_ORACLE = """
 [daemon]

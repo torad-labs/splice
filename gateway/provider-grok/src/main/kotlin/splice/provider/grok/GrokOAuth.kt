@@ -154,6 +154,9 @@ public class GrokOAuth {
         val cause = "grok: this account has run out of credits or needs a Grok subscription " +
             "(xAI personal-team-blocked / spending-limit). A refresh cannot change a billing state, " +
             "so splice did not re-authenticate."
+        // SAFE-RENDER-EXEMPT[2026-09-16]: neither value is a throwable — cause is a fixed literal and
+        // topUp is a host-constrained, length-bounded vendor URL, so no exception text and no
+        // arbitrary body bytes can reach the operator through this sentence.
         return if (topUp == null) cause else "$cause Top up: $topUp"
     }
 
@@ -171,4 +174,8 @@ private val ENTITLEMENT_PHRASES = listOf(
 )
 
 // The vendor's own top-up link, when the 403 body carries one.
-private val VENDOR_LINK = Regex("https://[^\\s\"'}]+")
+// The vendor's own top-up link, and ONLY the vendor's. This string is quoted back to the operator,
+// and the previous spelling was https://[^\s"'}]+ — ANY url anywhere in a 403 body, unbounded. A
+// redirect carrying a token in its query would have been echoed verbatim. The doc comment said "the
+// VENDOR's own"; nothing enforced it. Host-constrained and length-bounded now, so it does. (DR-65)
+private val VENDOR_LINK = Regex("""https://(?:[a-z0-9-]+\.)*(?:x\.ai|grok\.com)(?:/[^\s"'}]{0,120})?""")

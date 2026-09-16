@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,10 +20,12 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughReanchorController
 import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -172,5 +175,33 @@ class PassthroughProviderTest {
         val p = provider(KimiProfileFixture().kimi("kimi"))
         assertEquals(ReasoningDisplay.OFF, p.showReasoning)
         assertFalse(p.replayReasoning)
+    }
+
+    @Test
+    fun `re-anchoring is actually wired, so the third retry layer is not dead code`() {
+        // WHY THIS GUARD EXISTS. Provider.reanchorController returns null by DEFAULT ("surface the
+        // failure, pre-reanchor behaviour") and this dialect silently inherited that default, which
+        // IS the outage: a stream that EOFs without message_stop is a 2xx whose handler returns a
+        // Failure, so neither the connect-phase budget nor the G5 reissue budget can see it, and the
+        // controller was the only layer that could. Every behaviour test in
+        // PassthroughReanchorTest.kt passes whether or not the override below exists, so without
+        // this assertion the whole layer can be unwired again in perfect silence.
+        // assertInstanceOf rather than assertNotNull on purpose: an override repointed at some OTHER
+        // controller keeps the layer present while no longer being this dialect's, which is the same
+        // silence one step along.
+        val controller = provider(KimiProfileFixture().kimi("kimi")).reanchorController(
+            TurnMeta(
+                compact = false,
+                showReasoning = ReasoningDisplay.OFF,
+                stream = true,
+                originalModel = "k3[1m]",
+                upstreamModel = "k3",
+                clientMaxTokens = null,
+                effort = "max",
+                summary = null,
+                budgetTokens = null,
+            ),
+        )
+        assertInstanceOf(PassthroughReanchorController::class.java, controller)
     }
 }

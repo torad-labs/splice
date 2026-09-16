@@ -15,6 +15,12 @@ public class KimiQuirks {
         synthesizeSignatures = true,
         dropServerToolBlocks = true,
         effortRungs = EFFORT_RUNGS,
+        // V4-41: MEASURED 2026-09-16 against api.kimi.com/coding — a trailing assistant prefill is
+        // continued (the answer resumed at 4 from a "1\n2\n3" prefill) in all three thinking modes:
+        // enabled, disabled, and absent. So a truncated kimi turn can be resumed rather than lost.
+        // This rides on the head's BASE profile rather than on operator TOML because it is a fact
+        // about kimi's endpoint, not a preference — the same reason the six knobs above live here.
+        reanchorPrefill = true,
     )
 }
 

@@ -102,8 +102,29 @@ public class PassthroughStreamTranslator(
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,
                 "${quirks.providerTag}: stream ended without a terminal event (truncated); retry",
+                // The SALVAGE, and the reason this failure is now recoverable at all. Without it
+                // `partial` defaulted to null, which Provider.reanchorController reads as "this
+                // dialect cannot continue" — so a truncated stream on THIS dialect (every OAuth
+                // head, kimi, muse, deepseek) ended the turn with attempts=1 while the connect-phase
+                // and G5 budgets sat unused, because neither can see a 2xx that EOFs early. The
+                // wire is at a clean block boundary here (closeAll ran above), so a continuation
+                // may APPEND. Measured 2026-09-16: three deepseek truncations in one minute, at
+                // 196, 44 and 989 content frames already delivered, every one of them terminal.
+                partial = partialRound(),
             )
         }
+
+    /** What this round produced before it died, for [ReanchorController]. Mirrors successOutcome's
+     *  reads so a continuation and a success see the SAME buffers. */
+    private fun partialRound(): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
+        thinkingText = channels.thinkingBuf.toString(),
+        bodyText = channels.textBuf.toString(),
+        emittedText = channels.emittedText,
+        emittedThinking = channels.emittedThinking,
+        hasToolUse = blocks.hasToolUse,
+        toolTearOpen = blocks.toolTearOpen,
+        usage = usage.toUsage(),
+    )
 
     private fun successOutcome(): TurnOutcome = TurnOutcome.Success(
         hasToolUse = blocks.hasToolUse,

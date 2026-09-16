@@ -20,5 +20,7 @@ public class KimiProfileFixture {
         synthesizeSignatures = true,
         dropServerToolBlocks = true,
         effortRungs = listOf("low", "high", "max"),
+        // V4-41: measured — kimi continues from a trailing assistant prefill in every thinking mode.
+        reanchorPrefill = true,
     )
 }

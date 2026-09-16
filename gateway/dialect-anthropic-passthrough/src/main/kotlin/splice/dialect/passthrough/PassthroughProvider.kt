@@ -22,6 +22,7 @@ import splice.spi.BuiltTurn
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
+import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 
@@ -84,6 +85,14 @@ public class PassthroughProvider(
             quirks,
             names = toolNames,
         )
+
+    /** The third retry layer, finally wired for this dialect. Until 2026-09-16 this returned the
+     *  SPI default (null = surface the failure), so a stream that truncated mid-answer ended the
+     *  turn at attempts=1 — the connect-phase and G5 budgets cannot see a 2xx that EOFs early, and
+     *  this was the only layer that could. Stateless and cheap, so it is constructed per call
+     *  rather than held. */
+    override fun reanchorController(meta: TurnMeta): ReanchorController =
+        PassthroughReanchorController(prefill = quirks.reanchorPrefill)
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put(ACCEPT, SSE_CONTENT_TYPE) // dialect invariant: this upstream streams SSE

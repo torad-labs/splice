@@ -64,4 +64,10 @@ public data class PassthroughQuirks(
     /** V4-32: cap on tool `name` length, 0 = no cap. Muse's endpoint enforces 64 where
      *  Anthropic's does not; every other head leaves this off and nothing is rewritten. */
     val toolNameCap: Int = 0,
+    /** V4-41: may a re-anchor continuation APPEND the salvaged answer as a trailing assistant
+     *  message? Neutral is FALSE, which leaves a truncated turn ending exactly as it does today
+     *  except for the whole-stream restart that duplicates nothing. Measured per vendor, never
+     *  inferred: deepseek and kimi continue from a prefill, muse rejects the shape with a 400 that
+     *  would convert a retryable error into one Claude Code will not retry. */
+    val reanchorPrefill: Boolean = false,
 )

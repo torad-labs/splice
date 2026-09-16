@@ -33,6 +33,12 @@ internal class PassthroughBlockRegistry(
     // NF-06: tool JSON bypasses the prose buffers, so retain its aggregate size as a count only.
     private var toolArgsCharCount = 0L
     internal val openBlockCount: Int get() = blocks.size
+
+    /** A tool_use block still OPEN when the stream died. Partial argument JSON already reached the
+     *  wire, so the block is corrupt and no continuation can splice onto it — the one tear a
+     *  re-anchor must refuse rather than append to (TurnOutcome.PartialRound.toolTearOpen). Read
+     *  AFTER the flow ends, when whatever remains in [blocks] is exactly what never got its stop. */
+    internal val toolTearOpen: Boolean get() = blocks.values.any { it.kind == Kind.TOOL }
     internal val bufferedToolArgsChars: Int get() = minOf(Int.MAX_VALUE.toLong(), toolArgsCharCount).toInt()
     internal var hasToolUse = false
 

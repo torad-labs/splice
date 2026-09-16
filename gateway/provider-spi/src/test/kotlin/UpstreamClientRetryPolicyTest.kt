@@ -221,7 +221,10 @@ class UpstreamClientRetryPolicyTest {
 
         val follower = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
         assertEquals(1, calls.get(), "a follower must fail fast without reaching upstream")
-        assertTrue(follower.body.contains("cooldown"))
+        // V4-46: STRICTER than the word it replaced. The follower body must identify the GATEWAY as
+        // the holder of the interval — that is the property the row guarantees — where the old
+        // contains("cooldown") merely pinned a vocabulary word.
+        assertTrue(follower.body.contains("this gateway is holding retries"), follower.body)
         assertTrue(waiter.waits.isEmpty(), "neither the observer nor its follower may wait")
         assertEquals(1_000L, cooldown.remainingMs())
         assertEquals(0L, cooldown.unavailableForMs())
@@ -375,11 +378,12 @@ class UpstreamClientRetryPolicyTest {
         // the observer arms the cooldown and terminates without retrying
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
-        // a follower during the cooldown fails fast: 429 body names the cooldown, no upstream call
+        // a follower during the cooldown fails fast: 429 body names the GATEWAY as the holder of the
+        // interval, no upstream call
         val e = assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertEquals(429, e.status)
-        assertTrue(e.body.contains("cooldown"))
+        assertTrue(e.body.contains("this gateway is holding retries"), e.body)
         // default cooldown (no Retry-After) expires after 20s — traffic is attempted again
         now += 21_000
         assertThrows<UpstreamFailed> { postOnce(client) }

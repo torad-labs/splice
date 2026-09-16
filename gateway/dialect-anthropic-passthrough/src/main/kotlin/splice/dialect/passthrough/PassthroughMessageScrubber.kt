@@ -2,6 +2,26 @@
 // (2026-08-17, concentration campaign). Six functions that only call each other, the allowlist and
 // the stripper — the largest self-contained cluster in the file, and the only one that reads
 // quirks.blockAllowlist. Every relocated member kept its identical name and argument list.
+//
+// V4-39 (2026-09-16): the allowlist can empty a message that ARRIVED with blocks, and the emptied
+// message used to ride upstream as `content: []` — a shape no backend here can act on. The live
+// trigger is not exotic: it is what Claude Code sends the first time the operator pastes a
+// screenshot with no accompanying text, because the allowlist drops `image`. Reachable on the FIRST
+// screenshot, and shared by every anthropic-passthrough head, so deepseek, muse and kimi all
+// inherited it wherever their own allowlist drops a type a message consists entirely of.
+//
+// THE CHOICE, deliberately, because the row asks for it to be made rather than discovered:
+// SUBSTITUTE one honest text block, do not drop the message. A dropped message breaks turn
+// alignment on the replayed conversation Claude Code resends every turn — an assistant turn with no
+// preceding user turn, or a tool_result orphaned from the tool_use it answers, is a worse wire than
+// a sentence — and silence tells the model nothing, where a sentence saying the content was removed
+// and why is both true and actionable. An array that was ALREADY empty is left exactly as it is:
+// that shape is the client's, not something this scrubber made, and rewriting it would move bytes
+// for no defect of ours (never-below-status-quo).
+//
+// This COMPOSES with dropDisallowed below rather than replacing it: the same drop is reported once
+// per type on the anomaly channel AND leaves the message with a substitute block, so a head that
+// silently ate a screenshot now both says so in the log and tells the model something true.
 package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonArray
@@ -48,15 +68,37 @@ internal class PassthroughMessageScrubber(
 
     /** A content value is a bare string (verbatim) or a block list (allowlist-filtered). */
     private fun scrubContent(content: JsonElement): JsonElement = when (content) {
-        is JsonArray -> buildJsonArray {
+        is JsonArray -> scrubBlocks(content)
+        else -> content
+    }
+
+    /** Filter the blocks, and never hand back an EMPTY array for a message that had blocks: that is
+     *  the V4-39 defect, and it is answered with one honest block rather than with nothing. The
+     *  already-empty array is not ours to rewrite, so it passes through untouched. */
+    private fun scrubBlocks(content: JsonArray): JsonArray {
+        val kept = buildJsonArray {
             content.forEach { el -> (el as? JsonObject)?.let { scrubBlock(it) }?.let { add(it) } }
         }
-        else -> content
+        if (kept.isNotEmpty() || content.isEmpty()) return kept
+        return buildJsonArray { add(omittedBlock(content.size)) }
+    }
+
+    /** What this message became: one block naming the count, the proxy that removed them, and why.
+     *  The reasons a block does not survive are the allowlist and an empty unsigned thinking block;
+     *  the sentence covers both without pretending to know which, because a wrong specific is worse
+     *  than an honest general. */
+    private fun omittedBlock(removed: Int): JsonObject = buildJsonObject {
+        put(TYPE, TYPE_TEXT)
+        put(
+            TEXT,
+            "$removed content block(s) omitted by ${quirks.providerTag} proxy: this endpoint does not " +
+                "accept every content type, and this message carried nothing else.",
+        )
     }
 
     /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
-        val type = JsonScalars.strOrEmpty(block["type"])
+        val type = JsonScalars.strOrEmpty(block[TYPE])
         quirks.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
         if (isEmptyThinking(type, block)) return null
         return rebuildBlock(block, type)

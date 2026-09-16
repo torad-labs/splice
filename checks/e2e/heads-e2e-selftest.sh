@@ -300,8 +300,42 @@ else
   err "no receipt landed in scratch — emission broke or E2E_RECEIPT_DIR was ignored"
 fi
 
+# ── V4-33: over-long MCP tool name planted in the tier-2 scratch dir. ──
+# Red when OVERLONG_TOOL_NAME / plant_overlong_mcp is deleted from heads-e2e.sh
+# (the selftest is the wall; a live muse 400 is the operator report this exists
+# to catch next time).
+if msg="$(python3 - "$HARNESS" <<'PY' 2>&1
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+def need(pat, label):
+    m = re.search(pat, text, re.M)
+    if not m:
+        sys.exit(label + " missing from heads-e2e.sh")
+    return m
+name = need(r'^OVERLONG_TOOL_NAME="([^"]+)"', "OVERLONG_TOOL_NAME").group(1)
+server = need(r'^OVERLONG_MCP_SERVER="([^"]+)"', "OVERLONG_MCP_SERVER").group(1)
+tool = need(r'^OVERLONG_MCP_TOOL="([^"]+)"', "OVERLONG_MCP_TOOL").group(1)
+if len(name) <= 64:
+    sys.exit("OVERLONG_TOOL_NAME is %d chars, want >64 (operator 400 was 68)" % len(name))
+composed = "mcp__%s__%s" % (server, tool)
+if composed != name:
+    sys.exit("OVERLONG_TOOL_NAME is not mcp__SERVER__TOOL composition")
+if "plant_overlong_mcp" not in text:
+    sys.exit("plant_overlong_mcp missing from heads-e2e.sh")
+if 'plant_overlong_mcp "$scratch"' not in text:
+    sys.exit("tier2 no longer calls plant_overlong_mcp on the scratch dir")
+if "a skip is not a pass" not in text:
+    sys.exit("skip summary no longer says a skip is not a pass")
+print("%s is %d chars" % (name, len(name)))
+PY
+)"; then
+  ok "long-tool-name arm plants a >64-char MCP name into the scratch dir"
+else
+  err "long-tool-name arm: ${msg:-python failed}"
+fi
+
 if [ "$fail" -eq 0 ]; then
-  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped, transport failures and not-logged-in are per-head verdicts, receipts stay real"
+  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped, transport failures and not-logged-in are per-head verdicts, receipts stay real, long MCP tool name is planted in the tier-2 scratch"
   exit 0
 fi
 echo "heads-e2e-selftest FAIL"

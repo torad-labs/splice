@@ -22,7 +22,7 @@ internal class SelectPrompt(
     private val keys: KeyReader,
     private val terminal: TerminalMode,
     private val out: Appendable,
-    private val hasConsole: () -> Boolean = { System.console() != null },
+    private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
 ) {
     fun <T> ask(
         question: String,

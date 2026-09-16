@@ -30,11 +30,3 @@ internal fun interface SetupProbe {
 internal fun interface StartChoice {
     operator fun invoke(options: List<SelectOption<SetupStart>>, initialIndex: Int): SelectOutcome<SetupStart>
 }
-
-/**
- * Whether a real terminal is attached. False in a pipe, a CI log, and a test — where every prompt
- * must take its default silently instead of rendering a cursor-driven menu into a log file.
- */
-internal fun interface ConsolePresence {
-    operator fun invoke(): Boolean
-}

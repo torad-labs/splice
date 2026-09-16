@@ -7,13 +7,13 @@ import java.util.Timer
 import java.util.TimerTask
 
 internal fun interface PulseScheduler {
-    fun start(onPulse: () -> Unit): AutoCloseable
+    fun start(onPulse: PulseTick): AutoCloseable
 }
 
 internal class TimerPulseScheduler(
     private val periodMs: Long = PULSE_MS,
 ) : PulseScheduler {
-    override fun start(onPulse: () -> Unit): AutoCloseable {
+    override fun start(onPulse: PulseTick): AutoCloseable {
         val timer = Timer("splice-spinner", true)
         timer.schedule(
             object : TimerTask() {

@@ -77,8 +77,35 @@ public class PerfStats(
     }
 
     /** Numeric fields of the last [tailN] rows, newest last — the aggregation input. */
+    public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> =
+        tailRows().takeLast(tailN).map { numericFields(it) }
+
+    /** Numeric fields of EVERY row in the byte-bounded tail belonging to ONE client session,
+     *  newest last. No row cap on purpose: the read is already bounded by bytes, and a session's
+     *  spend must not be truncated by a count that a long session would exceed.
+     *
+     *  V4-37: the statusline's cost segment replaces a per-SESSION number, so it must be summed from
+     *  one session's rows. The row on disk stores the session TRUNCATED (SESSION_TAG_CHARS in
+     *  TurnDrive.kt); this reader is the one place that knows it, so the caller passes the full id it
+     *  holds and the truncation stays with the writer instead of being duplicated in another module.
+     *  An empty [sessionId] matches nothing at all — an empty tag would otherwise `startsWith` every
+     *  row in the file and quietly become a head-wide total. */
+    public fun tailNumericFor(sessionId: String): List<Map<String, Long>> {
+        if (sessionId.isEmpty()) return emptyList()
+        return tailRows().filter { row -> belongsTo(row, sessionId) }.map { numericFields(it) }
+    }
+
+    /** True when [row]'s stored tag is the truncated form of [sessionId]. */
+    private fun belongsTo(row: JsonObject, sessionId: String): Boolean {
+        val tag = sessionTagOf(row)?.takeIf { it.isNotEmpty() } ?: return false
+        return sessionId.startsWith(tag)
+    }
+
+    private fun sessionTagOf(row: JsonObject): String? =
+        (row["session"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
     // read is best-effort by design: a missing/corrupt file yields empty; a bad line is skipped.
-    public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
+    private fun tailRows(): List<JsonObject> {
         AsyncFileIo.drain()
         // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
         // empty; an inaccessible perf log degrades the same but leaves a trace instead of a
@@ -101,7 +128,7 @@ public class PerfStats(
             if (genuinelyAbsent) unreadableLogged.set(false)
             emptyList()
         }
-        return rows.takeLast(tailN).map { numericFields(it) }
+        return rows
     }
 
     private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {

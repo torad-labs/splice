@@ -20,9 +20,14 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
 
     fun effort(root: JsonObject): String? = str((root["effort"] as? JsonObject)?.get("level"))
 
-    fun costSegment(root: JsonObject): String? {
-        val cost = num((root["cost"] as? JsonObject)?.get("total_cost_usd"))?.takeIf { it > 0.0 } ?: return null
-        return "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", cost)
+    /** [computed] is splice's OWN figure for this session (V4-37). It wins when present, because the
+     *  client's `total_cost_usd` is priced with an ANTHROPIC card whatever head it is really talking
+     *  to — the 20x error the operator reported. Null means the head declares no rates, and the
+     *  client's number renders exactly as it does today: NEVER-BELOW-STATUS-QUO. */
+    fun costSegment(root: JsonObject, computed: Double? = null): String? {
+        val cost = computed ?: num((root["cost"] as? JsonObject)?.get("total_cost_usd"))
+        val shown = cost?.takeIf { it > 0.0 } ?: return null
+        return "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", shown)
     }
 
     /** [quotaFirst]: the line is pooled, so the tracked windows are the SELECTED account's and win;

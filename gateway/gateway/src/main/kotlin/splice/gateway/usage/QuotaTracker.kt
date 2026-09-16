@@ -9,6 +9,7 @@ import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.QuotaHeaders
 import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaSnapshot
+import splice.core.usage.QuotaStatus
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -49,6 +50,17 @@ public class QuotaTracker(
 
     /** What every client response carries so Claude Code's rate_limits show this head's windows. */
     public fun clientHeaders(): Map<String, String> = latest.get()?.let(headers::forClient).orEmpty()
+
+    /** V4-51: the REFUSAL variant, for the admission-side 429 V4-50 sends. Same family, with
+     *  `-status: rejected` and the plain `anthropic-ratelimit-unified-reset` naming
+     *  [resetEpochSeconds] — the member Claude Code's withRetry reads off a 429 to decide WHEN to
+     *  come back, as opposed to how full a bucket is.
+     *
+     *  A head with no tracked snapshot still states the refusal, because the deadline is the whole
+     *  message and the window members are optional; [resetEpochSeconds] null simply omits the
+     *  deadline rather than inventing one. */
+    public fun clientHeadersRejected(resetEpochSeconds: Long?): Map<String, String> =
+        headers.forClient(latest.get() ?: QuotaSnapshot(), QuotaStatus.REJECTED, resetEpochSeconds)
 
     private fun readFile(): QuotaSnapshot? =
         Cancellables.runCatchingCancellable { codec.decode(Files.readString(file)) }.getOrNull()

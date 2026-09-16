@@ -82,7 +82,7 @@ class AccountPoolTest {
     }
 
     @Test
-    fun `a short 429 on a nearly spent turn keeps the next selection warm`() {
+    fun `a short 429 backs off and still keeps the next selection warm`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary, fixture.account("plus-a"))
@@ -97,9 +97,11 @@ class AccountPoolTest {
         )
         val next = pool.select("session")
 
-        assertEquals(RetryDecision.GIVE_UP, plan.decision)
+        // V4-48: a short pushback now takes the BACKOFF branch — it is waited out, not surrendered —
+        // and a waited-out 429 arms NOTHING, so no follower is failed fast for that interval.
+        assertEquals(RetryDecision.BACKOFF, plan.decision)
         assertEquals(0L, primary.cooldown.unavailableForMs())
-        assertEquals(1_000L, primary.cooldown.remainingMs(), "followers still fail fast on the same account")
+        assertEquals(0L, primary.cooldown.remainingMs(), "the wait path leaves the head unarmed")
         assertSame(primary, next.account)
         assertFalse(next.cacheCold)
         assertEquals(null, next.switch)

@@ -204,6 +204,14 @@ private val EXCLUDED = mapOf(
     "UnixStty" to "seam — production stty runner, not a widget",
     "TimerPulseScheduler" to "seam — spinner timer, not a widget",
     "WizardCancelled" to "exception type — cancel outcome",
+    // The named seams (kt-no-lambda-seam, 2026-09-16). Each is an injected ROLE, exercised through
+    // the widget that takes it rather than on its own: ConsolePresence is what every check below
+    // sets to false, and RawBlock is what TerminalMode.raw runs.
+    "ConsolePresence" to "seam interface — injected console presence",
+    "ShutdownHookAdd" to "seam interface — injected shutdown-hook registration",
+    "ShutdownHookRemove" to "seam interface — injected shutdown-hook removal",
+    "RawBlock" to "seam interface — the body TerminalMode.raw brackets",
+    "PulseTick" to "seam interface — one spinner tick",
 )
 
 private val CURSOR = Regex("""\r|\u001B\[[0-9;]*[ABCDJK]""")

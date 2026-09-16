@@ -3,6 +3,7 @@
 package splice.app.cli.prompt
 
 import java.io.File
+import java.util.concurrent.Executors
 
 /** stdout plus the process exit. A mode string and an error must not share a channel. */
 internal data class SttyResult(val exit: Int, val stdout: String)
@@ -32,16 +33,18 @@ internal class UnixStty : SttyCommand {
  */
 internal class TerminalMode(
     private val stty: SttyCommand = UnixStty(),
-    private val hasConsole: () -> Boolean = { System.console() != null },
-    private val addHook: (Thread) -> Unit = { Runtime.getRuntime().addShutdownHook(it) },
-    private val removeHook: (Thread) -> Unit = { Runtime.getRuntime().removeShutdownHook(it) },
+    private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
+    private val addHook: ShutdownHookAdd = ShutdownHookAdd { Runtime.getRuntime().addShutdownHook(it) },
+    private val removeHook: ShutdownHookRemove = ShutdownHookRemove { Runtime.getRuntime().removeShutdownHook(it) },
 ) {
-    fun <T> raw(block: () -> T): T {
+    fun <T> raw(block: RawBlock<T>): T {
         if (!hasConsole()) return block()
         val captured = stty.run(listOf("stty", "-g"))
         val saved = captured.stdout.trim()
         if (captured.exit != 0 || saved.isEmpty()) return block()
-        val hook = Thread { stty.run(listOf("stty", saved)) }
+        // kt-no-raw-thread's own prescribed form: addShutdownHook demands the Thread TYPE and no
+        // coroutine can stand in, so the platform factory owns thread group and priority.
+        val hook = Executors.defaultThreadFactory().newThread { stty.run(listOf("stty", saved)) }
         addHook(hook)
         try {
             stty.run(listOf("stty", "-icanon", "-echo", "min", "1", "time", "0"))

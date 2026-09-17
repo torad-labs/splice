@@ -9,6 +9,25 @@
 # `kotlin.runCatching(::fn)`) forms are different node kinds and slipped through entirely. Added an
 # `any:` covering all three alternate shapes; `runCatchingCancellable` stays correctly unaffected
 # because every branch matches on the exact `runCatching` identifier, no prefix collision.
+#
+# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :control and :app sat outside most walls'
+# `files:` globs). :control serves the statusline route and the MCP host inside Ktor coroutines, and
+# :app runs the daemon supervisor, the OAuth callback server and the refresh loops — the 600%-CPU
+# incident's blast radius, not a place the law stops applying. Widened LITERALLY as the audit row
+# specifies, to all of `gateway/control/src/main` and `gateway/app/src/main`, with NO new ignores.
+# NEW RED AT WIDENING — 20, all pre-existing, none fixed here:
+#   :control StatuslineRenderer.kt:61,:71,:93,:203,:236, mcp/McpHost.kt:62, api/StatuslineRoute.kt:94
+#   :app     DaemonLock.kt:89,:93, LoginIo.kt:218, OAuthLoginFlow.kt:161,:167,:180,:230,
+#            cli/LoginMuse.kt:134, cli/AdminSupport.kt:79, cli/RestartCommand.kt:26,
+#            cli/KeyCommand.kt:62, cli/SetupCommand.kt:80, cli/DoctorRedaction.kt:77
+# READ THIS BEFORE FIXING, and it is a scoping question the wall row deliberately did NOT decide:
+# six of the twenty (`cli/LoginMuse`, `cli/AdminSupport`, `cli/RestartCommand`, `cli/KeyCommand`,
+# `cli/SetupCommand`, `cli/DoctorRedaction`) sit under `gateway/app/src/main/kotlin/**/cli/**`, which
+# kt-no-runblocking-in-daemon already `ignores:` BY NAME as the blocking-CLI boundary — no coroutine
+# there, so nothing to swallow. `runCatchingCancellable` is still correct and harmless in blocking
+# code, so the cheap fix is to convert all twenty uniformly; the alternative is to mirror
+# kt-no-runblocking-in-daemon's dated `cli/**` + `Main.kt` ignore pair here. The fix row picks one;
+# a wall row must not narrow its own census.
 id: kt-no-runcatching-in-coroutine
 language: kotlin
 severity: error
@@ -23,6 +42,8 @@ files:
   - gateway/dialect-openai-chat/src/main/**/*.kt
   - gateway/dialect-anthropic-passthrough/src/main/**/*.kt
   - gateway/gateway/src/main/**/*.kt
+  - gateway/control/src/main/**/*.kt
+  - gateway/app/src/main/**/*.kt
 rule:
   any:
     - pattern: runCatching { $$$BODY }

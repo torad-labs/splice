@@ -1,0 +1,45 @@
+id: kt-no-exception-as-outcome
+valid:
+  # the remedy: the refusal is a subtype of a sealed CLASS the call returns. `sealed class`, not
+  # `sealed interface` — kt-no-sealed-interface owns that convention, and a `sealed interface`
+  # remedy here would satisfy this wall while tripping that one.
+  - |
+    public sealed class AccountSelection {
+        public data class Chosen(val label: String) : AccountSelection()
+        public data class AllExhausted(val earliestResetEpochSeconds: Long?) : AccountSelection()
+    }
+  # a genuine invariant break is spelled check()/require(), never given a catchable name
+  - |
+    public fun select(sessionId: String?): AccountSelection {
+        require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
+        return chosen()
+    }
+  # ordinary types are untouched
+  - 'public data class AccountPoolView(val selectedLabel: String?)'
+  - 'public class AccountPool(private val accounts: List<PoolAccount>)'
+  # CALLING or catching an exception type is not a declaration — this rule matches declarations only
+  - 'try { pool.select(id) } catch (e: AllAccountsExhausted) { refuse(e) }'
+  - 'throw IllegalStateException("unreachable")'
+  # subclassing a DIFFERENT exception root is outside this rule's stated scope (IllegalArgumentException
+  # is the input-validation vocabulary; Exception/Throwable are not the refusal-laundering shapes the
+  # census found). Pinned so a future widening is a deliberate edit, not an accident.
+  - 'public class OAuthAccountRefused(public val reason: String) : IllegalArgumentException(reason)'
+  - 'internal class WizardCancelled(reason: String) : Exception(reason)'
+invalid:
+  # the named scar
+  - 'public class AllAccountsExhausted(public val earliestResetEpochSeconds: Long?) : IllegalStateException(AccountResetText.exhausted(earliestResetEpochSeconds))'
+  # supertype WITH arguments — reached through the constructor_invocation wrapper
+  - 'public class UpstreamAuthMissing : RuntimeException("no upstream credentials")'
+  - 'public class StreamTornBeforeClient(cause: Throwable) : RuntimeException("stream torn before first client frame", cause)'
+  # ...and the BARE supertype spelling, which has no wrapper at all
+  - 'internal class RequestBodyTooLarge(val limit: Int) : RuntimeException()'
+  # fully-qualified spelling must not escape
+  - 'public class GatewayAtCapacityException : kotlin.RuntimeException("gateway at capacity")'
+  # a multi-line declaration with constructor properties
+  - |
+    public class UpstreamFailed(
+        public val body: String,
+        public val status: Int? = null,
+    ) : RuntimeException("upstream failed after retries (status=$status)")
+  # an extra interface in the supertype list must not launder the exception root
+  - 'public class WsRoundNeedsSse(public val detail: String = "") : RuntimeException("websocket round needs sse"), RoundRefusal'

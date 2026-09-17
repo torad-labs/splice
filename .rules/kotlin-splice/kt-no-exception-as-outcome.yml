@@ -1,0 +1,95 @@
+# THE LAW. An EXPECTED refusal is an outcome, not an exception. `throw` is the channel for "this
+# cannot happen" — a broken invariant, unrecoverable, reported to a human. The moment a class is
+# declared so that a caller can `catch` it BY NAME and continue, the throw is a return statement
+# wearing a stack trace, and every property the type system would have given a sealed return is
+# lost: the compiler cannot tell a caller it forgot a case, the signature does not say the refusal
+# exists, and the refusal travels up through every `catch (e: Exception)` on the way — including the
+# broad catches kt-catch-swallows-cancellation already had to be written to police.
+#
+# Worse here specifically: these extend RuntimeException and IllegalStateException, so they pass
+# through `runCatching`, `Result`, and any `catch (e: IllegalStateException)` written for a genuine
+# invariant break. A refusal and a bug become indistinguishable at the catch site — the 2026-07-18
+# "auth failure looked identical to a missing file" shape that kt-no-silent-result-collapse exists
+# for, one level earlier in the design.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit A row 9 / B rows 1,7). `AllAccountsExhausted` is the named
+# one: AccountPool.select throws it when no account can start a turn — an entirely ordinary,
+# expected, per-request condition — as an IllegalStateException, which HeadAdmission.kt:233 then
+# catches by name and turns into a 429 with a reset hint. Selection's answer "no account is
+# available, earliest reset is T" is a VALUE the caller must handle.
+#
+# THE REMEDY. A `sealed class` return from the function that decided — `sealed class`, not `sealed
+# interface`: kt-no-sealed-interface owns that convention and a `sealed interface` remedy trips it
+# (measured against the hook, 2026-09-17). `AccountPool.select` returns `AccountSelection`, today a
+# plain class (AccountSelection.kt:85): the remedy makes it a sealed class whose Exhausted subtype
+# carries `earliestResetEpochSeconds`, and HeadAdmission's `catch` becomes a `when` branch the
+# compiler checks. Same shape for the rest: the refusal rides the return type of the call that
+# refused. `TurnOutcome` (core/turn/TurnOutcome.kt:92) is the in-tree example of the target shape.
+#
+# THE CENSUS (measured 2026-09-17, `ast-grep scan`). The audit row named ONE and predicted the
+# declaration-side matcher would find it; the matcher finds NINE, all in :provider-spi, all expected
+# refusals, and the eight extra are recorded here because that list IS the fix row's work:
+#   gateway/provider-spi/src/main/kotlin/splice/spi/AccountSelection.kt:144  AllAccountsExhausted : IllegalStateException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:13     UpstreamAuthMissing : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:16     UpstreamTurnWaitExhausted : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:23     StreamTornBeforeClient : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:26     UpstreamFailed : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt:192      GatewayAtCapacityException : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
+#   gateway/provider-spi/src/main/kotlin/splice/spi/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
+# gateway/core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
+# matcher over the same glob reports the nine above, so :core's emptiness is measured against a
+# denominator that demonstrably produces findings ("empty" and "empty in X" are different
+# sentences, §24).
+#
+# Six of the nine are caught or dispatched BY NAME from :gateway main sources, which is the proof
+# that they are control flow and not invariant breaks: HeadAdmission.kt:233 (AllAccountsExhausted),
+# TurnFailures.kt:26 / TurnKnownEnd.kt:31 / TurnDriver.kt:149 (UpstreamAuthMissing),
+# SseRoundPost.kt:62 (UpstreamTurnWaitExhausted), AdmissionGate.kt:37 (GatewayAtCapacityException),
+# SseRoundDriver.kt:119 (StreamTornBeforeClient). WsRoundNeedsSse announces its own control-flow
+# purpose in its name.
+#
+# THE MATCHER IS THE DECLARATION SIDE, and that is a rule-shape fact worth stating: "is this class
+# caught by name somewhere else" is a cross-FILE question and ast-grep matches one file at a time.
+# The audit row chose the declaration side for exactly this reason. It means the rule cannot
+# distinguish "declared as an exception AND caught by name" from "declared as an exception"; it
+# fails CLOSED on the second, which is correct, because a RuntimeException subclass nobody catches
+# by name has no reason to be a distinct type at all.
+#
+# THE EXEMPTION CHANNEL — a genuine invariant error. A class that really is "this cannot happen"
+# takes the repo's existing reviewed-exception channel at its declaration, where the next reader of
+# that class sees the reasoning:
+#   // ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>
+# Honored identically by the PreToolUse hook and by `gate:rules` (orchestrator.py:28). It is used
+# ZERO times today: none of the nine qualifies, because a genuine invariant break in this repo is
+# spelled `check()`/`require()` and is never given a name for a caller to catch.
+id: kt-no-exception-as-outcome
+language: kotlin
+severity: error
+message: "Expected refusals are sealed OUTCOMES, not exception types: return the refusal from the function that decided it, so the compiler checks the caller's `when`. A named RuntimeException/IllegalStateException subclass is a return statement wearing a stack trace."
+note: >
+  Add the refusal as a subtype of a `sealed class` the call returns (`sealed class`, never `sealed
+  interface` — kt-no-sealed-interface owns that): AccountPool.select returns AccountSelection, so
+  the exhausted case becomes one more subtype carrying its reset hint and the catch site becomes an
+  exhaustive `when`. TurnOutcome is the in-tree example of the shape. These subclasses are worse than a plain outcome because
+  they extend RuntimeException/IllegalStateException: they slip through runCatching, Result, and any
+  catch written for a real invariant break, making a refusal and a bug indistinguishable. A class
+  that genuinely IS an invariant break takes
+  `// ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>`.
+files:
+  - gateway/provider-spi/src/main/**/*.kt
+  - gateway/core/src/main/**/*.kt
+rule:
+  all:
+    - kind: class_declaration
+    # the grammar's own name for "this class extends X": present iff there is a supertype clause.
+    # `stopBy: end` reaches the user_type through the constructor_invocation wrapper that a
+    # supertype WITH arguments (`: RuntimeException("msg")`) adds and a bare one does not, so both
+    # spellings match — pinned in the rule-test.
+    - has:
+        kind: delegation_specifier
+        has:
+          stopBy: end
+          kind: user_type
+          regex: '^(kotlin\.)?(IllegalStateException|RuntimeException)$'

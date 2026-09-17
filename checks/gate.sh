@@ -159,6 +159,28 @@ run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defau
 # only in a runtime doctor map — the map that would otherwise make this wall green for free.
 run "quirks keys documented" python3 checks/config/quirks-keys-documented.py check .
 run "quirks keys selftest" python3 checks/config/quirks-keys-documented.py --selftest
+# ARCH-AUDIT 2026-09-17 (#924, walls V4-87..V4-98): each violation class the architecture audit
+# found became an instrument BEFORE its instances were fixed, and every instrument is red-green
+# proven by a selftest that runs beside it. The `check` legs are red BY NAME until the sibling fix
+# rows (V4-99..V4-114) land; a red here is the inventory, not a flake. Ratchet legs (--ratchet)
+# carry a checked-in baseline and fail on GROWTH and on a stale entry, so they are green today and
+# stay green only while nobody adds an offender. The ast-grep walls of the same wave need no leg
+# here — sgconfig.yml routes them into `gate:rules` above and into the PreToolUse hook from one
+# source (same-checker-twice).
+run "knob keys documented" python3 checks/config/knob-keys-documented.py check .
+run "knob keys selftest" bash checks/knob-keys-documented-selftest.sh
+run "env vars documented" python3 checks/config/env-vars-documented.py check .
+run "env vars selftest" bash checks/env-vars-documented-selftest.sh
+run "const single source" python3 checks/const-single-source.py --ratchet
+run "const single source selftest" bash checks/const-single-source-selftest.sh
+run "silent constants" python3 checks/silent-constants.py --ratchet
+run "silent constants selftest" bash checks/silent-constants-selftest.sh
+run "role registry" python3 checks/role-registry.py check .
+run "role registry selftest" bash checks/role-registry-selftest.sh
+run "model catalogs single source" python3 checks/model-catalogs-single-source.py check .
+run "model catalogs selftest" bash checks/model-catalogs-single-source-selftest.sh
+run "autocloseable closed" python3 checks/autocloseable-closed.py check
+run "autocloseable closed selftest" bash checks/autocloseable-closed-selftest.sh
 # V4-68: a @Test method JUnit never DISCOVERED is a green suite with a hole in it — no failure,
 # no skip, no warning, and the XML just looks one short. Found 2026-09-16: HeadServerCapacityTest
 # declared four @Test methods and its XML reported three, because the fourth's body ended in

@@ -1,0 +1,65 @@
+id: kt-tests-no-wall-clock
+valid:
+  # remedy 1 — runTest virtual time. A numeric delay inside it costs nothing and is deterministic.
+  - |
+    @Test
+    fun watchdogFires() = runTest {
+        val target = launch { delay(10.seconds) }
+        delay(900)
+        assertTrue(target.isCancelled)
+    }
+  - |
+    @Test
+    fun withDispatcher() = runTest(UnconfinedTestDispatcher()) {
+        delay(1_200)
+    }
+  # remedy 2 — an injected clock: no waiting at all
+  - |
+    @Test
+    fun watchdogFiresOnTheInjectedClock() {
+        val clock = FakeElapsedClock()
+        clock.advance(900)
+        assertTrue(watchdog.expired(clock))
+    }
+  # remedy 3 — poll a CONDITION with a deadline; it fails by naming the predicate
+  - 'awaitUntil(deadline = 2_000) { recorder.frames().isNotEmpty() }'
+  # a Duration delay is not a guessed millisecond count — it is how a test spells "longer than the
+  # thing under test", and the rule deliberately does not flag it
+  - 'val target = launch { delay(10.seconds) }'
+  - 'launch { delay(1.minutes) }'
+  # a NAMED constant is not a numeric literal: the number lives once, where it can be explained
+  - 'delay(STALL_SLEEP_MS)'
+  - 'delay(TEAR_DELIVERY_PAUSE_MS)'
+  - 'delay(spec.firstByteTimeoutMs)'
+invalid:
+  # Thread.sleep — every spelling, and red even inside runTest, because it blocks a real thread
+  - 'Thread.sleep(50)'
+  - 'Thread.sleep(700) // Netty warmup'
+  - 'Thread.sleep(TEAR_DELIVERY_PAUSE_MS)'
+  - 'java.lang.Thread.sleep(600)'
+  - |
+    @Test
+    fun blocksInsideRunTest() = runTest {
+        Thread.sleep(500)
+    }
+  # a numeric delay OUTSIDE runTest waits exactly as long as the sleep it replaced — the third of
+  # the census the inherited rule could not see
+  - 'delay(6_500)'
+  - 'delay(100)'
+  - 'delay(1)'
+  - 'delay(60_000)'
+  - 'delay(100L)'
+  - 'kotlinx.coroutines.delay(300)'
+  # ...including inside a plain runBlocking, which has no virtual clock
+  - |
+    @Test
+    fun drains() = runBlocking {
+        delay(6_500)
+    }
+  # a nested lambda inside runTest is still virtual time, but one OUTSIDE it is not: a runTest
+  # elsewhere in the file must not vouch for this
+  - |
+    @Test
+    fun outside() {
+        runBlocking { delay(400) }
+    }

@@ -46,7 +46,7 @@ public class SseEmitter internal constructor(
      *  turn and the emitter is built before the first byte; the streaming caller points it at the
      *  channel's own CONTENT_FRAMES_OUT counter, so the emitter's answer and the wire's accounting
      *  cannot disagree. */
-    private val contentReached: () -> Boolean,
+    private val contentReached: ContentReached,
 ) : TurnTerminal, WireSink by blocks {
 
     // Sole-terminal state machine: OPEN → ENDING (claim) → ENDED (frames succeeded, or abandon).
@@ -274,6 +274,12 @@ public class SseEmitter internal constructor(
  *  are never remapped (see above); INVALID_REQUEST and AUTHENTICATION are never remapped (splice is
  *  telling the client something only the operator can change); and only the WIRE TYPE moves — the
  *  message still comes from FailurePresenter and telemetry still records the REAL type. */
+/** Has any content frame reached the client this turn — the one fact the pre-content rule turns on.
+ *  Named for its role at the seam (wall kt-no-lambda-seam); the emitter asks it per error frame. */
+public fun interface ContentReached {
+    public operator fun invoke(): Boolean
+}
+
 internal object PreContentWireType {
     fun of(type: ErrorType, contentReachedClient: Boolean, permanent: Boolean = false): ErrorType {
         // 1. The client is already finalizing what it holds — a relabel would misdescribe it. Written

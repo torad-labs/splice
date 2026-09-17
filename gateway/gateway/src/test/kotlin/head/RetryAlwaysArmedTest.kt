@@ -222,11 +222,11 @@ class RetryAlwaysArmedTest {
         return seen
     }
 
-    private suspend fun request(scenario: String): Pair<Int, String> {
+    private suspend fun request(scenario: String, stream: Boolean = true): Pair<Int, String> {
         val response = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
                     "system":"You are a test. SCENARIO:$scenario",
                     "messages":[{"role":"user","content":"go"}]}""",
             )
@@ -294,6 +294,56 @@ class RetryAlwaysArmedTest {
         val (status, body) = drive("overload_once")
         assertEquals(200, status, "a once-failing upstream must still be answered from a retry, got: ${body.take(200)}")
     }
+
+    @Test
+    fun `the FIRST persistent-429 turn reaches the client retryable, and the next gets a real 429`() = runBlocking {
+        // V4-71. The wall's RATE_LIMIT row is driven as quota429+requota429, and drive() deliberately
+        // returns only the SECOND reply — so until now the FIRST 429 turn was never asserted on, and
+        // it was the broken one. It reached the client as an in-stream rate_limit_error, which Claude
+        // Code NEVER retries (in-band errors are retried only when they carry overloaded_error), so
+        // the operator's very first encounter with a persistent 429 died terminally and only the NEXT
+        // turn got the admission 429. This asserts the first turn on its own.
+        upstreamClient.clearRateLimitCooldown()
+        val (firstStatus, firstBody) = request("quota429")
+
+        // The 200 is committed at TurnStreamer.stream before the upstream connect, so this turn
+        // cannot carry a real status — which is exactly why the wire TYPE is the only lever here.
+        assertEquals(200, firstStatus, "the 200 is committed before the upstream is reached")
+        assertTrue(
+            firstBody.contains("overloaded_error"),
+            "the FIRST 429 turn must be retryable, got: ${firstBody.take(240)}",
+        )
+        assertTrue(
+            !firstBody.contains("\"type\":\"rate_limit_error\""),
+            "an in-stream rate_limit_error is never retried by the client: ${firstBody.take(240)}",
+        )
+        // (b) the WORDS do not move: the operator must still be told it was a rate limit, and the
+        // V4-59 code still rides in front of them.
+        assertTrue(
+            firstBody.contains("rate limit", ignoreCase = true),
+            "the wording must stay rate-limit even though the wire type is overload: ${firstBody.take(240)}",
+        )
+        assertTrue(firstBody.contains("SPLICE-RATE-LIMIT"), "the greppable code must survive: ${firstBody.take(240)}")
+
+        // (c) and this is what makes the first turn's shape matter: the same head, next turn, is now
+        // answered from the cooldown the first turn armed — a REAL 429 the client can act on.
+        val (nextStatus, nextBody) = request("requota429")
+        assertEquals(429, nextStatus, "the next turn must get a real 429, got: ${nextBody.take(240)}")
+    }
+
+    @Test
+    fun `the collect path answers the FIRST persistent-429 turn with a real 529, still a rate limit in words`() =
+        runBlocking {
+            // V4-71 collect-path pin (orchestrator, 2026-09-17): the wire type chosen for the stream
+            // path decides the collect path's STATUS too (CollectingTerminal.statusFor), so a
+            // stream:false persistent-429 turn moved from 429 to 529. Both are retryable by the
+            // client in both modes, but the number genuinely changed, so it is pinned rather than
+            // left to be rediscovered.
+            upstreamClient.clearRateLimitCooldown()
+            val (status, body) = request("quota429", stream = false)
+            assertEquals(529, status, "collect path must carry the overload status, got: ${body.take(240)}")
+            assertTrue(body.contains("SPLICE-RATE-LIMIT"), "the words stay rate-limit: ${body.take(240)}")
+        }
 
     @Test
     fun `the exclusion list is exactly the four types and every entry says why`() {

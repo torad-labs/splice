@@ -2,6 +2,7 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.gateway.head
 
+import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.gateway.pipeline.FailurePresenter
@@ -59,7 +60,24 @@ internal class TurnKnownEnd(
             // DR-128: account BEFORE the emit — same law as the auth-missing arm above.
             telemetry.recordPerf(drive, "error:upstream-failed")
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
-            drive.emitter.emitError(failure.type, message)
+            // V4-71: the FIRST turn to meet a persistent 429 must reach the client RETRYABLE, and
+            // today it does not. Claude Code retries an in-band error ONLY when it carries
+            // overloaded_error (or a real 429/529 status) — verified in the 2.1.257 binary — and a
+            // 200 is already committed at TurnStreamer.stream before the upstream connect, so a
+            // genuine 429 is not ours to send here. Before any content the turn is indistinguishable
+            // from a transient overload and nothing the client read is at stake, so the WIRE TYPE
+            // becomes OVERLOADED while the WORDS stay rate-limit: the same shape the conn-reset and
+            // watchdog endings already use. The cooldown is armed by RetryRules.giveUp, so the
+            // client's re-send meets the V4-50 admission 429 with its real headers.
+            //
+            // THE FACT IS THE TURN'S, NOT A ROUND'S. SseRoundDriver baselines CONTENT_FRAMES_OUT per
+            // round and this layer cannot see a round baseline; perfCounter is turn-cumulative, so
+            // "> 0" is the question that belongs here — has ANY content reached the client this turn.
+            // After content this stays a rate_limit_error, which is V4-60's exclusion and unchanged.
+            val contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0
+            val isPreContentRateLimit = failure.type == ErrorType.RATE_LIMIT && !contentReachedClient
+            val wireType = if (isPreContentRateLimit) ErrorType.OVERLOADED else failure.type
+            drive.emitter.emitError(wireType, message)
             true
         }
         else -> false

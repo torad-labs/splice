@@ -18,6 +18,12 @@ public class FailureRules {
     /** 403-body classifier (grok 2026-07-18): plan/permission 403s must not look like auth. */
     public fun isAuthFailureBody(body: String): Boolean = authBodyRe.containsMatchIn(body)
 
+    /** V4-73: 402 Payment Required is a quota exhaustion for EVERY provider — deepseek answers
+     *  Insufficient Balance as 402, and a spent account is not a malformed request. A vendor-neutral
+     *  HTTP fact, which is why it lives here and not on the auth port: the port is where a VENDOR's
+     *  own spelling goes, this is the protocol's. */
+    public fun isQuotaExhaustionStatus(status: Int): Boolean = status == PAYMENT_REQUIRED
+
     /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. PUBLIC because the
      *  RC-4 amend gate must key off the SAME predicate as this GIVE_UP classification (review
      *  2026-07-24: a narrower literal match on the amend side let any wording drift skip the
@@ -28,6 +34,7 @@ public class FailureRules {
 
 private const val UNAUTHORIZED = 401
 private const val FORBIDDEN = 403
+private const val PAYMENT_REQUIRED = 402
 
 // xAI reports an expired/revoked OAuth token as 403 `unauthenticated:bad-credentials`,
 // NOT 401 (grok-dead-head incident, 2026-07-18: refresh never fired, the head 403'd every

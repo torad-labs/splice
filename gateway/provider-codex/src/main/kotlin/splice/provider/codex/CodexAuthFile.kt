@@ -3,6 +3,7 @@
 // class drops below 1.8, 2026-08-19). Shared by doRefresh() and describe().
 package splice.provider.codex
 
+import splice.core.auth.CredentialFileDigest
 import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -39,7 +40,14 @@ internal class CodexAuthFile {
     // freshly re-authenticated credential from the rejected one it replaced within the same tick.
     fun codexAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
         Cancellables.runCatchingCancellable {
-            CredentialFileIdentity(Files.getLastModifiedTime(authPath).toMillis(), Files.size(authPath))
+            CredentialFileIdentity(
+                Files.getLastModifiedTime(authPath).toMillis(),
+                Files.size(authPath),
+                // V4-70: metadata cannot see a same-length rewrite, so the CONTENT is part of
+                // the identity. A read failure throws into the catch below and becomes a null
+                // identity — unknown, which the latch treats as fail-open.
+                CredentialFileDigest.of(authPath),
+            )
         }.onFailure {
             log(
                 "[codex-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +

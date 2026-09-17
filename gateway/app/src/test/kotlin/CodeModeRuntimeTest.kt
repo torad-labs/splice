@@ -449,8 +449,13 @@ class CodeModeRuntimeTest {
         }
     }
 
+    // THE `<Unit>` IS LOAD-BEARING, NOT STYLE — do not tidy it away. This body ends in
+    // assertThrows(...), which RETURNS the exception it checked for, so without the explicit type
+    // argument runBlocking returns that exception and JUnit never discovers the method: no
+    // failure, no skip, no warning. Found by checks/config/tests-are-discovered.py (V4-68), which
+    // compares declared test methods against the JUnit XML — the XML read 23 against 24 declared.
     @Test
-    fun `closed runtime rejects new cells`() = runBlocking {
+    fun `closed runtime rejects new cells`() = runBlocking<Unit> {
         val runtime = runtime()
         runtime.close()
         assertThrows(IllegalStateException::class.java) {

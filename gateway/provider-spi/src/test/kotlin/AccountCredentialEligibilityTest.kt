@@ -5,6 +5,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -14,6 +16,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.spi.AccountCredentialIdentitySource
 import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
+import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.AccountQuotaSource
 import splice.spi.ElapsedNow
@@ -34,7 +37,7 @@ class AccountCredentialEligibilityTest {
             override fun credentialEvidence(): CredentialEvidence {
                 observations.incrementAndGet()
                 return CredentialEvidence(
-                    CredentialFileIdentity(1L, 1L),
+                    CredentialFileIdentity(1L, 1L, "digest-of-the-observed-credential"),
                     CredentialPresence.PRESENT,
                 )
             }
@@ -288,5 +291,19 @@ class AccountCredentialEligibilityTest {
         successfulRefresh.markCredentialUnavailable()
         view = pool.view(null).accounts.single { it.primary }
         assertEquals(300_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+    }
+
+    // V4-70: THE READ FAILURE MUST FAIL OPEN, and this is the one way the content digest could make
+    // things WORSE than the bug it fixes — a transient read error turned into a lockout. The reader
+    // takes the digest inside the same best-effort block as its stat, so an unreadable path yields
+    // NO identity rather than a stale one, and a null identity is the latch's word for UNKNOWN
+    // (never suppresses). Pinned here because this is where the identity is actually produced from
+    // a real path; the latch-level half lives in InvalidGrantLatchTest.
+    @Test
+    fun `an unreadable credential file yields no identity, never a stale one - V4-70`() {
+        val missing = java.nio.file.Path.of("/nonexistent/dir/credential-that-cannot-be-read.json")
+        val evidence = CredentialFileEvidenceReader.read(missing)
+        assertNull(evidence.identity, "an unreadable file must produce UNKNOWN, not an identity")
+        assertNotEquals(CredentialPresence.PRESENT, evidence.presence)
     }
 }

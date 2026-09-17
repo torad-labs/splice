@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughRequestBuilder
@@ -56,7 +57,40 @@ private val JSON = Json {
 }
 private val UPDATING = System.getenv("UPDATE_GOLDENS") == "true"
 
-private fun assertGolden(name: String, actual: String) {
+/**
+ * V4-69: WHAT THE FAILURE GOLDEN WATCHES — the client-facing half of a failure, and nothing else.
+ *
+ *  The wire error type and the PROVIDER-TAGGED message (CH-2's providerTag prefix) are what the
+ *  operator reads and what a deformation would move; the rest of [TurnOutcome.Failure] is splice's
+ *  own bookkeeping — [TurnOutcome.Failure.partial] and [TurnOutcome.Failure.salvagedUsage] are
+ *  accounting, and [TurnOutcome.Failure.connReset] is a V4-67 journal tag. Freezing the data class's
+ *  whole `toString` froze those too, so adding a defaulted field red the wall although not one byte
+ *  the client sees had changed — which is what happened, and what cost two seats an evening.
+ *
+ *  Using the WIRE spelling ([ErrorType.wireName]) and not the enum's Kotlin name is the same point:
+ *  `overloaded_error` is what crosses to the client, `OVERLOADED` is an implementation detail.
+ *
+ *  NOT COVERED, deliberately and worth knowing: [TurnOutcome.Failure.deterministic] IS client-visible
+ *  (its KDoc says it chooses a readable ending over an SSE error event), so a change to it moves what
+ *  the client shows and this golden would not notice. That belongs to a second pin; it is not
+ *  bookkeeping and it is not the field that moved this wall.
+ */
+private fun failureSubject(failure: TurnOutcome.Failure): String =
+    "${failure.type.wireName} ${failure.message}"
+
+/** Drives the provider-tagged failure scenario under ARBITRARY quirks, so the canary can move the
+ *  provider tag and prove the subject still notices. One definition, used by the golden and by its
+ *  canary, so the two cannot drift onto different scenarios. */
+private suspend fun driveFailure(quirks: PassthroughQuirks): TurnOutcome.Failure =
+    PassthroughStreamTranslator(ctx(), quirks).driveTurn(
+        listOf(
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev("""{"type":"error","error":{"type":"overloaded_error","message":"upstream busy"}}"""),
+        ).asFlow(),
+        Recorder(),
+    ) as TurnOutcome.Failure
+
+private fun assertGolden(name: String, actual: String, subject: String = "what Kimi receives") {
     val file = GOLDEN_DIR.resolve(name)
     val body = if (actual.endsWith("\n")) actual else actual + "\n"
     if (UPDATING) {
@@ -75,10 +109,10 @@ private fun assertGolden(name: String, actual: String) {
         "missing golden $name — regenerate with UPDATE_GOLDENS=true and READ THE DIFF"
     }
     assertEquals(Files.readString(file), body) {
-        "KIMI WIRE BYTES MOVED ($name). Kimi behavior is frozen by the claude-head campaign; a diff " +
-            "here means the change under test altered what Kimi receives. Fix the change, not the " +
-            "golden. If the operator has decided kimi's wire genuinely changes, regenerate with " +
-            "UPDATE_GOLDENS=true and read the diff."
+        "GOLDEN MOVED ($name). Kimi behavior is frozen by the claude-head campaign; a diff here " +
+            "means the change under test altered $subject. Fix the change, not the golden. If the " +
+            "operator has decided it genuinely changes, regenerate with UPDATE_GOLDENS=true and " +
+            "read the diff."
     }
 }
 
@@ -230,7 +264,12 @@ class PassthroughGoldenTest {
     }
 
     /** The provider-tagged failure text is user-facing on every head that runs this dialect, so it
-     *  is pinned too: CH-2 makes it providerTag-driven, and kimi's rendering must not move. */
+     *  is pinned too: CH-2 makes it providerTag-driven, and kimi's rendering must not move.
+     *
+     *  V4-69: the SUBJECT is the projection above — the wire error type and the provider-tagged
+     *  message — not the Failure data class's rendering. The old subject froze splice's own
+     *  bookkeeping, so a defaulted internal field (V4-67's connReset) red this wall while no byte
+     *  the client sees had changed. Nothing about the scenario changed; only what is watched. */
     @Test
     fun `provider-tagged failure text is byte-stable`() = runTest {
         val sink = Recorder()
@@ -241,7 +280,40 @@ class PassthroughGoldenTest {
             ).asFlow(),
             sink,
         )
-        assertGolden("translator-failure-text.txt", outcome.toString())
+        assertGolden(
+            "translator-failure-text.txt",
+            failureSubject(outcome as TurnOutcome.Failure),
+            subject = "the failure TYPE and its provider-tagged message",
+        )
+    }
+
+    /** V4-69 canary — the failure golden must still detect a REAL deformation and must NOT be moved
+     *  by an INTERNAL one. Both halves are CONSTRUCTED rather than awaited or mutated in main
+     *  sources: the second Failure below differs from the first only in a defaulted bookkeeping
+     *  field, which is exactly what the old subject could not tell apart from a wire change (V4-67's
+     *  connReset red this wall while no byte the client reads had moved). A wall that fails here has
+     *  stopped watching the client's bytes; a wall that passes the second half has stopped watching
+     *  splice's own bookkeeping, which is the point of the row. */
+    @Test
+    fun `canary — the failure golden detects a provider change and ignores internal fields`() = runTest {
+        val kimi = driveFailure(KIMI_QUIRKS)
+        val relabelled = driveFailure(KIMI_QUIRKS.copy(providerTag = "someone-else"))
+        assertNotEquals(
+            failureSubject(relabelled),
+            failureSubject(kimi),
+            "a different providerTag MUST move the subject, or this wall froze nothing at all",
+        )
+
+        assertEquals(
+            failureSubject(kimi.copy(connReset = true)),
+            failureSubject(kimi),
+            "connReset is splice's own V4-67 journal tag — not something the client reads",
+        )
+        assertEquals(
+            failureSubject(kimi.copy(salvagedUsage = Usage(inputTokens = 7, outputTokens = 9))),
+            failureSubject(kimi),
+            "salvaged accounting is bookkeeping, never part of what the client sees",
+        )
     }
 
     // --- the canary: a golden that cannot detect a deformation is worthless ------------------------

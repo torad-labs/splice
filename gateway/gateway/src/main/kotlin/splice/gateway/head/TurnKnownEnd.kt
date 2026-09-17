@@ -4,6 +4,7 @@ package splice.gateway.head
 
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
+import splice.gateway.pipeline.FailurePresenter
 import splice.spi.FailureSource
 import splice.spi.Provider
 import splice.spi.UpstreamAuthMissing
@@ -17,6 +18,14 @@ internal class TurnKnownEnd(
     private val failures: TurnFailures,
     private val health: HeadHealthCounters,
 ) {
+
+    // V4-59: named for the presenter, not the TurnFailures above — the classified message reaching
+    // emitError is the SECOND place a vendor's raw body could become client text. The classifier
+    // lifts error.message out of a JSON body, but falls back to the WHOLE body whenever the shape
+    // is one it cannot read (our own detail-only fail-fast is exactly that shape), and this arm
+    // then emitted the fallback verbatim.
+    private val presenter = FailurePresenter()
+
     /** True when [e] is a known upstream-auth or upstream-HTTP failure this surface owns. */
     suspend fun tryEmit(drive: TurnDrive, e: Throwable): Boolean = when (e) {
         is UpstreamAuthMissing -> {
@@ -36,7 +45,12 @@ internal class TurnKnownEnd(
             val failure = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
             val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
             log(telemetry.errTurn("upstream-failed", drive, detail))
-            val boundedMessage = failure.message.take(ERR_SNIPPET)
+            // V4-59: the code rides OUTSIDE the snippet bound on purpose. Bounding the presented
+            // line instead pushed the appended login hint past ERR_SNIPPET, silently dropping the
+            // one part of this message that tells the operator what to DO — caught by the existing
+            // login-hint test, which is exactly what it is for.
+            val classified = presenter.present(failure.type, failure.message)
+            val boundedMessage = "[${classified.code}] ${classified.body.take(ERR_SNIPPET)}"
             val message = if (failure.type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {
                 "$boundedMessage — run: ${provider.loginCommand}"
             } else {

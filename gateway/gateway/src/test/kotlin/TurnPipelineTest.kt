@@ -147,6 +147,77 @@ class TurnPipelineTest {
         return CompactStats(tmp.resolve("compact.jsonl")).read()
     }
 
+    /** V4-59's wall. NO text block and NO error message splice emits may be JSON.
+     *
+     *  The operator's complaint is the reason this is not a style rule: outcome.message is the raw
+     *  upstream body, so a vendor's error payload was rendered into his conversation as literal
+     *  braces, and splice did it to itself — the rate-limit fail-fast throws a hand-built
+     *  {"detail":...}, and UpstreamFailureClassifier reads error.message/message but never detail,
+     *  so its own body fell back to raw and travelled on intact.
+     *
+     *  THE ASSERTION IS ABOUT THE BYTES THE CLIENT RENDERS, NOT ABOUT A COUNT. Like V4-56, no edit to
+     *  a number can satisfy it — the only way to pass is to stop sending payloads. The denominator is
+     *  ErrorType.entries, read by reflection, so a failure class added later is covered the day it
+     *  exists rather than the day someone remembers this file.
+     *
+     *  MUTATION PROOF: delete the presentation call in TurnPipeline and feed the body below — every
+     *  case here reddens, because the raw JSON is exactly what arrives. */
+    @Test
+    fun `no text block or error message splice emits is json`() = runTest {
+        val payload = """{"detail":"Rate limit exceeded — this gateway is holding retries for 120s"}"""
+        val offending = mutableListOf<String>()
+        for (type in ErrorType.entries) {
+            // Both endings: the deterministic one is the visible leak, and the error event carries
+            // the identical body — presenting one and not the other leaves most failures leaking.
+            val explained = RecTerminal()
+            pipeline().finishStream(
+                explained,
+                TurnOutcome.Failure(type, payload, deterministic = true),
+                meta("text"),
+                elapsedMs = 1,
+            )
+            offending += inspect("text block for $type", explained.texts.joinToString(" "))
+
+            val errored = RecTerminal()
+            pipeline().finishStream(errored, TurnOutcome.Failure(type, payload), meta("text"), elapsedMs = 1)
+            offending += inspect("error event for $type", errored.errorMessage)
+        }
+        assertTrue(offending.isEmpty(), "JSON reached the client:\n" + offending.joinToString("\n"))
+    }
+
+    /** One rendered line's violations, as a list so a failure names EVERY case rather than the first. */
+    private fun inspect(what: String, rendered: String): List<String> = buildList {
+        if (rendered.contains("{")) add("$what: opens a brace -> $rendered")
+        if (rendered.contains("\"detail\"")) add("$what: carries a detail key -> $rendered")
+        if (rendered.contains("\"error\"")) add("$what: carries an error key -> $rendered")
+        // The positive half: a stripped body would also pass the checks above, so the sentence the
+        // operator should actually read must SURVIVE — and the code must be present to grep for.
+        if (!rendered.contains("Rate limit exceeded")) add("$what: dropped the human sentence -> $rendered")
+        if (!rendered.contains("SPLICE-")) add("$what: has no greppable code -> $rendered")
+    }
+
+    /** A body that is valid JSON but carries no human field is DESCRIBED. It is the one case where
+     *  the payload's own text is exactly what a reader cannot use, so reproducing it is not a
+     *  fallback — it is the defect wearing a fallback's name.
+     *
+     *  NOT markup: mapping a vendor's error PAGE here was tried and reverted, because an existing
+     *  test pins that a human-readable auth page keeps its text. This layer lifts a field or
+     *  describes; it does not judge whether prose is pretty. */
+    @Test
+    fun `a json body with no human field is described rather than dumped`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(
+            rec,
+            TurnOutcome.Failure(ErrorType.API_ERROR, """{"foo":1,"bar":[1,2,3],"baz":null}""", deterministic = true),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        val text = rec.texts.single()
+        assertTrue(text.contains("could not be read"), "an unreadable body must be described: $text")
+        assertTrue(!text.contains("{"), "no body may be reproduced as braces: $text")
+        assertTrue(!text.contains("baz"), "no field of an unreadable body may be reproduced: $text")
+    }
+
     /** A deterministic failure (a verdict no retry can change) ends in words, not an error event;
      *  every other failure keeps the honestly-typed error the client is right to retry. */
     @Test
@@ -159,7 +230,9 @@ class TurnPipelineTest {
             elapsedMs = 1,
         )
         assertEquals("terminal", explained.ending)
-        assertEquals(listOf("\u26A0 splice: code-mode cell is unavailable"), explained.texts)
+        // V4-59: the verb is unchanged \u2014 still a text block, still marked as the proxy speaking \u2014
+        // and what changed is the words: the failure now names its stable code before the sentence.
+        assertEquals(listOf("\u26A0 splice [SPLICE-API-ERROR] code-mode cell is unavailable"), explained.texts)
         assertEquals("failure:api_error", tag)
 
         val retried = RecTerminal()

@@ -76,6 +76,7 @@ internal class UpstreamRequest(
 ) {
     private val headerRules = HeaderRules()
     private val retryAfter = RetryAfter()
+    private val failureRules = FailureRules()
 
     /** Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip. */
     fun body(bodyJson: String): RequestBody = RequestBody(bodyJson, zstdRequestBody)
@@ -118,13 +119,44 @@ internal class UpstreamRequest(
                 onStreamStart()
                 RetryOutcome.Done(block(UpstreamResponse(resp)))
             } else {
+                val realStatus = resp.status.value
+                val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
                 RetryOutcome.Failed(
-                    resp.status.value,
-                    UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES),
+                    quotaExhaustedStatus(realStatus, text, ctx),
+                    text,
                     retryAfter.retryAfterMs(resp.headers["Retry-After"]),
                 )
             }
         }
+    }
+
+    /**
+     * V4-73: A QUOTA EXHAUSTION IS A RATE LIMIT, whatever status the vendor dressed it in.
+     *
+     *  One rewrite, at the single site that builds [RetryOutcome.Failed], is what makes every layer
+     *  above agree without any of them learning a vendor's spelling: rateLimitedPlan arms the shared
+     *  cooldown, the account pool marks the account unavailable and moves on, the thrown
+     *  UpstreamFailed carries 429, the classifier's RATE_LIMIT-by-status fires, and the admission
+     *  refusal answers with the headers the client's persistent retry reads.
+     *
+     *  AUTH REFRESH IS NEVER SPENT ON A REWRITTEN FAILURE, structurally rather than by a second
+     *  guard: the refresh decision asks isAuthRefreshableFailure(status, body), which is true only
+     *  for 401 and for 403-with-an-auth-body — and by the time it is asked, the status is 429. An
+     *  UNRECOGNISED 403 keeps its status and therefore keeps V4-38's freshness rule exactly.
+     *
+     *  The body rides through UNCHANGED: the vendor's own sentence (grok's "run out of credits") is
+     *  the honest thing to show, and it is deliberately none of the phrases that stop the client's
+     *  persistent retry (pinned in the client-contract test).
+     */
+    private fun quotaExhaustedStatus(realStatus: Int, body: String, ctx: PostContext): Int {
+        val exhausted = failureRules.isQuotaExhaustionStatus(realStatus) ||
+            ctx.auth.isQuotaExhausted(realStatus, body)
+        if (!exhausted) return realStatus
+        ctx.onRetry(
+            "upstream $realStatus is a quota exhaustion — treating it as $RATE_LIMITED so the " +
+                "retry, cooldown and pool layers see the rate limit it is",
+        )
+        return RATE_LIMITED
     }
 }
 

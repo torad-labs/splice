@@ -226,6 +226,21 @@ public class GrokAuthProvider(
         return !demonstrablyFresh
     }
 
+    /**
+     * V4-73: grok's spent account is a 403 whose body names the billing wall
+     * (`personal-team-blocked:spending-limit`), and until this override existed the transport
+     * classified it as a terminal invalid_request — bypassing the cooldown, the account pool and
+     * every client retry, when the operator's law is that credits exhaustion is retried until the
+     * credits are back. The phrase list stays HERE, in the vendor module (SEPARATION); the port is
+     * the neutral question and this is the only place that answers it with vendor spelling.
+     *
+     *  403 ONLY, and only when [GrokOAuth.isEntitlementRejection] recognises the body — the same
+     *  list V4-38 uses for the refresh veto. An UNRECOGNISED 403 keeps today's behaviour exactly,
+     *  including the freshness rule above: this rewrite never widens what counts as a quota wall.
+     */
+    override fun isQuotaExhausted(status: Int, body: String): Boolean =
+        status == FORBIDDEN_STATUS && oauth.isEntitlementRejection(body)
+
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
     // Staged (read → exchange → persist), each stage owning its own failure branches.

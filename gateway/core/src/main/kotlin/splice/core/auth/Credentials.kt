@@ -52,4 +52,17 @@ public interface RefreshableAuthProvider : AuthProvider {
      * providers only narrow it.
      */
     public fun allowRefreshAfterFailure(status: Int, body: String): Boolean = true
+
+    /**
+     * V4-73: does this vendor report a QUOTA EXHAUSTION behind a status the HTTP layer does not
+     * name as one? xAI answers a spent account with 403 `personal-team-blocked:spending-limit`, and
+     * the operator's law is that credits exhaustion is RETRIED until the credits are back — not
+     * surfaced as a terminal invalid_request that bypasses the cooldown, the pool and every client
+     * retry. One vendor-neutral question, asked at the transport's single failure site; the phrases
+     * that answer it live in the vendor module (grok's entitlement list), never here.
+     *
+     *  Default false: a provider that has not declared the shape keeps today's behaviour exactly,
+     *  which is what makes this safe to add to a port every provider implements.
+     */
+    public fun isQuotaExhausted(status: Int, body: String): Boolean = false
 }

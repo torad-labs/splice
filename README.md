@@ -341,6 +341,20 @@ globally, per upstream model (`[[compaction.model]]`) or per project directory
 compaction requests only, so the cached request prefix is byte-identical with and without it, and
 `/api/compact` shows the effective text and where it came from.
 
+### Per-head system prompt
+
+`system_prompt` under `[heads.<key>]` gives that head standing instructions on **every** turn —
+inline text, or `system_prompt_file = "~/path"` (never both; both present is a config error at
+load, as is a file that cannot be read). Absent, or `""`, is exactly today's bytes.
+
+`system_prompt_mode` picks the seam. `"append"` is the default: your text is placed beside Claude
+Code's own system field, so the client's bytes ride through untouched, every existing
+`cache_control` breakpoint survives, and the prompt cache still hits from turn two.
+`"replace"` substitutes that whole field instead — and Claude Code ships its **entire operating
+instruction set** in it, so a `replace` head behaves like a bare model with tools attached. That is
+a deliberate choice, not a mistake, so `splice doctor` warns about it rather than refusing it; use
+it on a head you drive yourself. Two heads with different prompts never leak into each other.
+
 ### Code mode for ChatGPT
 
 Code mode is **on by default** for Claudex-compatible providers (`auth.kind = "chatgpt-oauth"`,

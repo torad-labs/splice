@@ -8,8 +8,11 @@
 // answers which failures may be RE-ISSUED as a stream, and it was never meant to gate the
 // connect-phase attempt budget. The pins below cover both directions: the unnamed IOException
 // spends the budget as a possible duplicate, the named types keep their exact phase, and
-// cancellation still aborts on attempt one. A non-I/O RuntimeException still fails immediately,
-// because catchCancellable never captures one — retrying our own bugs was never the law.
+// cancellation still aborts on attempt one. What reaches the seam at all is catchCancellable's
+// catch list — IOException, SerializationException, IllegalArgumentException — so a truncated
+// body now retries (the row's best consequence) and a bad base_url spends the whole ~1.5s budget
+// before failing (its trade). An IllegalState, an NPE, any other RuntimeException is never
+// captured and still fails on attempt one: retrying our own bugs was never the law.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -518,9 +521,10 @@ class UnclassifiedTransportFailureTest {
 
     @Test
     fun `the transport seam rethrows cancellation with a full budget`() {
-        // The transport path cannot deliver a cancellation here — catchCancellable's I/O-only
-        // catch list lets it propagate before this seam — so the guard V4-66 added is proven
-        // where it lives rather than assumed from the call site.
+        // The transport path cannot deliver a cancellation here: catchCancellable captures
+        // IOException, SerializationException and IllegalArgumentException, and a
+        // CancellationException is none of them, so it propagates before this seam. The guard
+        // V4-66 added is therefore proven where it lives rather than assumed from the call site.
         assertThrows<CancellationException> {
             TransportFailures().rethrowUnlessRetryableTransport(
                 CancellationException("cancelled mid-attempt"),

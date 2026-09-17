@@ -48,8 +48,12 @@ internal class StreamPromote(
                 // blank summary and lose the thread). Never invent locally.
                 compact.record(meta, "empty_model", elapsedMs, error = "api_error")
                 log("[gateway] empty-turn shape compact=true ${outcome.outputShape}\n")
+                // V4-42 (operator law, 2026-09-17: retry on every error, never stall): OVERLOADED,
+                // the same retryable wire type as the empty_model branch below. A compaction that
+                // ends terminally leaves the session growing until it dies, which is the stall
+                // this ending exists to prevent; the client's backoff bounds the re-sends.
                 emitter.emitError(
-                    ErrorType.API_ERROR,
+                    ErrorType.OVERLOADED,
                     "splice: compact returned no content from model — retry (upstream ${outcome.outputShape})",
                 )
                 PromoteVerdict("empty_compact")

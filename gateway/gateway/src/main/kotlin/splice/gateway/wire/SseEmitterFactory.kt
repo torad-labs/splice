@@ -32,7 +32,7 @@ public class SseEmitterFactory {
          *  streaming path can answer it truthfully, because only that path counts what it writes
          *  (ClientChannel.timedClientWrite → CONTENT_FRAMES_OUT); the local answer and the
          *  compaction replay take the default and keep the types they always sent. */
-        contentReached: () -> Boolean = { true },
+        contentReached: ContentReached = ContentReached { true },
     ): SseEmitter {
         val frames = SseFrameWriter(write)
         val start = MessageStart(frames, model, messageId, usagePayload)

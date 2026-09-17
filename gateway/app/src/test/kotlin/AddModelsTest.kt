@@ -24,6 +24,7 @@ import splice.app.cli.AddModelVerb
 import splice.app.cli.AddRefused
 import splice.app.cli.Cli
 import splice.app.cli.HeadModelArray
+import splice.app.cli.RosterEditor
 import splice.app.cli.prompt.KeyReader
 import splice.app.cli.prompt.MultiSelectPrompt
 import splice.app.cli.prompt.SelectPrompt
@@ -241,7 +242,7 @@ class AddModelsTest {
         multiKeys: ByteArray = byteArrayOf(),
         selectTty: Boolean = false,
         multiTty: Boolean = false,
-        roster: (String, String, List<String>) -> String = HeadModelArray()::withAdded,
+        roster: RosterEditor = RosterEditor(HeadModelArray()::withAdded),
     ): AddModelVerb = AddModelVerb(
         select = SelectPrompt(
             keys = KeyReader(ByteArrayInputStream(selectKeys)),

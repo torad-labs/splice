@@ -96,6 +96,27 @@ internal class RetryRules(private val maxRetries: Int) {
         nextRefreshed: Boolean,
         rateLimit: RateLimitTurn,
     ): RetryPlan {
+        // V4-62 CARVE-OUT — and it is the DEFINITION of that law, not an exception to it.
+        //
+        // [nextRefreshed] true means a refresh RAN for this turn (either it happened now or it was
+        // already done), so an auth-refreshable failure reaching here is one where the credential
+        // was refreshed and REJECTED AGAIN. Every later attempt would carry the identical token:
+        // nothing varies between them, so the outcome is fixed before the request leaves. Sending it
+        // again is not a retry, it is a delay — and the operational law is that no turn ends while a
+        // retry COULD succeed. This one cannot. The escalation ladder for an auth failure is not the
+        // same bytes again; it is refresh (G1) → and when the refresh is itself rejected, EVICT and
+        // rotate (pooled — AccountTurnSelectionTest pins [primary, backup]) or surface (single).
+        //
+        // Same principle as Failure.deterministic, one layer down: that carve-out covers verdicts
+        // splice computed with no upstream involved; this one a verdict whose answer cannot change.
+        // Both are what a retry IS, never holes in V4-62.
+        if (nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text)) {
+            ctx.onRetry(
+                "upstream ${failed.status} rejected the credential again after a refresh " +
+                    "(no retry: the bytes would be identical)",
+            )
+            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
+        }
         if (failed.status == RATE_LIMITED) {
             val canRetry = attempt < maxRetries - 1
             return rateLimit.cooldown.rateLimitedPlan(
@@ -111,21 +132,40 @@ internal class RetryRules(private val maxRetries: Int) {
                 body = failed.text,
             )
         }
-        // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
-        // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
-        // client owns any wait past 15s (it re-sends on its own backoff; the daemon holding the
-        // slot for a minute is what stacked the 2026-07-19 zombie herd).
+        // V4-62, operator law: "we would retry on any error, no matter what, with different levels
+        // of retry and escalation + backoff." So the status GATE is gone from the retry decision —
+        // every upstream failure status takes BACKOFF on the shared curve — and `isRetryableStatus`
+        // now decides only whether a pushback protects FOLLOWERS (UP-001), which is what it was
+        // really about.
+        //
+        // WHY A 400 EARNS A RETRY. Classification is not reliable enough to refuse a 1.5s one: a
+        // 403 has been observed as overload (the mock carries overload_403 for that reason), and
+        // the muse 400 on assistant prefill was OUR bug, not the client's — a turn we refused to
+        // retry was a turn we broke. The whole default budget on the 200ms doubling curve costs
+        // about 1.5s, so a genuinely permanent 4xx is cheap to discover and a misclassified
+        // transient is expensive to miss.
+        //
+        // THE PUSHBACK IS A FLOOR, CLAMPED. A short Retry-After is obeyed exactly. An absurd one
+        // still no longer means "go away and never retry" — it is clamped to the interactive
+        // ceiling, so the wait is bounded the way the client's patience is. Handing the raw value
+        // to the curve would hold a gate slot for the 88 minutes that stacked the 2026-07-19
+        // zombie herd; discarding it entirely is what V4-61 fixed for 429 and this generalizes.
         val pushback = failed.retryAfterMs
-        val retryable = isRetryableStatus(failed.status)
         if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
-            ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
-            // UP-001: retryable 408/5xx pushback still protects followers on this account. Pool
-            // selection reads unavailableForMs(), not this fail-fast horizon, so it never switches.
-            if (retryable) rateLimit.cooldown.arm(pushback)
-            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
+            ctx.onRetry(
+                "upstream ${failed.status} Retry-After ${pushback}ms exceeds the interactive budget; " +
+                    "waiting ${RETRY_AFTER_GIVE_UP_MS}ms instead",
+            )
+            // UP-001: a retryable 408/5xx pushback still protects followers on this account. Pool
+            // selection reads unavailableForMs(), not this horizon, so it never switches.
+            if (isRetryableStatus(failed.status)) rateLimit.cooldown.arm(pushback)
         }
-        val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
-        return RetryPlan(decision, refreshedOnce = nextRefreshed, minDelayMs = pushback ?: 0L)
+        val decision = if (attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
+        return RetryPlan(
+            decision,
+            refreshedOnce = nextRefreshed,
+            minDelayMs = minOf(pushback ?: 0L, RETRY_AFTER_GIVE_UP_MS),
+        )
     }
 
     // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays

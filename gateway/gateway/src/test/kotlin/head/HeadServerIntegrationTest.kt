@@ -421,12 +421,23 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `a 4xx wearing the overload code keeps its deterministic verdict and is not retried`() = runTest {
+    fun `a 4xx wearing the overload code keeps its invalid_request verdict through every retry`() = runTest {
+        // V4-62 REVERSED THE COUNT THIS TEST USED TO PIN, and that is a policy change rather than
+        // assertion-editing: "a 4xx must not be retried" WAS the old law, and this scenario —
+        // overload_403, a 403 that really was an overload — is the evidence the new law rests on.
+        //
+        // THE VERDICT IS THE HALF THAT SURVIVES, and it is the more useful invariant. A retried 403
+        // that came back reclassified as overloaded_error on the second pass would be exactly the
+        // drift nobody would notice; retrying makes that harder, not easier, because the same body
+        // now passes through the classifier more than once.
         val sse = messages("overload_403")
         assertTrue(sse.contains("event: error"), sse)
         assertTrue(sse.contains("invalid_request_error"), sse)
         assertFalse(sse.contains("overloaded_error"), sse)
-        assertEquals(1, mock.upstreamBodies.count { it.first == "overload_403" }, "a 4xx must not be retried")
+        assertTrue(
+            mock.upstreamBodies.count { it.first == "overload_403" } > 1,
+            "V4-62 retries every upstream failure status, so a 4xx is no longer terminal",
+        )
     }
 
     @Test

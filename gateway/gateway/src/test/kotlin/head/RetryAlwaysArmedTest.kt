@@ -8,9 +8,26 @@
 //       is therefore armed by construction;
 //   (b) an HTTP status Claude Code retries on (429, 408, 5xx except 501);
 //   (c) an SSE error frame whose TYPE Claude Code retries on (overloaded_error, api_error);
-//   (d) a member of the EXPLICIT exclusion list below — the four genuinely non-retryable types,
-//       each with its reason written down.
+//   (d) a member of the EXPLICIT exclusion list below, each with its reason written down.
 // Anything in none of the four FAILS BY NAME.
+//
+// (d) RECONCILED WITH V4-62 — TWO LAWS THAT TURNED OUT TO GOVERN DIFFERENT LAYERS.
+// The operator's law ("we would retry on any error, no matter what, with different levels of retry
+// and escalation + backoff") is about what SPLICE does to the upstream, and V4-62 made it so: the
+// status gate is gone from RetryPolicy and a 400 now takes the same 200ms curve as a 503. This list
+// is about what the CLIENT can usefully do with the ENDING. Different questions.
+//
+// SO THE FOUR STAY, AND EVERY REASON BELOW NOW READS AS "SPLICE ALREADY TRIED". The old wording
+// called them "genuinely non-retryable", which V4-62 falsified; the exclusion was never a decision
+// not to retry, it is a statement about EXHAUSTED retries. A 400 that splice backed off on and is
+// STILL a 400 is the request's own body — handing it to the client to retry sends the identical
+// body one more time. A 401 splice already refreshed and retried means the credential is really
+// rejected; the client's retry carries the same one.
+//
+// V4-62 makes this list STRONGER, not weaker: the more turns succeed inside splice, the more of
+// them land in (a) above and never reach this list at all. A type may be added here only when a
+// retry has been RUN and is provably a no-op — which is also why Failure.deterministic is the sole
+// carve-out in the retry path itself, for verdicts splice computed with no upstream involved.
 //
 // THIS TEST MUST NOT BE SATISFIABLE BY EDITING A COUNT. Every test that failed us before asserted
 // POLICY — how many upstream calls splice makes — and that is a number we control, so each change
@@ -63,15 +80,18 @@ import java.net.ServerSocket
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
 
-/** NOT retryable, each for a reason that has to be written down rather than assumed. Anything not
- *  here must reach the client in a recoverable shape; a type that is neither fails by name. */
+/** Excluded CLIENT-side after splice's own retries are EXHAUSTED — never "we did not retry". V4-62
+ *  retries every upstream failure; each reason below is about the ending the client is handed once
+ *  that has already happened. Anything not here must reach the client in a recoverable shape. */
 private val EXCLUDED: Map<ErrorType, String> = mapOf(
     ErrorType.INVALID_REQUEST to
-        "the client's own malformed body — retrying an identical body loops forever",
+        "splice already backed off and re-sent it; still a 400 means the body itself, and the " +
+        "client's retry sends that same body again",
     ErrorType.AUTHENTICATION to
-        "needs re-auth; a retry carries the same rejected credential",
-    ErrorType.PERMISSION to "an entitlement verdict, not a transient one",
-    ErrorType.NOT_FOUND to "the model or route does not exist; no retry invents it",
+        "splice already refreshed the credential once (G1) and was rejected again; a client retry " +
+        "carries the same rejected credential, so the fix is re-auth, not repetition",
+    ErrorType.PERMISSION to "an entitlement verdict that survived the retry budget; it is not transient",
+    ErrorType.NOT_FOUND to "the model or route does not exist; the retry budget was spent proving it",
 )
 
 /** The FIFTH exclusion, and the only one that is not an ErrorType. It is a SHAPE, not a category:

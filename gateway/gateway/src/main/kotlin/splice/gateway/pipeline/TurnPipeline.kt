@@ -8,6 +8,7 @@
 // abandon(); a stream that never started + failure still emits an honest error frame.
 package splice.gateway.pipeline
 
+import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -61,7 +62,11 @@ public class TurnPipeline(
                 } else {
                     emitter.emitError(outcome.type, spoken)
                 }
-                return "failure:${outcome.type.wireName}"
+                // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
+                // would have carried had it escaped to TurnConnEnd. That tag is the only string in
+                // the journal that names this failure class, and the row that made a torn stream
+                // continuable is the row that would otherwise have hidden its successor.
+                return if (outcome.connReset) CONN_RESET_OUTCOME else "failure:${outcome.type.wireName}"
             }
             is TurnOutcome.ClientAbandoned -> {
                 emitter.abandon()

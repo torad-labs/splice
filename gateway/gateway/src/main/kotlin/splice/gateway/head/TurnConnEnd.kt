@@ -2,6 +2,8 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.gateway.head
 
+import splice.core.turn.CONN_RESET_KIND
+import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.spi.Provider
@@ -40,10 +42,10 @@ internal class TurnConnEnd(
 
     /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
     suspend fun emitConnReset(drive: TurnDrive, detail: String?) {
-        log(telemetry.errTurn("conn-reset", drive, ": $detail"))
+        log(telemetry.errTurn(CONN_RESET_KIND, drive, ": $detail"))
         val boundedDetail = (detail ?: "no detail").take(ERR_SNIPPET)
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
-        telemetry.recordPerf(drive, "error:conn-reset")
+        telemetry.recordPerf(drive, CONN_RESET_OUTCOME)
         health.local()
         drive.emitter.emitError(
             ErrorType.OVERLOADED,

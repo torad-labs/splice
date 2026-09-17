@@ -7,7 +7,7 @@
 // 100%). A gauge built on uncached tokens reads comfortable at the exact moment the quota dies.
 import { describe, expect, test } from 'vitest';
 import {
-  sum, within, hitRate, amplification, perTurn, toolSurface, wireDelta, burn, hourly,
+  sum, within, hitRate, writeRate, amplification, perTurn, toolSurface, wireDelta, burn, hourly,
 } from '../src/entities/economics/model/derive';
 import type { EconomicsBucket, HeadEconomics } from '../src/shared/api';
 
@@ -17,7 +17,7 @@ const NOW = 1_700_000_000_000;
 function bucket(hoursAgo: number, over: Partial<EconomicsBucket> = {}): EconomicsBucket {
   return {
     hour: Math.floor((NOW - hoursAgo * HOUR) / HOUR) * HOUR,
-    turns: 0, in_tokens: 0, cached_tokens: 0, out_tokens: 0,
+    turns: 0, in_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 0,
     req_bytes: 0, upstream_req_bytes: 0,
     tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0,
     ...over,
@@ -42,6 +42,63 @@ describe('the metered quantity', () => {
     const warm = burn(head([bucket(1, { in_tokens: 1e6, cached_tokens: 999_999 })], 1e6), NOW);
     expect(warm.spent).toBe(cold.spent);
     expect(warm.fraction).toBe(cold.fraction);
+  });
+});
+
+// V4-86. The daemon now ships a THIRD token bucket per hour: the cache-WRITE half of the metered
+// input, disjoint from the cache-READ half. It arrives here because it is the one bucket a vendor
+// charges a different rate for (Anthropic's Sonnet card: input 3.00, cache_write 3.75, cache_read
+// 0.30 per million), so an operator reading "89% hit" needs to know whether the remaining input
+// was a plain miss or a rebuild. NOTE FOR ANYONE EXTENDING THIS FILE: there is no dollar figure on
+// the burn page and no rate on this side of the wire at all — the rollup is keyed per head per
+// hour with NO model dimension, so no single rate can be correctly applied to a bucket. These
+// tests therefore pin the SUM and the SHARE, which is everything this side computes.
+describe('the cache-write bucket', () => {
+  test('sum() accumulates cache writes as their own bucket, beside input and cached', () => {
+    const t = sum([
+      bucket(1, { turns: 1, in_tokens: 60_000, cached_tokens: 40_000, cache_write_tokens: 12_000 }),
+      bucket(2, { turns: 1, in_tokens: 30_000, cached_tokens: 0, cache_write_tokens: 30_000 }),
+    ]);
+    expect(t.cacheWriteTokens).toBe(42_000);
+    expect(t.inTokens).toBe(90_000); // still the METERED total, both cache buckets inside it
+    expect(t.cachedTokens).toBe(40_000); // the read half is untouched by the write half
+  });
+
+  /** Computed exactly as hitRate is, over the same denominator: the two are halves of one total
+   * and must be comparable at a glance in the ledger's adjacent columns. */
+  test('writeRate is the cache-write share of TOTAL input, like hitRate is for the read half', () => {
+    const t = sum([bucket(1, {
+      turns: 1, in_tokens: 100_000, cached_tokens: 60_000, cache_write_tokens: 25_000,
+    })]);
+    expect(writeRate(t)).toBeCloseTo(0.25, 5);
+    expect(hitRate(t)).toBeCloseTo(0.6, 5);
+    // NOT the share of the non-cached remainder (25k/40k = 0.625), and NOT the share of the two
+    // cache buckets together (25k/85k). The denominator is the billed total, same as the hit rate.
+    expect(writeRate(t)).not.toBeCloseTo(0.625, 3);
+  });
+
+  test('a dialect that reports no cache-creation bucket reads 0, not null', () => {
+    const t = sum([bucket(1, { turns: 1, in_tokens: 1_000, cached_tokens: 200 })]);
+    expect(t.cacheWriteTokens).toBe(0);
+    expect(writeRate(t)).toBe(0); // "this head wrote no cache" is a finding, and it is not absent
+  });
+
+  test('no input at all yields null rather than NaN or a confident zero', () => {
+    expect(writeRate(sum([]))).toBeNull();
+  });
+
+  /** The burn gauge must not move. Cache writes were ALREADY inside in_tokens (the daemon keeps
+   * inputTokens inclusive of both cache buckets), so surfacing them separately changes what the
+   * page can SAY and not one digit of what it meters. */
+  test('surfacing the write bucket does not change the burn gauge', () => {
+    const plain = burn(head([bucket(1, { turns: 1, in_tokens: 1_000_000 })], 2_000_000), NOW);
+    const written = burn(
+      head([bucket(1, { turns: 1, in_tokens: 1_000_000, cache_write_tokens: 400_000 })], 2_000_000),
+      NOW,
+    );
+    expect(written.spent).toBe(plain.spent);
+    expect(written.fraction).toBe(plain.fraction);
+    expect(written.ratePerHour).toBe(plain.ratePerHour);
   });
 });
 

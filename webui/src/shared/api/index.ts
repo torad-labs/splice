@@ -254,6 +254,11 @@ export interface EconomicsBucket {
   turns: number;
   in_tokens: number;
   cached_tokens: number;
+  /** V4-86: the cache-WRITE half of in_tokens, disjoint from cached_tokens (the read half). Its
+   * own field because it bills at the vendor's cache_write rate, not the input rate — and because
+   * netting it into either of the other two would make a read and a write indistinguishable here.
+   * Absent on a bucket the daemon loaded from a pre-V4-86 economics file, where it reads as 0. */
+  cache_write_tokens: number;
   out_tokens: number;
   req_bytes: number;
   upstream_req_bytes: number;

@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import {
   startEconomicsPolling, useEconomics,
-  sum, within, burn, hourly, hitRate, amplification, perTurn, toolSurface, wireDelta,
+  sum, within, burn, hourly, hitRate, writeRate, amplification, perTurn, toolSurface, wireDelta,
 } from '@entities/economics';
 import { ErrorNote, EmptyState, Stale } from '@shared/ui';
 import { fmtInt } from '@shared/lib';
@@ -227,6 +227,7 @@ function Ledger({ heads, now }: { heads: HeadEconomics[]; now: number }) {
             <th scope="col">input</th>
             <th scope="col">in/turn</th>
             <th scope="col">hit</th>
+            <th scope="col">write</th>
             <th scope="col">amp</th>
             <th scope="col">tools</th>
             <th scope="col">429</th>
@@ -236,6 +237,7 @@ function Ledger({ heads, now }: { heads: HeadEconomics[]; now: number }) {
           {heads.map((h) => {
             const t = sum(within(h.buckets, WEEK_HOURS, now));
             const hit = hitRate(t);
+            const write = writeRate(t);
             const amp = amplification(t);
             const per = perTurn(t);
             const tools = toolSurface(t);
@@ -246,6 +248,9 @@ function Ledger({ heads, now }: { heads: HeadEconomics[]; now: number }) {
                 <td>{fmtBig(t.inTokens)}</td>
                 <td>{per === null ? <span className="bn-none">{NA}</span> : fmtBig(per)}</td>
                 <td>{hit === null ? <span className="bn-none">{NA}</span> : `${Math.round(hit * 100)}%`}</td>
+                {/* The cache-WRITE share of the same total. A head whose dialect reports no
+                    cache-creation bucket sits at 0%, which is a fact about that dialect. */}
+                <td>{write === null ? <span className="bn-none">{NA}</span> : `${Math.round(write * 100)}%`}</td>
                 <td>{amp === null ? <span className="bn-none">{NA}</span> : `${Math.round(amp)}:1`}</td>
                 {/* "n/a" means this dialect CANNOT defer, which is a finding, not a zero. */}
                 <td>
@@ -262,8 +267,10 @@ function Ledger({ heads, now }: { heads: HeadEconomics[]; now: number }) {
       <p className="bn-caption">
         <b>amp</b> is input tokens burned per output token: the read-amplification of a tool loop,
         and why turn COUNT dominates cost. <b>tools</b> is eager/total, so a head showing “n/a” has
-        no tool deferral in its dialect and sends the whole surface every turn. <b>hit</b> sits last
-        on purpose, because cached tokens still bill in full.
+        no tool deferral in its dialect and sends the whole surface every turn. <b>hit</b> and{' '}
+        <b>write</b> are the read and the WRITE halves of that same input, and both sit late on
+        purpose: cached tokens still bill in full, and a written one bills at the vendor's higher
+        cache_write rate. A rising write share is a prefix being rebuilt rather than re-read.
       </p>
     </section>
   );

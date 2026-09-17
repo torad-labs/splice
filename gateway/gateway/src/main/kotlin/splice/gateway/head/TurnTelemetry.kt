@@ -79,6 +79,12 @@ internal class TurnTelemetry(
                     TurnEconomics(
                         inTokens = snap.counters[PerfKeys.IN_TOKENS] ?: 0,
                         cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS] ?: 0,
+                        // V4-86: the cache-WRITE bucket. Absent on a perf row written before the
+                        // counter existed, which reads as 0 — the true historical value, since
+                        // nothing was counting it. Without this line the counter TurnUsageStamp
+                        // writes on every turn died right here and the rollup saw a cache write
+                        // as ordinary input.
+                        cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS] ?: 0,
                         outTokens = snap.counters[PerfKeys.OUT_TOKENS] ?: 0,
                         reqBytes = snap.counters[PerfKeys.REQ_BYTES],
                         upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],

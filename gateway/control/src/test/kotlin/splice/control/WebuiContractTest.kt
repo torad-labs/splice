@@ -81,7 +81,7 @@ class WebuiContractTest {
                 override fun path() = "/tmp/codex.log"
             },
             economics = HeadEconomicsSource {
-                listOf(EconomicsRow(1_000, 2, 300, 270, 5, 400, 440, 28, 48, 2, 1))
+                listOf(EconomicsRow(1_000, 2, 300, 270, 24, 5, 400, 440, 28, 48, 2, 1))
             },
             warnPct = 80,
             warnTokens5h = 0,
@@ -196,7 +196,7 @@ class WebuiContractTest {
         assertFields(
             head["buckets"]!!.jsonArray.first().jsonObject,
             listOf(
-                "hour", "turns", "in_tokens", "cached_tokens", "out_tokens",
+                "hour", "turns", "in_tokens", "cached_tokens", "cache_write_tokens", "out_tokens",
                 "req_bytes", "upstream_req_bytes",
                 "tools_eager", "tools_deferred", "deferral_turns", "rate_limited",
             ),
@@ -213,6 +213,14 @@ class WebuiContractTest {
             .jsonArray.first().jsonObject
         assertEquals(300L, bucket["in_tokens"]!!.jsonPrimitive.long, "in_tokens is the METERED total")
         assertEquals(270L, bucket["cached_tokens"]!!.jsonPrimitive.long, "cached is reported, never subtracted")
+        // V4-86: the cache-WRITE half is a THIRD separate field. Netting it into either of the
+        // other two would hide the one bucket that bills at its own rate, and pre-summing the two
+        // cache buckets would make a read and a write indistinguishable on the page.
+        assertEquals(
+            24L,
+            bucket["cache_write_tokens"]!!.jsonPrimitive.long,
+            "the cache-write bucket reaches the wire on its own, disjoint from cached_tokens",
+        )
     }
 }
 

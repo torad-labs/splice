@@ -274,6 +274,11 @@ class PassthroughStreamTranslatorTest {
         ) as TurnOutcome.Success
         assertEquals(52, s.usage.inputTokens) // 10 + cache_read 5 + cache_creation (30 + 7)
         assertEquals(5, s.usage.cachedTokens)
+        // V4-85: the same cache_creation total also leaves as its OWN disjoint bucket, because it
+        // bills at the cache_write rate rather than the input rate. It stays folded into
+        // inputTokens above (the context-window numerator needs it there); this is the read-off the
+        // perf counter and SessionCost price. Zero here meant a cache write billed as a cache MISS.
+        assertEquals(37, s.usage.cacheWriteTokens) // the nested 30 + 7, not folded away
     }
 
     @Test
@@ -289,6 +294,7 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
         assertEquals(14, s.usage.inputTokens) // 10 + flat 4; the nested object is not double-counted
+        assertEquals(4, s.usage.cacheWriteTokens) // and the write bucket reads the same flat 4, once
     }
 
     // CX-09 REGRESSION GUARD. emittedThinking must mean "the client received reasoning", not
@@ -464,6 +470,14 @@ class PassthroughStreamTranslatorTest {
         assertEquals(ErrorType.API_ERROR, failure.type)
         assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
         assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        // V4-81: the runaway verdict is PERMANENT, and the reason is the shape of the valve rather
+        // than the shape of the error: it trips on the GENERATION ITSELF hitting the truncation
+        // bound, so re-sending the identical request reproduces the identical overrun. Without this
+        // the pre-content wire-type rule would advertise it as overloaded_error and the client would
+        // re-send until its retry budget ran out — for a turn that cannot change. The other three
+        // siblings (responses refusal, responses content-filter, chat refusal/content-filter) are
+        // marked the same way; this pin closes the sweep.
+        assertTrue(failure.permanent, "a tripped runaway valve is not healed by a retry")
         val deltas = sink.calls.count { it.startsWith("text:") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
     }

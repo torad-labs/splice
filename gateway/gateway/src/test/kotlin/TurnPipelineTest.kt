@@ -247,12 +247,39 @@ class TurnPipelineTest {
         assertTrue(retried.texts.isEmpty())
     }
 
+    /** V4-42: a zero-content turn must reach the client RETRYABLE. The operator's journal caught one
+     *  at 07:05:30 on 2026-09-16 (tag=empty_model, between healthy turns, so not a quota artifact) —
+     *  a muse 200 with stop_reason max_tokens and no content blocks.
+     *
+     *  Zero content means nothing reached the client, so the turn is indistinguishable from a
+     *  transient overload and nothing the client read is at stake. The TYPE decides recovery: before
+     *  content Claude Code re-sends an api_error IDENTICALLY until it gives up — the 2.1.x behaviour
+     *  recorded on TurnOutcome.Failure.deterministic, 87 and 47 identical turns on 2026-09-07 —
+     *  so it reproduces the same empty turn rather than recovering, while overloaded_error is
+     *  retried on a backoff. The WORDS stay, because they are the diagnosis. */
+    @Test
+    fun `a zero-content turn ends as overloaded, not api_error, so the client retries it`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(rec, outcome(thinking = ""), meta("text"), elapsedMs = 1)
+
+        assertEquals("error", rec.ending, "a zero-content turn is an error ending, not a clean one")
+        assertEquals(
+            ErrorType.OVERLOADED,
+            rec.errorType,
+            "an empty turn BEFORE content must be retryable with backoff, not identically re-sent",
+        )
+        assertTrue(
+            rec.errorMessage.contains("no content"),
+            "the honest words must survive the type change: ${rec.errorMessage}",
+        )
+    }
+
     @Test
     fun `the default pipeline keeps the reasoning mirror locked off`() = runTest {
         val rec = RecTerminal()
         pipeline().finishStream(rec, outcome(bandThinking), meta("text"), elapsedMs = 1)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
         assertTrue(rec.texts.isEmpty(), "nothing may reach the wire when the turn errors")
     }
 
@@ -260,7 +287,7 @@ class TurnPipelineTest {
     fun `the band is an honest error when reasoning is not displayed as text`() = runTest {
         val rec = run(mirrorReasoning = false, showReasoning = "hide", thinking = bandThinking)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
     }
 
     @Test
@@ -296,7 +323,7 @@ class TurnPipelineTest {
         // thinkingText non-empty but nothing ever reached the sink: the ONE genuinely empty turn.
         val rec = run(mirrorReasoning = false, showReasoning = "thinking", thinking = bandThinking)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
     }
 
     // THE ASTRA CELL (2026-09-05). Thirteen retry storms in one evening, every one the same shape:

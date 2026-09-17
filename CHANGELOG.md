@@ -296,6 +296,7 @@
 
 ### Fixed
 - **No error class can stall a session on a rate limit or a spent account any more (V4-71, V4-72, V4-73).** The first turn to meet a persistent 429 now reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer — cooldown, account pool, classifier and admission — rather than an `invalid_request_error`.
+- **An empty model turn is retried, not re-sent identically (V4-42).** A 200 with no content blocks (muse reasoning its whole budget away) now ends as `overloaded_error` with the honest words kept, so the client backs off and retries instead of stalling. The kimi failure-text golden now freezes the wire type and provider-tagged message rather than an internal data-class rendering (V4-69).
 
 - **The kimi usage probe never ran.** The shared bearer probe required `Credentials.Bearer`
   while the kimi provider yields `Credentials.ApiKey` with an `x-api-key` header, so the poller

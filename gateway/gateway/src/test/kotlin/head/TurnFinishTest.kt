@@ -225,7 +225,9 @@ class TurnFinishTest {
         } finally {
             drive.slot.release()
         }
-        assertEquals(502, emitter.httpStatus(), "the client must have received the empty-model error")
+        // V4-42: the empty_model ending is OVERLOADED now (retried with backoff), so the collect
+        // path's status is 529, not the api_error 502 it carried when this pin was written.
+        assertEquals(529, emitter.httpStatus(), "the client must have received the empty-model error")
         assertEquals(1L, rig.health.snapshot().localOrigin, "the downgrade must reach head health")
         assertTrue(rig.logs.any { it.contains("finish-degraded") }, "the downgrade must reach the log")
         AsyncFileIo.drain() // perf rows are appended asynchronously

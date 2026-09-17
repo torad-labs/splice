@@ -76,7 +76,19 @@ internal class PassthroughTerminalState(
     internal fun providerFailure(): TurnOutcome.Failure? =
         // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
         runawayGuard?.let {
-            TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+            TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                it,
+                providerReported = false,
+                // V4-81: permanent, and it is the same argument the responses dialect's runaway arm
+                // makes by construction — the valve trips on the GENERATION ITSELF hitting its
+                // truncation bound, so re-sending the identical request reproduces the identical
+                // overrun. Marking it permanent is what stops the pre-content rule advertising a
+                // condition a retry cannot change as transient. This is the last of the four
+                // siblings (responses refusal, responses content-filter, chat refusal, chat
+                // content-filter); the sweep is closed.
+                permanent = true,
+            )
         } ?: failureType?.let {
             // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
             // a non-clean stop_reason (CX-07, see [PassthroughFailureRules.stopReasonFailure]) —

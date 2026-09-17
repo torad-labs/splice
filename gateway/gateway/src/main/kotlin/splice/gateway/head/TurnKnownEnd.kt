@@ -2,7 +2,6 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.gateway.head
 
-import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.gateway.pipeline.FailurePresenter
@@ -62,58 +61,25 @@ internal class TurnKnownEnd(
             // plan said no, and it must be countable in the rollup, not just greppable in the log.
             telemetry.recordPerf(drive, "error:upstream-failed", failure.type == ErrorType.RATE_LIMIT)
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
-            // V4-71: the FIRST turn to meet a persistent 429 must reach the client RETRYABLE, and
-            // today it does not. Claude Code retries an in-band error ONLY when it carries
-            // overloaded_error (or a real 429/529 status) — verified in the 2.1.257 binary — and a
-            // 200 is already committed at TurnStreamer.stream before the upstream connect, so a
-            // genuine 429 is not ours to send here. Before any content the turn is indistinguishable
-            // from a transient overload and nothing the client read is at stake, so the WIRE TYPE
-            // becomes OVERLOADED while the WORDS stay rate-limit: the same shape the conn-reset and
-            // watchdog endings already use. The cooldown is armed by RetryRules.giveUp, so the
-            // client's re-send meets the V4-50 admission 429 with its real headers.
+            // V4-71 re-sited by V4-81: the FIRST turn to meet a persistent 429 must reach the
+            // client RETRYABLE, and a 200 is already committed at TurnStreamer.stream before the
+            // upstream connect — so the 429 cannot be sent as a status and the wire type is the
+            // only lever. That lever now lives at the emitter; what stays HERE is the one fact the
+            // classifier produced for this failure and nothing downstream can re-derive.
             //
-            // THE FACT IS THE TURN'S, NOT A ROUND'S. SseRoundDriver baselines CONTENT_FRAMES_OUT per
-            // round and this layer cannot see a round baseline; perfCounter is turn-cumulative, so
-            // "> 0" is the question that belongs here — has ANY content reached the client this turn.
-            // After content this stays a rate_limit_error, which is V4-60's exclusion and unchanged.
-            val contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0
-            // V4-78: API_ERROR is the SECOND type this rule covers, and for exactly the reason
-            // above — the binary retries an in-band error ONLY when the body carries
-            // overloaded_error, so a pre-content api_error is terminal for the client while a
-            // pre-content overloaded_error is retried. A live api_error-in-200 path exists
-            // (HeadServerFailureBranchTest drives it), and until this line such a turn ended the
-            // session where a retry would have healed it.
-            //
-            // THE BOUNDS ARE THE POINT, and they are the same ones the rate-limit half keeps:
-            // content already delivered excludes it (after content the client finalizes whatever it
-            // holds, and a remap would be a lie about what it is reading), and INVALID_REQUEST and
-            // AUTH are NOT remapped — those are splice telling the client something it must act on,
-            // and no retry of the same bytes changes them. Only the WIRE TYPE moves: the message
-            // text still comes from FailurePresenter and telemetry still records the REAL type.
-            val wireType = PreContentWireType.of(failure.type, contentReachedClient)
-            drive.emitter.emitError(wireType, message)
+            // V4-81: the WIRE TYPE is decided at the emitter now (SseEmitter.emitError), not here,
+            // so this surface hands the failure through unaltered. Two facts stay the CALLER'S
+            // because only the caller holds them: the failure's own permanence — failure.transient
+            // is the classifier's verdict that an identical re-send reproduces this exact answer,
+            // and a relabelled permanent failure is 300 client re-sends at six upstream attempts
+            // each — and the message text, which is FailurePresenter's plus the login hint V4-59
+            // appends outside the snippet bound. Everything else (whether content has reached the
+            // client, and what the client does with each type) is the emitter's, because the
+            // emitter owns both the counter and the frame. Telemetry above still records the REAL
+            // type: only the WIRE TYPE ever moves.
+            drive.emitter.emitError(failure.type, message, permanent = !failure.transient)
             true
         }
         else -> false
-    }
-}
-
-/** V4-78: THE PRE-CONTENT WIRE-TYPE RULE, as a value rather than a branch buried in a handler.
- *
- *  Claude Code 2.1.257 retries an IN-BAND error event only when its body carries overloaded_error
- *  (a real 429/529 is retried by STATUS, and neither is ours to send once the 200 is committed).
- *  So before any content has reached the client, a failure whose type the client would treat as
- *  terminal — RATE_LIMIT, and API_ERROR — is wired as OVERLOADED instead. Nothing the client has
- *  read is at stake at that point, and the turn is indistinguishable from a transient overload.
- *
- *  THE BOUNDS, all three deliberate: after content the type is left ALONE (the client finalizes
- *  whatever it holds, and relabelling would misdescribe what it is reading); INVALID_REQUEST and
- *  AUTHENTICATION are never remapped (splice is telling the client something only the operator can
- *  change, and a retry of identical bytes cannot); and only the WIRE TYPE moves — the message still
- *  comes from FailurePresenter and telemetry still records the REAL type. */
-internal object PreContentWireType {
-    fun of(type: ErrorType, contentReachedClient: Boolean): ErrorType {
-        val retryable = type == ErrorType.RATE_LIMIT || type == ErrorType.API_ERROR
-        return if (retryable && !contentReachedClient) ErrorType.OVERLOADED else type
     }
 }

@@ -68,6 +68,11 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
                 ErrorType.API_ERROR,
                 "chat backend: model refused — $refusalBuf",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
+                // V4-81, the responses dialect's sibling (found by sweeping rather than by being
+                // told): a refusal reproduces exactly, so advertising it as transient buys the same
+                // refusal again — see PreContentWireType. The two dialects answer the same question
+                // the same way or the behaviour depends on which head the operator happens to run.
+                permanent = true,
             )
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
             // blocked generation masquerade as complete (honesty invariant); it outranks
@@ -76,6 +81,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
                 ErrorType.API_ERROR,
                 "chat backend: generation stopped by content filter",
                 providerReported = true, // finish_reason the backend sent, not a local verdict (G20)
+                permanent = true, // V4-81: the identical prompt is filtered identically.
             )
             else -> null
         }

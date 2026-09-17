@@ -48,10 +48,6 @@ internal class TurnFinish(
                 outcome,
                 drive.meta,
                 latencyMs,
-                // V4-79: the content-reached answer, read where the drive lives. Turn-cumulative on
-                // purpose: the question is whether ANY content reached this turn's client, which is
-                // what decides if a failure type may still be relabelled as retryable.
-                contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0,
             )
         }
         drive.perf.mark(PerfKeys.FINISH)

@@ -31,6 +31,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import splice.core.perf.PerfKeys
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.FrameRecording
 import splice.gateway.wire.ImmediateSseWriter
@@ -94,6 +95,12 @@ internal class TurnStreamer(
                 progressWrite = { frame ->
                     channel.writeMutex.withLock { channel.timedProgressWrite(frame, perf, deps.clock) }
                 },
+                // V4-81: the content-reached answer the emitter's failure rule turns on, read off
+                // the SAME TurnPerf this writer increments through (ClientChannel.timedClientWrite
+                // is the only thing that ever adds CONTENT_FRAMES_OUT, and this lambda is the only
+                // thing that calls it). A lambda, not a snapshot: the emitter is built before the
+                // first byte and must see the answer as of the failure, not as of the open.
+                contentReached = { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
                 model = built.meta.originalModel,
                 usagePayload = wiring.usagePayloadBuilder(
                     provider.catalog,

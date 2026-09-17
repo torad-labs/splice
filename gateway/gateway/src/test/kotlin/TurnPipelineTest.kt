@@ -124,7 +124,7 @@ class TurnPipelineTest {
     }
 
     /** [run]'s compact sibling, returning the pipeline's own OUTCOME TAG alongside the terminal:
-     *  `empty_compact` and `empty_model` both reach the wire as the same API_ERROR shape, so the
+     *  `empty_compact` and `empty_model` both reach the wire as the same OVERLOADED shape, so the
      *  terminal alone cannot tell the compact gate from the non-compact one. */
     private suspend fun runCompact(thinking: String, mirrorReasoning: Boolean = false): Pair<RecTerminal, String> {
         val rec = RecTerminal()
@@ -409,7 +409,7 @@ class TurnPipelineTest {
         val (rec, tag) = runCompact(thinking = "")
         assertEquals("empty_compact", tag)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: retryable, like empty_model
         assertTrue(rec.errorMessage.contains("compact returned no content"), rec.errorMessage)
         assertTrue(rec.texts.isEmpty(), "a blank summary must never reach the wire: ${rec.texts}")
         val stats = recordedCompact()
@@ -423,7 +423,7 @@ class TurnPipelineTest {
         // reasoning covers nothing on a compact turn and the honesty gate fires.
         val (rec, tag) = runCompact(thinking = bandThinking)
         assertEquals("empty_compact", tag)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: retryable, like empty_model
         assertTrue(rec.texts.isEmpty(), "compact must not emit a mirror block: ${rec.texts}")
     }
 

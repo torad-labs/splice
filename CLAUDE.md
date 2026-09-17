@@ -17,10 +17,15 @@ jar the seat did not build and verify itself.
 The procedure, every time, in this order:
 
 1. Clean export, never the dirty worktree: `git archive HEAD | tar -x -C <scratch>/export-<sha>`.
-2. Gate of record on the export, from `gateway/`, inside `buildgate.slice`, `--offline --no-daemon
-   --no-build-cache`: leg A `clean check :app:shadowJar -x :gateway:test`, then leg B
-   `:gateway:test`. Grep each log for its FAILED/error line; never tail it. Red = stop, fix
-   forward, no install.
+2. Gate of record on the export is the WHOLE ladder: `bash checks/gate.sh` from the export root,
+   inside `buildgate.slice`, ending in `GATE: PASS`. It runs the gradle tier (module-law, detekt,
+   arch-tests, every unit test, the load test), the ast-grep walls, concentration, the campaign
+   walls, the oracle replay, the code-mode selftests, config guard, safe-failure-render, and the
+   pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
+   green three times while the oracle replay had three drifted pins. Grep the log for `GATE:` and
+   `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the
+   conventional types in `checks/pr-title.sh` (`chore(ledger): ...`, never `ledger: ...`), because
+   the ladder lints HEAD's subject.
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
 4. Atomic install: `cp` the built jar to a sibling path in the same directory, then `mv` it over

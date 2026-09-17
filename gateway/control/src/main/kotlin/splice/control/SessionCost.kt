@@ -65,8 +65,30 @@ public class SessionCost(
         var cacheRead = 0L
         var output = 0L
         for (row in tokens.tailNumericFor(sessionId)) {
-            input += row[PerfKeys.IN_TOKENS] ?: 0L
-            cacheRead += row[PerfKeys.CACHED_TOKENS] ?: 0L
+            // V4-37 redo: IN_TOKENS is INCLUSIVE of the cached portion, so the cache-miss bucket is
+            // the difference, never the raw field. Both dialects that write it agree, and by
+            // construction rather than by vendor luck: ChatUsage sets inputTokens from
+            // prompt_tokens, which the vendor defines as inclusive, and PassthroughUsage.kt:23 spells
+            // it out — inputTokens = inputTokens + cacheRead + cacheCreation. TurnUsageStamp.kt:48
+            // and :50 then write both counters straight from that same object with NO subtraction,
+            // so billing the raw field as a miss AND cached_tokens as a read charges the cached
+            // portion twice, once at the miss rate. On the deepseek session that measured 46.47
+            // dollars against a true 1.42.
+            //
+            // DO NOT BE MISLED BY ChatUsage's own comment that HeadServer disjoints them. That is
+            // true of the CLIENT usage envelope (TurnCacheLine.kt:21 writes
+            // input_tokens_details.cached_tokens), which is a DIFFERENT surface from this perf row.
+            // PassthroughStreamTranslator.kt:14 states the expectation directly — cachedTokens =
+            // cache_read, "making the downstream subtraction reproduce the disjoint numbers" — so
+            // this subtraction is the consumer doing what the producer documented.
+            //
+            // coerceAtLeast(0) because a malformed or older row could carry a cached count above its
+            // input count, and a negative miss bucket would SUBTRACT from the bill rather than
+            // floor it.
+            val rawIn = row[PerfKeys.IN_TOKENS] ?: 0L
+            val cached = row[PerfKeys.CACHED_TOKENS] ?: 0L
+            input += (rawIn - cached).coerceAtLeast(0L)
+            cacheRead += cached
             output += row[PerfKeys.OUT_TOKENS] ?: 0L
         }
         return TokenBuckets(input = input, cacheRead = cacheRead, output = output)

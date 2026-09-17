@@ -10,6 +10,7 @@
 package splice.provider.grok
 
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialFileDigest
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -64,7 +65,14 @@ internal class GrokAuthDescribe(
     // freshly re-authenticated credential from the rejected one it replaced within the same tick.
     fun grokAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
         Cancellables.runCatchingCancellable {
-            CredentialFileIdentity(Files.getLastModifiedTime(authPath).toMillis(), Files.size(authPath))
+            CredentialFileIdentity(
+                Files.getLastModifiedTime(authPath).toMillis(),
+                Files.size(authPath),
+                // V4-70: metadata cannot see a same-length rewrite, so the CONTENT is part of
+                // the identity. A read failure throws into the catch below and becomes a null
+                // identity — unknown, which the latch treats as fail-open.
+                CredentialFileDigest.of(authPath),
+            )
         }.onFailure {
             log(
                 "[grok-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +

@@ -180,8 +180,15 @@ class HeadServerCapacityTest {
         listOf(first, second).forEach { it.await() }
     }
 
+    // THE `<Unit>` IS LOAD-BEARING, NOT STYLE — do not tidy it away. This body ends in
+    // held.await(), whose value is a String, so without the explicit type argument the method
+    // would RETURN a String and JUnit would never discover it: no failure, no skip, no warning.
+    // That is what happened for this test's whole life — the XML read tests=3 against four @Test
+    // methods until V4-68 added the wall that compares declarations against results.
+    // await() rather than join() on purpose: await rethrows a FAILED held turn and fails this
+    // test, while join() waits without rethrowing and would quietly weaken it.
     @Test
-    fun `count_tokens answers promptly and calls no upstream while the turn gate is saturated`() = runBlocking {
+    fun `count_tokens answers promptly and calls no upstream while the turn gate is saturated`() = runBlocking<Unit> {
         // count_tokens is a local estimate off the turn gate: even with the one inflight slot held,
         // it must return 200 immediately, never touch upstream, and never occupy the gate.
         mock.resetHold()

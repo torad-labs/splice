@@ -372,8 +372,9 @@ class AccountPoolTest {
             credentialIdentityKnown: Boolean = true,
         ): PoolAccount {
             val quota = AtomicReference(quota(five, weekly, reset))
+            val rev = revision++
             val identity = AtomicReference(
-                CredentialFileIdentity(revision++, 100L).takeIf {
+                CredentialFileIdentity(rev, 100L, "digest-of-revision-$rev").takeIf {
                     credentialPresent && credentialIdentityKnown
                 },
             )
@@ -419,7 +420,8 @@ class AccountPoolTest {
         }
 
         fun rotateCredential(account: PoolAccount) {
-            identities.getValue(account).set(CredentialFileIdentity(revision++, 100L))
+            val rev = revision++
+            identities.getValue(account).set(CredentialFileIdentity(rev, 100L, "digest-of-revision-$rev"))
             presences.getValue(account).set(CredentialPresence.PRESENT)
         }
 

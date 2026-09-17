@@ -159,6 +159,25 @@ run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defau
 # only in a runtime doctor map — the map that would otherwise make this wall green for free.
 run "quirks keys documented" python3 checks/config/quirks-keys-documented.py check .
 run "quirks keys selftest" python3 checks/config/quirks-keys-documented.py --selftest
+# V4-68: a @Test method JUnit never DISCOVERED is a green suite with a hole in it — no failure,
+# no skip, no warning, and the XML just looks one short. Found 2026-09-16: HeadServerCapacityTest
+# declared four @Test methods and its XML reported three, because the fourth's body ended in
+# held.await() inside `= runBlocking { }`, so the method returned a String. The denominator is
+# parsed from the SOURCE (@Test/@ParameterizedTest per class, member depth only) and the
+# observation is the JUnit XML — never the SHAPE of the source, because a syntax-based check
+# accuses all four of those methods and kotlinx's TestResult is a Unit typealias, so it is wrong
+# in both directions. Two guards refuse a vacuous pass: a parse that finds no test class, and an
+# empty results tree.
+#
+# POSITION IS LOAD-BEARING: these two legs MUST stay after the `gradle clean check` leg above,
+# because that leg PRODUCES the XML they read, and they must read it in the same pass. The results
+# directory is a shared, mutually-destructive observation — any scoped run of one test class in a
+# module wipes every other class's XML in that module, which is measured, not hypothetical (a
+# scoped :gateway:test run by another seat during this row's own development deleted 62 of the 63
+# XML files mid-run). Moved above the gradle leg this wall would compare fresh source against
+# absent or stale results and red the whole tree for the wrong reason.
+run "tests are discovered" python3 checks/config/tests-are-discovered.py check .
+run "tests are discovered selftest" python3 checks/config/tests-are-discovered.py --selftest
 # CW-9: stty and raw-mode entry exist only inside TerminalMode.raw. A widget that
 # invokes stty on its own can leave the tty raw after SIGINT. Selftest is in-process
 # (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.

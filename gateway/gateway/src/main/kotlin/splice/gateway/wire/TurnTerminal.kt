@@ -51,8 +51,12 @@ public interface TurnTerminal : WireSink {
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 
-    /** The ONLY failure ending — a retryable, honestly-typed error the client can act on. */
-    public suspend fun emitError(type: ErrorType, message: String)
+    /** The ONLY failure ending — a retryable, honestly-typed error the client can act on.
+     *
+     *  [permanent] (V4-81) says NO retry can change this verdict; the pre-content rule then leaves
+     *  the type alone rather than advertising a repeatable failure as transient. Defaulted false,
+     *  so a caller that does not know keeps the retryable reading it always had. */
+    public suspend fun emitError(type: ErrorType, message: String, permanent: Boolean = false)
 
     /** The ending for a failure NO retry can change (TurnOutcome.Failure.deterministic): the
      *  explanation as a text block the client renders verbatim, then the clean terminal. An error

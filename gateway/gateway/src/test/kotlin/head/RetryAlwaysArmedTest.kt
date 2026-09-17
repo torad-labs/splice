@@ -332,16 +332,26 @@ class RetryAlwaysArmedTest {
     }
 
     @Test
-    fun `the collect path answers the FIRST persistent-429 turn with a real 529, still a rate limit in words`() =
+    fun `the collect path answers the FIRST persistent-429 turn with a real 429, still a rate limit in words`() =
         runBlocking {
-            // V4-71 collect-path pin (orchestrator, 2026-09-17): the wire type chosen for the stream
-            // path decides the collect path's STATUS too (CollectingTerminal.statusFor), so a
-            // stream:false persistent-429 turn moved from 429 to 529. Both are retryable by the
-            // client in both modes, but the number genuinely changed, so it is pinned rather than
-            // left to be rediscovered.
+            // V4-81 CORRECTED THIS CELL, which had been pinning a BUG for a few hours.
+            //
+            // It was written under V4-78/V4-79 as a change-record: those rows applied the
+            // pre-content rule to EVERY failure that reached the wire, including the collect path,
+            // so a stream:false persistent-429 turn moved from a real 429 to a 529 overload. Pinning
+            // the new number made the suite green while the defect it recorded stayed in place —
+            // the "policy-mirroring test ratifies the regression" shape this campaign exists to
+            // catch. V4-81 moved the rule to SseEmitter.emitError, where the collect path cannot
+            // inherit it (CollectingTerminal is a separate TurnTerminal), and V4-81's own row text
+            // says the collect path keeps its real statuses: 429 rate_limit_error, 502 api_error.
+            //
+            // The 429 is the better answer on the merits, not just the older one: on stream:false
+            // the HTTP status IS the information and the rate-limit headers ride on it, so shipping
+            // a 529 claimed an overload that had not happened. Both numbers are client-retryable,
+            // which is why the regression was quiet.
             upstreamClient.clearRateLimitCooldown()
             val (status, body) = request("quota429", stream = false)
-            assertEquals(529, status, "collect path must carry the overload status, got: ${body.take(240)}")
+            assertEquals(429, status, "collect path keeps the real status, got: ${body.take(240)}")
             assertTrue(body.contains("SPLICE-RATE-LIMIT"), "the words stay rate-limit: ${body.take(240)}")
         }
 

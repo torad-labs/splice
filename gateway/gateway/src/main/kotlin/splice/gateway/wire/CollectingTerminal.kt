@@ -143,7 +143,15 @@ public class CollectingTerminal(
         status = OK_STATUS
     }
 
-    override suspend fun emitError(type: ErrorType, message: String) {
+    /** V4-81: [permanent] is accepted and DELIBERATELY UNUSED here — the pre-content wire-type
+     *  rule is a streaming rule and does not apply to a buffered response. On `stream:false` the
+     *  client has read nothing yet by construction, but the response it is about to read is a
+     *  single HTTP status, not an in-band SSE event: there is no retryable event to relabel, and
+     *  the status IS the information (429 rate_limit_error, 502 api_error). Applying the rule here
+     *  would ship a genuine 429 as a 529 with rate-limit headers attached and turn every buffered
+     *  api_error into a lie about an overload that did not happen. The signature carries the
+     *  parameter only because the interface does. */
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         if (!ended.compareAndSet(false, true)) return
         body = errorEnvelope(type.wireName, message)
         status = statusFor(type)

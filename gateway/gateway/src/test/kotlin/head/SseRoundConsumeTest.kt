@@ -81,7 +81,7 @@ private class NoopTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String) = Unit
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
     override fun abandon() = Unit
 }
 

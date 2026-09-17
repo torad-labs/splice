@@ -19,6 +19,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.URLParserException
 import io.ktor.http.content.OutgoingContent
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeStringUtf8
@@ -99,6 +100,16 @@ private class SyntheticUrlParseException(message: String) : IllegalStateExceptio
 private class SubclassThrowingProvider(delegate: Provider) : Provider by delegate {
     override fun extraHeaders(creds: Credentials): Map<String, String> =
         throw SyntheticUrlParseException("synthetic bad base_url")
+}
+
+/** V4-81: the CONFIG-PARSE case, thrown as the REAL type rather than a stand-in. `SyntheticUrlParseException`
+ *  above exists to prove the log line survives subclassing; this one exists to prove the arm's
+ *  PERMANENCE decision, and that decision is a type test — so a stand-in would be testing the
+ *  stand-in. io.ktor.http.URLParserException is public and takes (message, cause), so the real
+ *  shape is constructible here. */
+private class ConfigParseThrowingProvider(delegate: Provider) : Provider by delegate {
+    override fun extraHeaders(creds: Credentials): Map<String, String> =
+        throw URLParserException("Fail to parse url: not-a-url", IllegalArgumentException("not-a-url"))
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -205,7 +216,7 @@ class HeadServerFailureBranchTest {
     }
 
     @Test
-    fun `an internal gateway bug emits one honest api_error, not a truncated 200`() = runBlocking {
+    fun `an internal gateway bug emits one honest error, not a truncated 200`() = runBlocking {
         val headPort = freshPort()
         val head = buildHead(headPort, BranchFakeAuth(), wrap = { ThrowingProvider(it) })
         head.start()
@@ -214,12 +225,14 @@ class HeadServerFailureBranchTest {
         try {
             val sse = turn(headPort, "basic")
             assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
-            // V4-78: the WIRE type is overloaded_error now, not api_error — a pre-content api_error
-            // is terminal for the client (the binary retries an in-band error only when the body
-            // carries overloaded_error), so splice relabels the type while saying the same words.
-            // The honesty this test exists for is unchanged and asserted below: the message still
-            // names an internal gateway error, the turn still ends in one error and never a clean
-            // stop, and telemetry still records the REAL type (the error:unexpected row further down).
+            // V4-81: THE GENERIC ARM STAYS RETRYABLE, and this cell is the one that says so. The
+            // orchestrator's ruling narrowed permanence here to the config-parse case alone: the
+            // operator law (V4-62) is retry on any error, and a generic RuntimeException at the turn
+            // boundary is exactly the class where a transient internal fault must come back on its
+            // own. So an arbitrary gateway bug keeps the V4-78 relabel — pre-content, nothing read,
+            // wired as the one in-band error Claude Code retries.
+            //
+            // The config-parse case has its own cell below, on a REAL URLParserException.
             assertTrue(sse.contains("\"type\":\"overloaded_error\""), sse)
             assertFalse(sse.contains("\"type\":\"api_error\""), "the client-terminal type must not ride: $sse")
             assertTrue(sse.contains("splice: internal gateway error — retry"), sse)
@@ -228,6 +241,54 @@ class HeadServerFailureBranchTest {
             assertTrue(
                 scoped.any { it.contains("perf outcome=error:unexpected") },
                 "expected the error:unexpected perf row in: $scoped",
+            )
+        } finally {
+            head.stop()
+        }
+    }
+
+    // V4-81: THE ONE PERMANENT CASE IN THIS SURFACE, on the REAL Ktor type.
+    //
+    // The arm above is retryable; this is the exception, and it is narrow on purpose. An
+    // unparseable base_url is a property of STATIC CONFIGURATION, not of any response, so the same
+    // broken config throws it identically on every re-send — which makes advertising it as
+    // transient a bill rather than a heal (up to 300 client re-sends at six upstream attempts
+    // each, with RetryPolicy arming a cooldown only for RATE_LIMITED). It keeps api_error and the
+    // client ends the session on the honest verdict.
+    //
+    // MUTATION PROOF (recorded in the ledger): change `e is URLParserException` to `false` at
+    // TurnEnding.kt and THIS cell goes red BY NAME while the generic-arm cell above stays green —
+    // so the two cells pin the two halves of the narrowing, not one shared behaviour.
+    //
+    // The words do not move either way: the message still says "— retry", which is addressed to the
+    // OPERATOR (fix the config), not to the client.
+    @Test
+    fun `an unparseable base_url is permanent and keeps its api_error - V4-81`() = runBlocking {
+        val headPort = freshPort()
+        val head = buildHead(headPort, BranchFakeAuth(), wrap = { ConfigParseThrowingProvider(it) })
+        head.start()
+        awaitListening(headPort)
+        val before = logs.size
+        try {
+            val sse = turn(headPort, "basic")
+            assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
+            assertTrue(sse.contains("\"type\":\"api_error\""), sse)
+            assertFalse(
+                sse.contains("\"type\":\"overloaded_error\""),
+                "a config failure a retry cannot change must not be sold as transient: $sse",
+            )
+            assertTrue(sse.contains("splice: internal gateway error — retry"), sse)
+            assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
+            // Same accounting as every other surface: the real class is still what the journal
+            // names, and the perf row still lands — permanence changed the WIRE TYPE only.
+            val scoped = logs.drop(before)
+            assertTrue(
+                scoped.any { it.contains("perf outcome=error:unexpected") },
+                "expected the error:unexpected perf row in: $scoped",
+            )
+            assertTrue(
+                scoped.any { it.contains("URLParserException") },
+                "the journal must still name the throwing class in: $scoped",
             )
         } finally {
             head.stop()

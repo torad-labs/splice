@@ -65,6 +65,13 @@ account_id_header = true
 cache_key = "first-message-hash"
 effort_ceiling = "max"
 summary_field = true
+# RETIRED — compact_effort is not a knob any more, and setting it FAILS AT LOAD. A compaction is
+# built exactly like a turn and inherits the session's model and effort: any pin moves the
+# reasoning off the session's, and the backend's prompt cache then misses the whole transcript on
+# the most expensive turn class there is. The key is still PARSED so a config that carries it is
+# rejected loudly at startup instead of being ignored in silence. Remove it from any config that
+# has it; it is documented here so that an operator reading this file learns why it is gone.
+# retired: compact_effort — a compaction is built exactly like a turn, so any effort pin misses the prompt cache on the whole transcript
 # websocket (default false in code): serve rounds over the Responses WebSocket with
 # previous_response_id chaining, so a continuation turn sends ONLY the new items instead of the
 # whole history. Measured on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send
@@ -86,6 +93,7 @@ zstd_request_body = true
 # This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
 # A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
 # Setting true is an experiment, not demonstrated task-efficiency parity.
+# parallel_tool_calls = false
 # code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
 # adds splice's JAR-bundled JavaScript runner and orchestration instructions only to eligible GPT-6
 # Astra and Sol turns. Ordinary tools remain Claude Code's permission-checked client handlers, which
@@ -110,6 +118,20 @@ enabled = true
 # Prior LSP use replays its declaration in history; it never promotes LSP into the stable
 # initial tool list. The partition depends on the current catalog and policy, not usage.
 defer = ["LSP"]
+# The rest of the tool_surface policy, shown with its code defaults. Every one is an OVERLAY: leave
+# it out and the default below is what rides, which is what the daily-driven claudex runs. Names
+# here are the TOOL NAMES Claude Code advertises, matched exactly.
+#   eager = []                 names FORCED onto the eager surface; wins over every defer rule
+#   defer_prefixes = ["mcp__"] every name under these prefixes is deferred wholesale
+#   min_deferred = 8           below this many deferrable tools the split buys nothing and costs
+#                              a round, so the whole surface stays eager
+#   search_limit = 8           most tools one tool_search answer returns (clamped 1..this). A
+#                              HIGHER limit answers a broad query in fewer rounds at the cost of a
+#                              bigger payload every round; a LOWER one keeps each answer small but
+#                              pushes more queries toward the exhaustive final round
+#   search_rounds = 3          permitted tool_search rounds before the FINAL round answers with the
+#                              ENTIRE deferred set regardless of query — capability at the cap is
+#                              exactly today's full surface, so the loop cannot wedge
 [[providers.codex.models]]
 id = "gpt-6-astra"
 label = "Codex 6 Astra"
@@ -268,6 +290,10 @@ auth = { kind = "kimi-oauth" }
 #                           value rides its built-in profile, so it is not repeated in the table
 #                           below; declare it yourself for any other passthrough provider.
 quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true, map_thinking_adaptive = true, block_allowlist = ["text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"] }
+# strip_sampling_params (default absent — the sampling knobs ride): drop temperature/top_p/top_k
+# from the request when a live probe shows the endpoint rejects them. Kimi accepts them, so it is
+# NOT set here; declare it for a passthrough upstream that 400s on the shape.
+# strip_sampling_params = true
 # Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
 # exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.
 # `Accept` and the X-Msh-* device identity stay in code: one is a dialect invariant, the other is

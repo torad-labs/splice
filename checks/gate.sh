@@ -147,6 +147,18 @@ run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
 # disk, so a field added tomorrow is in scope without editing the checker; there is no allowlist.
 run "shared-quirks no vendor defaults" python3 checks/config/shared-quirks-no-vendor-defaults.py check .
 run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defaults.py --selftest
+# V4-44: the OTHER half of the same surface. The check above keeps a VENDOR FACT out of a shared
+# dialect default; this one keeps a quirk KEY from drifting away from its documentation. The
+# denominator is parsed from QuirksConfig.kt — the keys an operator may write under
+# [providers.X.quirks], nested tool_surface included — so a key added tomorrow is in scope with no
+# edit to the checker, and two guards refuse a vacuous pass (a parse yielding no keys, and a parsed
+# @SerialName count that disagrees with the file). Every key must be documented in
+# config/splice.example.toml or the `splice add PROFILE` emitter, or retired with a written reason;
+# absence is not a disposition and fails BY NAME. The selftest proves it red on a synthetic key
+# appended to a temp copy of the source, on a retirement carrying no reason, and on a key named
+# only in a runtime doctor map — the map that would otherwise make this wall green for free.
+run "quirks keys documented" python3 checks/config/quirks-keys-documented.py check .
+run "quirks keys selftest" python3 checks/config/quirks-keys-documented.py --selftest
 # CW-9: stty and raw-mode entry exist only inside TerminalMode.raw. A widget that
 # invokes stty on its own can leave the tty raw after SIGINT. Selftest is in-process
 # (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.

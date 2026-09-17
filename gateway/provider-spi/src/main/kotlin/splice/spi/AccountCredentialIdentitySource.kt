@@ -2,6 +2,7 @@
 // so that file stays out of HIGH (V4-21 neighbourhood denom).
 package splice.spi
 
+import splice.core.auth.CredentialFileDigest
 import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import java.nio.file.Files
@@ -50,7 +51,14 @@ public fun interface AccountCredentialIdentitySource {
                 if (attributes["isRegularFile"] != true) return@runCatchingCancellable unknown()
                 val modifiedAt = (attributes.getValue("lastModifiedTime") as FileTime).toMillis()
                 val size = attributes.getValue("size") as Long
-                CredentialEvidence(CredentialFileIdentity(modifiedAt, size), CredentialPresence.PRESENT)
+                // V4-70: the content digest rides the SAME best-effort block as the stat, so a read
+                // failure collapses to the null identity below exactly as a stat failure does —
+                // unknown, never "unchanged". Metadata alone could not tell a same-length rewrite
+                // from the file the latch was armed against. See CredentialFileIdentity's header.
+                CredentialEvidence(
+                    CredentialFileIdentity(modifiedAt, size, CredentialFileDigest.of(path)),
+                    CredentialPresence.PRESENT,
+                )
             }.getOrElse { failure -> CredentialEvidence(null, presence(path, failure)) }
 
         private fun presence(path: Path, failure: Throwable): CredentialPresence =

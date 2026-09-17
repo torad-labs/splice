@@ -40,40 +40,53 @@ private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
 private const val HANG_BACKSTOP_S = 60L
 
-class MuseAuthProviderFixesTest {
-
-    private fun authFile(
-        dir: Path,
-        accessToken: String = "account-access",
-        apiKey: String = "persisted-key",
-        extra: String = "",
-    ): Path {
-        val file = dir.resolve(".config").resolve("splice").resolve("auth").resolve("muse.json")
-        Files.createDirectories(file.parent)
-        Files.writeString(
-            file,
-            """{"access_token":"$accessToken","api_key":"$apiKey",
-                "splice_auth_kind":"muse-oauth","splice_account_label":"backup"$extra}""",
-        )
-        return file
-    }
-
-    private fun provider(
-        file: Path,
-        clock: WallClock = WallClock(System::currentTimeMillis),
-        authCacheMs: Long = 30_000L,
-        prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
-        flightContext: CoroutineContext = ProcessDispatchers().background(),
-        mint: MuseKeyMintCall,
-    ): MuseAuthProvider = MuseAuthProvider(
-        authPath = file,
-        log = LogSink { },
-        clock = clock,
-        mintCall = mint,
-        authCacheMs = authCacheMs,
-        prefetchScope = prefetchScope,
-        flightContext = flightContext,
+// V4-70: the three fixtures below are TOP-LEVEL rather than members of the test class because a
+// second class in this file needs them and duplicating them would let the two copies drift — the
+// same failure this campaign keeps meeting in other guises. Test sources are outside the
+// no-top-level-functions wall's scope (it reads gateway/*/src/main), which is what makes this the
+// cheapest correct shape; the alternative was a new file, outside the row's fence.
+internal fun authFile(
+    dir: Path,
+    accessToken: String = "account-access",
+    apiKey: String = "persisted-key",
+    extra: String = "",
+): Path {
+    val file = dir.resolve(".config").resolve("splice").resolve("auth").resolve("muse.json")
+    Files.createDirectories(file.parent)
+    Files.writeString(
+        file,
+        """{"access_token":"$accessToken","api_key":"$apiKey",
+            "splice_auth_kind":"muse-oauth","splice_account_label":"backup"$extra}""",
     )
+    return file
+}
+
+internal fun provider(
+    file: Path,
+    clock: WallClock = WallClock(System::currentTimeMillis),
+    authCacheMs: Long = 30_000L,
+    prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
+    flightContext: CoroutineContext = ProcessDispatchers().background(),
+    mint: MuseKeyMintCall,
+): MuseAuthProvider = MuseAuthProvider(
+    authPath = file,
+    log = LogSink { },
+    clock = clock,
+    mintCall = mint,
+    authCacheMs = authCacheMs,
+    prefetchScope = prefetchScope,
+    flightContext = flightContext,
+)
+
+internal fun usageKey(apiKey: String): MuseSubscriptionKey = MuseSubscriptionKey(
+    apiKey = apiKey,
+    fields = Json.parseToJsonElement(
+        """{"api_key":"$apiKey","is_subs_active":true,"require_payment":false,
+            "subs_usage":{"weekly":{"used_percent":12,"resets_at":200}}}""",
+    ).jsonObject,
+)
+
+class MuseAuthProviderFixesTest {
 
     @Test
     fun `RateLimited zero still floors to the default hold`(@TempDir tempDir: Path) = runTest {
@@ -123,10 +136,23 @@ class MuseAuthProviderFixesTest {
         }
         assertEquals("token-AAAAAAA", (auth.credentials() as Credentials.Bearer).token)
 
+        // V4-70 CHANGED WHAT THIS ASSERTS, deliberately, because the cache was serving a credential
+        // that no longer existed on disk. The store's freshness check is `cached.identity ==
+        // identity` (MuseCredentialStore.read), and the identity now carries the file's CONTENT, so a
+        // same-size rewrite with a restored timestamp is a MISS where it used to be a stale HIT.
+        // That is the same defect the latch had — metadata standing in for content — so it is fixed
+        // in both places rather than pinned in one. An untouched file is still a HIT, which is what
+        // the cache exists for:
         val stamp = Files.getLastModifiedTime(file)
+        assertEquals("token-AAAAAAA", (auth.credentials() as Credentials.Bearer).token)
+
         authFile(tempDir, apiKey = "token-BBBBBBB")
         Files.setLastModifiedTime(file, stamp)
-        assertEquals("token-AAAAAAA", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(
+            "token-BBBBBBB",
+            (auth.credentials() as Credentials.Bearer).token,
+            "a same-length rewrite is now DETECTED: the cache must not serve a credential that is gone",
+        )
 
         authFile(tempDir, apiKey = "token-CCCCCCCC-longer")
         Files.setLastModifiedTime(file, stamp)
@@ -187,13 +213,13 @@ class MuseAuthProviderFixesTest {
             accessToken = "old-account-token",
             apiKey = "old-key",
             fields = fields,
-            identity = CredentialFileIdentity(1L, 10L),
+            identity = CredentialFileIdentity(1L, 10L, "digest-of-the-old-credential"),
         )
         val current = MuseCredentialSnapshot(
             accessToken = "current-account-token",
             apiKey = "current-key",
             fields = fields,
-            identity = CredentialFileIdentity(2L, 20L),
+            identity = CredentialFileIdentity(2L, 20L, "digest-of-the-current-credential"),
         )
         holds.recordInactive(current, MAX_MINT_HOLD_MS, "https://www.meta.ai/")
 
@@ -436,12 +462,63 @@ class MuseAuthProviderFixesTest {
         assertTrue(written.containsKey("vendor_future_field"))
         assertFalse(written.containsKey("future_vendor_flag"))
     }
+}
 
-    private fun usageKey(apiKey: String): MuseSubscriptionKey = MuseSubscriptionKey(
-        apiKey = apiKey,
-        fields = Json.parseToJsonElement(
-            """{"api_key":"$apiKey","is_subs_active":true,"require_payment":false,
-                "subs_usage":{"weekly":{"used_percent":12,"resets_at":200}}}""",
-        ).jsonObject,
-    )
+/** V4-70: the identity collision, in its own class for the same reason V4-63 and V4-68 split
+ *  theirs — MuseAuthProviderFixesTest sits at detekt's LargeClass ceiling and a new pin there
+ *  reddens the gate before it can prove anything. The fixtures it needs are the top-level ones
+ *  above, which is why they were lifted out of the other class. */
+class MuseCredentialIdentityCollisionTest {
+
+    // ── V4-70: THE COLLISION, CONSTRUCTED RATHER THAN AWAITED ────────────────────────────────────
+    // The poll-mint test above is the one-in-N witness of this bug: it reds only when the rewrite
+    // happens to land in the same millisecond as the file the latch was armed against, which is why
+    // it read as a flake. This test CONSTRUCTS that collision with Files.setLastModifiedTime, so it
+    // is red on every run against a metadata-only identity and green once the content is part of it.
+    // Both are kept: this one is the proof, that one is the real-world path that found it.
+    //
+    // The operator story is DR-176's, already suffered once in production: a credential is rejected,
+    // the operator re-authenticates, and every turn is then refused LOCALLY — no request leaves the
+    // box — because the sentinel outlived the credential it was armed against. DR-176 widened the
+    // identity with [sizeBytes], which a same-length rewrite does not change; content does.
+    @Test
+    fun `a same-length rewrite that keeps the mtime still clears the account latch - V4-70`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val file = authFile(tempDir, accessToken = "token-a", apiKey = "key-a")
+        val calls = AtomicInteger()
+        val auth = provider(file) { _, _ ->
+            if (calls.incrementAndGet() == 1) {
+                MuseMintAttempt.InvalidAccountToken
+            } else {
+                MuseMintAttempt.Granted(usageKey("key-b"))
+            }
+        }
+
+        // Arm the latch through the real path: the mint rejects the token the file still holds.
+        auth.refresh()
+        assertEquals(
+            "invalid",
+            auth.describe().fields["account_token"],
+            "precondition: the rejected mint must have latched the account as invalid",
+        )
+
+        val originalMtime = Files.getLastModifiedTime(file)
+
+        // The operator re-authenticates: a DIFFERENT credential of the SAME LENGTH, with the
+        // timestamp restored — what cp -p, a tar extract or any mtime-preserving sync produces.
+        authFile(tempDir, accessToken = "token-b", apiKey = "key-b")
+        Files.setLastModifiedTime(file, originalMtime)
+
+        auth.refresh()
+        assertNull(
+            auth.describe().fields["account_token"],
+            "a NEW credential must clear the latch even when its metadata matches the rejected one",
+        )
+        assertEquals(
+            "key-b",
+            (auth.credentials() as Credentials.Bearer).token,
+            "and the re-authenticated credential must actually be serving",
+        )
+    }
 }

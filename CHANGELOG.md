@@ -295,6 +295,7 @@
   grok's and kimi's tables are byte-identical.
 
 ### Fixed
+- **No error class can stall a session on a rate limit or a spent account any more (V4-71, V4-72, V4-73).** The first turn to meet a persistent 429 now reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer — cooldown, account pool, classifier and admission — rather than an `invalid_request_error`.
 
 - **The kimi usage probe never ran.** The shared bearer probe required `Credentials.Bearer`
   while the kimi provider yields `Credentials.ApiKey` with an `x-api-key` header, so the poller

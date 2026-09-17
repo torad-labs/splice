@@ -136,4 +136,24 @@ class GrokEntitlementTest {
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
     }
+
+    // ── V4-73: the SPENT-ACCOUNT 403 is a rate limit, not an invalid request ────────────────
+    // The billing wall used to reach the client as a terminal invalid_request_error, bypassing the
+    // cooldown, the account pool and every client retry — when the operator's law is that credits
+    // exhaustion is retried until the credits are back. The port is asked by the transport; this is
+    // the only place that answers it with vendor spelling, and it answers with the SAME list V4-38
+    // uses for the refresh veto, so the two can never disagree about what a quota wall looks like.
+    @Test
+    fun `a billing 403 is declared quota-exhausted, and nothing else is - V4-73`() {
+        val auth = provider(Files.createTempDirectory("grok-quota"), expiresAtMs = 2_000_000L, now = 1_000_000L)
+
+        assertTrue(auth.isQuotaExhausted(403, spendingLimit), "the billing 403 IS a quota wall")
+        assertFalse(auth.isQuotaExhausted(403, genuineExpiry), "an EXPIRY 403 is not a quota wall")
+        assertFalse(
+            auth.isQuotaExhausted(403, "some unrecognised body"),
+            "an unrecognised 403 keeps every bit of today's behaviour",
+        )
+        assertFalse(auth.isQuotaExhausted(401, spendingLimit), "a 401 is auth, never a quota wall")
+        assertFalse(auth.isQuotaExhausted(429, spendingLimit), "an already-rate-limited status needs no rewrite")
+    }
 }

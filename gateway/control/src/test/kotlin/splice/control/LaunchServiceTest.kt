@@ -58,6 +58,28 @@ class LaunchServiceTest {
         assertEquals("960000", env["API_TIMEOUT_MS"])
     }
 
+    // V4-72: the client's own retry budget is 10 attempts (~2-3 min), so a rate-limit hold longer
+    // than that used to end the SESSION rather than resume when the window reopened. Persistent mode
+    // is a client env flag (CLAUDE_CODE_RETRY_WATCHDOG, read by QI() in the 2.1.257 binary) and it
+    // is planted for EVERY head, so both spellings are pinned: a foreign head, and the native one
+    // that runs its client in subscriber mode — the mode whose 429 gate persistent retry is checked
+    // BEFORE, which is exactly why the native head needs this too rather than being exempt.
+    @Test
+    fun `CLAUDE_CODE_RETRY_WATCHDOG is planted for a foreign head`() {
+        val env = service.launch(spec("codex"), emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals("1", env["CLAUDE_CODE_RETRY_WATCHDOG"])
+    }
+
+    @Test
+    fun `CLAUDE_CODE_RETRY_WATCHDOG is planted for the native head too - V4-72`() {
+        val env = service.launch(nativeSpec(), emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals(
+            "1",
+            env["CLAUDE_CODE_RETRY_WATCHDOG"],
+            "a native head's client runs in subscriber mode; persistent retry is checked before that gate",
+        )
+    }
+
     // DR-81 (assembly sweep): the spec is assembled once at boot, but `splice key set` promises
     // live pickup — the capture hook and advertiser used to be frozen at the boot-time key check,
     // so every later launch still armed the paste-your-key hook against a working credential

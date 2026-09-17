@@ -311,9 +311,12 @@ launch_recipe() { # head port
 import json, sys
 port = sys.argv[1]
 r = json.load(sys.stdin); env = r.get("env", {})
-print({k: env.get(k) for k in ("ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES")}, "argv:", r.get("argv"))
+print({k: env.get(k) for k in ("ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES", "CLAUDE_CODE_RETRY_WATCHDOG")}, "argv:", r.get("argv"))
 assert env.get("ANTHROPIC_BASE_URL") == "http://127.0.0.1:%s" % port, env.get("ANTHROPIC_BASE_URL")
 assert int(env.get("API_TIMEOUT_MS") or 0) > 900_000, "API_TIMEOUT_MS must exceed the daemon 900s wall: %r" % env.get("API_TIMEOUT_MS")
+# V4-72: without persistent retry the client stops after 10 attempts (~2-3 min) and a longer
+# rate-limit hold ends the session instead of resuming when the window reopens. Every head.
+assert env.get("CLAUDE_CODE_RETRY_WATCHDOG") == "1", "persistent retry must be planted: %r" % env.get("CLAUDE_CODE_RETRY_WATCHDOG")
 assert r.get("argv"), "empty argv"' "$2"
 }
 step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"

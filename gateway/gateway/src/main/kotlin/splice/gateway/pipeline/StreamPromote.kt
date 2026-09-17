@@ -67,8 +67,16 @@ internal class StreamPromote(
                 // the old line made them one grep-proof sentence (Astra, 2026-09-05: eleven identical
                 // client retries of one turn, each burning 258k input tokens, with no way to tell).
                 log("[gateway] empty-turn shape compact=false ${outcome.outputShape}\n")
+                // V4-42: OVERLOADED, not API_ERROR. Zero content means NOTHING has reached the
+                // client, so the turn is indistinguishable from a transient overload and there is
+                // no client-visible work to lose — but the type decides whether the client recovers.
+                // Before content, Claude Code re-sends an api_error IDENTICALLY until it gives up
+                // (the 2.1.x behaviour recorded on TurnOutcome.Failure.deterministic: 87 and 47
+                // identical turns on 2026-09-07), which reproduces the same empty turn instead of
+                // recovering from it; overloaded_error is retried on a backoff. The WORDS are
+                // unchanged, including the upstream shape, because they are the diagnosis.
                 emitter.emitError(
-                    ErrorType.API_ERROR,
+                    ErrorType.OVERLOADED,
                     "splice: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
                 )
                 PromoteVerdict("empty_model")

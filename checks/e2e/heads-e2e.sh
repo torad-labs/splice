@@ -14,8 +14,11 @@
 #                          count_tokens sanity call. Cheap, provider-billed, seconds per head.
 #   tier 2  tmux drive   — launches the head's REAL Claude Code wrapper (claudex / claude-grok /
 #                          claude-kimi …) inside an isolated tmux server, answers first-run
-#                          prompts, sends live prompts, asserts the answers render, then runs the
-#                          perf-JSONL oracle (perf_rows_ok) over the drive window.
+#                          prompts, plants an OPERATOR-SHAPED tool surface (a real stdio MCP
+#                          server whose composed tool name is over 64 chars — see
+#                          plant_overlong_mcp), sends live prompts, asserts the answers render
+#                          and that the tool surface really formed, then runs the perf-JSONL
+#                          oracle (perf_rows_ok) over the drive window.
 #
 # COST — tier 2 spends REAL provider quota on EVERY head, deliberately and without a gate,
 # including a client-auth head. That is not an oversight of tier 1's credential gate: the two
@@ -27,8 +30,10 @@
 # already universal. Instead the spend is announced per head at dispatch time — see tier2().
 #
 # Usage:
-#   checks/e2e/heads-e2e.sh [--tier 1|2|all|perf-oracle] [--head KEY] [--list]
+#   checks/e2e/heads-e2e.sh [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list]
 #   (perf-oracle: selftest hook — tier 2's perf gate alone, over E2E_PERF_SINCE/E2E_PERF_WANT)
+#   (mcp-oracle:  selftest hook — tier 2's tool-surface gate alone, over E2E_MCP_SCRATCH)
+#   (plant-oracle: selftest hook — plant the MCP server + its enable settings into E2E_MCP_SCRATCH)
 # Env:
 #   E2E_TTFB_MS / E2E_FIRST_DELTA_MS / E2E_TOTAL_MS / E2E_GAP_MS   latency budgets (ms)
 #   E2E_MODEL_<HEADKEY>   full discovery model id override (default: cheapest-looking row)
@@ -274,8 +279,21 @@ wait_pane() { # session deadline_s want_regex -> 0|1|2
   while [ $SECONDS -lt $end ]; do
     p="$(pane "$sess")"
     # dialogs first — they can sit UNDER a spurious readiness match otherwise
+    # The trust dialog's DEFAULT SELECTION IS "No, exit" (verified against Claude Code 2.1.257 in
+    # a fresh mktemp dir, which is the only kind of dir tier 2 ever launches in — so it is always
+    # untrusted and this dialog is always drawn). A bare Enter therefore ANSWERED NO and killed
+    # the wrapper before a single turn; the drive then died in wait_pane's 90s timeout as "TUI
+    # never became ready", which reads like a head problem and is not one. `--dangerously-skip-
+    # permissions` does not skip it either. So: move the cursor, then CONFIRM the trusting option
+    # is the selected one before pressing Enter — a reordered or re-worded dialog stalls to the
+    # timeout instead of silently answering No again.
     if printf '%s' "$p" | grep -qiE "trust this folder|do you trust"; then
-      tmux -L "$TMUX_SOCK" send-keys -t "$sess" Enter; sleep 1; continue
+      if printf '%s' "$p" | grep -qE '❯[[:space:]]*Yes'; then
+        tmux -L "$TMUX_SOCK" send-keys -t "$sess" Enter
+      else
+        tmux -L "$TMUX_SOCK" send-keys -t "$sess" Down
+      fi
+      sleep 1; continue
     fi
     if printf '%s' "$p" | grep -qiE "text style|theme to use|choose the text"; then
       tmux -L "$TMUX_SOCK" send-keys -t "$sess" Enter; sleep 1; continue
@@ -409,22 +427,124 @@ PY
 # mktemp dir, so the session never carried an operator-shaped tool surface. Planting this
 # name into the scratch dir is the cheapest honest stand-in that does not depend on which
 # plugins happen to be installed. Length is load-bearing: keep it over 64.
+#
+# THE NAME IS COMPOSED, NOT DECLARED. Claude Code spells an MCP tool mcp__<server key>__<tool>,
+# so the 68 characters come from the .mcp.json KEY plus the name the server advertises in its
+# tools/list — never from a string anybody writes out in full. Both halves live here; the server
+# owns only its short half (checks/e2e/mcp_overlong_tool_server.py).
+#
+# REDO 2026-09-17 — the first version of this arm was inert. It planted
+# `python3 -c "raise SystemExit(0)"`, which exits before the first byte of the stdio handshake,
+# and it wrote no settings, so the project MCP server was never even enabled. Claude Code
+# registered zero tools, the 68-char name never reached the wire, and the arm could not have
+# caught the 400 it exists to catch. Both halves are fixed below: a REAL server, and the
+# settings line that enables it non-interactively.
 OVERLONG_TOOL_NAME="mcp__plugin_desktop-commander_desktop-commander__read_process_output"
 OVERLONG_MCP_SERVER="plugin_desktop-commander_desktop-commander"
 OVERLONG_MCP_TOOL="read_process_output"
+OVERLONG_MCP_SERVER_SCRIPT="$ROOT/checks/e2e/mcp_overlong_tool_server.py"
+OVERLONG_MCP_LOG_NAME="mcp-handshake.jsonl"
 
-plant_overlong_mcp() { # scratch_dir — writes .mcp.json whose composed tool name is OVERLONG_TOOL_NAME
+# Plants the server AND enables it. A project-scoped .mcp.json is INERT on its own: Claude Code
+# asks the operator to approve it on first sight, and tier 2 drives a TUI with nobody to answer,
+# so an unapproved server silently contributes no tools. `enabledMcpjsonServers` names this one
+# server; `enableAllProjectMcpServers` is the blanket form of the same permission — both are read
+# from project settings (scratch/.claude/settings.local.json, the same file Claude Code writes
+# itself when a human clicks approve). VERIFIED SEPARATELY against Claude Code 2.1.257 on
+# 2026-09-17: each key ALONE makes the client spawn the planted server and pull its tools (the
+# server's handshake receipt lands either way), so neither is decoration and either one is a
+# sufficient enable — which is why the selftest accepts either. Both are written because the
+# scratch dir is thrown away at the end of the head, so there is nothing to keep tidy.
+#
+# `claude mcp list` is NOT the oracle here and says "Pending approval" for this server no matter
+# what these settings say: it reports the per-project approval recorded in ~/.claude.json, which
+# the harness deliberately does not touch (it is the operator's own global file). The oracle is
+# whether the server is actually spawned — which is what mcp_surface_ok reads.
+plant_overlong_mcp() { # scratch_dir — real stdio MCP server in .mcp.json, enabled in project settings
   local scratch="$1"
-  cat > "$scratch/.mcp.json" <<JSON
-{
-  "mcpServers": {
-    "$OVERLONG_MCP_SERVER": {
-      "command": "python3",
-      "args": ["-c", "raise SystemExit(0)"]
-    }
-  }
+  # JSON is emitted by python, not a heredoc: $ROOT rides into the args array, and a path that
+  # needs escaping must not be able to produce a .mcp.json Claude Code silently fails to parse.
+  SCRATCH="$scratch" SERVER="$OVERLONG_MCP_SERVER" SCRIPT="$OVERLONG_MCP_SERVER_SCRIPT" \
+  LOG_NAME="$OVERLONG_MCP_LOG_NAME" python3 - <<'PY'
+import json, os, pathlib
+scratch = pathlib.Path(os.environ["SCRATCH"])
+server = os.environ["SERVER"]
+(scratch / ".mcp.json").write_text(json.dumps({
+    "mcpServers": {
+        server: {
+            "command": "python3",
+            "args": [os.environ["SCRIPT"]],
+            # Absolute: the server is spawned with the scratch as cwd today, but the receipt the
+            # gate reads must not depend on that staying true.
+            "env": {"SPLICE_E2E_MCP_LOG": str(scratch / os.environ["LOG_NAME"])},
+        },
+    },
+}, indent=2) + "\n", encoding="utf-8")
+settings = scratch / ".claude"
+settings.mkdir(exist_ok=True)
+(settings / "settings.local.json").write_text(json.dumps({
+    "enabledMcpjsonServers": [server],
+    "enableAllProjectMcpServers": True,
+}, indent=2) + "\n", encoding="utf-8")
+PY
 }
-JSON
+
+# The receipt that proves the tool surface was REAL, read from the JSONL the planted server
+# appends per JSON-RPC method it serves. Two facts are asserted, and only these two are
+# observable: Claude Code completed the `initialize` handshake with the server, and it pulled
+# `tools/list` and was answered with OVERLONG_MCP_TOOL. Since Claude Code composes
+# mcp__<server key>__<advertised tool>, a served tools/list IS the 68-char name entering this
+# session's tool surface — the surface the operator's muse turn carried when it 400d.
+#
+# WHY NOT THE WIRE BYTES. The stronger receipt — the exact request the head sent upstream — needs
+# the head-side tap gateway/CONTRACT.md describes and that does not exist yet (the same gap
+# emit_receipt marks contract_bound=false for), and a perf row carries no tool names at all
+# (PerfStats.kt writes ts/model/outcome/marks/counters). So this gate asserts the name entered
+# the session and the turn assertions assert the head answered anyway: an unshortened over-cap
+# name comes back 400 and turn 1 never renders ANSWER=42. Together that is the catch.
+mcp_surface_ok() { # scratch_dir -> verdict on stdout; rc 1 when the surface never formed
+  python3 - "$1/$OVERLONG_MCP_LOG_NAME" "$OVERLONG_MCP_TOOL" "$OVERLONG_TOOL_NAME" <<'PY'
+import json, pathlib, sys
+path, want_tool, composed = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+if not path.exists():
+    print("no MCP handshake receipt at %s — Claude Code never spawned the planted server "
+          "(is it enabled in the scratch settings?)" % path)
+    sys.exit(1)
+rows = []
+for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        rows.append(json.loads(line))
+    except json.JSONDecodeError:
+        continue
+methods = [r.get("method") for r in rows]
+if "initialize" not in methods:
+    print("MCP receipt has no initialize row (methods: %s) — the stdio handshake never completed"
+          % (methods or "<none>"))
+    sys.exit(1)
+listed = [t for r in rows if r.get("method") == "tools/list" for t in (r.get("tools") or [])]
+if not listed:
+    print("MCP receipt has no tools/list row (methods: %s) — the server initialized but its tools "
+          "never entered the session" % methods)
+    sys.exit(1)
+if want_tool not in listed:
+    print("MCP server advertised %s, not %r — the composed name is no longer %r"
+          % (listed, want_tool, composed))
+    sys.exit(1)
+print("initialize + tools/list served; %r advertised, so %r (%d chars) entered the session tool "
+      "surface" % (want_tool, composed, len(composed)))
+PY
+}
+
+# pass/fail wrapper, shared by tier 2 and the mcp-oracle tier so the selftest exercises the exact
+# gate tier 2 runs (same shape as perf_gate below, for the same reason).
+mcp_surface_gate() { # head_key scratch_dir
+  local verdict
+  if verdict="$(mcp_surface_ok "$2")"; then
+    note "    tool surface: $verdict"
+    pass "$1/mcp-tool-surface"
+  else
+    fail "$1/mcp-tool-surface" "$verdict"
+  fi
 }
 
 tier2() {
@@ -465,7 +585,12 @@ tier2() {
   # The expected answers (ANSWER=42 / SECOND=DONE) deliberately do NOT appear in the prompt text,
   # so a match is the model's RESPONSE, never the echoed input line.
   send_prompt "$sess" "Compute six times seven and reply with exactly ANSWER= followed by the number."
-  if ! wait_pane "$sess" 150 'ANSWER=42'; then
+  rc=0; wait_pane "$sess" 150 'ANSWER=42' || rc=$?
+  # BEFORE the early return, deliberately. When the over-long name is what broke the turn, the
+  # handshake receipt is the diagnosis — a return that discards it leaves "no ANSWER=42" as the
+  # only evidence, which is exactly the shape the operator's unexplained 400 already had.
+  mcp_surface_gate "$key" "$scratch"
+  if [ $rc != 0 ]; then
     fail "$key/tui" "no ANSWER=42 within 150s"; tier2_cleanup "$key" "$sess" "$scratch"; return
   fi
   pass "$key/tui-turn1"
@@ -521,6 +646,16 @@ while IFS=$'\t' read -r key label port healthy auth_kind; do
     # so the oracle's pairing rules are red/green provable without a tmux drive or provider spend.
     perf-oracle) perf_gate "$key" "${E2E_PERF_SINCE:?set E2E_PERF_SINCE (epoch ms)}" \
                    "${E2E_PERF_WANT:?set E2E_PERF_WANT (min ok rows)}" ;;
+    # Selftest hook (V4-33), same shape and same reason as perf-oracle: run tier 2's tool-surface
+    # gate alone over an E2E_MCP_SCRATCH dir, so the gate is red/green provable against a receipt
+    # written by the REAL server without a tmux drive or provider spend.
+    mcp-oracle) mcp_surface_gate "$key" "${E2E_MCP_SCRATCH:?set E2E_MCP_SCRATCH (scratch dir holding the handshake receipt)}" ;;
+    # Selftest hook (V4-33): run the PLANT alone into E2E_MCP_SCRATCH. The selftest then reads the
+    # config this produced and spawns the server from it — command, args and env exactly as
+    # planted, nothing retyped. A check that greps this file for the word "enabledMcpjsonServers"
+    # passes on the COMMENT that explains it; only running the plant can tell the two apart.
+    plant-oracle) plant_overlong_mcp "${E2E_MCP_SCRATCH:?set E2E_MCP_SCRATCH (dir to plant into)}"
+                  pass "$key/mcp-plant" ;;
     *)   echo "bad --tier $TIER" >&2; exit 2 ;;
   esac
 done <<< "$HEADS"

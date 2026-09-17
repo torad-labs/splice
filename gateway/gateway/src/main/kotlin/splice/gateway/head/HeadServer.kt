@@ -24,7 +24,14 @@ import splice.core.head.HeadHealth
 import splice.spi.Provider
 
 // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
-private const val STOP_DRAIN_NS = 5_000_000_000L // 5s
+//
+// V4-74: 45s, and the reason is a MEASURED turn length rather than a round number — the operator's
+// deepseek turns run 7 to 16s, so the old 5s drain could not outlive even a short one and every
+// restart cut the turn mid-stream, which Claude Code does NOT retry after content (it prints
+// "API Error: Connection lost mid-response"). This is the INNERMOST budget of a five-link ladder;
+// see Main.kt's STOP_DEADLINE_MS comment for the whole chain, and DaemonStopBudgetTest for the
+// ordering that keeps each link below the next.
+private const val STOP_DRAIN_NS = 45_000_000_000L // 45s: above a 16s deepseek turn, inside the ladder
 private const val STOP_DRAIN_POLL_MS = 50L
 
 public class HeadServer(

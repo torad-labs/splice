@@ -1,4 +1,4 @@
-// NEW (V4-59): the operator's transcript was receiving raw vendor JSON. TurnPipeline used to hand
+// NEW: V4-59 — the operator's transcript was receiving raw vendor JSON. TurnPipeline used to hand
 // outcome.message straight to the wire — the very string upstream sent — so a provider's error body
 // landed in his chat as literal braces. And splice did it to ITSELF: RateLimitCooldown's fail-fast
 // throws a hand-built {"detail":...}, so our own careful sentence arrived wrapped in JSON we wrote.

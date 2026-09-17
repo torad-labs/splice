@@ -363,6 +363,15 @@
 
 ## splice v0.3.1 — silent-stream reliability and the code-mode beta - 2026-09-06
 
+### Install
+
+Install this exact version (requires an authenticated GitHub CLI; run `gh auth login` once):
+
+```bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.1/install.sh \
+  | env SPLICE_VERSION=v0.3.1 bash
+```
+
 ### Fixed
 - **Code mode no longer refuses a conversation whose environment moved.** A completed script's
   history baseline is now measured on the conversation alone; the lite preamble (the eager tool

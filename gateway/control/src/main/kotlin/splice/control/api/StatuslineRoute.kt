@@ -20,6 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.control.HeadPerfSkipSource
 import splice.control.HeadSessionPerfSource
 import splice.control.ManagedHead
 import splice.control.SessionCost
@@ -69,6 +70,9 @@ internal class StatuslineRoute(
                 clientWindows = managed.clientWindows,
                 accountPool = managed.accountPool,
                 sessionCost = sessionCostOf(managed),
+                // V4-45: the same checked-cast bridge sessionCostOf uses below, and captured the
+                // same way — the SOURCE, never a count, so the cached renderer reads it live.
+                perfSkips = managed.perf as? HeadPerfSkipSource,
             )
         }
         val sessionId = sessionId(stdin)

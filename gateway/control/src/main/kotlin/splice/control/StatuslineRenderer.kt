@@ -46,6 +46,11 @@ public class StatuslineRenderer(
      *  card because it believes it is talking to Anthropic (a measured ~20x high on every
      *  non-Anthropic head). Null = render the client's number, byte-identically to before. */
     private val sessionCost: SessionCostSource? = null,
+    /** V4-45: how many perf rows the COST reader had to drop. A source rather than a number,
+     *  deliberately — RendererCacheTest pins that this renderer is cached per head and constructed
+     *  once, so a captured count would freeze at the head's start (zero) and the operator would
+     *  never learn that the figure beside it had gone short. Null renders exactly as today. */
+    private val perfSkips: HeadPerfSkipSource? = null,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -99,7 +104,7 @@ public class StatuslineRenderer(
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
-            bars.costSegment(root, sessionCost?.usdFor(sessionId, modelId)),
+            bars.costSegment(root, sessionCost?.usdFor(sessionId, modelId), perfSkips?.skippedRowCount() ?: 0L),
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, quotaFirst = selectedQuota != null) +
             listOfNotNull(

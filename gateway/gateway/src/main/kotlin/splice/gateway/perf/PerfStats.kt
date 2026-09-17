@@ -50,6 +50,21 @@ public class PerfStats(
 
     private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    // V4-45: rows this reader DROPPED. A torn append leaves a length-extended NUL hole, the parse
+    // fails, and the row used to vanish with no trace — on the COST path, so the operator's spend
+    // read low by exactly those turns with nothing anywhere saying so. The control-plane reader
+    // (PerfRowsFileSource) already counts its rejects; this one, which feeds V4-37's statusline
+    // cost, did not. Counting is not enough on its own — an unread counter is the same silence —
+    // so the first skip of an episode also logs once, the way the unreadable-file latch above does.
+    private val skippedRows = java.util.concurrent.atomic.AtomicLong(0)
+
+    private val skippedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Rows dropped by [tailRows] since this instance was built, for a caller that renders cost and
+     *  must say when that number is short. Monotonic: a healthy read does not reset it, because the
+     *  rows it counted are still missing from every figure summed afterwards. */
+    public fun skippedRowCount(): Long = skippedRows.get()
+
     private val json = Json { ignoreUnknownKeys = true }
 
     // append is best-effort by design: the turn builds an immutable row and the bounded file lane
@@ -112,7 +127,9 @@ public class PerfStats(
         // silently-blank instrument.
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                val row = Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                if (row == null) noteSkippedRow()
+                row
             }
         }.onSuccess {
             // ANY healthy read — an empty or all-skipped tail included — closes the unreadable
@@ -129,6 +146,21 @@ public class PerfStats(
             emptyList()
         }
         return rows
+    }
+
+    /** Count a dropped row, and say so ONCE per episode. Once rather than per row because a badly
+     *  torn file can drop thousands and a line each would bury the signal — the COUNT carries the
+     *  magnitude and [skippedRowCount] hands it to whoever renders cost. The latch is keyed on the
+     *  instance, not on the file, so a long-lived head logs at most one line however many holes it
+     *  accumulates; that is the same trade the unreadable-file latch above already makes. */
+    private fun noteSkippedRow() {
+        val total = skippedRows.incrementAndGet()
+        if (skippedLogged.compareAndSet(false, true)) {
+            log(
+                "[perf] $file has unreadable rows (first skip at this read, $total so far) — " +
+                    "any figure summed from this file is LOW by those turns\n",
+            )
+        }
     }
 
     private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {

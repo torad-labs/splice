@@ -3,10 +3,15 @@
 // consistent (provider references resolve, JW-13 port collisions named before a bind error).
 package splice.app.cli
 
+import splice.core.prompt.SystemPromptMode
+import splice.core.topology.HeadConfig
+import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import java.nio.file.Path
 
 private const val CHECK_TOPOLOGY = "topology"
+private const val REPLACE_FIX =
+    "set system_prompt_mode = \"append\" to add your text beside the client's own instructions instead"
 
 internal enum class CheckStatus { OK, INFO, WARN, FAIL }
 
@@ -60,7 +65,33 @@ internal class DoctorConfigChecks(private val localRuntime: DoctorLocalRuntime =
                 )
             }
             // v0.4.0 (FEATURES.md §10): local runtimes answer for themselves, in their own words.
-            listOf(summary) + brokenRefs + portDupes + localRuntime.localChecks(topology, live)
+            listOf(summary) + brokenRefs + portDupes + systemPromptChecks(topology) +
+                localRuntime.localChecks(topology, live)
         }
     }
+
+    /** V4-36 (operator amendment 2026-09-15): `system_prompt_mode = "replace"` SUBSTITUTES the
+     *  client's whole system field, and Claude Code ships its entire operating instruction set in
+     *  that field — so the head then runs as a bare model with tools attached. That is the
+     *  operator's choice to make, but it must never be a thing they DISCOVER; doctor says it
+     *  plainly. WARN, not FAIL: the configuration is legal and deliberate.
+     *
+     *  Fires only on a head that actually carries a prompt: `replace` with no `system_prompt` or
+     *  `system_prompt_file` resolves to null and never reaches the wire, so warning about it would
+     *  be noise. The declarations are read straight off the schema rather than resolved, because
+     *  resolving would read the prompt FILE and doctor must not throw on an unreadable one. */
+    private fun systemPromptChecks(topology: Topology): List<DoctorCheck> = topology.heads
+        .filterValues { it.systemPromptMode == SystemPromptMode.REPLACE && it.carriesPrompt() }
+        .map { (key, _) ->
+            DoctorCheck(
+                "system-prompt:$key",
+                CheckStatus.WARN,
+                "head '$key' sets system_prompt_mode = \"replace\" — the client's own system field is " +
+                    "substituted, and Claude Code ships its entire operating instruction set in that " +
+                    "field, so this head runs as a bare model with tools attached",
+                REPLACE_FIX,
+            )
+        }
+
+    private fun HeadConfig.carriesPrompt(): Boolean = !systemPrompt.isNullOrEmpty() || systemPromptFile != null
 }

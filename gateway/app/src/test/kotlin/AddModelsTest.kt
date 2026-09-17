@@ -1,5 +1,11 @@
 // NEW: V4-34 — splice add-model writes through SelectPrompt and MultiSelectPrompt.
 // Cancel and a non-TTY empty selection leave the seeded file byte-identical.
+//
+// REDO 2026-09-17: the seed is now the REAL starter TopologyLoader materializes, not a hand-written
+// stub. The old stub declared no `models = [...]` line on the head, so Topology.modelsFor fell
+// through to the whole provider table and the provider-only write looked like it worked. On the
+// shipped starter the head DOES declare a roster, modelsFor returns it verbatim
+// (Topology.kt:206), and an id added to the provider table alone never reaches /v1/models.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -7,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TopologyLoader
 import splice.app.cli.AddModelVerb
+import splice.app.cli.HeadModelArray
 import splice.app.cli.prompt.KeyReader
 import splice.app.cli.prompt.MultiSelectPrompt
 import splice.app.cli.prompt.SelectPrompt
@@ -18,6 +25,16 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 class AddModelsTest {
+
+    @Test
+    fun `the seeded starter declares a head model roster`(@TempDir dir: Path) {
+        // The denominator this whole class rests on: if the starter ever stops declaring
+        // `models = [...]`, the roster assertions below would pass vacuously.
+        val path = seed(dir)
+        val head = requireNotNull(TopologyLoader.loadOrMaterialize(path).heads["openrouter"])
+        val roster = requireNotNull(head.models) { "starter head declares no models = [...] roster" }
+        assertFalse(LUNA in roster.map { it.id }, "seed already rosters the model the test adds")
+    }
 
     @Test
     fun `cancel at the head picker leaves the file byte-identical`(@TempDir dir: Path) {
@@ -38,27 +55,57 @@ class AddModelsTest {
     }
 
     @Test
-    fun `choosing a remaining model appends a parseable row`(@TempDir dir: Path) {
+    fun `choosing a remaining model puts it on the head model surface`(@TempDir dir: Path) {
         val path = seed(dir)
-        val wrote = verb(
-            selectTty = false,
-            multiTty = true,
-            multiKeys = byteArrayOf(SPACE, ENTER),
-        ).add(path)
-        assertTrue(wrote)
+        assertTrue(addFirstRemaining(path), "add-model wrote nothing")
         val topology = TopologyLoader.loadOrMaterialize(path)
         val head = requireNotNull(topology.heads["openrouter"]) { "head missing after add-model" }
         val provider = requireNotNull(topology.providers["openrouter"]) { "provider missing after add-model" }
-        val ids = provider.models.map { it.id }
-        assertTrue(OPUS in ids, "appended id missing from provider models: $ids")
+        assertTrue(LUNA in requireNotNull(head.models).map { it.id }, "added id missing from the head roster")
+        assertTrue(LUNA in provider.models.map { it.id }, "added id missing from provider models")
+        // catalogFor is the /v1/models surface: it is the only path that reaches modelsFor.
         val catalog = provider.catalogFor(head)
         assertEquals(SONNET, catalog.pinnedModel)
-        assertTrue(catalog.models.any { it.id == OPUS }, "appended id missing from catalog")
+        assertTrue(catalog.models.any { it.id == LUNA }, "added id never reaches /v1/models")
     }
 
+    @Test
+    fun `everything outside the head roster survives the add byte-for-byte`(@TempDir dir: Path) {
+        val path = seed(dir)
+        val before = Files.readString(path)
+        assertTrue(addFirstRemaining(path))
+        val after = Files.readString(path)
+        assertEquals(outsideRoster(before), outsideRoster(after))
+    }
+
+    @Test
+    fun `adding a model already on the roster is a no-op`(@TempDir dir: Path) {
+        val path = seed(dir)
+        assertTrue(addFirstRemaining(path))
+        val once = Files.readString(path)
+        // Re-offering the same id: the roster already names it, so the array is left alone.
+        val topology = TopologyLoader.loadOrMaterialize(path)
+        val head = requireNotNull(topology.heads["openrouter"])
+        val unchanged = HeadModelArray().withAdded(once, "openrouter", listOf(LUNA))
+        assertEquals(once, unchanged)
+        assertEquals(1, requireNotNull(head.models).count { it.id == LUNA })
+    }
+
+    /** The first id the starter's head roster does not already carry — `openai/gpt-5.6-luna`. */
+    private fun addFirstRemaining(path: Path): Boolean = verb(
+        selectTty = false,
+        multiTty = true,
+        multiKeys = byteArrayOf(SPACE, ENTER),
+    ).add(path)
+
+    /** The file with the `models = [ ... ]` array of `[heads.openrouter]` cut out. */
+    private fun outsideRoster(text: String): String =
+        text.substringBefore(ROSTER_OPEN) + text.substringAfter(ROSTER_OPEN).substringAfter("]")
+
+    /** The operator's REAL shape: whatever TopologyLoader writes on a first run. */
     private fun seed(dir: Path): Path {
         val path = dir.resolve("splice.toml")
-        Files.writeString(path, SEEDED)
+        TopologyLoader.loadOrMaterialize(path)
         return path
     }
 
@@ -96,23 +143,5 @@ private const val ESC: Byte = 27
 private const val SPACE: Byte = 32
 private const val ENTER: Byte = 13
 private const val SONNET = "anthropic/claude-sonnet-5"
-private const val OPUS = "anthropic/claude-opus-5"
-private val SEEDED = """
-    [daemon]
-    control_port = 3096
-    [providers.openrouter]
-    dialect = "openai-chat"
-    base_url = "https://openrouter.ai/api/v1"
-    auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
-    [[providers.openrouter.models]]
-    id = "anthropic/claude-sonnet-5"
-    label = "Claude Sonnet 5"
-    context_window = 1000000
-    [heads.openrouter]
-    provider = "openrouter"
-    port = 3101
-    discovery_prefix = "claude-openrouter--"
-    pinned_model = "anthropic/claude-sonnet-5"
-    [heads.openrouter.claude]
-    command = "claude-openrouter"
-""".trimIndent() + "\n"
+private const val LUNA = "openai/gpt-5.6-luna"
+private const val ROSTER_OPEN = "models = ["

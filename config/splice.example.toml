@@ -365,6 +365,24 @@ context_window = 1000000
 # other; a pre-existing per-head projects dir is migrated into ~/.claude/projects once, then linked.
 share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions", "projects"]
 
+# ── per-head system prompt: standing instructions every turn of a head carries ──
+# Set under [heads.<key>]. Either inline text or a file, NEVER both — both present is a config
+# error at load, as is a system_prompt_file that cannot be read. Absent, or the empty string, is
+# exactly today's bytes on the wire.
+#   system_prompt = "Answer in British English. Never edit files under vendor/."
+#   system_prompt_file = "~/.config/splice/prompts/review.md"   # ~/ is home; relative is beside this file
+#
+# system_prompt_mode picks the seam:
+#   "append"  (the DEFAULT — an operator who names no mode gets this) places your text BESIDE
+#             Claude Code's own system field. The client's bytes ride through untouched, every
+#             existing cache_control breakpoint survives, and the prompt cache still hits from
+#             turn two.
+#   "replace" SUBSTITUTES that whole field. Claude Code ships its ENTIRE operating instruction set
+#             there, so replace strips the harness instructions and the head then behaves like a
+#             bare model with tools attached. `splice doctor` WARNs on any head that sets it. Use
+#             it deliberately, usually on a head you drive yourself rather than through Claude Code.
+#   system_prompt_mode = "append"
+
 [heads.claudex]
 provider = "codex"
 port = 3099

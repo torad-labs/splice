@@ -2,6 +2,7 @@
 // page composition; every number on screen comes from the control API.
 import { useEffect, useState } from 'react';
 import { FleetPage } from '@pages/fleet';
+import { BurnPage } from '@pages/burn';
 import { AuthPage } from '@pages/auth';
 import { ConfigPage } from '@pages/config';
 import { LogsPage } from '@pages/logs';
@@ -11,6 +12,7 @@ import { fetchControlStatus, useControlStatus } from '@entities/control-status';
 
 const TABS = [
   { id: 'fleet', label: 'fleet', page: FleetPage },
+  { id: 'burn', label: 'burn', page: BurnPage },
   { id: 'auth', label: 'auth', page: AuthPage },
   { id: 'config', label: 'config', page: ConfigPage },
   { id: 'logs', label: 'logs', page: LogsPage },

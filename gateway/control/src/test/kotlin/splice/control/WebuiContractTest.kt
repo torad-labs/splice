@@ -17,7 +17,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -76,6 +79,9 @@ class WebuiContractTest {
             logs = object : HeadLogSource {
                 override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
                 override fun path() = "/tmp/codex.log"
+            },
+            economics = HeadEconomicsSource {
+                listOf(EconomicsRow(1_000, 2, 300, 270, 5, 400, 440, 28, 48, 2, 1))
             },
             warnPct = 80,
             warnTokens5h = 0,
@@ -177,7 +183,40 @@ class WebuiContractTest {
     fun `logs payload matches LogsPayload`() = runBlocking {
         assertFields(api("/api/logs/codex"), listOf("key", "path", "lines"), "LogsPayload")
     }
+
+    /** EconomicsPayload + HeadEconomics + EconomicsBucket (webui shared/api). The bucket fields
+     *  are the burn page's whole input; a rename here silently blanks the quota gauge, which is
+     *  the one surface whose failure mode is reading SAFE while the plan drains. */
+    @Test
+    fun `economics payload matches EconomicsPayload plus nested bucket`() = runBlocking {
+        val payload = api("/api/economics")
+        assertFields(payload, listOf("retention_hours", "generated_at", HEADS_KEY), "EconomicsPayload")
+        val head = payload[HEADS_KEY]!!.jsonArray.first().jsonObject
+        assertFields(head, listOf("key", "label", "ceiling_tokens", "buckets"), "HeadEconomics")
+        assertFields(
+            head["buckets"]!!.jsonArray.first().jsonObject,
+            listOf(
+                "hour", "turns", "in_tokens", "cached_tokens", "out_tokens",
+                "req_bytes", "upstream_req_bytes",
+                "tools_eager", "tools_deferred", "deferral_turns", "rate_limited",
+            ),
+            "EconomicsBucket",
+        )
+    }
+
+    /** The page bills on TOTAL input, so in_tokens and cached_tokens must stay SEPARATE fields.
+     *  Pre-summing them upstream (or shipping only the uncached remainder) is the exact mistake
+     *  that made a 90%-cached drain look safe — the wire must carry both, unreduced. */
+    @Test
+    fun `economics ships input and cached separately, not pre-netted`() = runBlocking {
+        val bucket = api("/api/economics")[HEADS_KEY]!!.jsonArray.first().jsonObject["buckets"]!!
+            .jsonArray.first().jsonObject
+        assertEquals(300L, bucket["in_tokens"]!!.jsonPrimitive.long, "in_tokens is the METERED total")
+        assertEquals(270L, bucket["cached_tokens"]!!.jsonPrimitive.long, "cached is reported, never subtracted")
+    }
 }
+
+private const val HEADS_KEY = "heads"
 
 // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
 // collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.

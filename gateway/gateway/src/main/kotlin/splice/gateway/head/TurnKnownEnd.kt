@@ -58,7 +58,9 @@ internal class TurnKnownEnd(
                 boundedMessage
             }
             // DR-128: account BEFORE the emit — same law as the auth-missing arm above.
-            telemetry.recordPerf(drive, "error:upstream-failed")
+            // A 429 is the quota instrument's most load-bearing event: it is the exact moment the
+            // plan said no, and it must be countable in the rollup, not just greppable in the log.
+            telemetry.recordPerf(drive, "error:upstream-failed", failure.type == ErrorType.RATE_LIMIT)
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
             // V4-71: the FIRST turn to meet a persistent 429 must reach the client RETRYABLE, and
             // today it does not. Claude Code retries an in-band error ONLY when it carries

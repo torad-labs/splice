@@ -23,11 +23,32 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
     /** [computed] is splice's OWN figure for this session (V4-37). It wins when present, because the
      *  client's `total_cost_usd` is priced with an ANTHROPIC card whatever head it is really talking
      *  to — the 20x error the operator reported. Null means the head declares no rates, and the
-     *  client's number renders exactly as it does today: NEVER-BELOW-STATUS-QUO. */
-    fun costSegment(root: JsonObject, computed: Double? = null): String? {
+     *  client's number renders exactly as it does today: NEVER-BELOW-STATUS-QUO.
+     *
+     *  [droppedRows] is V4-45's last hop to a human. The cost reader SKIPS a perf row it cannot
+     *  parse — a torn append leaves a length-extended run of NULs — so the figure above is summed
+     *  from fewer turns than the session actually ran and reads LOW with nothing saying so. The
+     *  count has been computed and reachable since this row's reader half landed; nothing rendered
+     *  it, which is the same silence one layer up.
+     *
+     *  TWO THINGS THE MARKER MUST NOT DO, and both are why this is a branch rather than a suffix.
+     *  It must not appear beside the CLIENT's number: dropped rows make splice's figure low and
+     *  have no bearing on a figure Claude Code priced itself, so a marker there is a false alarm.
+     *  And it must not make a PER-SESSION claim: the count is head-wide while the figure is one
+     *  session's, so it says this figure may be low and how many rows the reader dropped — never
+     *  that this session lost N turns, which would be the differently-wrong confident number V4-37
+     *  exists to remove.
+     *
+     *  Reading, left to right: `≥` on the money is the direction (the true spend is AT LEAST this),
+     *  `⚠N` is the magnitude (N rows the reader could not read). Nothing is dropped, nothing is
+     *  rendered, and the string is byte-identical to the one this function returned before. */
+    fun costSegment(root: JsonObject, computed: Double? = null, droppedRows: Long = 0L): String? {
         val cost = computed ?: num((root["cost"] as? JsonObject)?.get("total_cost_usd"))
         val shown = cost?.takeIf { it > 0.0 } ?: return null
-        return "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", shown)
+        val figure = "$DIM\$$RESET" + String.format(Locale.ROOT, "%.2f", shown)
+        // Only OUR figure can be short, so only OUR figure gets qualified.
+        if (computed == null || droppedRows <= 0L) return figure
+        return "$YELLOW≥$RESET$figure $YELLOW⚠$droppedRows$RESET"
     }
 
     /** [quotaFirst]: the line is pooled, so the tracked windows are the SELECTED account's and win;

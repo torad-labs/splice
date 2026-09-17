@@ -32,6 +32,8 @@ ATOMIC_WRITE = "SecureFile.writeAtomic0600("
 
 # 2026-09-15. Pre-existing non-muse atomic writers. Not Muse credential persists.
 NON_MUSE_ATOMIC_WRITERS = {
+    "gateway/gateway/src/main/kotlin/splice/gateway/usage/EconomicsStore.kt":
+        "2026-09-17 V4-75 hourly token-economics rollup persist; never a credential",
     "gateway/app/src/main/kotlin/splice/app/LoginIo.kt":
         "2026-09-15 shared login credential write used by every vendor flow",
     "gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountWrites.kt":

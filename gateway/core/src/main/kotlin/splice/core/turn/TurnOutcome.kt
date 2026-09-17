@@ -36,6 +36,26 @@ public enum class ErrorType(public val wireName: String) {
     OVERLOADED("overloaded_error"),
 }
 
+/**
+ * The connection-tear ending, named ONCE (V4-67).
+ *
+ * TWO SPELLINGS ARE IN PLAY and they are why this is here rather than written where it is used:
+ * [CONN_RESET_KIND] is the journal label (`turn ERROR conn-reset ...`) and [CONN_RESET_OUTCOME] is
+ * the perf-row tag (`outcome=error:conn-reset`) — the same tag under the `error:` prefix every
+ * locally-classified ending uses. The second is DERIVED from the first at compile time, so the
+ * pair cannot drift the way the two literals in TurnConnEnd just did. This tag is the only string
+ * in the live journal that names this failure class, and it is what the operator greps: the row
+ * that made a torn stream continuable is the row that would otherwise have hidden its successor,
+ * because a converted tear finishes through the pipeline instead of the conn-reset surface.
+ *
+ * In core beside [ErrorType] because BOTH sides now read it: splice.gateway.head (internal) and
+ * splice.gateway.pipeline (public) cannot see each other, and a copy in each is the drift.
+ */
+public const val CONN_RESET_KIND: String = "conn-reset"
+
+/** The perf-row outcome tag for [CONN_RESET_KIND] — derived, never re-spelled. */
+public const val CONN_RESET_OUTCOME: String = "error:$CONN_RESET_KIND"
+
 /** A hosted tool call the round addressed to the GATEWAY (Responses `execution:"client"`), never
  *  to Claude Code. Value-typed id so a call_id can never be confused with a tool_use id. */
 @JvmInline
@@ -127,6 +147,14 @@ public sealed class TurnOutcome {
          *  up when it arrives before content, and after content replaces the message with a fixed
          *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07). */
         val deterministic: Boolean = false,
+        /** V4-67: a connection tear the GATEWAY synthesized into an outcome (SseRoundDriver
+         *  .tearOutcome) rather than letting it escape to the conn-reset surface. Carried so the
+         *  ending keeps the [CONN_RESET_OUTCOME] tag whatever path it finishes through: a
+         *  converted tear that no controller continues is finished by the pipeline, and without
+         *  this it recorded `failure:overloaded_error` — leaving the one string that names this
+         *  failure class absent from the perf row it is grepped in. Defaulted false, so every
+         *  other construction of this type is byte-unchanged. */
+        val connReset: Boolean = false,
     ) : TurnOutcome()
 
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:

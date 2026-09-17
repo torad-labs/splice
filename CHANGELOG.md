@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- **Per-head system prompt.** `system_prompt` (or `system_prompt_file`) under `[heads.<key>]` gives
+  a head standing instructions that ride on **every** turn, at that dialect's own system seam —
+  anthropic-passthrough, openai-chat and openai-responses each place it the way their wire expects.
+  Setting both keys, or naming a file that cannot be read, is a config error at load, never a
+  silently empty prompt; absent or `""` leaves the request bytes byte-identical to before, pinned
+  per dialect. `system_prompt_mode` picks the seam: `"append"` (the default) places the text beside
+  Claude Code's own system field so the client's bytes and every `cache_control` breakpoint survive
+  and the prompt cache still hits from turn two; `"replace"` substitutes that whole field, which
+  strips the entire operating instruction set Claude Code ships there and leaves the head behaving
+  like a bare model with tools attached — `splice doctor` warns on any head that sets it.
 - **`splice add <profile>` adds a second provider without editing TOML.** Five profiles as data
   (`codex`, `grok`, `kimi`, `claude`, `api-key`); the command authenticates with the login verb's
   own flow, takes models and context windows (`--model id:window`), always checks the candidate

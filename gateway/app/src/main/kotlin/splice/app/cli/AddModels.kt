@@ -103,9 +103,15 @@ internal class AddModelVerb(
     private fun pick(profile: AddProfile, topology: Topology, heads: List<String>): Planned? {
         val headPick = select.ask("Which head?", heads.map { SelectOption(it, it) }, 0)
         val headKey = (headPick as? SelectOutcome.Chosen)?.value ?: return null
-        val providerKey = topology.heads.getValue(headKey).provider
-        val present = topology.providers.getValue(providerKey).models.map { it.id }.toSet()
-        val remaining = profile.models.filter { it.id !in present }
+        val head = topology.heads.getValue(headKey)
+        val providerKey = head.provider
+        val providerIds = topology.providers.getValue(providerKey).models.map { it.id }.toSet()
+        // REACHABLE, not merely present. A head that declares `models = [...]` is a ROSTER:
+        // Topology.modelsFor returns it verbatim and ignores every other provider row, so a model
+        // already in the provider table but absent from the array is still invisible on /v1/models
+        // and must stay on offer (V4-34 redo 2026-09-17).
+        val reachable = head.models?.map { it.id }?.toSet() ?: providerIds
+        val remaining = profile.models.filter { it.id !in reachable }
         val ids = if (remaining.isEmpty()) {
             emptyList()
         } else {
@@ -117,23 +123,105 @@ internal class AddModelVerb(
             )
             (picked as? MultiSelectOutcome.Chosen)?.values ?: return null
         }
-        return Planned(providerKey, remaining.filter { it.id in ids })
+        return Planned(providerKey, headKey, head.models != null, providerIds, remaining.filter { it.id in ids })
     }
 
     private fun write(path: Path, existing: String, planned: Planned) {
         val key = planned.providerKey
-        val extra = planned.models.flatMap { model ->
+        // Only ids the provider table does not already carry: on the shipped starter every curated
+        // id is already a provider row and the roster is what was missing, so a second copy here
+        // would be a duplicate the catalog silently collapses. No rows means the file keeps exactly
+        // its trailing newline rather than gaining a blank line (V4-34 redo 2026-09-17).
+        val rows = planned.models.filter { it.id !in planned.providerIds }.flatMap { model ->
             listOf(
                 "[[providers.$key.models]]",
                 "id = \"${model.id}\"",
                 "label = \"${model.label}\"",
                 "context_window = ${model.contextWindow}",
             )
-        }.joinToString("\n", prefix = "\n", postfix = "\n")
+        }
+        val extra = if (rows.isEmpty()) "\n" else rows.joinToString("\n", prefix = "\n", postfix = "\n")
+        val rostered = if (planned.headDeclaresModels) {
+            HeadModelArray().withAdded(existing, planned.headKey, planned.models.map { it.id })
+        } else {
+            existing
+        }
         val tmp = path.resolveSibling(path.fileName.toString() + ".add-model-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, existing.trimEnd('\n') + extra)
+        Files.writeString(tmp, rostered.trimEnd('\n') + extra)
         Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
-    private data class Planned(val providerKey: String, val models: List<AddModel>)
+    private data class Planned(
+        val providerKey: String,
+        val headKey: String,
+        val headDeclaresModels: Boolean,
+        val providerIds: Set<String>,
+        val models: List<AddModel>,
+    )
 }
+
+/** V4-34 redo (2026-09-17): the `models = [...]` array on `[heads.KEY]` is the head's ROSTER, not a
+ *  hint — Topology.modelsFor (Topology.kt:206) returns it verbatim and ignores every other provider
+ *  row. The shipped starter declares one, so `splice add-model` writing only a
+ *  `[[providers.KEY.models]]` table left the added id invisible on /v1/models. This edits the array
+ *  in place: every byte OUTSIDE the brackets is preserved, and an id the array already names is a
+ *  no-op, so a repeated add is idempotent. */
+internal class HeadModelArray {
+
+    fun withAdded(text: String, headKey: String, ids: List<String>): String {
+        val open = arrayStart(text, headKey)
+            ?: throw AddRefused(
+                "head '$headKey' declares a model roster splice cannot edit: expected a " +
+                    "`models = [` line under [heads.$headKey]. Add ${ids.joinToString(", ")} by hand.",
+            )
+        val close = matchingBracket(text, open)
+            ?: throw AddRefused("head '$headKey' has an unterminated models = [ array")
+        val inner = text.substring(open + 1, close)
+        val present = idPattern.findAll(inner).map { it.groupValues[1] }.toSet()
+        val missing = ids.filter { it !in present }
+        if (missing.isEmpty()) return text
+        val closeIndent = inner.substringAfterLast('\n', "").takeIf { it.isBlank() }.orEmpty()
+        val kept = inner.trimEnd()
+        val prefix = when {
+            kept.isEmpty() -> "\n"
+            kept.endsWith(",") -> kept + "\n"
+            else -> "$kept,\n"
+        }
+        val added = missing.joinToString("") { "  { id = \"$it\" },\n" }
+        return text.substring(0, open + 1) + prefix + added + closeIndent + text.substring(close)
+    }
+
+    /** Index of the `[` that opens `models = [` inside the `[heads.KEY]` table, or null. */
+    private fun arrayStart(text: String, headKey: String): Int? {
+        val header = Regex("(?m)^[ \\t]*\\[heads\\.\\Q$headKey\\E][ \\t]*$").find(text) ?: return null
+        val bodyStart = header.range.last + 1
+        val bodyEnd = Regex("(?m)^[ \\t]*\\[").find(text, bodyStart)?.range?.first ?: text.length
+        val array = Regex("(?m)^[ \\t]*models[ \\t]*=[ \\t]*\\[")
+            .find(text.substring(bodyStart, bodyEnd)) ?: return null
+        return bodyStart + array.range.last
+    }
+
+    /** Bracket depth, skipping anything inside a double-quoted TOML string. */
+    private fun matchingBracket(text: String, open: Int): Int? {
+        var depth = 0
+        var quoted = false
+        var i = open
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                quoted && c == '\\' -> i++
+                c == '"' -> quoted = !quoted
+                quoted -> Unit
+                c == '[' -> depth++
+                c == ']' -> {
+                    depth--
+                    if (depth == 0) return i
+                }
+            }
+            i++
+        }
+        return null
+    }
+}
+
+private val idPattern = Regex("id[ \\t]*=[ \\t]*\"([^\"]*)\"")

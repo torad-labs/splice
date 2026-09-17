@@ -87,6 +87,11 @@ private fun retryableFailure(
     bodyText: String = "partial",
     thinkingText: String = "",
     emittedText: Boolean = bodyText.isNotEmpty(),
+    // V4-76: the tool shape of the cut. hasToolUse with toolTearOpen FALSE means the tool block's
+    // content_block_stop already reached the client (PartialRound's own contract); toolTearOpen
+    // means the client holds half a tool call nothing can complete.
+    hasToolUse: Boolean = false,
+    toolTearOpen: Boolean = false,
 ) = TurnOutcome.Failure(
     ErrorType.OVERLOADED,
     "mid-stream death",
@@ -95,6 +100,8 @@ private fun retryableFailure(
         thinkingText = thinkingText,
         bodyText = bodyText,
         emittedText = emittedText,
+        hasToolUse = hasToolUse,
+        toolTearOpen = toolTearOpen,
         usage = Usage(outputTokens = outputTokens),
     ),
 )
@@ -238,6 +245,68 @@ class ReanchorRunnerTest {
         )
         assertEquals(0, asks, "the controller is never consulted for a gone client")
         assertEquals(1, h.count("error"), "the turn still finishes with the honest error")
+    }
+
+    // ── V4-76: a cut AFTER a completed tool call must end CLEAN, not as a finalize-only error ──
+    //
+    // The measured operator symptom: once any content block has reached the client, Claude Code
+    // 2.1.257 never retries — it finalizes the partial and prints "Connection lost mid-response".
+    // No continuation is possible for this shape (a prefill cannot resume past a tool call whose
+    // result the model has not seen), so the ending has to be ours: the tool block COMPLETED, the
+    // client can simply run it, and the model continues next turn from the tool result.
+    @Test
+    fun `a cut after a COMPLETED tool call ends clean at tool_use - V4-76`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add {
+            val i = h.emitter.openTool("toolu_1", "Bash")
+            h.emitter.inputJsonDelta(i, "{\"command\":\"ls\"}")
+            h.emitter.closeBlock(i) // the block CLOSED: content_block_stop already reached the client
+            retryableFailure(outputTokens = 9, hasToolUse = true)
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(continuationBody(), ReanchorController { null }) // NO continuation is available
+
+        val success = h.finished as TurnOutcome.Success
+        assertTrue(success.hasToolUse, "the salvaged turn carries the completed tool call")
+        assertTrue(!success.incomplete, "and it is NOT an incomplete turn")
+        assertEquals(9, success.usage.outputTokens, "the torn round's usage is still billed")
+        assertEquals(0, h.count("error"), "the client must never see an error frame for this shape")
+        assertEquals(1, h.count("message_stop"), "and it gets a real terminal")
+        assertTrue(
+            h.frames.any { it.startsWith("event: message_delta") && it.contains("tool_use") },
+            "the terminal names stop_reason tool_use, got: " +
+                h.frames.filter { it.startsWith("event: message_delta") },
+        )
+    }
+
+    @Test
+    fun `an OPEN tool tear keeps today's honest error - V4-76 control`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add {
+            val i = h.emitter.openTool("toolu_2", "Bash")
+            h.emitter.inputJsonDelta(i, "{\"command\":\"l") // HALF the args JSON: never closed
+            retryableFailure(outputTokens = 4, hasToolUse = true, toolTearOpen = true)
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(continuationBody(), ReanchorController { null })
+
+        assertTrue(
+            h.finished is TurnOutcome.Failure,
+            "a client holding HALF a tool call cannot be told the turn ended clean",
+        )
+        assertEquals(1, h.count("error"), "the open tear still surfaces as the honest error")
     }
 
     @Test

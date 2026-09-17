@@ -1864,3 +1864,19 @@ title = "UpstreamClientRetryPolicyTest sits at detekt LargeClass 400 code-lines:
 files = ["gateway/provider-spi/src/test/kotlin/UpstreamClientRetryPolicyTest.kt"]
 status = "todo"
 verify = ":provider-spi:test :provider-spi:detekt; identical test names before and after"
+
+[[items]]
+id = "V4-64"
+phase = "resume"
+title = "Share Claude Code transcripts across every head so a session started on one head resumes on another (operator: if I run out of credits on an account I switch head and resume the same session). Wire-wise nothing blocks it: splice keeps no server-side session state a resume needs (every per-head store degrades to status quo on a miss, store=false everywhere, reasoning replay off). The blocker is that each head launches with CLAUDE_CONFIG_DIR=~/.claude-<head> and projects/ (where <sessionId>.jsonl lives) is not in sharedLinkItems. Adding it is NOT enough on this machine: every existing head already holds projects/ as a REAL directory with thousands of transcripts (claudex 3846, codex 1544, kimi 202, grok 136, deepseek 70) and ClaudeConfigMaterializer.linkOneShared never replaces a real directory, so the plain link would silently do nothing. So: projects joins sharedLinkItems AND gets a migrate-then-link path mirroring SessionRegistryLink (move each per-head projects/<enc-cwd>/* into ~/.claude/projects/<enc-cwd>/, never overwrite an existing file, then replace the emptied real dir with the symlink). Example toml share list gains projects with a comment. SessionProject then resolves transcripts for every head from the one global dir."
+files = ["gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigKeys.kt", "gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt", "gateway/core/src/main/kotlin/splice/core/launch/ProjectsLink.kt", "gateway/core/src/test/kotlin/ClaudeConfigMaterializerTest.kt", "gateway/core/src/test/kotlin/splice/core/launch/ProjectsLinkTest.kt", "config/splice.example.toml"]
+status = "todo"
+verify = "cd gateway && ./gradlew --offline --no-daemon :core:test :core:detekt"
+
+[[items]]
+id = "V4-65"
+phase = "resume"
+title = "E2E proof for V4-64 that breaks if transcripts stop being shared: materialize two heads (two LaunchSpecs, share policy including projects) against one temp global ~/.claude; write a transcript file through head A config dir projects path; assert head B config dir resolves the SAME file (same real path, same bytes) and that SessionProject built on the global dirs maps that session id to its cwd. Second test: a head whose projects/ is a pre-existing REAL directory holding a transcript ends materialize with that transcript present under the global dir and the head dir now a symlink (the migration case, which is every head on the operator machine). Authored against the V4-64 contract; runs green only after V4-64 lands."
+files = ["gateway/app/src/test/kotlin/SharedTranscriptsResumeTest.kt", "gateway/core/src/test/kotlin/SessionProjectTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew --offline --no-daemon :app:test --tests SharedTranscriptsResumeTest :core:test --tests SessionProjectTest"

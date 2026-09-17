@@ -120,3 +120,15 @@ tag = "LAYOUT"
 wall = ""
 note = "needs a check that no campaign artifact lives outside the campaign folder"
 law_present = true
+
+# Added 2026-09-17 (V4-79). A CODE invariant rather than a process law, and it belongs here for a
+# mechanical reason: the item planes of this gate read .dev/campaigns/proxy-hardening.toml, so a
+# v0.4.0 row registered as an [[item]] would raise C2 ORPHAN. A law row is the channel that makes
+# the gate RUN this wall on every `npm run gate:campaign`, with a law enforcer's INVERSE polarity —
+# it must PASS today, and a red is a live violation, not an unfinished item. BLOCKING (C9), which
+# is the convention the retry-law walls already carry.
+[[law]]
+tag = "PRE-CONTENT-WIRE-TYPE"
+wall = ".dev/campaigns/proxy-hardening/walls/law_pre_content_wire_type.py"
+note = "V4-78/V4-79: every emitError in gateway main sources routes its wire type through PreContentWireType.of, or names a literal type the rule leaves alone. An ALLOWLIST, not a banned-literal grep — TurnPipeline's `emitter.emitError(outcome.type, spoken)` carried no literal and was the widest of the three original holes. The governed set is derived from the rule object's own body and ratcheted so narrowing the rule cannot quietly narrow the wall."
+law_present = true

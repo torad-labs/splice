@@ -403,5 +403,12 @@ class RetryAlwaysArmedTest {
 /** Statuses Claude Code retries on: 429, 408, and 5xx except 501. */
 private val RETRYABLE_STATUSES = setOf(408, 429, 500, 502, 503, 504, 529)
 
-/** SSE error types Claude Code retries on. */
-private val RETRYABLE_SSE_TYPES = listOf("overloaded_error", "api_error")
+/** SSE error types Claude Code retries on IN BAND — overloaded_error, and nothing else.
+ *
+ *  V4-78 corrected this: the list used to include api_error, which is the WEAKER reading of the
+ *  2.1.257 binary and made this wall pass over a path that was terminal for the client. The binary
+ *  retries an in-band error event only when the body carries overloaded_error; a 429 or 529 is
+ *  retried by STATUS (RETRYABLE_STATUSES above), which is a different mechanism entirely. A wall
+ *  that accepts api_error as retryable cannot see the difference between a turn the client will
+ *  re-send and one it will finalize as "Server error mid-response". */
+private val RETRYABLE_SSE_TYPES = listOf("overloaded_error")

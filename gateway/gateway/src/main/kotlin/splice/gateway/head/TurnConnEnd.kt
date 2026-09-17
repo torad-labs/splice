@@ -2,6 +2,7 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.gateway.head
 
+import splice.core.perf.PerfKeys
 import splice.core.turn.CONN_RESET_KIND
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
@@ -34,7 +35,19 @@ internal class TurnConnEnd(
             // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
             telemetry.recordPerf(drive, "error:upstream-frame-too-large")
             health.provider()
-            drive.emitter.emitError(ErrorType.API_ERROR, "upstream sent an oversized streaming event — retry")
+            // V4-78/V4-79: the wire type goes through the shared pre-content rule. The drive is a
+            // PARAMETER of tryEmit, so the counter is in reach here without any plumbing — and this
+            // path is the one that most needs it, because an oversized event can be met either side
+            // of content: BEFORE it the client re-sends on overloaded_error, AFTER it the type is
+            // left alone because the client is already finalizing what it holds. The message and
+            // the telemetry type are unchanged.
+            drive.emitter.emitError(
+                PreContentWireType.of(
+                    ErrorType.API_ERROR,
+                    contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0,
+                ),
+                "upstream sent an oversized streaming event — retry",
+            )
             true
         }
         else -> false

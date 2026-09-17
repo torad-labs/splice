@@ -88,7 +88,7 @@ internal class AddModelVerb(
     // The roster edit as a seam (the DR-66 StarterWrite precedent): the fail-closed re-parse below
     // is only testable on the production path if a test can hand write() a composition that does
     // not parse. Production always passes the real editor.
-    private val roster: (String, String, List<String>) -> String = HeadModelArray()::withAdded,
+    private val roster: RosterEditor = RosterEditor(HeadModelArray()::withAdded),
 ) {
     fun add(path: Path): Boolean {
         val existing = Files.readString(path)
@@ -193,6 +193,13 @@ internal class AddModelVerb(
  *  offsets. Raw-text scanning read a commented-out `# { id = "..." }` as present (the add became a
  *  silent no-op) and let a `]` inside a comment close the array early, splicing the file mid-array
  *  and moving the corruption over splice.toml. */
+/** The roster edit as a role: given the config text, the head key and the ids to add, return the
+ *  edited text. The verb's fail-closed re-parse sits behind this seam so a test can hand it an
+ *  editor that produces unparseable TOML and prove nothing is written (wall kt-no-lambda-seam). */
+internal fun interface RosterEditor {
+    operator fun invoke(text: String, headKey: String, ids: List<String>): String
+}
+
 internal class HeadModelArray {
 
     fun withAdded(text: String, headKey: String, ids: List<String>): String {

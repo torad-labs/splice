@@ -45,11 +45,27 @@ import splice.spi.RateLimitCooldown
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 class AccountTurnSelectionTest {
+    private val imfFixdate = Regex("""[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT""")
+
+    /** V4-77: a client deadline is a HOLD FROM NOW — positive, and inside V4-61's clamp — never the
+     *  provider's window. Shared by the two exhaustion arms so the law is stated once. */
+    private fun assertBoundedHold(retryAfter: String, sentAtSeconds: Long) {
+        val holdSeconds = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME)
+            .toEpochSecond() - sentAtSeconds
+        assertTrue(holdSeconds > 0L, "a deadline already in the past is not a deadline, got: $retryAfter")
+        assertTrue(
+            holdSeconds <= CLAMP_SECONDS,
+            "the client deadline is the cooldown lift, at most ${CLAMP_SECONDS}s — got ${holdSeconds}s",
+        )
+    }
+
     @Test
     fun `the next turn switches credentials and quota while the session routing stays intact`() = runTest {
         val rig = AccountTurnRig()
@@ -160,20 +176,31 @@ class AccountTurnSelectionTest {
         }
     }
 
+    // V4-77 REWRITE of `all exhausted records a local refusal with literal IMF-fixdate`, whose
+    // Retry-After assertion was the literal 2035 reset. It was RED against this row and had to be:
+    // it pinned the client deadline to the provider's window, which is what V4-61 reversed on the
+    // cooldown branch and what V4-77 reverses here (a non-persistent Claude Code ABORTS on a
+    // Retry-After past 60s; a persistent one sleeps through it). What this arm is ABOUT is
+    // unchanged and still asserted: the refusal is local, it is an IMF-fixdate — the format is
+    // still pinned, by shape — and it names the provider's real reset. What moved is WHICH instant
+    // the header carries: a bounded hold from now instead of the window.
     @Test
-    fun `all exhausted records a local refusal with literal IMF-fixdate`() = runTest {
+    fun `all exhausted refuses with an IMF-fixdate Retry-After bounded by the clamp`() = runTest {
         val rig = AccountTurnRig()
         try {
             rig.start()
             val resetEpochSeconds = 2_077_951_777L
             val reset = Instant.ofEpochSecond(rig.exhaustAll(resetEpochSeconds)).toString()
+            val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             val response = rig.messages().also { body ->
                 assertTrue(body.bodyAsText().contains("all OAuth accounts are exhausted; earliest reset is $reset"))
             }
 
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            assertEquals("Tue, 06 Nov 2035 08:49:37 GMT", response.headers["Retry-After"])
+            val retryAfter = checkNotNull(response.headers["Retry-After"])
+            assertTrue(imfFixdate.matches(retryAfter), "Retry-After must stay IMF-fixdate, got: $retryAfter")
+            assertBoundedHold(retryAfter, sentAtSeconds)
             assertEquals(1L, rig.localErrors())
             assertEquals(0L, rig.providerErrors())
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
@@ -184,18 +211,24 @@ class AccountTurnSelectionTest {
         }
     }
 
+    // V4-77 REWRITE of `... with a formatter-safe Retry-After`, RED for the same reason as the arm
+    // above. Its SUBJECT survives intact and gains reach: an absurd upstream reset must not break
+    // the refusal. It used to prove that through the formatter alone; now it also proves the
+    // clamp arithmetic does not overflow on the same hostile number before bounding it, and the
+    // formatter-safe 9999 instant is still asserted where it now lives, in the message.
     @Test
-    fun `oversized exhausted reset stays rate limited with a formatter-safe Retry-After`() = runTest {
+    fun `oversized exhausted reset stays rate limited with a bounded Retry-After`() = runTest {
         val rig = AccountTurnRig()
         try {
             rig.start()
             val oversizedReset = Long.MAX_VALUE - 10_000_000_000_000_000L
             rig.exhaustAll(oversizedReset)
+            val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             val response = rig.messages()
 
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            assertEquals("Fri, 31 Dec 9999 23:59:59 GMT", response.headers["Retry-After"])
+            assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds)
             assertTrue(response.bodyAsText().contains("earliest reset is 9999-12-31T23:59:59Z"))
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
         } finally {
@@ -426,3 +459,9 @@ private class AccountAuth(private val token: String, private val accountId: Stri
 }
 
 private const val SESSION = "session-1"
+
+private const val MS_PER_SECOND = 1_000L
+
+// V4-61's ceiling on the CLIENT-FACING deadline, mirrored by HeadAdmission's MAX_CLIENT_HOLD_MS;
+// both are private to their files, so the pin states the number the law states.
+private const val CLAMP_SECONDS = 120L

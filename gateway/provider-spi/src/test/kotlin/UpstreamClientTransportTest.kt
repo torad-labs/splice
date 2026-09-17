@@ -3,6 +3,13 @@
 // HTTP-status failures, never thrown transport errors). Connection-phase DNS/connect failures now
 // retry on the normal backoff budget and rethrow only when exhausted; non-transport exceptions
 // still fail immediately; the retryable set is pinned by predicate tests. MockEngine — no network.
+//
+// V4-66 (2026-09-16): a failure the classifier does NOT name now retries too — the allowlist
+// answers which failures may be RE-ISSUED as a stream, and it was never meant to gate the
+// connect-phase attempt budget. The pins below cover both directions: the unnamed IOException
+// spends the budget as a possible duplicate, the named types keep their exact phase, and
+// cancellation still aborts on attempt one. A non-I/O RuntimeException still fails immediately,
+// because catchCancellable never captures one — retrying our own bugs was never the law.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -26,16 +33,19 @@ import splice.spi.PostContext
 import splice.spi.ReissueRules
 import splice.spi.RetryNotice
 import splice.spi.StreamTornBeforeClient
+import splice.spi.TransportFailurePhase
 import splice.spi.TransportFailures
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamTransport
 import splice.spi.Waiter
+import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 
 class UpstreamClientTransportTest {
 
@@ -471,5 +481,101 @@ class UpstreamClientTransportTest {
         assertFalse(TransportFailures().isDnsFailureTransport(ConnectException("refused")))
         assertFalse(TransportFailures().isDnsFailureTransport(SocketException("reset")))
         assertTrue(TransportFailures().isDnsFailureTransport(RuntimeException(UnknownHostException())))
+    }
+
+    @Test
+    fun `an unclassified IOException retries to the budget as a possible duplicate`() = runTest {
+        // V4-66, the measured case: the JDK's header parser ("HTTP/1.1 header parser received no
+        // bytes") arrives as a BARE IOException, which no entry in the classifier's allowlist
+        // names. It rethrew on attempt one with the whole budget unspent — measured live
+        // 2026-09-16 on claude-deepseek: conn-reset at 234ms, perf attempts=1, no headers and no
+        // first_byte. Unclassifiable means POST_SEND: this seam cannot see whether the request
+        // reached the wire, so the honest label is the possible-duplicate one.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            throw IOException("HTTP/1.1 header parser received no bytes")
+        }
+        val retries = mutableListOf<String>()
+        val thrown = assertThrows<IOException> {
+            clientOver(engine).post(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
+        }
+        assertEquals("HTTP/1.1 header parser received no bytes", thrown.message)
+        assertEquals(3, calls.get(), "the whole attempt budget is spent before the real failure surfaces")
+        assertEquals(2, retries.size)
+        assertTrue(
+            retries.all { it.startsWith("transport-possible-duplicate IOException") },
+            "an unnamed failure must claim the conservative half: $retries",
+        )
+    }
+}
+
+/** V4-66 pins, in their own class for the same reason V4-63 split its sibling: the class above
+ *  sits close to detekt's LargeClass ceiling, so a new pin reddens the gate before it can prove
+ *  anything. These four need no MockEngine and no client — they address the decision seam
+ *  directly, which is what the row changed. */
+class UnclassifiedTransportFailureTest {
+
+    @Test
+    fun `the transport seam rethrows cancellation with a full budget`() {
+        // The transport path cannot deliver a cancellation here — catchCancellable's I/O-only
+        // catch list lets it propagate before this seam — so the guard V4-66 added is proven
+        // where it lives rather than assumed from the call site.
+        assertThrows<CancellationException> {
+            TransportFailures().rethrowUnlessRetryableTransport(
+                CancellationException("cancelled mid-attempt"),
+                deadlineHit = false,
+                lastAttempt = false,
+            )
+        }
+    }
+
+    @Test
+    fun `the previously-named types keep their exact phase and the retryable set is not widened`() {
+        // V4-66 narrowed WHAT DECIDES, not what classifies: the retryable set still answers the
+        // G5 stream-reissue question, so widening it there would re-issue a stream on a failure
+        // nobody characterised. FOUR distinct JVM classes, not six names: ktor's
+        // ConnectTimeoutException EXTENDS java.net.ConnectException, and its
+        // io.ktor.client.network.sockets.SocketTimeoutException is a typealias for the java.net
+        // one, so each pair is one class (the ConnectTimeoutException branch is therefore
+        // unreachable behind the ConnectException branch — noted, not touched, by V4-66).
+        val failures = TransportFailures()
+        assertEquals(TransportFailurePhase.CONNECT, failures.classifyTransport(UnresolvedAddressException()))
+        assertEquals(TransportFailurePhase.CONNECT, failures.classifyTransport(UnknownHostException()))
+        assertEquals(TransportFailurePhase.CONNECT, failures.classifyTransport(ConnectException("refused")))
+        assertEquals(TransportFailurePhase.POST_SEND, failures.classifyTransport(SocketException("reset")))
+        assertEquals(TransportFailurePhase.POST_SEND, failures.classifyTransport(SocketTimeoutException("read")))
+        assertNull(failures.classifyTransport(IOException("HTTP/1.1 header parser received no bytes")))
+        assertFalse(failures.isRetryableTransport(IOException("parser")))
+        // The seam is where the decision moved: same throwable, a phase instead of a rethrow.
+        assertEquals(
+            TransportFailurePhase.POST_SEND,
+            failures.rethrowUnlessRetryableTransport(
+                IOException("parser"),
+                deadlineHit = false,
+                lastAttempt = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `the seam gives up on the deadline or the last attempt whatever the throwable`() {
+        // The two gates are unchanged and still end the loop — an unknown throwable buys the
+        // budget, never an unbounded loop.
+        val failures = TransportFailures()
+        assertThrows<IOException> {
+            failures.rethrowUnlessRetryableTransport(
+                IOException("unknown"),
+                deadlineHit = true,
+                lastAttempt = false,
+            )
+        }
+        assertThrows<IOException> {
+            failures.rethrowUnlessRetryableTransport(
+                IOException("unknown"),
+                deadlineHit = false,
+                lastAttempt = true,
+            )
+        }
     }
 }

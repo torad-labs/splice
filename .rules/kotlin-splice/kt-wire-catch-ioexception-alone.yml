@@ -1,0 +1,70 @@
+# THE LAW. On the wire, a dead client fails in TWO shapes and a catch that names only one of them
+# is a catch that does not handle client death. `catch (e: IOException)` reads as "the socket broke",
+# but half the ways this socket breaks do not arrive as an IOException at all: the engine's write
+# throws IOException, and a channel that has already been CLOSED throws IllegalStateException. The
+# repo says so in its own words at ClientChannel.kt:141-143 — "On a dead socket the flush itself
+# throws (IOException from the engine write, IllegalStateException from a closed channel)" — and
+# then, thirty lines above and a hundred below, catches only the first.
+#
+# What escapes is not a benign error. An IllegalStateException out of a write in the middle of a
+# turn is not classified as client loss, so `clientGone` is never set, `detachIfRecording()` never
+# runs, the pinger keeps ticking, and the failure propagates as an unclassified fault into the Ktor
+# pipeline instead of ending the turn. That is the zombie-turn shape: a slot held for the whole
+# watchdog budget for a client that hung up. Worse, IllegalStateException is CancellationException's
+# superclass, so a handler written for one and not the other has already been a source of two
+# separate bugs in this tree (TurnFailures.kt:40 carries the note).
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 4). ImmediateSseWriter's `flushRaw` is wired in
+# TurnStreamer.kt:84 to Ktor's `respondTextWriter { flush() }`, which throws IllegalStateException
+# once the channel is closed. ClientChannel.kt:112 (the per-frame write) and :214 (the keepalive
+# ping) each catch IOException alone, so exactly that shape walks past both.
+#
+# THE REMEDY, two compliant forms already in this tree:
+#   - PAIR the catches, which is what CancellationSeal.kt:40-52 does for the same reason — a
+#     `catch (cleanup: IOException)` and a `catch (cleanup: IllegalStateException)` arm doing the
+#     same thing, side by side, so neither shape escapes.
+#   - Or, when the failure is discardable cleanup, `Cancellables.runCatchingCleanup { … }` — which
+#     catches both and rethrows CancellationException by contract (ClientChannel.flushQuietly is the
+#     example). There is no `catch_block` in that form, so it satisfies this rule by construction
+#     rather than by exemption; the compliant-twin case in the rule-test pins that.
+#
+# THE CENSUS (measured 2026-09-17, gateway/gateway/src/main/**/wire/**): 2 catch blocks total in
+# scope, 2 RED:
+#   gateway/gateway/src/main/kotlin/splice/gateway/wire/ClientChannel.kt:112  per-frame write
+#   gateway/gateway/src/main/kotlin/splice/gateway/wire/ClientChannel.kt:214  keepalive ping
+# The denominator is every IOException catch the parser finds in `wire/` — not a file list — and it
+# is 2, so this census is complete BY CONSTRUCTION rather than by inspection: every catch in scope
+# is accounted for and both are red.
+#
+# SCOPE IS `wire/`, DELIBERATELY. The law is about the CLIENT socket, and `wire/` is the package
+# that owns it. An IOException catch elsewhere (a file read, an upstream POST) has a different
+# second shape or none, and widening this rule to all of :gateway would flag correct code — the
+# failure mode kt-no-silent-result-collapse's header records as the reason a wall gets suppressed
+# instead of obeyed. `head/` is covered for the same hazard by kt-turn-finally-flush-quietly.
+#
+# NO ALLOWLIST. Both compliant forms are cheap and both already exist in tree, so an exemption
+# would only be a waived finding. A genuine one goes here dated with its reason.
+id: kt-wire-catch-ioexception-alone
+language: kotlin
+severity: error
+message: "On the client socket, IOException is only half of client death: a CLOSED channel throws IllegalStateException. Pair the catches (CancellationSeal.kt:40-52) or use Cancellables.runCatchingCleanup, which catches both and rethrows cancellation."
+note: >
+  ClientChannel.kt:141-143 already states both shapes. Unpaired, the IllegalStateException escapes
+  as an unclassified fault: clientGone is never set, detachIfRecording never runs, the pinger keeps
+  ticking, and the slot is held for the whole watchdog budget for a client that has hung up. Add a
+  sibling `catch (e: IllegalStateException)` arm doing the same thing, or — for discardable cleanup —
+  `Cancellables.discard(Cancellables.runCatchingCleanup { … }, "<why>")`.
+files:
+  - gateway/gateway/src/main/**/wire/**/*.kt
+rule:
+  all:
+    - kind: catch_block
+      regex: ':\s*(java\.io\.)?IOException\b'
+    # a SIBLING catch on the same try. `inside` stops at the immediate parent try_expression, so an
+    # IllegalStateException arm on an OUTER try cannot vouch for an inner unpaired catch.
+    - not:
+        inside:
+          kind: try_expression
+          has:
+            kind: catch_block
+            regex: ':\s*(kotlin\.)?IllegalStateException\b'

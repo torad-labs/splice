@@ -1,0 +1,49 @@
+# V4-90 (ARCH-AUDIT 2026-09-17): the red/green pins for kt-quota-tracker-single-resolution.
+#
+# The `valid` cases are the three shapes that MUST stay silent, and each is live in the tree: a call
+# to the single resolver (the compliant form), an already-resolved tracker PASSED as an argument
+# (TurnDriver.kt:62/:93, TurnDriveFactory.kt:74 — wiring, not a decision), and the map's own
+# DECLARATION (HeadDeps.kt:55 — the map has to be declarable somewhere). Firing on any of those
+# would make the wall red on correct code, and the usual response to that is to delete the clause
+# that catches the real sites.
+#
+# The `invalid` cases are the census spellings. There are three different left operands and two
+# different right operands across the seven real sites, which is the measurement behind the row, so
+# each combination is pinned separately rather than represented by one example: a matcher that
+# handled `selectedQuota ?: deps.quota` and missed `drive.quota ?: quota` would report five of
+# seven sites and look complete.
+id: kt-quota-tracker-single-resolution
+valid:
+  # THE COMPLIANT FORM — the decision asked once, of the resolver that owns it.
+  - 'TurnQuota.forSession(deps, sessionId)?.clientHeaders()?.forEach { (n, v) -> call.response.header(n, v) }'
+  - 'val active = TurnQuota.forSession(deps, drive.sessionId)'
+  - 'quota = TurnQuota.forSession(deps, account?.account?.label)'
+  # WIRING, not resolution: an already-resolved tracker handed down as an argument.
+  - 'private val collectTurn = CollectTurn(provider, driveFactory, this, deps.quota, deps.clientWindows)'
+  - 'val drive = TurnDrive(meta, quota = inputs.quota, windows = deps.clientWindows)'
+  - 'TurnStreamer(provider, driveFactory, deps.quota)'
+  # THE DECLARATION — a property, not a navigation read. The map must stay declarable.
+  - 'val accountQuotas: Map<String, QuotaTracker> = emptyMap()'
+  - 'internal data class HeadDeps(val quota: QuotaTracker?, val accountQuotas: Map<String, QuotaTracker> = emptyMap())'
+  # An elvis over something that is NOT a quota must stay silent, or the rule is an elvis ban.
+  - 'val label = account?.label ?: deps.primaryLabel'
+  - 'val w = inputs.windows ?: deps.clientWindows'
+invalid:
+  # CENSUS: `selectedQuota ?: deps.quota` — HeadAdmission.kt:136 and :223.
+  - '(selectedQuota ?: deps.quota)?.clientHeadersRejected(retryEpochSeconds)?.forEach { (n, v) -> call.response.header(n, v) }'
+  # CENSUS: `inputs.quota ?: deps.quota` — TurnStreamer.kt:77.
+  - '(inputs.quota ?: deps.quota)?.clientHeaders()?.forEach { (n, v) -> call.response.header(n, v) }'
+  # CENSUS: a BARE `quota` field as the fallback — CollectTurn.kt:85. A rule written only against
+  # `deps.quota` misses this one and the next.
+  - '(inputs.quota ?: quota)?.clientHeaders()?.forEach { (n, v) -> call.response.header(n, v) }'
+  # CENSUS: `drive.quota ?: quota` — SseRoundPost.kt:32, the third left-hand spelling.
+  - 'val activeQuota = drive.quota ?: quota'
+  # CENSUS: the SELECTION half on its own — the map lookup, in both spellings that appear.
+  - 'val selected = deps.accountPool?.view(sessionId)?.selectedLabel?.let(deps.accountQuotas::get)'
+  - 'val selectedQuota = label?.let(deps.accountQuotas::get)'
+  - 'val t = deps.accountQuotas[label]'
+  # CENSUS: HeadAdmission.kt:245 — lookup and elvis in one expression, the densest site.
+  - 'quota = account?.account?.label?.let(deps.accountQuotas::get) ?: deps.quota'
+  # An elvis that reaches the primary FIRST — the exact inversion the resolver exists to make
+  # unspellable, and the bug V4-84 (4) fixed by hand at one site.
+  - 'val active = deps.quota ?: selectedQuota'

@@ -1,0 +1,89 @@
+# THE LAW. A log line is a RECORD, and the control plane's log is the closest thing this daemon has
+# to an audit trail. Interpolating caller-supplied text into it verbatim hands the caller the record
+# format: a `\n` in a launch argument writes a second, fabricated `[control] …` line; a `\r` hides
+# the rest of the real one in a terminal; a 100 KB argument buries the surrounding context. Nothing
+# about the log call says the value came from outside, and nothing downstream can tell an authored
+# line from an injected one — which is the property an audit trail exists to have.
+#
+# Interpolating a COLLECTION verbatim is worse than a string, twice over. `List<String>.toString()`
+# is not a record format: `[a, b]` cannot be read back, and an element containing `, ` or `]` is
+# indistinguishable from a delimiter. And it is not a stable one either — it is whatever
+# `AbstractCollection.toString` does in the JDK of the day, so the audit line's shape is not even
+# the repo's to promise.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 13). `ControlAudit.kt:14` is
+# `log("[control] launch $key -> $argv\n")`, and `$argv` is `recipe.argv` (LaunchRoutes.kt:72), built
+# from the REQUEST BODY at LaunchRoutes.kt:82-83 (`body?.get("args") as? JsonArray`). A POST to
+# `/launch/{head}` therefore writes attacker-chosen bytes, unescaped, into the audit line that
+# records the launch — the one line an operator would read to find out what was launched.
+#
+# THE REMEDY. One escaping helper, and every interpolation goes through it:
+# `log("[control] launch ${LogSafe.str(key)} -> ${LogSafe.list(argv)}\n")`. `LogSafe` must make the
+# record unambiguous (escape CR/LF/control bytes, quote elements, bound the length) so a log line is
+# one log line whatever arrives. Any expression beginning `LogSafe.` satisfies this rule, so the
+# helper's own shape is the fix row's to design.
+#
+# THE CENSUS (measured 2026-09-17, gateway/control/src/main). Denominator from the source: 9 `log(`
+# calls in control main, every one of them a template with at least one interpolation. 6 carry only
+# repo-owned values (dated allowlist below); 3 RED, all of them in the audit helper:
+#   gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt:10  $key, $action
+#   gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt:14  $key, $argv
+#   gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt:18  $message
+#
+# :10 AND :18 ARE A PREMISE CORRECTION, not a widening. The audit row named :14 (the argv list) as
+# the finding. The other two arrive from the same place and are the same defect:
+#   :10 `$key`/`$action` come from `/api/heads/{head}/{action}` via HeadRoutes.kt:39 — URL path
+#       segments, caller-chosen;
+#   :18 `$message` is `recipe.warning` (LaunchRoutes.kt:73), composed from the same request body.
+# All three are the audit trail describing a request using the request's own bytes.
+#
+# ALLOWLIST (dated; each entry is a value the repo itself composes, so escaping it would only add
+# noise to a record nobody outside can shape):
+#   2026-09-17: bare `$reason` — HostedServer.tearDown's parameter, passed only from in-tree
+#     `close("<literal>")` call sites (HostedServer.kt:137-152).
+#   2026-09-17: bare `$lastError` — HostedServer's own composed status string (HostedServer.kt:75,
+#     :196, :252, :266, :282). It EMBEDS a child process's exception message, so if LogSafe ever
+#     gains a bounded-length guarantee this entry is the first one to revisit.
+#   2026-09-17: bare `$name` and `${spec.name}` — the MCP server's key from the `mcpServers` config
+#     document, not from a request (McpServerSpec; McpHost.kt:202, McpProcessLauncher.kt:43,:49,
+#     HostedServer.kt:152,:227,:283).
+#   2026-09-17: `${…pid()}` — a JVM process id, a Long; it has no text to escape.
+#   2026-09-17: `${e.message}` — an in-tree McpHostException message (McpHost.kt:202).
+# Deliberately NOT allowlisted anywhere: a child process's stderr. McpProcessLauncher.kt:42-43
+# already refuses to log it at all ("content withheld"), which is the stronger answer and the reason
+# this rule never had to reason about it.
+#
+# WHAT THIS RULE CANNOT DO. "Did this value come from a request" is a taint question and needs a
+# whole-program analysis; ast-grep sees one file. So the rule inverts the burden instead: EVERY
+# interpolation in a control-plane log line is red until it is either escaped or written down here
+# as ours. That is what makes the next `log("... $x")` in :control fail closed — which the audit's
+# own finding shows is the failure mode that actually happens.
+id: kt-log-escapes-caller-input
+language: kotlin
+severity: error
+message: "Control-plane log line interpolating an unescaped value: route it through LogSafe (e.g. `${LogSafe.list(argv)}`). A newline in a launch argument forges an audit line, and List.toString() is not a record format."
+note: >
+  The control log is this daemon's audit trail; interpolating request bytes verbatim hands the
+  caller its format. `recipe.argv` comes straight from the POST body (LaunchRoutes.kt:82). Any
+  expression beginning `LogSafe.` satisfies this rule, so the helper is the fix row's to design —
+  it needs to escape CR/LF and control bytes, quote collection elements, and bound the length. A
+  value the repo composes itself gets a DATED entry in this rule's header, never an inline ignore.
+files:
+  - gateway/control/src/main/**/*.kt
+rule:
+  all:
+    - any:
+        - pattern: log($$$A)
+        - pattern: $R.log($$$A)
+    # an interpolation that is neither escaped nor dated-allowlisted. Two node kinds, because Kotlin
+    # spells interpolation two ways and a rule that knew only one would be silent on `$argv`:
+    # `interpolated_identifier` is `$x`, `interpolated_expression` is `${…}`.
+    - has:
+        stopBy: end
+        any:
+          - kind: interpolated_identifier
+            not:
+              regex: '^(reason|lastError|name)$'
+          - kind: interpolated_expression
+            not:
+              regex: '^(LogSafe\.|spec\.name$|e\.message$|[A-Za-z_][A-Za-z0-9_]*\.pid\(\)$)'

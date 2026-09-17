@@ -1,0 +1,68 @@
+# THE LAW. An `invokeOnCancellation` handler must be TOTAL: it must not throw and it must not block.
+# kotlinx.coroutines calls it from an undefined context — possibly the thread that cancelled,
+# possibly while a lock is held — and documents that an exception escaping it is delivered as an
+# UNCAUGHT exception to the current thread's handler, not to the cancelled coroutine. So a handler
+# that throws does not fail the turn it belongs to; it crashes whatever thread happened to run the
+# cancellation, and a handler that blocks stalls that thread for its whole timeout. The correct
+# shape is a total `*Quietly` function: it swallows what it cannot act on, states why, and returns.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 7). `WorkerChannel.kt:57` is
+# `continuation.invokeOnCancellation { close() }`, and `close()` (WorkerChannel.kt:81-89) is neither
+# of the two things the handler needs to be:
+#   - it THROWS: `cancellation?.let { throw it }` on line 87 rethrows a CancellationException
+#     collected from any of its four cleanup steps — from a cancellation handler, into an undefined
+#     thread;
+#   - it BLOCKS: step four is `observeExitAfterWait()` -> `waitForExit()` ->
+#     `process.waitFor(CLOSE_WAIT_MS, MILLISECONDS)` (WorkerChannel.kt:128), so cancelling a
+#     code-mode call parks the cancelling thread on a child process for up to CLOSE_WAIT_MS.
+# Both are correct behaviour for `close()` called from `use { }` on the owning coroutine. Neither is
+# correct for a cancellation handler, and the call site is what makes it wrong, not the function.
+#
+# THE REMEDY. A total sibling — `closeQuietly()` — that runs the same cleanup, swallows the
+# cancellation instead of rethrowing it, and hands the blocking wait to the code that owns the
+# lifecycle (`afterExit`/`onExit` already exist on this class for exactly that). The `*Quietly`
+# naming is the in-tree convention for "total by contract": `ClientChannel.flushQuietly()`
+# (ClientChannel.kt:149) is the pattern, including the header that states why the failure is
+# discarded. Any name ending `Quietly` satisfies this rule by construction, since the matcher keys
+# on the bare verbs (`close(`, `waitFor(`, `destroy*(`) and `closeQuietly(` is not one of them.
+#
+# THE CENSUS (measured 2026-09-17, gateway/*/src/main). Denominator from the source: 3
+# `invokeOnCancellation` handlers in the whole tree, 1 RED:
+#   RED   gateway/app/src/main/kotlin/splice/app/codemode/WorkerChannel.kt:57   { close() }
+#   green gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt:137   { synchronized(lock) { queue.remove(waiter) } }
+#   green gateway/gateway/src/main/kotlin/splice/gateway/head/CollectTurn.kt:111 { future.removeListener(listener) }
+# The two green ones are the law satisfied, not the matcher failing: both bodies do bounded,
+# non-throwing bookkeeping, which is what a cancellation handler is for.
+#
+# THE MATCHER IS THE CALL SITE, and its limit is worth stating: it flags the named blocking and
+# throwing verbs LEXICALLY inside the handler, so a handler that calls a local helper which in turn
+# calls `close()` is invisible to it — the same single-file boundary kt-no-blocking-io-under-monitor
+# records. That is the price of a pattern-layer wall; what it buys is that the obvious spelling,
+# which is the one this repo actually wrote, cannot come back.
+#
+# NO ALLOWLIST. The remedy is a rename plus a total wrapper, so an exemption would only be a waived
+# finding. A genuine one goes here dated, with its reason.
+id: kt-cancellation-handler-total
+language: kotlin
+severity: error
+message: "An invokeOnCancellation handler must be TOTAL — it runs on an undefined thread, where a throw becomes an uncaught exception and a block parks the canceller. Call a *Quietly variant (the ClientChannel.flushQuietly pattern), not close()/waitFor()/destroy()."
+note: >
+  kotlinx delivers an exception escaping this handler to the current thread's uncaught handler, NOT
+  to the cancelled coroutine, so a throwing handler crashes whoever cancelled. Write a `closeQuietly()`
+  that runs the same cleanup, swallows what it cannot act on with a stated reason, and leaves the
+  blocking wait to the lifecycle owner (`afterExit`/`onExit`). Any name ending `Quietly` satisfies
+  this rule by construction.
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  all:
+    - any:
+        - pattern: $X.invokeOnCancellation { $$$B }
+        - pattern: invokeOnCancellation { $$$B }
+    # the blocking / throwing verbs, ANCHORED at the start of the call node so a longer name that
+    # merely begins with one of them (`closeQuietly(`, `destroyLater(`) is not matched — that
+    # anchoring is what makes the `*Quietly` remedy compliant without an exemption list.
+    - has:
+        stopBy: end
+        kind: call_expression
+        regex: '^([A-Za-z_][A-Za-z0-9_.]*\.)?(close|destroy|destroyForcibly|waitFor|join|awaitTermination)\s*\('

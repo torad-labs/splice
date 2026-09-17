@@ -3,8 +3,10 @@
 // the ControlServer with a stub head and asserts every declared field is present in the daemon's
 // actual JSON — so a rename in the Kotlin payload builders breaks THIS test, not the dashboard at
 // runtime. Field sets are transcribed from index.ts @ pre-public-port-baseline (the comment is the source of
-// truth; a drift shows up as a failing assertion here). Manual click-through stays operator work;
-// this pins the SHAPE contract automatically.
+// truth; a drift shows up as a failing assertion here) — EXCEPT the economics bucket, whose set is
+// DERIVED from EconomicsRow since V4-98 and asserted as a bijection; see ECONOMICS_WIRE_RENAMES for
+// why that one is not a transcription. Manual click-through stays operator work; this pins the
+// SHAPE contract automatically.
 package splice.control
 
 import io.ktor.client.HttpClient
@@ -115,6 +117,26 @@ class WebuiContractTest {
         assertTrue(missing.isEmpty(), "$where missing webui-contract fields: $missing (has ${obj.keys})")
     }
 
+    /** V4-98: missing AND extra, both by name. [assertFields] is deliberately one-directional —
+     *  most payloads here carry client-only or contract-nullable keys the Kotlin side never had to
+     *  own — but a DERIVED denominator makes the other direction meaningful: a wire field with no
+     *  property behind it is a field the dashboard reads and nothing in Kotlin maintains. */
+    private fun assertBijection(obj: JsonObject, fields: List<String>, where: String) {
+        val missing = fields.filter { it !in obj.keys }
+        assertTrue(
+            missing.isEmpty(),
+            "$where: declared but NOT on the wire: $missing — a sum added to EconomicsRow reaches " +
+                "the dashboard only if FileSources.kt's row copy AND EconomicsPayloads both carry " +
+                "it (wire has ${obj.keys})",
+        )
+        val extra = obj.keys.filterNot { it in fields }
+        assertTrue(
+            extra.isEmpty(),
+            "$where: on the wire but backed by NO EconomicsRow property: $extra — either add the " +
+                "property or drop the field; the row type is the denominator (declared $fields)",
+        )
+    }
+
     @Test
     fun `heads payload matches HeadsPayload plus HeadStatus`() = runBlocking {
         val payload = api("/api/heads")
@@ -186,20 +208,23 @@ class WebuiContractTest {
 
     /** EconomicsPayload + HeadEconomics + EconomicsBucket (webui shared/api). The bucket fields
      *  are the burn page's whole input; a rename here silently blanks the quota gauge, which is
-     *  the one surface whose failure mode is reading SAFE while the plan drains. */
+     *  the one surface whose failure mode is reading SAFE while the plan drains.
+     *
+     *  V4-98: the bucket's expected field set is DERIVED from [EconomicsRow] (see
+     *  [economicsWireNames]) instead of transcribed, and asserted as a BIJECTION against the wire.
+     *  The hand list it replaced could not fail for a field absent from itself, which is the §24
+     *  shape — EconomicsRow's sums reach the wire through THREE hand copies (EconomicsStore's
+     *  EconomicsBucket -> FileSources.kt:56's row copy -> EconomicsPayloads' buildJsonObject) and
+     *  every one of them keeps compiling when a sum is added with a default and forgotten. */
     @Test
     fun `economics payload matches EconomicsPayload plus nested bucket`() = runBlocking {
         val payload = api("/api/economics")
         assertFields(payload, listOf("retention_hours", "generated_at", HEADS_KEY), "EconomicsPayload")
         val head = payload[HEADS_KEY]!!.jsonArray.first().jsonObject
         assertFields(head, listOf("key", "label", "ceiling_tokens", "buckets"), "HeadEconomics")
-        assertFields(
+        assertBijection(
             head["buckets"]!!.jsonArray.first().jsonObject,
-            listOf(
-                "hour", "turns", "in_tokens", "cached_tokens", "cache_write_tokens", "out_tokens",
-                "req_bytes", "upstream_req_bytes",
-                "tools_eager", "tools_deferred", "deferral_turns", "rate_limited",
-            ),
+            economicsWireNames(),
             "EconomicsBucket",
         )
     }
@@ -225,6 +250,74 @@ class WebuiContractTest {
 }
 
 private const val HEADS_KEY = "heads"
+
+// ── V4-98: the economics bucket's field set, DERIVED from EconomicsRow ────────────────────────
+//
+// WHY. This file's other field lists are transcribed from webui/src/shared/api/index.ts and that
+// is the right shape for them: they pin a CLIENT contract whose keys the Kotlin side does not own.
+// The economics bucket is different — every one of its fields is one EconomicsRow sum, copied by
+// hand three times (EconomicsStore.EconomicsBucket -> FileSources.kt:56 -> EconomicsPayloads'
+// buildJsonObject), and none of those copies fails to compile when a sum is added with a default
+// and forgotten at one hop. A hand list here checked one hand-authored list against another; it
+// agreed with itself and could not fail for a field absent from both (§24). The denominator now
+// comes from the type.
+//
+// WHY EconomicsRow AND NOT EconomicsBucket, which the row asked for. Two blocking premises, both
+// recorded in the V4-98 ledger note:
+//   1. splice.gateway.usage.EconomicsBucket is NOT @Serializable, and neither is EconomicsRow, and
+//      EconomicsPayloads hand-builds the JSON with put(...) — so there is no
+//      `serializer().descriptor.elementNames` anywhere on this path to read.
+//   2. :control may not see :gateway (FileSources.kt:52 states that split as the reason the copy
+//      exists at all), so this test — a :control test — cannot name EconomicsBucket even if it
+//      were serializable.
+// EconomicsRow is the nearest correct denominator: it is :control's own vocabulary, it is what
+// EconomicsPayloads actually reads, and it is the type FileSources' copy targets, so a sum that
+// reaches the row but not the wire fails here BY NAME.
+//
+// WHY JVM REFLECTION and not kotlin-reflect: :control declares no kotlin-reflect dependency, and
+// adding one to ship a field list is a production dependency bought for a test. A data class's
+// non-synthetic, non-static declared fields ARE its constructor properties; order is irrelevant
+// because the assertion compares SETS.
+//
+// DISPOSITION for every property, because absence is not one. A property is accounted for as
+// either mechanically named (camelCase -> snake_case, which is 11 of the 12) or explicitly
+// RENAMED with a written reason below. A property in neither bucket cannot exist: the mapping is
+// total by construction, and the bijection assertion then fails by name on whichever side drifted.
+//
+// NOT CAUGHT, and why. A field renamed in BOTH EconomicsRow and EconomicsPayloads at once still
+// agrees here — the client contract is what would break, and that is what
+// webui/src/shared/api/index.ts and the webui tests own. A value that is wrong rather than absent:
+// the `economics ships input and cached separately` test below pins the three that must not be
+// pre-netted. This wall owns the field SET.
+private val ECONOMICS_WIRE_RENAMES = mapOf(
+    // The wire says req_bytes for the client's own bytes and upstream_req_bytes for the bytes
+    // splice forwarded; the property dropped the `req` because on the row side `upstreamBytes`
+    // sits next to `reqBytes` and reads unambiguously. Mechanical snake_case would ask for
+    // `upstream_bytes`, which the dashboard does not read.
+    "upstreamBytes" to "upstream_req_bytes",
+)
+
+/** [EconomicsRow]'s properties as the wire spells them. The denominator, from the type. */
+private fun economicsWireNames(): List<String> {
+    val properties = EconomicsRow::class.java.declaredFields
+        .filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
+        .map { it.name }
+    // A reflection call that yields nothing would make the bijection below pass only against an
+    // empty wire; the assertion is the guard, but say so where the list is built.
+    check(properties.isNotEmpty()) {
+        "EconomicsRow exposed no declared fields — the denominator is absent, so no field-set " +
+            "assertion in this test can be trusted"
+    }
+    val unknownRenames = ECONOMICS_WIRE_RENAMES.keys - properties.toSet()
+    check(unknownRenames.isEmpty()) {
+        "ECONOMICS_WIRE_RENAMES names $unknownRenames, which EconomicsRow no longer declares — a " +
+            "stale rename entry silently removes a field from the denominator"
+    }
+    return properties.map { ECONOMICS_WIRE_RENAMES[it] ?: snakeCase(it) }
+}
+
+private fun snakeCase(name: String): String =
+    name.replace(Regex("(?<!^)(?=[A-Z])"), "_").lowercase()
 
 // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
 // collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.

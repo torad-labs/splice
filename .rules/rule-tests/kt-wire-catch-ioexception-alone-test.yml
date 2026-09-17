@@ -1,0 +1,70 @@
+id: kt-wire-catch-ioexception-alone
+valid:
+  # remedy 1 — PAIRED arms, the CancellationSeal.kt:40-52 shape
+  - |
+    try {
+        coalesced.write(frame)
+    } catch (e: IOException) {
+        clientGone.set(true)
+    } catch (e: IllegalStateException) {
+        clientGone.set(true)
+    }
+  # order does not matter
+  - |
+    try {
+        coalesced.write(frame)
+    } catch (e: IllegalStateException) {
+        clientGone.set(true)
+    } catch (e: IOException) {
+        clientGone.set(true)
+    }
+  # a fully-qualified IllegalStateException still pairs
+  - |
+    try { flush() } catch (e: IOException) { gone() } catch (e: kotlin.IllegalStateException) { gone() }
+  # remedy 2 — no catch_block at all: satisfied by construction, not by exemption
+  - |
+    Cancellables.discard(
+        Cancellables.runCatchingCleanup { coalesced.flush() },
+        "turn-finally flush on a possibly-dead socket",
+    )
+  # a broad catch is a DIFFERENT wall's business (kt-catch-swallows-cancellation), not this one
+  - |
+    try { work() } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        log(e)
+    }
+  # not an IOException catch at all
+  - 'try { parse(body) } catch (e: SerializationException) { log(e) }'
+invalid:
+  # the census, both sites
+  - |
+    try {
+        coalesced.write(frame)
+    } catch (e: IOException) {
+        clientGone.set(true)
+        if (!detachIfRecording()) throw e
+        return
+    }
+  - |
+    try {
+        writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
+    } catch (e: IOException) {
+        pingFailed(e, turnJob, headKey, log, session)
+        return@launch
+    }
+  # the fully-qualified spelling must not escape
+  - 'try { flush() } catch (e: java.io.IOException) { gone() }'
+  # a CancellationException arm is not the missing shape — IllegalStateException is
+  - |
+    try { flush() } catch (e: CancellationException) { throw e } catch (e: IOException) { gone() }
+  # an IllegalStateException arm on an OUTER try must not vouch for the inner unpaired catch
+  - |
+    try {
+        try {
+            coalesced.write(frame)
+        } catch (e: IOException) {
+            gone()
+        }
+    } catch (e: IllegalStateException) {
+        gone()
+    }

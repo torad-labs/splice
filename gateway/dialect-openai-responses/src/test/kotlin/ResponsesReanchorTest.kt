@@ -144,6 +144,33 @@ class ResponsesReanchorControllerTest {
     }
 
     @Test
+    fun `a mid-stream rate limit continues, because the re-POST is where a real 429 becomes readable`() {
+        // V4-58, the Responses twin of V4-57 — premise re-proven on THIS dialect, not ported. A rate
+        // limit met after the first frame arrives as an SSE rate_limit_error inside a 200, and the
+        // client's recovery trigger is HTTP status 429, so a turn that dead-ends here has no
+        // automatic recovery. Continuing is enough on its own: the re-POST is a fresh request through
+        // the shared round post, and a provider still limiting answers it with a genuine pre-stream
+        // 429 carrying Retry-After, which the pre-stream path already owns. No pushback is invented
+        // here, because a mid-stream SSE frame never carried one, and no cooldown is armed by it —
+        // every arm site is status-gated and this dialect references the cooldown nowhere in code.
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(type = ErrorType.RATE_LIMIT), 0),
+        )
+        assertNotNull(next, "a mid-stream rate limit must earn a continuation on this dialect too")
+    }
+
+    @Test
+    fun `a rate limit past the attempt budget still stops`() {
+        // Pinned from both sides like the budget itself: RATE_LIMIT continues on the same terms as
+        // OVERLOADED, so the ceiling that bounds OVERLOADED bounds it too — never a blind re-POST loop.
+        assertNull(
+            controller.continuationForFailure(
+                ReanchorRound(previousBody(), failureWith(type = ErrorType.RATE_LIMIT), 5),
+            ),
+        )
+    }
+
+    @Test
     fun `a thinking-only partial restarts from scratch - nothing replayable, no marker`() {
         val partial = TurnOutcome.PartialRound(thinkingText = "deep partial reasoning already streamed")
         val next = controller.continuationForFailure(

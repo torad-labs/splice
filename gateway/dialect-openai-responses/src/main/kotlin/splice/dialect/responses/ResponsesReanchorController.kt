@@ -107,4 +107,14 @@ private const val MARKER_TEXT: String =
         "restate reasoning you have already given."
 
 // FILE SCOPE ON PURPOSE: one shared immutable set, read per failure classification.
-private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR)
+//
+// V4-58 adds RATE_LIMIT, the Responses twin of V4-57 — and the premise was RE-PROVEN here rather
+// than ported, because this dialect reaches its terminal differently. Both facts hold. (1) A
+// mid-stream SSE error arms NO cooldown: every arm site is status-gated (RetryPolicy.kt:50 and
+// :161, RateLimitCooldown.kt:288) and an SSE frame carries no status, so this dialect references
+// the cooldown nowhere outside a comment. (2) The re-POST is a FRESH request through the shared
+// round post, so a provider still limiting answers it with a genuine pre-stream 429 carrying
+// Retry-After — the one place a pushback is machine-readable, already owned by the pre-stream path
+// (V4-48's short wait, and an honest 429 past the ceiling). Continuability alone therefore buys the
+// recovery, and no pushback is invented at this layer.
+private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR, ErrorType.RATE_LIMIT)

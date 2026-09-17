@@ -99,6 +99,22 @@ private val EXCLUDED: Map<ErrorType, String> = mapOf(
  *  retroactively answer 429 — and a stream held for an 88-minute reset is not a wait, it is a hang
  *  the client will reap long before it ends.
  *
+ *  WHY THE ANTHROPIC-SHAPED WIRE CANNOT BE RESCUED FROM IT — and this is NOT a vendor limit
+ *  anybody failed to work around; on that wire the mechanism is absent. Resuming requires the
+ *  backend to continue a truncated assistant turn. Measured 2026-09-16: muse answers an assistant
+ *  prefill with HTTP 400 assistant prefill is not supported by this server; Anthropic documents the
+ *  same for its own modern models — prefill is not supported on Claude 4.6 and later models and
+ *  such requests return a 400 — and Meta's Messages adapter is stateless with no
+ *  previous_response_id equivalent. A restart, the only remaining move, duplicates everything the
+ *  client has already read.
+ *
+ *  PRECISELY WHERE IT APPLIES (V4-58 review): the Responses dialect DOES carry a resume — its
+ *  ResponsesReanchorController appends a marker instruction to continue exactly where the text
+ *  stops — and a measured Anthropic-shaped head can resume from a prefill (kimi, deepseek). On
+ *  those, only the LONG-RESET half of this shape applies; the no-mechanism half is the unmeasured
+ *  Anthropic-shaped heads, muse first among them. Reading "everywhere" into this comment would
+ *  widen it past its evidence.
+ *
  *  WRITTEN AS NARROWLY AS THE REASON ALLOWS, deliberately: it names MID-STREAM **and** a reset
  *  longer than the bounded wait, and nothing else. A future seat cannot lean on it for a
  *  pre-stream case (those all go through admission, where a status is still ours to write) or for

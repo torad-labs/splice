@@ -106,7 +106,15 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `501 and plain 400 are terminal without retry`() = runTest {
+    fun `every failure status retries, so 501 and plain 400 are not terminal on the first try`() = runTest {
+        // V4-62, operator law: "we would retry on any error, no matter what, with different levels of
+        // retry and escalation + backoff." These two statuses were exactly what the previous version
+        // of this test pinned as terminal. They now take the same 200ms curve as a 503, and the
+        // BUDGET is what ends the turn — never the status code.
+        //
+        // The cost argument is in RetryPolicy: the whole default budget on that curve is about 1.5s,
+        // so a genuinely permanent 4xx is cheap to discover and a misclassified transient — a 403
+        // observed as overload, the muse 400 that was OUR bug — is expensive to miss.
         for (status in listOf(HttpStatusCode.NotImplemented, HttpStatusCode.BadRequest)) {
             val calls = AtomicInteger()
             val engine = MockEngine {
@@ -114,7 +122,7 @@ class UpstreamClientRetryPolicyTest {
                 respond("nope", status, headersOf())
             }
             assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
-            assertEquals(1, calls.get(), "status $status must not retry")
+            assertTrue(calls.get() > 1, "status $status must be retried before giving up, saw ${calls.get()}")
         }
     }
 

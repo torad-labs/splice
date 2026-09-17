@@ -24,6 +24,33 @@ public fun interface HeadSessionPerfSource {
     public fun tailNumericFor(sessionId: String): List<Map<String, Long>>
 }
 
+/** How many rows the COST reader DROPPED because they would not parse (V4-45).
+ *
+ *  A SIBLING of [HeadSessionPerfSource] for the same reason that type is a sibling of
+ *  [HeadPerfSource] — a fun interface carries one method, and widening either would break every
+ *  construction site for a reader most of them never call.
+ *
+ *  NOT A DUPLICATE OF [PerfRowsWindow.skipped], and the difference is the whole reason both exist.
+ *  That one is an Int, scoped to ONE WINDOW, produced by the control-plane reader that walks whole
+ *  generations, consumed into the /api/perf payload and its coverage note, and it resets on every
+ *  read. This one is a Long, MONOTONIC for the life of the reader, produced by the cost-plane
+ *  reader that walks a byte-bounded tail, and consumed by the statusline. Two instruments, two
+ *  planes, two readers, two lifetimes: folding either into the other breaks one of them, because
+ *  a per-window count cannot qualify a figure rendered long after the read that skipped, and a
+ *  monotonic total cannot say whether THIS generation is a broken file or an idle head.
+ *
+ *  MONOTONIC IS THE CONTRACT, not an implementation detail: a healthy read must NOT clear it. The
+ *  rows it counted are still missing from every figure summed afterwards, so forgetting them
+ *  renders a clean number over a holed file — this row's own defect, one layer up.
+ *
+ *  HEAD-WIDE, while the cost segment it qualifies is PER-SESSION. A renderer may therefore say
+ *  that the figure it shows may be low and how many rows the reader dropped; it may NEVER say that
+ *  this session lost N turns. That would be a differently-wrong confident number, which is the
+ *  exact defect V4-37 was cut to remove. */
+public fun interface HeadPerfSkipSource {
+    public fun skippedRowCount(): Long
+}
+
 /** One perf row with its outcome tag — the windowed summary's input (v0.4.0, FEATURES.md §3). */
 public data class PerfRow(val ts: Long, val outcome: String, val fields: Map<String, Long>)
 

@@ -4,6 +4,7 @@ package splice.app
 
 import splice.control.CompactView
 import splice.control.HeadCompactSource
+import splice.control.HeadPerfSkipSource
 import splice.control.HeadPerfSource
 import splice.control.HeadSessionPerfSource
 import splice.control.HeadUsageSource
@@ -44,10 +45,18 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
     }
 }
 
-public class PerfStatsSource(private val stats: PerfStats) : HeadPerfSource, HeadSessionPerfSource {
+public class PerfStatsSource(private val stats: PerfStats) :
+    HeadPerfSource,
+    HeadSessionPerfSource,
+    HeadPerfSkipSource {
     override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
 
     /** V4-37: the same rows narrowed to one session — what the statusline's cost segment sums. */
     override fun tailNumericFor(sessionId: String): List<Map<String, Long>> =
         stats.tailNumericFor(sessionId)
+
+    /** V4-45: how many rows that same reader had to DROP. Delegated live rather than snapshotted —
+     *  the statusline renderer is cached per head and built once, so a captured number would freeze
+     *  at whatever the count was when the head started (zero) and never say anything again. */
+    override fun skippedRowCount(): Long = stats.skippedRowCount()
 }

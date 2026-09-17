@@ -88,22 +88,90 @@ public object JsonlSink {
         }
     }
 
+    /**
+     * DR-186 / V4-45: four decisions, four members. The durability change (the forced write below)
+     * pushed the single-method form past CyclomaticComplexMethod, and the remedy is the gate's own
+     * — decompose, never raise the threshold and never suppress. THE ORDER IS THE CONTRACT and is
+     * unchanged: size, then rotate, then HEAL, then write. The heal must happen BEFORE the row
+     * lands, because that is the 2026-08-25 ENOSPC fix — a heal after the write fuses the fragment
+     * with the row that followed it and costs both.
+     */
     private fun append(file: Path, line: String, maxBytes: Long, rotate: Boolean) {
         val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
         val currentSize = if (Files.exists(file)) Files.size(file) else 0L
-        val rotated = rotate && currentSize > 0 && currentSize + encoded.size > maxBytes
+        val rotated = rotateIfOver(file, currentSize, encoded.size, maxBytes, rotate)
+        writeForced(file, healedBytes(file, encoded, currentSize, rotated))
+    }
+
+    /** Rolls one generation when this row would take the file past [maxBytes], and answers whether
+     *  it did — which [healedBytes] needs, since a freshly rotated file has no tail to heal. A
+     *  caller that lost the cross-process lock passes [rotate] false and appends unrotated; see
+     *  [appendLine]'s DR-178 note for why that degrade beats parking the lane. */
+    private fun rotateIfOver(
+        file: Path,
+        currentSize: Long,
+        encodedSize: Int,
+        maxBytes: Long,
+        rotate: Boolean,
+    ): Boolean {
+        val rotated = rotate && currentSize > 0 && currentSize + encodedSize > maxBytes
         if (rotated) {
             val rolled = file.resolveSibling("${file.fileName}.1")
             Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
         }
-        // A torn tail is healed BEFORE the row lands. 2026-08-25 01:23 the disk filled mid-append
-        // (ENOSPC): 230 bytes of one perf row were written with no newline, the next row was
-        // appended straight onto them, and every reader lost BOTH — the whole row that followed
-        // the short write was fused into the fragment. One byte read per append buys the
-        // guarantee that a short write costs exactly the row it interrupted.
+        return rotated
+    }
+
+    /**
+     * [encoded], preceded by the newline a torn tail is missing.
+     *
+     * A torn tail is healed BEFORE the row lands. 2026-08-25 01:23 the disk filled mid-append
+     * (ENOSPC): 230 bytes of one perf row were written with no newline, the next row was appended
+     * straight onto them, and every reader lost BOTH — the whole row that followed the short write
+     * was fused into the fragment. One byte read per append buys the guarantee that a short write
+     * costs exactly the row it interrupted.
+     */
+    private fun healedBytes(file: Path, encoded: ByteArray, currentSize: Long, rotated: Boolean): ByteArray {
         val torn = !rotated && currentSize > 0 && lastByte(file) != NEWLINE_BYTE
-        val bytes = if (torn) byteArrayOf(NEWLINE_BYTE) + encoded else encoded
-        Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+        return if (torn) byteArrayOf(NEWLINE_BYTE) + encoded else encoded
+    }
+
+    /**
+     * FORCED, not merely written.
+     *
+     * V4-45: Files.write returns once the bytes are in the page cache, and under delayed allocation
+     * the file LENGTH can be committed before the data blocks are — so a HOST crash, freeze or
+     * power loss leaves the file longer than its contents and the tail reads as a run of NULs. That
+     * is the measured signature: runs of multi-hundred zeros inside otherwise valid JSONL, on
+     * exactly the three oldest and largest perf files, which are the only ones alive across enough
+     * of this box's documented freezes. force(true) flushes data AND metadata, so length and bytes
+     * land together or neither does.
+     *
+     * THIS IS NOT A PROCESS-DEATH DEFENCE and must not be read as one: the page cache outlives a
+     * SIGKILL and the kernel still writes it back, so a daemon restart CANNOT produce this damage.
+     * Only losing the machine can.
+     *
+     * force(true) rather than DSYNC, deliberately: DSYNC covers only the data of each write, while
+     * the rotation in [rotateIfOver] is a Files.move — a metadata operation whose durability is
+     * part of the same question. force(true) is the one option that covers both. Known limit,
+     * stated rather than implied: the DIRECTORY entry for a rotation is not itself forced, so a
+     * crash in the window between the move and the next append can lose the rename, never the
+     * bytes.
+     *
+     * The loop is load-bearing: `channel.write` is not obliged to consume the buffer, and the
+     * `Files.write` this replaced hid that. JsonlSinkDurabilityTest drives it.
+     */
+    private fun writeForced(file: Path, bytes: ByteArray) {
+        FileChannel.open(
+            file,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.APPEND,
+        ).use { channel ->
+            val buffer = ByteBuffer.wrap(bytes)
+            while (buffer.hasRemaining()) channel.write(buffer)
+            channel.force(true)
+        }
     }
 
     private fun lastByte(file: Path): Byte =

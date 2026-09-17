@@ -96,11 +96,16 @@ internal class HeadAdmission(
      *  which is the actual defect class here — a head with one account took every penalty of the
      *  cooldown and was denied every recovery path it had.
      *
-     *  THE DEADLINE IS THE PROVIDER'S, NEVER THE GATEWAY'S. [UpstreamClient.rateLimitedForMs] is
-     *  splice's own follower protection, clamped to 120s; telling a client to return then, when the
-     *  provider said 88 minutes, just buys another 429. Retry-After carries the provider reset or
-     *  nothing at all — an absent header leaves the client its own backoff, which is strictly better
-     *  than a confident wrong number.
+     *  THE DEADLINE IS WHEN THIS GATEWAY NEXT LETS A REQUEST THROUGH — V4-61 reversed V4-50's
+     *  first choice, on evidence. V4-50 sent the provider's reset; muse stamps its 5h-WINDOW reset
+     *  on a burst 429 (the live episode said 88 minutes) while the operator's own re-send moments
+     *  later succeeded. A client told to sleep 88 minutes for a limit that clears in seconds is the
+     *  worse failure. So Retry-After and the plain unified-reset carry the cooldown lift, at most
+     *  120s: by the time a turn is refused here, splice has already retried upstream on the 15s
+     *  schedule and armed on exhaustion, and if the window really is spent the re-probe after the
+     *  lift meets another 429 and re-arms — a bounded poll, never a blind 88-minute sleep. The
+     *  provider's window still rides in the message and the telemetry as information, and in
+     *  -5h-reset via quota.
      *
      *  NEVER-BELOW-STATUS-QUO: nothing armed, nothing changes — the turn takes the identical path it
      *  did before. A turn that is ALREADY streaming when the limit lands still ends in an error
@@ -113,36 +118,37 @@ internal class HeadAdmission(
     ): Boolean {
         val armedMs = deps.upstream.rateLimitedForMs
         if (armedMs <= 0L) return false
-        val providerResetMs = deps.upstream.providerResetForMs
-        val resetEpochSeconds =
-            providerResetMs.takeIf { it > 0L }?.let { (wallClock() + it) / MILLIS_PER_SECOND }
+        val now = wallClock()
+        val retryEpochSeconds = (now + armedMs) / MILLIS_PER_SECOND
+        val windowResetEpochSeconds =
+            deps.upstream.providerResetForMs.takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
         // V4-51's seam: the refusal states `rejected` and carries the plain
         // anthropic-ratelimit-unified-reset, which is the member Claude Code reads off a 429 to
         // decide when to come back. Without this the same response would assert `allowed` while
         // refusing the turn — splice contradicting itself in two headers of the same reply.
-        deps.quota?.clientHeadersRejected(resetEpochSeconds)?.forEach { (name, value) ->
+        deps.quota?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
             call.response.header(name, value)
         }
         // V4-55: recorded BEFORE responding, mirroring the pooled sibling below. A refusal that
         // leaves no perf row and no journal line is a turn that, from splice's own telemetry, never
         // happened — which is how three reports of this exact failure went unfalsifiable in a day.
-        driver.recordRateLimited(prepared.built.meta, admitted.perf, admitted.t0, resetEpochSeconds, armedMs)
-        responses.respondRateLimited(call, rateLimitedMessage(armedMs, resetEpochSeconds), resetEpochSeconds)
+        driver.recordRateLimited(prepared.built.meta, admitted.perf, admitted.t0, windowResetEpochSeconds, armedMs)
+        responses.respondRateLimited(call, rateLimitedMessage(armedMs, windowResetEpochSeconds), retryEpochSeconds)
         return true
     }
 
-    /** Names BOTH horizons, because they are different facts and the operator needs both: when the
-     *  provider says the quota returns, and how long this gateway is holding its own retries. A
-     *  message that reported only the gateway's 120s cooldown read as "back in two minutes" against
-     *  an 88-minute reset. */
-    private fun rateLimitedMessage(armedMs: Long, resetEpochSeconds: Long?): String {
-        val holding = "this gateway is holding retries for " +
-            "${(armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND}s to avoid a retry wave"
-        if (resetEpochSeconds == null) {
-            return "Rate limit exceeded — the upstream named no reset time, so $holding."
-        }
-        return "Rate limit exceeded until ${AccountResetText.format(resetEpochSeconds)} " +
-            "(the upstream's own reset); $holding."
+    /** A sentence, in the order a person needs it: what happened, that splice already tried, when
+     *  to retry — and the provider's window as information, never as the instruction. Naming both
+     *  horizons matters because they are different facts: a message carrying only the 120s hold
+     *  read as "back in two minutes" against an 88-minute window, and one carrying only the window
+     *  told the operator to wait 88 minutes for a limit his own re-send cleared in seconds. */
+    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?): String {
+        val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
+        val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
+            "limited, so it is holding new turns for ${waitS}s — retry after that."
+        if (windowResetEpochSeconds == null) return base
+        return "$base The upstream reports its quota window resets at " +
+            "${AccountResetText.format(windowResetEpochSeconds)}; if this keeps happening, that is the real deadline."
     }
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {

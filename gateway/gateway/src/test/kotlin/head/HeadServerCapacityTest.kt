@@ -65,7 +65,11 @@ class HeadServerCapacityTest {
     // prior run's socket is still in TIME_WAIT.
     private val port = ServerSocket(0).use { it.localPort }
     private lateinit var head: HeadServer
-    private val upstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2)
+
+    // maxRetries = 1: V4-61 makes a 429 with budget left wait the 15s floor in REAL time before
+    // retrying; these tests need the ARM that follows exhaustion, not the schedule (provider-spi
+    // pins the schedule), so the budget is a single attempt and the arm is immediate.
+    private val upstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1)
     private val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
     private lateinit var tmp: java.nio.file.Path
 
@@ -240,11 +244,10 @@ class HeadServerCapacityTest {
     // the text was worded. Three operator reports in one day were this, and each was first
     // mistaken for a wording problem.
     //
-    // RETRY-AFTER IS ALSO END-TO-END PROOF OF V4-47: the header is written only from a provider
-    // reset, and the only place that reset exists is the 429 body this scenario sends
-    // ({"detail":"Rate limit exceeded","resets_in_seconds":60}). If the capture regressed to
-    // reading the gateway's own clamped horizon, or stopped parsing the body, this assertion is
-    // what fails.
+    // RETRY-AFTER IS THE COOLDOWN LIFT (V4-61): the header names when this gateway next lets a
+    // request through — at most 120s — never the provider's window reset, which muse stamps on
+    // burst 429s that clear in seconds. The scenario's body still carries resets_in_seconds:60 and
+    // V4-47 still captures it; that value now rides in the message and the perf row, not the header.
     @Test
     fun `an armed cooldown refuses the next turn with a real 429 carrying the provider deadline`() = runBlocking {
         upstreamClient.clearRateLimitCooldown()
@@ -277,7 +280,7 @@ class HeadServerCapacityTest {
         )
         assertNotNull(
             refused.headers["Retry-After"],
-            "the refusal must carry the PROVIDER's reset as Retry-After — that is the deadline the client sleeps on",
+            "the refusal must carry Retry-After — the cooldown lift, when this gateway next lets a request through",
         )
         // V4-55: the refusal must also LEAVE A TRACE. Review of V4-50 found it wrote no perf row
         // and no journal line, so a refused turn did not exist in splice's own telemetry — the

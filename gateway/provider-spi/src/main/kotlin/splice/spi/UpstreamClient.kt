@@ -106,7 +106,7 @@ public class UpstreamClient(
                 LoopStep.Continue -> Unit
             }
         }
-        return retryRules.giveUp(state.lastErr)
+        return retryRules.giveUp(state.lastErr, activeCooldown(ctx))
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -162,13 +162,13 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx))
         }
         if (turnWaitExhausted(ctx)) {
             ctx.onRetry(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
-            if (state.lastErr != null) retryRules.giveUp(state.lastErr)
+            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx))
             throw UpstreamTurnWaitExhausted()
         }
         activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
@@ -264,10 +264,10 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx))
         }
         val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
-        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr)
+        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr, activeCooldown(ctx))
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
@@ -341,7 +341,7 @@ public class UpstreamClient(
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr)
+            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx))
         }
     }
 

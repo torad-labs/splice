@@ -1,0 +1,90 @@
+# WALL (V4-90, ARCH-AUDIT 2026-09-17 row B10; concept #924 "make drift not compile"): "which
+# QuotaTracker does this turn read?" is answered in ONE place. There are three candidate answers at
+# any moment — the SELECTED account's tracker (`deps.accountQuotas[label]`), the turn's own
+# (`inputs.quota` / `drive.quota`), and the head's primary (`deps.quota`) — and the correct
+# precedence is selected-then-primary. Today that precedence is RE-DERIVED AS AN ELVIS CHAIN at
+# every site that needs a quota, seven times, with three different left-hand operands.
+#
+# WHY SEVEN ELVIS CHAINS IS THE DEFECT. `?:` is invisible precedence: nothing in the type system
+# says the left operand must be the SELECTED account's tracker, so a site that reaches for
+# `deps.quota` first — or forgets the `accountQuotas` lookup entirely — compiles, runs, and answers
+# the CLIENT with the wrong account's `anthropic-ratelimit-*` headers. This is not hypothetical
+# drift: HeadAdmission.kt:213 carries a comment from V4-84 (4) recording that exact fix on ONE of
+# the seven sites — "the SELECTED account's tracker, not the primary's. deps.quota is the primary" —
+# which is a repair applied by hand at one call site while six siblings kept the old shape. A
+# per-site comment is what a single resolver replaces.
+#
+# THE REMEDY, and the ONE file this wall points at. Fix row V4-104 creates
+#   gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt  (`TurnQuota.forSession(...)`)
+# as the sole resolver: it owns the selected-then-primary precedence, the `accountQuotas` lookup,
+# and the null semantics, and every caller asks it instead of re-spelling the chain. That path is
+# this rule's only `ignores:` entry. It does NOT exist yet — the exemption is inert today and goes
+# live the moment the fix row lands, with no edit here.
+#
+# CENSUS AT AUTHORING (2026-09-17, derived from the tree with this rule, never hand-listed — SEVEN
+# resolution sites, 11 matches because three sites spell both the lookup and the elvis):
+#   gateway/head/HeadAdmission.kt:135   deps.accountQuotas        } the 401/429 admission refusal,
+#   gateway/head/HeadAdmission.kt:136   selectedQuota ?: deps.quota } client headers on reject
+#   gateway/head/HeadAdmission.kt:222   deps.accountQuotas        } the second refusal path
+#   gateway/head/HeadAdmission.kt:223   selectedQuota ?: deps.quota }
+#   gateway/head/HeadAdmission.kt:245   account?.account?.label?.let(deps.accountQuotas::get) ?: deps.quota
+#                                       (the drive's quota, chosen at admission)
+#   gateway/head/TurnStreamer.kt:77     inputs.quota ?: deps.quota   (stream client headers)
+#   gateway/head/CollectTurn.kt:85      inputs.quota ?: quota        (collect client headers)
+#   gateway/head/LocalResponses.kt:119  deps.accountQuotas        } the local /v1/messages answer
+#   gateway/head/LocalResponses.kt:120  selected ?: deps.quota    }
+#   gateway/head/SseRoundPost.kt:32     drive.quota ?: quota         (per-round post)
+# Note the three DIFFERENT left operands across the seven — `selectedQuota`, `inputs.quota`,
+# `drive.quota` — and two different right operands (`deps.quota`, a bare `quota` field). No two of
+# these seven agree on how to spell the same decision, which is the measurement behind the row.
+#
+# WHAT IS DELIBERATELY *NOT* MATCHED, measured on the tree rather than reasoned about:
+#   - PASSING a tracker as an argument is wiring, not resolution: TurnDriver.kt:62 and :93
+#     (`deps.quota` as a constructor argument), TurnDriveFactory.kt:74 (`quota = inputs.quota`).
+#     Those hand a resolved value down; they do not decide anything. The rule keys on the ELVIS
+#     (the decision) and on the `accountQuotas` LOOKUP (the selection), so all three stay silent.
+#   - The DECLARATION, HeadDeps.kt:55 (`val accountQuotas: Map<String, QuotaTracker>`). A property
+#     declaration is not a navigation read, so `$X.accountQuotas` does not reach it — the map must
+#     still be declarable in the one place that declares it.
+#
+# SCOPE IS THE HEAD PLANE, and that is a decision with a reason. `files:` is
+# `gateway/gateway/src/main/**/*.kt`: all seven sites live in `splice.gateway.head`, and the
+# resolver the fix row creates lives there too. Two control-plane sites read a `.quota` through an
+# elvis — `control/api/UsagePayloads.kt:41` (`pool?.selectedQuota() ?: usage.quota`) and
+# `control/StatuslineRenderer.kt:109` (`selectedQuota ?: snapshot?.quota`) — but those resolve a
+# quota off a USAGE SNAPSHOT for rendering, not a live head's tracker for a turn, and
+# `TurnQuota.forSession` in `splice.gateway.head` is not reachable from `control` anyway. Naming
+# them here rather than matching them keeps the scope honest instead of implicit.
+#
+# NOT CAUGHT, and why.
+#   A resolution written WITHOUT an elvis — an `if (selected != null) selected else deps.quota`, or
+#   a `when`. The matcher keys on `?:` because that is the shape all seven sites use; the `if` form
+#   would be invisible. That hole closes from the other side once TurnQuota exists and the callers
+#   have no `accountQuotas` in scope to look up — a matcher cannot narrow a field's visibility.
+#   An unrelated elvis whose operand happens to end in `.quota`. Inside this rule's scope there are
+#   none today (measured: 11 matches, all 7 census sites, 0 false positives). The `\.quota$` branch
+#   is the price of reaching `deps.quota`, `drive.quota` and `inputs.quota` without three patterns.
+id: kt-quota-tracker-single-resolution
+language: kotlin
+severity: error
+message: "One resolver answers which QuotaTracker a turn reads: call TurnQuota.forSession (gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt) instead of re-deriving the selected-then-primary elvis chain here."
+note: "`?:` is invisible precedence — nothing types the left operand as the SELECTED account's tracker, so a site that reaches for deps.quota first answers the client with the wrong account's anthropic-ratelimit-* headers and still compiles. Seven sites spell this decision three different ways today, and HeadAdmission.kt:213's V4-84 comment records the same bug being fixed by hand at one of them. Passing an already-resolved tracker as an argument is wiring, not resolution, and stays silent."
+files:
+  - gateway/gateway/src/main/**/*.kt
+ignores:
+  # The sole resolver, created by fix row V4-104. Inert until the file exists; live with no edit here.
+  - gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt
+rule:
+  any:
+    # THE DECISION. `elvis_expression`'s named children are exactly its two operands (the `?:` token
+    # is anonymous), so a bare `has:` on immediate children reaches BOTH sides with one clause —
+    # which is what makes `drive.quota ?: quota` and `selectedQuota ?: deps.quota` one rule instead
+    # of two positional ones.
+    - kind: elvis_expression
+      has:
+        any:
+          - regex: '^quota$'
+          - regex: '\.quota$'
+    # THE SELECTION. Any navigation read of the account->tracker map. A property DECLARATION is not
+    # a navigation, so HeadDeps.kt's own `val accountQuotas` stays silent.
+    - pattern: $X.accountQuotas

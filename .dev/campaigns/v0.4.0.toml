@@ -1821,6 +1821,7 @@ verify = ":gateway:test :provider-spi:test plus both detekt, mutation-proven"
 # [2026-09-16] NOT TAKEN, deliberately. The other eight emit sites carry locally authored prose and so are not leaks, but they also carry no code. Making codes uniform across them is a follow-up rather than scope absorbed here. Also named, not wired: SafeFailureText already exists as an allowlist renderer but serves daemon.log and doctor only, never the turn path.
 # [2026-09-16] GATES, fresh artifact, --rerun-tasks: :gateway:detekt PASS, :gateway:test PASS 338 tests 0 failed (was 336), TurnPipelineTest 17 tests 0 failed. GRADLE IS FREE.
 # [2026-09-16] Attribution unavailable: missing in_flight tree snapshot
+# [2026-09-16] ORACLE RE-PIN 2026-09-16: the FailureText prefix moved the client-visible error bytes of the three sanctioned failure scenarios in the proxy-hardening oracle (failed, overflow_sse, truncated), which the full checks/gate.sh ladder caught (builder2 flagged it while wiring V4-44); my gradle-plus-rules gate does not run the oracle, which is why it passed here. Read the observed bytes: only the leading [SPLICE-API-ERROR] / [SPLICE-INVALID-REQUEST] / [SPLICE-OVERLOADED] differs, error class and upstream counts (6, 1, 6) identical to the 2026-09-15 pins. Re-pinned under V4-59 authority with dated replay notes; replay 11/11, ledger floor OK. LESSON, recorded on the project CLAUDE.md procedure: the install gate is checks/gate.sh (GATE: PASS), not the gradle legs alone.
 
 [[items]]
 id = "V4-61"

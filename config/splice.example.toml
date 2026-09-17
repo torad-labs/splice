@@ -335,7 +335,9 @@ context_window = 1000000
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
-share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions"]
+# `projects` shares the transcript tree, so a session started on one head can `--resume` on any
+# other; a pre-existing per-head projects dir is migrated into ~/.claude/projects once, then linked.
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions", "projects"]
 
 [heads.claudex]
 provider = "codex"

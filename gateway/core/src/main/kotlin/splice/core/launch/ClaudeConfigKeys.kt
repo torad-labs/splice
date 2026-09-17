@@ -5,9 +5,13 @@ package splice.core.launch
 
 /** On-disk items a head may share by symlinking into the operator's global ~/.claude/<item>.
  *  `sessions` is the cross-session-messaging peer registry: sharing it is what lets every head's
- *  ListAgents see every other head's sessions (the message sockets are already machine-global). */
-public val sharedLinkItems: List<String> =
-    listOf(Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS, Keys.SESSIONS)
+ *  ListAgents see every other head's sessions (the message sockets are already machine-global).
+ *  `projects` is the transcript tree `--resume` lists: sharing it is what lets a session started on
+ *  one head resume on another (a pre-existing per-head tree is migrated in once, ProjectsLink). */
+public val sharedLinkItems: List<String> = listOf(
+    Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS, Keys.SESSIONS,
+    Keys.PROJECTS,
+)
 
 /** ~/.claude.json keys carried into a head's isolated state (only when absent locally). */
 public val portKeys: List<String> = listOf(
@@ -35,4 +39,5 @@ internal object Keys {
     const val COMMANDS = "commands"
     const val HOOKS = "hooks"
     const val SESSIONS = "sessions"
+    const val PROJECTS = "projects"
 }

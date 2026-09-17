@@ -214,7 +214,14 @@ class HeadServerFailureBranchTest {
         try {
             val sse = turn(headPort, "basic")
             assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
-            assertTrue(sse.contains("api_error"), sse)
+            // V4-78: the WIRE type is overloaded_error now, not api_error — a pre-content api_error
+            // is terminal for the client (the binary retries an in-band error only when the body
+            // carries overloaded_error), so splice relabels the type while saying the same words.
+            // The honesty this test exists for is unchanged and asserted below: the message still
+            // names an internal gateway error, the turn still ends in one error and never a clean
+            // stop, and telemetry still records the REAL type (the error:unexpected row further down).
+            assertTrue(sse.contains("\"type\":\"overloaded_error\""), sse)
+            assertFalse(sse.contains("\"type\":\"api_error\""), "the client-terminal type must not ride: $sse")
             assertTrue(sse.contains("splice: internal gateway error — retry"), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             val scoped = logs.drop(before)

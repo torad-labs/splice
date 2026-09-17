@@ -18,13 +18,14 @@ private const val HOUR = 3_600_000L
 private fun turn(
     inTokens: Long = 0,
     cached: Long = 0,
+    cacheWrite: Long = 0,
     out: Long = 0,
     req: Long? = null,
     upstream: Long? = null,
     eager: Long? = null,
     deferred: Long? = null,
     rateLimited: Boolean = false,
-) = TurnEconomics(inTokens, cached, out, req, upstream, eager, deferred, rateLimited)
+) = TurnEconomics(inTokens, cached, cacheWrite, out, req, upstream, eager, deferred, rateLimited)
 
 class EconomicsStoreTest {
 
@@ -146,6 +147,81 @@ class EconomicsStoreTest {
         assertEquals(52, b.toolsDeferred)
         assertEquals(1, b.deferralTurns)
         assertEquals(1, b.rateLimited)
+    }
+
+    /** V4-86 THE ROUND TRIP. A cache write is a DISJOINT read-off of the metered input, beside the
+     *  cache READ and never netted out of either, and it has to survive the file — the burn page
+     *  reads the file, not the memory. Both cache buckets together here exceed nothing and sum to
+     *  less than input, which is the ordinary production shape (fresh + read + written = input). */
+    @Test
+    fun `a bucket carrying cache writes round-trips through the file`(@TempDir tmp: Path) {
+        val file = tmp.resolve("e.json")
+        val first = EconomicsStore(file, WallClock { 10 * HOUR })
+        first.record(turn(inTokens = 60_000, cached = 40_000, cacheWrite = 12_000, out = 500))
+        first.record(turn(inTokens = 30_000, cached = 0, cacheWrite = 30_000, out = 7))
+        first.flushNow()
+        AsyncFileIo.drain()
+
+        // The key is on the wire under the name the payload and the webui both read.
+        assertTrue(
+            Files.readString(file).contains("\"cache_write_tokens\":42000"),
+            "the persisted shape must carry the bucket: " + Files.readString(file),
+        )
+
+        val b = EconomicsStore(file, WallClock { 10 * HOUR }).read().single()
+        assertEquals(90_000, b.inTokens, "input stays the METERED total, both cache buckets included")
+        assertEquals(40_000, b.cachedTokens, "the read bucket is untouched by the write bucket")
+        assertEquals(42_000, b.cacheWriteTokens, "12k + 30k written, summed and reloaded")
+        assertEquals(507, b.outTokens)
+    }
+
+    /** V4-86 THE MIGRATION, and the only reason it is a test and not a comment: every economics.json
+     *  on an operator's disk today was written by the 11-key shape, and a loader that dropped such a
+     *  row (or threw on it) would erase the burn page's entire week on upgrade. The absent key reads
+     *  as 0, which is the TRUE historical value — nothing counted cache writes before this row — and
+     *  every other field on the old row must still arrive. Hand-written rather than produced by an
+     *  old build, so the shape is pinned as LITERAL BYTES and cannot drift with the writer. */
+    @Test
+    fun `an economics file written before the cache-write bucket loads with cacheWrite zero`(
+        @TempDir tmp: Path,
+    ) {
+        val file = tmp.resolve("e.json")
+        Files.writeString(
+            file,
+            """[{"hour":36000000,"turns":3,"in_tokens":1000,"cached_tokens":900,"out_tokens":40,""" +
+                """"req_bytes":700,"upstream_req_bytes":640,"tools_eager":28,"tools_deferred":48,""" +
+                """"deferral_turns":2,"rate_limited":1}]""" + "\n",
+        )
+
+        val b = EconomicsStore(file, WallClock { 10 * HOUR }).read().single()
+        assertEquals(0, b.cacheWriteTokens, "an absent key is 0, never a dropped row and never a throw")
+        assertEquals(36_000_000, b.hour, "the old row is still PLACED")
+        assertEquals(3, b.turns)
+        assertEquals(1_000, b.inTokens)
+        assertEquals(900, b.cachedTokens)
+        assertEquals(40, b.outTokens)
+        assertEquals(700, b.reqBytes)
+        assertEquals(640, b.upstreamBytes)
+        assertEquals(28, b.toolsEager)
+        assertEquals(48, b.toolsDeferred)
+        assertEquals(2, b.deferralTurns)
+        assertEquals(1, b.rateLimited)
+    }
+
+    /** The old row must stay MERGEABLE, not merely readable: a turn recorded into the same hour
+     *  after the upgrade adds its cache write to a bucket that arrived carrying none. */
+    @Test
+    fun `a turn with cache writes folds into a bucket loaded from the old shape`(@TempDir tmp: Path) {
+        val file = tmp.resolve("e.json")
+        Files.writeString(file, """[{"hour":36000000,"turns":1,"in_tokens":1000,"cached_tokens":900}]""")
+
+        val store = EconomicsStore(file, WallClock { 10 * HOUR })
+        store.record(turn(inTokens = 5_000, cacheWrite = 5_000))
+
+        val b = store.read().single()
+        assertEquals(2, b.turns, "one hour, one bucket, the old turn still counted")
+        assertEquals(6_000, b.inTokens)
+        assertEquals(5_000, b.cacheWriteTokens, "the new bucket starts from the old row's implicit 0")
     }
 
     @Test

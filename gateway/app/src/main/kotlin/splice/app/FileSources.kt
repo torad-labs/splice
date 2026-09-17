@@ -58,6 +58,7 @@ public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEcono
             turns = it.turns,
             inTokens = it.inTokens,
             cachedTokens = it.cachedTokens,
+            cacheWriteTokens = it.cacheWriteTokens,
             outTokens = it.outTokens,
             reqBytes = it.reqBytes,
             upstreamBytes = it.upstreamBytes,

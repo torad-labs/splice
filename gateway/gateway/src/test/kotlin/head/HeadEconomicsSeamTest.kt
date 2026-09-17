@@ -17,7 +17,9 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
 import mock.TestResponsesProvider
 import mock.awaitListening
@@ -31,21 +33,38 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.head.TurnDrive
+import splice.gateway.head.TurnTelemetry
 import splice.gateway.perf.PerfStats
+import splice.gateway.pipeline.TurnPipeline
+import splice.gateway.round.RunnerSignals
 import splice.gateway.usage.EconomicsStore
+import splice.gateway.usage.OutputClamp
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.ClientChannel
+import splice.gateway.wire.CollectingTerminal
+import splice.gateway.wire.ImmediateSseWriter
+import splice.gateway.wire.UsagePayloadBuilder
 import splice.spi.InflightGate
+import splice.spi.LiveLimit
 import splice.spi.ProviderTuning
+import splice.spi.TurnWatchdog
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 private class EconomicsFakeAuth : RefreshableAuthProvider {
@@ -56,6 +75,7 @@ private class EconomicsFakeAuth : RefreshableAuthProvider {
 
 private val IN_TOKENS_FIELD = Regex("\"in_tokens\":(\\d+)")
 private val OUT_TOKENS_FIELD = Regex("\"out_tokens\":(\\d+)")
+private val CACHE_WRITE_FIELD = Regex("\"cache_write_tokens\":(\\d+)")
 
 /** A real HeadServer over the mock upstream, with the economics store the head writes. */
 private class EconomicsRig(tmp: Path) {
@@ -131,6 +151,61 @@ private class EconomicsRig(tmp: Path) {
     }
 }
 
+/** The economics seam ALONE: one TurnTelemetry, one EconomicsStore, one drive whose perf row
+ *  already carries the counters — no upstream, no dialect, no HeadServer.
+ *
+ *  WHY THIS RIG AND NOT ANOTHER [EconomicsRig] ARM. The full-head rig speaks the responses dialect,
+ *  and no OpenAI-responses wire reports a cache-creation bucket at all (ResponsesHarvest reads
+ *  input/output plus input_tokens_details.cached_tokens and nothing else), so a cache-write
+ *  assertion over it could only ever compare 0 to 0 — green under every mutation, including
+ *  deleting the field from TurnEconomics. A NONZERO counter is the only thing that can fail, and
+ *  the shortest honest way to one is to set it on the snapshot the way TurnUsageStamp does. */
+private class TelemetryRig(tmp: Path, private val tag: String) {
+    val log = LogSink { }
+    val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
+    val economics = EconomicsStore(tmp.resolve("economics-$tag.json"))
+    val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, economics)
+
+    suspend fun drive(): TurnDrive = TurnDrive(
+        requestBody = buildJsonObject { },
+        meta = TurnMeta(
+            compact = false,
+            showReasoning = ReasoningDisplay.TEXT,
+            stream = false,
+            originalModel = "claude-anthropic--sonnet-4-6",
+            upstreamModel = "sonnet-4-6",
+            clientMaxTokens = 100,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
+        watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+        slot = InflightGate(LiveLimit { 1 }).acquire(),
+        pipeline = TurnPipeline(
+            CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
+            log = log,
+            clampOutput = OutputClamp { it },
+        ),
+        t0 = 0,
+        upstreamModel = "sonnet-4-6",
+        perf = TurnPerf(),
+        turnHeaders = emptyMap(),
+        signals = RunnerSignals(),
+        channel = ClientChannel(
+            ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+            Mutex(),
+            AtomicBoolean(false),
+        ),
+        toolSearch = null,
+    )
+
+    fun perfRow(): String {
+        AsyncFileIo.drain()
+        return Files.readString(perfFile).trim().lines().first { it.isNotBlank() }
+    }
+}
+
 class HeadEconomicsSeamTest {
 
     /** THE SEAM. A finished turn must land in the hourly quota rollup carrying the SAME numbers the
@@ -176,6 +251,69 @@ class HeadEconomicsSeamTest {
             assertEquals(1, bucket.rateLimited, "the 429 must be counted, not just logged: $bucket")
         } finally {
             rig.close()
+        }
+    }
+
+    /** V4-86 THE SEAM THIS ROW ADDS. TurnUsageStamp writes cache_write_tokens on every turn
+     *  (V4-85), and recordEconomics is the one place that decides whether the rollup ever sees it.
+     *  It did not: TurnEconomics had no such field, so the counter died here and the burn page
+     *  counted a cache write as ordinary input with nothing to distinguish it. ONE snapshot, TWO
+     *  sinks, so the number in the store must equal the number in the JSONL row exactly. */
+    @Test
+    fun `the cache-write counter reaches the hourly rollup, equal to the perf row's own`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val rig = TelemetryRig(tmp, "cache-write")
+        val drive = rig.drive()
+        try {
+            // The shape PassthroughUsage.toUsage() produces for a turn that read a 40k prefix and
+            // wrote a 12k block: in_tokens is INCLUSIVE of both cache buckets, which are disjoint
+            // read-offs of it. Set exactly as TurnUsageStamp.setKnownCounters sets them.
+            drive.perf.setCount(PerfKeys.IN_TOKENS, 60_000)
+            drive.perf.setCount(PerfKeys.CACHED_TOKENS, 40_000)
+            drive.perf.setCount(PerfKeys.CACHE_WRITE_TOKENS, 12_000)
+            drive.perf.setCount(PerfKeys.OUT_TOKENS, 500)
+
+            rig.telemetry.recordPerf(drive, "ok")
+
+            val bucket = rig.economics.read().single()
+            assertEquals(
+                12_000,
+                bucket.cacheWriteTokens,
+                "the cache-write bucket must reach the rollup, or the burn page cannot see it: $bucket",
+            )
+            assertEquals(60_000, bucket.inTokens, "input stays the METERED total, both cache buckets in it")
+            assertEquals(40_000, bucket.cachedTokens, "the read bucket is unchanged by the write bucket")
+
+            val fromPerf = CACHE_WRITE_FIELD.find(rig.perfRow())?.groupValues?.get(1)?.toLong()
+            assertEquals(12_000L, fromPerf, "the JSONL row carries it too: one snapshot, two sinks")
+            assertEquals(fromPerf, bucket.cacheWriteTokens, "the two sinks may never disagree")
+        } finally {
+            drive.slot.release()
+        }
+    }
+
+    /** A turn that never reported usage leaves the counter ABSENT from the snapshot (pinned by
+     *  TurnUsageStampTest), and the rollup must fold that as 0 rather than throwing or skipping the
+     *  turn — the same reading the persisted old-shape row gets. A rollup that dropped such turns
+     *  would under-count the very thing it exists to count. */
+    @Test
+    fun `a turn whose snapshot has no cache-write counter folds as zero, and still counts`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val rig = TelemetryRig(tmp, "absent")
+        val drive = rig.drive()
+        try {
+            drive.perf.setCount(PerfKeys.IN_TOKENS, 1_000)
+
+            rig.telemetry.recordPerf(drive, "ok")
+
+            val bucket = rig.economics.read().single()
+            assertEquals(1, bucket.turns, "the turn is still recorded")
+            assertEquals(0, bucket.cacheWriteTokens, "an absent counter is 0, never a dropped turn")
+            assertEquals(1_000, bucket.inTokens)
+        } finally {
+            drive.slot.release()
         }
     }
 }

@@ -235,6 +235,33 @@ class DoctorReportTest {
         assertTrue(error.startsWith("rotated:"), "a fixed generation label, never the head-derived file name: $error")
     }
 
+    // V4-85: cache_write_tokens is a NEW numeric perf key, and perfNumericFields is an ALLOWLIST —
+    // so the failure mode is silence, not a wrong number. Omitted from the set, the counter that
+    // explains a cache-write overcharge would be dropped from the one report the operator reaches
+    // for when a reported cost looks wrong, while every existing assertion here stayed green.
+    // The negative half is the real check: an INVENTED sibling key must still be dropped, or this
+    // arm would pass against an allowlist that had been widened into a pass-through.
+    @Test
+    fun `the perf tail keeps cache_write_tokens and still drops a key that is not on the allowlist`() {
+        val env = plant()
+        Files.writeString(
+            tmp.resolve("state").resolve("codex-perf.jsonl"),
+            """{"ts":9,"model":"gpt-6-astra","outcome":"ok","in_tokens":150000,"cached_tokens":50000,""" +
+                """"cache_write_tokens":100000,"out_tokens":11,"cache_write_cost_usd":0.375}""" + "\n",
+        )
+        val rows = report(env, withLogs = false)
+            .getValue("perf").jsonObject.getValue("codex").jsonObject
+            .getValue("rows").jsonArray.map { it.jsonObject }
+        assertEquals(1, rows.size)
+        assertEquals(
+            setOf("model", "outcome", "in_tokens", "cached_tokens", "cache_write_tokens", "out_tokens"),
+            rows.single().keys,
+            "the write counter survives the allowlist; the invented cache_write_cost_usd does not, " +
+                "and neither does ts — a number the allowlist has never carried",
+        )
+        assertEquals(100_000, rows.single().getValue("cache_write_tokens").jsonPrimitive.content.toInt())
+    }
+
     @Test
     fun `the log tail spans both generations and reports an unreadable one`() {
         val env = plant()

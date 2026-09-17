@@ -48,5 +48,11 @@ internal class TurnUsageStamp(
         drive.perf.setCount(PerfKeys.IN_TOKENS, usage.inputTokens)
         drive.perf.setCount(PerfKeys.OUT_TOKENS, usage.outputTokens)
         drive.perf.setCount(PerfKeys.CACHED_TOKENS, usage.cachedTokens)
+        // V4-85: the cache-WRITE half of inputTokens, so SessionCost can price it at the declared
+        // cache_write rate instead of at the input rate. Set UNCONDITIONALLY, like the three above:
+        // a dialect whose wire reports no cache-creation bucket (ChatUsage) stamps a literal 0
+        // rather than an absent key, so a zero in the row means "this head wrote no cache" and an
+        // absent key means "this row predates the counter" — two different facts, both readable.
+        drive.perf.setCount(PerfKeys.CACHE_WRITE_TOKENS, usage.cacheWriteTokens)
     }
 }

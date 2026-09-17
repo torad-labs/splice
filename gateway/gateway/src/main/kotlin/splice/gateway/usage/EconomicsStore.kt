@@ -55,6 +55,11 @@ public data class EconomicsBucket(
     val turns: Long = 0,
     val inTokens: Long = 0,
     val cachedTokens: Long = 0,
+    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens] (the read half).
+     *  Recorded BESIDE input, never out of it, for the same reason [cachedTokens] is: the plan
+     *  meters total input and a written block bills in full. It is a separate sum because it
+     *  bills at the vendor's cache_write rate, not the input rate. */
+    val cacheWriteTokens: Long = 0,
     val outTokens: Long = 0,
     val reqBytes: Long = 0,
     val upstreamBytes: Long = 0,
@@ -70,6 +75,10 @@ public data class EconomicsBucket(
 public data class TurnEconomics(
     val inTokens: Long,
     val cachedTokens: Long,
+    /** V4-86: this turn's cache-write bucket, from PerfKeys.CACHE_WRITE_TOKENS. NO default on
+     *  purpose — a default would let a new call site drop the most expensive bucket on the turn
+     *  and still compile, which is exactly how the counter came to die at this seam. */
+    val cacheWriteTokens: Long,
     val outTokens: Long,
     val reqBytes: Long?,
     val upstreamBytes: Long?,
@@ -94,6 +103,7 @@ public class EconomicsStore(
                 turns = b.turns + 1,
                 inTokens = b.inTokens + turn.inTokens,
                 cachedTokens = b.cachedTokens + turn.cachedTokens,
+                cacheWriteTokens = b.cacheWriteTokens + turn.cacheWriteTokens,
                 outTokens = b.outTokens + turn.outTokens,
                 reqBytes = b.reqBytes + (turn.reqBytes ?: 0),
                 upstreamBytes = b.upstreamBytes + (turn.upstreamBytes ?: 0),
@@ -177,6 +187,7 @@ public class EconomicsStore(
                             put("turns", b.turns)
                             put("in_tokens", b.inTokens)
                             put("cached_tokens", b.cachedTokens)
+                            put("cache_write_tokens", b.cacheWriteTokens)
                             put("out_tokens", b.outTokens)
                             put("req_bytes", b.reqBytes)
                             put("upstream_req_bytes", b.upstreamBytes)
@@ -211,6 +222,13 @@ public class EconomicsStore(
             turns = longOr(o, "turns"),
             inTokens = longOr(o, "in_tokens"),
             cachedTokens = longOr(o, "cached_tokens"),
+            // THE MIGRATION, and it is deliberately the absent-field default rather than a version
+            // stamp: every economics.json written before V4-86 carries no `cache_write_tokens` key,
+            // and [longOr] reads an absent key as 0 — which is the TRUE historical value, because
+            // no cache-write counter existed to sum. A file-format version would have to map the
+            // old shape to exactly this, so the version field would carry no information. Pinned by
+            // EconomicsStoreTest's old-shape arm, which loads a hand-written 11-key row.
+            cacheWriteTokens = longOr(o, "cache_write_tokens"),
             outTokens = longOr(o, "out_tokens"),
             reqBytes = longOr(o, "req_bytes"),
             upstreamBytes = longOr(o, "upstream_req_bytes"),

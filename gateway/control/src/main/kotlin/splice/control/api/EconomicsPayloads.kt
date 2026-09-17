@@ -51,6 +51,7 @@ internal class EconomicsPayloads(
                                 put("turns", b.turns)
                                 put("in_tokens", b.inTokens)
                                 put("cached_tokens", b.cachedTokens)
+                                put("cache_write_tokens", b.cacheWriteTokens)
                                 put("out_tokens", b.outTokens)
                                 put("req_bytes", b.reqBytes)
                                 put("upstream_req_bytes", b.upstreamBytes)

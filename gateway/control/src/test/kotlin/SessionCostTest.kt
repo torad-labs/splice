@@ -281,4 +281,103 @@ class SessionCostTest {
         val plain = HeadPerfSource { listOf(mapOf("in_tokens" to 1_000L)) }
         assertTrue(plain !is HeadSessionPerfSource, "the sibling interface is what the route looks for")
     }
+
+    // ---- V4-85: the cache-WRITE bucket -----------------------------------------------------------
+    //
+    // A perf row's `in_tokens` is inclusive of BOTH cache buckets, not just the read: PassthroughUsage
+    // sets inputTokens = inputTokens + cacheRead + cacheCreation. So the cache-MISS bucket is
+    // `in_tokens - cached_tokens - cache_write_tokens`, and until this row there was no
+    // cache_write_tokens counter at all — the written tokens stayed folded inside in_tokens and billed
+    // at the input rate while the declared cache_write rate multiplied a permanently-zero bucket.
+    //
+    // The card below is Anthropic's published Sonnet card, which is the shape that makes the defect
+    // cost money: a cache write is 1.25x input there, so folding it into the miss bucket UNDER-charges,
+    // and any vendor whose write is cheaper than its input would over-charge. Either way the number
+    // is not the one the operator declared.
+
+    private val sonnetCard = ModelRates(input = 3.00, cacheRead = 0.30, output = 15.00, cacheWrite = 3.75)
+
+    private fun cacheWritingCatalog() = ModelCatalog(
+        discoveryPrefix = "claude-anthropic--",
+        models = listOf(
+            ModelEntry(id = "sonnet-4-6", label = "Sonnet 4.6", contextWindow = 200_000, rates = sonnetCard),
+        ),
+        defaultContextWindow = 200_000,
+        pinnedModel = "sonnet-4-6",
+    )
+
+    @Test
+    fun `cache-WRITE tokens bill at the declared cache_write rate, not at the input rate`() {
+        // One turn that wrote a 100k-token cache and read nothing back: in_tokens is inclusive, so the
+        // whole 100k is ALSO the cache_write_tokens count and the miss bucket is empty.
+        //   miss  = 100000 - 0 - 100000 =      0  ->      0 * 3.00  =      0.0
+        //   read  =                          0  ->      0 * 0.30  =      0.0
+        //   write =                     100000  -> 100000 * 3.75  = 375000.0
+        //   out   =                          0  ->      0 * 15.00 =      0.0
+        //                                                           --------
+        //                                              375000.0 / 1e6 =   0.375
+        val wroteCache = listOf(
+            mapOf(
+                "in_tokens" to 100_000L,
+                "cached_tokens" to 0L,
+                "cache_write_tokens" to 100_000L,
+                "out_tokens" to 0L,
+            ),
+        )
+        val cost = SessionCost(tokens(wroteCache), cacheWritingCatalog())
+        assertEquals(0.375, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+        // What the pre-V4-85 arithmetic produced on the same row: with no cache_write_tokens counter
+        // the write was invisible, so all 100k sat in the miss bucket at the INPUT rate.
+        //   100000 * 3.00 = 300000.0 / 1e6 = 0.30
+        assertNotEquals(
+            0.30,
+            cost.usdFor(sessionId, "sonnet-4-6")!!,
+            "a cache write must not be billed at the cache-MISS rate",
+        )
+        // And dropping only the subtraction, keeping the bucket, bills the same tokens TWICE:
+        //   100000 * 3.00 + 100000 * 3.75 = 675000.0 / 1e6 = 0.675
+        assertNotEquals(
+            0.675,
+            cost.usdFor(sessionId, "sonnet-4-6")!!,
+            "the written tokens come OUT of the miss bucket; they must not be charged in both",
+        )
+    }
+
+    @Test
+    fun `the miss bucket is input minus BOTH cache buckets, each at its own rate`() {
+        // The production shape: one turn that replayed a cached prefix, wrote a new block, and answered.
+        //   miss  = 250000 - 100000 - 50000 = 100000 -> 100000 * 3.00  = 300000.0
+        //   read  =                           100000 -> 100000 * 0.30  =  30000.0
+        //   write =                            50000 ->  50000 * 3.75  = 187500.0
+        //   out   =                             2000 ->   2000 * 15.00 =  30000.0
+        //                                                                --------
+        //                                                     547500.0 / 1e6 = 0.5475
+        val mixed = listOf(
+            mapOf(
+                "in_tokens" to 250_000L,
+                "cached_tokens" to 100_000L,
+                "cache_write_tokens" to 50_000L,
+                "out_tokens" to 2_000L,
+            ),
+        )
+        val cost = SessionCost(tokens(mixed), cacheWritingCatalog())
+        assertEquals(0.5475, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+    }
+
+    @Test
+    fun `a row whose two cache buckets together exceed its input floors the miss bucket`() {
+        // Same defence as the cached-only arm above, now that TWO counters are subtracted: a torn or
+        // older row could carry read + write above its input count, and a negative miss bucket would
+        // CREDIT the operator's bill instead of flooring at zero.
+        //   miss  = 1000 - 900 - 900 = -800 -> floored to 0 ->   0 * 3.00 =    0.0
+        //   read  =                     900                 -> 900 * 0.30 =  270.0
+        //   write =                     900                 -> 900 * 3.75 = 3375.0
+        //                                                                    ------
+        //                                                      3645.0 / 1e6 = 0.003645
+        val impossible = listOf(
+            mapOf("in_tokens" to 1_000L, "cached_tokens" to 900L, "cache_write_tokens" to 900L, "out_tokens" to 0L),
+        )
+        val cost = SessionCost(tokens(impossible), cacheWritingCatalog())
+        assertEquals(0.003645, cost.usdFor(sessionId, "sonnet-4-6")!!, 1e-12)
+    }
 }

@@ -189,15 +189,26 @@ public class GrokAuthProvider(
      * RULE 1, the structural half (2026-09-16 operator report: the grok login page kept reopening).
      *
      * A 403 on a credential that is DEMONSTRABLY FINE cannot be an expiry, whatever the body says.
-     * This class owns that fact: readSnapshot always yields an expiry, synthesizing one off the
-     * file's mtime when the file lost it (G18). Vetoing the refresh here kills the whole class at
-     * once — no refresh, no dead credential, no sign-in, no browser — and it needs no vendor
-     * strings, so the NEXT unrecognised 403 code is covered too.
+     * Vetoing the refresh here kills the whole class at once — no refresh, no dead credential, no
+     * sign-in, no browser — and it needs no vendor strings, so the NEXT unrecognised 403 code is
+     * covered too.
      *
-     * NEVER BELOW STATUS QUO: a token at or inside the proactive window is NOT demonstrably fine,
-     * so a genuine expiry still refreshes exactly as it did before and the 2026-07-18 grok-dead-head
-     * incident (xAI reports an expired token as 403, not 401) does not regress. An unreadable
-     * snapshot proves nothing either, so it falls through to the old behaviour as well.
+     * ONLY A REAL `expires` MAY VETO (V4-38 redo). The first version read [GrokAuthJson.readSnapshot],
+     * which never returns a null expiry: for a file that carries none (legacy shape, or a foreign CLI
+     * write that stripped it) it SYNTHESIZES mtime + 4h (G18/SH-01, GrokAuthJson lines 99-104). That
+     * ceiling is a statement about staleness, not about validity, and reading it as proof of freshness
+     * suppressed the refresh on a genuine 403 expiry for up to four hours — precisely the 2026-07-18
+     * grok-dead-head shape this provider exists to prevent, and the exact inversion
+     * SynthesizedExpiry.kt:5 forbids: it "can force an extra refresh, never suppress one".
+     * [GrokAuthJson.parseSnapshot] is the seam that already separates the two — it is what
+     * readSnapshot calls BEFORE applying the synthesis, and it reports the file's `expires` as null
+     * when the file has none — so the veto asks it instead. It also re-reads rather than serving the
+     * TTL cache, which is the right side to err on for a judgement made once per auth failure, and it
+     * THROWS where readSnapshot classifies, so the catch is here.
+     *
+     * NEVER BELOW STATUS QUO, on three counts: a token at or inside the proactive window is NOT
+     * demonstrably fine; a file with no declared `expires` is NOT demonstrably fine; and an unreadable
+     * file proves nothing. All three fall through to the pre-V4-38 behaviour — the refresh runs.
      *
      * RULE 3 appears here only as a SENTENCE: a recognised entitlement body is logged with its cause
      * and the vendor's own top-up link. Those strings never reach the decision below.
@@ -212,15 +223,20 @@ public class GrokAuthProvider(
         // REGRESS, not protect. The only statuses reaching this call are 401 and 403 (the transport
         // consults the veto solely for `isAuthRefreshableFailure`), so this is the whole surface.
         if (status != FORBIDDEN_STATUS) return true
-        val expiresAtMs = authJson.readSnapshot(authCacheMs)?.expiresAtMs
-        val demonstrablyFresh = expiresAtMs != null && expiresAtMs - clock() >= PROACTIVE_WINDOW_MS
+        // The DECLARED expiry — the file's own `expires` — never a synthesized ceiling. parseSnapshot
+        // rethrows anything that is not proven absence, so the guard is the caller's here just as it
+        // is inside readSnapshot; an unreadable file yields null and vetoes nothing.
+        val declaredExpiryMs = Cancellables.runCatchingCancellable { authJson.parseSnapshot() }
+            .getOrNull()?.expiresAtMs
+        val demonstrablyFresh =
+            declaredExpiryMs != null && declaredExpiryMs - clock() >= PROACTIVE_WINDOW_MS
         if (demonstrablyFresh) {
             val sentence = oauth.entitlementSentence(body)
                 ?: "body not recognised as an entitlement rejection"
             log(
                 "[$LOG_TAG] upstream $status on a credential valid for another " +
-                    "${(expiresAtMs - clock()) / MS_PER_S}s — not an expiry, so NO refresh and no " +
-                    "sign-in. $sentence",
+                    "${(declaredExpiryMs - clock()) / MS_PER_S}s — not an expiry, so NO refresh and " +
+                    "no sign-in. $sentence",
             )
         }
         return !demonstrablyFresh

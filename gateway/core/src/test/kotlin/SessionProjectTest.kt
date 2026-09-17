@@ -1,8 +1,13 @@
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.compaction.SessionProject
+import splice.core.launch.ClaudeConfigMaterializer
+import splice.core.launch.ClaudePolicy
+import splice.core.launch.MaterializeSpec
 import splice.core.util.ElapsedClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -129,5 +134,38 @@ class SessionProjectTest {
         Files.writeString(registry, """{"sessionId":"oldest","cwd":"$cwd"}""")
         assertEquals(cwd.normalize(), resolver.projectFor("oldest"))
         assertEquals(cwd.normalize(), resolver.projectFor("cached"))
+    }
+
+    // V4-64/V4-65 (shared transcripts): a session started on a head whose projects/ was still a
+    // REAL directory is migrated into the global projects dir when the head materializes with
+    // `projects` shared. The daemon's SessionProject reads the GLOBAL dirs, so after the migration
+    // — and with NO registry entry, the headless case — it must resolve that session's cwd from the
+    // migrated transcript: compaction instructions follow the session to whichever head resumes it.
+    @Test
+    fun `a transcript migrated out of a head projects dir resolves its cwd with no registry entry`() {
+        val home = tmp
+        val globalSessions = Files.createDirectories(home.resolve(".claude/sessions"))
+        val globalProjects = Files.createDirectories(home.resolve(".claude/projects"))
+        val cwd = home.resolve("work/repo").toAbsolutePath()
+        val encoded = cwd.toString().replace(Regex("[^A-Za-z0-9]"), "-")
+        val headProjects = home.resolve(".claude-a/projects")
+        Files.createDirectories(headProjects.resolve(encoded))
+        Files.writeString(
+            headProjects.resolve(encoded).resolve("migrated-1.jsonl"),
+            """{"type":"user","sessionId":"migrated-1","cwd":"$cwd","message":{"role":"user","content":"hi"}}
+""",
+        )
+        val policy = ClaudePolicy(share = setOf("projects"), isolate = emptySet())
+
+        ClaudeConfigMaterializer(home).materialize(
+            MaterializeSpec(home.resolve(".claude-a"), policy, listOf("m1"), "m1", buildJsonObject { }, "statusline"),
+        )
+
+        assertTrue(Files.isSymbolicLink(headProjects), "the head's real projects dir must become the link")
+        assertTrue(
+            Files.isRegularFile(globalProjects.resolve(encoded).resolve("migrated-1.jsonl")),
+            "the transcript must now live under the global projects dir",
+        )
+        assertEquals(cwd.normalize(), SessionProject(globalSessions, globalProjects).projectFor("migrated-1"))
     }
 }

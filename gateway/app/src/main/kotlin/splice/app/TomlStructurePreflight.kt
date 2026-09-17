@@ -79,7 +79,11 @@ internal object TomlStructurePreflight {
     }
 }
 
-private class TomlStructureMasker(private val text: String) {
+/** V4-83: `internal`, not `private` — `splice add-model` edits the head roster by offset and must
+ *  find its structure on the same mask this preflight uses (a comment or a string must not be able
+ *  to fake or hide an array bracket in EITHER reader). Offsets are preserved byte-for-byte: every
+ *  masked character is replaced in place, never removed. */
+internal class TomlStructureMasker(private val text: String) {
     private val masked = StringBuilder(text)
 
     fun mask(): String {

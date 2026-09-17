@@ -4,6 +4,7 @@
 // 2026-09-14).
 package splice.app.cli
 
+import splice.app.TomlStructureMasker
 import splice.app.TopologyLoader
 import splice.app.cli.prompt.KeyReader
 import splice.app.cli.prompt.MultiSelectOutcome
@@ -84,6 +85,10 @@ internal class AddModelVerb(
         TerminalMode(),
         System.out,
     ),
+    // The roster edit as a seam (the DR-66 StarterWrite precedent): the fail-closed re-parse below
+    // is only testable on the production path if a test can hand write() a composition that does
+    // not parse. Production always passes the real editor.
+    private val roster: (String, String, List<String>) -> String = HeadModelArray()::withAdded,
 ) {
     fun add(path: Path): Boolean {
         val existing = Files.readString(path)
@@ -142,13 +147,29 @@ internal class AddModelVerb(
         }
         val extra = if (rows.isEmpty()) "\n" else rows.joinToString("\n", prefix = "\n", postfix = "\n")
         val rostered = if (planned.headDeclaresModels) {
-            HeadModelArray().withAdded(existing, planned.headKey, planned.models.map { it.id })
+            roster(existing, planned.headKey, planned.models.map { it.id })
         } else {
             existing
         }
+        val composed = rostered.trimEnd('\n') + extra
+        refuseUnparseable(composed)
         val tmp = path.resolveSibling(path.fileName.toString() + ".add-model-${ProcessHandle.current().pid()}.tmp")
-        Files.writeString(tmp, rostered.trimEnd('\n') + extra)
+        Files.writeString(tmp, composed)
         Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    /** FAIL CLOSED (review 2026-09-17 (2)): the composition is parsed by the loader `splice` itself
+     *  boots with BEFORE any byte reaches the operator's file, so a corrupted edit refuses instead
+     *  of riding ATOMIC_MOVE over a working splice.toml. Nothing is written on the refusal — not
+     *  even the temp file, which is created after this returns. */
+    private fun refuseUnparseable(composed: String) {
+        val failure = splice.core.util.Cancellables
+            .runCatchingCancellable { TopologyLoader.parse(composed) }
+            .exceptionOrNull() ?: return
+        throw AddRefused(
+            "the roster edit does not parse, so splice.toml was left untouched: " +
+                splice.core.util.SafeFailureText.render(failure),
+        )
     }
 
     private data class Planned(
@@ -165,63 +186,87 @@ internal class AddModelVerb(
  *  row. The shipped starter declares one, so `splice add-model` writing only a
  *  `[[providers.KEY.models]]` table left the added id invisible on /v1/models. This edits the array
  *  in place: every byte OUTSIDE the brackets is preserved, and an id the array already names is a
- *  no-op, so a repeated add is idempotent. */
+ *  no-op, so a repeated add is idempotent.
+ *
+ *  Review 2026-09-17 (2): structure is found on the MASK — TomlStructureMasker blanks comments and
+ *  string bodies at the SAME offsets — and every edit is applied to the original text at those
+ *  offsets. Raw-text scanning read a commented-out `# { id = "..." }` as present (the add became a
+ *  silent no-op) and let a `]` inside a comment close the array early, splicing the file mid-array
+ *  and moving the corruption over splice.toml. */
 internal class HeadModelArray {
 
     fun withAdded(text: String, headKey: String, ids: List<String>): String {
-        val open = arrayStart(text, headKey)
+        val mask = TomlStructureMasker(text).mask()
+        val open = arrayStart(text, mask, headKey)
             ?: throw AddRefused(
                 "head '$headKey' declares a model roster splice cannot edit: expected a " +
                     "`models = [` line under [heads.$headKey]. Add ${ids.joinToString(", ")} by hand.",
             )
-        val close = matchingBracket(text, open)
+        val close = matchingBracket(mask, open)
             ?: throw AddRefused("head '$headKey' has an unterminated models = [ array")
-        val inner = text.substring(open + 1, close)
-        val present = idPattern.findAll(inner).map { it.groupValues[1] }.toSet()
-        val missing = ids.filter { it !in present }
+        val missing = ids.filter { it !in rostered(text, mask, open + 1, close) }
         if (missing.isEmpty()) return text
-        val closeIndent = inner.substringAfterLast('\n', "").takeIf { it.isBlank() }.orEmpty()
-        val kept = inner.trimEnd()
-        val prefix = when {
-            kept.isEmpty() -> "\n"
-            kept.endsWith(",") -> kept + "\n"
-            else -> "$kept,\n"
-        }
+        // The insertion point is the end of the array's last STRUCTURAL byte, so a comma lands
+        // before a trailing comment rather than inside it, and the comment survives untouched.
+        val end = lastStructure(mask, open + 1, close)
+        val kept = text.substring(open + 1, end)
+        val rest = text.substring(end, close)
+        val closeIndent = if ('\n' in rest) rest.substringAfterLast('\n') else ""
         val added = missing.joinToString("") { "  { id = \"$it\" },\n" }
-        return text.substring(0, open + 1) + prefix + added + closeIndent + text.substring(close)
+        return text.substring(0, open + 1) + kept + (if (kept.endsWith(",") || kept.isEmpty()) "" else ",") +
+            rest.dropLast(closeIndent.length).ifEmpty { "\n" } + added + closeIndent + text.substring(close)
     }
 
-    /** Index of the `[` that opens `models = [` inside the `[heads.KEY]` table, or null. */
-    private fun arrayStart(text: String, headKey: String): Int? {
-        val header = Regex("(?m)^[ \\t]*\\[heads\\.\\Q$headKey\\E][ \\t]*$").find(text) ?: return null
-        val bodyStart = header.range.last + 1
-        val bodyEnd = Regex("(?m)^[ \\t]*\\[").find(text, bodyStart)?.range?.first ?: text.length
-        val array = Regex("(?m)^[ \\t]*models[ \\t]*=[ \\t]*\\[")
-            .find(text.substring(bodyStart, bodyEnd)) ?: return null
+    /** Index of the `[` that opens `models = [` inside the `[heads.KEY]` table, or null. Review
+     *  2026-09-17 (5): the header spelling is matched on the whole LINE, so a trailing comment
+     *  (`[heads.openrouter]  # primary head`) and a quoted key (`[heads."openrouter"]`) are
+     *  tolerated instead of throwing a refusal at an operator who wrote legal TOML. */
+    private fun arrayStart(text: String, mask: String, headKey: String): Int? {
+        val header = Regex("^[ \\t]*\\[heads\\.[\"']?\\Q$headKey\\E[\"']?][ \\t]*(?:#.*)?$")
+        val line = TABLE_HEADER.findAll(mask).map { it.range.first }
+            .firstOrNull { header.matches(lineAt(text, it)) } ?: return null
+        val bodyStart = line + lineAt(text, line).length
+        val bodyEnd = TABLE_HEADER.find(mask, bodyStart)?.range?.first ?: text.length
+        val array = MODELS_ARRAY.find(mask.substring(bodyStart, bodyEnd)) ?: return null
         return bodyStart + array.range.last
     }
 
-    /** Bracket depth, skipping anything inside a double-quoted TOML string. */
-    private fun matchingBracket(text: String, open: Int): Int? {
+    /** Bracket depth on the MASK, where a `[` or `]` inside a comment or a string is already blank. */
+    private fun matchingBracket(mask: String, open: Int): Int? {
         var depth = 0
-        var quoted = false
-        var i = open
-        while (i < text.length) {
-            val c = text[i]
-            when {
-                quoted && c == '\\' -> i++
-                c == '"' -> quoted = !quoted
-                quoted -> Unit
-                c == '[' -> depth++
-                c == ']' -> {
-                    depth--
-                    if (depth == 0) return i
-                }
+        for (index in open until mask.length) {
+            when (mask[index]) {
+                '[' -> depth++
+                ']' -> if (--depth == 0) return index
             }
-            i++
         }
         return null
     }
+
+    /** The ids the array already names: each `id =` the MASK still shows is structure, and its value
+     *  is read from the original text at that offset (the mask blanks string bodies). */
+    private fun rostered(text: String, mask: String, from: Int, to: Int): Set<String> =
+        ID_ASSIGNMENT.findAll(mask.substring(from, to))
+            .mapNotNull { quotedValue(text, from + it.range.last) }
+            .toSet()
+
+    private fun quotedValue(text: String, quote: Int): String? {
+        val end = text.indexOf(text[quote], quote + 1)
+        return if (end < 0) null else text.substring(quote + 1, end)
+    }
+
+    /** End (exclusive) of the last non-whitespace byte of the mask in [from, to) — comments are
+     *  whitespace there, so this is the last byte of real array content. */
+    private fun lastStructure(mask: String, from: Int, to: Int): Int {
+        var index = to
+        while (index > from && mask[index - 1].isWhitespace()) index--
+        return index
+    }
+
+    private fun lineAt(text: String, start: Int): String =
+        text.substring(start, text.indexOf('\n', start).takeIf { it >= 0 } ?: text.length)
 }
 
-private val idPattern = Regex("id[ \\t]*=[ \\t]*\"([^\"]*)\"")
+private val ID_ASSIGNMENT = Regex("(?<![A-Za-z0-9_-])id[ \\t]*=[ \\t]*\\?")
+private val TABLE_HEADER = Regex("(?m)^[ \\t]*\\[")
+private val MODELS_ARRAY = Regex("(?m)^[ \\t]*models[ \\t]*=[ \\t]*\\[")

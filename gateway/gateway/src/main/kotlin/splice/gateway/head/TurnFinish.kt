@@ -43,7 +43,16 @@ internal class TurnFinish(
         // Cancellation still skips the stamps (runCatchingCancellable rethrows immediately):
         // a cancellation seal is the documented no-bill case, unchanged.
         val streamed = Cancellables.runCatchingCancellable {
-            drive.pipeline.finishStream(drive.emitter, outcome, drive.meta, latencyMs)
+            drive.pipeline.finishStream(
+                drive.emitter,
+                outcome,
+                drive.meta,
+                latencyMs,
+                // V4-79: the content-reached answer, read where the drive lives. Turn-cumulative on
+                // purpose: the question is whether ANY content reached this turn's client, which is
+                // what decides if a failure type may still be relabelled as retryable.
+                contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0,
+            )
         }
         drive.perf.mark(PerfKeys.FINISH)
         (outcome as? TurnOutcome.Success)?.let { usageStamp.stampSuccess(drive, it) }

@@ -6,6 +6,7 @@
 // TurnConnEnd; auth/upstream-HTTP endings live in TurnKnownEnd (concentration, 2026-08-19).
 package splice.gateway.head
 
+import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 
@@ -41,7 +42,18 @@ internal class TurnEnding(
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
                 telemetry.recordPerf(drive, "error:unexpected")
                 health.local() // internal gateway bug (e.g. bad base_url parse)
-                drive.emitter.emitError(ErrorType.API_ERROR, "splice: internal gateway error — retry")
+                // V4-78: the WIRE TYPE goes through the shared pre-content rule. The message is
+                // literally "— retry" while the type was api_error, which the client does NOT retry
+                // in band: splice was telling it to retry in the one spelling it treats as terminal.
+                // Pre-content the type becomes overloaded_error and the client re-sends; after
+                // content the type is left alone, because the client is finalizing what it holds.
+                drive.emitter.emitError(
+                    PreContentWireType.of(
+                        ErrorType.API_ERROR,
+                        contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0,
+                    ),
+                    "splice: internal gateway error — retry",
+                )
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked
         }

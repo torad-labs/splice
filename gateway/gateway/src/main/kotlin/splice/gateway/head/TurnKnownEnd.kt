@@ -77,11 +77,43 @@ internal class TurnKnownEnd(
             // "> 0" is the question that belongs here — has ANY content reached the client this turn.
             // After content this stays a rate_limit_error, which is V4-60's exclusion and unchanged.
             val contentReachedClient = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > 0
-            val isPreContentRateLimit = failure.type == ErrorType.RATE_LIMIT && !contentReachedClient
-            val wireType = if (isPreContentRateLimit) ErrorType.OVERLOADED else failure.type
+            // V4-78: API_ERROR is the SECOND type this rule covers, and for exactly the reason
+            // above — the binary retries an in-band error ONLY when the body carries
+            // overloaded_error, so a pre-content api_error is terminal for the client while a
+            // pre-content overloaded_error is retried. A live api_error-in-200 path exists
+            // (HeadServerFailureBranchTest drives it), and until this line such a turn ended the
+            // session where a retry would have healed it.
+            //
+            // THE BOUNDS ARE THE POINT, and they are the same ones the rate-limit half keeps:
+            // content already delivered excludes it (after content the client finalizes whatever it
+            // holds, and a remap would be a lie about what it is reading), and INVALID_REQUEST and
+            // AUTH are NOT remapped — those are splice telling the client something it must act on,
+            // and no retry of the same bytes changes them. Only the WIRE TYPE moves: the message
+            // text still comes from FailurePresenter and telemetry still records the REAL type.
+            val wireType = PreContentWireType.of(failure.type, contentReachedClient)
             drive.emitter.emitError(wireType, message)
             true
         }
         else -> false
+    }
+}
+
+/** V4-78: THE PRE-CONTENT WIRE-TYPE RULE, as a value rather than a branch buried in a handler.
+ *
+ *  Claude Code 2.1.257 retries an IN-BAND error event only when its body carries overloaded_error
+ *  (a real 429/529 is retried by STATUS, and neither is ours to send once the 200 is committed).
+ *  So before any content has reached the client, a failure whose type the client would treat as
+ *  terminal — RATE_LIMIT, and API_ERROR — is wired as OVERLOADED instead. Nothing the client has
+ *  read is at stake at that point, and the turn is indistinguishable from a transient overload.
+ *
+ *  THE BOUNDS, all three deliberate: after content the type is left ALONE (the client finalizes
+ *  whatever it holds, and relabelling would misdescribe what it is reading); INVALID_REQUEST and
+ *  AUTHENTICATION are never remapped (splice is telling the client something only the operator can
+ *  change, and a retry of identical bytes cannot); and only the WIRE TYPE moves — the message still
+ *  comes from FailurePresenter and telemetry still records the REAL type. */
+internal object PreContentWireType {
+    fun of(type: ErrorType, contentReachedClient: Boolean): ErrorType {
+        val retryable = type == ErrorType.RATE_LIMIT || type == ErrorType.API_ERROR
+        return if (retryable && !contentReachedClient) ErrorType.OVERLOADED else type
     }
 }

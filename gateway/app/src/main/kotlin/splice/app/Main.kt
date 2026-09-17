@@ -29,6 +29,23 @@ public fun main(args: Array<String>) {
     // latent-default trap G10 (stale shim) already burned once.
     Security.setProperty("networkaddress.cache.negative.ttl", "0")
     Security.setProperty("networkaddress.cache.ttl", "30")
+    // V4-74: THE DAEMON'S ORDERED STOP IS THE ONLY SHUTDOWN OWNER. Ktor's EmbeddedServer registers
+    // its OWN JVM shutdown hook per engine, and on SIGTERM those hooks run CONCURRENTLY with the
+    // hook below (shutdown -> daemon.stop -> stopHeads -> HeadServer.stopLocked): engine.stop
+    // disposes the application scope and cancels every call handler, so the in-flight SSE write
+    // fails and the turn ends as a conn-reset AFTER content — which Claude Code does not retry, it
+    // prints "API Error: Connection lost mid-response". MEASURED on the operator's session: two
+    // restarts, both cutting a mid-stream turn in the same second, with no stop: draining line ever.
+    //
+    // The switch, read from the ktor-server-core-jvm 3.5.2 bytecode rather than guessed:
+    // ShutdownHookJvmKt's static initializer computes SHUTDOWN_HOOK_ENABLED as
+    // System.getProperty("io.ktor.server.engine.ShutdownHook", "true") == "true", and
+    // ShutdownHookKt.addShutdownHook (called by EmbeddedServer.start) reads that flag and returns
+    // WITHOUT registering the hook when it is false. Two properties of that read matter here: it is
+    // an EQUALITY test against the literal "true", so "false" disables it; and the value is cached
+    // in a static final, so it must be set BEFORE the class is first loaded — which is here, before
+    // any engine exists. One property covers every embeddedServer in the process, head engines AND
+    // ControlServer's, which is why this is a process-wide line and not a per-engine flag.
     when (args.firstOrNull()) {
         null, "daemon", "start" -> DaemonProcess().runDaemon()
         else -> exitProcess(splice.app.cli.Cli().runCli(args))
@@ -44,6 +61,7 @@ internal class DaemonProcess {
     private val boundary = DaemonBoundary()
 
     internal fun runDaemon() {
+        armShutdownOwnership()
         val statePaths = StatePaths()
         // JW-01: the boot-failure net exists BEFORE anything that can throw (lock, TOML parse,
         // daemon.start). Both cold-start paths used to launch the JVM with output discarded, so a
@@ -108,6 +126,32 @@ internal class DaemonProcess {
      *  CALL runBlocking at process entry but never EXPORT a blocking bridge, and relocating these
      *  functions into a class turned the old file-private `runDaemon` into a member. The blocking
      *  body therefore lives here, one level below the member `main` dispatches to. */
+    /** V4-74: THE DAEMON'S ORDERED STOP IS THE ONLY SHUTDOWN OWNER, and this is where that is armed.
+     *
+     *  Ktor's EmbeddedServer registers its OWN JVM shutdown hook per engine, and on SIGTERM those
+     *  hooks run CONCURRENTLY with the hook registered below (shutdown -> daemon.stop -> stopHeads ->
+     *  HeadServer.stopLocked): engine.stop disposes the application scope and cancels every call
+     *  handler, so an in-flight SSE write fails and the turn ends as a conn-reset AFTER content —
+     *  which Claude Code does not retry, it prints "API Error: Connection lost mid-response".
+     *  MEASURED on the operator's own session: two restarts, each cutting a mid-stream turn in the
+     *  same second, with no stop: draining line ever reaching the log.
+     *
+     *  The switch, read from the ktor-server-core-jvm 3.5.2 bytecode rather than guessed:
+     *  ShutdownHookJvmKt's static initializer computes SHUTDOWN_HOOK_ENABLED as
+     *  System.getProperty("io.ktor.server.engine.ShutdownHook", "true") == "true", and
+     *  ShutdownHookKt.addShutdownHook — called by EmbeddedServer.start — reads that flag and returns
+     *  WITHOUT registering the hook when it is false. Two properties of that read decide where this
+     *  call has to live: it is an EQUALITY test against the literal "true", so "false" disables it;
+     *  and the value is cached in a static final, so it must be set BEFORE the class is first
+     *  loaded, which is why this runs at the top of runDaemon — ahead of the lock, the topology read
+     *  and every engine. ONE property covers every embeddedServer in the process, the head engines
+     *  AND ControlServer's, which is why it is a process-wide line and not a per-engine flag.
+     *
+     *  Callable on its own so the boot seam is testable: see DaemonStopBudgetTest. */
+    internal fun armShutdownOwnership() {
+        System.setProperty("io.ktor.server.engine.ShutdownHook", "false")
+    }
+
     private fun serveUntilShutdown(
         daemon: Daemon,
         lock: DaemonLock,
@@ -181,14 +225,22 @@ internal class DaemonProcess {
         boundary.bootFailureHandler(statePaths)
 }
 
-// The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 10s — must stay BELOW the CLI's
-// graceful stop rung (GRACEFUL_POLLS in cli/DaemonStop.kt, 11s), so a bounded stop is never mistaken
+// The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 57s — must stay BELOW the CLI's
+// graceful stop rung (GRACEFUL_POLLS in cli/DaemonStop.kt, 60s), so a bounded stop is never mistaken
 // for a hung one and SIGTERM cannot land mid-tail. The two constants are a pair: change one, check
 // the other. (The comment here previously cited a 15s CLI budget that the escalation ladder
 // replaced, while the real rung had shrunk to exactly 8s — equal to this cap, zero margin.)
 // Also above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
-private const val STOP_DEADLINE_MS = 8_000L
-private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
+//
+// V4-74 — THE WHOLE LADDER, innermost first, because raising one link alone is DEAD CODE:
+//   drain 45s (HeadServer) < head budget 50s (HeadShutdown) < this cap 55s
+//   < halt floor 57s (this + TEARDOWN_TAIL_GRACE_MS) < CLI rung 60s (DaemonStop)
+//   < systemd TimeoutStopSec 90s (the external bound).
+// The reason the drain had to grow is a measured turn length: a restart used to cancel every
+// in-flight turn at 8s, and a deepseek turn runs 7 to 16s. DaemonStopBudgetTest pins the ordering
+// so the next person who raises one link gets a red instead of a silently ineffective constant.
+internal const val STOP_DEADLINE_MS = 55_000L
+internal const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 // Held here so DaemonProcess.persistentLogger keeps the same default the tests pass past.

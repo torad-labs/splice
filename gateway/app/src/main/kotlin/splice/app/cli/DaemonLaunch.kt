@@ -73,5 +73,9 @@ internal class DaemonLaunch {
     }
 }
 
-private const val STARTUP_POLLS = 60
+// V4-74: 62s = the old daemon's halt floor (57s) plus a 5s margin, because a restart now waits for
+// the outgoing daemon to DRAIN ITS IN-FLIGHT TURNS (up to 45s) before it releases the lock. This
+// budget must stay above DaemonLockWait's LOCK_WAIT_POLLS for the same reason that derived it from
+// the floor: a spawner that gave up first would report a failure for a restart that was working.
+internal const val STARTUP_POLLS = 248
 private const val POLL_INTERVAL_MS = 250L

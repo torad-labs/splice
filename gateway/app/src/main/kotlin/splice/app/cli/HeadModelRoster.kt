@@ -1,4 +1,4 @@
-// V4-83 split (concentration ratchet, 2026-09-17): the roster TEXT editor is its own concern —
+// NEW: V4-83 split (concentration ratchet, 2026-09-17) — the roster TEXT editor is its own concern —
 // finding structure on the TOML mask and splicing ids into `[heads.KEY].models` byte-preservingly —
 // separate from the add-model verb that prompts, plans and writes. AddModelVerb consumes it only
 // through the RosterEditor seam.

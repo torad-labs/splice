@@ -38,6 +38,7 @@ import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
@@ -227,7 +228,12 @@ public class GrokAuthProvider(
         // rethrows anything that is not proven absence, so the guard is the caller's here just as it
         // is inside readSnapshot; an unreadable file yields null and vetoes nothing.
         val declaredExpiryMs = Cancellables.runCatchingCancellable { authJson.parseSnapshot() }
-            .onFailure { log("[$LOG_TAG] auth.json unreadable while judging a $status — no veto, refresh runs: $it") }
+            .onFailure {
+                log(
+                    "[$LOG_TAG] auth.json unreadable while judging a $status — no veto, refresh runs: " +
+                        SafeFailureText.render(it),
+                )
+            }
             .getOrNull()?.expiresAtMs
         val demonstrablyFresh =
             declaredExpiryMs != null && declaredExpiryMs - clock() >= PROACTIVE_WINDOW_MS

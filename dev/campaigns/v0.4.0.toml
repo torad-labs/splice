@@ -1513,6 +1513,7 @@ verify = "gradlew :provider-grok:test --tests '*Entitlement*' :provider-grok:det
 # [2026-09-17] GRADLE FREE - v4-37-38-builder released the slot.
 # [2026-09-17] ATTEST: scoped diffstat: .../splice/provider/grok/GrokAuthProvider.kt       | 40 +++++++++++++------ | .../src/test/kotlin/grok/GrokEntitlementTest.kt    | 45 ++++++++++++++++++++++ | 2 files changed, 73 insertions(+), 12 deletions(-); sidecar: .claude/ledger-diffs/V4-38.diff; off-scope: CHANGELOG.md, README.md, checks/e2e/heads-e2e-selftest.sh, checks/e2e/heads-e2e.sh, checks/e2e/mcp_overlong_tool_server.py, config/splice.example.toml, gateway/app/src/main/kotlin/splice/app/cli/AddModels.kt, gateway/app/src/main/kotlin/splice/app/cli/DoctorConfigChecks.kt, ... 5 more
 # [2026-09-17] 2026-09-17 orchestrator diff review (pre-gate): allowRefreshAfterFailure now reads authJson.parseSnapshot() (declared expires only, null when absent) via runCatchingCancellable instead of readSnapshot's synthesized mtime+4h; unreadable/absent -> refresh runs (status quo). Test pins expires-less vs real-expires files byte-identical otherwise; mutation -> exactly 1 red. ACCEPT pending gate of record.
+# [2026-09-17] 2026-09-17 orchestrator: gate on 0efa3b09 red on safe-failure-render (DR-65): my onFailure log rendered the throwable raw; now SafeFailureText.render(it), wrapped for line length; wall 95 routed/23 exempt/0 undispositioned, selftest 89 arms green, :provider-grok/:app detekt+compile green.
 
 [[items]]
 id = "V4-39"

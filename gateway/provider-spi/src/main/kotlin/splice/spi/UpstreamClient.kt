@@ -188,8 +188,10 @@ public class UpstreamClient(
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport
-            // failure like any other for the decision below — catchCancellable's I/O-only
-            // catch list can't see a RuntimeException, so it is folded in here.
+            // failure like any other for the decision below. The fold is REQUIRED, and the catch
+            // list is why: catchCancellable captures IOException, SerializationException and
+            // IllegalArgumentException, and StreamTornBeforeClient is none of the three (plain
+            // RuntimeException, UpstreamErrors.kt:23), so nothing else would see it.
             Result.failure(e)
         }
         val transportError = attempted.exceptionOrNull()

@@ -1,18 +1,19 @@
-// NEW (V4-79): the oversized-streaming-event ending, pinned on the WIRE TYPE it hands the client.
+// NEW (V4-79): the oversized-streaming-event ending, pinned on what it hands the emitter.
 //
 // SseFrameTooLargeException is the one connection-class failure that can land on either side of
 // content: an upstream event can blow the frame cap before anything has been read, or after the
-// client has already rendered half an answer. TurnConnEnd therefore does not emit a constant — it
-// runs the shared pre-content rule, fed by the drive that tryEmit already receives as its first
-// parameter (drive.perfCounter(CONTENT_FRAMES_OUT)). These two cells pin both sides of that fork.
+// client has already rendered half an answer. V4-79 read that fork here; V4-81 removed the hand
+// copy and moved it to SseEmitter.emitError, so what this file now pins is the arm's own two
+// facts — the failure is TRANSIENT (a decision, argued in the cell) and the surface no longer
+// branches on content at all.
 //
-// The assertions are on the ErrorType the EMITTER received, not on a splice-side count: the only
-// fact that matters is the type that reaches Claude Code, because 2.1.257 retries an in-band
+// The assertions are on what the EMITTER received, not on a splice-side count: the only fact that
+// matters is the type that reaches Claude Code, because 2.1.257 retries an in-band
 // overloaded_error and ends the session on an in-band api_error.
 //
-// MUTATION PROOF (recorded in the ledger): replace the PreContentWireType.of(...) argument at
-// TurnConnEnd.kt with the bare ErrorType.API_ERROR and the pre-content cell goes red BY NAME while
-// the after-content cell stays green — so this is a pin on the rule, not on a constant.
+// MUTATION PROOF (recorded in the ledger): flip `permanent = false` to `true` at TurnConnEnd.kt and
+// the transient cell goes red BY NAME; re-introduce a content fork here and the content-blind cell
+// goes red — so each pins one thing this file still owns.
 //
 // The rig mirrors TurnEndingAccountingTest's (same package, same provider/telemetry/drive idiom);
 // it is rebuilt here rather than shared because these cells need a RECORDING terminal where that
@@ -77,12 +78,14 @@ private class ConnEndFakeAuth : RefreshableAuthProvider {
 /** Records exactly what reached the wire: the error TYPE and the words beside it. */
 private class ConnEndRecordingTerminal : TurnTerminal {
     var errorType: ErrorType? = null
+    var errorPermanent: Boolean = false
     var errorMessage: String = ""
     override var hasEnded: Boolean = false
         private set
 
-    override suspend fun emitError(type: ErrorType, message: String) {
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         errorType = type
+        errorPermanent = permanent
         errorMessage = message
         hasEnded = true
     }
@@ -199,27 +202,36 @@ class TurnConnEndTest {
     }
 
     @Test
-    fun `an oversized event before any content reaches the client as overloaded_error - V4-79`() = runBlocking {
+    fun `an oversized event reaches the emitter as a TRANSIENT api_error - V4-81`() = runBlocking {
         val emitter = emitOversized("pre-content", contentFrames = 0)
-
-        assertEquals(
-            ErrorType.OVERLOADED,
-            emitter.errorType,
-            "nothing was read yet, so the wire type must be the one Claude Code retries in band",
-        )
-        // The relabel is a wire fact only — the words the operator diagnoses from are untouched.
-        assertEquals("upstream sent an oversized streaming event — retry", emitter.errorMessage)
-    }
-
-    @Test
-    fun `an oversized event after content keeps api_error - V4-79`() = runBlocking {
-        val emitter = emitOversized("post-content", contentFrames = 1)
 
         assertEquals(
             ErrorType.API_ERROR,
             emitter.errorType,
-            "the client is finalizing what it already holds; a relabel would buy a pointless retry",
+            "this surface reports the failure; the wire type is decided at the emitter",
         )
+        // THE ONE DECISION THIS ARM STILL OWNS, and the row asked for it explicitly: an oversized
+        // frame is TRANSIENT. The frame size is a property of the RESPONSE the upstream host chose
+        // to send, not of the request we sent, so a re-send buys a genuinely different response and
+        // can come back small. Contrast TurnEnding's unparseable base_url, which is a property of
+        // our own config and reproduces exactly — that one is permanent. Without this flag the
+        // emitter would have to guess, and guessing "permanent" here would end sessions that a
+        // retry fixes.
+        assertEquals(false, emitter.errorPermanent, "an oversized upstream frame is a transient condition")
         assertEquals("upstream sent an oversized streaming event — retry", emitter.errorMessage)
+    }
+
+    @Test
+    fun `the surface is content-blind now that the fork lives at the seam - V4-81`() = runBlocking {
+        // V4-79 read CONTENT_FRAMES_OUT here and forked on it. V4-81 removed that hand copy, and the
+        // way to pin a REMOVAL is to show the two sides are indistinguishable at this surface: if
+        // someone re-adds a fork here, one of these two goes red. What still differs pre- vs post-
+        // content is the WIRE TYPE, and that is pinned where it is decided (SseEmitterTest).
+        val pre = emitOversized("pre-content", contentFrames = 0)
+        val post = emitOversized("post-content", contentFrames = 1)
+
+        assertEquals(pre.errorType, post.errorType, "this surface no longer forks on content")
+        assertEquals(pre.errorPermanent, post.errorPermanent, "nor on permanence")
+        assertEquals("upstream sent an oversized streaming event — retry", post.errorMessage)
     }
 }

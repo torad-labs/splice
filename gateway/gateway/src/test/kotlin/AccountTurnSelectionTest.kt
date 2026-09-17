@@ -56,10 +56,22 @@ class AccountTurnSelectionTest {
 
     /** V4-77: a client deadline is a HOLD FROM NOW — positive, and inside V4-61's clamp — never the
      *  provider's window. Shared by the two exhaustion arms so the law is stated once. */
-    private fun assertBoundedHold(retryAfter: String, sentAtSeconds: Long) {
-        val holdSeconds = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME)
-            .toEpochSecond() - sentAtSeconds
-        assertTrue(holdSeconds > 0L, "a deadline already in the past is not a deadline, got: $retryAfter")
+    /** V4-84 (7): the CEILING is measured from [receivedAtSeconds], the FLOOR from [sentAtSeconds].
+     *
+     *  The server stamps its deadline at refusal time, somewhere inside the round trip, so measuring
+     *  the ceiling from the moment the request LEFT adds that trip to the hold and reads 121s against
+     *  a 120s clamp whenever the second boundary falls inside the reply — the flake this pins. The
+     *  later instant is the exact statement, and a second cannot rescue the defect: a three-day
+     *  provider window is 259_200s against a 120s ceiling. The floor still runs from [sentAtSeconds],
+     *  because a deadline must be in the future of the request that earned it. Same split, same
+     *  reasoning, as HeadServerCapacityTest.assertBoundedRejectedRefusal. */
+    private fun assertBoundedHold(retryAfter: String, sentAtSeconds: Long, receivedAtSeconds: Long) {
+        val deadlineSeconds = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME).toEpochSecond()
+        assertTrue(
+            deadlineSeconds - sentAtSeconds > 0L,
+            "a deadline already in the past is not a deadline, got: $retryAfter",
+        )
+        val holdSeconds = deadlineSeconds - receivedAtSeconds
         assertTrue(
             holdSeconds <= CLAMP_SECONDS,
             "the client deadline is the cooldown lift, at most ${CLAMP_SECONDS}s — got ${holdSeconds}s",
@@ -184,6 +196,44 @@ class AccountTurnSelectionTest {
     // unchanged and still asserted: the refusal is local, it is an IMF-fixdate — the format is
     // still pinned, by shape — and it names the provider's real reset. What moved is WHICH instant
     // the header carries: a bounded hold from now instead of the window.
+    /** V4-84 (4): the refusal's quota family comes from the SELECTED account's tracker, not the
+     *  primary's. deps.quota is ONE tracker per label — the primary's — so a pooled head whose
+     *  session is sticky to backup shipped primary's bars on the 429, and the client's utilization
+     *  jumped to the other account's number. The window is identified by its RESET here rather than
+     *  its utilization, because both accounts must read 100% to be unselectable and only the reset
+     *  can then tell the two trackers apart. Mutation: restoring deps.quota returns the primary's
+     *  reset and this fails. */
+    @Test
+    fun `an exhausted refusal carries the SELECTED account's quota windows, not the primary's`() = runTest {
+        val rig = AccountTurnRig()
+        try {
+            rig.start()
+            rig.messages().also { it.bodyAsText() } // session selects primary
+            rig.exhaustPrimary()
+            rig.messages().also { it.bodyAsText() } // ...and is now sticky to backup
+            assertEquals("backup", rig.poolView().selectedLabel)
+
+            val nowSeconds = System.currentTimeMillis() / MS_PER_SECOND
+            rig.exhaustAllWithDistinctWindows(nowSeconds + 3_600L, nowSeconds + 86_400L)
+            val wrong = rig.primaryFiveHourReset()
+            val refused = rig.messages().also { it.bodyAsText() }
+
+            assertEquals(HttpStatusCode.TooManyRequests, refused.status)
+            val reset = refused.headers["anthropic-ratelimit-unified-5h-reset"]
+            assertTrue(
+                reset != wrong.toString(),
+                "the refusal shipped the PRIMARY's window ($wrong) on a session routed to backup",
+            )
+            assertEquals(
+                (nowSeconds + 86_400L).toString(),
+                reset,
+                "the refusal must carry the SELECTED account's window; the primary's is $wrong",
+            )
+        } finally {
+            rig.close()
+        }
+    }
+
     @Test
     fun `all exhausted refuses with an IMF-fixdate Retry-After bounded by the clamp`() = runTest {
         val rig = AccountTurnRig()
@@ -196,11 +246,12 @@ class AccountTurnSelectionTest {
             val response = rig.messages().also { body ->
                 assertTrue(body.bodyAsText().contains("all OAuth accounts are exhausted; earliest reset is $reset"))
             }
+            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
             val retryAfter = checkNotNull(response.headers["Retry-After"])
             assertTrue(imfFixdate.matches(retryAfter), "Retry-After must stay IMF-fixdate, got: $retryAfter")
-            assertBoundedHold(retryAfter, sentAtSeconds)
+            assertBoundedHold(retryAfter, sentAtSeconds, receivedAtSeconds)
             assertEquals(1L, rig.localErrors())
             assertEquals(0L, rig.providerErrors())
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
@@ -226,9 +277,10 @@ class AccountTurnSelectionTest {
             val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             val response = rig.messages()
+            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds)
+            assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds, receivedAtSeconds)
             assertTrue(response.bodyAsText().contains("earliest reset is 9999-12-31T23:59:59Z"))
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
         } finally {
@@ -349,6 +401,19 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
         backupQuota.record(exhausted)
         return checkNotNull(checkNotNull(exhausted.fiveHour).resetsAt)
     }
+
+    /** V4-84 (4): exhaust BOTH accounts so selection fails, while keeping their windows
+     *  DISTINGUISHABLE. [exhaustAll] records one snapshot into both trackers, so primary and backup
+     *  look identical at refusal time and no assertion could say which tracker answered. Same
+     *  utilization — both must still block — but different RESETS is what separates them. */
+    fun exhaustAllWithDistinctWindows(primaryReset: Long, backupReset: Long) {
+        primaryQuota.record(quota(100.0, primaryReset))
+        backupQuota.record(quota(100.0, backupReset))
+    }
+
+    /** The reset the PRIMARY's tracker reports, so a test can name the wrong answer explicitly. */
+    fun primaryFiveHourReset(): Long =
+        checkNotNull(primaryQuota.snapshot()?.fiveHour?.resetsAt)
 
     fun markPrimaryUnavailable() {
         primaryCooldown.markUnavailable(60_000L)

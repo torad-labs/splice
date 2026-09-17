@@ -43,6 +43,10 @@ internal class ResponsesTerminalDecision(
                 "upstream: ${it.message}",
                 providerReported = true,
                 partial = if (it.transient) payload.partialOrNull(state) else null,
+                // V4-81: the classifier's own verdict, reaching the outcome at last. It gated
+                // `partial` before this and nothing else, so a non-transient API_ERROR still went
+                // out labelled retryable and the client re-sent it — see PreContentWireType.
+                permanent = !it.transient,
             )
         } ?: refusalFailure(state) ?: contentFilterFailure(state),
         finished = state.finalResponse != null,
@@ -65,6 +69,10 @@ internal class ResponsesTerminalDecision(
         state.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
             TurnOutcome.Failure(
                 ErrorType.API_ERROR,
+                // V4-81: permanent, and this is the site the row names — the comment above already
+                // says a refusal is deterministic, and `permanent` is that sentence made load-
+                // bearing. Without it the pre-content rule relabelled the refusal overloaded_error
+                // and the client re-sent the identical bytes up to 300 times for the same refusal.
                 "upstream: model refused — $it",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
             )
@@ -81,6 +89,10 @@ internal class ResponsesTerminalDecision(
                 ErrorType.API_ERROR,
                 "upstream: generation stopped by content filter",
                 providerReported = true,
+                // V4-81: permanent, for the reason the comment above already gives — the identical
+                // prompt is filtered identically, so a retry buys the same censored turn at full
+                // price.
+                permanent = true,
             )
         } else {
             null

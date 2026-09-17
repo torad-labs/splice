@@ -111,4 +111,41 @@ class CollectingTerminalTest {
         val message = t.responseBody()["error"]!!.jsonObject["message"]?.jsonPrimitive?.content.orEmpty()
         assertTrue(message.contains("exceeded max buffered size"), message)
     }
+
+    // V4-81: THE COLLECT PATH IS OUT OF THE PRE-CONTENT WIRE-TYPE RULE BY CONSTRUCTION, and these
+    // two pins are what say so out loud. The rule exists for the committed-200 STREAMING path, where
+    // the only lever left after the status is committed is the event type inside the body. On
+    // `stream:false` there is no committed 200 and no in-band event: the HTTP status IS the
+    // information, and relabelling it would be a lie about a condition that did not happen — a
+    // genuine 429 shipped as a 529 with rate-limit headers attached, or a buffered api_error
+    // claiming an overload. The rule was relocated to SseEmitter.emitError (V4-81) precisely so
+    // that this terminal cannot inherit it: the two are separate implementations of TurnTerminal,
+    // so there is no shared code path to forget about.
+    @Test
+    fun `a buffered rate limit keeps its real 429 instead of the streaming relabel - V4-81`() = runTest {
+        val t = terminal()
+        t.emitError(ErrorType.RATE_LIMIT, "upstream: quota exhausted")
+        assertEquals(429, t.httpStatus())
+        assertEquals(
+            ErrorType.RATE_LIMIT.wireName,
+            t.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `a buffered api error keeps its real 502, permanent or not - V4-81`() = runTest {
+        val remappable = terminal()
+        remappable.emitError(ErrorType.API_ERROR, "upstream: broke")
+        assertEquals(ERROR_STATUS, remappable.httpStatus())
+
+        // The parameter the streaming terminal reads is DELIBERATELY INERT here: the collect path
+        // has no retryable event to relabel, so permanence changes nothing about its status.
+        val permanent = terminal()
+        permanent.emitError(ErrorType.API_ERROR, "upstream: model refused", permanent = true)
+        assertEquals(ERROR_STATUS, permanent.httpStatus())
+        assertEquals(
+            ErrorType.API_ERROR.wireName,
+            permanent.responseBody()["error"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+        )
+    }
 }

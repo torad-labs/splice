@@ -15,6 +15,16 @@ public data class Usage(
     // output_tokens_details.reasoning_tokens (Responses). Drives reasoning-continuation fold
     // detection (the 518n-2 truncation fingerprint); NEVER part of the client usage payload.
     val reasoningTokens: Long = 0,
+    // V4-85: prompt-cache WRITE — cache_creation_input_tokens, or the sum of Anthropic's per-TTL
+    // `cache_creation` buckets. Like [cachedTokens] this is a DISJOINT part of [inputTokens], not an
+    // addition to it, and it exists because a cache write bills at its own premium rate: folded into
+    // inputTokens alone it was indistinguishable from a cache MISS and billed as one. Zero on every
+    // dialect whose wire reports no such bucket (ChatUsage) — those heads never write a cache.
+    //
+    // APPENDED LAST, deliberately: Usage is constructed positionally as Usage(19, 7, 5, 3) in the
+    // code-mode and custom-call pins, so inserting it beside cachedTokens where it semantically
+    // belongs would silently re-read those four literals as a different set of buckets.
+    val cacheWriteTokens: Long = 0,
 ) {
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
     public operator fun plus(other: Usage): Usage = Usage(
@@ -22,6 +32,7 @@ public data class Usage(
         outputTokens = outputTokens + other.outputTokens,
         cachedTokens = cachedTokens + other.cachedTokens,
         reasoningTokens = reasoningTokens + other.reasoningTokens,
+        cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
     )
 }
 
@@ -147,6 +158,21 @@ public sealed class TurnOutcome {
          *  up when it arrives before content, and after content replaces the message with a fixed
          *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07). */
         val deterministic: Boolean = false,
+        /** V4-81: NO retry can change this verdict — an identical re-send reproduces it exactly.
+         *
+         *  Distinct from [deterministic], which is about the ENDING'S SHAPE (words the client
+         *  renders vs an error event); this is about whether the failure is RE-ATTEMPTABLE, and it
+         *  is what the pre-content wire-type rule reads. Advertising such a failure as transient is
+         *  the expensive lie: RetryPolicy arms a cooldown only for RATE_LIMITED, so with
+         *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure makes the client re-send the
+         *  identical bytes up to 300 times, six upstream attempts each, for a verdict that cannot
+         *  move. Set from the classifier's `transient = false` (UpstreamFailureClassifier), from a
+         *  deterministic refusal (ResponsesTerminalDecision), and from the local base_url parse —
+         *  the operator law "always a retry armed" is about failures a retry can HEAL.
+         *
+         *  Defaulted false: every construction that does not know stays exactly as it was, and the
+         *  rule treats "unknown" as retryable, which is today's behavior. */
+        val permanent: Boolean = false,
         /** V4-67: a connection tear the GATEWAY synthesized into an outcome (SseRoundDriver
          *  .tearOutcome) rather than letting it escape to the conn-reset surface. Carried so the
          *  ending keeps the [CONN_RESET_OUTCOME] tag whatever path it finishes through: a

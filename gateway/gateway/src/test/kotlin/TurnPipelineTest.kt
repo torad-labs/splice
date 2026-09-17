@@ -29,6 +29,7 @@ private class RecTerminal : TurnTerminal {
     val texts = mutableListOf<String>()
     var ending: String? = null
     var errorType: ErrorType? = null
+    var errorPermanent: Boolean = false
     var errorMessage: String = ""
     override var hasEnded: Boolean = false
         private set
@@ -38,9 +39,10 @@ private class RecTerminal : TurnTerminal {
         hasEnded = true
     }
 
-    override suspend fun emitError(type: ErrorType, message: String) {
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         ending = "error"
         errorType = type
+        errorPermanent = permanent
         errorMessage = message
         hasEnded = true
     }
@@ -123,10 +125,6 @@ class TurnPipelineTest {
             outcome(thinking, emittedThinking),
             meta(showReasoning),
             elapsedMs = 1,
-            // V4-79: these arms all drive SUCCESS outcomes, where the pre-content rule is not
-            // consulted at all. `true` is the value that leaves every case below meaning exactly
-            // what it meant before the parameter existed.
-            contentReachedClient = true,
         )
         return rec
     }
@@ -141,7 +139,6 @@ class TurnPipelineTest {
             outcome(thinking),
             meta("text", compact = true),
             elapsedMs = 1,
-            contentReachedClient = true,
         )
         return rec to tag
     }
@@ -188,7 +185,6 @@ class TurnPipelineTest {
                 TurnOutcome.Failure(type, payload, deterministic = true),
                 meta("text"),
                 elapsedMs = 1,
-                contentReachedClient = true,
             )
             offending += inspect("text block for $type", explained.texts.joinToString(" "))
 
@@ -200,7 +196,6 @@ class TurnPipelineTest {
                 elapsedMs = 1,
                 // The assertion here is about BYTES, not the type; `true` keeps the wire type the
                 // one the case names, so this wall stays a statement about presentation alone.
-                contentReachedClient = true,
             )
             offending += inspect("error event for $type", errored.errorMessage)
         }
@@ -233,7 +228,6 @@ class TurnPipelineTest {
             TurnOutcome.Failure(ErrorType.API_ERROR, """{"foo":1,"bar":[1,2,3],"baz":null}""", deterministic = true),
             meta("text"),
             elapsedMs = 1,
-            contentReachedClient = true,
         )
         val text = rec.texts.single()
         assertTrue(text.contains("could not be read"), "an unreadable body must be described: $text")
@@ -251,7 +245,6 @@ class TurnPipelineTest {
             TurnOutcome.Failure(ErrorType.API_ERROR, "code-mode cell is unavailable", deterministic = true),
             meta("text"),
             elapsedMs = 1,
-            contentReachedClient = true,
         )
         assertEquals("terminal", explained.ending)
         // V4-59: the verb is unchanged \u2014 still a text block, still marked as the proxy speaking \u2014
@@ -267,7 +260,6 @@ class TurnPipelineTest {
             elapsedMs = 1,
             // AFTER content: the type the outcome carries is the type the client receives. The
             // pre-content half of this seam is pinned by its own cases at the foot of the file.
-            contentReachedClient = true,
         )
         assertEquals("error", retried.ending)
         assertEquals(ErrorType.API_ERROR, retried.errorType)
@@ -287,7 +279,7 @@ class TurnPipelineTest {
     @Test
     fun `a zero-content turn ends as overloaded, not api_error, so the client retries it`() = runTest {
         val rec = RecTerminal()
-        pipeline().finishStream(rec, outcome(thinking = ""), meta("text"), elapsedMs = 1, contentReachedClient = true)
+        pipeline().finishStream(rec, outcome(thinking = ""), meta("text"), elapsedMs = 1)
 
         assertEquals("error", rec.ending, "a zero-content turn is an error ending, not a clean one")
         assertEquals(
@@ -304,7 +296,7 @@ class TurnPipelineTest {
     @Test
     fun `the default pipeline keeps the reasoning mirror locked off`() = runTest {
         val rec = RecTerminal()
-        pipeline().finishStream(rec, outcome(bandThinking), meta("text"), elapsedMs = 1, contentReachedClient = true)
+        pipeline().finishStream(rec, outcome(bandThinking), meta("text"), elapsedMs = 1)
         assertEquals("error", rec.ending)
         assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
         assertTrue(rec.texts.isEmpty(), "nothing may reach the wire when the turn errors")
@@ -367,7 +359,6 @@ class TurnPipelineTest {
             outcome("", messageClosed = true),
             meta("text"),
             elapsedMs = 1,
-            contentReachedClient = true,
         )
         assertEquals("terminal", rec.ending, "a closed empty message is a finished answer")
         assertEquals("empty_message", tag, "the log must still name the class")
@@ -383,7 +374,6 @@ class TurnPipelineTest {
             outcome("", messageClosed = true),
             meta("text", compact = true),
             elapsedMs = 1,
-            contentReachedClient = true,
         )
         assertEquals("empty_compact", tag)
         assertEquals("error", rec.ending)
@@ -432,7 +422,6 @@ class TurnPipelineTest {
             tooled,
             meta("text", compact = true),
             elapsedMs = 1,
-            contentReachedClient = true,
         )
         assertEquals(mapOf("tooled_no_text" to 1), recordedCompact().byOutcome, "the shape must get a row")
         assertEquals("ok", tag, "recorded, not rewritten — the turn flows to the normal terminal")
@@ -472,71 +461,58 @@ class TurnPipelineTest {
         assertTrue(rec.texts.any { it == summary }, "the summary must reach the wire: ${rec.texts}")
         assertEquals(mapOf("model_thinking" to 1), recordedCompact().byOutcome)
     }
-    // V4-79 PIN, SITE 1 OF 2: TurnPipeline's Failure arm.
+    // V4-79 pin, RE-POINTED BY V4-81: TurnPipeline's Failure arm.
     //
-    // This is the widest of the pre-content holes, because EVERY classified upstream failure the
-    // pipeline finishes flows through this one emitError. Before V4-79 it sent outcome.type raw, so
-    // an api_error or a rate_limit_error reached Claude Code IN BAND with nothing yet read — and
-    // 2.1.257 treats both as terminal in band, ending the session where a retry would have healed
-    // it. The rule now runs at the call, fed by the caller's CONTENT_FRAMES_OUT (TurnFinish).
+    // V4-79 put the pre-content rule at this call, which made the pipeline the place that knew
+    // about CONTENT_FRAMES_OUT and forced a perf snapshot through finishStream on every turn. V4-81
+    // moved the rule to SseEmitter.emitError — the one place an error frame is written — so the
+    // pipeline's contract is now the narrower and more honest one: it reports the failure and says
+    // whether a retry could change it, and the wire type is not its business at all.
     //
-    // MUTATION PROOF (recorded in the ledger): replace `PreContentWireType.of(outcome.type,
-    // contentReachedClient)` in TurnPipeline.finishStream with the bare `outcome.type` and the two
-    // pre-content cells below go red BY NAME; the after-content cell stays green, which is what
-    // makes this a pin on the RULE and not merely on the constant OVERLOADED.
+    // The cells below therefore assert PASS-THROUGH, not remapping, and the remapping itself is
+    // pinned where it now happens (SseEmitterTest, "the pre-content rule is applied at the frame").
+    // Splitting them this way is the point: a cell here that still expected OVERLOADED would be
+    // testing a decision this file no longer makes, and would have gone red for the right reason
+    // only after someone re-implemented the rule in the wrong place.
+    //
+    // MUTATION PROOF (recorded in the ledger): drop `permanent = outcome.permanent` from the
+    // emitError call in TurnPipeline.finishStream and the permanent cell below goes red BY NAME.
 
     @Test
-    fun `a pre-content api_error failure reaches the wire as overloaded_error - V4-79`() = runTest {
-        val rec = RecTerminal()
-        val tag = pipeline().finishStream(
-            rec,
-            TurnOutcome.Failure(ErrorType.API_ERROR, "upstream stream ended without response.completed"),
-            meta("text"),
-            elapsedMs = 1,
-            contentReachedClient = false,
-        )
-        assertEquals("error", rec.ending)
-        assertEquals(
-            ErrorType.OVERLOADED,
-            rec.errorType,
-            "nothing reached the client, so the wire type must be the one Claude Code retries",
-        )
-        // The relabel is a WIRE fact only: the words and the journal tag both keep the honest class.
-        assertTrue(
-            rec.errorMessage.contains("response.completed"),
-            "the diagnosis must survive the type change: ${rec.errorMessage}",
-        )
-        assertEquals("failure:api_error", tag, "the log must still name the failure honestly")
-    }
-
-    @Test
-    fun `a pre-content rate limit failure reaches the wire as overloaded_error - V4-79`() = runTest {
-        val rec = RecTerminal()
-        val tag = pipeline().finishStream(
-            rec,
-            TurnOutcome.Failure(ErrorType.RATE_LIMIT, "upstream is rate limiting this account"),
-            meta("text"),
-            elapsedMs = 1,
-            contentReachedClient = false,
-        )
-        assertEquals(ErrorType.OVERLOADED, rec.errorType, "rate_limit_error in band is terminal for the client too")
-        assertEquals("failure:rate_limit_error", tag, "the log must still name the failure honestly")
-    }
-
-    @Test
-    fun `after content the pipeline leaves the failure type alone - V4-79`() = runTest {
-        // The client is finalizing what it already holds; a relabel here would spend its retry
-        // budget re-sending a turn whose output it has already rendered.
+    fun `the pipeline hands the emitter the failure's own type and permanence - V4-81`() = runTest {
         for (type in listOf(ErrorType.API_ERROR, ErrorType.RATE_LIMIT)) {
             val rec = RecTerminal()
-            pipeline().finishStream(
+            val tag = pipeline().finishStream(
                 rec,
-                TurnOutcome.Failure(type, "upstream failed after content"),
+                TurnOutcome.Failure(type, "upstream stream ended without response.completed"),
                 meta("text"),
                 elapsedMs = 1,
-                contentReachedClient = true,
             )
-            assertEquals(type, rec.errorType, "content already reached the client, so $type rides through")
+            assertEquals("error", rec.ending)
+            assertEquals(type, rec.errorType, "the pipeline reports the failure; the emitter types the wire")
+            assertEquals(false, rec.errorPermanent, "an unclassified failure is not permanent by default")
+            // The words and the journal tag keep the honest class either way.
+            assertTrue(
+                rec.errorMessage.contains("response.completed"),
+                "the diagnosis must survive: ${rec.errorMessage}",
+            )
+            assertEquals("failure:${type.wireName}", tag, "the log must still name the failure honestly")
         }
+    }
+
+    @Test
+    fun `a permanent failure reaches the emitter marked as such - V4-81`() = runTest {
+        // See PreContentWireType: a failure the client would reproduce exactly by re-sending must
+        // not be advertised as transient, and this is the flag that tells the emitter so.
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            TurnOutcome.Failure(ErrorType.API_ERROR, "upstream: model refused", permanent = true),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(true, rec.errorPermanent, "the permanence verdict must survive the pipeline")
+        assertEquals("failure:api_error", tag)
     }
 }

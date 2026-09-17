@@ -78,7 +78,7 @@ private class BranchlessFakeAuth : splice.core.auth.RefreshableAuthProvider {
 private class DeadClientTerminal : TurnTerminal {
     override val hasEnded: Boolean = true
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String): Unit =
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -99,7 +99,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage): Unit =
         throw IOException("client hung up mid terminal frame")
-    override suspend fun emitError(type: ErrorType, message: String): Unit =
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -118,7 +118,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
 private class CancellationDuringSealTerminal(private val emission: CancellationException) : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String): Unit = throw emission
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit = throw emission
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
     override suspend fun openThinking() = WireBlockIndex(0)

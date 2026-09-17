@@ -13,7 +13,6 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
-import splice.gateway.head.PreContentWireType
 import splice.gateway.usage.OutputClamp
 import splice.gateway.wire.TurnTerminal
 
@@ -47,12 +46,6 @@ public class TurnPipeline(
         outcome: TurnOutcome,
         meta: TurnMeta,
         elapsedMs: Long,
-        // V4-79: has any content reached THIS turn's client? The pipeline holds no perf handle, so
-        // the answer is threaded from the one caller that has one (TurnFinish, from the drive's
-        // CONTENT_FRAMES_OUT). It gates ONE decision below: a failure type the client would treat as
-        // terminal in band is wired as overloaded_error while nothing has been read, and left alone
-        // once something has — see PreContentWireType.
-        contentReachedClient: Boolean,
     ): String {
         when (outcome) {
             is TurnOutcome.Failure -> {
@@ -67,13 +60,11 @@ public class TurnPipeline(
                 if (outcome.deterministic) {
                     emitter.emitExplained(EXPLAINED_PREFIX + spoken, outcome.salvagedUsage)
                 } else {
-                    // V4-79: the wire type goes through the shared pre-content rule. A failure
-                    // whose type is API_ERROR or RATE_LIMIT is terminal for Claude Code in band,
-                    // and before content that is a session ended where a retry heals it.
-                    emitter.emitError(
-                        PreContentWireType.of(outcome.type, contentReachedClient),
-                        spoken,
-                    )
+                    // V4-81: the wire type is the EMITTER's decision now (SseEmitter.emitError
+                    // holds the pre-content rule and the counter it needs), so the pipeline passes
+                    // the failure's own permanence through and no longer snapshots perf at all —
+                    // the V4-79 parameter is gone with the rule it fed.
+                    emitter.emitError(outcome.type, spoken, permanent = outcome.permanent)
                 }
                 // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
                 // would have carried had it escaped to TurnConnEnd. That tag is the only string in

@@ -25,6 +25,14 @@ public class SseEmitterFactory {
         usagePayload: UsagePayloadBuilder,
         messageId: String = MessageIds().generateMessageId(),
         progressWrite: FrameWrite = write,
+        /** V4-81: the content-reached answer the emitter's failure rule turns on. It DEFAULTS TO
+         *  TRUE — the INERT reading — because a caller that cannot prove nothing has been written
+         *  must not be handed a relabel it cannot justify: true means "assume content may have
+         *  reached the client", and the rule then leaves the type exactly as it found it. Only the
+         *  streaming path can answer it truthfully, because only that path counts what it writes
+         *  (ClientChannel.timedClientWrite → CONTENT_FRAMES_OUT); the local answer and the
+         *  compaction replay take the default and keep the types they always sent. */
+        contentReached: () -> Boolean = { true },
     ): SseEmitter {
         val frames = SseFrameWriter(write)
         val start = MessageStart(frames, model, messageId, usagePayload)
@@ -33,6 +41,6 @@ public class SseEmitterFactory {
         val blocks = WireBlockWriter(frames, start, indexes)
         val progressFrames = SseFrameWriter(progressWrite)
         val progress = ProgressWire(progressFrames, WireBlockWriter(progressFrames, start, indexes))
-        return SseEmitter(frames, start, blocks, progress, usagePayload)
+        return SseEmitter(frames, start, blocks, progress, usagePayload, contentReached)
     }
 }

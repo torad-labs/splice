@@ -126,7 +126,14 @@ internal class HeadAdmission(
         // anthropic-ratelimit-unified-reset, which is the member Claude Code reads off a 429 to
         // decide when to come back. Without this the same response would assert `allowed` while
         // refusing the turn — splice contradicting itself in two headers of the same reply.
-        deps.quota?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
+        // V4-84 (4), the SIBLING of the refusal above and the same defect: this arm runs BEFORE
+        // account selection, so the turn has no fresh selection to read — but a session that is
+        // sticky to account B is still routed to B on its next turn, which is exactly when this
+        // armed-cooldown refusal fires. Shipping primary's utilization here would send the same
+        // wrong bars the row is about, one gate earlier. Same resolution, same fallback.
+        val selectedQuota = deps.accountPool?.view(prepared.built.meta.sessionId)?.selectedLabel
+            ?.let(deps.accountQuotas::get)
+        (selectedQuota ?: deps.quota)?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
             call.response.header(name, value)
         }
         // V4-55: recorded BEFORE responding, mirroring the pooled sibling below. A refusal that
@@ -203,7 +210,17 @@ internal class HeadAdmission(
         val retryEpochSeconds = exhausted.earliestResetEpochSeconds?.let {
             clientRetryEpochSeconds(now, AccountResetText.normalizedInstant(it).toEpochMilli() - now)
         }
-        deps.quota?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
+        // V4-84 (4): the SELECTED account's tracker, not the primary's. deps.quota is the primary
+        // label's QuotaTracker (ManagedHeadFactory passes quota = primaryQuota, one tracker per
+        // label), so on a pooled head whose session is sticky to another account this 429 used to
+        // ship the OTHER account's utilization and reset members — the client's bars jumped 37% to
+        // 10% in the AccountTurnSelectionTest fixture. AccountPool.select throws AllAccountsExhausted
+        // BEFORE touching sessions[sessionId], so the session's own routing still stands and
+        // view(sessionId).selectedLabel still names the account this turn was headed for. Resolved
+        // exactly as LocalResponses.kt:118-120 resolves it for the same reason.
+        val selectedQuota = deps.accountPool?.view(prepared.built.meta.sessionId)?.selectedLabel
+            ?.let(deps.accountQuotas::get)
+        (selectedQuota ?: deps.quota)?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
             call.response.header(name, value)
         }
         responses.respondRateLimited(call, exhausted.message.orEmpty(), retryEpochSeconds)

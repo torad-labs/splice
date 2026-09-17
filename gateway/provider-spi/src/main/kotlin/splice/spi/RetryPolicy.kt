@@ -36,9 +36,20 @@ internal class RetryRules(private val maxRetries: Int) {
     private val failureRules = FailureRules()
 
     /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
-     *  429/401/5xx floors actually fire (body-text-only classification left them dead code). */
-    fun giveUp(last: RetryOutcome.Failed?): Nothing =
+     *  429/401/5xx floors actually fire (body-text-only classification left them dead code).
+     *
+     *  V4-61: A 429 CANNOT LEAVE THE LOOP UNARMED. Every 429 used to arm inside rateLimitedPlan
+     *  before returning GIVE_UP; now a 429 with budget left plans a BACKOFF instead, and the two
+     *  exits where that backoff is refused (turn deadline spent, wait does not fit the remaining
+     *  budget) would end the turn with no horizon — and an unarmed exit lets every follower
+     *  reproduce the limit upstream. Arming here, at the one exit, makes the invariant structural
+     *  rather than a property of each planner branch; re-arming an armed horizon is a max() and
+     *  costs nothing. The pushback is the header's own value, clamped by arm() exactly as before,
+     *  or the bare-429 default when there was none. */
+    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown): Nothing {
+        if (last?.status == RATE_LIMITED) cooldown.arm(last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
         throw UpstreamFailed(last?.text.orEmpty(), last?.status)
+    }
 
     suspend fun planRetry(
         ctx: PostContext,

@@ -227,6 +227,7 @@ public class GrokAuthProvider(
         // rethrows anything that is not proven absence, so the guard is the caller's here just as it
         // is inside readSnapshot; an unreadable file yields null and vetoes nothing.
         val declaredExpiryMs = Cancellables.runCatchingCancellable { authJson.parseSnapshot() }
+            .onFailure { log("[$LOG_TAG] auth.json unreadable while judging a $status — no veto, refresh runs: $it") }
             .getOrNull()?.expiresAtMs
         val demonstrablyFresh =
             declaredExpiryMs != null && declaredExpiryMs - clock() >= PROACTIVE_WINDOW_MS

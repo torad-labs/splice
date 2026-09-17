@@ -81,7 +81,7 @@ internal class DoctorConfigChecks(private val localRuntime: DoctorLocalRuntime =
      *  be noise. The declarations are read straight off the schema rather than resolved, because
      *  resolving would read the prompt FILE and doctor must not throw on an unreadable one. */
     private fun systemPromptChecks(topology: Topology): List<DoctorCheck> = topology.heads
-        .filterValues { it.systemPromptMode == SystemPromptMode.REPLACE && it.carriesPrompt() }
+        .filterValues { it.systemPromptMode == SystemPromptMode.REPLACE && carriesPrompt(it) }
         .map { (key, _) ->
             DoctorCheck(
                 "system-prompt:$key",
@@ -93,5 +93,6 @@ internal class DoctorConfigChecks(private val localRuntime: DoctorLocalRuntime =
             )
         }
 
-    private fun HeadConfig.carriesPrompt(): Boolean = !systemPrompt.isNullOrEmpty() || systemPromptFile != null
+    private fun carriesPrompt(head: HeadConfig): Boolean =
+        !head.systemPrompt.isNullOrEmpty() || head.systemPromptFile != null
 }

@@ -110,6 +110,33 @@ class GrokEntitlementTest {
     }
 
     @Test
+    fun `a SYNTHESIZED expiry never vetoes a refresh — only a real expires may`() {
+        val now = 1_000_000L
+        val withExpires = provider(Files.createTempDirectory("grok-real-expiry"), now + 6 * 3_600_000L, now)
+        val withoutExpires = providerNoExpires(Files.createTempDirectory("grok-no-expiry"), now)
+
+        // Same 403, same body, two files that differ ONLY in whether they declare `expires`.
+        // readSnapshot answers BOTH with an expiry hours past the proactive window: the second one
+        // by SYNTHESIZING min(mtime, now) + 4h (G18/SH-01, GrokAuthJson lines 99-104). Reading that
+        // ceiling as proof of freshness suppressed the refresh on a genuine 403 expiry for the whole
+        // synthesized window — the 2026-07-18 grok-dead-head shape, and the exact inversion
+        // SynthesizedExpiry.kt:5 forbids ("can force an extra refresh, never suppress one").
+        assertFalse(
+            withExpires.allowRefreshAfterFailure(403, genuineExpiry),
+            "a REAL expires hours out is the freshness evidence rule 1 is built on",
+        )
+        assertTrue(
+            withoutExpires.allowRefreshAfterFailure(403, genuineExpiry),
+            "an expires-less file proves NOTHING about the token, so the refresh must still run",
+        )
+        assertTrue(
+            withoutExpires.allowRefreshAfterFailure(403, spendingLimit),
+            "and a recognised billing body changes nothing: only a REAL expires may veto",
+        )
+        assertTrue(withoutExpires.allowRefreshAfterFailure(401, ""), "a 401 still always keeps the refresh")
+    }
+
+    @Test
     fun `an unreadable credential proves nothing, so the old behaviour stands`() {
         val now = 1_000_000L
         val missing = Files.createTempDirectory("grok-absent").resolve("nope").resolve("auth.json")
@@ -120,6 +147,24 @@ class GrokEntitlementTest {
         )
 
         assertTrue(auth.allowRefreshAfterFailure(403, spendingLimit), "no readable snapshot → no veto")
+    }
+
+    /** The drifted shape G18/SH-01 exist for: a real grok auth.json with NO top-level `expires` —
+     *  a legacy file, or one the official grok CLI rewrote without it. Byte-for-byte [provider]'s
+     *  file minus that one field, so the two tests above differ in nothing else. */
+    private fun providerNoExpires(dir: Path, now: Long): GrokAuthProvider {
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"tokens":{"access_token":"grok-access","refresh_token":"grok-refresh"},""" +
+                """"last_refresh":"2026-09-16T00:05:00Z"}""",
+        )
+        return GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
     }
 
     private fun provider(dir: Path, expiresAtMs: Long, now: Long): GrokAuthProvider {

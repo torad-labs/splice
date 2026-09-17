@@ -31,6 +31,9 @@
 // is in :gateway, and :provider-spi depends only on :core — that edge would invert.
 package splice.spi
 
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import java.time.Instant
@@ -172,20 +175,36 @@ public class RateLimitCooldown public constructor(
             // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
             // elapsed clock would name a 1970-era instant to the operator.
             val resetsAt = Instant.ofEpochMilli(wallClock() + providerResetMs)
-            """{"detail":"Rate limit exceeded — $gatewayClause; this head is out of provider quota """ +
-                """until $resetsAt, so waiting will not help. Top up and the head resumes on its own."}"""
+            // V4-61: the window is REPORTED, not asserted as the deadline. muse stamps its 5h-window
+            // reset on burst 429s that clear in seconds (the operator's own re-send succeeded), so
+            // "waiting will not help" was a claim this turn could not support.
+            "Rate limit exceeded — $gatewayClause; the upstream reports its quota window resets " +
+                "at $resetsAt. If this keeps happening, that is the real deadline."
         } else {
-            """{"detail":"Rate limit exceeded — $gatewayClause to avoid a retry wave"}"""
+            "Rate limit exceeded — $gatewayClause to avoid a retry wave"
         }
-        throw UpstreamFailed(detail, RATE_LIMITED)
+        // V4-61: the ANTHROPIC ERROR ENVELOPE, not a hand-built {"detail":...}. This body is the
+        // classifier's structured input (TurnKnownEnd hands it to UpstreamFailureClassifier, which
+        // lifts error.message) and the presentation seam's (FailureText unwraps the same field) —
+        // so a failure splice synthesizes is shape-identical to one a real upstream sends, and our
+        // sentence reaches the operator as a sentence. The detail key was the one shape neither
+        // reader looked at, which is how our own words landed in his transcript as braces.
+        val body = buildJsonObject {
+            put("type", "error")
+            putJsonObject("error") {
+                put("type", "rate_limit_error")
+                put("message", detail)
+            }
+        }.toString()
+        throw UpstreamFailed(body, RATE_LIMITED)
     }
 
-    /** A 429 at or under the interactive ceiling, with retry budget left, is WAITED OUT and
-     *  retried — the same branch a short 408 or 5xx pushback has always taken. Every other 429
-     *  terminates instead of joining a synchronized retry wave, and arms the shared local horizon so
-     *  followers that have not reached upstream yet fail fast rather than reproducing the limit. A
-     *  wait beyond the fixed interactive ceiling is what removes a pooled account from later
-     *  selection; a short or missing wait never evicts it and never invents a provider reset. */
+    /** Every 429 with retry budget left is WAITED OUT and retried here in splice — a short
+     *  Retry-After honored as the floor, anything longer or absent at the 15s ceiling (V4-61). Two
+     *  cases terminate instead: an exhausted budget, and a POOLED account facing a wait past the
+     *  ceiling, which is evicted so the client's own retry lands on a healthy backup at once. Both
+     *  arm the shared local horizon so followers fail fast rather than reproducing the limit. A
+     *  short or missing wait never evicts an account and never invents a provider reset. */
     internal fun rateLimitedPlan(
         pushbackMs: Long?,
         turn: RateLimitTurn,
@@ -206,54 +225,54 @@ public class RateLimitCooldown public constructor(
         // adding a second member.
         captureProviderReset(body)
 
-        return shortWaitPlan(pushbackMs, canRetry, nextRefreshed, onRetry)
-            ?: giveUpAndArm(pushbackMs, turn, canRetry, nextRefreshed, onRetry)
+        // V4-61: a pooled account facing a wait past the interactive ceiling is EVICTED rather than
+        // retried — a healthy backup beats three more attempts on a spent account, and the client's
+        // own retry lands on that backup at once. Everything else with budget left backs off and
+        // retries HERE, in splice, whatever the header said.
+        val providerWaitExceeded = pushbackMs != null && pushbackMs > RETRY_AFTER_GIVE_UP_MS
+        val evictInstead = turn.pooledAccount && providerWaitExceeded
+        if (!canRetry || evictInstead) return giveUpAndArm(pushbackMs, turn, nextRefreshed, onRetry)
+        return backoffPlan(pushbackMs, nextRefreshed, onRetry)
     }
 
-    // V4-48: A SHORT 429 IS WAITED OUT, NOT SURRENDERED — the asymmetry this file carried
-    // against statusPlan. A 408 or a 5xx carrying a Retry-After at or under
-    // RETRY_AFTER_GIVE_UP_MS takes the BACKOFF branch (RetryPolicy.planRetry), waits the pushback
-    // and retries; the identical short pushback on a 429 was given up on because this function
-    // returned GIVE_UP before that threshold could be consulted. Same constant, same BACKOFF,
-    // same minDelayMs — this removes an asymmetry rather than inventing a policy, and
-    // isRetryableStatus has always counted RATE_LIMITED as retryable.
+    // V4-61: EVERY 429 WITH BUDGET LEFT BACKS OFF AND RETRIES IN SPLICE. V4-48 restored this for a
+    // Retry-After at or under the 15s ceiling; an ABSENT or LONG header still gave up, and that is
+    // the case the operator actually hits. muse stamps its 5h-window reset on a burst 429 — the
+    // live episode carried Retry-After 5301000ms — and his own re-send moments later SUCCEEDED.
+    // The long number is the window, not this 429's retry-after, and trusting it as a deadline was
+    // wrong in both directions: splice gave up here, then (V4-50) told the client to sleep 88
+    // minutes for a limit that cleared in seconds. This is the "retry every 15 seconds" layer the
+    // operator remembers: a short header is honored as the floor, anything else waits the ceiling.
+    // The fixed 15s dominates the 200ms-doubling curve (capped 10s) that applyBackoff maxes it
+    // against, so the schedule reads 15s, 15s, 15s across the default 4-attempt budget — 45s of
+    // patience before the client ever sees a 429, against a 900s turn timeout.
     //
-    // WHY THE HERD ARGUMENT DOES NOT BLOCK THE SYMMETRY. The give-up was built against a
-    // synchronized retry wave amplifying one 429 into N x maxRetries requests, and that concern
-    // is real — but it is not a 429-specific one, and the 5xx path has ALWAYS had identical
-    // exposure: a short 5xx pushback backs off and retries WITHOUT arming, so N concurrent turns
-    // each add a round there too, and that has been accepted since long before v0.3.0, because
-    // the alternative is refusing to retry anything short. Two things bound it here: only
-    // pushbacks at or under the 15s interactive ceiling wait at all, and the client's own
-    // concurrency is the real ceiling on N. What is NOT bounded away, and is worth naming: a 429
-    // is likelier than a 5xx to hit every concurrent turn at once, so this trade is at its worst
-    // on a busy head. That is the price of no longer refusing every short retry.
+    // WHY THE HERD ARGUMENT DOES NOT BLOCK THIS. The give-up was built against a synchronized
+    // wave amplifying one 429 into N x maxRetries requests. The 5xx path has ALWAYS carried the
+    // identical exposure and it has been accepted since before v0.3.0; the client's own
+    // concurrency is the real ceiling on N, and the operator has chosen the wave over the dead
+    // turn, with the evidence on his side. What is NOT bounded away, and is worth naming: a 429 is
+    // likelier than a 5xx to hit every concurrent turn at once, so this trade is at its worst on a
+    // busy head.
     //
-    // ARMING IS DELIBERATELY NOT DONE ON THIS PATH, matching the symmetric 5xx branch, which
-    // arms only in its give-up case. Arming would make every OTHER turn on the head fail fast for
-    // the very interval this turn is waiting out — the amplifier, pointed at our own followers.
-    private fun shortWaitPlan(
-        pushbackMs: Long?,
-        canRetry: Boolean,
-        nextRefreshed: Boolean,
-        onRetry: RetryNotice,
-    ): RetryPlan? {
-        val ms = pushbackMs ?: return null
-        if (ms > RETRY_AFTER_GIVE_UP_MS || !canRetry) return null
-        onRetry(
-            "429 rate limit: Retry-After header ${ms}ms at or under the " +
-                "${RETRY_AFTER_GIVE_UP_MS}ms interactive ceiling, budget remaining; waiting it out",
-        )
-        return RetryPlan(RetryDecision.BACKOFF, nextRefreshed, minDelayMs = ms)
+    // ARMING IS DELIBERATELY NOT DONE ON THIS PATH. Arming on the first 429 would fail every
+    // OTHER turn on the head for the whole interval this one is waiting out — clamped to 120s on
+    // an 88-minute header — while this turn may well succeed at 15s. The horizon is armed once,
+    // on exhaustion, by giveUpAndArm.
+    private fun backoffPlan(pushbackMs: Long?, nextRefreshed: Boolean, onRetry: RetryNotice): RetryPlan {
+        val floor = pushbackMs?.coerceAtMost(RETRY_AFTER_GIVE_UP_MS) ?: RETRY_AFTER_GIVE_UP_MS
+        val header = pushbackMs?.let { "${it}ms" } ?: "ABSENT"
+        onRetry("429 rate limit: Retry-After header $header; budget remaining, retrying in ${floor}ms")
+        return RetryPlan(RetryDecision.BACKOFF, nextRefreshed, minDelayMs = floor)
     }
 
-    /** The give-up half: the V4-46 instrument line and the clamp notice, the herd-starving
-     *  notice, an optional pooled-account eviction, the arm, and the terminal plan. Extracted
-     *  from rateLimitedPlan so each half stays under detekt's complexity ceiling. */
+    /** The give-up half: the V4-46 instrument line and the clamp notice, an optional
+     *  pooled-account eviction, the arm, and the terminal plan. Reached only on an exhausted budget
+     *  or a pooled eviction (V4-61). Extracted from rateLimitedPlan so each half stays under
+     *  detekt's complexity ceiling. */
     private fun giveUpAndArm(
         pushbackMs: Long?,
         turn: RateLimitTurn,
-        canRetry: Boolean,
         nextRefreshed: Boolean,
         onRetry: RetryNotice,
     ): RetryPlan {
@@ -264,9 +283,6 @@ public class RateLimitCooldown public constructor(
                 "arming ${minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)}ms follower protection",
         )
         noticeClamp(pushback, onRetry)
-        if (canRetry) {
-            onRetry("429 observed with retry budget remaining; giving up to avoid a synchronized retry wave")
-        }
         val providerWaitExceeded = pushbackMs != null && pushback > RETRY_AFTER_GIVE_UP_MS
         if (turn.pooledAccount && providerWaitExceeded) {
             markUnavailable(pushback)
@@ -290,7 +306,7 @@ internal const val RATE_LIMITED = 429
 // Cooldown length when a 429 carries no Retry-After (the ChatGPT backend's bare
 // {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
 // recovered account resumes within one client-retry cycle.
-private const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
+internal const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
 
 // NF-01: ceiling on the ARMED horizon, whatever the pushback says. ChatGPT quota errors
 // legitimately carry multi-day resets (142h observed 2026-07-26) and accumulateAndGet(max)

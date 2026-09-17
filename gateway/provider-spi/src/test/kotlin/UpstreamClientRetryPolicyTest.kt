@@ -162,8 +162,9 @@ class UpstreamClientRetryPolicyTest {
         assertTrue(failure.body.endsWith("[… omitted …]"))
     }
 
+    // V4-61 REVERSED THIS: it pinned the give-up the operator reported as "it did not retry".
     @Test
-    fun `non-pooled bare 429 gives up without sleeping inside a 900 second budget`() = runTest {
+    fun `non-pooled bare 429 retries every 15 seconds inside a 900 second budget, then arms`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
@@ -179,10 +180,11 @@ class UpstreamClientRetryPolicyTest {
             clock = ElapsedNow { 0L },
         )
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get())
-        assertTrue(capture.minDelays.isEmpty())
+        assertEquals(3, calls.get(), "every attempt in the budget is spent before the turn fails")
+        assertEquals(listOf(15_000L, 15_000L), capture.minDelays, "the floor is 15s on every retry of a bare 429")
+        assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get(), "a follower inside Retry-After must not reach upstream")
+        assertEquals(3, calls.get(), "a follower inside the armed horizon must not reach upstream")
     }
 
     @Test
@@ -323,8 +325,8 @@ class UpstreamClientRetryPolicyTest {
 
     @Test
     fun `http-date retry-after is honoured - arms the cooldown like its seconds twin`() = runTest {
-        // NF-04: a date ~30s out behaves exactly like "Retry-After: 30" — give up at once
-        // (>15s interactive budget), arm the shared cooldown for the served horizon.
+        // NF-04: a date ~30s out behaves exactly like "Retry-After: 30" — the shared cooldown is
+        // armed for the SERVED horizon, whichever exit the turn leaves by.
         val httpDate = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME
             .format(java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(30))
         var now = 0L
@@ -335,7 +337,7 @@ class UpstreamClientRetryPolicyTest {
         }
         val client = clientOver(engine, clock = { now })
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get()) // >15s pushback: no retry
+        assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up armed
         now += 20_000 // past the 20s no-header default but inside the served ~30s
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "a date-form pushback must arm its horizon, not the 20s guess")
@@ -379,7 +381,7 @@ class UpstreamClientRetryPolicyTest {
             respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = clientOver(engine, clock = { now })
-        // the observer arms the cooldown and terminates without retrying
+        // V4-61: a 15s retry cannot fit the 5s harness budget, so the observer exits at once, ARMED
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         // a follower during the cooldown fails fast: 429 body names the GATEWAY as the holder of the
@@ -406,7 +408,7 @@ class UpstreamClientRetryPolicyTest {
         }
         val client = clientOver(engine, clock = { now })
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(1, calls.get()) // >15s pushback: the probe does not retry
+        assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up ARMED
         now += 25_000 // past the 20s default but inside the served 30s
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get()) // still cooling — no upstream call

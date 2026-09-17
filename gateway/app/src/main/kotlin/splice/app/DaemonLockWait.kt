@@ -40,8 +40,14 @@ internal class DaemonLockWait(
     fun windowMs(): Long = polls * pollIntervalMs
 }
 
-// 10s: the old daemon's cooperative cap plus its tail grace (Main.kt's STOP_DEADLINE_MS +
+// 57s: the old daemon's cooperative cap plus its tail grace (Main.kt's STOP_DEADLINE_MS +
 // TEARDOWN_TAIL_GRACE_MS) — past that the old process has halted and the lock is free, or the
 // holder is something a new daemon must not race. Below the spawner's STARTUP_POLLS budget.
-private const val LOCK_WAIT_POLLS = 40
-private const val LOCK_POLL_INTERVAL_MS = 250L
+//
+// V4-74 KEPT THIS DERIVATION TIED TO THE FLOOR rather than shortening it: the old daemon may be
+// draining in-flight turns for up to 45s, so a new daemon that gave up on the lock sooner would
+// race a process that is still serving, and the operator's restart would report "did not come up"
+// while the turn it was waiting for finished fine. The spawner's budget rose with it (DaemonLaunch
+// STARTUP_POLLS) so the wait still fits inside the startup it is part of.
+internal const val LOCK_WAIT_POLLS = 228
+internal const val LOCK_POLL_INTERVAL_MS = 250L

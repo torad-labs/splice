@@ -23,8 +23,10 @@ import splice.spi.ProcessDispatchers
 
 // The whole head-stop phase's deadline (see [HeadShutdown.stopHeads]). Kept below Main's
 // STOP_DEADLINE_MS so the graceful stop + control shutdown finish before Main's hard halt
-// watchdog would ever need to fire.
-internal const val HEAD_STOP_BUDGET_MS = 6_000L
+// watchdog would ever need to fire, and ABOVE HeadServer's STOP_DRAIN_NS so the drain owns the
+// wait rather than being cancelled by this budget. V4-74 raised both together: the drain needs
+// 45s to outlive a deepseek turn, so this sits at 50s. Change one, check the other.
+internal const val HEAD_STOP_BUDGET_MS = 50_000L
 
 internal class HeadShutdown(
     // HD-19: where the N blocking HeadServer.stop() engine stops run. Was a hardcoded

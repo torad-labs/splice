@@ -66,6 +66,26 @@ internal class ReanchorRunner(
                 // rescued turn must not report a degraded provider as healthy, and (DR-125) a
                 // ClientAbandoned ending is attributed nowhere else at all: pre-fix a degraded
                 // provider grinding retries while clients hung up kept head health clean.
+                // V4-76: BEFORE the failure is finalized, ask whether the cut came AFTER a
+                // COMPLETED tool call. If it did, the client holds a well-formed tool call it can
+                // simply run, so the turn ends CLEAN at stop_reason tool_use instead of an error
+                // frame the client can only finalize as "Connection lost mid-response" (it never
+                // retries after content). An OPEN tool tear is refused here and falls through to
+                // today's honest error. See ReanchorContinuation.toolCutSalvage.
+                val cutSalvage = continuation.toolCutSalvage(outcome, salvaged, acc)
+                if (cutSalvage != null) {
+                    // A RESCUED turn must still report the degraded provider: the loop above
+                    // attributes absorbed failures only when the turn does not FAIL, and this turn
+                    // no longer does — silently skipping it would make a provider that tore
+                    // mid-tool look healthy.
+                    absorbedFailures.forEach(signals.onRoundFailure::invoke)
+                    log(
+                        "[$key] tool-cut salvage: stream cut after a COMPLETED tool_use — ending " +
+                            "clean at tool_use so the client runs the call and continues\n",
+                    )
+                    finish(cutSalvage)
+                    return
+                }
                 if (outcome !is TurnOutcome.Failure) absorbedFailures.forEach(signals.onRoundFailure::invoke)
                 finish(rounds.withFailureSalvage(continuation.finalOutcome(outcome, salvaged, acc), acc))
                 return

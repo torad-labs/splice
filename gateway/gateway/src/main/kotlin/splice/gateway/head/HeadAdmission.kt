@@ -119,7 +119,7 @@ internal class HeadAdmission(
         val armedMs = deps.upstream.rateLimitedForMs
         if (armedMs <= 0L) return false
         val now = wallClock()
-        val retryEpochSeconds = (now + armedMs) / MILLIS_PER_SECOND
+        val retryEpochSeconds = clientRetryEpochSeconds(now, armedMs)
         val windowResetEpochSeconds =
             deps.upstream.providerResetForMs.takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
         // V4-51's seam: the refusal states `rejected` and carries the plain
@@ -151,18 +151,70 @@ internal class HeadAdmission(
             "${AccountResetText.format(windowResetEpochSeconds)}; if this keeps happening, that is the real deadline."
     }
 
+    /** V4-61'S LAW IN ONE PLACE, because it was written once and forgotten on the sibling branch
+     *  (V4-77): the client's deadline is a HOLD FROM NOW — when this gateway next lets a request
+     *  through — never a provider instant, and never past [MAX_CLIENT_HOLD_MS]. Both refusals in
+     *  this file compute it here so neither can drift from the other again. The armed-cooldown
+     *  caller is already inside the clamp (RateLimitCooldown arms at most its own ceiling), so the
+     *  coerce is a wall for it and the actual bound for [refuseExhausted].
+     *
+     *  WHY A HOLD AND NOT THE REAL RESET: a non-persistent Claude Code ABORTS the turn on a
+     *  Retry-After past 60s and a persistent one sleeps through it, so a 3-day pooled reset on the
+     *  wire is the turn dying either way. The real reset is not lost — it rides in the refusal
+     *  message and in the perf row — and the client that comes back at the bound meets a re-probe
+     *  that either serves it or re-refuses with a fresh bounded deadline. */
+    private fun clientRetryEpochSeconds(now: Long, holdMs: Long): Long =
+        (now + holdMs.coerceIn(0L, MAX_CLIENT_HOLD_MS)) / MILLIS_PER_SECOND
+
+    /** V4-77: the POOLED twin of [refuseIfRateLimited] — every account is blocked, so no turn can
+     *  start, and the client is told so with the SAME bounded deadline a cooldown refusal gives.
+     *  Before this it was handed [AllAccountsExhausted.earliestResetEpochSeconds] raw, which is the
+     *  quota `resetsAt` / provider unavailability bounded only by seven days.
+     *
+     *  The provider's own reset is UNTOUCHED in the two places it belongs: the exception's message
+     *  (AccountResetText.exhausted names the instant) and the perf/journal row, which still records
+     *  the raw epoch. Only the wire deadline is bounded. An UNKNOWN reset still ships no
+     *  Retry-After at all — inventing one is a claim this refusal cannot support, and a pinned
+     *  behaviour.
+     *
+     *  V4-80: and it states `rejected` on V4-51's seam, the same one [refuseIfRateLimited] uses.
+     *  Before this the pooled refusal emitted NO quota headers, so a pooled head with a tracker
+     *  answered `anthropic-ratelimit-unified-status: allowed` on the very response refusing the
+     *  turn — the identical self-contradiction V4-51 fixed for the cooldown branch, surviving on
+     *  the branch V4-51 did not open. The reset member carries the CLIENT deadline (the bounded
+     *  [retryEpochSeconds]), never the provider window, so the plain unified-reset and Retry-After
+     *  name the same instant; a null deadline states the refusal and omits the member. */
+    private suspend fun refuseExhausted(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: Admitted,
+        exhausted: AllAccountsExhausted,
+    ) {
+        driver.recordAccountExhausted(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            exhausted.earliestResetEpochSeconds,
+        )
+        val now = wallClock()
+        // normalizedInstant is the same four-digit-year clamp AdmissionResponses formats through,
+        // borrowed here so an absurd upstream reset cannot overflow the subtraction before the
+        // hold is bounded.
+        val retryEpochSeconds = exhausted.earliestResetEpochSeconds?.let {
+            clientRetryEpochSeconds(now, AccountResetText.normalizedInstant(it).toEpochMilli() - now)
+        }
+        deps.quota?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
+            call.response.header(name, value)
+        }
+        responses.respondRateLimited(call, exhausted.message.orEmpty(), retryEpochSeconds)
+    }
+
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
         if (refuseIfRateLimited(call, prepared, admitted)) return
         val account = try {
             deps.accountPool?.select(prepared.built.meta.sessionId)
         } catch (e: AllAccountsExhausted) {
-            driver.recordAccountExhausted(
-                prepared.built.meta,
-                admitted.perf,
-                admitted.t0,
-                e.earliestResetEpochSeconds,
-            )
-            responses.respondRateLimited(call, e.message.orEmpty(), e.earliestResetEpochSeconds)
+            refuseExhausted(call, prepared, admitted, e)
             return
         }
         try {
@@ -185,3 +237,10 @@ internal class HeadAdmission(
 }
 
 private const val MILLIS_PER_SECOND = 1000L
+
+// V4-61's clamp on the CLIENT-FACING deadline, mirroring RateLimitCooldown's
+// MAX_RATE_LIMIT_COOLDOWN_MS, which is private to :provider-spi. Declared here rather than widened
+// there for the reason AdmissionResponses declares its own 429: a cross-module const import for one
+// number, against a file another row holds. The two must stay equal — the cooldown ceiling is when
+// this gateway next lets a request through, and this is what the client is told about that.
+private const val MAX_CLIENT_HOLD_MS = 120_000L

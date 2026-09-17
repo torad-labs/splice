@@ -28,6 +28,7 @@ public class TurnPipeline(
 
     // Success-path honesty / promote / mirror live in StreamFinish.kt (concentration, 2026-08-19).
     private val compact = StreamCompact(compactStats)
+    private val failures = FailurePresenter()
     private val streamFinish = StreamFinish(
         compact,
         log,
@@ -50,10 +51,15 @@ public class TurnPipeline(
                 if (meta.compact) {
                     compact.recordStreamError(meta, elapsedMs, outcome.type.wireName)
                 }
+                // V4-59: the same seam feeds BOTH endings. The deterministic one is the visible
+                // leak — its text block is rendered verbatim into the conversation — but the error
+                // event carries the identical raw body, so presenting only one of the two would
+                // have left most failures still quoting a vendor's JSON at the client.
+                val spoken = failures.spoken(outcome.type, outcome.message)
                 if (outcome.deterministic) {
-                    emitter.emitExplained(EXPLAINED_PREFIX + outcome.message, outcome.salvagedUsage)
+                    emitter.emitExplained(EXPLAINED_PREFIX + spoken, outcome.salvagedUsage)
                 } else {
-                    emitter.emitError(outcome.type, outcome.message)
+                    emitter.emitError(outcome.type, spoken)
                 }
                 return "failure:${outcome.type.wireName}"
             }
@@ -66,5 +72,6 @@ public class TurnPipeline(
     }
 }
 
-/** What a deterministic failure reads as on the client: the proxy speaking, marked as such. */
-private const val EXPLAINED_PREFIX = "\u26A0 splice: "
+/** What a deterministic failure reads as on the client: the proxy speaking, marked as such. The
+ *  code that follows it says WHICH splice failure this is; the mark says it is us talking. */
+private const val EXPLAINED_PREFIX = "\u26A0 splice "

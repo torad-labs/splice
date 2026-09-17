@@ -247,6 +247,39 @@ export interface LogsPayload {
   note?: string;
 }
 
+/** One hour of a head's token economics. SUMS ONLY — the daemon deliberately ships no ratios,
+ * so every rate on screen is derived here and stays recomputable when the window changes. */
+export interface EconomicsBucket {
+  hour: number;
+  turns: number;
+  in_tokens: number;
+  cached_tokens: number;
+  out_tokens: number;
+  req_bytes: number;
+  upstream_req_bytes: number;
+  tools_eager: number;
+  tools_deferred: number;
+  /** Turns that REPORTED a tool partition. 0 on a dialect that cannot defer — which the ledger
+   * must render as "n/a", never as a deferral rate of zero. */
+  deferral_turns: number;
+  rate_limited: number;
+}
+
+export interface HeadEconomics {
+  key: string;
+  label: string;
+  /** The provider's own x-ratelimit-limit-tokens, or null where it sends none. A null ceiling
+   * renders as "no ceiling known" — never as a guess. */
+  ceiling_tokens: number | null;
+  buckets: EconomicsBucket[];
+}
+
+export interface EconomicsPayload {
+  retention_hours: number;
+  generated_at: number;
+  heads: HeadEconomics[];
+}
+
 // ── endpoints ────────────────────────────────────────────────────────────────
 
 export const control = {
@@ -263,6 +296,7 @@ export const control = {
   auth: () => request<AuthPayload>('/api/auth'),
   refreshAuth: (head: string) => request<AuthActionResult>(`/api/auth/${head}/refresh`, { method: 'POST' }),
   compact: () => request<CompactPayload>('/api/compact'),
+  economics: () => request<EconomicsPayload>('/api/economics'),
   logs: (head: string, tail: number) => request<LogsPayload>(`/api/logs/${head}?tail=${tail}`),
 };
 

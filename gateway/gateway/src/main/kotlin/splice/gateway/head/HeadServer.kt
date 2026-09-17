@@ -122,5 +122,6 @@ public class HeadServer(
         driver.stopDetached()
         provider.onHeadStop()
         deps.usageStore.flushNow()
+        deps.economicsStore?.flushNow()
     }
 }

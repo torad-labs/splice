@@ -1,0 +1,335 @@
+/* ============================================================
+   BURN — the quota instrument.
+   Route-scoped by contract (tokens.css: "New pages own their spacing in
+   route-scoped CSS instead of selecting a global tempo recipe").
+
+   Four bands, deliberately DIFFERENT anatomy — a scale, a table, a signed
+   axis, a trace. Nothing here is a reusable card; if two bands started to
+   look alike this page would have become a kit.
+
+   Tone: measured instrument. Prussian is the measuring ink. Vermilion is
+   reserved for ONE thing — a projection that lands inside the window — so it
+   still means something when it appears. Verdigris = provider-confirmed,
+   ormolu = operator-asserted (tokens.css: "asserted = gilt / provisional").
+   ============================================================ */
+
+.bn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* ── BAND 1 · THE SCALE ─────────────────────────────────────
+   The week as an engraved rule. The dominant object on the page. */
+
+.bn-scale-band {
+  padding: var(--space-6) var(--space-6) var(--space-7);
+  background: var(--surface-raised);
+  box-shadow: var(--plate-leaf);
+  border-radius: var(--radius-1);
+}
+
+.bn-scale-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.bn-figure {
+  font-family: var(--font-display);
+  font-size: var(--text-10);
+  font-weight: 600;
+  line-height: .84;
+  letter-spacing: -.02em;
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.bn-figure.is-alarm { color: var(--accent); }
+
+.bn-figure-sub {
+  display: block;
+  margin-top: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 400;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.bn-scale-right {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-3);
+  color: var(--ink-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.bn-ceiling-kind {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: var(--text-1);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.bn-ceiling-kind.is-reported { color: var(--data-pos); }
+.bn-ceiling-kind.is-asserted { color: var(--data-amber); }
+.bn-ceiling-kind.is-absent { color: var(--ink-mute); }
+
+/* The track: a cut channel, not a rounded pill. */
+.bn-track {
+  position: relative;
+  height: var(--space-6);
+  background: var(--surface-sunk);
+  border-top: var(--hair) solid var(--line-strong);
+  border-bottom: var(--hair) solid var(--line-strong);
+  overflow: hidden;
+}
+
+/* Spent = hatch, never a flat opacity grey. Density IS the tone. */
+.bn-fill {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  background-color: color-mix(in srgb, var(--data-info) 22%, transparent);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--data-info) 0 1px,
+    transparent 1px 5px
+  );
+  border-right: 2px solid var(--data-info);
+}
+
+.bn-fill.is-alarm {
+  background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--accent) 0 1px,
+    transparent 1px 4px
+  );
+  border-right-color: var(--accent);
+}
+
+/* Where the burn rate runs out of week. A cut, with a flag beside it. Muted by default: the MARK
+   is information, only its colour is the alarm. */
+.bn-proj {
+  position: absolute;
+  inset-block: 0;
+  width: 0;
+  border-left: 2px dashed var(--tick-soft);
+}
+
+.bn-proj.is-alarm { border-left-color: var(--accent); }
+
+.bn-proj-flag {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-2);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.bn-proj.is-alarm .bn-proj-flag { color: var(--accent); }
+
+/* Day ticks — the scale's own graduations. */
+.bn-ticks {
+  position: relative;
+  height: var(--space-5);
+  margin-top: var(--space-1);
+}
+
+.bn-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  letter-spacing: .08em;
+  color: var(--ink-mute);
+}
+
+.bn-tick::before {
+  content: '';
+  display: block;
+  width: var(--hair);
+  height: var(--space-2);
+  margin: 0 auto var(--space-1);
+  background: var(--tick-soft);
+}
+
+.bn-rate {
+  margin-top: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-3);
+  color: var(--ink-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.bn-rate b { color: var(--ink-strong); font-weight: 600; }
+
+.bn-ceiling-set {
+  margin-left: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  border-bottom: var(--hair) dotted currentColor;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bn-ceiling-set:hover { color: var(--accent-bright); }
+
+/* ── BAND 2 · THE LEDGER ────────────────────────────────────
+   Dense figures. Deliberately NOT plates — a struck table. */
+
+.bn-ledger { width: 100%; border-collapse: collapse; }
+
+.bn-ledger caption {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding-bottom: var(--space-4);
+}
+
+.bn-ledger th,
+.bn-ledger td {
+  text-align: right;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: var(--hair) solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.bn-ledger th {
+  font-size: var(--text-1);
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  border-bottom-color: var(--line-strong);
+}
+
+.bn-ledger th:first-child,
+.bn-ledger td:first-child { text-align: left; }
+
+.bn-ledger td:first-child {
+  font-family: var(--font-body);
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+}
+
+.bn-none { color: var(--ink-mute); }
+
+/* ── BAND 3 · THE SEAM ──────────────────────────────────────
+   What splice does to a request between client and upstream. A signed axis:
+   left of centre = bytes removed, right = bytes added. */
+
+.bn-seam { display: flex; flex-direction: column; gap: var(--space-5); }
+
+.bn-seam-row {
+  display: grid;
+  grid-template-columns: minmax(0, var(--space-10)) minmax(0, 1fr) minmax(0, var(--space-11));
+  align-items: center;
+  gap: var(--gap-track);
+}
+
+.bn-seam-label { font-family: var(--font-body); font-size: var(--text-4); color: var(--ink-strong); }
+
+.bn-axis {
+  position: relative;
+  height: var(--space-5);
+  border-left: var(--hair) solid var(--line);
+  border-right: var(--hair) solid var(--line);
+}
+
+/* The zero line — the thing every bar is read against. */
+.bn-axis::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  inset-block: calc(var(--space-1) * -1);
+  width: var(--hair);
+  background: var(--line-strong);
+}
+
+.bn-bar {
+  position: absolute;
+  top: 50%;
+  height: var(--space-3);
+  transform: translateY(-50%);
+}
+
+.bn-bar.is-add { background: var(--data-amber); }
+.bn-bar.is-cut { background: var(--data-pos); }
+
+.bn-seam-note {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--ink-body);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ── BAND 4 · THE TRACE ─────────────────────────────────────
+   48 hours of burn. A ramp must be visible as a ramp. */
+
+.bn-trace { width: 100%; height: var(--space-8); display: block; overflow: visible; }
+.bn-trace-fill { fill: color-mix(in srgb, var(--data-info) 18%, transparent); }
+.bn-trace-line { fill: none; stroke: var(--data-info); stroke-width: 1.5; }
+.bn-trace-429 { fill: var(--accent); }
+
+.bn-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin-top: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* Section rule — shared only as a hairline, never as a component. */
+.bn-band > h2 {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 500;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
+  border-bottom: var(--hair) solid var(--line-strong);
+}
+
+.bn-caption {
+  max-width: var(--measure-narrow);
+  margin-top: var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-3);
+  line-height: 1.5;
+  color: var(--ink-mute);
+}
+
+@media (max-width: 720px) {
+  .bn-seam-row { grid-template-columns: 1fr; gap: var(--space-2); }
+  .bn-seam-note { text-align: left; }
+  .bn-ledger th:nth-child(n + 5),
+  .bn-ledger td:nth-child(n + 5) { display: none; }
+}

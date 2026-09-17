@@ -7,6 +7,7 @@ package splice.app.head
 import kotlinx.coroutines.CoroutineScope
 import splice.app.AuthHttpClientFactory
 import splice.app.CompactStatsSource
+import splice.app.EconomicsStoreSource
 import splice.app.LogFileSource
 import splice.app.PerfRowsFileSource
 import splice.app.PerfStatsSource
@@ -27,6 +28,7 @@ import splice.core.model.ClientWindows
 import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexQuotaHeaderFamily
@@ -71,15 +73,7 @@ internal class ManagedHeadFactory(
             ?.let { accountQuotas.getValue(it.label) }
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         onPrimaryQuota(primaryQuota)
-        val stores = HeadStores(
-            usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
-            compactStats = CompactStats(statePaths.compactStatsFile(key)),
-            perfStats = PerfStats(statePaths.perfStatsFile(key)),
-            quota = primaryQuota,
-            accountPool = accountPools.build(wired, accountQuotas),
-            accountQuotas = accountQuotas,
-            clientWindows = ClientWindows(store = statePaths.clientWindowsFile(key), log = log),
-        )
+        val stores = headStores(key, wired, primaryQuota, accountQuotas)
         startQuotaPollers(ctx, wired, stores, cfg.quotaPollOff)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
@@ -112,6 +106,7 @@ internal class ManagedHeadFactory(
             ),
             perf = PerfStatsSource(stores.perfStats),
             perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key)),
+            economics = EconomicsStoreSource(stores.economics),
             keyPresence = keyPresence,
             catalog = ctx.catalog,
             clientWindows = stores.clientWindows,
@@ -119,6 +114,27 @@ internal class ManagedHeadFactory(
             accountAuth = accountPools.authSource(wired),
         )
     }
+
+    /** Every file-backed store one head owns, built from its state paths. Its own method because
+     *  the head WRITES these and the control-plane adapters READ them, and both must hold the SAME
+     *  instances — a second store over the same path would serve the dashboard its own stale
+     *  in-memory copy. (The economics store pushed assembleHead past detekt's LongMethod ceiling,
+     *  which is the same pressure that made this a separate declaration in the original commit.) */
+    private fun headStores(
+        key: String,
+        wired: Wired,
+        primaryQuota: QuotaTracker,
+        accountQuotas: Map<String, QuotaTracker>,
+    ): HeadStores = HeadStores(
+        usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
+        compactStats = CompactStats(statePaths.compactStatsFile(key)),
+        perfStats = PerfStats(statePaths.perfStatsFile(key)),
+        economics = EconomicsStore(statePaths.economicsFile(key)),
+        quota = primaryQuota,
+        accountPool = accountPools.build(wired, accountQuotas),
+        accountQuotas = accountQuotas,
+        clientWindows = ClientWindows(store = statePaths.clientWindowsFile(key), log = log),
+    )
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a

@@ -16,6 +16,7 @@ import splice.core.version.ClientVersionTracker
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.spi.AccountPool
@@ -42,6 +43,9 @@ public data class HeadDeps(
     val compactStats: CompactStats,
     val usageStore: UsageStore,
     val perfStats: PerfStats,
+    /** Hourly quota rollup (the burn page's input). Nullable so a head assembled without it (tests,
+     *  embedders) simply records no economics rather than needing a stub store. */
+    val economicsStore: EconomicsStore? = null,
     /** The head's quota windows: fed by upstream rounds and the app-side poller, stamped onto
      *  every client response as the unified rate-limit headers Claude Code draws its bars from.
      *  Null = a head that neither observes nor emits them (tests, and nothing else). */

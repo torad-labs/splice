@@ -62,6 +62,7 @@ internal class HeadServerFactory(
                 progressLine = cfg.progressLine,
                 usageStore = stores.usageStore,
                 perfStats = stores.perfStats,
+                economicsStore = stores.economics,
                 quota = stores.quota,
                 accountPool = stores.accountPool,
                 accountQuotas = stores.accountQuotas,

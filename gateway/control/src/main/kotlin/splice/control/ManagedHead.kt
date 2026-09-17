@@ -35,6 +35,31 @@ public interface HeadCompactSource {
 
 public data class CompactView(val total: Int, val byOutcome: Map<String, Int>, val tail: List<Map<String, String>>)
 
+/** Reads the head's hourly token-economics rollup (file truth, oldest first). Separate from
+ *  [HeadPerfSource] on purpose: perf answers "where did the latency go" from a bounded TAIL,
+ *  economics answers "what has this cost against the plan" and needs SUMS over a week — a figure
+ *  no percentile over the last few hundred turns can reconstruct. */
+public fun interface HeadEconomicsSource {
+    public fun buckets(): List<EconomicsRow>
+}
+
+/** One hour of a head's economics on the control-plane side. Sums only; every ratio the dashboard
+ *  shows is derived at render time from these. [deferralTurns] is the denominator for the tool
+ *  averages and is 0 on a head whose dialect cannot defer — which the UI renders as "n/a". */
+public data class EconomicsRow(
+    val hour: Long,
+    val turns: Long,
+    val inTokens: Long,
+    val cachedTokens: Long,
+    val outTokens: Long,
+    val reqBytes: Long,
+    val upstreamBytes: Long,
+    val toolsEager: Long,
+    val toolsDeferred: Long,
+    val deferralTurns: Long,
+    val rateLimited: Long,
+)
+
 /** Reads the head's log tail (file truth). */
 public interface HeadLogSource {
     public fun tail(lines: Int): String
@@ -59,6 +84,8 @@ public data class ManagedHead(
     val perf: HeadPerfSource? = null,
     /** v0.4.0 (FEATURES.md §3): the same rows with outcome tags, for the windowed summary. */
     val perfRows: PerfRowsSource? = null,
+    /** Hourly quota rollup for /api/economics; null = head has no economics sink wired. */
+    val economics: HeadEconomicsSource? = null,
     /** DR-81: "does this head hold a working api key RIGHT NOW" — read per /launch, never frozen
      *  into [launchSpec] (the spec is assembled once at boot; `splice key set` promises live
      *  pickup, and a boot-frozen gate left the paste-your-key capture hook armed against a

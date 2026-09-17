@@ -179,6 +179,9 @@ public class UpstreamClient(
         // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
         // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
         // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
+        // V4-66: "a TRANSPORT error" means every failure this seam can carry, not only the six
+        // types the classifier names — a bare IOException from the JDK parser used to escape
+        // with attempts=1 and end a turn a retry would have completed.
         val attempted = try {
             transportFailures.catchCancellable {
                 request.execute(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
@@ -206,7 +209,12 @@ public class UpstreamClient(
     /** The transport-error half of one attempt (split so [runAttempt] stays under the complexity
      *  ceiling — same reasoning as planRetry/statusPlan). G5: a stream torn BEFORE the client saw a
      *  byte re-issues on its own small budget (does NOT consume `attempt`); otherwise the pre-G5
-     *  rule holds — retry on the backoff budget only before handoff, else rethrow. */
+     *  rule holds — retry on the backoff budget only before handoff, else rethrow.
+     *
+     *  V4-66: the RETHROW below is now decided by the two give-up gates alone, never by the
+     *  failure's class — see TransportFailures.rethrowUnlessRetryableTransport. An unclassified
+     *  throwable takes the POST_SEND branch, so it gets the possible-duplicate label and the
+     *  double-burn marker rather than an early exit. */
     private suspend fun onTransportError(
         e: Throwable,
         ctx: PostContext,

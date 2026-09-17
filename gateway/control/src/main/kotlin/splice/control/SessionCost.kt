@@ -56,13 +56,14 @@ public class SessionCost(
         return c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates
     }
 
-    /** Sums the three billing buckets over this session's rows. Each perf row is ONE turn's own
+    /** Sums the four billing buckets over this session's rows. Each perf row is ONE turn's own
      *  contribution — in_tokens is that turn's final round, out_tokens its output across rounds — so
      *  the session total is their sum, which is the same arithmetic the operator's 67-turn figure
      *  was taken with. */
     private fun bucketsFor(sessionId: String): TokenBuckets {
         var input = 0L
         var cacheRead = 0L
+        var cacheWrite = 0L
         var output = 0L
         for (row in tokens.tailNumericFor(sessionId)) {
             // V4-37 redo: IN_TOKENS is INCLUSIVE of the cached portion, so the cache-miss bucket is
@@ -82,15 +83,27 @@ public class SessionCost(
             // cache_read, "making the downstream subtraction reproduce the disjoint numbers" — so
             // this subtraction is the consumer doing what the producer documented.
             //
+            // V4-85: the cache-WRITE tokens are the OTHER disjoint part of that same inclusive
+            // in_tokens, and they come out of the miss bucket for exactly the reason the read does.
+            // Before this they had no counter at all, so they stayed folded inside in_tokens and
+            // billed at the input rate — which is a real overcharge on an Anthropic-shaped wire
+            // (a write is 1.25x the input rate there, so the sign is not even consistent) and left
+            // a head's declared cache_write rate as arithmetic over a permanently-zero operand.
+            // ABSENT, not zero, on every row written before the counter existed: `?: 0L` then keeps
+            // that row priced exactly as it was, which is the NEVER-BELOW-STATUS-QUO law — a
+            // historical row cannot be retro-split into buckets it never recorded.
+            //
             // coerceAtLeast(0) because a malformed or older row could carry a cached count above its
             // input count, and a negative miss bucket would SUBTRACT from the bill rather than
             // floor it.
             val rawIn = row[PerfKeys.IN_TOKENS] ?: 0L
             val cached = row[PerfKeys.CACHED_TOKENS] ?: 0L
-            input += (rawIn - cached).coerceAtLeast(0L)
+            val written = row[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L
+            input += (rawIn - cached - written).coerceAtLeast(0L)
             cacheRead += cached
+            cacheWrite += written
             output += row[PerfKeys.OUT_TOKENS] ?: 0L
         }
-        return TokenBuckets(input = input, cacheRead = cacheRead, output = output)
+        return TokenBuckets(input = input, cacheRead = cacheRead, cacheWrite = cacheWrite, output = output)
     }
 }

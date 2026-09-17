@@ -45,6 +45,15 @@ public object PerfKeys {
     public const val IN_TOKENS: String = "in_tokens"
     public const val CACHED_TOKENS: String = "cached_tokens"
 
+    /** V4-85: prompt-cache WRITE tokens (cache_creation_input_tokens). A DISJOINT part of
+     *  [IN_TOKENS], exactly as [CACHED_TOKENS] is — the row's `in_tokens` contains both — so the
+     *  cache-MISS bucket is `in_tokens - cached_tokens - cache_write_tokens`. This key exists
+     *  because a cache write bills at its own premium rate: without it SessionCost could only see
+     *  the write folded inside `in_tokens` and charged it as a miss, leaving a head's declared
+     *  cache_write rate as arithmetic over a permanently-zero operand. Written on every turn (0 on
+     *  dialects whose wire reports no such bucket), the same way [CACHED_TOKENS] is. */
+    public const val CACHE_WRITE_TOKENS: String = "cache_write_tokens"
+
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 

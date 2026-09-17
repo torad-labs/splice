@@ -1,5 +1,5 @@
 // NEW: v0.4.0 FEATURES.md §6 — the doctor report's perf tail: the last 200 rows per head across
-// both file generations, restricted to the 36 numeric perf keys (numbers only), model, outcome
+// both file generations, restricted to the 37 numeric perf keys (numbers only), model, outcome
 // and account as safe tokens (a model id or label is operator-authored: prose there is omitted)
 // and the compact / cache_cold flags as JSON booleans only. Split from
 // DoctorReportTail.kt (concentration, 2026-09-13).
@@ -62,6 +62,11 @@ internal val perfNumericFields: Set<String> = setOf(
     PerfKeys.OUT_TOKENS,
     PerfKeys.IN_TOKENS,
     PerfKeys.CACHED_TOKENS,
+    // V4-85: the cache-WRITE counter. This set is an ALLOWLIST, so a key missing from it is not
+    // rendered wrong — it is invisible, which is the worse failure here: the doctor report is the
+    // operator diagnostic for exactly the question "why is my reported cost wrong", and a cache
+    // write priced as a cache miss was that question. A number, like every other key in this set.
+    PerfKeys.CACHE_WRITE_TOKENS,
     PerfKeys.INFLIGHT,
     PerfKeys.ASYNC_IO_DROPS,
     PerfKeys.TOOLS_EAGER,

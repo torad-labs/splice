@@ -18,11 +18,19 @@ internal class PassthroughUsage {
     private var outputTokens = 0L
 
     /** Anthropic usage is disjoint; re-add the cache buckets so HeadServer's cached-subtraction
-     *  reproduces the correct disjoint numbers. cachedTokens carries the prompt-cache-read hit. */
+     *  reproduces the correct disjoint numbers. cachedTokens carries the prompt-cache-read hit.
+     *
+     *  V4-85: cacheWriteTokens carries the cache-WRITE half back out again. It used to be folded
+     *  into inputTokens and then dropped, which left a cache write indistinguishable from a cache
+     *  MISS downstream — so it billed at the input rate and the declared cache_write rate was dead
+     *  arithmetic. inputTokens stays INCLUSIVE of it (CX-18: the context-window percentage is
+     *  `(input + cache_creation + cache_read) / window`, which this numerator has to keep feeding);
+     *  the new field is a disjoint READ-OFF of that same total, not an addition to it. */
     internal fun toUsage(): Usage = Usage(
         inputTokens = inputTokens + cacheRead + cacheCreation,
         outputTokens = outputTokens,
         cachedTokens = cacheRead,
+        cacheWriteTokens = cacheCreation,
     )
 
     internal fun harvestUsage(u: JsonObject?) {

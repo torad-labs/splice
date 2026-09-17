@@ -16,6 +16,9 @@ export interface Totals {
   turns: number;
   inTokens: number;
   cachedTokens: number;
+  /** The cache-WRITE half of inTokens, disjoint from cachedTokens. Summed on its own because it
+   * bills at the vendor's cache_write rate and not at the input rate. */
+  cacheWriteTokens: number;
   outTokens: number;
   reqBytes: number;
   upstreamBytes: number;
@@ -26,7 +29,7 @@ export interface Totals {
 }
 
 const ZERO: Totals = {
-  turns: 0, inTokens: 0, cachedTokens: 0, outTokens: 0, reqBytes: 0,
+  turns: 0, inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, outTokens: 0, reqBytes: 0,
   upstreamBytes: 0, toolsEager: 0, toolsDeferred: 0, deferralTurns: 0, rateLimited: 0,
 };
 
@@ -35,6 +38,7 @@ export function sum(buckets: EconomicsBucket[]): Totals {
     turns: a.turns + b.turns,
     inTokens: a.inTokens + b.in_tokens,
     cachedTokens: a.cachedTokens + b.cached_tokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cache_write_tokens,
     outTokens: a.outTokens + b.out_tokens,
     reqBytes: a.reqBytes + b.req_bytes,
     upstreamBytes: a.upstreamBytes + b.upstream_req_bytes,
@@ -56,6 +60,18 @@ export function within(buckets: EconomicsBucket[], hours: number, now: number): 
  * mistaken for safety. */
 export function hitRate(t: Totals): number | null {
   return t.inTokens > 0 ? t.cachedTokens / t.inTokens : null;
+}
+
+/** Share of the metered input that was WRITTEN into the cache, computed exactly as [hitRate] is
+ * computed for the read half: the bucket over total input, null when there is no input to divide.
+ *
+ * It sits beside the hit rate rather than replacing it because the two answer different questions
+ * about the same total: a high hit rate is a warm prefix being re-read, a high write share is that
+ * prefix being re-BUILT, and a vendor charges more per token for the second than for either the
+ * first or a plain miss. On this page both are diagnostics, never inputs to the burn gauge — the
+ * plan meters total input and every one of these tokens bills in full. */
+export function writeRate(t: Totals): number | null {
+  return t.inTokens > 0 ? t.cacheWriteTokens / t.inTokens : null;
 }
 
 /** Input tokens burned per output token produced — the read-amplification of an agentic tool

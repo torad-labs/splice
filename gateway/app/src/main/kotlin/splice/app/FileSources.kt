@@ -3,7 +3,9 @@
 package splice.app
 
 import splice.control.CompactView
+import splice.control.EconomicsRow
 import splice.control.HeadCompactSource
+import splice.control.HeadEconomicsSource
 import splice.control.HeadPerfSkipSource
 import splice.control.HeadPerfSource
 import splice.control.HeadSessionPerfSource
@@ -15,6 +17,7 @@ import splice.control.UsageView
 import splice.core.usage.QuotaSnapshot
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 
@@ -42,6 +45,27 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
         val s = stats.read(tailN)
         val tail = s.tail.map { row -> row.mapValues { (_, v) -> v.toString() } }
         return CompactView(s.total, s.byOutcome, tail)
+    }
+}
+
+/** The hourly quota rollup, projected onto the control plane's row type. A straight field-for-field
+ *  copy on purpose: [EconomicsRow] is :control's own vocabulary and :control may not see :gateway,
+ *  so the translation belongs here, in the composition root, and nowhere else. */
+public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEconomicsSource {
+    override fun buckets(): List<EconomicsRow> = store.read().map {
+        EconomicsRow(
+            hour = it.hour,
+            turns = it.turns,
+            inTokens = it.inTokens,
+            cachedTokens = it.cachedTokens,
+            outTokens = it.outTokens,
+            reqBytes = it.reqBytes,
+            upstreamBytes = it.upstreamBytes,
+            toolsEager = it.toolsEager,
+            toolsDeferred = it.toolsDeferred,
+            deferralTurns = it.deferralTurns,
+            rateLimited = it.rateLimited,
+        )
     }
 }
 

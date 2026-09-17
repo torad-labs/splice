@@ -6,14 +6,18 @@
 package splice.gateway.head
 
 import splice.core.perf.PerfKeys
+import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.EconomicsStore
+import splice.gateway.usage.TurnEconomics
 import splice.spi.AccountResetText
 import splice.spi.WatchdogFired
 import splice.spi.WatchdogHeld
@@ -32,12 +36,16 @@ internal class TurnTelemetry(
     private val perfStats: PerfStats,
     private val log: LogSink,
     private val clock: ElapsedClock,
+    /** The hourly quota rollup, or null on a head assembled without one — then a turn records no
+     *  economics, which is the honest reading, never a zero-burn row. */
+    private val economics: EconomicsStore? = null,
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
 
-    /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws. */
-    fun recordPerf(drive: TurnDrive, outcomeTag: String) {
+    /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws.
+     *  [rateLimited] marks the one turn the upstream refused with a 429 — see [recordEconomics]. */
+    fun recordPerf(drive: TurnDrive, outcomeTag: String, rateLimited: Boolean = false) {
         drive.perf.mark(PerfKeys.TOTAL)
         val snap = drive.perf.snapshot()
         val session = drive.sessionTag()
@@ -57,6 +65,34 @@ internal class TurnTelemetry(
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
         }
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
+        recordEconomics(snap, rateLimited)
+    }
+
+    /** Fold this turn into the hourly quota rollup. The perf snapshot is the single source for
+     *  BOTH the JSONL row and this store, so the dashboard can never disagree with the log line.
+     *  Wrapped because recordPerf's contract is never-throws and telemetry must not fail a turn. */
+    private fun recordEconomics(snap: PerfSnapshot, rateLimited: Boolean) {
+        val store = economics ?: return
+        Cancellables.discard(
+            Cancellables.runCatchingCancellable {
+                store.record(
+                    TurnEconomics(
+                        inTokens = snap.counters[PerfKeys.IN_TOKENS] ?: 0,
+                        cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS] ?: 0,
+                        outTokens = snap.counters[PerfKeys.OUT_TOKENS] ?: 0,
+                        reqBytes = snap.counters[PerfKeys.REQ_BYTES],
+                        upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],
+                        // Absent (not zero) on a head whose dialect cannot defer — the chat dialect
+                        // has no tool_search at all, and the ledger must render that as "n/a",
+                        // never as a deferral rate of zero.
+                        toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
+                        toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
+                        rateLimited = rateLimited,
+                    ),
+                )
+            },
+            "telemetry is best-effort; a turn must never fail on the quota rollup",
+        )
     }
 
     /** Records a pool refusal that happens after parsing but before a [TurnDrive] can exist. */

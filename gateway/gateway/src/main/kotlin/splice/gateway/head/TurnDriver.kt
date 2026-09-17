@@ -35,7 +35,8 @@ internal class TurnDriver(
 ) {
     private val log get() = deps.log
 
-    private val telemetry = TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock)
+    private val telemetry =
+        TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock, deps.economicsStore)
     private val health = HeadHealthCounters()
     private val failures = TurnFailures(provider)
     private val zeroEvent = ZeroEventFailure(provider, log)

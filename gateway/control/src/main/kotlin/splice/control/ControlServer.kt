@@ -33,6 +33,7 @@ import splice.control.api.CompactPayloads
 import splice.control.api.ConfigRoutes
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
+import splice.control.api.EconomicsPayloads
 import splice.control.api.HeadResolver
 import splice.control.api.HeadRoutes
 import splice.control.api.JsonBody
@@ -106,6 +107,7 @@ public class ControlServer(
     private val configRoutes = ConfigRoutes(config, jsonBody, payloads)
     private val usagePayloads = UsagePayloads(heads, config)
     private val perfPayloads = PerfPayloads(heads)
+    private val economicsPayloads = EconomicsPayloads(heads)
     private val compactPayloads = CompactPayloads(heads)
     private val authRoutes = AuthRoutes(heads, resolver)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
@@ -144,6 +146,7 @@ public class ControlServer(
                     guarded(call) { respond(call, perfPayloads.perfJson(tail(call, DEFAULT_PERF_TAIL))) }
                 }
                 get("/api/perf/summary") { guarded(call) { perfPayloads.summary(call) } }
+                get("/api/economics") { guarded(call) { respond(call, economicsPayloads.economicsJson()) } }
                 get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
                 post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
                 get("/api/compact") { guarded(call) { respond(call, compactPayloads.compactJson()) } }

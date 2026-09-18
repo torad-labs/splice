@@ -186,7 +186,7 @@ run "autocloseable closed selftest" bash checks/autocloseable-closed-selftest.sh
 # wall now; checks/config/python-burndown.json is the dated debt and may only shrink.
 run "no python" bun checks/no-python.ts
 run "no python selftest" bun checks/no-python-selftest.ts
-run "public surface" python3 checks/public-surface.py --ratchet
+run "public surface" bun checks/public-surface.ts --ratchet
 run "public surface selftest" bash checks/public-surface-selftest.sh
 run "constructor width" python3 checks/constructor-width.py --ratchet
 run "constructor width selftest" bash checks/constructor-width-selftest.sh

@@ -174,7 +174,17 @@ function selftest() {
     if (!ok) bad++;
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${c.label} — wanted ${c.want}, got ${got}`);
   }
-  console.log(bad === 0 ? `\nselftest ${cases.length}/${cases.length} PASS` : `\nselftest ${cases.length - bad}/${cases.length}, ${bad} wrong`);
+  // The vacuous pass, proven rather than asserted: this gate DID exit 0 on "0/0 passed"
+  // until 2026-09-18, found by reading a peer campaign's audit of its own thirteen
+  // checkers. A gate with nothing to run is the one case it cannot report as green.
+  {
+    const r = sh(process.execPath, [fileURLToPath(import.meta.url), '--only', '__no_such_leg__'], ROOT);
+    const ok = r.code !== 0;
+    if (!ok) bad++;
+    console.log(`  ${ok ? 'PASS' : 'FAIL'}  an empty leg set is not a pass — wanted a non-zero exit, got ${r.code}`);
+  }
+  const total = cases.length + 1;
+  console.log(bad === 0 ? `\nselftest ${total}/${total} PASS` : `\nselftest ${total - bad}/${total}, ${bad} wrong`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
@@ -182,6 +192,15 @@ if (has('selftest')) selftest();
 
 const only = flag('only', null)?.split(',').map(s => s.trim());
 const legs = only ? LEGS.filter(l => only.includes(l.name)) : LEGS;
+// FAIL CLOSED ON AN EMPTY LEG SET. Without this the gate prints "0/0 passed" and exits 0,
+// which is a vacuous pass — the same defect as a check whose denominator came from the list
+// it is checking, wearing the gate's own uniform. A typo in --only must not read as green.
+if (legs.length === 0) {
+  console.error(only
+    ? `REFUSED: --only ${only.join(',')} selected no legs. Known: ${LEGS.map(l => l.name).join(', ')}`
+    : 'REFUSED: no legs are defined; a gate with nothing to run is not a passing gate');
+  process.exit(2);
+}
 const results = [];
 for (const leg of legs) {
   process.stderr.write(`  … ${leg.name}\n`);

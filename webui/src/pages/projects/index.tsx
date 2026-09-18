@@ -86,7 +86,7 @@ const COLUMNS: Record<string, { label: string; w: number }> = {
 /**
  * The root as the STRIP prints it: the home directory collapsed to `~`.
  *
- * The column is 44 characters and StripField clips rather than wraps, so a root under the home
+ * The column is 49 characters and StripField clips rather than wraps, so a root under the home
  * directory has to say the same thing in fewer of them — `/home/marcos/Documents/dev/projects/x`
  * and `~/Documents/dev/projects/x` are the same location, and only one of them fits. The detail
  * header prints the path WHOLE, unshortened, which is where an operator copies it from.

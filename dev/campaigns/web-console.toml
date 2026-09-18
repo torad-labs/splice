@@ -3698,7 +3698,8 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/models && npx vit
 id = "M2-34"
 phase = "m2"
 title = "MCP, THE LAST UNCOMPOSED PAGE IN THE CONSOLE OUTSIDE TEAMS. Uses NO widgets, verified before cutting, so it is independent of models (M2-33). 438 lines across 5 files, real, no stubs. It is the OTHER page whose detail column is populated at rest rather than collapsed, and mcps noOpened is LIVE -- rendered at mcp/index.tsx:177 -- so unlike fleets and models it is not dead and must not be swept. Bring the corrected diagnostic: every ratio on a page carries that racks fill factor, so read the SPREAD after normalising and never the level; a 1.0-1.5 band quoted at a page with different fill condemns a healthy rack. Check the axis width cannot see: does every strip reprint the column names the rack could state once? That cost a third of every row on three racks and the shared Bay has shipped a fields row for it since m1. Measure at the scrollport edge. Open the capture. Try it in the page before writing it. If the honest finding is that the page is already composed, say so -- an empty result reported is worth more than an invented change."
-files = ["webui/src/pages/mcp", "webui/tests/mcp.test.ts", "webui/.impeccable/review/compose"]
+files = ["webui/src/pages/mcp", "webui/tests/mcp.test.ts"]
 status = "todo"
 verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/mcp && npx vitest run tests/detail-rest.test.ts && npx vite build && test -f src/pages/mcp/index.tsx"
 # [2026-09-18] PLANNED m2 SCOPE (every page). Same independence check as M2-33. Verify asserts the page file exists rather than trusting the runner.
+# [2026-09-18] FENCE-EDITED: files = ["webui/src/pages/mcp", "webui/tests/mcp.test.ts", "webui/.impeccable/review/compose"] -> files = ["webui/src/pages/mcp", "webui/tests/mcp.test.ts"] (by=orchestrator implied; no flag)

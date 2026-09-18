@@ -1,0 +1,108 @@
+/* The doctor page: a rack of check strips, a detail column with the fixes, and the playground
+   behind a Reveal. Radius 0, tokens only. */
+
+.myx-doc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-doc-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-doc-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+.myx-doc-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* The bay clips at its own edge, so the detail column drops beneath it before the rack can be cut:
+   a clipped field is the defect, not the scroll. */
+@media (max-width: 1600px) {
+  .myx-doc-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.myx-doc-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-doc-bays > * { overflow-x: auto; }
+
+.myx-doc-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-doc-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--hairline);
+  border-radius: 0;
+}
+
+.myx-doc-section-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+.myx-doc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-doc-fix {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.myx-doc-note {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-doc-btn {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: transparent;
+  border: var(--hair) solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.myx-doc-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-doc-btn:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
+.myx-doc-btn:disabled { opacity: 0.55; cursor: not-allowed; }

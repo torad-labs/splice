@@ -318,8 +318,14 @@ describe('the upgrade verdict', () => {
 describe('the coverage manifests', () => {
   test('the seven routes of this row are disposed exactly once, across the two files', () => {
     const names = [...mcpDispositions, ...doctorDispositions].map((entry) => entry.name);
+    // Eight since 2026-09-18: /api/alerts/test was fetched by entities/alert/api/index.ts:53 and
+    // disposed by nothing at all, which M1-37's wire-check found by comparing the fetch sites
+    // against the manifests instead of the manifests against each other. This list is the page's
+    // route INVENTORY and stays exact on purpose — a new fetch site with no disposition should
+    // fail here by name.
     expect([...names].sort()).toEqual([
       '/api/alerts',
+      '/api/alerts/test',
       '/api/budgets',
       '/api/doctor',
       '/api/heads/{head}/capture',
@@ -330,9 +336,17 @@ describe('the coverage manifests', () => {
     expect(new Set(names).size).toBe(names.length); // no name carries two page dispositions
   });
 
-  test('the one pending entry names the row that will replace it', () => {
+  // Was `the ONE pending entry`, pinning a set of size one. /api/alerts and /api/budgets were
+  // disposed `editable` while control serves neither (grepped 2026-09-18: 0 occurrences of each),
+  // so the count was one only because two entries were lying. Pinning the pending SET would make
+  // this wall go red every time the daemon ships a route, which teaches the next reader to edit
+  // the wall rather than read it — so the assertion is the property instead: a pending entry with
+  // no row to point at is the defect, and the count is not.
+  test('every pending entry names the row that will replace it', () => {
     const pending = [...mcpDispositions, ...doctorDispositions].filter((entry) => entry.disposition === 'pending');
-    expect(pending.map((entry) => entry.name)).toEqual(['/api/heads/{head}/capture']);
-    expect(pending[0]?.where).toBe('V4-133');
+    expect(pending.length).toBeGreaterThan(0);
+    for (const entry of pending) {
+      expect(entry.where, `${entry.name} is pending and names no row`).toMatch(/^V4-\d+$/);
+    }
   });
 });

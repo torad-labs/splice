@@ -385,14 +385,30 @@ describe('the coverage manifest', () => {
     ]);
   });
 
-  test('every entry is a route this page actually uses, and none is left pending', () => {
+  // `none is left pending` was here until 2026-09-18 and it pinned a claim that was false when it
+  // was written: /api/accounts was disposed `read-only`, and gateway control serves no
+  // /api/accounts of any kind (M1-37's wire-check, grepped: 0 literal occurrences). The test held
+  // green for as long as the manifest and the test agreed with each other and neither asked the
+  // daemon — two hand-authored lists checking each other, which is the defect the wire-check was
+  // built to break.
+  //
+  // So the assertion is now the PROPERTY that survives a route landing: pending is legitimate, and
+  // what must never happen is a pending entry with no row to point at. Pinning the pending SET
+  // would put this test back in the business of going red every time the daemon ships a route,
+  // which is how a wall gets edited to match reality instead of the other way round.
+  test('every entry is a route, and every pending one names the row that will land it', () => {
     expect(dispositions.every((entry) => entry.kind === 'route')).toBe(true);
-    expect(dispositions.every((entry) => entry.disposition !== 'pending')).toBe(true);
+    for (const entry of dispositions.filter((e) => e.disposition === 'pending')) {
+      expect(entry.where, `${entry.name} is pending and names no row`).toMatch(/^V4-\d+$/);
+    }
   });
 
   test('reading and writing are told apart', () => {
     const byName = new Map(dispositions.map((entry) => [entry.name, entry.disposition]));
-    expect(byName.get('/api/accounts')).toBe('read-only');
+    // /api/accounts is `pending V4-132`, not `read-only`: the route does not exist yet. The two
+    // auth routes below DO exist and are the point of the test — that the manifest distinguishes
+    // a route the page reads from one it writes through.
+    expect(byName.get('/api/accounts')).toBe('pending');
     expect(byName.get('/api/auth')).toBe('read-only');
     expect(byName.get('/api/auth/{head}/switch')).toBe('editable');
   });

@@ -562,6 +562,7 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/entities src/shared/lib
 # [2026-09-18] 2026-09-18 from M2-05: the Rule cannot cock on a pending restart; the signal exists (entities/config useRestartPending) but widgets/rule reads no config state. Wire it in this row (rule reads the restart-pending signal; HolderEdge amber while pending).
 # [2026-09-18] 2026-09-18 from M2-01: @entities/usage now exports the nearest-window derivation with the exact signature the rule bar computes locally; adopt it in widgets/rule (one line) in this row.
 # [2026-09-18] 2026-09-18: the rule adoption and the restart-pending cock moved to M2-09.
+# [2026-09-18] 2026-09-18: the connection layer (entities/events, shared/lib/live.ts, the rule cell) is M3-00; this row keeps the per-entity subscriptions and refetches only. The transport is a streaming fetch, not EventSource (contract section 6).
 
 [[items]]
 id = "M3-02"
@@ -627,3 +628,13 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/accounts src/widg
 # [2026-09-18] 2026-09-18 orchestrator: dispatched to design-builder3 after M2-06 landed (0b9dbd19).
 # [2026-09-18] CLAIM: owner=design-builder3 at=2026-09-18T07:41:43Z
 # [2026-09-18] ATTEST-START: tree=aede8fadeeef189ac77fd7687691b9264fecc12d at=2026-09-18T07:41:43Z
+
+[[items]]
+id = "M3-00"
+phase = "m3"
+title = "LIVE CONNECTION (FEATURES.md 4.1, section 6 events; CONTRACTS.md section 6; the daemon route GET /api/events is V4-126, in flight, so this row builds against the frame contract with hand-written frames and the live proof is the m3 gate). webui/src/entities/events: connect() in the api segment opens ONE streaming fetch of /api/events with the bearer header (the fetch wall allows fetch in entities/*/api; the browser EventSource API cannot send a header, so it is not used), parses SSE frames (id, event, data, heartbeat comments) incrementally from the ReadableStream, resumes with the Last-Event-ID header from the last id seen, reconnects with backoff (1s doubling to 30s, reset on a frame), stops on 401 (the shared client's lock) and exposes the connection state (live, reconnecting, off) plus the last frame time as a store; subscribe(kind, fn) per the contract for head.state, turn.start, turn.end, session.change, message.edge, account.switch, returning the unsubscribe; no entity subscribes yet (M3-01 wires them). webui/src/shared/lib/live.ts: the typed frame parser (chunk to frames, a partial frame carried across chunks) and the backoff schedule as pure functions. widgets/rule prints the connection state beside health as a HolderEdge (green live, amber reconnecting, grey off) with the age of the last frame as a Figure, cells from props as in M2-09, label in strings.ts (three words at most). TEST webui/tests/events.test.ts: parser on hand-written frames including one split across two chunks and a heartbeat comment; backoff schedule; the resume id carried into the next request's headers with fetch stubbed; state transitions. tests/rule.test.ts gains the three states. Read craft-floor.md and CONTRACTS.md before editing."
+files = ["webui/src/entities/events/**", "webui/src/shared/lib/live.ts", "webui/src/widgets/rule/**", "webui/tests/events.test.ts", "webui/tests/rule.test.ts"]
+status = "todo"
+verify = "cd webui && npx tsc --noEmit && npx eslint src/entities/events src/shared/lib/live.ts src/widgets/rule tests/events.test.ts tests/rule.test.ts && npx vitest run tests/events.test.ts tests/rule.test.ts tests/labels.test.ts tests/coverage.test.ts && cd .. && for d in webui/src/entities/events webui/src/shared/lib/live.ts webui/src/widgets/rule; do test -e $d || exit 1; done && ast-grep scan -c sgconfig.yml webui/src/entities/events webui/src/shared/lib webui/src/widgets/rule && node /home/user/.claude/skills/impeccable/scripts/detect.mjs webui/src/entities/events webui/src/shared/lib webui/src/widgets/rule"
+# [2026-09-18] DISPATCH: to=design-builder4 (packet emitted)
+# [2026-09-18] 2026-09-18 orchestrator: dispatched to design-builder4 after M2-09 landed (20fbf602); split from M3-01 so a freed seat builds the connection while the hero holds the teams fence and M2-07 holds entities/mcp, doctor, budget, alert.

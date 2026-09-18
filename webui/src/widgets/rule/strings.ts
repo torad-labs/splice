@@ -12,5 +12,7 @@ export const S = {
     red: 'daemon unreachable',
   },
   nearest: 'nearest window',
+  /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */
+  restartPending: 'restart pending',
   noneTail: 'heads report none',
 } as const;

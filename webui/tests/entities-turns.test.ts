@@ -3,10 +3,13 @@
 // global fetch, because the pending state a page renders IS a property of the response handling:
 // "not built yet" and "the request failed" must not be the same shape in the store.
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { MgmtError } from '../src/shared/api';
 import type { GateSnapshot, HeadStatus, LogsPayload } from '../src/shared/api';
 import type { PendingRoute, TurnRow, TurnsState } from '../src/entities/perf';
-import { fetchPerfTurns, groupTurns, inflightFrom, marksOf, pendingOf, waterfall, UNATTRIBUTED } from '../src/entities/perf';
+import { fetchPerfTurns, groupTurns, inflightFrom, marksOf, waterfall, UNATTRIBUTED, PENDING_TURNS } from '../src/entities/perf';
+// The pending rule is ONE implementation (@shared/api, CONTRACTS.md 8): this file calls the shared
+// two-argument form with the row name the slice binds, instead of the slice-local binding M2-D1
+// used to export.
+import { MgmtError, pendingOf } from '../src/shared/api';
 import { perfTurnsStore } from '../src/entities/perf/model/store';
 import { fetchModels } from '../src/entities/model';
 import { modelsStore } from '../src/entities/model/model/store';
@@ -247,11 +250,11 @@ describe('pending routes', () => {
   });
 
   test('pendingOf maps an absent route and nothing else', () => {
-    expect(pendingOf(new MgmtError(404, 'HTTP 404'))).toEqual({ pending: 'V4-127' });
-    expect(pendingOf(new MgmtError(400, 'unknown route /api/perf/turns'))).toEqual({ pending: 'V4-127' });
-    expect(pendingOf(new MgmtError(500, 'HTTP 500'))).toBeNull();
-    expect(pendingOf(new MgmtError(401, 'management key required'))).toBeNull();
-    expect(pendingOf(new Error('network down'))).toBeNull();
+    expect(pendingOf(new MgmtError(404, 'HTTP 404'), PENDING_TURNS)).toEqual({ pending: 'V4-127' });
+    expect(pendingOf(new MgmtError(400, 'unknown route /api/perf/turns'), PENDING_TURNS)).toEqual({ pending: 'V4-127' });
+    expect(pendingOf(new MgmtError(500, 'HTTP 500'), PENDING_TURNS)).toBeNull();
+    expect(pendingOf(new MgmtError(401, 'management key required'), PENDING_TURNS)).toBeNull();
+    expect(pendingOf(new Error('network down'), PENDING_TURNS)).toBeNull();
   });
 
   test('landed rows and the live set arrive together on the happy path', async () => {

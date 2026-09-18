@@ -235,8 +235,8 @@ export function FleetPage() {
             panel is missing and which source would supply it, and at rest there is no panel to be
             missing anything - the console has not been asked for a head yet, so a card captioned
             "no head opened" describes a panel that does not exist. The strips are the affordance;
-            the comp of record has no resting detail column either. `EMPTIES.noOpened` is unread
-            here - model.ts is outside this row's fence, so it is reported in the ledger. */}
+            the comp of record has no resting detail column either. `EMPTIES.noOpened` went with it:
+            M1-102 could not delete it because model.ts was outside that fence, and M2-28 did. */}
         {/* THE EMPTY LANDMARK IS HIDDEN WHILE IT IS EMPTY (M1-123, one shape across five pages).
             At rest this aside is mounted and holds nothing, and an <aside> with a label is a
             COMPLEMENTARY LANDMARK whatever else it carries — measured in the live accessibility

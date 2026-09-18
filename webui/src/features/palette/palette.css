@@ -56,7 +56,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* FIGURE: a palette item is an address name, read in a list. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   font-variant-numeric: tabular-nums;
   color: var(--strip-ink);

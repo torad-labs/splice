@@ -347,8 +347,8 @@
 }
 /* FIGURE: a strip field marked as a figure. */
 .myx-sfield-figure { font-family: var(--font-figure); }
-font-variant-numeric: tabular-nums;
-/* A prose value keeps the label face; the box's figure face exists for the ch unit. */
+/* No tabular-nums here: .myx-sfield-figure is a modifier ON .myx-sfield-value (see the :not()
+   below), which already sets it, so a marked figure is tabular either way. */
 .myx-sfield-value:not(.myx-sfield-figure) { font-family: var(--font-label); }
 .myx-sfield-basis {
   /* --space-1 (2px) let a --text-3 value run into its --text-1 basis word once the ladder

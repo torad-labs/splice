@@ -21,7 +21,9 @@
 }
 
 .myx-head-key {
+  /* FIGURE: a head key is an identifier in a column. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   color: var(--ink-strong);
 }

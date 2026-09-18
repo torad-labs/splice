@@ -19,6 +19,10 @@
  *   · A STALE entry fails. An allowlist line whose file is gone or converted is
  *     a hard error, so the list can only shrink and never silently holds room
  *     for a file to come back into.
+ *   · AN UNTRACKED .py fails, with no allowlist at all. Both legs above read
+ *     `git ls-files` and are therefore blind to the scratch script that has not
+ *     been added yet — which is the state every tracked .py passed through on
+ *     its way in. This is the leg that catches the drift one move earlier.
  *   · IT CANNOT BE SATISFIED BY WEAKENING. Adding to the allowlist to make the
  *     gate pass is the violation, not the remedy — the allowlist is a dated
  *     burn-down of what already existed, not a permission slip.
@@ -87,6 +91,33 @@ function invokers(): string[] {
     .sort();
 }
 
+/** THE THIRD CENSUS, and the two above are structurally blind to it.
+ *
+ *  `git ls-files` enumerates what the repo TRACKS. That is the right denominator
+ *  for what SHIPS, and it is exactly why it cannot see the file that starts the
+ *  drift — Python does not arrive tracked. It arrives as a scratch script someone
+ *  writes in the worktree, runs once, and adds later because it is already there.
+ *
+ *  Measured 2026-09-18, twenty minutes after this wall landed and while the first
+ *  census read a clean 90: webui/.m1-34.py, 196 untracked lines of Python
+ *  rewriting six .tsx files by string substitution. Invisible to both censuses
+ *  above, and one `git add` away from being tracked.
+ *
+ *  THERE IS NO ALLOWLIST FOR THIS LEG, deliberately. The burn-down list records
+ *  Python that already existed when the rule landed; an untracked file is by
+ *  definition newer than the list, so every entry would be an exception granted
+ *  after the fact — the precise shape the other two legs already refuse. The
+ *  remedy is never a new line here: move the script to a scratch directory
+ *  OUTSIDE the worktree, which is where a throwaway belongs whatever its language.
+ *
+ *  --exclude-standard is load-bearing, not tidiness: it drops .gitignore'd trees,
+ *  so a vendored dependency's Python (node_modules/flatted/python/flatted.py, the
+ *  one such file here) is not charged to the author. This leg measures what a
+ *  session WROTE, never what a package manager unpacked. */
+function untracked(): string[] {
+  return gitLs("--others", "--exclude-standard", "*.py");
+}
+
 function burndown(): Burndown {
   if (!existsSync(ALLOW)) {
     console.error(`no-python: ${ALLOW} missing — the wall has no burn-down list to grade against`);
@@ -131,10 +162,23 @@ function main(): number {
 
   const runners = invokers();
   const allowedInvokers = list.invokers ?? [];
+  const scratch = untracked();
 
   console.log(`NO-PYTHON WALL — burn-down recorded ${list.recorded || "(none)"}`);
   console.log(`  tracked .py files                  measured ${String(measured.length).padStart(4)}   allowed ${String(list.files.length).padStart(4)}   [GATED]`);
   console.log(`  files that RUN or name python      measured ${String(runners.length).padStart(4)}   allowed ${String(allowedInvokers.length).padStart(4)}   [GATED]`);
+  console.log(`  UNTRACKED .py in the worktree      measured ${String(scratch.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+
+  if (scratch.length) {
+    problems.push(
+      `UNTRACKED PYTHON: ${scratch.length} file(s) written into the worktree but never added. The two censuses ` +
+        `above read \`git ls-files\` and cannot see these, which is how every tracked .py in the burn-down got ` +
+        `here in the first place. Move it to a scratch directory OUTSIDE the worktree — a throwaway does not ` +
+        `belong in the tree whatever its language — or write it as .ts if it is going to be kept. Adding it to ` +
+        `${ALLOW} is not available: that list is a dated record of what already existed, and this file is newer ` +
+        `than the list by definition:\n    ` + scratch.join("\n    "),
+    );
+  }
 
   problems.push(
     ...grade(
@@ -160,7 +204,8 @@ function main(): number {
   }
   console.log(
     `\nOK: no-python wall holds — ${measured.length} tracked .py file(s) and ${runners.length} file(s) that run or ` +
-      `name python, both exactly the ${list.recorded} burn-down, and nothing listed has already been converted`,
+      `name python, both exactly the ${list.recorded} burn-down, nothing listed has already been converted, and no ` +
+      `untracked .py is sitting in the worktree waiting to be added`,
   );
   return 0;
 }

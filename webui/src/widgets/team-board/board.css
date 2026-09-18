@@ -50,7 +50,11 @@
      between them, not by a second fill. */
   background: var(--strip);
   overflow: hidden;
-  font-size: var(--text-2);
+  /* THE SIZE COMES FROM THE PRIMITIVE (M1-85). This plate carried --text-2 and the value rule below
+     repeated it, which was the whole of the two-rung finding: ui.css binds .myx-sfield-value at
+     --text-3, and exactly one page in the tree overrode it down. THE OVERRIDE WAS WRONG AND THE
+     PAGE THAT NEVER OVERRODE WAS RIGHT -- see the value rule below for the measurement that settles
+     it. Removing it here is what lets the primitive's rung reach this page. */
   font-variation-settings: 'wdth' 62;
   /* The comp's grid starts at its own left edge, so the inset lives in the
      strip's edge column and the fields take none. Its labels sit at y13 and its
@@ -107,11 +111,31 @@
    (+29%), and Iosevka Narrow's published 0.4375em would still be +12% and is
    not published as a webfont. Archivo at wdth 62 reaches 52.9px on the comp's
    48px sample, +10%, so it is the closest face that exists. */
+/* THE ROLE'S RUNG IS --text-3, MEASURED AGAINST THE COMP'S OWN PLATE (M1-85), and this rule used to
+   push it down to --text-2 while fleet left the primitive alone. Which of the two was right is a
+   measurement, not a preference:
+
+   THE COMP'S VALUE INK, read off team-board-a's lead strip row by row: its value text spans plate
+   rows 37..48 -- twelve rows from the ascender top to the baseline -- with descenders reaching row
+   52, against a structural baseline of 20 dark pixels per row from the cells' own box borders. Its
+   digit cells (turns, 5h 74%, 14:01) read eleven rows, which is the CAP class. TWELVE ROWS IN THE
+   ASCENDER CLASS AND ELEVEN IN THE CAP CLASS ARE ONE SIZE, because Archivo's ascender is 0.73em and
+   its cap is 0.69em: 12/0.73 = 16.4px and 11/0.69 = 15.9px. Two glyph classes, one answer, and it
+   sits between --text-3 (16) and --text-4 (17), far nearer --text-3.
+
+   OURS AT EACH RUNG, same classes: --text-2 gives an ascender of 10.22px (10.22/0.73 = 14) and a
+   cap of 9.66 -- ONE AND A HALF ROWS SHORT of the comp's twelve. --text-3 gives 11.84, within a
+   fifth of a row of it. That is the inversion this row was cut on, confirmed: the page with no comp
+   was reading the comp correctly and the comp's own page was the one overriding it away.
+
+   THE COST, measured before the change rather than after: the strip's value cells clip 10 of 99 at
+   --text-2 and 10 of 99 at --text-3 -- the same ten cells, no new one starting to clip -- while the
+   total overflow across all 99 goes from 75px to 85px and the worst single cell from 15px to 17px.
+   The columns have the slack; the gain is the comp's own size. */
 .myx-board .myx-sfield-value {
   font-family: var(--font-label);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: var(--text-2);
   padding-block-start: var(--space-3);
 }
 

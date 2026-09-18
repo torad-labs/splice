@@ -114,6 +114,17 @@ def in_flight_by_seat() -> dict[str, str]:
 last: dict[str, str] = {}
 lost: set[str] = set()
 files: dict[str, str] = {}
+# A seat that goes idle and STAYS idle used to produce exactly one line and then silence,
+# because every print here fires on a TRANSITION. So silence meant two different things —
+# "every seat is busy" and "a seat has been idle for twenty minutes and you have forgotten" —
+# and the orchestrator could not tell them apart. That is campaign law 23 (a check must be
+# able to say it did not run) pointed at the watcher itself: measured 2026-09-18, the operator
+# noticed an idle seat seventeen minutes before this script would have mentioned it again.
+# An idle seat is now re-announced on a widening interval, so silence means one thing.
+idle_since: dict[str, float] = {}
+next_nag: dict[str, float] = {}
+NAG_FIRST = 300.0   # five minutes after the first STALL/FREE
+NAG_MAX = 1800.0    # then doubling, capped at half an hour, so a parked seat never goes quiet
 while True:
     holding = in_flight_by_seat()
     for seat in seats:
@@ -129,6 +140,21 @@ while True:
             lost.discard(seat)
         s, detail = state(p)
         prev = last.get(seat)
+        now = time.time()
+        if s != "idle":
+            idle_since.pop(seat, None)
+            next_nag.pop(seat, None)
+        elif seat not in idle_since:
+            idle_since[seat] = now
+            next_nag[seat] = now + NAG_FIRST
+        # Still idle and the interval has elapsed: say so again, with how long it has been.
+        elif now >= next_nag.get(seat, float("inf")):
+            mins = int((now - idle_since[seat]) // 60)
+            row = holding.get(seat)
+            where = f"{row}" if row else "no row"
+            print(f"STILL {seat} {where}: idle {mins}m", flush=True)
+            gap = min((next_nag[seat] - idle_since[seat]) * 2, NAG_MAX)
+            next_nag[seat] = now + gap
         if s == "idle" and prev != "idle":
             row = holding.get(seat)
             if row:

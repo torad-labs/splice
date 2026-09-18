@@ -86,6 +86,11 @@ public data class HeadDeps(
      *  mgmt-key front door is bypassed. FALSE for every other head, which keeps enforcing it. */
     val forwardClientAuth: Boolean = false,
 ) {
+    /** The single resolver for which quota tracker a turn reads (V4-99): the SELECTED account's
+     *  tracker, else the primary's. A body property, not a constructor param, so it is not part of
+     *  the data class's equals/copy — it is a derived collaborator, not a value. */
+    internal val turnQuota: TurnQuota = TurnQuota(accountPool, accountQuotas, quota)
+
     init {
         require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
         require(requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }

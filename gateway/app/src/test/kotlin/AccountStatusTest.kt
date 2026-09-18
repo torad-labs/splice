@@ -19,6 +19,7 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.spi.AccountNow
 import splice.spi.AccountPool
+import splice.spi.Selection
 import splice.spi.AccountQuotaSource
 import splice.spi.ElapsedNow
 import splice.spi.PoolAccount
@@ -318,9 +319,11 @@ class AccountSwitchVocabularyTest {
             )
             if (block == Block.COOLDOWN) primary.cooldown.markUnavailable(30_000L)
             val pool = AccountPool(listOf(primary, backup), AccountNow { now })
-            reasons += requireNotNull(pool.select("session").switch).reason
+            reasons += requireNotNull((pool.select("session") as Selection.Chosen).account.switch).reason
             now = 2_000_001L
-            if (block != Block.CREDENTIAL) reasons += requireNotNull(pool.select("session").switch).reason
+            if (block != Block.CREDENTIAL) {
+                reasons += requireNotNull((pool.select("session") as Selection.Chosen).account.switch).reason
+            }
         }
         assertEquals(5, reasons.size, "all five current switchReason branches must be exercised")
         reasons.forEach { reason ->

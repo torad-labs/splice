@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.model.ClientWindows
-import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
@@ -36,8 +35,8 @@ import kotlin.coroutines.resume
 internal class CollectTurn(
     private val provider: Provider,
     private val driveFactory: TurnDriveFactory,
-    private val driver: TurnDriver,
-    private val quota: QuotaTracker?,
+    private val sealedDrive: SealedDrive,
+    private val turnQuota: TurnQuota,
     private val clientWindows: ClientWindows = ClientWindows(),
 ) {
     private val wiring = TurnWiring()
@@ -46,7 +45,7 @@ internal class CollectTurn(
      *  calls (the Node predecessor served them by collecting the terminal object). Drives the SAME
      *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic
      *  Messages JSON body — no SSE channel, no liveness pinger. */
-    suspend fun collect(call: ApplicationCall, inputs: TurnInputs) {
+    suspend fun collect(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val built = inputs.built
         val terminal = CollectingTerminal(
             built.meta.originalModel,
@@ -80,11 +79,11 @@ internal class CollectTurn(
                 }
             }
             try {
-                driver.driveSealingCancellation(drive, pingClient = false, seal = false)
+                sealedDrive.driveSealingCancellation(drive, pingClient = false, seal = false)
                 // Same unified rate-limit headers as the streaming path (TurnStreamer).
-                (inputs.quota ?: quota)?.clientHeaders()?.forEach { (name, value) ->
-                    call.response.header(name, value)
-                }
+                turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
+                    ?.clientHeaders()
+                    ?.forEach { (name, value) -> call.response.header(name, value) }
                 call.respondText(
                     terminal.responseBody().toString(),
                     ContentType.Application.Json,
@@ -94,6 +93,8 @@ internal class CollectTurn(
                 watch?.cancel()
             }
         }
+        // The collect path never detaches a compaction, so it never hands the slot off (V4-99 item 3).
+        return false
     }
 
     private suspend fun awaitClientConnectionClosed(call: ApplicationCall) {

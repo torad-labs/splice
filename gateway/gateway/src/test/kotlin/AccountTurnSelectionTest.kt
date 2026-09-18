@@ -38,9 +38,9 @@ import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.AccountResetText
 import splice.spi.InflightGate
+import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.PoolAccount
 import splice.spi.ProcessElapsedNow
-import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.ProviderTuning
 import splice.spi.RateLimitCooldown
 import splice.spi.Selection
@@ -366,6 +366,14 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
             maxRequestBytes = 2_048,
             accountPool = pool,
             accountQuotas = mapOf("primary" to primaryQuota, "backup" to backupQuota),
+            // V4-99: the primary tracker, and it is LOAD-BEARING. Without it HeadDeps.turnQuota
+            // gets primary = null, so `label ?: primary` and `primary ?: label` are the same
+            // expression and the two precedence tests below could not fail for the reason their
+            // own KDoc claims ("Mutation: restoring deps.quota returns the primary's reset and this
+            // fails"). Measured: with this line absent, inverting TurnQuota.forSession survived the
+            // whole :gateway suite. The primary must be a DIFFERENT tracker from the selected
+            // account's or the swap stays invisible, which is why it is primaryQuota and not null.
+            quota = primaryQuota,
         ),
     )
     private val client = HttpClient(CIO) {

@@ -46,8 +46,8 @@ class AccountLoginTest {
         val paths = listOf(dir.resolve("codex.json"), dir.resolve("grok.json"), dir.resolve("kimi.json"))
         val providers = listOf<RefreshableAuthProvider>(
             CodexAuthProvider(paths[0], 0L, refreshCall = RefreshCall { error("unused") }),
-            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }),
-            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }),
+            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, authCacheMs = 30_000L),
+            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, authCacheMs = 30_000L),
         )
         val sources = providers.map { it as AccountCredentialIdentitySource }
 
@@ -67,8 +67,8 @@ class AccountLoginTest {
         val log = LogSink { logs.add(it) }
         val providers = listOf<RefreshableAuthProvider>(
             CodexAuthProvider(paths[0], 0L, refreshCall = RefreshCall { error("unused") }, log = log),
-            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, log = log),
-            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, log = log),
+            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, authCacheMs = 30_000L, log = log),
+            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, authCacheMs = 30_000L, log = log),
         )
         val sources = providers.map { it as AccountCredentialIdentitySource }
 
@@ -113,8 +113,8 @@ class AccountLoginTest {
         val log = LogSink { logs.add(it) }
         val sources = listOf<AccountCredentialIdentitySource>(
             CodexAuthProvider(paths[0], 0L, refreshCall = RefreshCall { error("unused") }, log = log),
-            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, log = log),
-            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, log = log),
+            GrokAuthProvider(paths[1], refreshCall = RefreshCall { error("unused") }, authCacheMs = 30_000L, log = log),
+            KimiAuthProvider(paths[2], refreshCall = RefreshCall { error("unused") }, authCacheMs = 30_000L, log = log),
         )
         paths.indices.forEach { index -> Files.createSymbolicLink(paths[index], targets[index]) }
         assertTrue(

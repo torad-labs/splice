@@ -5,7 +5,6 @@
 // is telemetry.
 package splice.gateway.head
 
-import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
@@ -19,7 +18,6 @@ import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.TurnEconomics
-import splice.spi.AccountResetText
 import splice.spi.WatchdogFired
 import splice.spi.WatchdogHeld
 
@@ -102,54 +100,43 @@ internal class TurnTelemetry(
         )
     }
 
-    /** Records a pool refusal that happens after parsing but before a [TurnDrive] can exist. */
-    /** V4-55: the admission-side rate-limit refusal (HeadAdmission.refuseIfRateLimited), mirroring
-     *  [recordAccountExhausted] because it is the same KIND of event — a turn refused locally,
-     *  before any upstream call — and the two must be equally visible. Review of V4-50 found the
-     *  refusal wrote NOTHING: no perf row, no journal line. That is the precise blindness that made
-     *  three operator reports in one day unfalsifiable, sitting on the path built to answer them.
+    /** V4-99 item 4: ONE entry for every turn refused LOCALLY — after parsing, before any upstream
+     *  call — whether the reason was the admission rate limit or an exhausted account pool. The two
+     *  were separate functions with identical bodies differing only in a tag and a detail string,
+     *  which is the shape that drifts: a third local refusal would have been a third copy.
      *
-     *  BOTH horizons are logged because they are different facts and only one is the operator's:
-     *  provider_reset is when the quota actually returns, gateway_hold is how long splice is holding
-     *  its own retries. A line carrying only the second reads as "back in two minutes" against an
-     *  88-minute reset. */
-    fun recordRateLimited(
+     *  THE VISIBILITY IS THE POINT (V4-55): a refusal that leaves no perf row and no journal line is,
+     *  from splice's own telemetry, a turn that never happened — which is how three operator reports
+     *  of this exact failure went unfalsifiable in one day, sitting on the path built to answer them.
+     *
+     *  [tag] is the outcome tag (it names the refusal in the perf row AND supplies the journal's
+     *  word); [detail] carries the facts that differ between refusals — both horizons for the rate
+     *  limit, because provider_reset is when the quota returns and gateway_hold is how long splice is
+     *  holding its own retries, and a line carrying only the second reads as "back in two minutes"
+     *  against an 88-minute reset. */
+    fun recordLocalRefusal(
         meta: TurnMeta,
         perf: TurnPerf,
         t0: Long,
-        resetEpochSeconds: Long?,
-        armedMs: Long,
+        tag: String,
+        detail: String,
     ) {
-        val outcome = OutcomeTag.RATE_LIMITED.wire
-        val reset = AccountResetText.format(resetEpochSeconds)
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
         val snap = perf.snapshot()
-        perfStats.record(PerfRowMeta(meta.upstreamModel, outcome, meta.compact, session), snap)
+        perfStats.record(PerfRowMeta(meta.upstreamModel, tag, meta.compact, session), snap)
+        // The tag is printed VERBATIM, the same spelling the perf row on the next line carries
+        // (kt-outcome-tag-single-source, V4-99). It used to be `substringAfter("error:")`, which
+        // meant this line and the perf row spelled one field two ways — and that the rendering
+        // depended on the FAMILY: an `error:` tag lost its prefix while a `failure:` tag kept it.
+        // A stripped prefix is not a named value anywhere in core (OutcomeTag keeps its prefixes
+        // private and exposes only the two builders), so re-deriving it here would have been a
+        // second spelling of the same contract — the exact defect the rule exists to prevent.
         log(
-            "[$headKey] turn ERROR rate-limited compact=${meta.compact} " +
-                "latency=${clock() - t0}ms provider_reset=$reset gateway_hold=${armedMs}ms\n",
+            "[$headKey] turn ERROR $tag compact=${meta.compact} " +
+                "latency=${clock() - t0}ms $detail\n",
         )
-        log(snap.perfLine(headKey, outcome, meta.compact, meta.upstreamModel, session))
-    }
-
-    fun recordAccountExhausted(
-        meta: TurnMeta,
-        perf: TurnPerf,
-        t0: Long,
-        earliestResetEpochSeconds: Long?,
-    ) {
-        val outcome = OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire
-        val reset = AccountResetText.format(earliestResetEpochSeconds)
-        val session = meta.sessionId?.take(SESSION_TAG_CHARS)
-        perf.mark(PerfKeys.TOTAL)
-        val snap = perf.snapshot()
-        perfStats.record(PerfRowMeta(meta.upstreamModel, outcome, meta.compact, session), snap)
-        log(
-            "[$headKey] turn ERROR all-accounts-exhausted compact=${meta.compact} " +
-                "latency=${clock() - t0}ms earliest_reset=$reset\n",
-        )
-        log(snap.perfLine(headKey, outcome, meta.compact, meta.upstreamModel, session))
+        log(snap.perfLine(headKey, tag, meta.compact, meta.upstreamModel, session))
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

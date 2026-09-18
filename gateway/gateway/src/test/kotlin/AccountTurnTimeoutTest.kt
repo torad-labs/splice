@@ -32,6 +32,7 @@ import splice.gateway.head.SseRoundConsume
 import splice.gateway.head.SseRoundPost
 import splice.gateway.head.TearAwareEvents
 import splice.gateway.head.TurnDrive
+import splice.gateway.head.TurnQuota
 import splice.gateway.head.TurnTelemetry
 import splice.gateway.head.WsRoundInputs
 import splice.gateway.head.ZeroEventFailure
@@ -163,7 +164,9 @@ class AccountTurnTimeoutTest {
             provider,
             upstream,
             UsageStore(tmp.resolve("usage.json"), tmp.resolve("rate-limit.json")),
-            null,
+            // V4-99 item 1: SseRoundPost's quota seam is now a required TurnQuota (non-null) rather
+            // than a nullable tracker, so the test supplies the empty one instead of null.
+            TurnQuota(null, emptyMap(), null),
             SseRoundConsume(
                 provider,
                 ZeroEventFailure(provider, log = {}),

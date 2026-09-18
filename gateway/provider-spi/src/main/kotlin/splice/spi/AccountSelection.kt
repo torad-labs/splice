@@ -78,7 +78,7 @@ public data class PoolAccount(
     }
 }
 
-private const val CREDENTIAL_EVIDENCE_TTL_NANOS = 2_000_000_000L
+private const val CREDENTIAL_EVIDENCE_TTL_NANOS = 2_000_000_000L // why: 2s keeps the sticky-session monitor off the credential file for a whole select loop, then re-reads so a freshly-written auth.json is seen
 
 /** Caches one account's credential evidence behind a short TTL so the sticky-session monitor never
  *  holds a filesystem round-trip. [refresh] re-reads the delegate OFF the monitor; within the TTL
@@ -184,11 +184,6 @@ public data class AccountPoolView(
     val selectedLabel: String?,
     val accounts: List<AccountView>,
     val lastSwitch: AccountSwitch?,
-)
-
-/** Selection could not start a turn on any account. */
-public class AllAccountsExhausted(public val earliestResetEpochSeconds: Long?) : IllegalStateException(
-    AccountResetText.exhausted(earliestResetEpochSeconds),
 )
 
 /** One reset timestamp vocabulary for operator responses and turn logs. */

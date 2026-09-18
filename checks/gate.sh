@@ -181,6 +181,11 @@ run "model catalogs single source" python3 checks/model-catalogs-single-source.p
 run "model catalogs selftest" bash checks/model-catalogs-single-source-selftest.sh
 run "autocloseable closed" python3 checks/autocloseable-closed.py check
 run "autocloseable closed selftest" bash checks/autocloseable-closed-selftest.sh
+# Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted
+# every time it was only prose, because nothing failed when a session added another .py. It is a
+# wall now; checks/config/python-burndown.json is the dated debt and may only shrink.
+run "no python" bun checks/no-python.ts
+run "no python selftest" bun checks/no-python-selftest.ts
 run "public surface" python3 checks/public-surface.py --ratchet
 run "public surface selftest" bash checks/public-surface-selftest.sh
 run "constructor width" python3 checks/constructor-width.py --ratchet

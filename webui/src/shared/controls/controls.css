@@ -20,19 +20,11 @@
   transition: border-color var(--dur-1) var(--ease-out);
 }
 
-/* The holder edge, on a key: the mark is inside a 2px column on the left, and it says what the key
-   is doing. At rest it is the quiet edge the rest of the room uses. */
-.myx-key-edge {
-  align-self: stretch;
-  width: var(--space-2);
-  background: var(--edge-grey);
-  transition: background-color var(--dur-1) var(--ease-out);
-}
-
-/* Hover and press cock the edge to amber - the same gesture a strip uses for "this one is live" -
-   and the border takes the strip's own ink so the key reads as lifted without a shadow. */
-.myx-key:hover .myx-key-edge,
-.myx-key:active .myx-key-edge { background: var(--edge-amber); }
+/* HOVER LIFTS THE BOX LINE AND NOTHING ELSE (m1 design review D1). It used to cock an amber edge
+   and take the box line to the strip's ink - the same two declarations the armed state carried, so
+   the operator whose pointer was still on the key they had just clicked could not see that it had
+   armed. The edge now belongs to the armed state alone, and the handle (`.myx-edge-mark`) comes
+   with its printed word, which is the channel hover does not have. */
 .myx-key:hover { border-color: var(--strip-ink); }
 
 /* Focus is the world's ring, never the browser's outline, and it is on the BUTTON so a keyboard
@@ -46,14 +38,33 @@
   cursor: not-allowed;
   color: var(--strip-ink-mute);
 }
-.myx-key[disabled] .myx-key-edge { background: var(--edge-grey); }
 
-/* Armed: the second half of a two-step key. The edge stays amber and the box line goes to the
-   strip's ink, so an armed key is unmistakable without a colour the palette does not have. */
-.myx-key-armed { border-color: var(--strip-ink); }
-.myx-key-armed .myx-key-edge { background: var(--edge-amber); }
+/* Armed: the second half of a two-step key. Three channels hover does not use - the paper steps up
+   one rung, the amber holder edge arrives with the word "armed" on it, and (in Confirm) the second
+   label prints with the cancel key beside it. The paper step is here because hover and armed set
+   the same box line, and a state that differs only in its markup is invisible in the one place it
+   matters most: under the pointer that just clicked it. */
+.myx-key-armed {
+  border-color: var(--strip-ink);
+  background: var(--strip-field);
+}
+.myx-key-armed .myx-edge { color: var(--strip-ink); }
+
+/* Busy: still focusable, and it says so in a word (D4). A busy key used to be `disabled`, which
+   drops it out of the tab order and painted nothing at all, so a working key and a dead one looked
+   the same. The word is the world's answer; there is no spinner and no shimmer here. */
+.myx-key-working { cursor: progress; }
+.myx-key-busy {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
 
 .myx-key-label { white-space: nowrap; }
+
+/* The two-step's own wrapper: it draws nothing, it only holds the pair so the control can tell
+   whether focus or a click left it (that is how it disarms - see confirm.tsx). */
+.myx-confirm-hold { display: inline-flex; }
 
 /* Two keys, one gesture: the armed key and its cancel sit together and never apart. */
 .myx-confirm {
@@ -73,7 +84,10 @@
 .myx-input-label {
   font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--ink-mute);
+  /* On PAPER, not on the room (m1 design review D7): this label sits in the strip's own field box,
+     and --ink-mute is the room's ink - measured 1.98:1 over --strip against a 4.5:1 bar. Nothing
+     had put an Input on a strip yet; the page sweep will. */
+  color: var(--strip-ink-mute);
 }
 
 .myx-input-box {
@@ -107,15 +121,15 @@
   gap: var(--space-2);
 }
 
-/* The strip module's height, derived from the same parts a StripField pads with (its own pad, the
-   label, the gap, the value), so a blank rack is exactly as tall as the rack it is standing in
-   for. No shimmer and no grey: paper, a hairline, and nothing printed on it. */
-.myx-blank-strip {
-  display: block;
-  height: calc(var(--space-2) * 2 + var(--text-1) + var(--space-1) + var(--text-3));
-  background: var(--strip);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
+/* The blank is a strip whose two lines are non-breaking spaces: it carries the strip's own box
+   classes (`.myx-strip`, `.myx-strip-fields`, `.myx-sfield`), so its height is the real module's
+   height by construction rather than by summing font sizes (m1 design review D7: the old formula
+   came to 38px against a 52px strip, and every page jumped when data landed). No shimmer and no
+   grey: paper, a hairline, and nothing printed on it. */
+.myx-blank-strip { width: auto; }
+.myx-blank-strip .myx-sfield {
+  flex: 1 1 auto;
+  width: auto;
 }
 
 /* ---------- the fault: a strip with a red holder edge ---------- */
@@ -126,3 +140,110 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+
+/* The message's field: a strip cell that WRAPS (m1 design review D2). It carries the same box
+   every value is printed in - the field ground, the cell's padding, the rule on its right - but
+   the text runs on to the next line and the strip grows with it, inside the floor's 65-75ch
+   measure. A fault is not in a rack, so nothing here has to hold a row pitch. */
+.myx-fault-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-4);
+  background: var(--strip-field);
+  border-inline-end: var(--hair) solid var(--strip-field-line);
+  min-width: 0;
+}
+.myx-fault-message {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  line-height: 1.5;
+  color: var(--strip-ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- the choice: the world's select ---------- */
+
+.myx-choice {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-start;
+}
+.myx-choice-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
+/* The box is the field box every other value is printed in, with the value on the left and the
+   state word on the right. No chevron: the world has no icon set. */
+.myx-choice-box {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  text-align: start;
+  cursor: pointer;
+}
+.myx-choice-box:hover { border-color: var(--strip-ink); }
+.myx-choice-box:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-choice-box[disabled] { color: var(--strip-ink-mute); cursor: not-allowed; }
+.myx-choice-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.myx-choice-state {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+  white-space: nowrap;
+}
+
+/* The options, printed in place: a bay of one-field strips. No absolute layer, no z-index, nothing
+   to dismiss by clicking a scrim - the world carries no stack ladder, and a list printed in flow
+   cannot land off-screen. */
+.myx-choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) 0 0;
+  list-style: none;
+}
+.myx-choice-option-line { display: flex; }
+.myx-choice-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  text-align: start;
+  cursor: pointer;
+}
+/* The pointer's own position, which is not the same thing as the chosen option. */
+.myx-choice-active { border-color: var(--strip-ink); }
+.myx-choice-option:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* The chosen option is marked the way the comp marks a selected strip: its box line is drawn in
+   the strip's own ink rather than the field's grey, and its holder edge prints the word. */
+.myx-choice-chosen { border-color: var(--strip-ink); }
+
+/* ---------- the flag: the world's checkbox ---------- */
+
+/* A Flag IS a key (it composes the same box) carrying a holder edge, so it needs nothing of its own
+   but the alignment of that edge inside a pressed key. */
+.myx-flag .myx-edge-mark { align-self: stretch; width: var(--space-2); }

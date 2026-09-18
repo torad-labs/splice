@@ -264,10 +264,25 @@ function selftest() {
   process.exit(bad === 0 ? 0 : 1);
 }
 
-if (process.argv.includes('--selftest')) selftest();
+// ---- THE ENTRY-POINT GUARD (M2-21), the same one density.mjs and capture.mjs carry ------------
+//
+// IMPORTING THIS MODULE USED TO EXECUTE IT. The selftest branch below fires on
+// `process.argv.includes('--selftest')` and the report body fires on ANY argv, so an instrument
+// that imported these exported functions got this file's whole report printed into its own output
+// -- and, on `--selftest`, got THIS file's three cases run and `process.exit` called, so the
+// importing instrument's own selftest never executed and its verify went green for a reason it had
+// not earned. That is the M2-23 defect exactly, measured there from the other side (density.mjs's
+// selftest branch had the same shape and was fixed the same way); this file is the caller that made
+// it visible, so it gets the guard too. `import.meta.url === file://<argv[1]>` is true only when
+// this file IS the program, which is the check capture.mjs and density.mjs both use.
+const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+
+if (isMain && process.argv.includes('--selftest')) selftest();
 
 const targets = process.argv.slice(2);
-if (targets.length === 0) {
+if (!isMain) {
+  // imported, not run: the exported functions are pure and the reader gets no surprise output
+} else if (targets.length === 0) {
   report('COMP(teams)', COMP);
   for (const t of ['teams', 'settings', 'turns', 'accounts', 'logs']) {
     const f = path.join(SECTIONS, `${t}-dark-1536x1024.png`);

@@ -1,0 +1,3276 @@
+[
+ {
+  "addr": "fleet",
+  "rest": {
+   "cells": 78,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 72
+    }
+   }
+  },
+  "open": {
+   "cells": 78,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/100"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "window2%"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/100"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/100"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 87,
+     "whole": false,
+     "text": "in flight0/12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 212,
+     "whole": true,
+     "text": "windowunknown"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 327,
+     "whole": true,
+     "text": "last turnnone"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 946,
+     "scrollWidth": 1274,
+     "scrolls": true,
+     "n": 72
+    }
+   }
+  }
+ },
+ {
+  "addr": "turns",
+  "rest": {
+   "cells": 192,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 56,
+     "whole": false,
+     "text": "retries41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 200,
+     "whole": true,
+     "text": "refreshes3"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 344,
+     "whole": true,
+     "text": "cache hit0.98"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 488,
+     "whole": true,
+     "text": "peak inflight9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 632,
+     "whole": true,
+     "text": "io drops12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 56,
+     "whole": false,
+     "text": "retries9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 200,
+     "whole": true,
+     "text": "refreshes1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 344,
+     "whole": true,
+     "text": "cache hit0.97"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 488,
+     "whole": true,
+     "text": "peak inflight9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 632,
+     "whole": true,
+     "text": "io drops0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 56,
+     "whole": false,
+     "text": "retriesn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 200,
+     "whole": true,
+     "text": "refreshesn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 344,
+     "whole": true,
+     "text": "cache hitn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 488,
+     "whole": true,
+     "text": "peak inflightn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 632,
+     "whole": true,
+     "text": "io dropsn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache write0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out97"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight8"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out712"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight7"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedtelemetry dropped"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out924"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight6"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache write94k"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out511"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight3"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts3"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 102
+    },
+    ".myx-tn-scroll": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1985,
+     "scrolls": true,
+     "n": 84
+    }
+   }
+  },
+  "open": {
+   "cells": 192,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 56,
+     "whole": false,
+     "text": "retries41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 200,
+     "whole": true,
+     "text": "refreshes3"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 344,
+     "whole": true,
+     "text": "cache hit0.98"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 488,
+     "whole": true,
+     "text": "peak inflight9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 632,
+     "whole": true,
+     "text": "io drops12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 56,
+     "whole": false,
+     "text": "retries9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 200,
+     "whole": true,
+     "text": "refreshes1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 344,
+     "whole": true,
+     "text": "cache hit0.97"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 488,
+     "whole": true,
+     "text": "peak inflight9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 632,
+     "whole": true,
+     "text": "io drops0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 56,
+     "whole": false,
+     "text": "retriesn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 200,
+     "whole": true,
+     "text": "refreshesn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 344,
+     "whole": true,
+     "text": "cache hitn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 488,
+     "whole": true,
+     "text": "peak inflightn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 632,
+     "whole": true,
+     "text": "io dropsn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache write0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out97"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight8"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out712"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight7"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedtelemetry dropped"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out12"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight9"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out924"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight6"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache write94k"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out511"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight3"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 18,
+     "whole": false,
+     "text": "cache writen/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 143,
+     "whole": true,
+     "text": "out0"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 229,
+     "whole": true,
+     "text": "retries2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 325,
+     "whole": true,
+     "text": "attempts3"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 431,
+     "whole": true,
+     "text": "inflight2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-tn-scroll",
+     "hidden": 642,
+     "whole": true,
+     "text": "droppedn/r"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 102
+    },
+    ".myx-tn-scroll": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1985,
+     "scrolls": true,
+     "n": 84
+    }
+   }
+  }
+ },
+ {
+  "addr": "sessions",
+  "rest": {
+   "cells": 36,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 30
+    }
+   }
+  },
+  "open": {
+   "cells": 36,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 138,
+     "whole": false,
+     "text": "started09:22:52"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 301,
+     "whole": true,
+     "text": "seen6s ago"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 387,
+     "whole": true,
+     "text": "peern/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 138,
+     "whole": false,
+     "text": "started11:40:52"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 301,
+     "whole": true,
+     "text": "seen32s ago"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 387,
+     "whole": true,
+     "text": "peern/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 138,
+     "whole": false,
+     "text": "started07:22:52"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 301,
+     "whole": true,
+     "text": "seen2m ago"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 387,
+     "whole": true,
+     "text": "peern/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 138,
+     "whole": false,
+     "text": "started16:22:52"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 301,
+     "whole": true,
+     "text": "seen51m ago"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 387,
+     "whole": true,
+     "text": "peern/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 138,
+     "whole": false,
+     "text": "startedn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 301,
+     "whole": true,
+     "text": "seenn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 387,
+     "whole": true,
+     "text": "peern/r"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 838,
+     "scrollWidth": 1225,
+     "scrolls": true,
+     "n": 30
+    }
+   }
+  }
+ },
+ {
+  "addr": "teams",
+  "rest": {
+   "cells": 108,
+   "SCROLL": [],
+   "VOID": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 274,
+     "whole": true,
+     "text": "namegs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 310,
+     "whole": true,
+     "text": "rolelead"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 356,
+     "whole": true,
+     "text": "modelfable"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 407,
+     "whole": true,
+     "text": "accountacct-a"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 451,
+     "whole": true,
+     "text": "window5h 74%"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 495,
+     "whole": true,
+     "text": "last turn14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 552,
+     "whole": true,
+     "text": "statedriving"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 223,
+     "whole": true,
+     "text": "headclaude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 282,
+     "whole": true,
+     "text": "session ids-1a7c9e2d"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 333,
+     "whole": true,
+     "text": "created09:12:33"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 379,
+     "whole": true,
+     "text": "uptime4h 49m"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 414,
+     "whole": true,
+     "text": "turns27"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 460,
+     "whole": true,
+     "text": "tokens in182,341"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 507,
+     "whole": true,
+     "text": "tokens out71,552"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 552,
+     "whole": true,
+     "text": "cost est$0.412"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 223,
+     "whole": true,
+     "text": "context left35%"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 273,
+     "whole": true,
+     "text": "scratchpad12.8 k"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 377,
+     "whole": true,
+     "text": "workspace~/.../grailseeker-b"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 442,
+     "whole": true,
+     "text": "branchfeature/gs-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 469,
+     "whole": true,
+     "text": "basemain"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 513,
+     "whole": true,
+     "text": "diff+412 -37"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 552,
+     "whole": true,
+     "text": "checkspass"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 706,
+     "whole": true,
+     "text": "namegs-backend-builder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 746,
+     "whole": true,
+     "text": "rolebuilder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 814,
+     "whole": true,
+     "text": "modeldeepseek-flash"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 851,
+     "whole": true,
+     "text": "accountacct-a"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 884,
+     "whole": true,
+     "text": "windown/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 925,
+     "whole": true,
+     "text": "last turn13:58"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 1000,
+     "whole": true,
+     "text": "statebuilding GS-41 done"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 699,
+     "whole": true,
+     "text": "headclaude-deepseek"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 753,
+     "whole": true,
+     "text": "session ids-5f3b8a11"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 797,
+     "whole": true,
+     "text": "created09:18:02"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 834,
+     "whole": true,
+     "text": "uptime4h 44m"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 869,
+     "whole": true,
+     "text": "turns18"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 913,
+     "whole": true,
+     "text": "tokens in93,274"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 958,
+     "whole": true,
+     "text": "tokens out38,611"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 1000,
+     "whole": true,
+     "text": "cost est$0.183"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 667,
+     "whole": true,
+     "text": "context leftn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 717,
+     "whole": true,
+     "text": "scratchpad8.1 k"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 824,
+     "whole": true,
+     "text": "workspace~/.../grailseeker-b"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 892,
+     "whole": true,
+     "text": "branchfeature/gs-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 918,
+     "whole": true,
+     "text": "basemain"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 962,
+     "whole": true,
+     "text": "diff+289 -37"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 1000,
+     "whole": true,
+     "text": "checkspass"
+    }
+   ],
+   "ELLIPSIS": 0,
+   "CUT": [
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "teamgrailseeker-backend"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "goalpromoter bookkeeping liv"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "repo~/Documents/dev/infra/gr"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "slots3 slots, 3 bound"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "lead drivinggs-backend-claud"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-42"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-42: dearm t"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-42"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-42: dearm t"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time13:41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-41: promote"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time13:58"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-builder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messageGS-41 done, see ledge"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-42"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-42: dearm t"
+    }
+   ],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-board": {
+     "overflowX": "hidden",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 17
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 0,
+     "scrollWidth": 0,
+     "scrolls": false,
+     "n": 44
+    },
+    ".myx-strip": {
+     "overflowX": "hidden",
+     "clientWidth": 459,
+     "scrollWidth": 459,
+     "scrolls": false,
+     "n": 38
+    },
+    ".myx-board-footer": {
+     "overflowX": "hidden",
+     "clientWidth": 551,
+     "scrollWidth": 551,
+     "scrolls": false,
+     "n": 3
+    }
+   }
+  },
+  "open": {
+   "cells": 108,
+   "SCROLL": [],
+   "VOID": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 274,
+     "whole": true,
+     "text": "namegs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 310,
+     "whole": true,
+     "text": "rolelead"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 356,
+     "whole": true,
+     "text": "modelfable"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 407,
+     "whole": true,
+     "text": "accountacct-a"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 451,
+     "whole": true,
+     "text": "window5h 74%"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 495,
+     "whole": true,
+     "text": "last turn14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 552,
+     "whole": true,
+     "text": "statedriving"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 223,
+     "whole": true,
+     "text": "headclaude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 282,
+     "whole": true,
+     "text": "session ids-1a7c9e2d"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 333,
+     "whole": true,
+     "text": "created09:12:33"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 379,
+     "whole": true,
+     "text": "uptime4h 49m"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 414,
+     "whole": true,
+     "text": "turns27"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 460,
+     "whole": true,
+     "text": "tokens in182,341"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 507,
+     "whole": true,
+     "text": "tokens out71,552"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 552,
+     "whole": true,
+     "text": "cost est$0.412"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 223,
+     "whole": true,
+     "text": "context left35%"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 273,
+     "whole": true,
+     "text": "scratchpad12.8 k"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 377,
+     "whole": true,
+     "text": "workspace~/.../grailseeker-b"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 442,
+     "whole": true,
+     "text": "branchfeature/gs-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 469,
+     "whole": true,
+     "text": "basemain"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 513,
+     "whole": true,
+     "text": "diff+412 -37"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 552,
+     "whole": true,
+     "text": "checkspass"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 706,
+     "whole": true,
+     "text": "namegs-backend-builder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 746,
+     "whole": true,
+     "text": "rolebuilder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 814,
+     "whole": true,
+     "text": "modeldeepseek-flash"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 851,
+     "whole": true,
+     "text": "accountacct-a"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 884,
+     "whole": true,
+     "text": "windown/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 925,
+     "whole": true,
+     "text": "last turn13:58"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 1000,
+     "whole": true,
+     "text": "statebuilding GS-41 done"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 699,
+     "whole": true,
+     "text": "headclaude-deepseek"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 753,
+     "whole": true,
+     "text": "session ids-5f3b8a11"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 797,
+     "whole": true,
+     "text": "created09:18:02"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 834,
+     "whole": true,
+     "text": "uptime4h 44m"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 869,
+     "whole": true,
+     "text": "turns18"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 913,
+     "whole": true,
+     "text": "tokens in93,274"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 958,
+     "whole": true,
+     "text": "tokens out38,611"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 1000,
+     "whole": true,
+     "text": "cost est$0.183"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 667,
+     "whole": true,
+     "text": "context leftn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 717,
+     "whole": true,
+     "text": "scratchpad8.1 k"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 824,
+     "whole": true,
+     "text": "workspace~/.../grailseeker-b"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 892,
+     "whole": true,
+     "text": "branchfeature/gs-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 918,
+     "whole": true,
+     "text": "basemain"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 962,
+     "whole": true,
+     "text": "diff+289 -37"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 1000,
+     "whole": true,
+     "text": "checkspass"
+    }
+   ],
+   "ELLIPSIS": 0,
+   "CUT": [
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "teamgrailseeker-backend"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "goalpromoter bookkeeping liv"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "repo~/Documents/dev/infra/gr"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "slots3 slots, 3 bound"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "lead drivinggs-backend-claud"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-42"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-42: dearm t"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-42"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-42: dearm t"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time13:41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-41: promote"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time13:58"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-builder"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-41"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messageGS-41 done, see ledge"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "time14:01"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "fromgs-backend-claude"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "→→"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "togs-backend-builder2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "packetGS-42"
+    },
+    {
+     "cell": ".myx-sfield",
+     "el": ".myx-sfield",
+     "hidden": 8,
+     "text": "messagepacket GS-42: dearm t"
+    }
+   ],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-board": {
+     "overflowX": "hidden",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 17
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 0,
+     "scrollWidth": 0,
+     "scrolls": false,
+     "n": 44
+    },
+    ".myx-strip": {
+     "overflowX": "hidden",
+     "clientWidth": 459,
+     "scrollWidth": 459,
+     "scrolls": false,
+     "n": 38
+    },
+    ".myx-board-footer": {
+     "overflowX": "hidden",
+     "clientWidth": 551,
+     "scrollWidth": 551,
+     "scrolls": false,
+     "n": 3
+    }
+   }
+  }
+ },
+ {
+  "addr": "projects",
+  "rest": {
+   "cells": 30,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 24
+    }
+   }
+  },
+  "open": {
+   "cells": 36,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 4,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 838,
+     "scrollWidth": 838,
+     "scrolls": false,
+     "n": 30
+    }
+   }
+  }
+ },
+ {
+  "addr": "accounts",
+  "rest": {
+   "cells": 52,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 1,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 46
+    }
+   }
+  },
+  "open": {
+   "cells": 53,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 68,
+     "whole": false,
+     "text": "resetsin 7m 40s"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 222,
+     "whole": true,
+     "text": "headsclaudex codex-b"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 375,
+     "whole": true,
+     "text": "nextprimary"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 68,
+     "whole": false,
+     "text": "resetsin 15m 0s"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 222,
+     "whole": true,
+     "text": "headsclaudex"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 375,
+     "whole": true,
+     "text": "next"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 107,
+     "whole": false,
+     "text": "headsgrokhead"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 260,
+     "whole": true,
+     "text": "next"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 107,
+     "whole": false,
+     "text": "headsno heads"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 260,
+     "whole": true,
+     "text": "next"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 107,
+     "whole": false,
+     "text": "headsmusehead"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 260,
+     "whole": true,
+     "text": "next"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 1,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 946,
+     "scrollWidth": 1321,
+     "scrolls": true,
+     "n": 46
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 1
+    }
+   }
+  }
+ },
+ {
+  "addr": "usage",
+  "rest": {
+   "cells": 39,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1294,
+     "scrollWidth": 1294,
+     "scrolls": false,
+     "n": 24
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 9
+    }
+   }
+  },
+  "open": {
+   "cells": 39,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1294,
+     "scrollWidth": 1294,
+     "scrolls": false,
+     "n": 24
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 9
+    }
+   }
+  }
+ },
+ {
+  "addr": "settings",
+  "rest": {
+   "cells": 80,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [
+    {
+     "cell": ".myx-fbox",
+     "el": ".myx-fbox-input",
+     "hidden": 66,
+     "text": ""
+    },
+    {
+     "cell": ".myx-fbox",
+     "el": ".myx-fbox-input",
+     "hidden": 59,
+     "text": ""
+    },
+    {
+     "cell": ".myx-fbox",
+     "el": ".myx-fbox-input",
+     "hidden": 37,
+     "text": ""
+    }
+   ],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1294,
+     "scrollWidth": 1294,
+     "scrolls": false,
+     "n": 74
+    }
+   }
+  },
+  "open": null
+ },
+ {
+  "addr": "models",
+  "rest": {
+   "cells": 56,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1294,
+     "scrollWidth": 1294,
+     "scrolls": false,
+     "n": 50
+    }
+   }
+  },
+  "open": {
+   "cells": 64,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 53,
+     "whole": false,
+     "text": "output10"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 53,
+     "whole": false,
+     "text": "output3.2"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 53,
+     "whole": false,
+     "text": "outputn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 53,
+     "whole": false,
+     "text": "outputn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 53,
+     "whole": false,
+     "text": "output0.28"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 53,
+     "whole": false,
+     "text": "output2.5"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-models-detail",
+     "hidden": 45,
+     "whole": false,
+     "text": "cache write1.5"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-models-detail",
+     "hidden": 169,
+     "whole": true,
+     "text": "output10"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-models-detail",
+     "hidden": 102,
+     "whole": false,
+     "text": "extra windows1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-models-detail",
+     "hidden": 246,
+     "whole": true,
+     "text": "window rules1"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 894,
+     "scrollWidth": 948,
+     "scrolls": true,
+     "n": 50
+    },
+    ".myx-models-detail": {
+     "overflowX": "auto",
+     "clientWidth": 384,
+     "scrollWidth": 631,
+     "scrolls": true,
+     "n": 8
+    }
+   }
+  }
+ },
+ {
+  "addr": "logs",
+  "rest": {
+   "cells": 67,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textcompact=false has_marker"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn compact=false model"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textcache: input=182346 cach"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn compact=false model"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textserver filesystem hosted"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn ERROR conn-reset co"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn ERROR finish-degrad"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn compact=false model"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn ERROR rate-limited "
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textretry attempt=2 backoff="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 1
+    },
+    ".myx-lt-scroll": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1946,
+     "scrolls": true,
+     "n": 60
+    }
+   }
+  },
+  "open": {
+   "cells": 67,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textcompact=false has_marker"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn compact=false model"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textcache: input=182346 cach"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn compact=false model"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textserver filesystem hosted"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn ERROR conn-reset co"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn ERROR finish-degrad"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn compact=false model"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textturn ERROR rate-limited "
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textretry attempt=2 backoff="
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-lt-scroll",
+     "hidden": 603,
+     "whole": false,
+     "text": "textperf outcome=ok compact="
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1342,
+     "scrolls": false,
+     "n": 1
+    },
+    ".myx-lt-scroll": {
+     "overflowX": "auto",
+     "clientWidth": 1342,
+     "scrollWidth": 1946,
+     "scrolls": true,
+     "n": 60
+    }
+   }
+  }
+ },
+ {
+  "addr": "compaction",
+  "rest": {
+   "cells": 49,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1294,
+     "scrollWidth": 1294,
+     "scrolls": false,
+     "n": 43
+    }
+   }
+  },
+  "open": {
+   "cells": 49,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 1294,
+     "scrollWidth": 1294,
+     "scrolls": false,
+     "n": 43
+    }
+   }
+  }
+ },
+ {
+  "addr": "mcp",
+  "rest": {
+   "cells": 45,
+   "SCROLL": [],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 978,
+     "scrollWidth": 978,
+     "scrolls": false,
+     "n": 35
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 4
+    }
+   }
+  },
+  "open": {
+   "cells": 48,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-console-page",
+     "hidden": 50,
+     "whole": false,
+     "text": "pidn/r"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-console-page",
+     "hidden": 175,
+     "whole": true,
+     "text": "restarts0"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 978,
+     "scrollWidth": 978,
+     "scrolls": false,
+     "n": 35
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1574,
+     "scrolls": true,
+     "n": 7
+    }
+   }
+  }
+ },
+ {
+  "addr": "doctor",
+  "rest": {
+   "cells": 43,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "2026-09-18T07:45:00Z"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "Linux"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "6.17.0-41-generic"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "amd64"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "21.0.11"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "Eclipse Adoptium"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 498,
+     "scrollWidth": 498,
+     "scrolls": false,
+     "n": 34
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 3
+    }
+   }
+  },
+  "open": {
+   "cells": 43,
+   "SCROLL": [
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "2026-09-18T07:45:00Z"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "1"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "Linux"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "6.17.0-41-generic"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "amd64"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "21.0.11"
+    },
+    {
+     "cell": ".myx-sfield",
+     "port": ".myx-bay-rows",
+     "hidden": 8,
+     "whole": false,
+     "text": "Eclipse Adoptium"
+    }
+   ],
+   "VOID": [],
+   "ELLIPSIS": 0,
+   "CUT": [],
+   "ports": {
+    ".myx-console": {
+     "overflowX": "hidden",
+     "clientWidth": 1536,
+     "scrollWidth": 1536,
+     "scrolls": false,
+     "n": 6
+    },
+    ".myx-bay-rows": {
+     "overflowX": "auto",
+     "clientWidth": 498,
+     "scrollWidth": 498,
+     "scrolls": false,
+     "n": 34
+    },
+    ".myx-console-page": {
+     "overflowX": "auto",
+     "clientWidth": 1398,
+     "scrollWidth": 1398,
+     "scrolls": false,
+     "n": 3
+    }
+   }
+  }
+ }
+]

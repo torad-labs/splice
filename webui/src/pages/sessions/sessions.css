@@ -78,7 +78,14 @@
    leftover ch is distributed across them, so the column grid is still the declared one and only the
    slack moves. That is the whole difference between bare paper and a full row. */
 .myx-sx-bays .myx-strip { width: 100%; }
-.myx-sx-bays .myx-sfield { flex: 1 1 auto; }
+/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
+   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
+   every row shape has the same cell count -- it does not, so the primitive now sets
+   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
+   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
+   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
+   changes it, and watches nothing happen. Verified dead on this page by DOM probe
+   before removal -- see the M1-93 note for the counts. */
 
 .myx-sx-detail {
   display: flex;

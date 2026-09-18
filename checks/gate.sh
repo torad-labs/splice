@@ -167,7 +167,7 @@ run "quirks keys selftest" bun checks/config/quirks-keys-documented.ts --selftes
 # stay green only while nobody adds an offender. The ast-grep walls of the same wave need no leg
 # here — sgconfig.yml routes them into `gate:rules` above and into the PreToolUse hook from one
 # source (same-checker-twice).
-run "knob keys documented" python3 checks/config/knob-keys-documented.py check .
+run "knob keys documented" bun checks/config/knob-keys-documented.ts check .
 run "knob keys selftest" bash checks/knob-keys-documented-selftest.sh
 run "env vars documented" python3 checks/config/env-vars-documented.py check .
 run "env vars selftest" bash checks/env-vars-documented-selftest.sh

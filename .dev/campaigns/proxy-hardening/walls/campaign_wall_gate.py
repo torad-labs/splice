@@ -135,7 +135,17 @@ def _resolve(wall: str) -> pathlib.Path:
 
 def run_wall(wall: str, *, selftest: bool = False, timeout: int = WALL_TIMEOUT_S) -> tuple[int, str]:
     target = _resolve(wall)
-    cmd = ["bash", str(target)] if target.suffix == ".sh" else [sys.executable, str(target)]
+    # V4-154: THE DISPATCH IS BY SUFFIX, so the runner does not care what language a wall is written
+    # in — it only has to know what RUNS that suffix. Adding `.ts` here is what lets the 36 walls
+    # convert ONE AT A TIME, each landing green under this still-Python runner, rather than in one
+    # big bang: before this branch a `.ts` wall fell through to `sys.executable` and was invoked as
+    # `python3 wall.ts`, which fails for a reason that has nothing to do with the wall.
+    if target.suffix == ".sh":
+        cmd = ["bash", str(target)]
+    elif target.suffix == ".ts":
+        cmd = ["bun", str(target)]
+    else:
+        cmd = [sys.executable, str(target)]
     if selftest:
         cmd.append("--selftest")
     try:

@@ -109,7 +109,6 @@ export const EMPTIES = {
   /** The pooled accounts, for the detail column's pool section. */
   pool: { text: 'account pool not built', source: 'row V4-132' },
   noHeads: { text: 'no heads configured', source: 'GET /api/heads' },
-  noOpened: { text: 'no head opened', source: 'click a strip' },
   /** The daemon-level restart is its own row, distinct from a head restart. */
   daemonRestart: { text: 'daemon restart not built', source: 'row V4-74' },
 } as const;

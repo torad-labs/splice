@@ -10,7 +10,6 @@ export const EMPTIES = {
   catalogPending: { text: 'the console cannot read the catalog yet', source: 'V4-127 serves /api/models' },
   noModels: { text: 'this head declares no models', source: 'the topology' },
   noProvider: { text: 'the payload reports no provider', source: 'GET /api/models' },
-  noneOpen: { text: 'no model opened', source: 'the catalog' },
 } as const;
 
 /** The honest bay label for heads whose payload carries no provider. A printed sentence-ish word

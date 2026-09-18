@@ -213,7 +213,7 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
             gates the content, so the exposure and the content cannot desync: they are one
             expression, not two facts kept in step. The element stays mounted, which is what gives
             the track something to transition from — the whole reason collapse beat unmount. */}
-        <aside className="myx-sx-detail" aria-label={S.detail} aria-hidden={open === null}>
+        <aside className="myx-sx-detail myx-swell" aria-label={S.detail} aria-hidden={open === null}>
           {open === null ? null : (
             <>
               <div className="myx-sx-detail-head">

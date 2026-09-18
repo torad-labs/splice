@@ -227,7 +227,22 @@ textarea:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- THE PHONE (M3-03) ----------
+   Below 720 the frame is a phone, and the desktop shell does not survive the loss of width: it gave
+   the rail 96 of 390 pixels (25 percent of the screen to thirteen words) and left the page 294.
+   The rail becomes a strip of addresses along the BOTTOM of the screen, where a thumb is, and the
+   page takes the whole width between the rule and that strip. The rule's own height is its
+   content's here (rule.css stacks its cells), so the first track is auto rather than the type
+   multiple the desktop band is.
+   The rack rails (the body's background above) are keyed to the vertical rail's tab pitch, which
+   no longer exists: a horizontal strip has no pitch to key them to, so they are not drawn. */
 @media (max-width: 720px) {
-  .myx-console { --rail-w: 14vw; --rail-min: 96px; }
+  .myx-console { grid-template-rows: auto minmax(0, 1fr); }
+  .myx-console-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    background-image: none;
+  }
+  .myx-console-body > .myx-rail { order: 2; }
   .myx-console-page { padding: var(--space-3); }
 }

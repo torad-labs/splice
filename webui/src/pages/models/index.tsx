@@ -14,7 +14,7 @@ import { startModelsPolling, useModels } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Blank, Fault } from '@shared/controls';
+import { Blank, Fault, Key } from '@shared/controls';
 import { HeadCatalogBay, ModelDetail } from './components';
 import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel } from './model';
 import { S } from './strings';
@@ -92,8 +92,13 @@ export function ModelsBoard({ catalog, sample }: {
               which source supplies it, and at rest there is no panel to be missing anything, so a
               card reading "none open" captions a panel that does not exist. `EMPTIES.noneOpen` went
               with it: M1-112 could not delete it from model.ts, outside that fence, and M2-28 did. */}
-          <aside className="myx-models-detail" aria-label={S.catalog} aria-hidden={opened === null}>
-            {opened === null ? null : <ModelDetail model={opened.model} head={opened.head} />}
+          <aside className="myx-models-detail myx-swell" aria-label={S.catalog} aria-hidden={opened === null}>
+            {opened === null ? null : (
+              <>
+                <Key className="myx-swell-close" onClick={() => setOpen(null)}>{S.close}</Key>
+                <ModelDetail model={opened.model} head={opened.head} />
+              </>
+            )}
           </aside>
         </div>
       )}

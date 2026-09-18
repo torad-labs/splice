@@ -146,71 +146,75 @@ export function TeamBoardByRole({ board, data = null, chat, feed }: {
   const focus = focusMember(board);
 
   return (
-    <section className="myx-board myx-board-role" aria-label={S.board}>
-      <BoardHeader board={board} />
+    // The phone scroller (board.css, M3-03): `display: contents` on a desktop, the one box that
+    // scrolls sideways below 720 so the rack's columns keep a readable width.
+    <div className="myx-board-frame">
+      <section className="myx-board myx-board-role" aria-label={S.board}>
+        <BoardHeader board={board} />
 
-      <div
-        className="myx-role-rack"
-        // The first row is the bay's own title plate, which the bay draws at its top: as `auto` it
-        // collapsed to nothing (no item is placed in it) and the first session strip covered the
-        // plate. 5.5cqh is the plate's own height on the comp, 53px of its 964.6px board.
-        style={{ gridTemplateColumns: tracksFor(bays.length), gridTemplateRows: `5.5cqh repeat(${Math.max(rows, 1)}, 1fr) auto` }}
-      >
-        {bays.map((bay, index) => (
-          <Bay
-            key={bay.role}
-            className="myx-role-bay"
-            label={bay.role}
-            style={{ gridColumn: index + 1, gridRow: '1 / -1' }}
-          >
-            {/* A bay with nobody in it says so in the words the comp prints, and names the head
-                the open slot declares — which is what the operator would launch. */}
-            {bay.members.length === 0 ? (
-              <p className="myx-role-open">
-                {bay.open === null ? 'no session bound' : `no session bound, launch one: ${bay.open.head}`}
-              </p>
-            ) : null}
-          </Bay>
-        ))}
+        <div
+          className="myx-role-rack"
+          // The first row is the bay's own title plate, which the bay draws at its top: as `auto` it
+          // collapsed to nothing (no item is placed in it) and the first session strip covered the
+          // plate. 5.5cqh is the plate's own height on the comp, 53px of its 964.6px board.
+          style={{ gridTemplateColumns: tracksFor(bays.length), gridTemplateRows: `5.5cqh repeat(${Math.max(rows, 1)}, 1fr) auto` }}
+        >
+          {bays.map((bay, index) => (
+            <Bay
+              key={bay.role}
+              className="myx-role-bay"
+              label={bay.role}
+              style={{ gridColumn: index + 1, gridRow: '1 / -1' }}
+            >
+              {/* A bay with nobody in it says so in the words the comp prints, and names the head
+                  the open slot declares — which is what the operator would launch. */}
+              {bay.members.length === 0 ? (
+                <p className="myx-role-open">
+                  {bay.open === null ? 'no session bound' : `no session bound, launch one: ${bay.open.head}`}
+                </p>
+              ) : null}
+            </Bay>
+          ))}
 
-        {events.map((event) => (event.kind === 'session' ? (
-          <div
-            className="myx-role-cell"
-            key={`session-${event.member.name}`}
-            style={{ gridColumn: event.column + 1, gridRow: event.row + 2 }}
-          >
-            <SessionStrip member={event.member} />
-          </div>
-        ) : (
-          <div
-            className="myx-role-cell myx-role-cross"
-            key={`msg-${event.message.time}-${event.message.from}`}
-            style={{ gridColumn: `${event.from + 1} / ${event.to + 2}`, gridRow: event.row + 2 }}
-          >
-            <MessageStrip message={event.message} />
-          </div>
-        )))}
+          {events.map((event) => (event.kind === 'session' ? (
+            <div
+              className="myx-role-cell"
+              key={`session-${event.member.name}`}
+              style={{ gridColumn: event.column + 1, gridRow: event.row + 2 }}
+            >
+              <SessionStrip member={event.member} />
+            </div>
+          ) : (
+            <div
+              className="myx-role-cell myx-role-cross"
+              key={`msg-${event.message.time}-${event.message.from}`}
+              style={{ gridColumn: `${event.from + 1} / ${event.to + 2}`, gridRow: event.row + 2 }}
+            >
+              <MessageStrip message={event.message} />
+            </div>
+          )))}
 
-        {marks.length > 0 ? (
-          <div className="myx-role-rule" style={{ gridColumn: '1 / -1', gridRow: '-2 / -1' }}>
-            {marks.map((mark) => (
-              <span className="myx-role-mark" key={mark.label} style={{ left: `${mark.at}%` }}>{mark.label}</span>
-            ))}
-          </div>
-        ) : null}
-      </div>
+          {marks.length > 0 ? (
+            <div className="myx-role-rule" style={{ gridColumn: '1 / -1', gridRow: '-2 / -1' }}>
+              {marks.map((mark) => (
+                <span className="myx-role-mark" key={mark.label} style={{ left: `${mark.at}%` }}>{mark.label}</span>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
-      <aside className="myx-board-aside myx-role-aside">
-        {focus === null
-          ? <Empty text="no session is racked" source="GET /api/teams/{id}" />
-          : <MemberCard board={board} member={focus} />}
-        <TurnsChart data={data} />
-        {chat}
-        {feed}
-      </aside>
+        <aside className="myx-board-aside myx-role-aside">
+          {focus === null
+            ? <Empty text="no session is racked" source="GET /api/teams/{id}" />
+            : <MemberCard board={board} member={focus} />}
+          <TurnsChart data={data} />
+          {chat}
+          {feed}
+        </aside>
 
-      <BoardFooter board={board} />
-    </section>
+        <BoardFooter board={board} />
+      </section>
+    </div>
   );
 }
 
@@ -342,57 +346,61 @@ export function TeamTimeline({ board, data = null }: { board: TeamPayload; data?
   const tracks = `5.646fr ${columns.map(() => `${(94.354 / Math.max(columns.length, 1)).toFixed(3)}fr`).join(' ')}`;
 
   return (
-    <section className="myx-board myx-board-tl" aria-label={S.board}>
-      <BoardHeader board={board} />
+    // The phone scroller (board.css, M3-03): `display: contents` on a desktop, the one box that
+    // scrolls sideways below 720 so the rack's columns keep a readable width.
+    <div className="myx-board-frame">
+      <section className="myx-board myx-board-tl" aria-label={S.board}>
+        <BoardHeader board={board} />
 
-      <div className="myx-tl-rack" style={{ gridTemplateColumns: tracks }}>
-        <span className="myx-tl-gutter-head" style={{ gridRow: 1, gridColumn: 1 }} />
-        {columns.map((member, index) => (
-          <div className="myx-tl-head" key={member.name} style={{ gridRow: 1, gridColumn: index + 2 }}>
-            <span className="myx-tl-head-name">{member.name}</span>
-            <span className="myx-tl-head-sub">
-              {`${member.head}${member.model === null ? '' : ` (${member.model})`} · ${member.role}`}
-            </span>
-          </div>
-        ))}
-
-        {rows.map((row, index) => (row.kind === 'bucket' ? [
-          <span className="myx-tl-mark" key={`mark-${row.label}-${index}`} style={{ gridRow: index + 2, gridColumn: 1 }}>{row.label}</span>,
-          ...row.cells.map((cells, column) => (
-            <div className="myx-tl-cell" key={`cell-${index}-${columns[column].name}`} style={{ gridRow: index + 2, gridColumn: column + 2 }}>
-              {cells.map((cell) => (cell.kind === 'turn'
-                ? <TurnStrip key={cell.turn.id} turn={cell.turn} />
-                : (
-                  <WrapStrip key={`${cell.member}-${cell.time}`} edge="grey" ariaLabel={`${cell.member} ${cell.activity}`} className="myx-tl-act">
-                    <StripField w={0} fixed label={S.activity} value={cell.activity} mono={false} />
-                    <StripField w={0} fixed label={S.time} value={cell.time} />
-                  </WrapStrip>
-                )))}
+        <div className="myx-tl-rack" style={{ gridTemplateColumns: tracks }}>
+          <span className="myx-tl-gutter-head" style={{ gridRow: 1, gridColumn: 1 }} />
+          {columns.map((member, index) => (
+            <div className="myx-tl-head" key={member.name} style={{ gridRow: 1, gridColumn: index + 2 }}>
+              <span className="myx-tl-head-name">{member.name}</span>
+              <span className="myx-tl-head-sub">
+                {`${member.head}${member.model === null ? '' : ` (${member.model})`} · ${member.role}`}
+              </span>
             </div>
-          )),
-        ] : [
-          <span className="myx-tl-mark" key={`mark-${row.label}-${index}`} style={{ gridRow: index + 2, gridColumn: 1 }}>{row.label}</span>,
-          <div
-            className="myx-tl-cell myx-tl-cross"
-            key={`msg-${index}`}
-            style={{ gridRow: index + 2, gridColumn: `${row.from + 2} / ${row.to + 3}` }}
-          >
-            <WrapStrip edge={row.message.fromHead === 'claude' ? 'green' : 'grey'} ariaLabel={`${row.message.from} to ${row.message.to}`} className="myx-tl-msg">
-              <StripField w={0} fixed label={S.message} value={row.message.text} mono={false} />
-              <StripField w={0} fixed label={S.arrow} value={`${slotName(board.team.slots, row.message.from)} → ${slotName(board.team.slots, row.message.to)}`} mono={false} />
-              <StripField w={0} fixed label={S.time} value={row.message.time} />
-            </WrapStrip>
-          </div>,
-        ]))}
-      </div>
+          ))}
 
-      <aside className="myx-board-aside myx-tl-aside">
-        <TeamSlots board={board} />
-        <CostPerRole board={board} data={data} />
-        <TurnsPerMember board={board} data={data} />
-      </aside>
+          {rows.map((row, index) => (row.kind === 'bucket' ? [
+            <span className="myx-tl-mark" key={`mark-${row.label}-${index}`} style={{ gridRow: index + 2, gridColumn: 1 }}>{row.label}</span>,
+            ...row.cells.map((cells, column) => (
+              <div className="myx-tl-cell" key={`cell-${index}-${columns[column].name}`} style={{ gridRow: index + 2, gridColumn: column + 2 }}>
+                {cells.map((cell) => (cell.kind === 'turn'
+                  ? <TurnStrip key={cell.turn.id} turn={cell.turn} />
+                  : (
+                    <WrapStrip key={`${cell.member}-${cell.time}`} edge="grey" ariaLabel={`${cell.member} ${cell.activity}`} className="myx-tl-act">
+                      <StripField w={0} fixed label={S.activity} value={cell.activity} mono={false} />
+                      <StripField w={0} fixed label={S.time} value={cell.time} />
+                    </WrapStrip>
+                  )))}
+              </div>
+            )),
+          ] : [
+            <span className="myx-tl-mark" key={`mark-${row.label}-${index}`} style={{ gridRow: index + 2, gridColumn: 1 }}>{row.label}</span>,
+            <div
+              className="myx-tl-cell myx-tl-cross"
+              key={`msg-${index}`}
+              style={{ gridRow: index + 2, gridColumn: `${row.from + 2} / ${row.to + 3}` }}
+            >
+              <WrapStrip edge={row.message.fromHead === 'claude' ? 'green' : 'grey'} ariaLabel={`${row.message.from} to ${row.message.to}`} className="myx-tl-msg">
+                <StripField w={0} fixed label={S.message} value={row.message.text} mono={false} />
+                <StripField w={0} fixed label={S.arrow} value={`${slotName(board.team.slots, row.message.from)} → ${slotName(board.team.slots, row.message.to)}`} mono={false} />
+                <StripField w={0} fixed label={S.time} value={row.message.time} />
+              </WrapStrip>
+            </div>,
+          ]))}
+        </div>
 
-      <BoardFooter board={board} />
-    </section>
+        <aside className="myx-board-aside myx-tl-aside">
+          <TeamSlots board={board} />
+          <CostPerRole board={board} data={data} />
+          <TurnsPerMember board={board} data={data} />
+        </aside>
+
+        <BoardFooter board={board} />
+      </section>
+    </div>
   );
 }

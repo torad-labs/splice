@@ -38,6 +38,8 @@ export const S = {
   headWindow: 'head window',
   sample: 'sample data',
   openModel: 'open model',
+  /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
+  close: 'close',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

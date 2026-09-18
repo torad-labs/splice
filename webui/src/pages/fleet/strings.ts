@@ -24,6 +24,8 @@ export const S = {
    *  It replaces the bare `not built` this page used to print in a strip; the pending routes are
    *  named where they belong, in its honest empties (EMPTIES.fields, EMPTIES.pool). */
   absent: 'n/r',
+  /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
+  close: 'close',
 } as const;
 
 // THE ABSENCE VOCABULARY, written down where the next person writing a cell will see it (M1-66).

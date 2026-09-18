@@ -250,7 +250,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
             gates the content, so the exposure and the content cannot desync: they are one
             expression, not two facts kept in step. The element stays mounted, which is what gives
             the track something to transition from — the whole reason collapse beat unmount. */}
-        <aside className="myx-px-detail" aria-label={S.detail} aria-hidden={open === null}>
+        <aside className="myx-px-detail myx-swell" aria-label={S.detail} aria-hidden={open === null}>
           {open === null ? null : (
             <>
               <div className="myx-px-detail-head">

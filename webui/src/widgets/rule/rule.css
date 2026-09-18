@@ -189,3 +189,45 @@
   align-items: baseline;
   gap: var(--space-2);
 }
+
+/* ---------- THE PHONE (M3-03): THE RULE STACKS ----------
+   The five measured cells are shares of a 1536 band, and at 390 they overprint each other: the
+   clocks ran into health, and health into the window line. Below 720 the band is a small grid in
+   the rule's own reading order: the wordmark holds the left, the clocks sit OVER health beside it,
+   and the window line and the tail each take a full row. The six dividers are drawn at the comp's
+   x and would cut through words in this arrangement, so the band draws none; one hairline sets the
+   readouts under the wordmark apart from the clock block above them. */
+@media (max-width: 720px) {
+  .myx-rule {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'mark clocks'
+      'mark health'
+      'window window'
+      'tail tail';
+    align-items: center;
+    column-gap: var(--space-5);
+    row-gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background-image: none;
+  }
+  .myx-rule .myx-rule-cell,
+  .myx-rule-tail {
+    position: static;
+    top: auto;
+    left: auto;
+    width: auto;
+    height: auto;
+  }
+  .myx-rule-wordmark { grid-area: mark; }
+  .myx-rule-clocks { grid-area: clocks; }
+  .myx-rule-health { grid-area: health; }
+  .myx-rule-window {
+    grid-area: window;
+    border-top: var(--hair) solid var(--hairline);
+    padding-top: var(--space-2);
+    text-overflow: ellipsis;
+  }
+  .myx-rule-tail { grid-area: tail; }
+}

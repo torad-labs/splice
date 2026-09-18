@@ -389,7 +389,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
             accessibility tree; this seat is applying it rather than choosing a variant. The column
             stays mounted at rest for the reason collapse beat unmount: the collapsing track needs
             something to transition from. */}
-        <aside className="myx-tn-detail" aria-label={S.detail} aria-hidden={open?.kind !== 'row' ? true : undefined}>
+        <aside className="myx-tn-detail myx-swell" aria-label={S.detail} aria-hidden={open?.kind !== 'row' ? true : undefined}>
           {open?.kind !== 'row' ? null : (
             <>
               <div className="myx-tn-detail-head">

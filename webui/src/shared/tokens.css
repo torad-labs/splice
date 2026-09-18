@@ -1,163 +1,280 @@
 /* ============================================================
-   Torad Design System · Tokens
-   Primitive tier (raw values) + Semantic tier (purpose, themed).
+   splice console · tokens — THE STRIP BAY
 
-   Themes: paper (light, default) + observatory (dark).
-   The system follows the OS via color-scheme + light-dark();
-   a user choice overrides it via [data-theme] on <html>.
+   Two complete sets on the root element, dark by default:
+     :root, :root[data-theme="dark"]   the graphite room  (default, whatever the OS says)
+     :root[data-theme="light"]         the paper bay
+
+   Every value below is measured from the approved comp
+   (.impeccable/mocks/team-board-a.png), not chosen: the dark set from its
+   grounds, strip paper, strip ink and holder edges; the light set from the
+   paper bay of .impeccable/mocks/decision/assigned.png. Where a measured
+   value could not carry its own text at AA it was moved the smallest step
+   that does, and the move is named where it happens.
+
+   The world: a graphite room, pale opaque strips printed on it, a colored
+   holder edge carrying attention, tabular figures. No glow, no blue-black,
+   no radius, no shadow. Type and spacing never appear as raw numbers in a
+   page: they come from var(--space-N) and var(--text-N) (ast-grep wall
+   webui-css-tokens-only).
+
+   Sections 1 of .dev/web-console/CONTRACTS.md is the lattice for this file.
+   ============================================================ */
+
+/* ============================================================
+   THE OLD WORLD — kept until M2 replaces the last consumer.
+   Names survive; new code never reads them. Themed through light-dark()
+   driven by the color-scheme each theme block below sets.
    ============================================================ */
 
 :root {
-  /* default: follow the operating system preference */
-  color-scheme: light dark;
+  color-scheme: dark;
 
   /* ---------- PRIMITIVE · color ---------- */
-  /* THE PLATE WORLD - 18th-c. pigments. paper = daylight rag salon; obsidian = candlelight leather. */
-  --paper-0:#fbf3df; --paper-50:#efe6d2; --paper-100:#e7dcc2; --paper-200:#e0d4b8;   /* warm rag stock */
-  --ink-900:#241d14; --ink-700:#5d5240; --ink-500:#635741; --ink-400:#8c8068; --ink-200:#bdb39c;  /* iron-gall (ink-500 deepened to clear AA on surface-sunk) */
-  --obsidian-900:#1c1610; --obsidian-800:#241a12; --obsidian-700:#150f09;            /* candlelight leather */
-  /* cream text scale: the candlelight ink, where iron-gall reads light on leather */
-  --mist-100:#efe2c6; --mist-300:#cbbd9d; --mist-400:#b6a888; --mist-500:#968969;  /* mute lightened to clear AA on leather */
-  /* vermilion (cinnabar) - THE rubric + the single charged accent. 800/700 are the LIGHT-theme
-     grades, deep enough to clear WCAG AA (4.5:1) on rag where vermilion is the link colour;
-     400/300 are the candlelight grades (brighter vermilion on leather already passes). */
+  /* the plate pigments of the retired world: kept so old pages still render */
+  --paper-0:#fbf3df; --paper-50:#efe6d2; --paper-100:#e7dcc2; --paper-200:#e0d4b8;
+  --ink-900:#241d14; --ink-700:#5d5240; --ink-500:#635741; --ink-400:#8c8068; --ink-200:#bdb39c;
+  --obsidian-900:#1c1610; --obsidian-800:#241a12; --obsidian-700:#150f09;
+  --mist-100:#efe2c6; --mist-300:#cbbd9d; --mist-400:#b6a888; --mist-500:#968969;
   --vermilion-800:#8f2412; --vermilion-700:#a62815; --vermilion-600:#bb301a; --vermilion-500:#c5331d; --vermilion-400:#e2563b; --vermilion-300:#f06a4c;
-  --prussian-600:#1c3c5c; --prussian-400:#6fa8cf;   /* the first synthetic blue - the instrument */
-  --verdigris-600:#2c6555; --verdigris-400:#5bb59c; /* copper green - the live / offline mark (600 deepened to clear AA on sunk) */
-  --ormolu-600:#7d5419; --ormolu-400:#e7c069;       /* gilt bronze - the asserted / provisional ink. 600 deepened from #a8802f (2.92 on rag, FAILED AA) to clear 4.5:1 on rag AND surface-sunk; 400 is the candlelight grade (10.36 on leather, already passes) */
-  --red-600:#a53b39; --red-400:#e85d5d;             /* negative data ink (rare; 600 deepened to clear AA on sunk) */
-  /* legacy gold/cyan/green primitives - superseded by the Plate pigments above; kept for safety */
+  --prussian-600:#1c3c5c; --prussian-400:#6fa8cf;
+  --verdigris-600:#2c6555; --verdigris-400:#5bb59c;
+  --ormolu-600:#7d5419; --ormolu-400:#e7c069;
+  --red-600:#a53b39; --red-400:#e85d5d;
   --gold-700:#8a5e1f; --gold-600:#a9762d; --gold-500:#c2922f; --gold-400:#d4a853; --gold-300:#e0bd72; --gold-800:#7d5419;
   --cyan-600:#2a7d76; --cyan-400:#4ecdc4; --green-600:#3f7d46; --green-400:#7bc47f;
+  --amber-600:#9a6a12; --amber-400:#d9a441;
 
-  /* ---------- PRIMITIVE · scales (theme-agnostic) ---------- */
-  --space-0:0; --space-1:.25rem; --space-2:.5rem; --space-3:.75rem; --space-4:1rem;
-  --space-5:1.5rem; --space-6:2rem; --space-7:3rem; --space-8:4rem; --space-9:6rem; --space-10:8rem;
-
-  --text-1:.62rem; --text-2:.72rem; --text-3:.84rem; --text-4:1rem; --text-5:1.16rem;
-  --text-6:1.5rem; --text-7:2.1rem; --text-8:3rem; --text-9:clamp(2.9rem, 6.4vw, 5rem);
+  /* ---------- SCALE · the rungs the new ladder does not cover ---------- */
+  --space-0:0; --space-9:6rem; --space-10:8rem; --space-11:10rem; --space-12:14rem;
+  --text-0:.54rem; --text-7:2.1rem; --text-8:3rem; --text-9:clamp(2.9rem, 6.4vw, 5rem);
+  --text-10:clamp(3.4rem, 9vw, 7.5rem);
 
   --radius-0:0; --radius-1:2px; --radius-2:6px;
-  --dur-1:.18s; --dur-2:.28s; --ease-snap:cubic-bezier(.16,.84,.18,1);
+  /* a hairline is a width here, and a color in the two theme blocks below
+     (--hairline / --hairline-strong): a rail reads
+     `border-top: var(--hair) solid var(--hairline)`. */
   --hair:1px;
+  --ease-snap:cubic-bezier(.16,.84,.18,1);
+  --ease-in-out:cubic-bezier(.65,0,.35,1);
+  --icon-1:1rem; --icon-2:1.5rem; --icon-3:2.25rem;
+  --focus-width:2px; --focus-offset:2px;
+  --control-box:1.15rem; --field-control-h:2.4rem;
 
-  --font-display:'Fraunces', serif;
-  --font-body:'Source Serif 4', serif;
-  --font-mono:'IBM Plex Mono', monospace;
+  /* the retired faces alias to the two in the new world (fonts.css) */
+  --font-display:var(--font-label);
+  --font-body:var(--font-label);
+  --font-mono:var(--font-figure);
 
   /* ---------- SEMANTIC · themed via light-dark(LIGHT, DARK) ---------- */
-  /* surfaces */
   --surface:        light-dark(var(--paper-50),  var(--obsidian-900));
   --surface-raised: light-dark(var(--paper-100), var(--obsidian-800));
   --surface-sunk:   light-dark(var(--paper-200), var(--obsidian-700));
-  /* ink */
-  --ink-strong: light-dark(var(--ink-900), var(--mist-100));
-  --ink-body:   light-dark(var(--ink-700), var(--mist-400));
-  --ink-mute:   light-dark(var(--ink-500), var(--mist-500));  /* ink-500 darkened to clear AA on the sunk surface too; ink-400 failed AA on paper */
-  /* the single gold voltage. Light = deep gold (AA on paper, gold is the link colour);
-     dark = bright gold (passes on near-black). accent-bright deepens on light (more
-     emphasis = more contrast), brightens on dark — both directions stay legible. */
-  /* the single vermilion voltage. Light = deep cinnabar (AA on rag, vermilion is the link colour);
-     dark = bright vermilion (passes on leather). accent-bright deepens on light, brightens on dark. */
-  --accent:        light-dark(var(--vermilion-700), var(--vermilion-400));
-  --accent-bright: light-dark(var(--vermilion-800), var(--vermilion-300));
-  --on-accent:     light-dark(var(--paper-0), var(--obsidian-900));
-  /* lines + structure (hairlines, not shadows) - iron-gall on rag, cream on leather */
+  --ink-body:       light-dark(var(--ink-700), var(--mist-400));
+  --accent:         light-dark(var(--vermilion-700), var(--vermilion-400));
+  --accent-bright:  light-dark(var(--vermilion-800), var(--vermilion-300));
+  --on-accent:      light-dark(var(--paper-0), var(--obsidian-900));
   --line:        light-dark(rgba(36,29,20,.14),  rgba(239,226,198,.16));
   --line-strong: light-dark(rgba(36,29,20,.30),  rgba(239,226,198,.32));
-  --tick:        light-dark(var(--ink-900),       var(--vermilion-400));
+  --line-mute:   light-dark(rgba(36,29,20,.07),  rgba(239,226,198,.10));
+  --tick:        light-dark(var(--ink-900), var(--vermilion-400));
+  --tick-soft:   light-dark(rgba(36,29,20,.4), rgba(239,226,198,.5));
   --grid:        light-dark(rgba(36,29,20,.04),  rgba(239,226,198,.05));
-  --focus:       light-dark(var(--vermilion-700), var(--vermilion-400));
-  /* data inks · measurements only, never chrome · the instrument palette */
-  --data-pos:  light-dark(var(--verdigris-600), var(--verdigris-400));
-  --data-neg:  light-dark(var(--red-600),   var(--red-400));
-  --data-info: light-dark(var(--prussian-600),  var(--prussian-400));
-  --selection: light-dark(rgba(197,51,29,.20), rgba(226,86,59,.26));
+  --selection:   light-dark(rgba(197,51,29,.20), rgba(226,86,59,.26));
+  --data-pos:    light-dark(var(--verdigris-600), var(--verdigris-400));
+  --data-neg:    light-dark(var(--red-600),   var(--red-400));
+  --data-info:   light-dark(var(--prussian-600),  var(--prussian-400));
+  --data-amber:  light-dark(var(--ormolu-600), var(--ormolu-400));
+  --control-surface: light-dark(var(--paper-0), var(--obsidian-800));
+  --control-fill:    var(--accent);
 
   /* ---------- SEMANTIC · layout ---------- */
   --container: 940px;
   --measure: 38rem;
-  /* Compatibility default for existing generic bands. New pages own their
-     spacing in route-scoped CSS instead of selecting a global tempo recipe. */
   --gap-section: clamp(3rem, 4vw, 4rem);
   --gap-block: var(--space-5);
-
-  /* ---------- SEMANTIC · layout v2 (THE PLATE) — additive; --container/--measure stay ---------- */
-  /* Reading measure, ch-locked. --measure (px, 38rem≈80ch) kept for back-compat; these are
-     the law for NEW prose, which binds here and NEVER to the canvas width. */
-  --measure-text:   66ch;   /* body prose */
-  --measure-narrow: 56ch;   /* decks / standfirst */
-  --measure-wide:   74ch;   /* technical body w/ inline code — never exceeds 75ch */
-
-  /* Cross-track gutter — distinct from intra-component gaps (size-contrast needs a wider alley). */
-  --gap-track: clamp(var(--space-5), 4vw, var(--space-7));  /* 24 → 48px */
-
-  /* Breakout track sizes (consumed by .t-canvas). */
+  --measure-text:   66ch;
+  --measure-narrow: 56ch;
+  --measure-wide:   74ch;
+  --gap-track: clamp(var(--space-5), 4vw, var(--space-7));
   --track-content: min(var(--measure-text), 100% - var(--gap-track) * 2);
-  --track-popout:  minmax(0, var(--space-7));   /* pull-quote / anchor-stat edge */
-  --track-feature: minmax(0, 8vw);              /* proof grids, keyed plates, ladders */
-  --track-full:    minmax(var(--space-6), 1fr); /* the bleed gutter (floor 2rem = clean edge) */
-  --track-rail:    minmax(0, 13rem);            /* the gloss-rail in .t-spread */
-
-  /* The canvas. Gutter-aware; no 0px floor, no 940 floor (which would h-scroll phones). */
+  --track-popout:  minmax(0, var(--space-7));
+  --track-feature: minmax(0, 8vw);
+  --track-full:    minmax(var(--space-6), 1fr);
+  --track-rail:    minmax(0, 13rem);
   --canvas:      min(100% - (2 * var(--space-6)), 1480px);
-  --canvas-wide: min(100% - (2 * var(--space-6)), 1600px);  /* hero / ledger / live-field only */
-
-  /* Back-compat aliases for the three bodies that still use the old section
-     recipe. New pages do not inherit these composition names. */
+  --canvas-wide: min(100% - (2 * var(--space-6)), 1600px);
   --pad-section:  var(--gap-section);
   --pad-chapter:  clamp(4.5rem, 8vw, 7.5rem);
   --pad-overture: clamp(5.5rem, 10vw, 9rem);
-
-  /* Anchor type step (current top --text-9 maxes at 5rem — mid on a wide canvas). */
-  --text-10: clamp(3.4rem, 9vw, 7.5rem);
-
-  /* Sticky-rail clearance under the fixed nav. */
   --rail-top: calc(var(--space-9) + var(--space-2));
 
-  /* ---------- PRIMITIVE · amber (ASSERTED data ink) ---------- */
-  --amber-600:#9a6a12; --amber-400:#d9a441;
-
-  /* ---------- SCALE additions (theme-agnostic) ---------- */
-  /* breakpoints (documented; used in @media): s 480 / m 720 / l 960 / xl 1120 == --container */
-  --space-11: 10rem; --space-12: 14rem; --text-0: .54rem;
-  --dur-3: .42s;
-  --ease-out: cubic-bezier(.22,1,.36,1);
-  --ease-in-out: cubic-bezier(.65,0,.35,1);
-  --icon-1: 1rem; --icon-2: 1.5rem; --icon-3: 2.25rem;
-  --focus-width: 2px; --focus-offset: 2px;
-  --control-box: 1.15rem; --field-control-h: 2.4rem;
-  /* z-index scale (depth via stacking, never shadow) · single source */
-  --z-base: 0; --z-raised: 1; --z-dropdown: 10; --z-flyout: 90;
-  --z-sticky: 100; --z-drawer: 110; --z-overlay: 190; --z-modal: 200;
-  --z-skip: 210; --z-toast: 300;
-
-  /* ---------- SEMANTIC additions ---------- */
-  --data-amber:      light-dark(var(--ormolu-600), var(--ormolu-400));   /* asserted = gilt / provisional */
-  --control-surface: light-dark(var(--paper-0),   var(--obsidian-800));
-  --control-fill:    var(--accent);
-  --line-mute:  light-dark(rgba(36,29,20,.07), rgba(239,226,198,.10));
-  --tick-soft:  light-dark(rgba(36,29,20,.4),  rgba(239,226,198,.5));
-
-  /* ---------- THE BURIN: tone = cut-depth, never opacity ---------- */
-  /* a shallow graver line (bw-1) reads light because it is thin; a deep one (bw-6) heavy. */
+  /* ---------- THE BURIN (retired with the plate world) ---------- */
   --bw-1:.34; --bw-2:.55; --bw-3:.8; --bw-4:1.15; --bw-5:1.7; --bw-6:2.6;
-  /* intaglio plate-mark: the rag pressed by a copper plate (the deboss + the bevel return) */
-  --plate-well:  light-dark(92%, 84%);  /* mix of paper-0 into the surface for the well's lit centre (deeper = more deboss read) */
-  --plate-sink:  light-dark(rgba(36,29,20,.32), rgba(0,0,0,.56));   /* the pressed shadow (deepened for the apex's larger plates) */
-  --plate-rise:  light-dark(rgba(255,250,235,.72), rgba(239,226,198,.08)); /* the cream highlight return */
-  --plate-bevel: light-dark(rgba(36,29,20,.42), rgba(239,226,198,.26));    /* the bevelled edge bite */
-  /* THE NICE PLATE (ported verbatim from the book's .pl-plate, torad-world.css): a struck
-     leaf LIFTING off the desk. A crisp cream rim catches the light on the near edge, the far
-     edge sinks soft, and one tight warm drop hugs underneath. Reads raised + letterpress, NOT
-     pressed-in (the intaglio deboss the founder rejected) and NOT a generic floating card. */
+  --plate-well:  light-dark(92%, 84%);
+  --plate-sink:  light-dark(rgba(36,29,20,.32), rgba(0,0,0,.56));
+  --plate-rise:  light-dark(rgba(255,250,235,.72), rgba(239,226,198,.08));
+  --plate-bevel: light-dark(rgba(36,29,20,.42), rgba(239,226,198,.26));
   --plate-leaf:
     inset 2px 2px 0 light-dark(rgba(255,250,235,.7),  rgba(239,226,198,.10)),
     inset -2px -3px 7px light-dark(rgba(36,29,20,.16), rgba(0,0,0,.42)),
     0 1px 0 light-dark(rgba(255,250,235,.6), rgba(0,0,0,0)),
     0 22px 50px -34px light-dark(rgba(36,29,20,.5), rgba(0,0,0,.7));
+
+  /* z-index scale (depth via stacking, never shadow) · single source */
+  --z-base:0; --z-raised:1; --z-dropdown:10; --z-flyout:90;
+  --z-sticky:100; --z-drawer:110; --z-overlay:190; --z-modal:200;
+  --z-skip:210; --z-toast:300;
 }
 
-/* User override (persisted): force a theme, beating the OS default. */
-:root[data-theme="paper"]       { color-scheme: light; }
-:root[data-theme="observatory"] { color-scheme: dark; }
+/* ============================================================
+   THE GRAPHITE ROOM — default. Measured from team-board-a.png:
+   top-rule ground #0A0C0D (92% of the rule), rail ground #0C0F10,
+   the room field between bays #0C1010, strip paper #DBD8C4..DFD9C7,
+   holder edges #578A36 (green) and #8E8D87 (grey), health square #1F882C.
+   ============================================================ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ---------- SCALE (theme-agnostic; both sets carry the same rungs) ---------- */
+  --space-1:2px; --space-2:4px; --space-3:8px; --space-4:12px;
+  --space-5:16px; --space-6:24px; --space-7:32px; --space-8:48px;
+  --text-1:11px; --text-2:12px; --text-3:13px; --text-4:15px; --text-5:18px; --text-6:22px;
+
+  --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
+  --ease-out:cubic-bezier(.22,1,.36,1);
+
+  --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --font-figure:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ---------- GROUND ---------- */
+  /* the room is one graphite field: the rule, the rail and the floor between
+     bays all measure #0A0C0D..#0C1010, grain included. */
+  --room:#0B0E0E;
+  /* the rail. Its margins measure #0A0E0E; the token is one deliberate step
+     below the room so the rail recedes instead of merely differing. */
+  --room-deep:#080A0A;
+  --hairline:rgba(236,234,226,.10);
+  --hairline-strong:rgba(236,234,226,.22);
+
+  /* ---------- INK ON THE ROOM ---------- */
+  --ink:#C9C3B4;        /* rule ink, measured #C2BBAE..#CDC6B9 */
+  --ink-mute:#9D9B8E;   /* the quieter half of the rule */
+  --ink-strong:#EAE8D9; /* the brightest ink the comp shows */
+
+  /* ---------- THE STRIP (pale paper on the graphite room) ---------- */
+  --strip:#DED9C6;          /* team header ground #DBD8C4, strips #DDD8C6..#DFD9C8 */
+  --strip-ink:#141414;      /* strip text cores measure #000000..#191818 */
+  --strip-ink-mute:#5A5749; /* the comp's mute #6B685B darkened one step short of
+                               AA on the strip (3.95:1); this value clears it at
+                               5.13:1 and stays a mute: the ink above it is 13:1. */
+  --strip-field:#E4E0D1;    /* boxed field fill: one step above the strip so the
+                               box reads as a field and not as the strip itself */
+  --strip-field-line:#A8A392;
+
+  /* ---------- HOLDER EDGE ----------
+     The four states carry attention, so each must clear 3:1 on the room AND on
+     the pale strip. On a near-black floor and a #DED9C6 strip that leaves one
+     narrow luminance band (0.11 .. 0.20); every edge below sits in it. */
+  --edge-green:#548630;  /* measured #578A36 on the lead strip: moved two steps
+                            down, because the measured value reads 2.91:1 on paper */
+  --edge-amber:#9A6E10;  /* no amber in the board comp: the hue is the light
+                            comp's holder edge #ECB51D, landed in the band. A
+                            brighter amber cannot clear 3:1 on the strip. */
+  --edge-red:#E63521;    /* the light comp's holder edge red; in the band in both */
+  --edge-grey:#6E6D68;   /* measured #8E8D87 on the builder strip: moved two steps
+                            down, because the measured value reads 2.35:1 on paper */
+
+  /* ---------- SCOPE (a chart is a dark inset, in both themes) ---------- */
+  --scope:#090C0C;
+  --scope-ink:#EAE8D9;
+  --scope-grid:rgba(234,232,217,.14);
+
+  /* ---------- FOCUS ----------
+     The one blue in the room. A ring must be seen on the near-black floor and
+     on the pale strip alike, so it lives in the same band the edges do. */
+  --focus:#3F76B4;
+}
+
+/* ============================================================
+   THE PAPER BAY — the light set. Measured from
+   .impeccable/mocks/decision/assigned.png: page ground #E0E2DF, strip paper
+   #F6F6F3, strip ink near-black, holder edge blue #2869D5 and red #E63521,
+   green #029703, chart inset ground #1F2422.
+   ============================================================ */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* ---------- SCALE (same rungs as the room) ---------- */
+  --space-1:2px; --space-2:4px; --space-3:8px; --space-4:12px;
+  --space-5:16px; --space-6:24px; --space-7:32px; --space-8:48px;
+  --text-1:11px; --text-2:12px; --text-3:13px; --text-4:15px; --text-5:18px; --text-6:22px;
+
+  --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
+  --ease-out:cubic-bezier(.22,1,.36,1);
+
+  --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --font-figure:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ---------- GROUND ---------- */
+  --room:#E0E2DF;      /* the paper floor of the bay, measured */
+  --room-deep:#D2D5D1; /* one step darker, and it has to be a step and not the
+                          comp's dark rail (#1F2422): --ink must clear 4.5:1 on
+                          the rail in both themes, and near-black paper cannot
+                          carry paper ink. */
+  --hairline:rgba(31,36,34,.16);
+  --hairline-strong:rgba(31,36,34,.32);
+
+  /* ---------- INK ON THE ROOM ---------- */
+  --ink:#161A19;
+  --ink-mute:#565955;   /* the lightest grey that still clears 4.5:1 on the
+                           deeper paper (4.80:1); the comp's greys sit above it */
+  --ink-strong:#0A0C0B;
+
+  /* ---------- THE STRIP (white paper on the paper floor) ---------- */
+  --strip:#F6F6F3;
+  --strip-ink:#141414;
+  --strip-ink-mute:#5A5749;
+  --strip-field:#FFFFFF;      /* the field box is the brightest paper on the sheet */
+  --strip-field-line:rgba(31,36,34,.55);
+
+  /* ---------- HOLDER EDGE ---------- */
+  --edge-green:#1F882C;  /* the comp's green dot #029703 measures 2.97:1 on the
+                            paper floor; this is the board comp's health green,
+                            which clears both grounds at 3.49:1 and 4.20:1 */
+  --edge-amber:#9A6E10;
+  --edge-red:#E63521;
+  --edge-grey:#6E6D68;
+
+  /* ---------- SCOPE ---------- */
+  --scope:#1F2422;      /* measured: the comp's chart insets are dark on paper too */
+  --scope-ink:#F6F6F3;
+  --scope-grid:rgba(246,246,243,.16);
+
+  /* ---------- FOCUS ---------- */
+  --focus:#2869D5;      /* the comp's own blue, measured on the holder edges */
+}
+
+/* ============================================================
+   MOTION — the switch is a cut. The console never fades between themes:
+   applyTheme() stamps data-theme-cut for the frame of the switch, and this
+   rule holds every transition still for that frame. Nothing declares a
+   transition on --room or --strip; this is the belt to that pair of braces.
+   ============================================================ */
+
+:root[data-theme-cut],
+:root[data-theme-cut] * {
+  transition: none !important;
+}
+
+/* prefers-reduced-motion holds every duration at zero. The gestures (print,
+   hand off, swell, strike, cock) keep their end states; they stop moving. */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  :root[data-theme] {
+    --dur-1:0ms; --dur-2:0ms; --dur-3:0ms;
+  }
+}

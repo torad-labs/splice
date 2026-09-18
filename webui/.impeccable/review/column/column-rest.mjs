@@ -7,6 +7,12 @@
 //
 //   bays    the rack area's width -- the number the operator actually reads data in
 //   aside   the detail column's width
+//   past    how far the widest child is painted PAST THE FRAME -- not past the column. M1-121
+//           drew the distinction the earlier read missed: fixed ch widths are the brief's own
+//           contract ("strips keep fixed field widths in ch units and scroll inside their bay"),
+//           so a strip WIDER THAN ITS COLUMN is correct and past-column-edge is not a defect.
+//           What is a defect is paint that lands beyond the FRAME with no scrollport to reach it.
+//           So this reports both, plus whether the box can actually be scrolled to the content.
 //   gap     the COMPUTED column-gap, which is the idiom's own defect: a grid gap applies between
 //           a 1fr track and a 0 track, so a collapsed column still costs --space-4 of the frame.
 //           A zero track that still costs a gap is not zero.
@@ -35,7 +41,25 @@ const READ = (body, bays, aside) => `(() => {
     return el === null ? null : Math.round(el.getBoundingClientRect().width * 10) / 10; };
   const b = document.querySelector('${body}');
   const cs = b === null ? null : getComputedStyle(b);
-  return JSON.stringify({
+  // THE OVERFLOW READ: past the column edge (expected, the ch contract), past the FRAME (a
+  // defect), and whether the content is REACHABLE -- a clipped box with no scrollport hides it.
+  const a = document.querySelector('${aside}');
+  let past = null;
+  if (a !== null) {
+    const ab = a.getBoundingClientRect(), fw = window.innerWidth;
+    let col = 0, frame = 0;
+    for (const el of a.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 1) continue;
+      col = Math.max(col, Math.round((r.right - ab.right) * 10) / 10);
+      if (getComputedStyle(a).overflowX === 'visible') frame = Math.max(frame, Math.round((r.right - fw) * 10) / 10);
+    }
+    // `scrolls` is the whole question for a clipped column: overflow-x auto with
+    // scrollWidth === clientWidth is overflow: hidden wearing a better name.
+    past = { col, frame, overflowX: getComputedStyle(a).overflowX,
+             scrolls: a.scrollWidth > a.clientWidth };
+  }
+  return JSON.stringify({ past,
     body: w('${body}'), bays: w('${bays}'), aside: w('${aside}'),
     asidePresent: document.querySelector('${aside}') !== null,
     gap: cs === null ? null : cs.columnGap,
@@ -94,6 +118,10 @@ for (const [addr, body, bays, aside] of PAGES) {
       + `  rack gives up ${Math.round(-d * 10) / 10}px on open`
       + (r.proved ? '' : `  [NOT PROVED OPEN: ${r.gesture}]`));
     console.log(`   rest tracks: ${r.rest.tracks}   |   open tracks: ${r.open.tracks}`);
+    const p = r.open.past;
+    if (p !== null) console.log(`   OPEN overflow: ${p.col}px past the column edge (the ch contract,`
+      + ` not a defect), ${p.frame}px past the FRAME, overflow-x:${p.overflowX},`
+      + ` ${p.scrolls ? 'scrollable to the rest' : 'nothing to scroll'}`);
   } catch (e) {
     console.log(`FAIL ${addr}: ${e.message.split('\n')[0]}`);
     fails++;

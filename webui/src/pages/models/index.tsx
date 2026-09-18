@@ -92,7 +92,7 @@ export function ModelsBoard({ catalog, sample }: {
               which source supplies it, and at rest there is no panel to be missing anything, so a
               card reading "none open" captions a panel that does not exist. `EMPTIES.noneOpen` is
               left in model.ts, which is outside this row's fence. */}
-          <aside className="myx-models-detail" aria-label={S.catalog}>
+          <aside className="myx-models-detail" aria-label={S.catalog} aria-hidden={opened === null}>
             {opened === null ? null : <ModelDetail model={opened.model} head={opened.head} />}
           </aside>
         </div>

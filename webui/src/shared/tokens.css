@@ -339,14 +339,24 @@
   --ink-strong:#0A0C0B;
 
   /* ---------- THE STRIP (comp paper on the deeper matte) ---------- */
-  --strip:#F6F6F3;            /* the strip stays the comp's own #F6F6F3, now 2.03:1
+  --strip:#F5EDDD;            /* the strip stays the comp's own #F6F6F3, now 2.03:1
                                  above the bay floor it is racked on */
   --strip-ink:#141414;
   --strip-ink-mute:#5A5749;
-  --strip-field:#FFFFFF;      /* the field box, one step above the strip as the dark
-                                 block steps it (1.08:1), reading by
-                                 --strip-field-line the way the dark block's 1.07:1
-                                 box reads by its own */
+  --strip-field:#FBF5E9;     /* MEASURED, not stepped (M1-35). It was #FFFFFF, and the comment
+                               that made it white was honest about its own error: the STEP was
+                               ported from the dark block, not the value. In dark, one step above
+                               #DED9C6 is #E4E0D1 - another paper. In the light room the strip is
+                               already #F5EDDD, so the same relative step ran out of range and
+                               landed on white, which is what you get when a step has no paper
+                               left above it. White is not a paper colour; the comp's own strip is
+                               #F6F6F3 and never was. L 243.0 with R-B +18, in the same cream
+                               family as the strip (+24) and the comp's paper (+26). It matters
+                               because it outweighs --strip about 7:1 by area in the light room,
+                               so the M1-35 cream fix landed on a plane nobody sees. It survived
+                               three nights because teams is the only page with field at 0.00%
+                               and teams is the comp of record - the one page that could not
+                               reveal it is the one everything is calibrated against. */
   --strip-field-line:rgba(31,36,34,.55);
 
   /* ---------- THE RACK (M1-13; the dark values are the comp's own) ----------

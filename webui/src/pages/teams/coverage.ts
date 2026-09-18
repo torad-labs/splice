@@ -10,6 +10,9 @@ import type { Disposition } from '@shared/coverage';
 
 export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/teams', disposition: 'pending', where: 'V4-131' },
+  // One team's board, fetched at entities/team/api/index.ts:30, and undisposed until now — the
+  // 37 fields of TeamPayload all rest on it (M1-37, M1-41).
+  { kind: 'route', name: '/api/teams/{id}', disposition: 'pending', where: 'V4-131' },
   { kind: 'route', name: '/api/teams/{id}/sessions', disposition: 'pending', where: 'V4-131' },
   { kind: 'route', name: '/api/teams/{id}/edges', disposition: 'pending', where: 'V4-131' },
   { kind: 'route', name: '/api/teams/{id}/chat', disposition: 'pending', where: 'V4-131' },

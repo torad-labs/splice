@@ -20,7 +20,10 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/auth/{head}/switch', disposition: 'editable' },
   // DELETE and PATCH on one pooled account: remove and relabel.
   { kind: 'route', name: '/api/auth/{kind}/accounts/{label}', disposition: 'editable' },
-  // The pooled view. Read-only: the pool is the daemon's, and the page marks what the selector
-  // will take rather than steering it.
-  { kind: 'route', name: '/api/accounts', disposition: 'read-only' },
+  // The pooled view. PENDING, not read-only: this said read-only — that the route is live and the
+  // page reads it — and gateway control serves no /api/accounts of any kind (grepped 2026-09-18,
+  // 0 literal occurrences). The daemon's accounts work is V4-132, handed over from WD-06. Read-only
+  // is the disposition this route EARNS once V4-132 lands; until then the claim was the coverage
+  // plane agreeing with the console's belief about a daemon nobody asked (M1-37, M1-41).
+  { kind: 'route', name: '/api/accounts', disposition: 'pending', where: 'V4-132' },
 ];

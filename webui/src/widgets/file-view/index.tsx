@@ -54,28 +54,26 @@ export function FileView({ projectId, files }: { projectId: string; files?: Proj
       {data.files.map((file) => (
         <div className="myx-fv-row" key={`${file.kind}:${file.path}:${file.head ?? ''}`}>
           <Strip edge="grey" edgeLabel={file.kind === 'memory' ? S.memory : S.instructions} ariaLabel={file.path}>
-            {/* MEASURED AND DELIBERATELY NOT REDISTRIBUTED (M2-31). The declared-over-content
-                diagnostic reads path 0.41 and head 0.83 here -- both UNDER, which is the mirror
-                of the dead column it hunts and not the same defect: there is no column holding
-                more than it needs, so there is no share to move. path declares 34ch (326px) and
-                holds 82ch (789px, `/home/user/.claude/projects/-home-marcos-.../MEMORY.md`);
-                head declares 12ch (115px) and holds 14.5ch (`claude-deepseek`).
-                What opening the capture found instead, at 1536 with a project open: the widget
-                declares 46ch of fields plus a 56px edge holder -- 497px -- inside a 468px detail
-                pane, so the last 29px of `head` is cut by the PANE rather than by its own
-                declaration, and two different files print as the identical string, because the
-                segment that tells them apart is the one the clip removes:
+            {/* THE BUDGET FITS THE PANE, AND THE PATH CLIPS AT THE OTHER END (M2-31 follow-up).
+                The declared-over-content diagnostic reads path 0.41 and head 0.83 here -- both
+                UNDER, so there is no column holding more than it needs and no share to move. A
+                ratio far below 1 is a column holding a KIND of value no width satisfies, and the
+                answer is not a width: path holds 82ch of absolute path and this pane has 43.
+                Two things were wrong and neither was a share. FIRST, the widget declared 46ch of
+                fields plus a 56px edge holder -- 497px -- inside a 468px pane, so the last 29px
+                of `head` was cut by the PANE rather than by its own box, which means cut with no
+                ellipsis and no signal that anything was removed. 31 + 12 = 43ch fits (measured at
+                9.59px per ch), and `head` now clips inside its own cell and says so.
+                SECOND, and this is the one only the capture could find: clipping a path from the
+                right throws away the segment that identifies it. These two
                   /home/user/Documents/dev/projects/atlas/repo/CLAUDE.md
                   /home/user/Documents/dev/projects/atlas/repo/AGENTS.md
-                Both render `/home/user/Documents/dev/projects/...`. Narrowing the budget to fit
-                the pane would take characters from the column already at 0.41, so this row does
-                not do it; the fix is the pane or the clip end, and neither is a width share --
-                the campaign law for a ratio far below 1, which is a column holding a KIND of
-                value no width satisfies rather than the mirror of a column sized for a retired
-                sentence. The cut was found at the SCROLLPORT edge and not the cell's: `head`
-                reports no overflow of its own box on two of the three rows and is cut by the pane
-                all the same. */}
-            <StripField w={34} label={S.path} value={file.path} />
+                both printed as `/home/user/Documents/dev/projects/...` -- two different files,
+                one string. The path column now clips at the START (file-view.css carries the
+                mechanism), so they read `...v/projects/atlas/repo/CLAUDE.md` and `...AGENTS.md`.
+                Taking three ch off path costs only shared prefix now, which is why the budget
+                could be fitted to the pane without losing anything. */}
+            <StripField w={31} label={S.path} value={file.path} />
             <StripField w={12} label={S.head} value={file.head ?? S.repo} />
           </Strip>
           <Reveal label={S.contents}>

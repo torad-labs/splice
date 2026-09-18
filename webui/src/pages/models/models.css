@@ -20,13 +20,23 @@
   font-weight: 500;
 }
 
+/* THE RACK TAKES THE WHOLE WIDTH UNTIL A MODEL IS OPENED (M1-112, from M1-109's measurement and
+   M1-102's remedy on fleet). The resting detail column measured a 432x784 dead region at 21.5% of
+   the frame against the comp's own 11.2% bar -- a fifth of the page reserved for a response to a
+   click nobody has made. The comp settles it rather than my preference: team-board-a's right third
+   is a POPULATED BAY, not a placeholder, so a resting detail column departs from the comp and
+   removing it returns to it. */
 .myx-models-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
   min-width: 0;
 }
+
+/* The open state, and ONLY the open state, declares the 24rem track. Nothing else changes: the
+   column is a track when there is a model in it and no track when there is not. */
+.myx-models-body-open { grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); }
 
 .myx-models-bays {
   display: flex;
@@ -40,6 +50,23 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+}
+
+/* THE COLUMN ARRIVES ON THE SWELL, mirrored verbatim from `myx-cfeed-swell` (compact-feed.css:25-39),
+   which is the implementation of CONTRACTS.md section 6's "swell: a strip opening into its detail
+   column, --dur-2". Mirrored rather than re-invented, reduced-motion rule included: under reduce the
+   column holds still entirely. */
+.myx-models-detail > * {
+  animation: myx-models-swell var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes myx-models-swell {
+  from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-models-detail > * { animation: none; }
 }
 
 .myx-models-sub {
@@ -61,5 +88,6 @@
    into it on the right — holds at every width above this floor. The rule belongs in the shell, in
    one place, for every page row; until it is hoisted there it is repeated here with this note. */
 @media (max-width: 1120px) {
-  .myx-models-body { grid-template-columns: minmax(0, 1fr); }
+  .myx-models-body,
+  .myx-models-body-open { grid-template-columns: minmax(0, 1fr); }
 }

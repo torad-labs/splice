@@ -53,11 +53,13 @@ err() { echo "  ✗ concentration-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 ORACLE="$tmp/checks/concentration.py"
-ROUTING="$tmp/checks/config/concentration-leg-routed.py"
+ROUTING="$tmp/checks/config/concentration-leg-routed.ts"
 SYNTH="$tmp/gateway/zz-selftest-synthetic/src/main/kotlin/splice/selftest"
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/gateway"
+mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/gateway"
+# V4-145: the routing wall is bun and imports the Python-semantics shims from ../e2e/.
+cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
 for main in "$ROOT"/gateway/*/src/main; do
   [ -d "$main" ] || continue
   mod="${main#"$ROOT"/gateway/}"
@@ -70,14 +72,14 @@ reset_oracle() { cp "$ROOT/checks/concentration.py" "$ORACLE"; }
 reset_config() {
   cp "$ROOT/package.json" "$tmp/package.json"
   cp "$ROOT/checks/gate.sh" "$tmp/checks/gate.sh"
-  cp "$ROOT/checks/config/concentration-leg-routed.py" "$ROUTING"
+  cp "$ROOT/checks/config/concentration-leg-routed.ts" "$ROUTING"
 }
 reset_oracle
 reset_config
 
 rc=0
 oracle() { python3 "$ORACLE" "$@" >"$tmp/out" 2>&1; rc=$?; }
-routing() { python3 "$ROUTING" >"$tmp/out" 2>&1; rc=$?; }
+routing() { bun "$ROUTING" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then

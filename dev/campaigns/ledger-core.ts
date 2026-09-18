@@ -90,9 +90,10 @@ const LOCK_TIMEOUT_MS = 10_000;
 /**
  * VENDORING DELTA 1 (splice V4-143, 2026-09-18): COEXISTENCE WITH manifest.py. That CLI takes
  * `fcntl.flock` on the LEDGER FILE itself; the O_EXCL sidecar below and an flock DO NOT exclude
- * each other, so while both CLIs can run, a python seat and a bun seat would each believe they
+ * each other, so while both CLIs can run, a manifest.py seat and a bun seat would each believe they
  * held the ledger. So this also takes a real flock(2) on the ledger file, through bun:ffi —
- * proved both ways in two processes (bun holds -> python blocked; python holds -> bun blocked).
+ * proved both ways in two processes (bun holds -> manifest.py blocked; manifest.py holds -> bun
+ * blocked).
  * Active only for a ledger beside manifest.py, so the delta expires when that CLI is deleted.
  */
 const COEXISTING_PY = join(import.meta.dir, "manifest.py");
@@ -429,7 +430,7 @@ export async function mutate(
 /**
  * VENDORING DELTA 2 (splice V4-143): write IN PLACE through the flocked descriptor, never rename.
  * An flock belongs to an INODE; a rename puts a new inode at the path, and a manifest.py seat
- * waiting on the old one then holds a lock nothing else contends — measured: python holding,
+ * waiting on the old one then holds a lock nothing else contends — measured: manifest.py holding,
  * rename, and a bun probe on the path ACQUIRES. manifest.py writes in place for the same reason,
  * so while it exists this one must too. The whole buffer is written before the truncate, so the
  * file only ever shrinks at the very end. The rename path returns with the .py's deletion.

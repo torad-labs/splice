@@ -17,7 +17,7 @@
  *    hashKey(v)       hash(v) for set/dict membership: 1 == 1.0 == True, unhashable -> TypeError
  *
  *  It also carries the Python exception hierarchy (by the NAMES receipts record), a unittest-shaped
- *  runner whose per-test lines match `python -m unittest -v`, and an argparse subset.
+ *  runner whose per-test lines match CPython's `unittest -v` runner, and an argparse subset.
  */
 import { spawn as nodeSpawn } from "node:child_process";
 import { constants as osConstants } from "node:os";
@@ -278,6 +278,84 @@ export function pySplitlines(s: string): string[] {
   if (cur) out.push(cur);
   return out;
 }
+/** shlex.split(s, comments), posix=True and whitespace_split=True, transcribed from read_token.
+ *  With comments=true an unquoted `#` discards the rest of the line, exactly as a shell does.
+ *  Landed by V4-145 for checks/config/concentration-leg-routed.ts; proven 8032/8032 against
+ *  shlex.split in both comments modes. code_mode_guidance.ts still carries its own older
+ *  comments=false copy; folding it into an import is a separate change. */
+export function shlexSplit(s: string, comments = false): string[] {
+  const WS = " \t\r\n";
+  const QUOTES = "'\"";
+  const out: string[] = [];
+  let i = 0;
+  const read = (): string => (i < s.length ? s[i++] : "");
+  // instream.readline(): everything to and including the next newline is consumed.
+  const readline = (): void => {
+    while (i < s.length && s[i++] !== "\n");
+  };
+  for (;;) {
+    let state: string | null = " ";
+    let token = "";
+    let quoted = false;
+    let escapedstate = " ";
+    for (;;) {
+      const c = read();
+      if (state === " ") {
+        if (!c) {
+          state = null;
+          break;
+        } else if (WS.includes(c)) {
+          if (token || quoted) break;
+          continue;
+        } else if (comments && c === "#") {
+          readline();
+          continue;
+        } else if (c === "\\") {
+          escapedstate = "a";
+          state = c;
+        } else if (QUOTES.includes(c)) {
+          state = c;
+        } else {
+          token = c;
+          state = "a";
+        }
+      } else if (state !== null && QUOTES.includes(state)) {
+        quoted = true;
+        if (!c) throw new ValueError("No closing quotation");
+        if (c === state) state = "a";
+        else if (c === "\\" && state === '"') {
+          escapedstate = state;
+          state = c;
+        } else token += c;
+      } else if (state === "\\") {
+        if (!c) throw new ValueError("No escaped character");
+        if (QUOTES.includes(escapedstate) && c !== state && c !== escapedstate) token += state;
+        token += c;
+        state = escapedstate;
+      } else if (state === "a") {
+        if (!c) {
+          state = null;
+          break;
+        } else if (WS.includes(c)) {
+          state = " ";
+          if (token || quoted) break;
+          continue;
+        } else if (comments && c === "#") {
+          readline();
+          state = " ";
+          if (token || quoted) break;
+          continue;
+        } else if (QUOTES.includes(c)) state = c;
+        else if (c === "\\") {
+          escapedstate = "a";
+          state = c;
+        } else token += c;
+      }
+    }
+    if (!quoted && token === "") return out;
+    out.push(token);
+  }
+}
 /** Code-point order (Python's str order); JS's default sort is UTF-16 unit order. */
 export function cpCompare(a: string, b: string): number {
   const x = Array.from(a);
@@ -302,6 +380,29 @@ export function pyInt(s: string): number {
     v = v * 10 + ((cp - start) % 10);
   }
   return t.startsWith("-") ? -v : v;
+}
+/** A Unicode decimal digit's value: every Nd run is a contiguous 0-9 block, so it is the offset in
+ *  the run, mod 10. */
+function ndValue(ch: string): number {
+  const cp = ch.codePointAt(0) as number;
+  let start = cp;
+  while (/\p{Nd}/u.test(String.fromCodePoint(start - 1))) start--;
+  return (cp - start) % 10;
+}
+/** float(str): surrounding whitespace, Unicode decimal digits, single underscores between digits,
+ *  inf/infinity/nan in any case; anything else is Python's ValueError, message included. Landed by
+ *  V4-145 for checks/config/concentration-leg-routed.ts; proven 3033/3033 against float(),
+ *  Unicode digits included. */
+export function pyFloat(s: string): number {
+  const t = s.replace(new RegExp(`^[${PY_WS}]+|[${PY_WS}]+$`, "gu"), "")
+    .replace(/\p{Nd}/gu, (ch) => String(ndValue(ch)));
+  const special = /^([+-]?)(inf|infinity|nan)$/i.exec(t);
+  if (special) return special[2].toLowerCase() === "nan" ? NaN : special[1] === "-" ? -Infinity : Infinity;
+  const digits = String.raw`[0-9]+(?:_[0-9]+)*`;
+  if (!new RegExp(String.raw`^[+-]?(?:${digits}(?:\.(?:${digits})?)?|\.${digits})(?:[eE][+-]?${digits})?$`).test(t)) {
+    throw new ValueError(`could not convert string to float: ${pyRepr(s)}`);
+  }
+  return Number(t.replaceAll("_", ""));
 }
 /** round(x) with no ndigits: nearest int, ties to even. */
 export function pyRoundInt(x: number): number {
@@ -372,7 +473,7 @@ export function popen(argv: string[], opts: { env: Record<string, string>; cwd: 
 
 // ---------------------------------------------------------------------------------------------
 // unittest. One class per module, tests run in NAME order (unittest's loader sorts them), each
-// reported as `python -m unittest -v` reports it; the summary goes to stderr like unittest's.
+// reported as CPython's `unittest -v` runner reports it; the summary goes to stderr like unittest's.
 // ---------------------------------------------------------------------------------------------
 
 export type Tests = Record<string, () => void | Promise<void>>;

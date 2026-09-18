@@ -2276,7 +2276,7 @@ async function selftest(): Promise<number> {
 
   // DELTA 10 ARMS: the cutover migration. An in_flight row manifest.py claimed carries its owner in
   // a CLAIM NOTE and no fields, which reads as UNCLAIMED here — the state Phase D would inherit.
-  await run("add", "--id", "PY1", "--phase", "m9", "--title", "claimed by the python CLI", "--verify", "", "--files", "src/py1.ts");
+  await run("add", "--id", "PY1", "--phase", "m9", "--title", "claimed by manifest.py", "--verify", "", "--files", "src/py1.ts");
   await run("set-status", "PY1", "in_flight");
   await run("note", "PY1", "CLAIM: owner=py-seat at=2026-09-18T10:00:00Z");
   check("an unmigrated py claim reads as unclaimed (the state the cutover inherits)",
@@ -2293,7 +2293,7 @@ async function selftest(): Promise<number> {
     (await run("migrate-claims")).includes("migrated 0") && (await run("migrate-claims")).includes("1 already on fields"));
   // THE HAZARD THIS ARM EXISTS FOR. This CLI's release-stale is age-only and batch; manifest.py's
   // asks whether the owner is alive. Were the note's time carried across, the first release-stale
-  // after the cutover would free every live row the python CLI had claimed more than an hour ago.
+  // after the cutover would free every live row manifest.py had claimed more than an hour ago.
   check("a freshly migrated claim is NOT released by the first release-stale after the cutover",
     !(await run("release-stale", "--minutes", "1")).includes("PY1") && (await run("get", "PY1")).includes("claim  : py-seat"));
   // A field that DISAGREES with the note is a seat mid-handover or both CLIs having claimed. It is

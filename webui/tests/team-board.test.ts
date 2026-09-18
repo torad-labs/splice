@@ -91,7 +91,12 @@ describe('the board renders the comp', () => {
   });
 
   test('every comp word is a real string in the output, not markup', () => {
-    expect(boardHtml.startsWith('<section')).toBe(true);
+    // The board's own element, wherever it sits: M3-03 wrapped it in the phone's scroll frame
+    // (`myx-board-frame`, `display: contents` on a desktop), so the render now opens on that div.
+    // What this arm is for is that the words above were found in RENDERED markup rather than in an
+    // escaped string, and the board's section is what says so.
+    expect(boardHtml.startsWith('<')).toBe(true);
+    expect(boardHtml).toContain('<section class="myx-board"');
     expect(boardHtml.length).toBeGreaterThan(2000);
   });
 

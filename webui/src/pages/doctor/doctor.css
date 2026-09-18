@@ -37,13 +37,6 @@
    brief's own topology — one detail column, the opened strip swelling into it on the right — holds
    at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
    place, for every page row; until it is hoisted there it is repeated here with this note. */
-@media (max-width: 1120px) {
-  .myx-doc-body { grid-template-columns: minmax(0, 1fr); }
-  /* The inner pair stacks with it: two racks whose cells total 82ch cannot sit side by side in a
-     column that has just lost the detail column's 24rem. */
-  .myx-doc-bays { grid-template-columns: minmax(0, 1fr); }
-}
-
 /* TWO COLUMNS OF MEMBERS, NOT ONE COLUMN OF SEVEN (M2-22). The checks are one table and the
    report's own facts are a second; side by side they cost the height of the taller of the two
    instead of the sum. 1.2 : 1 is the ratio the two racks' own declared widths ask for -- the checks
@@ -55,6 +48,19 @@
   gap: var(--space-4);
   align-items: start;
   min-width: 0;
+}
+
+/* IT SITS BELOW THE TWO-COLUMN RULE, AND THAT IS THE WHOLE FIX (M3-03). This block was above it.
+   Both rules are (0,1,0), so the later one won and `.myx-doc-bays` kept its two columns at every
+   width -- measured at 390: 197px and 165px side by side, the second bay's rack cut off at the
+   screen's edge, while the block that was supposed to stack them had been dead since M2-22 added
+   the two-column rule beneath it. The `.myx-doc-body` half worked all along, which is why the page
+   looked stacked and was not. */
+@media (max-width: 1120px) {
+  .myx-doc-body { grid-template-columns: minmax(0, 1fr); }
+  /* The inner pair stacks with it: two racks whose cells total 82ch cannot sit side by side in a
+     column that has just lost the detail column's 24rem. */
+  .myx-doc-bays { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* A TABLE'S ROWS, NOT A RACK'S STRIPS. `--space-7` between rows is the comp's measurement for

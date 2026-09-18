@@ -38,4 +38,6 @@ export const S = {
    *  one state word is what that precedent does too — the edge says what happened, the cell says
    *  which outcome it was, and neither is a truncation of the other. */
   state: { ok: 'ok', warn: 'warn', fail: 'fail' },
+  /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
+  close: 'close',
 } as const;

@@ -63,7 +63,14 @@ export function detailColumns(): { unit: string; dir: string; cls: string }[] {
       if (!statSync(dir).isDirectory()) continue;
       let tsx: string;
       try { tsx = readFileSync(path.join(dir, 'index.tsx'), 'utf8'); } catch { continue; }
-      const m = /<aside className="(myx-[a-z-]+-detail)"/.exec(tsx);
+      // The class LIST, not the whole attribute: M3-03 added a second class (`myx-swell`, the phone's
+      // full-screen swell) to every one of these asides, and a matcher anchored on the closing quote
+      // stopped seeing all seven at once -- the denominator went from 9 to 2. The per-column arms
+      // would have passed over the two survivors; the count below (`>= 9`) is what REDDED, which is
+      // why a cosmetic class change could not silently drop seven ninths of this wall's scope. A
+      // column is still identified by its `myx-*-detail` class; it is just no longer required to be
+      // the only one.
+      const m = /<aside className="(myx-[a-z-]+-detail)(?:\s[^"]*)?"/.exec(tsx);
       if (m !== null) found.push({ unit, dir, cls: m[1] });
     }
   }
@@ -85,7 +92,7 @@ function sheetOf(dir: string): string {
  * RESTING:   neither -- the track is declared at its full width unconditionally. The defect.
  */
 export function restState(tsx: string, css: string, cls: string): Rest {
-  const at = tsx.indexOf(`<aside className="${cls}"`);
+  const at = tsx.indexOf(`<aside className="${cls}`);
   if (at < 0) return 'absent';
   // the gate, if there is one, is the nearest preceding `? null : (` -- and it has to be NEAR:
   // a ternary four hundred characters back belongs to something else on the page.

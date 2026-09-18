@@ -13,7 +13,8 @@
 import { useState } from 'react';
 import type { CompactPayload, CompactRow } from '@shared/api';
 import { fmtInt, fmtMs, timeAgo } from '@shared/lib';
-import { Bay, Empty, Strip, StripField } from '@shared/ui';
+import { Key } from '@shared/controls';
+import { Bay, HolderEdge, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
 import { cx } from '@shared/lib';
 import { S } from './strings';
@@ -105,6 +106,9 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
         <Bay
           label={S.outcomes}
           count={outcomes.length}
+          // The fixture's own mark (CONTRACTS.md section 4: a grey `sample data` edge in the bay
+          // label). It used to ride as the closed detail column's empty, which M3-03 removed.
+          {...(sample ? { actions: <HolderEdge state="grey" label={S.sample} /> } : {})}
           empty={{ text: S.none, source: 'GET /api/compact' }}
           fields={<ColumnNames columns={[{ w: OUTCOME, label: S.outcome }, { w: COUNT, label: S.count }]} />}
         >
@@ -176,11 +180,16 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
         </Bay>
       </div>
 
-      <aside className="myx-cfeed-detail" aria-label={S.detail}>
-        {opened === null ? (
-          <Empty text="no event opened" source={sample ? S.sample : S.live} />
-        ) : (
+      {/* THE CLOSED COLUMN HOLDS NOTHING (M3-03), the five-page shape of M1-123. It held a 189px
+          "no event opened" empty inside a track that is 0 wide at rest, and that empty hung past the
+          page bay by 149-155px at 1280, 1440 and 1600 -- the only page in the console that scrolled
+          sideways at a desktop width. The swell has nothing to fill until a strip is opened, so the
+          aside stays mounted (the track needs something to transition from), empty, and hidden from
+          the landmark list by the same expression that gates its content. */}
+      <aside className="myx-cfeed-detail myx-swell" aria-label={S.detail} aria-hidden={opened === null}>
+        {opened === null ? null : (
           <>
+            <Key className="myx-swell-close" onClick={() => setOpen(null)}>{S.close}</Key>
             <Strip
               edge={edgeFor(opened.outcome ?? 'unknown')}
               edgeLabel={S.state[stateOf(opened.outcome ?? 'unknown')]}

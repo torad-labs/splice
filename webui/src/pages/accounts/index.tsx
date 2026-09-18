@@ -19,7 +19,7 @@ import { AccountActions, AccountLogin, HeadActions, HeadAuthStrip } from '@featu
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Bay, Empty, HolderEdge } from '@shared/ui';
-import { Blank, Fault } from '@shared/controls';
+import { Blank, Fault, Key } from '@shared/controls';
 import { AccountStrip } from '@widgets/account-strip';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from './model';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
@@ -241,9 +241,10 @@ export function AccountsPage() {
             opening any head still reaches it. What changes is that it is one click away instead of
             always on screen, which is a real consequence and is reported on the row rather than
             decided here. */}
-        <aside className="myx-accounts-detail" aria-label={S.detail} aria-hidden={closed}>
+        <aside className="myx-accounts-detail myx-swell" aria-label={S.detail} aria-hidden={closed}>
           {closed ? null : (
             <>
+              <Key className="myx-swell-close" onClick={() => setOpenKey(null)}>{S.close}</Key>
               {/* The same three-way branch as before, minus the Empty arm that went with the
                   resting column. The final `null` is unreachable by construction -- `closed` is
                   false here, so one of the two is non-null -- and it is written out rather than

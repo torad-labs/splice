@@ -19,7 +19,7 @@ import type { View } from '@features/views';
 import { poll } from '@shared/lib';
 import type { HeadStatus } from '@shared/api';
 import { Bay, Empty, FieldBox, HolderEdge } from '@shared/ui';
-import { Blank, Fault } from '@shared/controls';
+import { Blank, Fault, Key } from '@shared/controls';
 import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
 import { EMPTIES, arrangeHeads, columnsOf, dialectOf } from './model';
 import { dispositions } from './coverage';
@@ -245,9 +245,10 @@ export function FleetPage() {
             gates the content, so the exposure and the content cannot desync: they are one
             expression, not two facts kept in step. The element stays mounted, which is what gives
             the track something to transition from — the whole reason collapse beat unmount. */}
-        <aside className="myx-fleet-detail" aria-label={S.detail} aria-hidden={opened === null}>
+        <aside className="myx-fleet-detail myx-swell" aria-label={S.detail} aria-hidden={opened === null}>
           {opened === null ? null : (
             <>
+              <Key className="myx-swell-close" onClick={() => setOpenKey(null)}>{S.close}</Key>
               <div className="myx-fleet-detail-head">
                 <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
                 <span className="myx-fleet-detail-name">{opened.label}</span>

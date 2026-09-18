@@ -111,7 +111,6 @@
     "checks/config-guard-selftest.sh",
     "checks/config-guard.sh",
     "checks/config/constructor-width-baseline.json",
-    "checks/config/public-surface-baseline.json",
     "checks/config/role-registry.toml",
     "checks/const-single-source-selftest.sh",
     "checks/constructor-width-selftest.sh",

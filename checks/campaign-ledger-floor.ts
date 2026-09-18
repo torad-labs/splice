@@ -38,7 +38,7 @@
  * expectations.toml — and each carries an explicit never-delete law in its own header. Truncating
  * each and running every leg that reads it showed wall_registry and expectations are caught by the
  * campaign wall gate, which grades them against an EXTERNAL denominator; law_registry is not, because
- * its wall (inf_02_every_law_walled.py) iterates the very rows it checks and so cannot fail for a row
+ * its wall (inf_02_every_law_walled.ts) iterates the very rows it checks and so cannot fail for a row
  * that was deleted. 19 laws to 1 with every leg green — the same tautology this file was written
  * about, one directory down. Keys are paths relative to dev/campaigns/, so two registries sharing a
  * basename cannot collide into one floor entry.

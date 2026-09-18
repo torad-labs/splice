@@ -52,6 +52,24 @@
   color: var(--ink);
 }
 
+/* ONE CLASS ON TWO PLANES, WHICH NO SINGLE INK CAN SERVE (D7, M1-52). `.myx-head-new` is the only
+   variant in this file that paints paper; every other head sits on the bay. The same
+   `.myx-head-key` and `.myx-head-note` are printed inside both, so the ink has to be scoped to the
+   plane rather than chosen for the class.
+
+   Measured, all four combinations, dark then light:
+
+     room inks  on the bay    15.85 / 6.99  and  8.91 / 4.68   -- pass
+     room inks  on this paper  1.07 / 2.11  and 19.62 / 10.30  -- FAIL in dark
+     paper inks on this paper 13.93 / 5.49  and 16.97 / 6.68   -- pass
+     paper inks on the bay     1.06 / 2.69  and  8.37 / 3.30   -- FAIL in dark and light
+
+   So swapping the tokens on the class merely reverses which plane fails; the first cut of this row
+   did exactly that and made `.myx-head-key` 1.07 -> 1.06. This is the D7 class's second shape: not
+   an ink borrowed onto the wrong plane, but one rule serving two. */
 .myx-head-new {
   background: var(--strip-field);
 }
+.myx-head-new .myx-head-key { color: var(--strip-ink); }
+.myx-head-new .myx-head-note { color: var(--strip-ink-mute); }
+.myx-head-new .myx-head-findings { color: var(--strip-ink); }

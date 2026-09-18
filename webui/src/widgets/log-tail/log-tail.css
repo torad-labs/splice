@@ -50,7 +50,12 @@
 .myx-lt-field-label {
   font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--ink-mute);
+  /* D7 (M1-52): this box paints the STRIP's paper, so it takes the STRIP's ink. --ink* is the
+     ROOM's ink and is light in the dark theme, because the room is dark - on paper it was
+     light-on-light. Measured before: 2.11:1 in dark. The same wrong pairing is in controls.css's
+     own comment from the first D7 and was fixed there and nowhere else; this is instance 5 of
+     five the source sweep found. */
+  color: var(--strip-ink-mute);
 }
 .myx-lt-field input {
   padding: var(--space-1) var(--space-2);
@@ -71,7 +76,12 @@
   gap: var(--space-2);
   font-family: var(--font-label);
   font-size: var(--text-2);
-  color: var(--ink);
+  /* D7 (M1-52): the follow toggle is printed on the log strip's PAPER, measured --strip in both
+     themes, so it takes the paper's ink. --ink is the room's and is light in the dark theme:
+     1.24:1 there against a 4.5 bar, while light happened to pass at 15.08:1 because light's --ink
+     is dark. This rule was invisible to the first sweep because the colour is INHERITED by the
+     toggle's children rather than printed on a text node of its own. */
+  color: var(--strip-ink);
   cursor: pointer;
 }
 

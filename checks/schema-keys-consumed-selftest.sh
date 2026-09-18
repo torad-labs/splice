@@ -14,7 +14,7 @@
 # teaches exactly one lesson, and it is to delete the selftest. The live tree is the wall's
 # SUBJECT, never its fixture: a count that a fix row is supposed to change cannot be an assertion.
 #
-# WHAT THE ARMS ADD OVER `schema-keys-consumed.py --selftest`, which also uses fixtures: that one
+# WHAT THE ARMS ADD OVER `schema-keys-consumed.ts --selftest`, which also uses fixtures: that one
 # swaps NON_CONSUMPTION and ALLOWLIST through module globals, in-process. These arms mutate the
 # CHECKER FILE AS SHIPPED — its exclusion list, its allowlist, its source glob, and in two INVERSE
 # arms the mechanisms themselves — so the thing proven is the artifact the gate leg executes.
@@ -40,7 +40,7 @@ fail=0
 err() { echo "  x schema-keys-consumed-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-CHECK="$tmp/checks/schema-keys-consumed.py"
+CHECK="$tmp/checks/schema-keys-consumed.ts"
 FIXTURE_PKG="gateway/zzfix/src/main/kotlin/splice/zzfix"
 FIXTURE="$tmp/$FIXTURE_PKG"
 
@@ -60,181 +60,168 @@ tree_state="$(cd "$ROOT/gateway" && ls -1A)"
 write_fixture() {
   rm -rf "$tmp/gateway"
   mkdir -p "$FIXTURE"
-  python3 - "$FIXTURE" "$1" "$2" "$3" "$4" <<'FIXPY'
-import pathlib
-import sys
+  bun -e '
+const fs = require("fs");
+const path = require("path");
+const [out, ...flags] = process.argv.slice(1);
+const [deadKey, deadKnob, rename, orphan] = flags.map((arg) => arg !== "-");
 
-out = pathlib.Path(sys.argv[1])
-dead_key, dead_knob, rename, orphan = (arg != "-" for arg in sys.argv[2:6])
+const quirks = rename ? "QuirksRenamed" : "QuirksConfig";
+const deadLine = deadKey ? "    @SerialName(\"zz_dead_dir\") val zzDeadDir: String? = null,\n" : "";
+const orphanLine = orphan ? "    @SerialName(\"zz_orphan\")\n" : "";
 
-quirks = "QuirksRenamed" if rename else "QuirksConfig"
-dead_line = '    @SerialName("zz_dead_dir") val zzDeadDir: String? = null,\n' if dead_key else ""
-orphan_line = '    @SerialName("zz_orphan")\n' if orphan else ""
+// The synthetic PARSER file: the five classes the wall denominator is taken from. Every key is
+// wired by Wiring.kt below EXCEPT the optional dead one, and three keys are wired in the ways the
+// live tree wires them and a naive rule would call dead:
+//   extraWindows  — read ONLY inside this file, projected into a domain type (Catalog)
+//   compactEffort — read ONLY by a require() in its own init, which REJECTS a retired key
+//   contextWindow — an AMBIGUOUS name (Catalog declares one too), read receiver-qualified elsewhere
+fs.writeFileSync(path.join(out, "Schema.kt"),
+  "package splice.zzfix\n\n" +
+  "import kotlinx.serialization.SerialName\n" +
+  "import kotlinx.serialization.Serializable\n\n" +
+  "@Serializable\n" +
+  "public data class Topology(\n" +
+  "    val daemon: DaemonConfig = DaemonConfig(),\n" +
+  "    val providers: Map<String, ProviderConfig> = emptyMap(),\n" +
+  "    val heads: Map<String, HeadConfig> = emptyMap(),\n" +
+  ")\n\n" +
+  "@Serializable\n" +
+  "public data class DaemonConfig(\n" +
+  "    @SerialName(\"control_port\") val controlPort: Int? = null,\n" +
+  "    @SerialName(\"state_dir\") val stateDir: String? = null,\n" +
+  deadLine + orphanLine + ")\n\n" +
+  "@Serializable\n" +
+  "public data class HeadConfig(\n" +
+  "    val port: Int,\n" +
+  "    /** A KDoc between parameters, with a comma and a ) in it. */\n" +
+  "    @SerialName(\"context_window\") val contextWindow: Long? = null,\n" +
+  ")\n\n" +
+  "@Serializable\n" +
+  "public data class ProviderConfig(\n" +
+  "    @SerialName(\"base_url\") val baseUrl: String,\n" +
+  `    val quirks: ${quirks} = ${quirks}(),\n` +
+  "    @SerialName(\"extra_windows\") val extraWindows: List<String> = emptyList(),\n" +
+  ") {\n" +
+  "    public fun toCatalog(): Catalog = Catalog(extraWindows = extraWindows)\n" +
+  "}\n\n" +
+  "@Serializable\n" +
+  `public data class ${quirks}(\n` +
+  "    val store: Boolean = false,\n" +
+  "    @SerialName(\"compact_effort\") val compactEffort: String? = null,\n" +
+  ") {\n" +
+  "    init {\n" +
+  "        require(compactEffort == null) { \"compact_effort is retired\" }\n" +
+  "    }\n" +
+  "}\n");
 
-# The synthetic PARSER file: the five classes the wall's denominator is taken from. Every key is
-# wired by Wiring.kt below EXCEPT the optional dead one, and three keys are wired in the ways the
-# live tree wires them and a naive rule would call dead:
-#   extraWindows  — read ONLY inside this file, projected into a domain type (Catalog)
-#   compactEffort — read ONLY by a require() in its own init, which REJECTS a retired key
-#   contextWindow — an AMBIGUOUS name (Catalog declares one too), read receiver-qualified elsewhere
-(out / "Schema.kt").write_text(
-    "package splice.zzfix\n\n"
-    "import kotlinx.serialization.SerialName\n"
-    "import kotlinx.serialization.Serializable\n\n"
-    "@Serializable\n"
-    "public data class Topology(\n"
-    "    val daemon: DaemonConfig = DaemonConfig(),\n"
-    "    val providers: Map<String, ProviderConfig> = emptyMap(),\n"
-    "    val heads: Map<String, HeadConfig> = emptyMap(),\n"
-    ")\n\n"
-    "@Serializable\n"
-    "public data class DaemonConfig(\n"
-    '    @SerialName("control_port") val controlPort: Int? = null,\n'
-    '    @SerialName("state_dir") val stateDir: String? = null,\n'
-    + dead_line
-    + orphan_line
-    + ")\n\n"
-    "@Serializable\n"
-    "public data class HeadConfig(\n"
-    "    val port: Int,\n"
-    "    /** A KDoc between parameters, with a comma and a ) in it. */\n"
-    '    @SerialName("context_window") val contextWindow: Long? = null,\n'
-    ")\n\n"
-    "@Serializable\n"
-    "public data class ProviderConfig(\n"
-    '    @SerialName("base_url") val baseUrl: String,\n'
-    f"    val quirks: {quirks} = {quirks}(),\n"
-    '    @SerialName("extra_windows") val extraWindows: List<String> = emptyList(),\n'
-    ") {\n"
-    "    public fun toCatalog(): Catalog = Catalog(extraWindows = extraWindows)\n"
-    "}\n\n"
-    "@Serializable\n"
-    f"public data class {quirks}(\n"
-    "    val store: Boolean = false,\n"
-    '    @SerialName("compact_effort") val compactEffort: String? = null,\n'
-    ") {\n"
-    "    init {\n"
-    '        require(compactEffort == null) { "compact_effort is retired" }\n'
-    "    }\n"
-    "}\n"
-)
+fs.writeFileSync(path.join(out, "Catalog.kt"),
+  "package splice.zzfix\n\n" +
+  "public class Catalog(\n" +
+  "    public val extraWindows: List<String> = emptyList(),\n" +
+  "    public val contextWindow: Long = 0,\n" +
+  ") {\n" +
+  "    public fun widest(): String? = extraWindows.maxOrNull()\n" +
+  "}\n");
 
-(out / "Catalog.kt").write_text(
-    "package splice.zzfix\n\n"
-    "public class Catalog(\n"
-    "    public val extraWindows: List<String> = emptyList(),\n"
-    "    public val contextWindow: Long = 0,\n"
-    ") {\n"
-    "    public fun widest(): String? = extraWindows.maxOrNull()\n"
-    "}\n"
-)
+// The synthetic CONSUMER. Reads every key that is supposed to be wired, and nothing else.
+fs.writeFileSync(path.join(out, "Wiring.kt"),
+  "package splice.zzfix\n\n" +
+  `internal class Wiring(private val topology: Topology, private val quirks: ${quirks}) {\n` +
+  "    fun bind(): Int = topology.daemon.controlPort ?: 0\n" +
+  "    fun providerKeys(): Set<String> = topology.providers.keys\n" +
+  "    fun headKeys(): Set<String> = topology.heads.keys\n" +
+  "    fun window(head: HeadConfig): Long = head.contextWindow ?: 0\n" +
+  "    fun port(head: HeadConfig): Int = head.port\n" +
+  "    fun base(provider: ProviderConfig): String = provider.baseUrl\n" +
+  `    fun quirksOf(provider: ProviderConfig): ${quirks} = provider.quirks\n` +
+  "    fun store(): Boolean = quirks.store\n" +
+  "    fun dir(): String? = topology.daemon.stateDir\n" +
+  "}\n");
 
-# The synthetic CONSUMER. Reads every key that is supposed to be wired, and nothing else.
-(out / "Wiring.kt").write_text(
-    "package splice.zzfix\n\n"
-    f"internal class Wiring(private val topology: Topology, private val quirks: {quirks}) {{\n"
-    "    fun bind(): Int = topology.daemon.controlPort ?: 0\n"
-    "    fun providerKeys(): Set<String> = topology.providers.keys\n"
-    "    fun headKeys(): Set<String> = topology.heads.keys\n"
-    "    fun window(head: HeadConfig): Long = head.contextWindow ?: 0\n"
-    "    fun port(head: HeadConfig): Int = head.port\n"
-    "    fun base(provider: ProviderConfig): String = provider.baseUrl\n"
-    f"    fun quirksOf(provider: ProviderConfig): {quirks} = provider.quirks\n"
-    "    fun store(): Boolean = quirks.store\n"
-    "    fun dir(): String? = topology.daemon.stateDir\n"
-    "}\n"
-)
+// The synthetic ECHO SURFACE: it puts the dead key back out under its own key name and does
+// nothing else with it. This is the only file in the fixture that touches DaemonConfig.zzDeadDir,
+// and it is excluded, which is what makes the dead key red.
+const echoLines = deadKey ? "        \"zz_dead_dir\" to t.daemon.zzDeadDir,\n" : "";
+fs.writeFileSync(path.join(out, "Doctor.kt"),
+  "package splice.zzfix\n\n" +
+  "internal class DoctorShape {\n" +
+  "    fun shape(t: Topology): Map<String, Any?> = mapOf(\n" +
+  echoLines +
+  "        \"port\" to t.daemon.controlPort,\n" +
+  "    )\n" +
+  "}\n");
 
-# The synthetic ECHO SURFACE: it puts the dead key back out under its own key name and does
-# nothing else with it. This is the only file in the fixture that touches DaemonConfig.zzDeadDir,
-# and it is excluded, which is what makes the dead key red.
-echo_lines = '        "zz_dead_dir" to t.daemon.zzDeadDir,\n' if dead_key else ""
-(out / "Doctor.kt").write_text(
-    "package splice.zzfix\n\n"
-    "internal class DoctorShape {\n"
-    "    fun shape(t: Topology): Map<String, Any?> = mapOf(\n"
-    + echo_lines
-    + '        "port" to t.daemon.controlPort,\n'
-    "    )\n"
-    "}\n"
-)
+// The AMBIGUITY TWIN, in a file that is NOT excluded: a second class declaring the SAME property
+// name, read through a receiver that is not a spelling of DaemonConfig. StatePaths.stateDir in the
+// live tree, exactly. Receiver-qualified, this read belongs to LocalPaths and the schema key stays
+// red; name-only, it makes the dead schema key look wired. Arm 4 is that difference.
+fs.writeFileSync(path.join(out, "Paths.kt"),
+  "package splice.zzfix\n\n" +
+  "internal class LocalPaths {\n" +
+  "    val zzDeadDir: String = \"/var/lib/zzfix\"\n" +
+  "}\n\n" +
+  "internal class PathUser(private val paths: LocalPaths) {\n" +
+  "    fun dir(): String = paths.zzDeadDir\n" +
+  "}\n");
 
-# The AMBIGUITY TWIN, in a file that is NOT excluded: a second class declaring the SAME property
-# name, read through a receiver that is not a spelling of DaemonConfig. StatePaths.stateDir in the
-# live tree, exactly. Receiver-qualified, this read belongs to LocalPaths and the schema key stays
-# red; name-only, it makes the dead schema key look wired. Arm 4 is that difference.
-(out / "Paths.kt").write_text(
-    "package splice.zzfix\n\n"
-    "internal class LocalPaths {\n"
-    '    val zzDeadDir: String = "/var/lib/zzfix"\n'
-    "}\n\n"
-    "internal class PathUser(private val paths: LocalPaths) {\n"
-    "    fun dir(): String = paths.zzDeadDir\n"
-    "}\n"
-)
+const knobDead = deadKnob ? "    ZZ_DEAD_KNOB(\"zzDeadKnob\", false),\n" : "";
+fs.writeFileSync(path.join(out, "Knob.kt"),
+  "package splice.zzfix\n\n" +
+  "public enum class Knob(\n" +
+  "    public val key: String,\n" +
+  "    public val default: Any?,\n" +
+  ") {\n" +
+  "    PORT(\"port\", 3099L),\n" +
+  "    WIRED_DIRECT(\"wiredDirect\", \"x\"),\n" +
+  "    WIRED_VIA_ACCESSOR(\"wiredViaAccessor\", true),\n" +
+  knobDead +
+  "}\n");
 
-knob_dead = '    ZZ_DEAD_KNOB("zzDeadKnob", false),\n' if dead_knob else ""
-(out / "Knob.kt").write_text(
-    "package splice.zzfix\n\n"
-    "public enum class Knob(\n"
-    "    public val key: String,\n"
-    "    public val default: Any?,\n"
-    ") {\n"
-    '    PORT("port", 3099L),\n'
-    '    WIRED_DIRECT("wiredDirect", "x"),\n'
-    '    WIRED_VIA_ACCESSOR("wiredViaAccessor", true),\n'
-    + knob_dead
-    + "}\n"
-)
+const facadeDead = deadKnob ? "    public val zzDeadKnob: Boolean get() = m[Knob.ZZ_DEAD_KNOB.key] == true\n" : "";
+fs.writeFileSync(path.join(out, "SpliceConfig.kt"),
+  "package splice.zzfix\n\n" +
+  "public class SpliceConfig internal constructor(private val m: Map<String, Any?>) {\n" +
+  "    public val port: Int get() = (m[Knob.PORT.key] as? Int) ?: 0\n" +
+  "    public val wiredViaAccessor: Boolean get() = m[Knob.WIRED_VIA_ACCESSOR.key] == true\n" +
+  facadeDead +
+  "}\n");
 
-facade_dead = "    public val zzDeadKnob: Boolean get() = m[Knob.ZZ_DEAD_KNOB.key] == true\n" if dead_knob else ""
-(out / "SpliceConfig.kt").write_text(
-    "package splice.zzfix\n\n"
-    "public class SpliceConfig internal constructor(private val m: Map<String, Any?>) {\n"
-    "    public val port: Int get() = (m[Knob.PORT.key] as? Int) ?: 0\n"
-    "    public val wiredViaAccessor: Boolean get() = m[Knob.WIRED_VIA_ACCESSOR.key] == true\n"
-    + facade_dead
-    + "}\n"
-)
-
-# The synthetic KNOB CONSUMER: one knob read directly, one read through the facade accessor (the
-# single hop the wall follows). The dead knob's accessor is deliberately never called.
-(out / "KnobWiring.kt").write_text(
-    "package splice.zzfix\n\n"
-    "internal class KnobWiring(private val cfg: SpliceConfig) {\n"
-    "    fun direct(): String = Knob.WIRED_DIRECT.key\n"
-    "    fun viaAccessor(): Boolean = cfg.wiredViaAccessor\n"
-    "    fun bind(): Int = cfg.port\n"
-    "}\n"
-)
-FIXPY
+// The synthetic KNOB CONSUMER: one knob read directly, one read through the facade accessor (the
+// single hop the wall follows). The dead knob accessor is deliberately never called.
+fs.writeFileSync(path.join(out, "KnobWiring.kt"),
+  "package splice.zzfix\n\n" +
+  "internal class KnobWiring(private val cfg: SpliceConfig) {\n" +
+  "    fun direct(): String = Knob.WIRED_DIRECT.key\n" +
+  "    fun viaAccessor(): Boolean = cfg.wiredViaAccessor\n" +
+  "    fun bind(): Int = cfg.port\n" +
+  "}\n");
+' "$FIXTURE" "$1" "$2" "$3" "$4"
 }
 
 # The checker copy, with its two non-consumption surfaces retargeted at the fixture's own.
 reset_check() {
-  cp "$ROOT/checks/schema-keys-consumed.py" "$CHECK"
-  python3 - "$CHECK" "$FIXTURE_PKG" <<'RETARGET'
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-pkg = sys.argv[2]
-text = path.read_text()
-start = text.index("NON_CONSUMPTION: tuple")
-end = text.index("\n)\n", start) + 3
-replacement = (
-    "NON_CONSUMPTION: tuple[tuple[str, str], ...] = (\n"
-    f'    ("{pkg}/Doctor.kt", "2026-09-17: the fixture echo surface"),\n'
-    f'    ("{pkg}/SpliceConfig.kt", "2026-09-17: the fixture accessor facade"),\n'
-    ")\n"
-)
-path.write_text(text[:start] + replacement + text[end:])
-RETARGET
+  cp "$ROOT/checks/schema-keys-consumed.ts" "$CHECK"
+  # The harness mutates with bun rather than an inline heredoc for the retired interpreter, so this
+# file stops being an invoker at all. `bun -e '<script>' ARG...` puts ARGs at process.argv[1..].
+bun -e '
+const fs = require("fs");
+const [target, pkg] = process.argv.slice(1);
+const text = fs.readFileSync(target, "utf8");
+const start = text.indexOf("let NON_CONSUMPTION");
+const end = text.indexOf("\n];\n", start) + 4;
+if (start < 0 || end < 4) throw new Error("the NON_CONSUMPTION declaration moved");
+const replacement =
+  "let NON_CONSUMPTION: [string, string][] = [\n" +
+  `  ["${pkg}/Doctor.kt", "2026-09-17: the fixture echo surface"],\n` +
+  `  ["${pkg}/SpliceConfig.kt", "2026-09-17: the fixture accessor facade"],\n` +
+  "];\n";
+fs.writeFileSync(target, text.slice(0, start) + replacement + text.slice(end));
+' "$CHECK" "$FIXTURE_PKG"
 }
 
 rc=0
-check() { python3 "$CHECK" "$tmp" >"$tmp/out" 2>&1; rc=$?; }
+check() { bun "$CHECK" "$tmp" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then
@@ -254,21 +241,19 @@ must_pass() { # must_pass <label>
   fi
 }
 
-allow() { # allow <python tuple body>
-  python3 - "$CHECK" "$1" <<'ALLOW'
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-needle = "ALLOWLIST: tuple[tuple[str, str], ...] = ()"
-assert needle in text, "the ALLOWLIST declaration moved"
-path.write_text(text.replace(needle, "ALLOWLIST: tuple[tuple[str, str], ...] = (" + sys.argv[2] + ")", 1))
-ALLOW
+allow() { # allow <entry list body, in TypeScript array syntax>
+  bun -e '
+const fs = require("fs");
+const [target, body] = process.argv.slice(1);
+const text = fs.readFileSync(target, "utf8");
+const needle = "let ALLOWLIST: [string, string][] = [];";
+if (!text.includes(needle)) throw new Error("the ALLOWLIST declaration moved");
+fs.writeFileSync(target, text.replace(needle, "let ALLOWLIST: [string, string][] = [" + body + "];"));
+' "$CHECK" "$1"
 }
 
 # ── control: the fixture logic in-process, then the fully-wired fixture ───────────────────────
-python3 "$ROOT/checks/schema-keys-consumed.py" --selftest >"$tmp/out" 2>&1 || {
+bun "$ROOT/checks/schema-keys-consumed.ts" --selftest >"$tmp/out" 2>&1 || {
   err "CONTROL: the in-process fixture selftest must be green: $(tail -6 "$tmp/out" | tr '\n' ' ')"
 }
 
@@ -303,20 +288,16 @@ must_fail "2. a knob read only by an uncalled facade accessor is RED BY NAME" "z
 # ── 3. INVERSE: without the ECHO-SURFACE exclusion, the wall finds nothing ────────────────────
 write_fixture dead - - -
 reset_check
-python3 - "$CHECK" <<'DROPECHO'
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-# Dropped where the exclusion is APPLIED, not where it is declared, so NON_CONSUMPTION's dated-
-# reason and staleness validation keeps running: this arm removes exactly one thing.
-needle = "    excluded = {rel for rel, _ in NON_CONSUMPTION}\n"
-assert needle in text, "the excluded-set construction moved — this fixture is stale"
-path.write_text(
-    text.replace(needle, '    excluded = {rel for rel, _ in NON_CONSUMPTION if not rel.endswith("Doctor.kt")}\n', 1)
-)
-DROPECHO
+bun -e '
+const fs = require("fs");
+const target = process.argv[1];
+const text = fs.readFileSync(target, "utf8");
+// Dropped where the exclusion is APPLIED, not where it is declared, so NON_CONSUMPTION dated-
+// reason and staleness validation keeps running: this arm removes exactly one thing.
+const needle = "const excluded = new Set(NON_CONSUMPTION.map(([rel]) => rel));";
+if (!text.includes(needle)) throw new Error("the excluded-set construction moved — this fixture is stale");
+fs.writeFileSync(target, text.replace(needle, "const excluded = new Set(NON_CONSUMPTION.map(([rel]) => rel).filter((rel) => !rel.endsWith(\"Doctor.kt\")));"));
+' "$CHECK"
 check
 if grep -q "zz_dead_dir" "$tmp/out"; then
   err "3. INVERSE echo surface — the dead key is STILL red with the exclusion dropped, so the exclusion is not what finds it and the arm proves nothing"
@@ -328,16 +309,16 @@ fi
 # The fixture declares `zzDeadDir` on DaemonConfig AND on LocalPaths, and Doctor.kt reads
 # `paths.zzDeadDir` — the live tree's DaemonConfig.stateDir / StatePaths.stateDir shape exactly.
 reset_check
-python3 - "$CHECK" <<'DROPRECV'
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-needle = "    ambiguous = bool(declared_by.get(key.prop, set()) - {key.declared_in})\n"
-assert needle in text, "the ambiguity branch moved — this fixture is stale"
-path.write_text(text.replace(needle, needle + "    ambiguous = False\n", 1))
-DROPRECV
+bun -e '
+const fs = require("fs");
+const target = process.argv[1];
+const text = fs.readFileSync(target, "utf8");
+const needle = "const ambiguous = [...others].some((rel) => rel !== key.declaredIn);";
+if (!text.includes(needle)) throw new Error("the ambiguity branch moved — this fixture is stale");
+// The replacement KEEPS the const: forcing the branch false is the whole mutation, and appending
+// a bare assignment after a const would not even load.
+fs.writeFileSync(target, text.replace(needle, "const ambiguous = false;"));
+' "$CHECK"
 check
 if grep -q "zz_dead_dir" "$tmp/out"; then
   err "4. INVERSE receiver qualification — the dead key is STILL red with qualification off, so a name-only rule would have found it too and the mechanism is not load-bearing"
@@ -348,35 +329,31 @@ fi
 # ── 5. the allowlist is a disposition, and only with a dated reason ───────────────────────────
 write_fixture dead dead - -
 reset_check
-allow '("zz_dead_dir", "2026-09-17: fixture — deliberately inert"), ("zzDeadKnob", "2026-09-17: fixture — deliberately inert"),'
+allow '["zz_dead_dir", "2026-09-17: fixture — deliberately inert"], ["zzDeadKnob", "2026-09-17: fixture — deliberately inert"],'
 check
 must_pass "5a. two dated, reasoned allowlist entries dispose of both dead keys"
 
 reset_check
-allow '("zz_dead_dir", "  "), ("zzDeadKnob", "2026-09-17: fixture"),'
+allow '["zz_dead_dir", "  "], ["zzDeadKnob", "2026-09-17: fixture"],'
 check
 must_fail "5b. an allowlist entry with a blank reason is a hard error" "absence wearing a label"
 
 reset_check
-allow '("zz_dead_dir", "2026-09-17: fixture"), ("zzDeadKnob", "2026-09-17: fixture"), ("control_port", "2026-09-17: fixture — but control_port IS wired"),'
+allow '["zz_dead_dir", "2026-09-17: fixture"], ["zzDeadKnob", "2026-09-17: fixture"], ["control_port", "2026-09-17: fixture — but control_port IS wired"],'
 check
 must_fail "5c. an allowlist entry naming a key that IS acted on fails as stale" "IS acted on"
 
 # ── 6. a stale non-consumption entry is a hard error ─────────────────────────────────────────
 write_fixture - - - -
 reset_check
-python3 - "$CHECK" <<'STALE'
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-needle = "NON_CONSUMPTION: tuple[tuple[str, str], ...] = (\n"
-assert needle in text, "the NON_CONSUMPTION declaration moved"
-path.write_text(
-    text.replace(needle, needle + '    ("gateway/zzfix/src/main/kotlin/splice/zzfix/Gone.kt", "2026-09-17: fixture — names nothing"),\n', 1)
-)
-STALE
+bun -e '
+const fs = require("fs");
+const target = process.argv[1];
+const text = fs.readFileSync(target, "utf8");
+const needle = "let NON_CONSUMPTION: [string, string][] = [\n";
+if (!text.includes(needle)) throw new Error("the NON_CONSUMPTION declaration moved");
+fs.writeFileSync(target, text.replace(needle, needle + "  [\"gateway/zzfix/src/main/kotlin/splice/zzfix/Gone.kt\", \"2026-09-17: fixture — names nothing\"],\n"));
+' "$CHECK"
 check
 must_fail "6. a non-consumption entry naming a file that is gone is a hard error" "stale exclusion"
 
@@ -395,16 +372,14 @@ must_fail "8. a @SerialName belonging to no parameter must REFUSE, not shorten t
 # ── 9. the BORING case: a lost denominator must REFUSE, not report a clean tree (s24) ─────────
 write_fixture - - - -
 reset_check
-python3 - "$CHECK" <<'EMPTY'
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-text, n = re.subn(r'^SRC_GLOB = .*$', 'SRC_GLOB = "gateway/*/src/nowhere"', path.read_text(), count=1, flags=re.M)
-assert n == 1, "SRC_GLOB assignment not found"
-path.write_text(text)
-EMPTY
+bun -e '
+const fs = require("fs");
+const target = process.argv[1];
+const text = fs.readFileSync(target, "utf8");
+const patched = text.replace(/^const SRC_GLOB = .*$/m, "const SRC_GLOB = \"gateway/*/src/nowhere\";");
+if (patched === text) throw new Error("SRC_GLOB assignment not found");
+fs.writeFileSync(target, patched);
+' "$CHECK"
 check
 must_fail "9. a source glob that matches nothing must REFUSE, not pass vacuously" "vacuously"
 
@@ -414,7 +389,7 @@ must_fail "9. a source glob that matches nothing must REFUSE, not pass vacuously
 # denominator, and every finding it does have is attributed to a file:line and names its key. The
 # NUMBER of findings is deliberately not asserted: it is exactly what V4-96 and V4-109 change.
 # The SHIPPED checker, not the retargeted copy: the gate leg's own artifact against its own tree.
-python3 "$ROOT/checks/schema-keys-consumed.py" "$ROOT" >"$tmp/live" 2>&1
+bun "$ROOT/checks/schema-keys-consumed.ts" "$ROOT" >"$tmp/live" 2>&1
 live_rc=$?
 live_keys="$(grep -oE '[0-9]+ config key\(s\) examined' "$tmp/live" | grep -oE '^[0-9]+')"
 if [ "$live_rc" -ne 0 ] && [ "$live_rc" -ne 1 ]; then

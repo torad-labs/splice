@@ -42,7 +42,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-const ALLOW = "checks/config/python-burndown.json";
+export const ALLOW = "checks/config/python-burndown.json";
 
 type Burndown = { recorded: string; law: string; files: string[]; invokers?: string[] };
 
@@ -105,7 +105,16 @@ function tracked(): string[] {
  *  would make the wall permanently report itself. Nothing else is exempt — a file
  *  that merely explains a python command is drift and IS counted, because prose is
  *  what teaches the next session which language this repo writes tooling in. */
-const SELF = new Set([ALLOW, "checks/no-python.ts", "checks/no-python-selftest.ts"]);
+export const SELF = new Set([
+  ALLOW,
+  "checks/no-python.ts",
+  "checks/no-python-selftest.ts",
+  // The write-time half of this same checker (settings.json PreToolUse), and its red-green proof.
+  // Both must name the token they refuse, exactly as the wall and its selftest do, or they could
+  // not describe what they block — the selftest's whole job is to FEED it the violating text.
+  "checks/no-python-write-guard.ts",
+  "checks/no-python-write-guard-selftest.ts",
+]);
 
 /** Does this text RUN or NAME python?
  *
@@ -129,7 +138,7 @@ const SELF = new Set([ALLOW, "checks/no-python.ts", "checks/no-python-selftest.t
  *  of them names python for a reason that survives deleting the rule's name from the
  *  text. It cannot become a dodge either: a file that actually invokes `python3` still
  *  matches on that token no matter how often it also writes "no-python". */
-function namesPython(text: string): boolean {
+export function namesPython(text: string): boolean {
   return /\bpython3?\b/.test(text.replaceAll("no-python", ""));
 }
 
@@ -414,7 +423,7 @@ function burndownGrowth(): string[] {
   return out.sort();
 }
 
-function burndown(): Burndown {
+export function burndown(): Burndown {
   if (!existsSync(ALLOW)) {
     console.error(`no-python: ${ALLOW} missing — the wall has no burn-down list to grade against`);
     process.exit(2);
@@ -543,4 +552,9 @@ function main(): number {
   return 0;
 }
 
-process.exit(main());
+// SAME CHECKER, TWICE (brain #924 / CLAUDE.md §17): this file is BOTH the gate leg and the source
+// the write-time guard imports. The run is behind import.meta.main so importing it takes a reading
+// instead of executing one — a module that runs on import is how checks/no-python-write-guard.ts
+// would have gated every write by accident, and it is the trap density.mjs sprang on me the same
+// day: importing it to test one exported function ran its whole script and rewrote its output file.
+if (import.meta.main) process.exit(main());

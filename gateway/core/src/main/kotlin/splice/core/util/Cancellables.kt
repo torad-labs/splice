@@ -59,6 +59,24 @@ public object Cancellables {
     }
 
     /**
+     * The best-effort form (V4-118): for a step whose outcome is ALREADY committed — a
+     * post-persist mint, a login-end finalizer — where every non-cancellation, non-Error
+     * throwable must be REPORTED and the caller must stand, never rethrow (the RETRY DEFAULT IS
+     * TOTAL law in miniature). Capture-then-classify rather than catch clauses: raw [runCatching]
+     * takes every Throwable, then cancellation is rethrown so a cancelled coroutine still unwinds
+     * and an Error is rethrown so a fatal invariant break still reaches the thread's handler;
+     * everything else — including an [IllegalStateException] that [runCatchingCancellable] lets
+     * escape — is handed back as a [Result] for the caller to report.
+     */
+    public inline fun <R> runCatchingBestEffort(block: () -> R): Result<R> {
+        val attempt = runCatching(block)
+        val failure = attempt.exceptionOrNull() ?: return attempt
+        if (failure is CancellationException) throw failure
+        if (failure is Error) throw failure
+        return attempt
+    }
+
+    /**
      * The ONLY sanctioned way to drop a [Result] on the floor. Neither argument is read at runtime:
      * the Result is the thing being dropped (hence the parameter name — nothing here inspects it),
      * and [why] exists so the call site states the justification and the discard is

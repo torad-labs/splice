@@ -76,10 +76,17 @@ internal object AdminSupport {
      *  actually holds these bytes. [SELF_CLASS_RESOURCE] is the one string this costs, and
      *  AdminSupportTest pins it to the class it names. */
     fun selfJar(): Path? {
-        val loc = runCatching {
+        val loc = Cancellables.runCatchingCancellable {
             ClassLoader.getSystemResource(SELF_CLASS_RESOURCE)
                 ?.takeIf { it.protocol == "jar" }
-                ?.let { Paths.get(java.net.URI(it.path.substringBefore(JAR_URL_SEPARATOR))) }
+                ?.let { java.net.URI.create(it.path.substringBefore(JAR_URL_SEPARATOR)) }
+                ?.takeIf { it.scheme == "file" }
+                ?.let(Paths::get)
+        }.onFailure {
+            System.err.println(
+                "splice: the running jar's own location did not parse (${SafeFailureText.render(it)}) — " +
+                    "reading the installed copy instead",
+            )
         }.getOrNull()
         if (loc != null) return loc
         val installed = home().resolve(".local").resolve("share").resolve("splice").resolve("splice.jar")
@@ -143,7 +150,8 @@ internal object AdminSupport {
                 MgmtKeyRead.Unreadable(SafeFailureText.render(failure))
             }
         }
-        val key = attempt.getOrDefault("")
+        // Every failure returned above, so this is a success — no default to invent.
+        val key = attempt.getOrThrow()
         return if (key.isEmpty()) MgmtKeyRead.Absent else MgmtKeyRead.Present(key)
     }
 
@@ -172,6 +180,7 @@ internal object AdminSupport {
     fun confirm(prompt: String, default: Boolean = true): Boolean {
         if (System.console() == null) return default
         print("$prompt ${if (default) "[Y/n]" else "[y/N]"} ")
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same as AddSeams' prompter: a failed TTY read and an empty line both mean [default], which the `null, "" -> default` arm below says out loud.
         val line = Cancellables.runCatchingCancellable { readlnOrNull()?.trim()?.lowercase() }.getOrNull()
         return when (line) {
             null, "" -> default

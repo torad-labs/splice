@@ -15,6 +15,10 @@ import splice.core.util.Cancellables
 internal class JsonBody {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // null is this function's contract and the failure is answered by the CALLER: every route turns
+    // a null body into its own 4xx (see LaunchRoutes.receiveLaunchRequest's safe-by-default comment).
+    // A logger here would duplicate, once per request, what the caller already tells the operator.
     suspend fun parse(call: ApplicationCall): JsonObject? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- null is the contract and the caller answers the failure
         Cancellables.runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
 }

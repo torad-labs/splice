@@ -25,6 +25,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.wire.ErrorEnvelope
 import splice.spi.WireSink
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -194,15 +195,11 @@ public class SseEmitter internal constructor(
         var cancelled = false
         try {
             closeProgress()
+            // V4-102: the envelope is built once in core so this frame, the non-stream JSON body,
+            // the admission 4xx/5xx bodies and provider-spi's own fail-fast body cannot drift apart.
             frames.frame(
                 "error",
-                buildJsonObject {
-                    put(TYPE, "error")
-                    putJsonObject("error") {
-                        put(TYPE, wireType.wireName)
-                        put(MESSAGE, message)
-                    }
-                },
+                ErrorEnvelope.of(wireType.wireName, message),
             )
         } catch (e: CancellationException) {
             // Cancelled before the frame went out — release so a later seal can still retry.

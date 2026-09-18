@@ -6,6 +6,7 @@ package splice.app.head
 
 import splice.app.provider.ProviderBuild
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -30,7 +31,7 @@ internal class HeadServerFactory(
     private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
 ) {
     private val upstreamFactory = UpstreamFactory()
-    private val requestMaterializationGate = RequestMaterializationGate()
+    private val requestMaterializationGate = RequestMaterializationGate(materializationPermits())
 
     internal fun headServerFor(
         ctx: ProviderBuild,
@@ -40,6 +41,7 @@ internal class HeadServerFactory(
     ): HeadServer {
         val key = ctx.key
         val cfg = ctx.cfg
+        val knobs = cfg.asMap()
         return HeadServer(
             provider = provider,
             listenPort = ctx.head.port,
@@ -76,7 +78,16 @@ internal class HeadServerFactory(
                 clientVersions = clientVersions,
                 log = log,
                 requestMaterializationGate = requestMaterializationGate,
+                maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
+                requestReadTimeoutMs = knobs[Knob.REQUEST_READ_TIMEOUT_MS.key] as Long,
             ),
         )
+    }
+
+    /** V4-110: the process-shared materialization permit count, read from the GLOBAL knob layer (no
+     *  head key) once at daemon boot. One value bounds every head's concurrent decode/translate. */
+    private fun materializationPermits(): Int {
+        val m = config.getConfig().asMap()
+        return (m[Knob.MATERIALIZATION_PERMITS.key] as Long).toInt()
     }
 }

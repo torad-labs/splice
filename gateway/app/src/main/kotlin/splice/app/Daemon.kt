@@ -149,8 +149,6 @@ public class Daemon(
     public suspend fun stop(): Unit = stopLock.withLock {
         if (!stopped) {
             stopped = true
-            headProbes.stop()
-            controlPlane.cancelProbes()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -159,6 +157,13 @@ public class Daemon(
             // stderr/daemon.log instead of the JVM default, a black hole once production redirects
             // stderr to /dev/null.
             headShutdown.stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
+
+            // Probe cancellation runs AFTER the heads have drained: the probe scope is the scope
+            // ProviderAssembly hands every provider, so cancelling it first means a SingleFlight
+            // token refresh raised by a turn still streaming inside the 45s drain is cancelled by a
+            // job that turn does not own — a foreign CancellationException in a live turn.
+            headProbes.stop()
+            controlPlane.cancelProbes()
         }
     }
 }

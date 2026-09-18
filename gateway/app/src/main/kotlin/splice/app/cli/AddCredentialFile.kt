@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.provider.codex.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
 import splice.provider.kimi.KimiCredentialShape
@@ -25,7 +26,7 @@ internal class AddCredentialFile(private val json: Json = Json { ignoreUnknownKe
     /** Null when the file can serve or refresh; otherwise the reason, with the fix being a sign-in. */
     fun problem(path: Path, kind: String, nowMs: Long = System.currentTimeMillis()): String? {
         val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
-            .getOrNull() ?: return "the stored credential does not parse — $SIGN_IN"
+            .getOrElse { return "the stored credential does not parse (${SafeFailureText.render(it)}) — $SIGN_IN" }
         val material = shape(kind)?.material(root)
             ?: return "splice add cannot judge a $kind credential — $SIGN_IN"
         val expiresAt = material.expiresAtMs

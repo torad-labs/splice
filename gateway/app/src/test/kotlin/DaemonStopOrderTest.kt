@@ -9,15 +9,20 @@
 //   (a) Daemon.stop() cancels the provider probe scope BEFORE the 45s head drain, so a SingleFlight
 //       token refresh started by a live turn during the drain is cancelled by a job the turn does
 //       not own — a FOREIGN CancellationException surfacing inside a turn that is still streaming.
-//   (b) HeadServer.stopLocked drains in-flight turns BEFORE driver.stopDetached(), and a detached
-//       compaction holds its handed-off slot until it finishes — so one detached compaction burns
-//       the whole 45s budget that exists for LIVE turns.
+//   (b) HeadServer.stopLocked drains in-flight turns (detached compactions included) BEFORE
+//       driver.stopDetached(): a detached compaction OUTLIVES its client and its handed-off slot
+//       travels with the drive, so the drain budget belongs to that feature — a detached compaction
+//       that finishes inside the budget releases its slot and keeps its recording for the retry, and
+//       stopDetached then ends only what is STILL running once the budget is spent. An earlier audit
+//       premise (that one detached compaction BURNS the whole 45s budget) was wrong and is corrected
+//       here: this arm previously asserted the opposite order.
 //   (c) Main's teardown DISCARDS AsyncFileIo.drain()'s Boolean. A false there means the file lane
 //       did not flush inside its timeout, i.e. daemon.log / usage / economics writes were lost on
 //       the way out, and it is the one place a loss is still reportable before halt.
-//   (d) TurnStreamer's `detachedScope.isActive` guard cannot ever be false: stopDetached() calls
-//       cancelChildren(), which never cancels the scope, and nothing else cancels it. The guard is
-//       dead and the header claim beside it describes a state the code cannot reach.
+//   (d) TurnStreamer's `detachedScope.isActive` guard could never be false: stopDetached() calls
+//       cancelChildren(), which never cancels the scope, and nothing else cancels it. The dead guard
+//       and its header claim were removed — the detached scope OUTLIVES a head restart by design, so
+//       every compaction records and the guard had no branch to guard.
 //
 // WHY THIS WALL READS THE SOURCE instead of observing teardown through fakes, which is what the row
 // asked for. Recorded as a premise correction in the V4-97 ledger note, in short:
@@ -98,18 +103,19 @@ class DaemonStopOrderTest {
     }
 
     @Test
-    fun `HeadServer stop ends detached compactions BEFORE it spends the drain budget on them`() {
+    fun `HeadServer stop drains detached compactions within the budget and ends only what is still running`() {
         val source = code(HEAD_SERVER_REL)
         val drainLoop = requireOnce(source, "while (inflight > 0", HEAD_SERVER_REL)
         val stopDetached = requireOnce(source, "driver.stopDetached()", HEAD_SERVER_REL)
         assertTrue(
-            stopDetached < drainLoop,
-            "$HEAD_SERVER_REL: driver.stopDetached() runs at offset $stopDetached, AFTER the in-flight " +
-                "drain loop at $drainLoop. A detached compaction holds the slot it was handed " +
-                "(TurnInputs.slotHandedOff) until the upstream turn ends, so the loop waits the whole " +
-                "STOP_DRAIN_NS on work that has no client left to answer — spending the budget that " +
-                "exists for LIVE turns. End the detached drives first; each one's finally releases its " +
-                "slot, and the loop then converges on the turns that still have a client.",
+            drainLoop < stopDetached,
+            "$HEAD_SERVER_REL: driver.stopDetached() runs at offset $stopDetached, BEFORE the in-flight " +
+                "drain loop at $drainLoop. A detached compaction OUTLIVES its client: its handed-off " +
+                "slot travels with the drive and the drain budget belongs to that feature — a detached " +
+                "compaction that finishes inside the budget releases its slot and keeps its recording " +
+                "for the retry. Ending detached compactions first makes the client's retry start a " +
+                "SECOND upstream turn. Drain first; stopDetached ends only what is STILL running once " +
+                "the budget is spent.",
         )
     }
 
@@ -222,64 +228,20 @@ private fun String.lineContaining(offset: Int): String {
     return substring(start, end)
 }
 
-/** Kotlin line, block and raw-string-aware comment removal, replacing each comment with an equal
- *  run of spaces so every offset above still names the same position in the original file. */
+private val BLOCK_COMMENT = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
+private val LINE_COMMENT = Regex("""//[^\n]*""")
+
+/** Comment removal in two regexes, block-first. Each comment becomes an equal run of spaces,
+ *  newlines kept, so every offset above still names the same position in the original file.
+ *
+ *  Sufficient here because the four observed files carry none of the constructs that would mis-strip
+ *  under two regexes (a comment marker inside a string literal, a block marker inside a line comment,
+ *  or a raw string). A strip that lost or kept an anchor fails [requireOnce] by name, so the reader
+ *  stays honest without a character-state lexer. */
 private fun stripComments(source: String): String {
-    val out = StringBuilder(source.length)
-    var i = 0
-    var quote: String? = null
-    var escape = false
-    while (i < source.length) {
-        val ch = source[i]
-        if (quote != null) {
-            if (quote == "\"\"\"") {
-                if (source.startsWith("\"\"\"", i)) {
-                    out.append("\"\"\"")
-                    i += 3
-                    quote = null
-                    continue
-                }
-                out.append(ch)
-                i += 1
-                continue
-            }
-            out.append(ch)
-            when {
-                escape -> escape = false
-                ch == '\\' -> escape = true
-                quote.length == 1 && ch == quote[0] -> quote = null
-            }
-            i += 1
-            continue
-        }
-        if (source.startsWith("\"\"\"", i)) {
-            quote = "\"\"\""
-            out.append("\"\"\"")
-            i += 3
-            continue
-        }
-        if (ch == '"' || ch == '\'') {
-            quote = ch.toString()
-            out.append(ch)
-            i += 1
-            continue
-        }
-        if (source.startsWith("//", i)) {
-            val nl = source.indexOf('\n', i)
-            val end = if (nl < 0) source.length else nl
-            repeat(end - i) { out.append(' ') }
-            i = end
-            continue
-        }
-        if (source.startsWith("/*", i)) {
-            val close = source.indexOf("*/", i + 2)
-            val end = if (close < 0) source.length else close + 2
-            for (k in i until end) out.append(if (source[k] == '\n') '\n' else ' ')
-            i = end
-            continue
-        }
-        out.append(ch)
-        i += 1
-    }
-    return out.toString()
+    val withoutBlocks = BLOCK_COMMENT.replace(source) { blanked(it.value) }
+    return LINE_COMMENT.replace(withoutBlocks) { blanked(it.value) }
 }
+
+private fun blanked(comment: String): String =
+    String(CharArray(comment.length) { if (comment[it] == '\n') '\n' else ' ' })

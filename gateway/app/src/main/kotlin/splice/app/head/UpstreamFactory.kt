@@ -4,6 +4,7 @@
 package splice.app.head
 
 import splice.app.provider.ProviderBuild
+import splice.core.config.Knob
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
 import splice.spi.UpstreamClient
@@ -23,5 +24,11 @@ internal class UpstreamFactory {
         // mock's JSON.parse, which was the source of every leaked harness daemon.
         zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
         client = UpstreamTransport().defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
+        // V4-110 retry curve: read per head from the merged+normalized map (seeded with the Knob
+        // defaults, so absent config keeps the generic 200ms/10s/±10% curve). The map is always
+        // seeded, so `as Long` is safe.
+        backoffBaseMs = cfg.asMap()[Knob.RETRY_BACKOFF_BASE_MS.key] as Long,
+        backoffCapMs = cfg.asMap()[Knob.RETRY_BACKOFF_CAP_MS.key] as Long,
+        backoffJitterPct = (cfg.asMap()[Knob.RETRY_BACKOFF_JITTER_PCT.key] as Long).toInt(),
     )
 }

@@ -116,10 +116,12 @@ public class HeadServer(
         if (inflight > 0) {
             log("[${provider.key}] stop: draining timed out with inflight=$inflight — forcing engine stop\n")
         }
-        engine.stop()
-        // A detached compaction (TurnStreamer) has no head to record for once the engine is down;
-        // the driver is reused by startLocked, so this ends compactions, never their scope.
+        // A detached compaction OUTLIVES ITS CLIENT (TurnStreamer): its handed-off slot travels with
+        // the drive, and the drain budget above belongs to that feature — a detached compaction that
+        // finishes inside the budget releases its slot and keeps its recording for the retry. End
+        // only what is STILL driving once the budget is spent.
         driver.stopDetached()
+        engine.stop()
         provider.onHeadStop()
         deps.usageStore.flushNow()
         deps.economicsStore?.flushNow()

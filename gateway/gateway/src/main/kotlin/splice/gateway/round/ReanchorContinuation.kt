@@ -10,6 +10,15 @@ import splice.spi.ReanchorController
 import splice.spi.ReanchorRound
 import splice.spi.ToolSearchController
 
+/** V4-106: a continuation TOGETHER with the Failure it was computed from.
+ *
+ *  The decision above already knows the outcome is a Failure at the moment it answers at all — it
+ *  narrows with `as?` to get there. Handing that narrowed value back means no caller re-derives it
+ *  with an unchecked cast, so the two statements that had to agree are now one, and a caller cannot
+ *  reach the retry without holding the Failure. That is the wall's preferred remedy: not a safer
+ *  cast, but no cast at all. */
+internal data class FailureContinuation(val body: JsonObject, val failure: TurnOutcome.Failure)
+
 internal class ReanchorContinuation(
     private val toolSearch: ToolSearchController?,
     private val signals: RunnerSignals,
@@ -28,10 +37,13 @@ internal class ReanchorContinuation(
         outcome: TurnOutcome,
         body: JsonObject,
         attempt: Int,
-    ): JsonObject? =
+    ): FailureContinuation? =
         (outcome as? TurnOutcome.Failure)
             ?.takeIf { !signals.clientGone() }
-            ?.let { reanchor?.continuationForFailure(ReanchorRound(body, it, attempt)) }
+            ?.let { failure ->
+                reanchor?.continuationForFailure(ReanchorRound(body, failure, attempt))
+                    ?.let { FailureContinuation(it, failure) }
+            }
 
     fun searchContinuation(outcome: TurnOutcome, body: JsonObject, searchIndex: Int): JsonObject? =
         rounds.searchContinuation(toolSearch, outcome, body, searchIndex, signals)
@@ -80,8 +92,42 @@ internal class ReanchorContinuation(
         outcome: TurnOutcome,
         salvaged: List<TurnOutcome.PartialRound>,
         acc: RoundUsage,
+        attempts: Int,
+    ): TurnOutcome = gaveUp(mergeFinal(outcome, salvaged, acc), attempts)
+
+    private fun mergeFinal(
+        outcome: TurnOutcome,
+        salvaged: List<TurnOutcome.PartialRound>,
+        acc: RoundUsage,
     ): TurnOutcome {
         if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
         return rounds.mergedAcrossRounds(outcome.copy(usage = acc.plusRound(outcome.usage).toUsage()), salvaged)
     }
+
+    /** V4-116 (4): WHAT SPLICE DID, when it finally gives up.
+     *
+     *  Every ending the class above produces is one ROUND's ending, and the operator reads it as the
+     *  turn's. After five re-anchors that is a lie by omission: "upstream stalled — retry" describes
+     *  the fifth round and says nothing about the four POSTs splice already spent resuming it, or
+     *  that the salvage it was resuming from ran out. The account is added HERE rather than by
+     *  teaching each dialect to count, because this is the only layer that knows the number.
+     *
+     *  The wire TYPE is untouched on purpose. [splice.core.turn.ErrorType.OVERLOADED] still derives
+     *  `overloaded_error`, which is the class Claude Code actually retries, and
+     *  [splice.gateway.pipeline.FailurePresenter] derives the `SPLICE-OVERLOADED` code from that same
+     *  enum — so this row adds words and rosters no new code. Zero attempts means the first round
+     *  failed and nothing absorbed it: its message is already the whole truth, and it rides through
+     *  untouched (which is also what keeps every NEVER-BELOW-STATUS-QUO arm byte-identical). */
+    fun gaveUp(outcome: TurnOutcome, attempts: Int): TurnOutcome {
+        val failure = outcome as? TurnOutcome.Failure ?: return outcome
+        if (attempts <= 0) return outcome
+        return failure.copy(
+            message = "${failure.message.removeSuffix(RETRY_ADVICE)} — splice re-anchored it " +
+                "${attempts}x from the salvage, then gave up; retry",
+        )
+    }
 }
+
+// The trailing advice every transient-failure message in this codebase carries. Stripped before the
+// account is appended so the client reads one sentence with one ending, not two "retry"s.
+private const val RETRY_ADVICE = "; retry"

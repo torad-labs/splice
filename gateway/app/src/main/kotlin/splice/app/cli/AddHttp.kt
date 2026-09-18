@@ -19,6 +19,7 @@ internal fun interface AddHttp {
 }
 
 internal class JdkAddHttp(private val client: HttpClient = HttpClient.newHttpClient()) : AddHttp {
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): the one network seam of `splice add`: 'nothing answers' is the probe's normal negative and each caller turns the null into its own printed check row.
     override fun invoke(method: String, url: String, bearer: String?, body: String?): AddHttpReply? = Cancellables
         .runCatchingCancellable {
             val builder = HttpRequest.newBuilder(URI(url))

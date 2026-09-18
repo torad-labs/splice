@@ -6,6 +6,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 
 public class UpstreamResponse(
     private val resp: HttpResponse,
@@ -54,7 +55,11 @@ internal class LimitedBodyReader {
             val remaining = maxBytes - total
             if (read > remaining) {
                 if (remaining > 0) output.write(buffer, 0, remaining)
-                channel.cancel(UpstreamBodyLimitException(maxBytes))
+                // The cancel cause is DIAGNOSTIC ONLY — nothing catches it by name and the caller
+                // already holds the classified upstream status — so it is a plain IOException:
+                // a named RuntimeException subclass no reader branches on is a type with no job
+                // (kt-no-exception-as-outcome, V4-114).
+                channel.cancel(IOException("upstream error body exceeds $maxBytes bytes"))
                 return limitedText(output, truncated = true)
             }
             output.write(buffer, 0, read)
@@ -68,8 +73,5 @@ internal class LimitedBodyReader {
             if (truncated) append("\n[… omitted …]")
         }
 }
-
-private class UpstreamBodyLimitException(limit: Int) :
-    RuntimeException("upstream error body exceeds $limit bytes")
 
 private const val ERROR_READ_BUFFER_BYTES = 8 * 1024

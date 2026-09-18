@@ -262,6 +262,24 @@ class DeviceLoginTokenlessTest {
         assertTrue(Files.exists(authPath), printed)
         assertTrue(printed.contains("post-login step failed"), printed)
     }
+
+    // V4-118: the finalizer is best-effort AFTER the credential is persisted — an IOException is the
+    // only failure mode the sibling arm above exercises, and runCatchingCancellable also captures
+    // SerializationException and IllegalArgumentException. An IllegalStateException (the muse mint's
+    // error() shape) is outside that capture set, so a finalizer throwing it must still leave the
+    // credential in place and yield SUCCESS, not abort the login.
+    @Test
+    fun `a finalizer throwing an IllegalStateException still yields SUCCESS`(@TempDir tmp: Path) {
+        val authPath = tmp.resolve("auth.json")
+        val (ok, printed) = runFlow(
+            serving("""{"access_token":"tok_device"}"""),
+            authPath,
+            afterPersist = DeviceLoginFinalizer { _, _ -> throw java.lang.IllegalStateException("mint exploded") },
+        )
+        assertTrue(ok, printed)
+        assertTrue(Files.exists(authPath), printed)
+        assertTrue(printed.contains("post-login step failed"), printed)
+    }
 }
 
 // One hour, the cap DeviceLoginFlow applies to a wire interval before multiplying it into milliseconds.

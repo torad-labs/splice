@@ -83,6 +83,14 @@ abstract class CodeModeBridgeTestSupport {
         """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
     )
 
+    /** V4-114: a bridge tool result whose content is text AND then an image. The narrowing in
+     *  CodexCodeModeTurnBuilder.toolResults must REFUSE this, never quietly keep the text half —
+     *  `filterIsInstance<TextBlock>()` would be the silent-drop shape the `as TextBlock` cast was
+     *  replaced to avoid. */
+    protected fun mixedResultBody() = parseBody(
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"text","text":"ok"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
+    )
+
     protected fun historicalImageResultBody() = parseBody(
         """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"ordinary-history-id","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]},{"role":"user","content":"continue"}]}""",
     )

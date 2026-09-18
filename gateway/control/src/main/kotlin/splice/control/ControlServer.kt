@@ -155,8 +155,8 @@ public class ControlServer(
                 }
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
-                post("/statusline/{head}") { statuslineRoute.statusline(call) } // stdin-piped per tick; no bearer
-                get("/statusline/{head}") { statuslineRoute.statusline(call) }
+                post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
+                get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
                 if (mcpRoutes != null && mcpHost != null) {
                     get("/api/mcp") { guarded(call) { respond(call, mcpHost.statusJson()) } }
                     post("/mcp/{name}") { guarded(call, mcp = true) { mcpRoutes.post(call) } }

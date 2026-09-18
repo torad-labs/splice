@@ -35,7 +35,7 @@ internal class UpgradeActivation(
         val liveBefore = if (Files.isSymbolicLink(layout.liveJar)) Files.readSymbolicLink(layout.liveJar) else null
         val hadShim = Files.exists(layout.liveShim)
         var previousShim: Path? = null
-        Cancellables.runCatchingCancellable {
+        Cancellables.runCatchingBestEffort {
             previousShim = wrapper.activate(
                 layout.liveShim,
                 fromDir.resolve(SHIM_ASSET),
@@ -78,7 +78,7 @@ internal class UpgradeActivation(
     }
 
     private fun attempt(failed: MutableList<String>, name: String, step: RestoreStep) {
-        Cancellables.runCatchingCancellable { step.run() }
+        Cancellables.runCatchingBestEffort { step.run() }
             .onFailure { failed += "$name (${SafeFailureText.render(it)})" }
     }
 }

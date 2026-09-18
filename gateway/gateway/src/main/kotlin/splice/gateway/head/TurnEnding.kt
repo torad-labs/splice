@@ -7,6 +7,7 @@
 package splice.gateway.head
 
 import io.ktor.http.URLParserException
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 
@@ -40,7 +41,7 @@ internal class TurnEnding(
                 // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow
                 // after sealing, and the turn must not vanish from the perf JSONL and G20
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
-                telemetry.recordPerf(drive, "error:unexpected")
+                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire)
                 health.local() // internal gateway bug (e.g. bad base_url parse)
                 // V4-81, NARROWED BY THE ORCHESTRATOR'S RULING. This arm catches EVERY non-Error
                 // RuntimeException at the turn boundary, and the operator law (V4-62) is retry on

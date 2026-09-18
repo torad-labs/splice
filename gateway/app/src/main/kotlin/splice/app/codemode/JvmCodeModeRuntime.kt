@@ -18,14 +18,16 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val DEFAULT_MAX_WORKERS: Int = 4
-private const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
+internal const val DEFAULT_MAX_WORKERS: Int = 4
+internal const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
+internal const val DEFAULT_HEAP_MB: Int = 128
 private const val WORKER_MAIN_CLASS: String = "splice.app.codemode.CodeModeWorker"
 
 /** Runs one GraalJS cell in each bounded child JVM; it never executes client tools. */
 public class JvmCodeModeRuntime(
     private val maxWorkers: Int = DEFAULT_MAX_WORKERS,
     private val advanceTimeoutMs: Long = DEFAULT_ADVANCE_TIMEOUT_MS,
+    private val heapMb: Int = DEFAULT_HEAP_MB,
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val javaExecutable: String = Path.of(System.getProperty("java.home"), "bin", "java").toString(),
     private val workerClasspath: String = System.getProperty("java.class.path"),
@@ -38,6 +40,7 @@ public class JvmCodeModeRuntime(
     init {
         require(maxWorkers > 0) { "Code-mode worker capacity must be positive" }
         require(advanceTimeoutMs > 0) { "Code-mode advance timeout must be positive" }
+        require(heapMb > 0) { "Code-mode worker heap must be positive" }
         require(workerClasspath.isNotBlank()) { "Code-mode worker classpath is required" }
     }
 
@@ -93,7 +96,7 @@ public class JvmCodeModeRuntime(
                 runInterruptible {
                     val builder = ProcessBuilder(
                         javaExecutable,
-                        "-Xmx128m",
+                        "-Xmx${heapMb}m",
                         "-cp",
                         workerClasspath,
                         WORKER_MAIN_CLASS,

@@ -57,13 +57,64 @@
 # fails CLOSED on the second, which is correct, because a RuntimeException subclass nobody catches
 # by name has no reason to be a distinct type at all.
 #
-# THE EXEMPTION CHANNEL — a genuine invariant error. A class that really is "this cannot happen"
-# takes the repo's existing reviewed-exception channel at its declaration, where the next reader of
-# that class sees the reasoning:
+# THE EXEMPTION CHANNEL — a failure, not a refusal. A class that a caller can only REPORT takes the
+# repo's existing reviewed-exception channel at its declaration, where the next reader of that class
+# sees the reasoning:
 #   // ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>
-# Honored identically by the PreToolUse hook and by `gate:rules` (orchestrator.py:28). It is used
-# ZERO times today: none of the nine qualifies, because a genuine invariant break in this repo is
-# spelled `check()`/`require()` and is never given a name for a caller to catch.
+# Honored identically by `ast-grep scan` itself, by the PreToolUse hook, and by `gate:rules`
+# (orchestrator.py:28); the directive must be the LAST comment line before the declaration, with the
+# reasoning above it (measured 2026-09-17: a directive followed by four lines of prose suppresses
+# nothing, because ast-grep reads only the line immediately above the match).
+#
+# THE DISPOSITIONS (V4-114, 2026-09-17). All nine census entries above are now dispositioned, and
+# the split is one test applied to the CATCH SITE, not to the class's name: after catching, does the
+# caller produce a DIFFERENT CONTINUATION (a refusal value, a substitute outcome, another transport),
+# or does the turn end in a failure the client is told about? The first is control flow and becomes a
+# sealed outcome; the second is a failure and stays an exception.
+#
+#   SEALED OUTCOMES (4 — the refusal now rides the return type of the call that decided it):
+#     AccountSelection.kt:144  AllAccountsExhausted      -> V4-99: AccountPool.select returns a
+#                              sealed Selection; HeadAdmission.kt:233's catch becomes a `when`.
+#     InflightGate.kt:192      GatewayAtCapacityException -> InflightGate.acquire returns
+#                              `Admission { Acquired | AtCapacity }`. PROOF it was control flow:
+#                              AdmissionGate.kt:37 caught it and RETURNED NULL + 529, and the
+#                              window-closed refusal ten lines below was already a returned null —
+#                              one gate, two refusals, two channels.
+#     UpstreamErrors.kt:16     UpstreamTurnWaitExhausted -> UpstreamClient.post returns
+#                              `UpstreamPost { Delivered | TurnWaitExhausted }`. PROOF: SseRoundPost
+#                              .kt:62 built a SUBSTITUTE outcome (the translator over an empty flow)
+#                              and returned it normally. It is also the one ending this loop DECIDES
+#                              rather than suffers: no request was sent, no response exists.
+#     WsRoundRunner.kt:111     WsRoundNeedsSse           -> deleted from the SPI; WsRoundDrive
+#                              returns `WsRoundResult { Streamed | NeedsSse }`. PROOF: WsRoundDriver
+#                              .kt:112 RE-SERVED the round over SSE, so the caught signal led to a
+#                              successful turn. It was also declared in :provider-spi while being
+#                              thrown and caught entirely inside :gateway — nothing in provider-spi
+#                              referenced it. The residual throw is a private in-file loop break
+#                              between two adjacent statements (a suspend `collect` has no other way
+#                              to stop early), which is why the SPI class is gone rather than moved.
+#
+#   EXEMPTED (4, dated inline at each declaration — every catch site logs and propagates a client-
+#   visible failure terminal, and NO catch site continues or retries the turn):
+#     UpstreamErrors.kt:13   UpstreamAuthMissing   TurnFailures.kt:26 (the per-turn error boundary,
+#       in the same catch chain as IOException/IllegalStateException), TurnKnownEnd.kt:31 ->
+#       emitError(AUTHENTICATION) + login hint, TurnDriver.kt:149 -> markCredentialMissing() and the
+#       turn still fails. No alternative outcome exists anywhere.
+#     UpstreamErrors.kt:23   StreamTornBeforeClient  TurnFailures.kt:30, TurnConnEnd.kt:26 — folded
+#       into the SAME conn-reset arm as a raw IOException (`is StreamTornBeforeClient, is IOException`).
+#       Sharing an arm with the JDK's own transport failure IS the proof. Its plain-RuntimeException
+#       spelling is load-bearing (G5): the translators' IOException catches must not swallow it.
+#     UpstreamErrors.kt:26   UpstreamFailed   the upstream HOST's HTTP refusal after retries, not a
+#       decision this side made. TurnFailures.kt:28, TurnKnownEnd.kt:44 -> classify status/body and
+#       emit an error terminal.
+#     SseExceptions.kt:8     SseFrameTooLargeException   an upstream protocol violation of our own
+#       safety limit, thrown mid-walk by SseReader.kt:59 / SseDecode.kt:106 where no return channel
+#       exists. TurnFailures.kt:35, TurnConnEnd.kt:30 -> emitError(API_ERROR).
+#
+#   FIXED BY DELETION (1, and it was in neither bucket): UpstreamResponse.kt:72
+#     UpstreamBodyLimitException was `private`, caught by NOBODY, and only ever handed to
+#     `channel.cancel(...)` as a diagnostic cause. A named RuntimeException subclass no reader
+#     branches on is a type with no job: it is a plain IOException now and the class is gone.
 id: kt-no-exception-as-outcome
 language: kotlin
 severity: error

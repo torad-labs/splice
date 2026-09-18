@@ -92,7 +92,7 @@ class WatchdogTest {
     fun `prefill silence beyond streamIdle is NOT reaped before the first client frame - the v35 case`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000))
             val cancelled = AtomicBoolean(false)
             val target = launch {
@@ -121,7 +121,7 @@ class WatchdogTest {
     fun `the compact budget never reaps pre-output silence from the idle poller, even past totalCap`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 600).forCompact())
             val cancelled = AtomicBoolean(false)
             val target = launch {
@@ -150,7 +150,7 @@ class WatchdogTest {
     fun `a handshake byte before any client frame keeps the first-output tier - the compaction stall case`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000))
             val frameSeen = AtomicBoolean(false)
             val target = launch { delay(10.seconds) }
@@ -181,7 +181,7 @@ class WatchdogTest {
     fun `a silent round on a live path is held past its tier, and reaped once the path goes quiet`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val lines = mutableListOf<String>()
             val dog = TurnWatchdog(budget(firstByteMs = 300, idleMs = 300, capMs = 30_000), log = { lines += it })
             val pingAgo = AtomicLong(8_000) // the last server ping is 8 s old: a live path
@@ -212,7 +212,7 @@ class WatchdogTest {
     fun `idle after the first client frame is reaped with a typed sentinel`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
             val target = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
@@ -236,7 +236,7 @@ class WatchdogTest {
     fun `resetRound clears a stale Idle so the next round is not born stalled - DR-7`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
             val target = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
@@ -283,7 +283,7 @@ class WatchdogTest {
     fun `a stale Idle would block the later TotalCap from recording - DR-7`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 1_200))
             val stalled = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, stalled, ClientFrameEmitted { true })
@@ -310,7 +310,7 @@ class WatchdogTest {
     fun `launchIn never raises a whole-turn TotalCap - launchTotalCap owns that cancel - DR-7`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val ticks = BoundedTicks()
             val dog = TurnWatchdog(
                 budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 600),
@@ -396,7 +396,7 @@ class WatchdogTest {
     fun `clean exit - poller cancelled, nothing fired`() {
         runBlocking {
             val gate = InflightGate({ 0 })
-            val slot = gate.acquire()
+            val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(2_000, 2_000, 5_000))
             val target = launch { delay(100) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })

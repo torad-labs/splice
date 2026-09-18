@@ -81,8 +81,8 @@ public object DeviceLoginFlow {
     private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Outcome {
         val client = authClients.create()
         return try {
-            Cancellables.runCatchingCancellable {
-                val auth = requestDeviceAuth(client, spec, loginIo) ?: return@runCatchingCancellable Outcome.ABORT
+            Cancellables.runCatchingBestEffort {
+                val auth = requestDeviceAuth(client, spec, loginIo) ?: return@runCatchingBestEffort Outcome.ABORT
                 announce(spec, auth, loginIo)
                 poll(client, spec, auth, waiter, loginIo)
             }.getOrElse { e ->
@@ -134,8 +134,10 @@ public object DeviceLoginFlow {
         val deadline = CredentialExpiry.expiryFromNowMs(System.currentTimeMillis(), auth.expiresInS)
         while (System.currentTimeMillis() < deadline) {
             waiter.wait(intervalS.coerceIn(0L, MAX_POLL_INTERVAL_S) * MS_PER_S)
-            val resp = Cancellables.runCatchingCancellable {
+            val resp = Cancellables.runCatchingBestEffort {
                 postToken(client, spec, auth.deviceCode, loginIo)
+            }.onFailure {
+                println("splice: login poll did not reach the token endpoint — ${SafeFailureText.render(it)}")
             }.getOrNull()
             val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS, loginIo)
             when (step) {
@@ -187,7 +189,7 @@ public object DeviceLoginFlow {
 
     // One dispatch: a failed finalizer prints and leaves the just-written credential in place.
     private suspend fun runAfterPersist(spec: DeviceLoginSpec) {
-        Cancellables.runCatchingCancellable { spec.afterPersist(spec.authPath, spec.account) }.onFailure { e ->
+        Cancellables.runCatchingBestEffort { spec.afterPersist(spec.authPath, spec.account) }.onFailure { e ->
             println("splice: post-login step failed: ${SafeFailureText.render(e)}")
         }
     }

@@ -65,9 +65,12 @@ internal class FoldContinuations(
             searchIndex,
             signals,
         )
-        if (searchNext != null) {
+        // V4-106: the type test joins the guard so the narrowing is a SMART CAST. searchContinuation
+        // only ever answers for a Success, so the added arm cannot fire in practice; if that guard is
+        // loosened, this declines the search rather than throwing a ClassCastException mid-turn.
+        if (searchNext != null && outcome is TurnOutcome.Success) {
             buffer.discard() // the buffered final output never reached the client
-            salvaged.add(rounds.searchPartial(outcome as TurnOutcome.Success, buffered = true))
+            salvaged.add(rounds.searchPartial(outcome, buffered = true))
             val nextSearchIndex = searchIndex + 1
             signals.onSearchRound(nextSearchIndex)
             log("[$key] tool search round $nextSearchIndex: answering locally, continuing\n")

@@ -14,6 +14,8 @@ package splice.control
 
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.MaterializeSpec
+import splice.core.launch.ResumeAcrossHeads
+import splice.core.launch.SessionAdoption
 import splice.core.util.EnvReader
 import kotlin.math.max
 
@@ -29,6 +31,10 @@ public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
     private val envReader: EnvReader = EnvReader(System::getenv),
+    /** V4-115 cross-head `-r SESSION_ID`. A defaulted collaborator, not a wired one: the daemon's
+     *  composition root (ControlPlane) constructs LaunchService with a materializer alone, and a
+     *  cross-head resume needs no daemon state — only the sibling config dirs the spec carries. */
+    private val resumeAcrossHeads: ResumeAcrossHeads = ResumeAcrossHeads(),
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning.
@@ -48,7 +54,7 @@ public class LaunchService(
         val slots = aliasSlots(effective)
         materializer.materialize(
             MaterializeSpec(
-                configDir = effective.configDir,
+                configDir = effective.trees.own,
                 policy = effective.policy,
                 availableModelIds = effective.availableModelIds,
                 defaultModel = effective.pinnedModel,
@@ -63,6 +69,10 @@ public class LaunchService(
                 headKey = effective.headKey,
             ),
         )
+        // V4-115 AFTER the materialize, never before: the materializer is what guarantees
+        // <configDir>/projects is a REAL head-owned directory (ProjectsLink un-links one an earlier
+        // launch pointed elsewhere). Copying first would write through the very link this row removes.
+        val adoption = adoptResume(effective, extraArgs)
         val env = buildEnv(effective, slots)
         val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
@@ -72,13 +82,82 @@ public class LaunchService(
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             addAll(extraArgs)
         }
-        val warning = if (dangerouslySkipPermissions) {
-            "dangerouslySkipPermissions engaged for ${spec.configDir} — Claude Code runs with " +
+        return LaunchRecipe(env, unset, argv, launchWarning(spec, dangerouslySkipPermissions, adoption))
+    }
+
+    /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees (V4-115). Null
+     *  when the launch named no id — which is every `-c`, every plain launch, and every `-r` with NO
+     *  id: the picker is head-bounded by construction, and this is where that stays true. */
+    private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>): SessionAdoption? {
+        val sessionId = requestedSessionId(extraArgs) ?: return null
+        return resumeAcrossHeads.adopt(spec.trees.own, spec.trees.siblings, sessionId, spec.pinnedModel)
+    }
+
+    /** The session id a launch asked to resume BY NAME, or null. Every spelling the client accepts
+     *  for a named resume is admitted — `-r <id>`, `--resume <id>`, `-r=<id>`, `--resume=<id>`, and
+     *  the glued short form `-r<id>`; a bare `-r` with a following flag is the PICKER, not a name,
+     *  and resolves to null so nothing here can widen it. */
+    private fun requestedSessionId(args: List<String>): String? {
+        val index = args.indexOfFirst { isResumeFlag(it) }
+        if (index < 0) return null
+        val value = resumeValue(args[index], args.getOrNull(index + 1))
+        return value.takeIf { it.isNotEmpty() && !it.startsWith("-") }
+    }
+
+    /** Is [arg] one of the five resume spellings the client admits — `-r`, `--resume`, `-r=`,
+     *  `--resume=`, or the glued `-r<id>`? */
+    private fun isResumeFlag(arg: String): Boolean =
+        arg == "-r" || arg == "--resume" ||
+            arg.startsWith("-r=") || arg.startsWith("--resume=") ||
+            (arg.startsWith("-r") && arg.length > 2 && arg[2] != '-')
+
+    /** The session id a resume spelling carries: the NEXT argument for the spaced forms, after `=`
+     *  for the equals forms, and `substring(2)` for the glued `-r<id>` form only. */
+    private fun resumeValue(arg: String, next: String?): String = when {
+        arg == "-r" || arg == "--resume" -> next.orEmpty()
+        "=" in arg -> arg.substringAfter('=')
+        else -> arg.substring(2) // glued -r<id>: -r followed by a non-flag character
+    }
+
+    /** Everything the operator must be told about this launch, in one sentence. A cross-head adoption
+     *  is ANNOUNCED (it is an explicit act on one named session, not a shared tree); a resume that
+     *  found nothing is refused in words before Claude Code refuses the id itself. Every id these
+     *  sentences carry has passed ResumeAcrossHeads' session-id shape check, so none of them can
+     *  forge a line in the shim's stderr. */
+    private fun launchWarning(
+        spec: LaunchSpec,
+        dangerouslySkipPermissions: Boolean,
+        adoption: SessionAdoption?,
+    ): String? {
+        val danger = if (dangerouslySkipPermissions) {
+            "dangerouslySkipPermissions engaged for ${spec.trees.own} — Claude Code runs with " +
                 "--dangerously-skip-permissions (no permission prompts)."
         } else {
             null
         }
-        return LaunchRecipe(env, unset, argv, warning)
+        return listOfNotNull(danger, adoptionWarning(adoption)).takeIf { it.isNotEmpty() }?.joinToString("; ")
+    }
+
+    /** THE RETRY LAW: no refusal is bare and none invents a cause. Each sentence says what happened,
+     *  what is still true (nothing copied / that tree untouched), and the operator's next action. */
+    private fun adoptionWarning(adoption: SessionAdoption?): String? = when (adoption) {
+        null, is SessionAdoption.HeadOwned ->
+            null
+        is SessionAdoption.Adopted ->
+            "resumed session ${adoption.sessionId} copied into this head from ${adoption.from} — " +
+                "${adoption.modelsRewritten} assistant rows now name this head's model"
+        is SessionAdoption.Absent ->
+            "session ${adoption.sessionId} is in no transcript tree — searched " +
+                "${adoption.searchedHeads.size} heads (${adoption.searchedHeads.joinToString(", ")}). " +
+                "Nothing was copied, so Claude Code will refuse the id: check the id, or start a new " +
+                "session in this head"
+        is SessionAdoption.Refused ->
+            "session ${adoption.sessionId} could not be copied out of ${adoption.from} " +
+                "(${adoption.cause}). That tree is untouched: retry the launch, or resume the session " +
+                "on the head that owns it"
+        is SessionAdoption.Invalid ->
+            "the -r argument is not a session id (${adoption.cause}); re-run with the UUID Claude Code " +
+                "shows for that session, or with a bare -r to get this head's picker"
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: bin/splice-launch execs
@@ -121,7 +200,7 @@ public class LaunchService(
             // consuming work. A native-auth head plants NOTHING: the client's own credential must
             // reach the head untouched, and this would override it.
             if (!spec.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
-            put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
+            put("CLAUDE_CONFIG_DIR", spec.trees.own.toString())
             // NO gateway model discovery: the picker reads the materialized roster (settings.json
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
             // the wrapped /v1/models spelling must never reach the picker.

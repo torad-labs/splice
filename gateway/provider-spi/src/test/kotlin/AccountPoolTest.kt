@@ -352,6 +352,46 @@ class AccountPoolTest {
         assertEquals("secret", (primary.auth.credentials() as Credentials.Bearer).token)
     }
 
+    @Test
+    fun `credential evidence is read off the sticky-session monitor`() {
+        val now = AtomicReference(1_000_000L)
+        val monitorHolder = AtomicReference<Any?>(null)
+        var readUnderMonitor = false
+
+        fun account(label: String, primary: Boolean): PoolAccount {
+            val source = object : RefreshableAuthProvider, AccountCredentialIdentitySource {
+                override suspend fun credentials(): Credentials = Credentials.Bearer("secret", "id")
+                override suspend fun describe(): AuthDescription = AuthDescription(true, "test", emptyMap())
+                override suspend fun refresh(): Credentials = credentials()
+                override fun credentialIdentity(): CredentialFileIdentity? =
+                    CredentialFileIdentity(1, 100L, "digest-$label")
+                override fun credentialEvidence(): AccountCredentialIdentitySource.CredentialEvidence {
+                    val monitor = monitorHolder.get()
+                    if (monitor != null && Thread.holdsLock(monitor)) readUnderMonitor = true
+                    return AccountCredentialIdentitySource.CredentialEvidence(
+                        credentialIdentity(),
+                        AccountCredentialIdentitySource.CredentialPresence.PRESENT,
+                    )
+                }
+            }
+            return PoolAccount(
+                label = label,
+                primary = primary,
+                auth = source,
+                quota = AccountQuotaSource { null },
+                cooldown = RateLimitCooldown(ElapsedNow { 0L }),
+            )
+        }
+
+        val pool = AccountPool(listOf(account("primary", true), account("plus-a", false)), AccountNow(now::get))
+        val sessions = AccountPool::class.java.getDeclaredField("sessions").apply { isAccessible = true }.get(pool)
+        monitorHolder.set(sessions)
+
+        pool.select("session")
+
+        assertFalse(readUnderMonitor, "credential evidence must be read off the sticky-session monitor")
+    }
+
     internal class Fixture {
         val now = AtomicReference(1_000_000L)
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()

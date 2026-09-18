@@ -12,8 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import splice.core.wire.ErrorEnvelope
 import splice.spi.AccountResetText
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -34,16 +33,11 @@ internal class AdmissionResponses {
 
     // Relocated from a HeadServer member so respondAtCapacity shares one body builder; pure JSON
     // shaping with no instance state (review 2026-07-22 round 3).
-    private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
-        put("type", "error")
-        put(
-            "error",
-            buildJsonObject {
-                put("type", type)
-                put("message", message)
-            },
-        )
-    }.toString()
+    // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so provider-spi can build the
+    // same envelope — it cannot import :gateway. Kept as a named delegate so the six admission
+    // callers read unchanged; the local builder is gone, which is what the wall actually asks for.
+    private fun errorBodyJson(type: String, message: String): String =
+        ErrorEnvelope.of(type, message).toString()
 
     /** The 529 capacity terminal built once: every admission path must answer IDENTICALLY because
      *  client retry logic keys on the shape (three hand-built copies drifted; review 2026-07-22

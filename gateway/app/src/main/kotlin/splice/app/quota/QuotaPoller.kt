@@ -96,7 +96,7 @@ internal class QuotaPoller(
     }
 
     internal suspend fun pollOnce() {
-        Cancellables.runCatchingCancellable { probe.probe() }
+        Cancellables.runCatchingBestEffort { probe.probe() }
             .onSuccess { snapshot -> snapshot?.let(::accept) }
             .onFailure { failure ->
                 if (failureLogged.compareAndSet(false, true)) {

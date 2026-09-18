@@ -239,6 +239,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = Jd
         (obj?.get("data") as? JsonArray)?.map { it.jsonObject }.orEmpty()
 
     private fun parse(text: String): JsonObject? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): kind discrimination by shape: a runtime that is not the kind being probed answers with a body that is not a JSON object, which is the normal negative the ?.takeIf guards above consume.
         Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
 }
 

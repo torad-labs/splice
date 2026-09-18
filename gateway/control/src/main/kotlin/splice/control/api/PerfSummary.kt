@@ -19,6 +19,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.control.PerfRow
 import splice.control.PerfRowsSource
 import splice.control.PerfRowsWindow
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import kotlin.math.ceil
@@ -29,7 +30,12 @@ private const val MS_PER_MINUTE = 60_000L
 private const val MS_PER_HOUR = 3_600_000L
 private const val HOURS_PER_DAY = 24L
 private const val DAYS_PER_WEEK = 7L
-private const val OK = "ok"
+
+// V4-102: `val`, not `const val`, because the tag now comes from the single-source enum and an
+// enum property is not a compile-time constant. The value is unchanged, so every comparison and
+// every rendering is byte-identical — only the compile-time-foldability is lost, and nothing here
+// needed it.
+private val OK = OutcomeTag.OK.wire
 
 /** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
 public const val UNATTRIBUTED_OUTCOME: String = "?"

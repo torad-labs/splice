@@ -8,9 +8,18 @@ import splice.core.launch.ClaudePolicy
 import splice.core.launch.TokenCaptureSpec
 import java.nio.file.Path
 
+/** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
+ *  OTHER head's. They are ONE fact — which trees this head can adopt a named session out of — so they
+ *  travel as one value, which also keeps [LaunchSpec] inside the constructor-width ratchet
+ *  (checks/constructor-width.py) instead of widening it one field at a time. */
+public data class HeadTrees(
+    val own: Path,
+    val siblings: List<Path> = emptyList(),
+)
+
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(
-    val configDir: Path,
+    val trees: HeadTrees,
     val pinnedModel: String,
     val availableModelIds: List<String>,
     val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)

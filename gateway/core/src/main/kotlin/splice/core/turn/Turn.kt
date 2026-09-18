@@ -213,13 +213,38 @@ public class SharedSummaryParts(
     }
 }
 
-/** The two-tier watchdog knobs (v35 doctrine): before the client has seen output the idle limit
- *  is firstByteTimeout (prefill is legitimately silent for minutes); after, streamIdle;
- *  totalCap bounds the whole turn. */
+/** The watchdog knobs (v35 doctrine): before the client has seen output the idle limit is
+ *  firstByteTimeout (prefill is legitimately silent for minutes); after, [stallReanchor] when the
+ *  round can be continued and [streamIdle] otherwise; totalCap bounds the whole turn. */
 public data class WatchdogBudget(
     val firstByteTimeout: Duration,
     val streamIdle: Duration,
     val totalCap: Duration,
+    /** V4-116: the MID-OUTPUT STALL-RE-ANCHOR tier — how long a round may sit silent AFTER the
+     *  client has seen content before the proxy gives up waiting and resumes it itself.
+     *
+     *  Why a tier of its own, rather than just a lower [streamIdle]. [streamIdle] is a STALL
+     *  DETECTOR: breaching it is an admission of defeat that ends the round, and its 300 s value is
+     *  inherited from codex-rs because 300 s is genuinely how long a legitimately-silent backend
+     *  may be. A breach of THIS tier is not defeat — it is the signal to CANCEL the round and
+     *  re-POST it from the salvage, which is invisible to the client (a proxy that owns the wire can
+     *  always resume; the operator's ruling, 2026-09-17) and costs one POST. Waiting 300 s to do
+     *  something we are willing to do at 20 s is the scar this tier exists to close: claude-deepseek
+     *  session b10459ba streamed 3810 content frames, went silent, sat through the whole 300 s
+     *  mid-output tier, and then ended the turn as an error even though the provider had been
+     *  MEASURED to continue from an assistant prefill.
+     *
+     *  OFF BY DEFAULT ([Duration.INFINITE]), and the default is load-bearing rather than timid.
+     *  Whether an early reap helps or hurts is a property of the PROVIDER, not of this class: a
+     *  provider that cannot be handed a prefill (muse answers one with a 400 that Claude Code never
+     *  retries — see PassthroughReanchorController) has no continuation to be reaped INTO, so for
+     *  it an early reap converts a 300 s wait into an identical error 280 s sooner and can only
+     *  ever cost a slow-but-alive generation. The head that has been MEASURED to continue is the
+     *  one that arms this, at construction (HeadBuildInputs), which is why the value travels on the
+     *  budget the head already owns. [streamIdle] therefore stays the hard floor for a provider
+     *  that never arms this tier, and for one whose continuation budget is spent (the controller
+     *  declines and the round finishes with the honest error). */
+    val stallReanchor: Duration = Duration.INFINITE,
 ) {
     /** The budget a COMPACT turn runs under: its pre-output silence is bounded by [totalCap] alone.
      *  A compaction's prefill + reasoning over the whole transcript is the case the v35 doctrine

@@ -88,11 +88,7 @@ internal class AddCommand(
      *  or deliberately left for `splice restart`. A restart that was asked for and failed is false, and
      *  the footer says what to run instead of a Launch line that would not work yet. */
     private fun finish(c: AddCandidate, env: EnvReader): Boolean {
-        val linked = Cancellables.runCatchingCancellable { install(c.key, env) }.getOrDefault(false)
-        if (!linked) {
-            val fix = "${CYAN}splice install ${c.key}$RESET"
-            println("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked — run: $fix")
-        }
+        linkWrapper(c, env)
         val port = AdminSupport.controlPort(c.topology, env)
         val daemonLabel = "daemon".padEnd(ADD_PAD)
         val activated = when {
@@ -109,6 +105,16 @@ internal class AddCommand(
         }
         println("  Checkup     ${CYAN}splice doctor$RESET $DIM— anything wrong prints its fix$RESET")
         return activated
+    }
+
+    private fun linkWrapper(c: AddCandidate, env: EnvReader) {
+        val link = Cancellables.runCatchingCancellable { install(c.key, env) }
+        val linked = link.getOrElse { false }
+        if (!linked) {
+            val fix = "${CYAN}splice install ${c.key}$RESET"
+            val why = link.exceptionOrNull()?.let { " (${SafeFailureText.render(it)})" }.orEmpty()
+            println("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why — run: $fix")
+        }
     }
 
     private fun confirm(question: String, default: Boolean): Boolean =

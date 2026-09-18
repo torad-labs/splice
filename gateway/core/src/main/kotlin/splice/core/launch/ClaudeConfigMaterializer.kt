@@ -3,10 +3,14 @@
 // Invariants preserved EXACTLY:
 //   - isolated CLAUDE_CONFIG_DIR (default ~/.claude-<head>); refuse to write outside it;
 //   - SHARED items symlink into ~/.claude/<item>; a real file where a symlink belongs is replaced,
-//     but a real DIRECTORY the operator made is NEVER deleted (two exceptions: sessions/ and
-//     projects/ are machine-generated, so SessionRegistryLink and ProjectsLink migrate their
-//     entries into the global tree and replace the dir with the link — cross-head session
-//     visibility and cross-head --resume);
+//     but a real DIRECTORY the operator made is NEVER deleted (one exception: sessions/ is
+//     machine-generated, so SessionRegistryLink migrates its entries into the global registry and
+//     replaces the dir with the link — cross-head session VISIBILITY, the one dispositioned escape
+//     from head isolation, and it is Claude Code's peer registry rather than head configuration);
+//   - projects/ is NOT a shared item (V4-115, 2026-09-17): a head's transcripts are head-private by
+//     the operator ruling, so ProjectsLink guarantees a REAL projects dir inside each head and
+//     un-links one an earlier launch pointed elsewhere. Cross-head resume is an explicit COPY made
+//     at launch time (ResumeAcrossHeads), never a shared tree;
 //   - settings.json is ALWAYS a real merged file (never a symlink through which we'd clobber the
 //     operator's global): global settings + availableModels allowlist + enforceAvailableModels +
 //     preserved model choice (when still allowed) + the statusline command. A pre-existing symlink
@@ -62,6 +66,7 @@ public class ClaudeConfigMaterializer(
         prettyPrint = true
     }
     private val sessionRegistry = SessionRegistryLink()
+    private val projectsLink = ProjectsLink()
     private val jsonReads = JsonStateReads(json, log)
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
@@ -82,7 +87,7 @@ public class ClaudeConfigMaterializer(
         // here and writeSettings can change what this read observes.
         val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
         Files.createDirectories(spec.configDir)
-        linkShared(spec.configDir, spec.policy, spec.headKey)
+        linkShared(spec.configDir, spec.policy)
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 spec.configDir,
@@ -156,32 +161,27 @@ public class ClaudeConfigMaterializer(
     }
 
     // settings is merged (not linked); mcps arrive via .claude.json. Everything else that the
-    // policy shares is symlinked from the operator's global dir. [headKey] names the head in the
-    // parked-copy suffix a projects migration writes on a transcript collision (ProjectsLink).
-    private fun linkShared(configDir: Path, policy: ClaudePolicy, headKey: String) {
+    // policy shares is symlinked from the operator's global dir. projects is not decided by the
+    // policy at all — see the call below and ProjectsLink's header.
+    private fun linkShared(configDir: Path, policy: ClaudePolicy) {
+        // Head-private transcripts (V4-115): guaranteed real for EVERY head, whatever its policy
+        // says. The migration must run even for a head whose splice.toml still names `projects` in
+        // share — that spelling is inert now, and a policy must not be able to resurrect the link.
+        projectsLink.ensurePrivateOrLog(configDir.resolve(Keys.PROJECTS), log)
         // settings is merged (not linked) and mcps arrive via .claude.json, so both are skipped here.
         for (item in sharedLinkItems) {
-            val linkable = item !in MERGED_ITEMS && shares(policy, item)
-            if (!linkable) continue
-            when (item) {
-                Keys.SESSIONS -> {
-                    // The peer registry migrates rather than links: see SessionRegistryLink's header.
-                    // link() logs its own declines; this catches what it THROWS mid-flight (DR-39).
-                    Cancellables.runCatchingCancellable {
-                        sessionRegistry.link(globalDir().resolve(item), configDir.resolve(item))
-                    }.exceptionOrNull()?.let { cause ->
-                        // SAFE-RENDER-EXEMPT[2026-08-31]: SessionRegistryLink.link does path work only — the failure names a directory, never its content
-                        log("[materialize] sessions registry NOT linked into $configDir (${cause.message})\n")
-                    }
+            if (item in MERGED_ITEMS || !shares(policy, item)) continue
+            if (item == Keys.SESSIONS) {
+                // The peer registry migrates rather than links: see SessionRegistryLink's header.
+                // link() logs its own declines; this catches what it THROWS mid-flight (DR-39).
+                Cancellables.runCatchingCancellable {
+                    sessionRegistry.link(globalDir().resolve(item), configDir.resolve(item))
+                }.exceptionOrNull()?.let { cause ->
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: SessionRegistryLink.link does path work only — the failure names a directory, never its content
+                    log("[materialize] sessions registry NOT linked into $configDir (${cause.message})\n")
                 }
-                // The transcript tree migrates rather than links too (ProjectsLink's header); linkOrLog
-                // is the sessions arm's catch-and-log shape, hosted there for this loop's complexity budget.
-                Keys.PROJECTS -> ProjectsLink(headKey).linkOrLog(
-                    globalDir().resolve(item),
-                    configDir.resolve(item),
-                    log,
-                )
-                else -> linkOneShared(configDir, item)
+            } else {
+                linkOneShared(configDir, item)
             }
         }
     }
@@ -385,5 +385,5 @@ private val EMPTY_JSON = JsonObject(emptyMap())
 
 // The two shared items linkShared never links: settings is merged into a real file and mcps arrive
 // via .claude.json. A set rather than two `!=` legs so the loop stays under its complexity budget
-// now that it dispatches three generated-vs-linked shapes (sessions, projects, everything else).
+// now that it dispatches two generated-vs-linked shapes (sessions, everything else).
 private val MERGED_ITEMS = setOf(Keys.SETTINGS, Keys.MCPS)

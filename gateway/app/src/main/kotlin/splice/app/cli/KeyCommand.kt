@@ -7,6 +7,7 @@ package splice.app.cli
 
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 
@@ -59,7 +60,7 @@ internal class KeyCommand(
             return false
         }
         val value = readValue(flags) ?: return false
-        return runCatching { store.write(envVar, value) }
+        return Cancellables.runCatchingCancellable { store.write(envVar, value) }
             .onSuccess {
                 println("$envVar stored to ${store.path} (0600).")
                 println("Live daemons pick it up on the next request; `splice restart` refreshes status.")

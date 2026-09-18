@@ -24,6 +24,7 @@ private const val MIN_FIRST_BYTE_MS = 10_000L
 private const val MIN_STREAM_IDLE_MS = 30_000L
 private const val TEST_IDLE_FLOOR_MS = 250L
 private const val MIN_AUTH_CACHE_MS = 5_000L
+private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
 private const val MAX_PORT = 65_535L
 private const val MAX_INT = Int.MAX_VALUE.toLong()
 private const val MAX_RETRIES = 100L
@@ -113,7 +114,42 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // a feature (the r3 invalid-env-value lesson).
         out[Knob.TOOL_SURFACE.key] = offOrAuto(str(out, Knob.TOOL_SURFACE))
         out[Knob.QUOTA_POLL.key] = offOrAuto(str(out, Knob.QUOTA_POLL))
+        clampPromoted(out)
+        clampRetryCurve(out)
         return out
+    }
+
+    // V4-110: shared MCP hosting and request-materialization knobs are positive-only. A floor keeps
+    // a typo'd 0/negative from becoming a zero-capacity host or a body cap that rejects every
+    // request (NEVER-BELOW-STATUS-QUO — the operator's bad value must not crash the daemon).
+    private fun clampPromoted(out: MutableMap<String, Any?>) {
+        out[Knob.MCP_IDLE_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_IDLE_TIMEOUT_MS, floor = 1_000L)
+        out[Knob.MCP_REQUEST_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_REQUEST_TIMEOUT_MS, floor = 1_000L)
+        out[Knob.MCP_INITIALIZE_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_INITIALIZE_TIMEOUT_MS, floor = 1_000L)
+        out[Knob.MCP_MAX_SERVERS.key] = clampLong(out, Knob.MCP_MAX_SERVERS, floor = 1L)
+        out[Knob.MAX_REQUEST_BYTES.key] = clampLong(out, Knob.MAX_REQUEST_BYTES, floor = 1L)
+        out[Knob.REQUEST_READ_TIMEOUT_MS.key] = clampLong(out, Knob.REQUEST_READ_TIMEOUT_MS, floor = 1L)
+        out[Knob.MATERIALIZATION_PERMITS.key] = clampLong(out, Knob.MATERIALIZATION_PERMITS, floor = 1L)
+        out[Knob.QUOTA_POLL_INTERVAL_MS.key] = clampLong(
+            out,
+            Knob.QUOTA_POLL_INTERVAL_MS,
+            floor = MIN_QUOTA_POLL_INTERVAL_MS,
+        )
+    }
+
+    // V4-110: the retry-curve knobs. base is at least 1ms, cap is floored to base (a cap below the
+    // base would collapse the curve to zero), and jitter is a percentage clamped 0..100 so the
+    // multiplier range can never go negative. THE DEFAULT stays the generic bounded curve.
+    private fun clampRetryCurve(out: MutableMap<String, Any?>) {
+        val base = clampLong(out, Knob.RETRY_BACKOFF_BASE_MS, floor = 1L)
+        out[Knob.RETRY_BACKOFF_BASE_MS.key] = base
+        out[Knob.RETRY_BACKOFF_CAP_MS.key] = clampLong(out, Knob.RETRY_BACKOFF_CAP_MS, floor = base)
+        out[Knob.RETRY_BACKOFF_JITTER_PCT.key] = clampLong(
+            out,
+            Knob.RETRY_BACKOFF_JITTER_PCT,
+            floor = 0L,
+            ceiling = 100L,
+        )
     }
 
     // The one-way kill-switch shape shared by TOOL_SURFACE and QUOTA_POLL.

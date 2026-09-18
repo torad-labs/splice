@@ -1,0 +1,63 @@
+# HEAD-ISOLATION WALL (V4-115, 2026-09-17). OPERATOR RULING: head configurations and details must
+# NEVER leak into other heads, their wrappers, or the core claude binary sessions — fully isolated.
+#
+# THE SCAR. Commit 91d68f3e (V4-64/V4-65, 2026-09-16) made every head's CLAUDE_CONFIG_DIR/projects a
+# symlink to the operator's vanilla ~/.claude/projects so a session could be resumed on another head.
+# Measured 2026-09-17: three heads linked there, 95 transcripts carrying head model ids sat in the
+# vanilla tree (gpt-6-astra 36, gpt-5.6-sol 33, deepseek-flash 24, k3-256k 8), and the vanilla client
+# printed "Session model deepseek-flash could not be restored" on every restore. V4-115 unwound it:
+# each head owns a REAL projects tree and cross-head resume is an explicit COPY, never a shared tree.
+#
+# WHAT THIS RULE CATCHES. The vanilla config dir spelled as a STRING LITERAL — "./.claude" or
+# "~/.claude", bare or with a path suffix — anywhere in the head launch/materialization surface. That
+# is the shape a re-introduction takes: a head's projects (or any other generated item) resolved off
+# a literal that names the operator's vanilla tree. `.claude.json` is deliberately NOT matched: it is
+# a different external contract (the state file, read for MCP inherit), not the config DIRECTORY, and
+# the suffix pattern requires `/` or end after the name.
+#
+# WHY `string_literal` + `has: string_content` rather than `kind: string_content`: the same reason
+# kt-no-stream-options-request was widened on 2026-07-26 — a Kotlin RAW string (`""".claude"""`) has
+# different delimiters and different full text, so a full-text regex on the literal walks straight
+# through while producing the identical runtime path. Anchoring the regex on the inner content node
+# is delimiter-agnostic.
+#
+# THE ONE DATED ALLOWLIST ENTRY. ClaudeConfigKeys.kt is the single source of the name (Keys.CLAUDE /
+# Keys.CLAUDE_DIR); every legitimate reader — the materializer's isolation guard that refuses to
+# materialize into ~/.claude, and its sessions arm, which is the ONE dispositioned escape — reaches it
+# through that constant, never through a literal of its own. Allowing the constant's declaration site
+# is what keeps the wall discriminating: a second spelling anywhere else in this surface is red.
+#
+# WHAT THIS RULE CANNOT SEE, and what covers it. The wall is a LINT shape: a regression that reaches
+# the vanilla dir through Keys.CLAUDE (the materializer's own globalDir()) is not a literal and is not
+# matched here. That half is the BEHAVIOURAL pin — gateway/core/src/test/kotlin/splice/core/launch/
+# ClaudeConfigIsolationTest.kt — which materializes a head into a temp HOME and asserts (a) nothing
+# under the head dir resolves outside it, and (b) nothing under the fake vanilla dir was created or
+# modified except the session registry. Same-checker-twice: the lint shape blocks the spelling at
+# write time, the test catches every route at run time.
+#
+# SCOPE. Deliberately the surface that POINTS a head's config dir somewhere (the launch package, the
+# launch recipe's argv assembly, the per-head CLAUDE_CONFIG_DIR producer) rather than every main
+# source that mentions the vanilla tree. Readers that legitimately open the vanilla tree exist
+# outside it (ControlPlane's pid-to-head SessionRegistry, the `splice sessions` listing, SessionProject's
+# defaults) and are not this wall's subject; narrowing is stated here so it is a decision, not a hole.
+id: kt-no-vanilla-config-dir
+language: kotlin
+severity: error
+message: "A head's config dir must never be spelled from the vanilla ~/.claude literal — heads are fully isolated (V4-115). Use Keys.CLAUDE (the one source) or a head config dir."
+note: >
+  Resolve the vanilla config dir from ClaudeConfigKeys.Keys (CLAUDE / CLAUDE_DIR) if you are the
+  materializer's isolation guard or its dispositioned sessions-registry arm; anywhere else, a head's
+  generated state belongs under its OWN CLAUDE_CONFIG_DIR. A shared projects tree is the 2026-09-16
+  incident: it put 95 head transcripts in the vanilla tree and broke the vanilla client's resume.
+files:
+  - gateway/core/src/main/kotlin/splice/core/launch/**/*.kt
+  - gateway/control/src/main/kotlin/splice/control/Launch*.kt
+  - gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
+ignores:
+  # the ONE dated entry: the single source of the vanilla dir's NAME (Keys.CLAUDE / Keys.CLAUDE_DIR)
+  - gateway/core/src/main/kotlin/**/launch/ClaudeConfigKeys.kt
+rule:
+  kind: string_literal
+  has:
+    kind: string_content
+    regex: '^(?:~/)?\.claude(?:/.*)?$'

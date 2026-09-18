@@ -104,6 +104,7 @@ private class ExistingIdentity(
     private val json: Json,
 ) {
     fun matches(file: Path, label: String): Boolean {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a candidate file that does not parse cannot carry a matching identity, so false is the complete answer; this matcher is contractually silent (it must never print provider identity).
         val saved = Cancellables.runCatchingCancellable {
             json.parseToJsonElement(Files.readString(file)) as? JsonObject
         }.getOrNull() ?: return false

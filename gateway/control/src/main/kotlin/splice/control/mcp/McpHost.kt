@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.launch.McpSharing
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -59,7 +60,12 @@ public class McpHost(
                 isDaemon = true
             }
         }
-        exec.scheduleAtFixedRate({ runCatching { sweep() } }, SWEEP_PERIOD_S, SWEEP_PERIOD_S, TimeUnit.SECONDS)
+        exec.scheduleAtFixedRate(
+            { Cancellables.runCatchingCancellable { sweep() } },
+            SWEEP_PERIOD_S,
+            SWEEP_PERIOD_S,
+            TimeUnit.SECONDS,
+        )
         sweeper = exec
     }
 

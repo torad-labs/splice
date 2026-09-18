@@ -7,12 +7,11 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
 import splice.control.LaunchResponse
 import splice.control.LaunchService
 import splice.control.ManagedHead
 import splice.core.topology.TopologyMessages
+import splice.core.util.JsonScalars
 
 private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean)
 
@@ -78,9 +77,9 @@ internal class LaunchRoutes(
         val body = jsonBody.parse(call)
         // Safe by default: the caller must explicitly opt in with {"dangerouslySkipPermissions":"true"}
         // to get the flag; a missing key, malformed body, or any other value stays safe.
-        val dangerouslySkipPermissions = body?.get("dangerouslySkipPermissions")?.jsonPrimitive?.content == "true"
+        val dangerouslySkipPermissions = JsonScalars.str(body, "dangerouslySkipPermissions") == "true"
         val extraArgs = (body?.get("args") as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+            ?.mapNotNull { JsonScalars.str(it) } ?: emptyList()
         return LaunchRequest(extraArgs, dangerouslySkipPermissions)
     }
 }

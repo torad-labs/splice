@@ -10,11 +10,9 @@
 // with the drive and comes back when the upstream turn ends. Ordinary turns are untouched.
 //
 // The detached scope OUTLIVES A HEAD RESTART: HeadServer stops and starts on the same driver, so a
-// stop ends the compactions still driving (cancelChildren) and never the scope — a cancelled scope
-// turned the first compaction after a restart into an empty 200 with its slot handed off to
-// nobody (review 2026-09-05, splice-astra). A scope that cannot launch any more (the daemon's own,
-// at shutdown) is checked before the hand-off, and the launch is ATOMIC so its finally settles
-// the slot and the recording even when the cancellation lands between the check and the start.
+// stop ends the compactions still driving (cancelChildren) and never the scope. A recording is
+// therefore made for every compaction, and the launch is ATOMIC so its finally settles the slot and
+// the recording even when a cancellation lands between the check and the start.
 package splice.gateway.head
 
 import io.ktor.http.ContentType
@@ -27,7 +25,6 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelChildren
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -69,9 +66,10 @@ internal class TurnStreamer(
         val built = inputs.built
         val perf = inputs.perf
         val replayKey = if (built.meta.compact) replay.key(built.meta, built.requestBody.toString()) else null
-        // No recording without a scope to detach onto: the compaction then runs attached, as every
-        // turn did before 2026-09-05, instead of being handed to a launch that never starts.
-        val recording = if (replayKey != null && detachedScope.isActive) FrameRecording() else null
+        // A compaction always records: the detached scope outlives a head restart, so there is
+        // always a scope to detach onto (the launch below is ATOMIC, so its finally settles the slot
+        // and the recording even if the scope is cancelled in between).
+        val recording = if (replayKey != null) FrameRecording() else null
         // The head's quota windows ride every response as the headers Claude Code reads into its
         // rate_limits (the 5h/7d bars): the client sees the head's real plan usage, proxy or not.
         (inputs.quota ?: deps.quota)?.clientHeaders()?.forEach { (name, value) ->
@@ -135,9 +133,9 @@ internal class TurnStreamer(
     private suspend fun driveDetachable(drive: TurnDrive, inputs: TurnInputs, key: String, recording: FrameRecording) {
         replay.begin(key, recording)
         inputs.slotHandedOff.set(true)
-        // ATOMIC: the body starts even if the scope was cancelled since the isActive check, so the
-        // finally below always runs; the drive's first suspension then throws the cancellation and
-        // the seal writes the honest error frame to the still-attached client.
+        // ATOMIC: the body starts even if the scope was cancelled, so the finally below always runs;
+        // the drive's first suspension then throws the cancellation and the seal writes the honest
+        // error frame to the still-attached client.
         val job = detachedScope.launch(detachedContext, start = CoroutineStart.ATOMIC) {
             try {
                 driver.driveSealingCancellation(drive)
@@ -171,7 +169,7 @@ internal class TurnStreamer(
 
     /** Head stop: a detached compaction has no head to record for — end the ones still driving
      *  (each finally releases its slot and drops its recording). The scope itself survives, because
-     *  HeadServer restarts on this same streamer and a cancelled scope launches nothing (header). */
+     *  HeadServer restarts on this same streamer and a restart must be able to detach again. */
     fun stopDetached() {
         detachedScope.coroutineContext.cancelChildren()
     }

@@ -76,6 +76,22 @@ public object PerfKeys {
      *  log); this makes the double-issue rate countable in the perf row, not only greppable. */
     public const val POST_SEND_RETRIES: String = "post_send_retries"
 
+    /** V4-116: mid-stream re-anchors this turn SPENT — the proxy resumed the turn from its own
+     *  salvage after a stall or a tear. A COUNT, not a flag, because the question the next incident
+     *  asks is "how many times did splice try before giving up", and the ending message reports the
+     *  same number. Zero/absent on a turn that never re-anchored, which is the expected-delta
+     *  instrument: a deploy where this stays 0 on a head that stalls is a false landing. */
+    public const val REANCHORS: String = "reanchors"
+
+    /** V4-116: the upstream SILENCE that triggered each re-anchor, summed in ms — the watchdog's own
+     *  `idleMs` at the moment it fired, so the row answers "silent how long" without archaeology
+     *  through the journal. Paired with [REANCHORS] on purpose: neither number is interpretable
+     *  alone (one POST after 9 minutes of silence and five POSTs after 20 seconds each are opposite
+     *  diagnoses), and a stall judged by the mid-output stall tier reports a value at that tier, not
+     *  the 300s streamIdle an operator would otherwise assume. A SUM like every other duration
+     *  counter here ([BACKOFF_MS], [REFRESH_MS]); a turn with two stalls reports both. */
+    public const val STALL_MS: String = "stall_ms"
+
     /** Mark keys in pipeline order — the aggregation and the log line render in THIS order. */
     public val markOrder: List<String> = listOf(
         RECV, PARSE, BUILD, GATE, HEADERS, FIRST_BYTE, FIRST_FRAME, FIRST_DELTA,

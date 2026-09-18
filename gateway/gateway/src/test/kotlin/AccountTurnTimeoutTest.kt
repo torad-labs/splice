@@ -1,4 +1,5 @@
 // NEW: V4-10 pre-request turn expiry must use the existing total-cap translator terminal.
+import head.admittedSlot
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import kotlinx.coroutines.Job
@@ -195,7 +196,7 @@ class AccountTurnTimeoutTest {
             ),
             emitter = terminal,
             watchdog = TurnWatchdog(provider.watchdog, ElapsedClock { 0L }),
-            slot = InflightGate(LiveLimit { 1 }).acquire(),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = pipeline,
             t0 = 0L,
             upstreamModel = "gpt-5.6-sol",

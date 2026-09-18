@@ -158,13 +158,19 @@ public object OAuthLoginFlow {
         errRef: AtomicReference<String?>,
         latch: CountDownLatch,
     ) {
-        val params = runCatching { queryParams(ex.requestURI.rawQuery.orEmpty()) }.getOrDefault(emptyMap())
+        val params = Cancellables.runCatchingCancellable { queryParams(ex.requestURI.rawQuery.orEmpty()) }
+            .onFailure {
+                println("splice: ignoring a callback whose query does not parse — ${SafeFailureText.render(it)}")
+            }
+            .getOrDefault(emptyMap())
         // Only a callback carrying OUR state ends the login. A drive-by hit on the loopback port (a
         // local page, another process, a malformed-escape probe) is answered but IGNORED, so the
         // genuine provider redirect can still land — a stray request can't abort the flow.
         if (params["state"] != spec.expectedState) {
             Cancellables.discard(
-                runCatching { callbackPage.respond(ex, ok = false, head = spec.head, error = "unexpected callback") },
+                Cancellables.runCatchingCancellable {
+                    callbackPage.respond(ex, ok = false, head = spec.head, error = "unexpected callback")
+                },
                 "reply to a stray request is cosmetic; the flow keeps waiting either way",
             )
             return
@@ -177,7 +183,7 @@ public object OAuthLoginFlow {
                 else -> codeRef.set(params["code"])
             }
             Cancellables.discard(
-                runCatching {
+                Cancellables.runCatchingCancellable {
                     callbackPage.respond(
                         ex,
                         ok = codeRef.get() != null,
@@ -200,7 +206,7 @@ public object OAuthLoginFlow {
     internal suspend fun exchangeAndPersist(spec: LoginSpec, code: String): Boolean {
         val client = authClients.create()
         return try {
-            Cancellables.runCatchingCancellable {
+            Cancellables.runCatchingBestEffort {
                 val resp: HttpResponse = client.post(spec.tokenUrl) {
                     header("Content-Type", "application/x-www-form-urlencoded")
                     header("Accept", "application/json")
@@ -227,7 +233,9 @@ public object OAuthLoginFlow {
     }
 
     private fun decode(s: String): String =
-        runCatching { URLDecoder.decode(s, Charsets.UTF_8) }.getOrDefault(s)
+        Cancellables.runCatchingCancellable { URLDecoder.decode(s, Charsets.UTF_8) }
+            .onFailure { println("splice: a callback value is not valid percent-encoding — using it verbatim") }
+            .getOrDefault(s)
 
     private fun queryParams(raw: String): Map<String, String> =
         raw.split("&").filter { it.isNotEmpty() }.associate { part ->

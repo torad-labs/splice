@@ -23,6 +23,7 @@ import splice.app.quota.UsageFields
 import splice.control.ManagedHead
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
+import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.util.LogSink
@@ -36,7 +37,7 @@ import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider
 
 internal fun interface StartQuotaPoller {
-    operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker)
+    operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker, intervalMs: Long)
 }
 
 /** Observes the primary quota tracker at assembly so a test can see which tracker was wired.
@@ -55,8 +56,8 @@ internal class ManagedHeadFactory(
      *  end with Daemon.stop() like every other background probe. */
     private val probeScope: CoroutineScope,
     private val log: LogSink,
-    private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker ->
-        QuotaPoller(probeScope, head, probe, tracker, log).start()
+    private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker, intervalMs ->
+        QuotaPoller(probeScope, head, probe, tracker, log, intervalMs = intervalMs).start()
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
 ) {
@@ -152,17 +153,20 @@ internal class ManagedHeadFactory(
         off: Boolean,
     ) {
         if (off) return
+        // V4-110: the poll cadence is the quotaPollIntervalMs knob (floored in ConfigCoercion),
+        // read per head from the merged+normalized map — always seeded, so `as Long` is safe.
+        val intervalMs = ctx.cfg.asMap()[Knob.QUOTA_POLL_INTERVAL_MS.key] as Long
         // Subscription heads have a usage endpoint. Every OAuth account gets its own persisted
         // snapshot and poller; non-pooled heads retain the legacy single tracker path.
         if (wired.accounts.isEmpty()) {
             quotaProbes.forHead(ctx, wired.auth, usageFields(wired.auth))?.let { probe ->
-                startQuotaPoller(ctx.key, probe, stores.quota)
+                startQuotaPoller(ctx.key, probe, stores.quota, intervalMs)
             }
             return
         }
         wired.accounts.forEach { account ->
             quotaProbes.forHead(ctx, account.auth, usageFields(account.auth))?.let { probe ->
-                startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label))
+                startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label), intervalMs)
             }
         }
     }

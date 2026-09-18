@@ -8,11 +8,10 @@
 package splice.gateway.wire
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.wire.ErrorEnvelope
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val OK_STATUS = 200
@@ -23,9 +22,6 @@ private const val STATUS_PERMISSION = 403
 private const val STATUS_NOT_FOUND = 404
 private const val STATUS_RATE_LIMIT = 429
 private const val STATUS_OVERLOADED = 529
-
-private const val FIELD_TYPE = "type"
-private const val FIELD_ERROR = "error"
 
 public class CollectingTerminal(
     private val model: String,
@@ -164,18 +160,11 @@ public class CollectingTerminal(
     // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()
     // fallback has none to give) — only the malformed-tool-use path in emitTerminal has a real
     // turn usage in scope, so it is the only caller that passes one.
+    // V4-102: the shape lives in core now (splice.core.wire.ErrorEnvelope), because provider-spi
+    // cannot import :gateway and its own fail-fast body is the same envelope. Kept as a named
+    // delegate so the three call sites above read unchanged.
     private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
-        buildJsonObject {
-            put(FIELD_TYPE, FIELD_ERROR)
-            put(
-                FIELD_ERROR,
-                buildJsonObject {
-                    put(FIELD_TYPE, type)
-                    put("message", message)
-                },
-            )
-            usage?.let { put("usage", it) }
-        }
+        ErrorEnvelope.of(type, message, usage)
 
     // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
     // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.

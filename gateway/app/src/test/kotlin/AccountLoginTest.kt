@@ -17,6 +17,7 @@ import splice.app.LoginIo
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthAccountLabels
 import splice.app.auth.OAuthAccountRefused
+import splice.app.auth.OAuthLoginAccount
 import splice.app.cli.LoginCodex
 import splice.app.cli.LoginGrok
 import splice.app.cli.LoginKimi
@@ -350,6 +351,31 @@ class AccountLoginTest {
             }
         } finally {
             explicit.account?.releaseReservation()
+        }
+    }
+
+    /** V4-114 PIN (kt-no-atomic-in-data-class). OAuthLoginAccount carried two AtomicReferences
+     *  inside a `data class`, so the generated members lied in both directions: `equals` ignores
+     *  body properties, making two accounts with the same FIELDS interchangeable when their leases
+     *  are not; and `copy()` does not carry a body property at all, so a copy silently dropped the
+     *  lease its own `check(compareAndSet(null, lease))` uniqueness relies on. Both assertions FAIL
+     *  on the old shape — the first was `true` (data equality) and the second did not throw. */
+    @Test
+    fun `an OAuth login account is an identity and cannot be re-planned once it holds a lease`() {
+        val primary = dir.resolve("kimi.json")
+        Files.writeString(primary, "{}")
+        val spec = LoginKimi().spec("kimi", primary, "kimi-2")
+        try {
+            val account = requireNotNull(spec.account)
+            assertNotEquals(
+                account,
+                OAuthLoginAccount(account.kind, account.primary, account.label),
+                "the same fields are not the same login: one of these holds the lease",
+            )
+            val refused = assertThrows<IllegalStateException> { account.copy(label = "elsewhere") }
+            assertEquals("re-plan an OAuth login account BEFORE it holds a reservation", refused.message)
+        } finally {
+            spec.account?.releaseReservation()
         }
     }
 

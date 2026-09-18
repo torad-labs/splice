@@ -40,6 +40,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val upstreamTimeoutMs: Long get() = long(Knob.UPSTREAM_TIMEOUT_MS)
     public val firstByteTimeoutMs: Long get() = long(Knob.FIRST_BYTE_TIMEOUT_MS)
     public val streamIdleMs: Long get() = long(Knob.STREAM_IDLE_MS)
+    public val stallReanchorMs: Long get() = long(Knob.STALL_REANCHOR_MS)
     public val authCacheMs: Long get() = long(Knob.AUTH_CACHE_MS)
     public val debug: Boolean get() = bool(Knob.DEBUG)
     public val contextWindowOverride: Long? get() = m[Knob.CONTEXT_WINDOW_OVERRIDE.key] as? Long

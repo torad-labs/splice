@@ -23,7 +23,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.Cancellables
@@ -86,11 +85,11 @@ public class DaemonLock(private val lockFile: Path) : AutoCloseable {
 
     override fun close() {
         Cancellables.discard(
-            runCatching { lock?.release() },
+            Cancellables.runCatchingCancellable { lock?.release() },
             "process-exit cleanup; the OS reclaims the lock regardless",
         )
         Cancellables.discard(
-            runCatching { channel?.close() },
+            Cancellables.runCatchingCancellable { channel?.close() },
             "process-exit cleanup; the OS reclaims the fd regardless",
         )
         // After the descriptor is gone the path is genuinely free again, so the reservation must go
@@ -138,28 +137,31 @@ internal object DaemonProbe {
      *  Unlike AdminSupport.daemonUp this accepts a STALE daemon — restart must be able to stop one.
      *  str() (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as
      *  the literal string "null". */
-    internal fun healthView(port: Int): HealthView? = Cancellables.runCatchingCancellable {
-        request("http://127.0.0.1:$port/health") { connection ->
-            val obj = json.parseToJsonElement(body(connection)).jsonObject
-            HealthView(
-                version = JsonScalars.str(obj, "version"),
-                heads = JsonScalars.int(obj, "heads"),
-                readyHeads = JsonScalars.int(obj, "readyHeads"),
-                failedHeads = JsonScalars.int(obj, "failedHeads"),
-                topologyDigest = JsonScalars.str(obj, "topologyDigest"),
-                configPath = JsonScalars.str(obj, "configPath"),
-                topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
-                ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
-                turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
-                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-                    .orEmpty(),
-                clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
-            )
-        }
-    }.getOrNull()
+    internal fun healthView(port: Int): HealthView? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): no listener on the port is the NORMAL case for every caller — doctor and restart probe a daemon that may not be running — so the declared HealthView? absence IS the answer; this CLI-side probe holds no log lane to route a failure into.
+        Cancellables.runCatchingCancellable {
+            request("http://127.0.0.1:$port/health") { connection ->
+                val obj = json.parseToJsonElement(body(connection)).jsonObject
+                HealthView(
+                    version = JsonScalars.str(obj, "version"),
+                    heads = JsonScalars.int(obj, "heads"),
+                    readyHeads = JsonScalars.int(obj, "readyHeads"),
+                    failedHeads = JsonScalars.int(obj, "failedHeads"),
+                    topologyDigest = JsonScalars.str(obj, "topologyDigest"),
+                    configPath = JsonScalars.str(obj, "configPath"),
+                    topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
+                    ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
+                    turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
+                        ?.mapNotNull { JsonScalars.str(it) }
+                        .orEmpty(),
+                    clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
+                )
+            }
+        }.getOrNull()
 
     internal fun healthVersion(port: Int): String? = healthView(port)?.version
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same probe contract as healthView: /api/heads unreachable is the normal no-daemon reading, and null is what the caller renders.
     internal fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = Cancellables.runCatchingCancellable {
         request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
             val obj = json.parseToJsonElement(body(connection)).jsonObject
@@ -183,22 +185,26 @@ internal object DaemonProbe {
      *  file would then check the NEW port while the old daemon still holds the OLD one, so the stop
      *  reports success against a port nothing ever bound. It also survives a malformed TOML, which
      *  no file-sourced list can. */
-    internal fun headPorts(port: Int, bearer: String): List<Int>? = Cancellables.runCatchingCancellable {
-        request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
-            val obj = json.parseToJsonElement(body(connection)).jsonObject
-            (obj["heads"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.int(it as? JsonObject, "port") }
-        }
-    }.getOrNull()
+    internal fun headPorts(port: Int, bearer: String): List<Int>? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null when /api/heads is unreachable'; the stop ladder branches on that null and falls back to the topology's ports.
+        Cancellables.runCatchingCancellable {
+            request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
+                val obj = json.parseToJsonElement(body(connection)).jsonObject
+                (obj["heads"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.int(it as? JsonObject, "port") }
+            }
+        }.getOrNull()
 
     /** Per-head credential presence as the DAEMON sees it (`/api/auth`), or null when unreachable.
      *  Doctor compares this against shell-side presence to catch the exported-after-boot trap. */
-    internal fun authPresence(port: Int, key: String): Map<String, Boolean>? = Cancellables.runCatchingCancellable {
-        request("http://127.0.0.1:$port/api/auth", bearer = key) { connection ->
-            json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) ->
-                v.jsonObject["present"]?.jsonPrimitive?.booleanOrNull == true
+    internal fun authPresence(port: Int, key: String): Map<String, Boolean>? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null when unreachable'; doctor prints 'the daemon did not answer' for the null instead of a per-head verdict.
+        Cancellables.runCatchingCancellable {
+            request("http://127.0.0.1:$port/api/auth", bearer = key) { connection ->
+                json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) ->
+                    v.jsonObject["present"]?.jsonPrimitive?.booleanOrNull == true
+                }
             }
-        }
-    }.getOrNull()
+        }.getOrNull()
 
     internal fun <T> request(
         url: String,

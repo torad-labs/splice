@@ -5,6 +5,7 @@
 // is telemetry.
 package splice.gateway.head
 
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
@@ -119,7 +120,7 @@ internal class TurnTelemetry(
         resetEpochSeconds: Long?,
         armedMs: Long,
     ) {
-        val outcome = "error:rate-limited"
+        val outcome = OutcomeTag.RATE_LIMITED.wire
         val reset = AccountResetText.format(resetEpochSeconds)
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
@@ -138,7 +139,7 @@ internal class TurnTelemetry(
         t0: Long,
         earliestResetEpochSeconds: Long?,
     ) {
-        val outcome = "error:all-accounts-exhausted"
+        val outcome = OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire
         val reset = AccountResetText.format(earliestResetEpochSeconds)
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)

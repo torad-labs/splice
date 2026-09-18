@@ -18,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.SignInPlanner
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
+import splice.control.ControlServer
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -33,7 +34,12 @@ import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Path
+import java.nio.file.Paths
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 import kotlin.time.Duration.Companion.seconds
 
 class LaunchSpecClientAuthTest {
@@ -43,11 +49,11 @@ class LaunchSpecClientAuthTest {
         assertEquals(AuthKind.Client.wire, CLIENT_AUTH_KIND)
     }
 
-    private fun factory(tmp: Path): LaunchSpecFactory {
+    private fun factory(tmp: Path, topology: Topology = Topology()): LaunchSpecFactory {
         val statePaths = StatePaths(baseOverride = tmp)
         val signInPlanner = SignInPlanner()
         return LaunchSpecFactory(
-            topology = Topology(),
+            topology = topology,
             signInPlanner = signInPlanner,
             mgmtKey = MgmtKey(statePaths),
             buildInputs = HeadBuildInputs(ConfigService(statePaths), signInPlanner),
@@ -194,5 +200,127 @@ class LaunchSpecClientAuthTest {
             listOf(shown.id),
             spec.modelOptionsCache.jsonArray.map { it.jsonObject.getValue("value").jsonPrimitive.content },
         )
+    }
+
+    // V4-115: cross-head `-r SESSION_ID` resolves across the OTHER heads' config dirs — and nobody
+    // else's. The list comes from the TOPOLOGY, never from a listing of $HOME: a directory that
+    // merely exists on this machine is not a head this daemon serves, and reading someone's
+    // transcripts from it would be exactly the leak V4-115 removes. The omitted-config_dir arm also
+    // pins the per-head default: `~/.claude-<key>`, never the vanilla ~/.claude.
+    @Test
+    fun `sibling config dirs are the other topology heads, each under its own per-head default`(@TempDir tmp: Path) {
+        val topology = Topology(
+            heads = mapOf(
+                "claude-kimi" to HeadConfig(
+                    provider = "anthropic",
+                    port = 3101,
+                    discoveryPrefix = "claude-kimi--",
+                    pinnedModel = "k3-256k",
+                    claude = ClaudeWrapperConfig(command = "claude-kimi", configDir = "$tmp/kimi"),
+                ),
+                "claude-grok" to HeadConfig(
+                    provider = "anthropic",
+                    port = 3102,
+                    discoveryPrefix = "claude-grok--",
+                    pinnedModel = "grok-4",
+                    claude = ClaudeWrapperConfig(command = "claude-grok"),
+                ),
+            ),
+        )
+
+        val spec = factory(tmp, topology).launchSpecFor(build(tmp, Dialect.ANTHROPIC_PASSTHROUGH), 3099, false)
+
+        assertEquals(
+            listOf(
+                tmp.resolve("kimi").toString(),
+                Paths.get(System.getProperty("user.home"), ".claude-claude-grok").toString(),
+            ).sorted(),
+            spec.trees.siblings.map { it.toString() }.sorted(),
+        )
+        assertFalse(spec.trees.siblings.contains(spec.trees.own), "a head never adopts from itself")
+        assertFalse(
+            spec.trees.siblings.any { it.fileName.toString() == ".claude" },
+            "the vanilla ~/.claude tree is never a resume source",
+        )
+    }
+
+    // V4-119: /statusline/{head} is now guarded(call) (ControlServer.kt:158-159, mgmt-key bearer),
+    // but the command this factory writes into every head's settings used to carry no Authorization
+    // header — so every launched head's status line 401d while the suite stayed green (the suite
+    // tests the route, not the launch-time command string). This pin ties the command's bearer to the
+    // factory's ACTUAL mgmt key (spec.inferenceToken), never a re-guessed token.
+    @Test
+    fun `the statusline command carries the mgmt bearer the guarded route accepts`(@TempDir tmp: Path) {
+        val spec = factory(tmp).launchSpecFor(
+            build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
+            controlPort = 3099,
+            forwardClientAuth = false,
+        )
+        assertTrue(
+            spec.statuslineCommand.contains("Authorization: Bearer ${spec.inferenceToken}"),
+            "the statusline command must carry the mgmt-key bearer — /statusline/{head} is guarded",
+        )
+    }
+
+    // The pin that matters: drive the MATERIALIZED command against a real ControlServer statusline
+    // route and assert the guard passes (200), not 401. The route is registered unconditionally
+    // (ControlServer.kt:158) and `guarded` runs BEFORE any head resolution, so an empty heads map
+    // still exercises the guard: the bearer clears it to a 200, its absence is a 401 — the exact
+    // observable the defect was about. The command is driven as production drives it, via bash.
+    @Test
+    fun `the materialized statusline command clears the guarded route with a 200`(@TempDir tmp: Path) {
+        val paths = StatePaths(baseOverride = tmp)
+        val port = freshPort()
+        val server = ControlServer(
+            port = port,
+            heads = emptyMap(),
+            config = ConfigService(paths),
+            mgmtKey = MgmtKey(paths),
+            dashboardHtml = { "" },
+            log = {},
+        )
+        server.start()
+        try {
+            awaitListening(port)
+            val spec = factory(tmp).launchSpecFor(
+                build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
+                controlPort = port,
+                forwardClientAuth = false,
+            )
+            assertEquals(
+                200,
+                statuslineStatus(spec.statuslineCommand),
+                "materialized command: ${spec.statuslineCommand}",
+            )
+        } finally {
+            server.stop()
+        }
+    }
+
+    /** The statusline command is a shell one-liner (`curl -sS … --data-binary @- …`) with no status
+     *  code of its own: `-sS` prints the body and exits 0 on a 401 too. Append curl's
+     *  `--write-out '%{http_code}'` (body redirected to /dev/null) so the SAME invocation — same
+     *  URL, method, bearer, stdin source — reports the code we assert on. `{}` is the minimal
+     *  statusline payload; the route answers before reading it when the head is unknown. */
+    private fun statuslineStatus(command: String): Int {
+        val driven = "$command --output /dev/null --write-out '%{http_code}'"
+        val process = ProcessBuilder("bash", "-c", driven).start()
+        process.outputStream.use { it.write("{}".toByteArray(Charsets.UTF_8)) }
+        val out = process.inputStream.readBytes().toString(Charsets.UTF_8).trim()
+        check(process.waitFor(10, TimeUnit.SECONDS)) { "statusline command did not exit within 10s: $driven" }
+        return out.toInt()
+    }
+
+    private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
+
+    // Poll the CONDITION (a listening socket) with a deadline, never a sleep-for-a-duration:
+    // Netty binds asynchronously after ControlServer.start(), and a fixed wait is the flaky guess
+    // kt-tests-no-wall-clock forbids. LockSupport.parkNanos is the backoff, not Thread.sleep.
+    private fun awaitListening(port: Int) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
+            check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
+            LockSupport.parkNanos(5_000_000L)
+        }
     }
 }

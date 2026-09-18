@@ -82,4 +82,14 @@ class ClientChannelHeartbeatTest {
         assertTrue(ch.clientGone.get())
         assertTrue(turnJob.isCancelled, "the failed heartbeat cancels the turn: $logs")
     }
+
+    @Test
+    fun `a closed channel on the keepalive write cancels the turn like a dead client`() = runBlocking {
+        val ch = channel { error("Channel is already closed") }
+        val turnJob = Job()
+        val logs = mutableListOf<String>()
+        ch.launchClientPinger(this, turnJob, CountedTicker(1), "codex", { logs += it }, null) {}.join()
+        assertTrue(ch.clientGone.get())
+        assertTrue(turnJob.isCancelled, "the closed-channel keepalive cancels the turn: $logs")
+    }
 }

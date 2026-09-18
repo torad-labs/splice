@@ -19,6 +19,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
 import splice.provider.codex.CodexLegacyKnobs
 import splice.provider.grok.GrokLegacyKnobs
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -91,9 +92,34 @@ internal class HeadBuildInputs(
                 firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
                 streamIdle = headCfg.streamIdleMs.milliseconds,
                 totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+                // V4-116: arm the mid-output stall-re-anchor tier only where a continuation EXISTS.
+                // This is the one place the fact lives — the watchdog is handed a budget, not a
+                // provider, so arming has to happen where the two meet, and that is here.
+                stallReanchor = stallReanchorFor(resolvedProvider, headCfg),
             ),
             cfg = headCfg,
             loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).command,
         )
+    }
+
+    /** V4-116: is the MID-OUTPUT STALL RE-ANCHOR tier armed for THIS head?
+     *
+     *  Only when the upstream has been MEASURED to continue from an assistant prefill
+     *  ([QuirksConfig.reanchorPrefill] — deepseek and kimi, probed 2026-09-16; muse answers the shape
+     *  with a 400). The asymmetry is the whole argument: for a prefilling head an early reap is
+     *  INVISIBLE, because the round is resumed from its own salvage and the client reads one
+     *  continuous message, while a head with no continuation would just end the turn ~280s sooner
+     *  for the same error and could only ever cost a slow-but-alive generation. So a head that
+     *  cannot be resumed keeps [WatchdogBudget.streamIdle] as its floor, exactly as before this tier
+     *  existed — the "hard floor for providers with prefill off" half of the row.
+     *
+     *  The value is read from `getConfig(key)`, never the global view: heads share one ConfigService,
+     *  so a tier tuned for one upstream must not govern all of them. `0` is the documented "off"
+     *  spelling and is coerced to INFINITE rather than to a zero-length tier, which would reap every
+     *  mid-output round on its very first poll. */
+    private fun stallReanchorFor(provider: ProviderConfig, headCfg: SpliceConfig): Duration {
+        if (provider.quirks.reanchorPrefill != true) return Duration.INFINITE
+        val ms = headCfg.stallReanchorMs
+        return if (ms <= 0) Duration.INFINITE else ms.milliseconds
     }
 }

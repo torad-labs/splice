@@ -52,7 +52,13 @@
      rule at y24, which is where the label's line box ends at this size. The
      comp sets its strips smaller than the ladder's floor; the floor wins, so
      the longest values run out of their columns rather than shrink below it. */
-  padding: var(--space-4) 0 var(--space-0);
+  /* The comp's label row is 4px deep, not 12: its rule sits 19px below the
+     plate's top (lead-strip-2 measures it at row 19 of a plate that starts at
+     0), and the label's line box ends where that rule is. */
+  padding: var(--space-2) 0 var(--space-0);
+  /* the comp's rules between cells are the same ink as the rule under the label
+     row: it prints one weight of rule on the whole strip */
+  border-inline-end: var(--hair) solid var(--strip-ink-mute);
 }
 .myx-board .myx-sfield-label {
   display: block;
@@ -62,7 +68,9 @@
   width: 128.2%;
   transform: scaleX(0.78);
   transform-origin: left center;
-  border-bottom: var(--hair) solid var(--strip-field-line);
+  /* the comp's rule under the label row measures #5e5d50, which is the mute
+     ink, not the light field line the primitive defaults to */
+  border-bottom: var(--hair) solid var(--strip-ink-mute);
 }
 .myx-board .myx-sfield-value {
   font-weight: 600;
@@ -115,11 +123,16 @@
 /* session strips: regions lead-strip/2/3 (frame x10.5 w25.5 h6.5, y20/30/39.5)
    inside bay-claude, and builder-strip/2/3 (frame x39.7 w25.5, same ys) inside
    bay-deepseek. */
-.myx-board-strip { left: 2.5%; width: 91.071%; height: 8.228%; }
+/* The comp's plates are 90-94% of the region they were measured into, not the
+   whole of it, and its first line is inset 3px where the rest start at the
+   region's top: the region boxes are generous, the ink is not. These are the
+   comp's own plate extents (63px for line one, 60-61px for the rest of the
+   rack, on a 67px region), converted against the bay's 808.9px. */
+.myx-board-strip { left: 2.5%; width: 91.071%; }
 .myx-board-bay-1 .myx-board-strip { left: 2.545%; width: 92.727%; }
-.myx-board-strip-0 { top: 8.228%; }
-.myx-board-strip-1 { top: 20.886%; }
-.myx-board-strip-2 { top: 32.911%; }
+.myx-board-strip-0 { top: 8.599%; height: 7.788%; }
+.myx-board-strip-1 { top: 20.886%; height: 7.479%; }
+.myx-board-strip-2 { top: 32.911%; height: 7.541%; }
 
 /* the empty slots of the rack, below the strips (each one's top is set inline,
    from the same rack rhythm) */
@@ -143,9 +156,11 @@
 }
 /* The comp's gesture, read off its own pixels: the live strip's top-right
    corner sits at the region's right edge and its top-left lands 47px lower, so
-   the cluster is a 612x56 strip turned 4.41 degrees, with each ghost a further
-   88px down and 34px left. The percentages below are those offsets over the
-   strip's own box, which is what a transform's translate resolves against. */
+   the cluster is a 608x58 strip turned 4.41 degrees. Its ghosts walk down and
+   away to the left -- the comp's envelope reaches the region's left edge only
+   in the bottom band, which is most of a strip-width from the live one, so the
+   deck spreads wider than a nudge. The percentages are offsets over the strip's
+   own box, which is what a transform's translate resolves against. */
 .myx-board-handoff .myx-strip { position: relative; height: 100%; }
 /* Both lifted rows are tighter than a racked one. The chat's label row starts
    at y8 against the rack's y13, with its value at y30; the hand-off's label
@@ -159,16 +174,18 @@
 .myx-board-ghost {
   position: absolute;
   left: 14.14%;
-  /* the comp's live strip turns about a centre that puts its top-right corner
-     on the region's top edge; at this height that is 14% down */
-  top: 14%;
+  /* the comp's live plate, read down the region's middle columns where only it
+     is present: rows 31..83 of a 164px region */
+  top: 14.6%;
   width: 84.76%;
-  height: 34.1%;
+  height: 35.4%;
 }
 .myx-board-handoff-live { transform: rotate(-4.41deg); z-index: 3; }
-.myx-board-ghost { filter: brightness(0.62) saturate(0.8); }
-.myx-board-ghost-1 { transform: rotate(-4.41deg) translate(-5.56%, 157%); z-index: 2; }
-.myx-board-ghost-2 { transform: rotate(-4.41deg) translate(-11.11%, 314%); z-index: 1; }
+/* the comp's ghosts measure 0.5 of the plate's cream (110,105,94 against
+   #ded9c6), not the 0.62 a default dim would give */
+.myx-board-ghost { filter: brightness(0.5); }
+.myx-board-ghost-1 { transform: rotate(-4.41deg) translate(-30%, 110%); z-index: 2; }
+.myx-board-ghost-2 { transform: rotate(-4.41deg) translate(-105%, 245%); z-index: 1; }
 
 /* --- the chat bay: region chat-bay (frame x68 y13.5 w31 h42) --- */
 .myx-board-bay-chat { left: 64.835%; top: 8.174%; width: 34.066%; height: 44.586%; }
@@ -187,7 +204,9 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 25.8%;
+  /* each chat row carries its own top and height inline, read off the comp's
+     plates (82, 69 and 72px on a 287px region, at 0, 106 and 200) */
+  height: 100%;
   overflow: hidden;
 }
 /* The comp wraps a message too long for its line. This is the one field in the

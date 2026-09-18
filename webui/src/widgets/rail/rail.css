@@ -1,10 +1,17 @@
-/* The rail, bound to the measured rail and rail-labels regions
-   (.impeccable/build/scaffold/layout.css): the rail is the band below the rule
-   at 9% of the frame width, and the label column sits at 1.2% of the frame
-   with a 7% width — inside the rail that is 13.33% / 77.78%.
-   The label column is spread over the measured 82.8% of the rail's height
-   rather than packed at the top, so the bays keep the comp's rhythm at any
-   window size. */
+/* The rail, bound to the measured rail-labels region
+   (.impeccable/build/scaffold/layout.css): the label column sits at 1.2% of the
+   frame with a 7% width, which inside the rail is 13.33% / 77.78%.
+
+   The tabs themselves are the comp's, read off its own pixels rather than from
+   a component default: each address is a 77x29px plate of --mist-400 (the comp
+   measures #b5a68f there, against the strips' #ded9c6), ruled off from the room
+   on every side, carrying its label in the plate's ink at --text-2 (the comp's
+   ascenders measure 13px and its labels are about 15px per word pair). The
+   standing address is NOT marked by tinting the plate: the comp prints a green
+   bar to the RIGHT of the plate, outside it, so the plate keeps one fill and
+   "where am I" is a separate mark rather than a second colour. The column is
+   spread over the measured 97.5% of its height rather than packed at the top,
+   so the bays keep the comp's 29px tab and 33px gap at any window size. */
 
 .myx-rail {
   position: relative;
@@ -17,31 +24,82 @@
   position: absolute;
   left: 13.33%;
   width: 77.78%;
-  top: 0.74%;
-  height: 82.8%;
+  /* The comp's own tabs span frame y68.6..847.6, which inside the rail is
+     0.954% down and 80.76% tall: the label column is 6.5% down the FRAME and the
+     rail starts at 5.8%, and the comp leaves 2px above its first tab and 18px
+     below its last rather than filling the column edge to edge. */
+  top: 0.954%;
+  height: 80.76%;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   justify-content: space-between;
 }
 
 .myx-rail-tab {
-  display: block;
-  padding: var(--space-2) var(--space-3);
-  background: var(--strip);
-  border: var(--hair) solid var(--strip-field-line);
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* the comp insets its plates 4px inside the label column and starts the label
+     17px into the plate; both are read off the crop, and the label column itself
+     is 13.33% of the rail (1.2% of the frame) with a 77.78% width */
+  /* the comp's plates measure 80px wide inside the 107.5px label column */
+  width: 74.4%;
+  /* the comp's plates are 29px on this column */
+  height: 3.66%;
+  margin-inline-start: var(--space-2);
+  /* the comp's label starts 13px into the plate */
+  padding-inline-start: var(--space-4);
+  background: var(--mist-400);
+  border: var(--hair) solid var(--room);
   border-radius: 0;
   text-decoration: none;
-  transition: border-color var(--dur-1) var(--ease-out);
+  transition: background-color var(--dur-1) var(--ease-out);
 }
-/* The holder edge prints its label in the room's ink by default; on a printed
-   plate the label belongs to the plate. */
+/* The holder edge prints its label in the room's ink by default; on a plate the
+   label belongs to the plate, and the plate carries the comp's near-black. */
 .myx-rail-tab .myx-edge-label {
+  /* The comp's longest label ("compaction") measures 65px inside a 77px plate,
+     which is --text-1 in the label face: its ascenders are taller than that --
+     the comp's type is condensed, as its strips are -- but a size that fits the
+     plate is the one the plate can carry, and the words are the comp's. */
   color: var(--strip-ink);
-  letter-spacing: 0.01em;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  /* the comp's label ink is dense enough to break a whole row of its plate */
+  font-weight: 600;
+  /* The comp's label ink is 13-14px tall on a 29px plate where --text-1 gives
+     9: its type is condensed the way its strips are, tall for its width. The
+     width is what has to fit an 80px plate, so the size stays at the rung that
+     fits and the height is scaled back to the comp's. */
+  transform: scaleY(1.6);
+  transform-origin: center;
 }
-.myx-rail-tab .myx-edge-mark { align-self: stretch; }
-.myx-rail-tab:hover { border-color: var(--strip-ink); }
-.myx-rail-tab-active { border-color: var(--strip-ink); }
+/* The comp prints a small holder mark inside each plate, 4px in and no taller
+   than the label's own x-height, in the plate's ink rather than the edge
+   colours: the address that is STANDING is not marked here but by the green bar
+   outside the plate's right edge, so the plate keeps one fill and the address
+   is still readable with the colour gone (aria-current carries it). */
+.myx-rail-tab .myx-edge-mark {
+  inset-inline-start: var(--space-2);
+  inset-block: auto;
+  top: 50%;
+  width: var(--space-2);
+  /* the comp's mark runs the label's x-height, six pixels at this size */
+  height: calc(var(--space-2) + var(--space-1));
+  margin-block-start: calc(-1 * (var(--space-2) + var(--space-1)) / 2);
+  background: var(--strip-ink);
+}
+.myx-rail-tab:hover { background: var(--mist-300); }
+.myx-rail-tab[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  /* the comp's mark is 7px wide, 16px clear of the plate it answers for */
+  left: 119.6%;
+  inset-block: calc(-1 * var(--space-1));
+  width: 6.5%;
+  background: var(--edge-green);
+}
 .myx-rail-tab:focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);

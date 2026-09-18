@@ -106,7 +106,7 @@ arm "a recorded ledger deleted outright" RED "$d" "RECORDED BUT GONE"
 
 # 4b — DR-189, THE BORING CASE ONE DIRECTORY DOWN. law_registry.toml carries "a row may NEVER be
 #      deleted to silence the gate" in its own header, and nothing enforced it: its wall
-#      (inf_02_every_law_walled.py) iterates the very rows it grades, so a deleted row is simply
+#      (inf_02_every_law_walled.ts) iterates the very rows it grades, so a deleted row is simply
 #      absent from the denominator. Truncating it 19 laws to 1 left the campaign wall gate, the
 #      campaign selftest and this floor ALL green — measured, not argued. The floor's glob was
 #      one level deep, so "campaign memory" silently meant "whatever sits at the top of the

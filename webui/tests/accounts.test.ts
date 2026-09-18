@@ -397,6 +397,14 @@ describe('the coverage manifest', () => {
   // would put this test back in the business of going red every time the daemon ships a route,
   // which is how a wall gets edited to match reality instead of the other way round.
   test('every entry is a route, and every pending one names the row that will land it', () => {
+    // The denominator first. Without this line both assertions below are VACUOUS on an empty list —
+    // `[].every(...)` is true and a for-loop over `[]` never runs its body — so emptying the
+    // manifest entirely leaves this test a green tick at 0ms. Measured, not reasoned: it passes on
+    // an emptied array while the two siblings in this file go red, which is the only reason the
+    // file stays covered. Found by code-reviewer the same night law 23 was being enforced
+    // elsewhere, in a wall I had just relaxed from pinning a set to asserting a property — the
+    // relaxation was right and it removed the thing that was implicitly counting.
+    expect(dispositions.length).toBeGreaterThan(0);
     expect(dispositions.every((entry) => entry.kind === 'route')).toBe(true);
     for (const entry of dispositions.filter((e) => e.disposition === 'pending')) {
       expect(entry.where, `${entry.name} is pending and names no row`).toMatch(/^V4-\d+$/);

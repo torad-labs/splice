@@ -247,7 +247,14 @@ export function largestUnprintedRect(im, cut, cell = 8) {
            x: best.x * cell, y: best.y * cell, w: best.w * cell, h: best.h * cell };
 }
 
-if (process.argv.includes('--selftest')) {
+// THE SELFTEST IS GUARDED TOO (M2-23). The entry-point guard below covers the main body, but this
+// branch kept its own `process.argv.includes('--selftest')` test -- so importing this module from
+// ANOTHER instrument run with --selftest ran THIS file's tests and exited the process, and the
+// importing instrument's own selftest never executed. Measured: printed-bands.mjs --selftest printed
+// density's five cases and exited, which made its verify green for a reason it did not earn.
+const isSelfTest = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+
+if (isSelfTest && process.argv.includes('--selftest')) {
   // The two ends the classifier must pin, and the rectangle finder must find a planted hole.
   const mk = (fill) => { const d = Buffer.alloc(64 * 64 * 3, fill); return { w: 64, h: 64, data: d }; };
   let bad = 0;

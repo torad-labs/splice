@@ -33,6 +33,7 @@ const SRC = path.join(ROOT, 'webui/src');
 const ENTITIES = path.join(SRC, 'entities');
 const PAGES = path.join(SRC, 'pages');
 const DENSITY = path.join(ROOT, 'webui/.impeccable/review/density/density.json');
+const CONTROL_CLIENT = path.join(SRC, 'shared/api/index.ts');
 
 const ARGS = process.argv.slice(2);
 const flagOf = (name, dflt) => { const at = ARGS.indexOf(`--${name}`); return at === -1 ? dflt : ARGS[at + 1]; };
@@ -51,9 +52,61 @@ function filesUnder(dir, ext) {
   return out;
 }
 
+/**
+ * THE SHARED CONTROL CLIENT (M2-25): the routes eight entities fetch through, and the payload
+ * fields those routes serve.
+ *
+ * WHY THIS EXISTS. This census's route column was built by matching literal `/api/...` strings in
+ * each entity's own `api/` files, and eight entities do not have one: auth, compact-stats, config,
+ * control-status, economics, heads, logs and usage all fetch through `@shared/api`, so the parser
+ * read them as serving NOTHING. Measured on compaction, which is the page that made the hole
+ * visible: `entities/compact-stats/api/index.ts` is four lines and its only call is
+ * `control.compact()`, and the census printed `0 routes, 0 served fields, 0 printed` and called the
+ * surface EXHAUSTED. The page plainly reads data.
+ *
+ * THAT HOLE MATTERED IN ONE DIRECTION, which is why M1-118's answer had to be re-checked rather
+ * than re-argued. Its headroom is an under-estimate on the print side and an over-estimate on the
+ * available side, and those two biases push opposite ways so the direction of the answer survives
+ * both. A MISSING ENTITY IS NEITHER: it is an absence, and an absence cannot be corrected by a bias
+ * argument. If an entity serving less than its pages print was invisible, a page read as having
+ * headroom may in fact be exhausted, and a composition row cut for it would be the padded page
+ * M1-111 refused.
+ *
+ * THE ENDPOINT MAP IS READ FROM THE CLIENT ITSELF, not from a list of eight names written here: a
+ * ninth entity that starts fetching through the client is covered the moment it does, and a list
+ * could not fail for one missing from itself (law 24).
+ */
+export function readControlClient(clientFile = CONTROL_CLIENT) {
+  const text = fs.readFileSync(clientFile, 'utf8');
+  // `name: () => request<T>('route')`, and the multi-line form `config: (head?: string) =>\n
+  // request<...>(...)`. The lazy span between the name and `request<` covers both.
+  const endpoints = new Map();
+  // THE NAME MUST BE FOLLOWED BY A PARAMETER LIST AND AN ARROW, and the first cut did not require
+  // it: with the arrow optional, the lazy span let an INTERFACE PROPERTY be taken for an endpoint
+  // name -- `served_a: string;` sat within the 90-character window of the `request<...>` after it,
+  // so the map held `served_a` instead of `ping` and the entity still read as serving nothing. The
+  // selftest's two client cases caught it; every endpoint in this client is an arrow function.
+  for (const m of text.matchAll(/(\w+):\s*\([^)]*\)\s*=>[\s\S]{0,90}?request<\s*([\w| ]+)\s*>\s*\(\s*[`'"]([^`'"]+)[`'"]/g)) {
+    endpoints.set(m[1], { route: m[3], type: m[2].trim() });
+  }
+  const fields = new Map();
+  for (const m of text.matchAll(/export interface (\w+) \{([\s\S]*?)\n\}/g)) {
+    const names = new Set();
+    for (const p of m[2].matchAll(/^\s{2}([a-z_]+)\??:/gm)) names.add(p[1]);
+    // ONE LEVEL INTO AN INLINE OBJECT, because that is what a page reads: CompactPayload is
+    // `{ stats: { total, by_outcome, tail } }` and the page prints `total`, not `stats`.
+    for (const p of m[2].matchAll(/^\s{2}([a-z_]+)\??:\s*\{([^}]*)\}/gm)) {
+      for (const inner of p[2].matchAll(/([a-z_]+)\??:/g)) names.add(inner[1]);
+    }
+    fields.set(m[1], [...names]);
+  }
+  return { endpoints, fields };
+}
+
 /** THE ROUTES THE CONSOLE CAN READ, and the fields each one serves, both parsed from the entity. */
-export function readEntities(root = ENTITIES) {
+export function readEntities(root = ENTITIES, clientFile = CONTROL_CLIENT) {
   const entities = new Map();
+  const client = readControlClient(clientFile);
   for (const dir of fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory())) {
     const entity = dir.name;
     const apiFiles = filesUnder(path.join(root, entity, 'api'), /\.ts$/);
@@ -70,6 +123,19 @@ export function readEntities(root = ENTITIES) {
       const text = fs.readFileSync(f, 'utf8');
       for (const m of text.matchAll(/export interface \w+ \{([\s\S]*?)\n\}/g)) {
         for (const f2 of m[1].matchAll(/^\s{2}([a-z_]+)\??:/gm)) fields.add(f2[1]);
+      }
+    }
+    // ---- THE SHARED CONTROL CLIENT (M2-25). FOLLOWED, NOT LISTED. An entity that fetches through
+    // `@shared/api` has no literal /api path of its own, so the loop above reads it as serving
+    // nothing at all -- which is what made compaction print 0/0/0 and read as an exhausted surface
+    // on a page that plainly reads data. The call site names the endpoint and the client's own map
+    // names the route and its payload type, so an entity added tomorrow is covered when it calls.
+    for (const f of typeFiles) {
+      for (const m of fs.readFileSync(f, 'utf8').matchAll(/\bcontrol\.(\w+)\s*\(/g)) {
+        const ep = client.endpoints.get(m[1]);
+        if (ep === undefined) continue;
+        routes.add(ep.route);
+        for (const fl of client.fields.get(ep.type) ?? []) fields.add(fl);
       }
     }
     // PENDING constants cite the row that will serve them: quoted, not retyped.
@@ -188,6 +254,25 @@ function selftest() {
   // MUTATION: a page printing everything it holds has NO headroom -- the gateway case.
   fs.writeFileSync(path.join(tmp, 'pages/thing/index.tsx'), "import { useThing } from '@entities/thing';\nrow.alpha; row.beta; row.gamma;\n");
   check('a page printing every field has headroom zero', census(readPages(path.join(tmp, 'pages'), e), e)[0].headroom, 0);
+  // ---- THE CLIENT-FETCHED SHAPE (M2-25), AND ITS MUTATION. Two cases for the shape and one that
+  // proves the shape can be LOST: an entity whose api file has no literal /api path at all is the
+  // thing this extension exists for, and a check for it that cannot fail is worse than none.
+  fs.mkdirSync(path.join(tmp, 'entities/viaclient/api'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'shared/api'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'entities/viaclient/api/index.ts'),
+    "import { control } from '@shared/api';\nexport const go = () => control.ping();\n");
+  fs.writeFileSync(path.join(tmp, 'shared/api/index.ts'),
+    "export interface PingPayload {\n  served_a: string;\n  served_b: number;\n}\nconst api = {\n  ping: () => request<PingPayload>('/api/ping'),\n};\n");
+  const clientPath = path.join(tmp, 'shared/api/index.ts');
+  const viaClient = readEntities(path.join(tmp, 'entities'), clientPath);
+  check('a client-fetched route is followed into the client map', viaClient.get('viaclient').routes, ['/api/ping']);
+  check('and the payload fields it serves come with it', viaClient.get('viaclient').fields, ['served_a', 'served_b']);
+  // MUTATION: the same entity against a client whose map is empty. This is the state the census
+  // was in for eight entities -- and it must read as serving NOTHING, or the extension is not
+  // what changed the answer.
+  fs.writeFileSync(clientPath, 'const api = {};\n');
+  check('MUTATION: without the client map the entity reads as serving nothing',
+    readEntities(path.join(tmp, 'entities'), clientPath).get('viaclient').routes, []);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(bad === 0 ? '\nselftest: ok' : `\nselftest: ${bad} wrong`);
   process.exit(bad === 0 ? 0 : 1);

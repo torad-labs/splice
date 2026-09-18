@@ -25,6 +25,7 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import splice.core.auth.Credentials
+import splice.core.wire.HttpStatus
 
 /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
  *
@@ -153,10 +154,11 @@ internal class UpstreamRequest(
             ctx.auth.isQuotaExhausted(realStatus, body)
         if (!exhausted) return realStatus
         ctx.onRetry(
-            "upstream $realStatus is a quota exhaustion — treating it as $RATE_LIMITED so the " +
-                "retry, cooldown and pool layers see the rate limit it is",
+            "upstream $realStatus is a quota exhaustion — treating it as " +
+                "${HttpStatus.TOO_MANY_REQUESTS} so the retry, cooldown and pool layers see the " +
+                "rate limit it is",
         )
-        return RATE_LIMITED
+        return HttpStatus.TOO_MANY_REQUESTS
     }
 }
 

@@ -32,6 +32,7 @@ private const val EXIT_WAIT_MS = 1_000L
 
 /** A child that lived shorter than this is a crash, and two in a row are a crash loop. */
 private const val CRASH_LOOP_MS = 30_000L
+
 // V4-122: MCP_-prefixed because this is the MCP hosted-server's child-restart backoff, and the
 // name BACKOFF_BASE_MS was ALSO carried by UpstreamTransport.kt for the retry curve at 200ms — one
 // name over two unrelated budgets, which the checker held as a scar because whoever greps the name

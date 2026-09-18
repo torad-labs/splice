@@ -58,11 +58,29 @@
 // data measure 21.15% (teams), 17.53% (mcp) and 3.66% (fleet) paper, while the honest empties
 // (projects) measure 0.00% in both rooms. The gap between 3.66 and 0.01 is why PAPER_AT is 0.02.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file.
+//   SHAPE ONE, does every FAIL reach the exit code? YES in the capture path, and it did before: a
+//     claim that fails throws out of capturePage and the catch below exits 1 with the reasons by
+//     name; `--theme nonsense` and a missing url exit 2. In the SWEEP path it did not, twice over,
+//     and both are fixed below. Separately, the whole CLI hung off `import.meta.url ===
+//     file://${argv[1]}`, false on any checkout path holding a character a URL escapes — measured
+//     on the identical guard in law-check.mjs, and re-measured here on a copy under a directory
+//     named `has space`: fixed, `swept 8 frame(s)`, exit 0; string form, nothing printed, exit 0.
+//   SHAPE TWO, if every frame threw, what would it print? IT PRINTED A CLEAN SWEEP. `--sweep` walked
+//     each directory in a try/catch whose catch only printed, so an unreadable or renamed directory
+//     contributed no frames, no frames contributed no blanks, and `process.exit(blanks.length === 0)`
+//     read that as a pass: `swept 0 frame(s) ... 0 flat fill(s)`, exit 0. Both emptinesses are now
+//     named and exit 2 — the directory nobody could read, and the readable directory holding no
+//     .png, which is the boring case §24 says gets waved through. Measured 2026-09-18: 8 frames
+//     exit 0; a renamed directory exit 2; an empty one exit 2; and with FLAT_AT dropped to 0.02 the
+//     blanks branch still exits 1, so the mode's original failure was not swallowed by the fix.
+//
 // Usage: node .dev/web-console/capture.mjs '<url>' <absolute out.png> [<width> <height>]
 //        node .dev/web-console/capture.mjs --sweep <dir> [<dir> ...]     check frames already on disk
 //        node .dev/web-console/capture.mjs --help
 import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { shoot, show, withChrome } from './lib/cdp.mjs';
 import { THEMES, themeValues } from './theme.mjs';
 import { colorFraction, decodePng, hexToRgb } from './lib/png.mjs';
@@ -112,11 +130,21 @@ a flat fill, and a ?fixture=<name> URL carries data-sample="<name>" on the root.
 --sweep decodes frames already on disk and applies the part of the same predicate a PNG can answer
 (the flat-fill half), naming the blanks and exiting non-zero if there are any.`;
 
-/** The CLI runs only when this file IS the program: gate.mjs imports capturePage from here, and an
- *  unguarded body made that import run a capture with the gate's own argv (measured 2026-09-18:
- *  `gate.mjs census --out ... --dry-run` tried to navigate to 'census' and threw a CDP bindings
- *  error before it ever reached the dry run). */
-const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+/**
+ * The CLI runs only when this file IS the program: gate.mjs imports capturePage from here, and an
+ * unguarded body made that import run a capture with the gate's own argv (measured 2026-09-18:
+ * `gate.mjs census --out ... --dry-run` tried to navigate to 'census' and threw a CDP bindings
+ * error before it ever reached the dry run).
+ *
+ * pathToFileURL AND NOT `file://${argv[1]}` (M1-76). import.meta.url is percent-encoded and argv[1]
+ * is not, so on a checkout path holding a space the string form is FALSE when this file IS the
+ * program and the whole CLI silently does nothing — `--sweep` included, which would exit 0 having
+ * swept nothing and printed nothing at all. Measured on law-check.mjs, which carried the identical
+ * guard: the same file printed 97 rows from this worktree and printed NOTHING, exit 0, from a copy
+ * under a directory named `has space`. theme.mjs and snapshot.mjs fixed this in M1-60; this file
+ * and law-check.mjs and type-ladder.mjs were the three left behind.
+ */
+const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMain && (process.argv.length <= 2 || process.argv.includes('--help'))) {
   console.log(HELP);
@@ -250,8 +278,16 @@ if (isMain && argv[0] === '--sweep') {
       else if (entry.endsWith('.png')) frames.push(path);
     }
   };
+  // A DIRECTORY THIS COULD NOT READ IS A FINDING, NOT AN ASIDE (M1-76). This printed
+  // `  (no such directory: X)` to stderr and carried on, and nothing downstream remembered it: the
+  // exit rule below reads `blanks`, and a directory that was never walked contributes no frames, so
+  // it contributes no blanks either. Point the sweep at a renamed capture directory and it printed
+  // `swept 0 frame(s) ... 0 flat fill(s)` and exited 0 — the report a clean sweep gives, for a
+  // sweep that read nothing. Law 34's shape exactly: the denominator emptied itself for a reason
+  // that has nothing to do with the property being checked.
+  const unread = [];
   for (const dir of dirs) {
-    try { walk(dir); } catch { console.error(`  (no such directory: ${dir})`); }
+    try { walk(dir); } catch (error) { unread.push(`${dir}: ${error.message}`); }
   }
   const blanks = [];
   for (const path of frames) {
@@ -262,9 +298,15 @@ if (isMain && argv[0] === '--sweep') {
     if (flat) blanks.push(`${path} (${(frame.share * 100).toFixed(1)}% ${frame.colour})`);
     console.log(`  ${flat ? 'BLANK' : 'ok   '} ${(frame.share * 100).toFixed(1).padStart(5)}% top colour  ${(paper * 100).toFixed(2).padStart(6)}% paper  ${path}`);
   }
-  console.log(`\nswept ${frames.length} frame(s) across ${dirs.length} director(ies): ${blanks.length} flat fill(s)`);
+  console.log(`\nswept ${frames.length} frame(s) across ${dirs.length - unread.length} of ${dirs.length} director(ies): ${blanks.length} flat fill(s)`);
   for (const blank of blanks) console.error(`BLANK ${blank}`);
-  process.exit(blanks.length === 0 ? 0 : 1);
+  for (const dir of unread) console.error(`DID NOT RUN ${dir}`);
+  // AND THE EMPTY SWEEP ITSELF, separately from the unreadable one: every named directory can be
+  // readable and hold no .png at all (the capture step failed, or the frames go somewhere else
+  // now), and `0 blanks of 0 frames` is not a pass. Law 23 — a check must be able to say it did
+  // not run — and this is that sentence.
+  if (frames.length === 0) console.error(`DID NOT RUN: no .png found under ${dirs.join(', ')} — a sweep of nothing is not a clean sweep`);
+  process.exit(unread.length > 0 || frames.length === 0 ? 2 : (blanks.length === 0 ? 0 : 1));
 }
 
 // ------------------------------------------------------------------ the capture

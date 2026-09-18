@@ -39,7 +39,7 @@ law_present = true
 
 [[law]]
 tag = "WAVE-0-IS-THE-NET"
-wall = "dev/campaigns/proxy-hardening/walls/law_wave0_is_the_net.py"
+wall = "dev/campaigns/proxy-hardening/walls/law_wave0_is_the_net.ts"
 note = "no W4/W5 item done while CX-19 is unfinished"
 law_present = true
 

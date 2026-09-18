@@ -41,6 +41,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
+import { decodePng } from './lib/png.mjs';
 import { LOOK_DIR, nameFor, snapshot } from './snapshot.mjs';
 
 const ARGS = process.argv.slice(2);
@@ -147,10 +148,344 @@ function compReference() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// THE COMP'S OWN TYPE, BY AREA (M1-22 Half One).
+//
+// Why this had to exist: the build side of this comparison is area-weighted and the comp side was a
+// census of seven named regions, so the row was comparing a weighted number to an unweighted one —
+// the defect this campaign has made repeatedly. The comp is a raster, so its type is measured the
+// way a reader sees it: ink, grouped into lines, weighted by how many pixels each size actually
+// covers.
+//
+// THREE RULES, each one a correction to a mask that was already tried and was wrong:
+//
+//   GROUND PER BAND, NOT PER REGION. The first mask took one ground per declared region, so a box
+//   holding two grounds (a strip's paper over the room behind it) counted the paper as ink and the
+//   measurement collapsed — every text line measured as tall as its strip. A band here is a run of
+//   rows with a stable palette, and its ground is the two most common colours IN THAT BAND, because
+//   a band through a rack legitimately holds both the paper and the room. Ink is what differs from
+//   both, which is text and not the boundary between two grounds.
+//
+//   LINES, NOT REGIONS. Ink rows are grouped into runs and each run is one line of text with its
+//   own ink height and its own ink area. A region is a box somebody declared; a line is what the
+//   eye reads, and the reviewer's blind pass measured lines too.
+//
+//   COVERAGE BESIDE EVERY NUMBER. Ink is a fraction of the frame, and a line of type over an empty
+//   room is a different fact from the same line over a rack. Every band prints its own coverage so
+//   a reader can see how much of that band is ink at all, and a band that is 0.2% ink cannot be
+//   mistaken for a body of text.
+const COMP_TOLERANCE = 42;   // channel distance that separates ink from either ground of a band
+const COMP_MIN_RUN = 6;      // ink pixels in a row before that row counts as carrying a line
+
+/** The modal colours of a row, sampled across it. */
+function rowPalette(png, y, step = 2) {
+  const { width, channels, pixels } = png;
+  const counts = new Map();
+  for (let x = 0; x < width; x += step) {
+    const at = (y * width + x) * channels;
+    const key = `${pixels[at]},${pixels[at + 1]},${pixels[at + 2]}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+/**
+ * The comp's text, as lines with a height and an area, and the area-weighted distribution of those
+ * heights. `bands` is published so the denominator is visible rather than implied.
+ */
+export function compType(png) {
+  const { width, height, channels, pixels } = png;
+  const near = (a, b) => Math.abs(a[0] - b[0]) <= 6 && Math.abs(a[1] - b[1]) <= 6 && Math.abs(a[2] - b[2]) <= 6;
+  const rgbAt = (x, y) => { const i = (y * width + x) * channels; return [pixels[i], pixels[i + 1], pixels[i + 2]]; };
+  const far = (c, ground) => Math.max(
+    Math.abs(c[0] - ground[0]), Math.abs(c[1] - ground[1]), Math.abs(c[2] - ground[2])) > COMP_TOLERANCE;
+
+  // 1. The GROUNDS: the comp's flat colours, measured over the whole frame.
+  //
+  //    Not per row and not per region. A band taken per row re-segments itself across a line of
+  //    text - the rows carrying ink have a different palette from the rows between letters, so one
+  //    line becomes three bands and every line reports as a few 3px slivers. (Measured: that is
+  //    exactly what the previous attempt produced, 25 percent of its ink at a 3px "height".) The
+  //    comp is a printed world with a handful of flat tones, so the grounds are a property of the
+  //    IMAGE and are measured once: every colour covering at least one percent of the frame, plus
+  //    its immediate neighbours, is a ground; ink is whatever is far from all of them.
+  const palette = new Map();
+  for (let y = 0; y < height; y += 3) {
+    for (let x = 0; x < width; x += 3) {
+      const i = (y * width + x) * channels;
+      const key = `${pixels[i]},${pixels[i + 1]},${pixels[i + 2]}`;
+      palette.set(key, (palette.get(key) ?? 0) + 1);
+    }
+  }
+  const sampled = [...palette.values()].reduce((sum, n) => sum + n, 0);
+  // CLUSTERED, because a flat tone in a raster is not one colour: every edge carries an
+  // anti-aliased ramp of a dozen near-tones, and taking colours at a threshold would make the ramp
+  // a ground and the tone itself ink. Sorting by coverage and folding each colour into the first
+  // cluster it is close to leaves the frame's actual flat grounds, and the ramp is absorbed with the
+  // tone it belongs to.
+  const clusters = [];
+  for (const [key, n] of [...palette.entries()].sort((a, b) => b[1] - a[1])) {
+    const colour = key.split(',').map(Number);
+    const home = clusters.find((c) => near(c.colour, colour));
+    if (home === undefined) clusters.push({ colour, n });
+    else home.n += n;
+  }
+  const grounds = clusters.filter((c) => c.n / sampled >= 0.01).map((c) => c.colour);
+  const bands = [{ start: 0, end: height - 1, palette: grounds }];
+  const groundShare = clusters.filter((c) => c.n / sampled >= 0.01).reduce((sum, c) => sum + c.n, 0) / sampled;
+  // A MASK THAT CANNOT FAIL MUST SAY SO (law 23). If the grounds it derived cover essentially the
+  // whole frame, nothing can be ink and every table below is empty for a reason the reader cannot
+  // see - which is how a broken instrument reads as a clean result.
+  const blind = groundShare > 0.98;
+
+  // 2. Ink rows per band, against BOTH of the band's grounds.
+  const lines = [];
+  const report = [];
+  for (const band of bands) {
+    const grounds = band.palette;
+    if (grounds.length === 0) continue;
+    if (grounds.length > 5) continue;
+    const inkRows = [];
+    const firstX = new Map();   // the first and last ink x of a row, for the line's own extent
+    const lastX = new Map();
+    const maxStrokes = new Map();
+    for (let y = band.start; y <= band.end; y += 1) {
+      let ink = 0;
+      let strokes = 0;      // contiguous x segments of ink in this row
+      let inStroke = false;
+      let lo = -1; let hi = -1;
+      for (let x = 0; x < width; x += 1) {
+        const c = rgbAt(x, y);
+        const isInk = grounds.every((ground) => far(c, ground));
+        if (isInk) {
+          ink += 1; if (!inStroke) strokes += 1;
+          if (lo === -1) lo = x;
+          hi = x;
+        }
+        inStroke = isInk;
+      }
+      firstX.set(y, lo); lastX.set(y, hi);
+      // TYPE IS MANY STROKES. A border, a plate edge or a ground boundary is one contiguous run of
+      // ink across the row; a line of text is a row of letterforms, so it breaks into several. The
+      // first mask had no such test and reported 3px and 4px "type" wherever a rule was drawn - the
+      // same class of error as the withdrawn ladder, which was measured off junk rows.
+      maxStrokes.set(y, strokes);
+      inkRows.push(ink >= COMP_MIN_RUN && strokes >= 3 ? ink : 0);
+    }
+    const bandPixels = (band.end - band.start + 1) * width;
+    const bandInk = inkRows.reduce((sum, n) => sum + n, 0);
+    // 3. Lines: runs of rows that carry ink, a one-row gap tolerated inside a run.
+    let run = null;
+    const bandLines = [];
+    for (let i = 0; i < inkRows.length; i += 1) {
+      const carries = inkRows[i] >= COMP_MIN_RUN;
+      if (carries) {
+        if (run === null) run = { start: i, end: i, area: 0 };
+        run.end = i;
+        run.area += inkRows[i];
+      } else if (run !== null && i + 1 < inkRows.length && inkRows[i + 1] >= COMP_MIN_RUN) {
+        continue; // a single blank row inside a line (a descender gap) does not end it
+      } else if (run !== null) {
+        bandLines.push(run);
+        run = null;
+      }
+    }
+    if (run !== null) bandLines.push(run);
+    for (const line of bandLines) {
+      const px = line.end - line.start + 1;
+      if (px < 3) continue; // a 1-2px rule is a border, not type
+      // TYPE IS WIDE. A line of text spans many columns and is short; what otherwise passes every
+      // test is a ROUNDED PLATE CORNER - four or five short ink segments, three rows tall - and the
+      // empty rack's slot rules. The first mask reported 24 of those as "3px type" and they were 24
+      // percent of its ink, which is how a measurement gets withdrawn.
+      let lo = width; let hi = -1;
+      for (let y = band.start + line.start; y <= band.start + line.end; y += 1) {
+        const a = firstX.get(y); const b = lastX.get(y);
+        if (a === undefined || a === -1) continue;
+        if (a < lo) lo = a;
+        if (b > hi) hi = b;
+      }
+      const extend = hi - lo + 1;
+      if (extend < 24 || extend < 4 * px) continue;
+      // AND TYPE HAS LETTERS. A rail plate carries two small square DOTS at its ends; a row through
+      // a dot is two or three short segments, three rows tall, spread across the plate's whole
+      // width - every other test passes it. A line of text breaks into a segment per letter, so the
+      // count of segments in its busiest row is what separates the two.
+      let busiest = 0;
+      for (let y = band.start + line.start; y <= band.start + line.end; y += 1) {
+        busiest = Math.max(busiest, maxStrokes.get(y) ?? 0);
+      }
+      if (busiest < 6) continue;
+      lines.push({ top: band.start + line.start, height: px, area: line.area, width: extend, strokes: busiest });
+    }
+    report.push({
+      start: band.start, end: band.end, grounds: grounds.map((c) => c.join(',')),
+      coverage: bandPixels === 0 ? 0 : (bandInk / bandPixels) * 100, lines: bandLines.length,
+    });
+  }
+
+  // 4. The distribution the build's side is compared against: share of INK AREA by line height.
+  const byHeight = new Map();
+  for (const line of lines) byHeight.set(line.height, (byHeight.get(line.height) ?? 0) + line.area);
+  // Empty is a did-not-run too: a frame this full of type that yields zero lines has a mask
+  // problem, not an absence of text.
+  const zeroLines = lines.length === 0;
+  return { bands: report, lines, byHeight, blind: blind || zeroLines, groundShare,
+    groundCount: grounds.length, zeroLines, totalInk: lines.reduce((sum, l) => sum + l.area, 0) };
+}
+
+// ---------------------------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------------------------
+// THE LADDER CHECK (M1-22 Half Three), replacing look-gate's ladder-steps.
+//
+// WHY THE OLD ONE COULD NOT FAIL FOR THE REAL DEFECT: it counted the DECLARATION steps a stylesheet
+// announces (0 of 5 reach 1.25x) and said nothing about what the frame shows. Measured on this tree:
+// by declaration count --text-1 looked like the most-used rung in the world at 66 occurrences, and
+// by AREA it is 6.8 percent while one rung carries 88.9. A count and the eye disagreed and the
+// instrument with weight in it agreed with the eye. This one measures the frame.
+//
+// WHAT IT ASSERTS, both of them derived from the reviewer's own blind pass (N-2) rather than typed:
+//   FLOOR      every text role renders a cap height of at least FLOOR of the frame. N-2 measured 9px
+//              of ink at 3840 on knob names and column headers - 1.6mm on a 32-inch panel - and the
+//              claim here is the RATIO, not the pixel: a per-frame rule is the only kind that can
+//              be true at two sizes, and this row exists because type was in px while layout was vw.
+//   HIERARCHY  the roles must not invert: wordmark >= page title >= value >= tab label >= field
+//              label. N-2's finding was a nav tab label LARGER than the wordmark, and a title 2.3x
+//              the smallest text. A ladder whose top is 2.3x its bottom is not a ladder.
+//
+// THE INK HEIGHT IS MEASURED, NOT ASSUMED: a canvas 2D context is asked for the actual bounding box
+// ascent of a capital H in the element's own computed font, which is the same quantity the blind
+// pass measured off the raster. No cap-height ratio is invented anywhere.
+const LADDER_ROLES = [
+  ['wordmark', '.myx-rule-wordmark'],
+  ['page title', 'h1, h2'],
+  ['strip value', '.myx-sfield-text'],
+  ['tab label', '.myx-rail-tab .myx-edge-label'],
+  ['field label', '.myx-sfield-label'],
+  ['bay label', '.myx-bay-label'],
+];
+// THE FLOOR, and why it is this number rather than a round one. Two measurements bracket it:
+// design-reviewer's blind pass at 3840 measured the smallest text in the world at 9px of ink on a
+// 2160 frame - 0.417 percent, about 1.6mm of cap on a 32-inch panel - and called it the defect; the
+// same role measures 20px today, 0.926 percent, after M1-26 moved the ladder into rem. The floor is
+// set BETWEEN them, so the frame that was called unreadable fails and the frame that ships passes,
+// and a regression of more than about 8 percent toward the old defect goes red. A floor set at
+// today's own value would be a ratchet that freezes whatever happens to be there; a floor set at
+// the reviewer's value would pass the frame they rejected.
+const LADDER_FLOOR = 0.0085;
+/** Two roles closer than this are the same rung, not an inversion: the ladder is measured off
+ *  rendered glyph boxes and a rounding step of half a pixel is not a design decision. */
+const LADDER_INVERSION_SLACK = 0.5;
+
+const LADDER_PROBE = `(() => {
+  const ctx = document.createElement('canvas').getContext('2d');
+  const cap = (el) => {
+    const cs = getComputedStyle(el);
+    ctx.font = cs.font || cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    const m = ctx.measureText('H');
+    return Number.isFinite(m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : null;
+  };
+  const out = [];
+  for (const [name, sel] of ${JSON.stringify(LADDER_ROLES)}) {
+    const els = [...document.querySelectorAll(sel)].filter((el) => el.textContent.trim() !== '');
+    const caps = els.map(cap).filter((c) => c !== null);
+    out.push({ name, count: els.length, min: caps.length === 0 ? null : Math.min(...caps) });
+  }
+  return JSON.stringify({ frame: window.innerHeight, roles: out });
+})()`;
+
+/** The layout a mutated ladder produces: every role on one rung. Used by the selftest. */
+const LADDER_FLATTEN = '*, *::before, *::after { font-size: 12px !important; }';
+
+async function ladderReport(url, width, height, theme, mutate) {
+  let report = null;
+  await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
+    await show(send, url, width, height, 4000);
+    if (mutate !== null) {
+      await send('Runtime.evaluate', { expression: `(() => { const s = document.createElement('style'); s.textContent = ${JSON.stringify(mutate)}; document.head.append(s); })()` });
+    }
+    report = JSON.parse(await send('Runtime.evaluate', { expression: LADDER_PROBE, returnByValue: true }).then((r) => r.result.value));
+  });
+  return report;
+}
+
+/** The verdict: which roles are under the floor, and where the ladder inverts. */
+function ladderVerdict(report) {
+  const floor = LADDER_FLOOR * report.frame;
+  const under = report.roles.filter((role) => role.min !== null && role.min < floor);
+  const seen = report.roles.filter((role) => role.min !== null);
+  const inversions = [];
+  for (let i = 0; i + 1 < seen.length; i += 1) {
+    if (seen[i + 1].min > seen[i].min + LADDER_INVERSION_SLACK) inversions.push(`${seen[i + 1].name} (${seen[i + 1].min}px) > ${seen[i].name} (${seen[i].min}px)`);
+  }
+  return { floor, under, inversions, measured: seen };
+}
+
+// --ladder: the check, with its own mutation proof available in the same run.
+if (has('ladder')) {
+  const target = ARGS.find((a) => a.startsWith('http'));
+  if (target === undefined) {
+    console.error('usage: node dev/web-console/look.mjs --ladder <url> [--width W] [--height H] [--theme dark|light] [--mutate]');
+    process.exit(2);
+  }
+  const width = Number(flag('width', '3840'));
+  const height = Number(flag('height', '2160'));
+  const theme = flag('theme', 'dark');
+  const mutated = has('mutate') ? LADDER_FLATTEN : null;
+  const report = await ladderReport(target, width, height, theme, mutated);
+  const verdict = ladderVerdict(report);
+  const mode = mutated === null ? 'as rendered' : 'MUTATED (every role forced onto one rung)';
+  console.log(`ladder — ${target} at ${width}x${height} ${theme}, ${mode}\n`);
+  for (const role of verdict.measured) {
+    const share = role.min / report.frame;
+    console.log(`  ${role.name.padEnd(12)} ${String(role.min).padStart(5)}px ink  ${(share * 100).toFixed(3)}% of the frame  n=${role.count}`);
+  }
+  console.log(`\n  floor      ${verdict.floor.toFixed(1)}px (${(LADDER_FLOOR * 100).toFixed(3)}% of the frame)`);
+  for (const role of verdict.under) console.log(`  BELOW FLOOR  ${role.name}: ${role.min}px`);
+  for (const line of verdict.inversions) console.log(`  INVERTED     ${line}`);
+  const failed = verdict.under.length > 0 || verdict.inversions.length > 0;
+  console.log(`\n  LADDER: ${failed ? 'FAIL' : 'PASS'}${mutated === null ? '' : ' (mutation: a PASS here would mean the check cannot see a flattened ladder)'}`);
+  process.exit(failed ? 1 : 0);
+}
+
+const COMP_ARG = flag('comp', null);
+if (COMP_ARG !== null) {
+  const png = decodePng(readFileSync(COMP_ARG));
+  const measured = compType(png);
+  if (has('json')) {
+    console.log(JSON.stringify({ comp: COMP_ARG, frame: `${png.width}x${png.height}`,
+      bands: measured.bands, lines: measured.lines,
+      byHeight: [...measured.byHeight.entries()].sort((a, b) => a[0] - b[0]) }, null, 2));
+  } else {
+    console.log(`comp type by ink area — ${COMP_ARG}  ${png.width}x${png.height}\n`);
+    if (measured.blind) {
+      console.error(`DID NOT RUN — ${measured.zeroLines
+        ? 'the mask found no line of type in a frame full of it'
+        : `the grounds derived from this frame cover ${(measured.groundShare * 100).toFixed(1)}% of it (${measured.groundCount} ground(s)), so nothing can be ink`}. The mask needs a round it has not had; anything below is NOT a distribution and must not be quoted.`);
+    }
+    console.log('  band            grounds                 coverage   lines');
+    for (const band of measured.bands) {
+      console.log(`  y${String(band.start).padStart(4)}..${String(band.end).padEnd(4)}  ${band.grounds.join(' / ').padEnd(22)} ${band.coverage.toFixed(2).padStart(6)}%   ${String(band.lines).padStart(3)}`);
+    }
+    console.log('\n  the heaviest lines (top, height, ink pixels)');
+    for (const line of [...measured.lines].sort((a, b) => b.area - a.area).slice(0, 24)) {
+      console.log(`    y${String(line.top).padStart(4)}  ${String(line.height).padStart(3)}px  ${String(line.area).padStart(6)} px`);
+    }
+    console.log('\n  ink height   share of ink area');
+    const total = [...measured.byHeight.values()].reduce((sum, px) => sum + px, 0);
+    for (const [height, px] of [...measured.byHeight.entries()].sort((a, b) => a[0] - b[0])) {
+      console.log(`  ${String(height).padStart(6)}px   ${((px / total) * 100).toFixed(2).padStart(6)}%   ${'#'.repeat(Math.round((px / total) * 60))}`);
+    }
+    console.log(`\n  ${measured.lines.length} line(s), ${total} ink pixel(s), frame ${png.width * png.height}`);
+  }
+  process.exit(0);
+}
+
 
 const URL_ARG = ARGS.find((a) => !a.startsWith('--'));
 if (URL_ARG === undefined || has('help')) {
   console.log("usage: node dev/web-console/look.mjs '<url>' [--out DIR] [--width W] [--height H] [--theme dark|light] [--json]");
+  console.log("       node dev/web-console/look.mjs --comp <png> [--json]   (the comp's type by ink area)");
   console.log('  freezes the address, runs the rendered detector and the look-gate on it, and');
   console.log('  reports the two area-weighted distributions (type area, sibling-gap area).');
   process.exit(URL_ARG === undefined && !has('help') ? 2 : 0);

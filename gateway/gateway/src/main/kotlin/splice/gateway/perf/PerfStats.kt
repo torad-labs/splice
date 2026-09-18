@@ -77,9 +77,15 @@ public class PerfStats(
 
     // append is best-effort by design: the turn builds an immutable row and the bounded file lane
     // owns filesystem latency.
-    public fun record(meta: PerfRowMeta, snap: PerfSnapshot) {
+    //
+    // V4-134: RETURNS the row's `ts`, the only key the row has — /api/perf/turns reports each row
+    // under it (PerfRoutes), so it is what the console's turn.end carries to join the stream to the
+    // poll. Two rows of one head stamped in the same millisecond share it; that is the route's
+    // existing key, and a new id here would be one the route could not look up.
+    public fun record(meta: PerfRowMeta, snap: PerfSnapshot): Long {
+        val ts = clock()
         val row = buildJsonObject {
-            put("ts", clock())
+            put("ts", ts)
             put("model", meta.model)
             put("outcome", meta.outcome)
             put("compact", meta.compact)
@@ -99,6 +105,7 @@ public class PerfStats(
                 JsonlSink.appendLine(file, row)
             }
         }
+        return ts
     }
 
     /** Numeric fields of the last [tailN] rows, newest last — the aggregation input. */

@@ -101,6 +101,10 @@ public data class HeadDeps(
         /** V4-124: a session id to its working directory, for the per-project prompt layers. The
          *  default knows no session, so a head built without it carries the head layer only. */
         val sessionProject: SessionProjectLookup = SessionProjectLookup { null },
+        /** V4-134: where this head reports lifecycle, turn and account events for the console. The
+         *  default reports to nobody, like every seam in this bundle; HeadServerFactory gives every
+         *  production head a real one, and HeadEventsTest fails if a served turn stops reaching it. */
+        val events: HeadEvents = NoHeadEvents,
     )
 
     /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather
@@ -116,4 +120,63 @@ public data class HeadDeps(
          *  alone, which is exactly V4-36's bytes. */
         val systemPrompt: SystemPromptLayers = SystemPromptLayers(HeadSystemPrompt()),
     )
+}
+
+// V4-134, FEATURES.md §6 — HeadEvents: what a head tells the console, at the seams that already hold each
+// fact. :gateway cannot see :control's EventBus (its build depends on :core and :provider-spi only),
+// so a head reports through this interface and :app adapts it to the bus, once, in
+// ConsoleEventPublisher. Nothing here is a new probe: every call site is a line that already knew
+// the fact — the head lifecycle mutex, the ready turn's admission, the one perf-row emitter.
+//
+// ONE INSTANCE PER HEAD, keyed by :app when it builds that head's HeadSeams, so no call site passes
+// its head key and none can pass the wrong one.
+//
+// EVERY METHOD MUST RETURN AT ONCE AND NEVER THROW: they run on the turn path and inside the
+// lifecycle lock, and the console is an observer — a slow or broken observer must lose events, never
+// stall a turn or a restart. The bus behind the production implementation drops rather than waits
+// (EventBus.publish).
+//
+// WHY IN THIS FILE: HeadSeams.events is the interface's only holder, and every other seam a head is
+// built with is declared here; the seam's type sits beside the field that carries it.
+
+/** The head lifecycle states the console shows (`head.state`'s `state` field). */
+public enum class HeadLifecycle(public val wire: String) {
+    /** The engine is bound and admission is open. */
+    STARTED("started"),
+
+    /** Admission is closed and in-flight turns are draining; the engine is still up. */
+    DRAINING("draining"),
+
+    /** The engine is down. */
+    STOPPED("stopped"),
+}
+
+public interface HeadEvents {
+    /** The head moved to [state]. */
+    public fun lifecycle(state: HeadLifecycle)
+
+    /** A turn was admitted and is about to be served or refused with a perf row. Fired for exactly
+     *  the turns that end in [turnEnded], so a console can pair the two. [session] is the client's
+     *  full session id, or null for a request that carried none. */
+    public fun turnStarted(session: String?)
+
+    /** A turn's perf row was written. [perfRowId] is that row's `ts`, the key /api/perf/turns
+     *  reports it under (PerfRoutes); [outcome] is the row's outcome tag, verbatim. */
+    public fun turnEnded(perfRowId: String, outcome: String)
+
+    /** The account pool moved this turn to another account. [from] is null when the pool had no
+     *  previous choice for the session. */
+    public fun accountSwitched(from: String?, to: String)
+}
+
+/** The head that reports to nobody: a head built without a console (tests, tools). Production heads
+ *  get a real one from HeadServerFactory, and HeadEventsTest fails if a turn stops reaching it. */
+public object NoHeadEvents : HeadEvents {
+    override fun lifecycle(state: HeadLifecycle): Unit = Unit
+
+    override fun turnStarted(session: String?): Unit = Unit
+
+    override fun turnEnded(perfRowId: String, outcome: String): Unit = Unit
+
+    override fun accountSwitched(from: String?, to: String): Unit = Unit
 }

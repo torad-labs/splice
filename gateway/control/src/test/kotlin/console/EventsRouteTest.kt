@@ -17,6 +17,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
@@ -51,9 +52,9 @@ class EventsRouteTest {
     private lateinit var control: ControlServer
     private lateinit var key: String
 
-    /** The server's OWN bus, read back off it: the bus is a body property, so this is also what
-     *  proves it is reachable the way the daemon reaches it in :app. */
-    private val bus: EventBus get() = control.events
+    /** V4-134: the bus is ASSIGNED, the way ControlPlane assigns the daemon's one bus — the server no
+     *  longer builds its own, so the test hands it this one and publishes to it. */
+    private val bus = EventBus()
 
     @BeforeAll
     fun setUp() {
@@ -68,6 +69,7 @@ class EventsRouteTest {
             dashboardHtml = { "<!doctype html>" },
             log = { },
         )
+        control.events = bus
         control.start()
     }
 
@@ -82,6 +84,22 @@ class EventsRouteTest {
         awaitPort()
         val refused = withTimeout(TIMEOUT_MS) { client.get("$url/api/events") }
         assertEquals(HttpStatusCode.Unauthorized, refused.status, "an unguarded stream is a leak")
+    }
+
+    @Test
+    fun `a server with no bus assigned answers a named 503, never an empty stream`() = runBlocking {
+        awaitPort()
+        control.events = null
+        try {
+            val unwired = withTimeout(TIMEOUT_MS) {
+                client.get("$url/api/events") { header("Authorization", "Bearer $key") }
+            }
+            assertEquals(HttpStatusCode.ServiceUnavailable, unwired.status, "an unwired bus must not stream")
+            val body = unwired.bodyAsText()
+            assertTrue("wired no console event bus" in body, "the 503 must name what was not wired: $body")
+        } finally {
+            control.events = bus
+        }
     }
 
     @Test

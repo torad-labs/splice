@@ -196,14 +196,30 @@ describe('the per-page registry', () => {
     expect(first.get().views.map((v) => v.id)).toEqual(['by-head', 'by-role']);
   });
 
-  test('a reader that looked before the page registered is told when it arrives', () => {
+  test('a reader that looked before the page registered is told when it arrives', async () => {
     expect(peekViewStore('late-page')).toBeNull();
     const told: string[] = [];
     const stop = onViewStoreCreated(() => told.push('created'));
     viewStoreFor('late-page', DEFAULTS);
+    // The notification is deferred to a microtask, because `useViews` calls `viewStoreFor` during
+    // render and telling a reader synchronously ran its setState inside another component's render.
+    await Promise.resolve();
     stop();
     expect(told).toEqual(['created']);
     expect(peekViewStore('late-page')?.get().views).toHaveLength(2);
+  });
+
+  test('the registration does not tell anyone during the call itself', () => {
+    // The arm that pins the deferral: this is the whole reason the microtask exists, so a revert to
+    // a synchronous `for (const listener of created) listener()` fails HERE rather than only in a
+    // browser console nobody reads. The store must still exist by the time the call returns, since
+    // `useSyncExternalStore` subscribes to it in the same render that created it.
+    const told: string[] = [];
+    const stop = onViewStoreCreated(() => told.push('created'));
+    const store = viewStoreFor('sync-page', DEFAULTS);
+    expect(told).toEqual([]);
+    expect(store.get().views).toHaveLength(2);
+    stop();
   });
 });
 

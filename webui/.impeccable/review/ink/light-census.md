@@ -42,8 +42,8 @@ It is not a defect and nothing is fixed here. It is the number a future colour c
 
 ## The 69-of-181 gap: what this census cannot see, and what now fills part of it
 
-**The tree this was read from: HEAD e344f94a, dirty — 1 css file(s) differ, 2 other file(s) differ.**
-The sweep's own stamp, which is the denominator below: HEAD e344f94a, dirty — 1 css file(s) differ, 2 other file(s) differ.
+**The tree this was read from: HEAD 9028c547, dirty — no css differs, 4 other file(s) differ.**
+The sweep's own stamp, which is the denominator below: HEAD 9028c547, dirty — no css differs, 4 other file(s) differ.
 
 
 The census is over pairs that RENDER. A rule that never renders contributes no pair, so it is

@@ -668,6 +668,57 @@ Requirement source: user discussion, 2026-09-13. Evidence: `README.md:193`,
 `gateway/control/src/main/kotlin/splice/control/api/UsagePayloads.kt`,
 `webui/src/pages/auth/index.tsx:1`, `gateway/app/src/main/kotlin/splice/app/cli/Command.kt:34`.
 
+## 12. Head-bounded sessions, cross-head resume on demand
+
+**Release status:** user-required for 0.4.0, added 2026-09-17 (ledger row V4-115).
+
+**User outcome:** a session belongs to the head that started it. The vanilla `claude` binary and
+every other head see only their own sessions in `-c` and the resume picker, so `claude -c` can
+never restore a claude-deepseek transcript and warn that its model is unknown. When a session
+must move heads (an account runs dry, a provider is down), `claude-kimi -r <session-id>` pulls
+it over on demand: the transcript is copied into the calling head's own tree with its model
+fields rewritten to that head's pinned model, so the client restores exactly what the head
+serves.
+
+**Baseline (2026-09-17):** the 2026-09-16 cross-head resume (V4-64/V4-65, commit `91d68f3e`)
+symlinked every head's `$CLAUDE_CONFIG_DIR/projects` at the operator's global
+`~/.claude/projects` so `--resume` on any head could list every session. Measured cost: three
+heads link there today, 95 transcripts in the vanilla tree carry head model ids (gpt-6-astra 36,
+gpt-5.6-sol 33, deepseek-flash 24, k3-256k 8, gpt-5.6-luna/terra 4), and the vanilla client
+prints `Session model deepseek-flash could not be restored (not a model this version of Claude
+Code recognizes)` whenever `-c` lands on one. Operator ruling: head configuration and details
+never leak into other heads, their wrappers, or the core binary's sessions.
+
+Proposed scope:
+- **Bounded by head.** Each head owns a real `projects/` tree under its own `CLAUDE_CONFIG_DIR`;
+  the shared-tree link is retired with a migration that removes the symlink and never touches
+  the vanilla tree's content. The live-session registry (`sessions/`, what cross-session
+  messaging depends on) is the one dispositioned exception and is asserted as such.
+- **Cross-head `-r` on demand.** A head launched with `-r <id>` it does not own resolves the id
+  across the other heads' trees (same encoded cwd first), copies `<id>.jsonl` and its `<id>/`
+  subdir into its own tree (a copy, never a link; the source stays byte-identical), rewrites the
+  assistant messages' `model` to the head's pinned model, then launches. An id that exists
+  nowhere refuses with a clear message. The picker without an id stays head-bounded.
+- **Model follows the head.** Whether writing the head's roster into the per-head
+  `settings.json` `availableModels` also makes the restore succeed for the head's own sessions
+  is settled by reading the client, and the materializer writes it if so.
+- **Walls before the fix.** A core test materializes a head into a temp HOME and asserts nothing
+  under it links or writes outside the head dir (red on the current code); an ast-grep rule
+  forbids naming the vanilla config dir in main sources outside one dated site.
+- **Operator-side repair after install:** the 95 leaked transcripts move from `~/.claude/projects`
+  into their heads by model-id attribution, with a manifest; alias-named sessions stay.
+
+**Boundary:** no shared tree of any kind between heads or with the vanilla client; no
+background sync. Cross-head resume is explicit and per session.
+
+Requirement source: user rulings 2026-09-17 ("Head configurations and details should NEVER leak
+into other heads binary wrappers or the core original claude binary sessions"; "sessions bounded
+by the head, BUT available to be resumed by another head if necessary via -r"). Evidence:
+`gateway/core/src/main/kotlin/splice/core/launch/ProjectsLink.kt:1-30`,
+`gateway/control/src/main/kotlin/splice/control/LaunchService.kt:71,124,128`, the
+`~/.claude-claude-{deepseek,kimi}` and `~/.claude-claudex` `projects` symlinks, and the transcript
+census over `~/.claude/projects` (95 sessions with non-`claude-*` model ids).
+
 ## Boundaries and deferred directions
 
 - Do not add providers merely to increase the provider count; establish the user need first.

@@ -144,6 +144,14 @@ describe('FieldBox', () => {
     expect(out).toContain('defaults table');
   });
 
+  test('the seventh provenance name is the file itself, and prints as written', () => {
+    // A topology key does not come from any layer of the runtime config; it comes from splice.toml.
+    // The name exists so the topology forms never have to borrow a config layer's word for it.
+    const out = box({ provenance: 'splice.toml' });
+    expect(out).toContain('splice.toml');
+    expect(out).not.toContain('defaults table');
+  });
+
   test('says whether the change needs a restart, in words', () => {
     expect(box({ hot: true })).toContain('applies live');
     expect(box({ hot: true })).not.toContain('restart to apply');

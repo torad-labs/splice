@@ -47,6 +47,18 @@ interface Field {
 // detail header when the strip is opened.
 const WIDTHS: Record<string, number> = { repo: 44, sessions: 8, teams: 7, turns: 8, cost: 23, last: 12 };
 
+/**
+ * The root as the STRIP prints it: the home directory collapsed to `~`.
+ *
+ * The column is 44 characters and StripField clips rather than wraps, so a root under the home
+ * directory has to say the same thing in fewer of them — `/home/user/Documents/dev/projects/x`
+ * and `~/Documents/dev/projects/x` are the same location, and only one of them fits. The detail
+ * header prints the path WHOLE, unshortened, which is where an operator copies it from.
+ */
+function rootText(root: string): string {
+  return root.replace(/^\/(?:home|Users)\/[^/]+\//, '~/');
+}
+
 /** USD per day, two places, or null when no head declared rates. */
 function costText(usd: number | null): string | null {
   return usd === null ? null : `$${usd.toFixed(2)}`;
@@ -55,7 +67,7 @@ function costText(usd: number | null): string | null {
 function fieldsOf(row: ProjectRow, order: readonly string[]): Field[] {
   const cost = costText(row.cost_today_usd);
   const values: Record<string, { label: string; value: string; basis: Basis }> = {
-    repo: { label: S.repo, value: row.root, basis: 'measured' },
+    repo: { label: S.repo, value: rootText(row.root), basis: 'measured' },
     sessions: { label: S.sessions, value: String(row.live_sessions), basis: 'measured' },
     teams: { label: S.teams, value: String(row.teams), basis: 'measured' },
     turns: { label: S.turns, value: String(row.turns_today), basis: 'measured' },
@@ -148,6 +160,9 @@ export function ProjectsBoard({ payload, files = {}, sample = false, error = nul
           )}
         </div>
 
+        {/* The column COLLAPSES to 0 width until a strip is opened (.myx-px-board /
+            .myx-px-board-open), so there is no empty to fill here: the swell only exists once
+            there is something to swell to. */}
         <aside className="myx-px-detail" aria-label={S.detail}>
           {open === null ? null : (
             <>

@@ -80,7 +80,11 @@ function oldPrimitives(): Set<string> {
 
 /** CONTRACTS.md section 7: rows before M3-04 delete nothing, so these still render the old world. */
 const DELETION_LIST = [
-  'src/pages/burn', 'src/pages/config', 'src/pages/auth',
+  // M1-48 deleted the three legacy page directories this list used to exempt: pages/burn,
+  // pages/auth and pages/config were unreachable — pageModuleKey checks an address's OWN directory
+  // first, and usage, accounts and settings all exist — but they still SHIPPED, because the page
+  // glob matches every directory and the single-file build inlines every chunk. An entry naming a
+  // path that is gone is a denominator that lies about what it excludes, so the three come out.
   'src/widgets/head-plate', 'src/widgets/fleet-banner',
   'src/features/edit-config', 'src/features/unlock-mgmt', 'src/features/refresh-auth',
   'src/shared/tokens.css', 'src/shared/fonts.css',

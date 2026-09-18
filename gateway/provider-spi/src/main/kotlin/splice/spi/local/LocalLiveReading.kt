@@ -4,21 +4,23 @@
 // mentions tool_calls and ping is not a call. A non-200 reply is described by its status class and
 // size only — the body is the runtime's and can echo headers, paths or terminal controls into the
 // doctor. Split from LocalRuntimeProbe.kt (review 2026-09-14).
-package splice.app.provider.local
+package splice.spi.local
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.dialect.chat.LocalHttpReply
+import splice.core.wire.HttpStatus
+import splice.spi.LocalHttpReply
 
+// V4-103: the five error statuses this file classifies come from splice.core.wire.HttpStatus, the
+// single declaration site (kt-http-status-single-source). This file MOVED here from :app carrying
+// its own copies — exactly the drift the rule exists for, since these are compared against a live
+// runtime's reply and a drifted spelling would silently reclassify a refused credential as a
+// runtime error. HTTP_OK stays local because HttpStatus declares no 2xx constant; the wall is
+// silent on it and inlining the 200 would only move the literal.
 private const val HTTP_OK = 200
-private const val HTTP_BAD_REQUEST = 400
-private const val HTTP_UNAUTHORIZED = 401
-private const val HTTP_FORBIDDEN = 403
-private const val HTTP_NOT_FOUND = 404
-private const val HTTP_SERVER_ERROR = 500
 private const val SSE_DATA = "data: "
 private const val SSE_DONE = "[DONE]"
 
@@ -39,10 +41,10 @@ internal class LocalLiveReading {
     }
 
     private fun statusClass(status: Int): String = when {
-        status == HTTP_NOT_FOUND -> "no chat completions at this path"
-        status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN -> "credential refused"
-        status >= HTTP_SERVER_ERROR -> "runtime error"
-        status >= HTTP_BAD_REQUEST -> "request refused"
+        status == HttpStatus.NOT_FOUND -> "no chat completions at this path"
+        status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN -> "credential refused"
+        status >= HttpStatus.INTERNAL_SERVER_ERROR -> "runtime error"
+        status >= HttpStatus.BAD_REQUEST -> "request refused"
         else -> "unexpected status"
     }
 

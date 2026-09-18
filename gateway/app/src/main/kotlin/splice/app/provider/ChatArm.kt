@@ -9,15 +9,14 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
-import splice.app.provider.local.LocalRuntimeProbe
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
-import splice.dialect.chat.JdkLocalHttp
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.spi.Provider
 import splice.spi.ProviderTuning
+import splice.spi.local.LocalRuntimeProbe
 import java.nio.file.Paths
 
 internal class ChatArm(

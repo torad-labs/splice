@@ -7,8 +7,8 @@ import splice.app.cli.CheckStatus
 import splice.app.cli.ConfigHeadWindowOverride
 import splice.app.cli.DoctorLocalRuntime
 import splice.core.util.EnvReader
-import splice.dialect.chat.LocalHttp
-import splice.dialect.chat.LocalHttpReply
+import splice.spi.LocalHttp
+import splice.spi.LocalHttpReply
 import java.nio.file.Path
 
 private const val PING_CALL = "{\"function\":{\"name\":\"ping\"}}"

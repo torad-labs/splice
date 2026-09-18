@@ -1,0 +1,94 @@
+{
+ "frame": {
+  "w": 1536,
+  "h": 1024
+ },
+ "bays": [
+  {
+   "cls": "myx-bay myx-board-bay myx-board-bay-0",
+   "h": 808.96875,
+   "strips": [
+    {
+     "cls": "myx-strip myx-board-strip myx-board-strip-0",
+     "h": 63
+    },
+    {
+     "cls": "myx-strip myx-board-strip myx-board-strip-1",
+     "h": 60.5
+    },
+    {
+     "cls": "myx-strip myx-board-strip myx-board-strip-2",
+     "h": 61
+    }
+   ]
+  },
+  {
+   "cls": "myx-bay myx-board-bay myx-board-bay-1",
+   "h": 808.96875,
+   "strips": [
+    {
+     "cls": "myx-strip myx-board-strip myx-board-strip-0",
+     "h": 63
+    },
+    {
+     "cls": "myx-strip myx-board-strip myx-board-strip-1",
+     "h": 60.5
+    },
+    {
+     "cls": "myx-strip myx-board-strip myx-board-strip-2",
+     "h": 61
+    }
+   ]
+  },
+  {
+   "cls": "myx-bay myx-board-bay myx-board-bay-chat",
+   "h": 430.078125,
+   "strips": [
+    {
+     "cls": "myx-strip myx-board-msg",
+     "h": 82
+    },
+    {
+     "cls": "myx-strip myx-board-msg",
+     "h": 68.8125
+    },
+    {
+     "cls": "myx-strip myx-board-msg",
+     "h": 71.953125
+    }
+   ]
+  },
+  {
+   "cls": "myx-bay myx-board-bay myx-board-bay-activity",
+   "h": 378.875,
+   "strips": [
+    {
+     "cls": "myx-strip myx-board-act",
+     "h": 38.0625
+    },
+    {
+     "cls": "myx-strip myx-board-act",
+     "h": 38.0625
+    },
+    {
+     "cls": "myx-strip myx-board-act",
+     "h": 38.0625
+    }
+   ]
+  }
+ ],
+ "header": 51.1875,
+ "field": {
+  "pt": "4.00013px",
+  "pb": "0px"
+ },
+ "label": {
+  "fs": "14.0004px",
+  "lh": "14.7005px"
+ },
+ "value": {
+  "fs": "14.0004px",
+  "lh": "21.0007px",
+  "pt": "8.00026px"
+ }
+}

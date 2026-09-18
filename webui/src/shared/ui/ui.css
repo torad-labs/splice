@@ -297,7 +297,9 @@
 /* A prose value keeps the label face; the box's figure face exists for the ch unit. */
 .myx-sfield-value:not(.myx-sfield-figure) { font-family: var(--font-label); }
 .myx-sfield-basis {
-  margin-inline-start: var(--space-1);
+  /* --space-1 (2px) let a --text-3 value run into its --text-1 basis word once the ladder
+     grew (M2-10 saw $12.84estimated); a real gap between value and basis. */
+  margin-inline-start: var(--space-2);
   color: var(--strip-ink-mute);
 }
 

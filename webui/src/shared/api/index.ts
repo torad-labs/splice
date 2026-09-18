@@ -43,6 +43,12 @@ export function bindUnauthorized(fn: UnauthorizedListener): void {
   onUnauthorized = fn;
 }
 
+/** A 401 seen outside request<T> (the events stream reads its own response) lands the same lock. */
+export function noteUnauthorized(): void {
+  locked = true;
+  onUnauthorized?.();
+}
+
 // Exported for entity api segments (entities/*/api), which own their routes and payload types
 // locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
 // `control` below keeps the routes that predate the console rebuild.

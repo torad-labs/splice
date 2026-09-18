@@ -22,21 +22,6 @@ import './projects.css';
 
 const PAGE_ID = 'projects';
 
-/** The rack's column names, printed once on the bay head instead of on every strip (CONTRACTS
- *  section 2, m1 design review B9). The boxes carry the cell's own inline padding so a name sits
- *  over the value it names; the bay's head row supplies the face and the colour. */
-function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
-  return (
-    <>
-      {columns.map((column) => (
-        <span className="myx-px-col" key={column.key} style={{ width: `${column.w}ch` }}>
-          <span className="myx-px-col-name">{column.label}</span>
-        </span>
-      ))}
-    </>
-  );
-}
-
 
 const DEFAULT_VIEWS: View[] = [
   {
@@ -75,11 +60,6 @@ const COLUMNS: Record<string, { label: string; w: number }> = {
   cost: { label: S.cost, w: 23 },
   last: { label: S.last, w: 12 },
 };
-
-/** The columns a view asks for, in its own order, for the bay head. */
-function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
-  return order.flatMap((key) => (COLUMNS[key] === undefined ? [] : [{ key, ...COLUMNS[key] }]));
-}
 
 /**
  * The root as the STRIP prints it: the home directory collapsed to `~`.
@@ -210,7 +190,6 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
             <Bay
               label={S.repos}
               count={rows.length}
-              fields={<ColumnHeads columns={columnsOf(active.fields)} />}
               actions={<a className="myx-px-open" href="#/sessions">{S.sessionsWord}</a>}
             >
               {rows.map((row) => (
@@ -230,7 +209,7 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
                   {/* No label on a cell: the bay head prints the column names once for the whole
                       rack (CONTRACTS.md section 2, m1 design review B9). */}
                   {fieldsOf(row, active.fields).map((field) => (
-                    <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
+                    <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
                   ))}
                 </Strip>
               ))}

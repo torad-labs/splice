@@ -7,28 +7,6 @@
   gap: var(--space-4);
   min-width: 0;
 }
-
-/* One column name on a bay head, over the cell it names (CONTRACTS.md section 2, m1 design review
-   B9).
-
-   The box's `ch` must resolve in the CELL's own face and size, or a name sits left of the value it
-   names and drifts further with every column: the bay's head row sets the LABEL face at --text-1
-   so the edge column's 6ch budget resolves, and a 26ch box in that face is about a third narrower
-   than a 26ch cell in the figure face at --text-3. The width is therefore declared in the figure
-   face and only the printed name is put back in the label face. */
-.myx-sx-col {
-  font-family: var(--font-figure);
-  font-size: var(--text-3);
-  padding-inline: var(--space-3);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.myx-sx-col-name {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-}
-
 .myx-sx-head {
   display: flex;
   align-items: center;

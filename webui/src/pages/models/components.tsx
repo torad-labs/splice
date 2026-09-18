@@ -56,26 +56,12 @@ function ModelStrip({ model, slot, selected, onOpen }: {
         <StripField
           key={column.key}
           w={column.w}
+          label={column.label}
           value={modelCell(model, slot, column.key)}
           {...(column.prose ? { mono: false } : {})}
         />
       ))}
     </Strip>
-  );
-}
-
-/** The rack's column names, printed once for the whole bay (CONTRACTS.md section 2, m1 design
- *  review B9). The boxes carry the cell's own inline padding so a name sits over the value it
- *  names; the bay's head row supplies the face and the colour. */
-function ModelColumnHeads() {
-  return (
-    <>
-      {MODEL_COLUMNS.map((column) => (
-        <span className="myx-mdl-col" key={column.key} style={{ width: `${column.w}ch` }}>
-          <span className="myx-mdl-col-name">{column.label}</span>
-        </span>
-      ))}
-    </>
   );
 }
 
@@ -101,7 +87,6 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
     <Bay
       label={head.key}
       count={head.models.length}
-      fields={<ModelColumnHeads />}
       empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
     >
       {slotTiers(head).map((tier) => (
@@ -113,8 +98,8 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
             struck
             ariaLabel={`${S.slot} ${tier.slot}`}
           >
-            <StripField w={24} value={S.absent} mono={false} />
-            <StripField w={8} value={tier.slot} mono={false} />
+            <StripField w={24} label={S.model} value={S.absent} mono={false} />
+            <StripField w={8} label={S.slot} value={tier.slot} mono={false} />
           </Strip>
         ) : (
           <ModelStrip

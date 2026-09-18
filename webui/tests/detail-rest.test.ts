@@ -123,6 +123,12 @@ export const NO_RESTING_COLUMN: Record<string, string> = {
   projects: 'already collapses its track to 0 at rest and transitions it open. Its 43.7% dead '
     + 'region is the empty slot rails below four repo strips -- a different defect with a '
     + 'different remedy, and not this column.',
+  accounts: 'COLLAPSES at rest since M2-24, the same mechanism as the other six -- second track 0, '
+    + 'the -open class carrying both the wide track and its gutter, the transition covering both, '
+    + 'and a reduced-motion arm. Held under M1-107 until that row landed; it was the last resting '
+    + 'column in the console. Dead region 20.3%, third worst. Its rest state is TWO conditions '
+    + 'rather than one, so the gate is a named `closed` read by both aria-hidden and the content '
+    + 'rather than a compound expression written out twice and left to drift.',
 };
 
 /** Carries real content at rest, so removing the column would delete content, not reclaim space. */
@@ -136,9 +142,10 @@ export const POPULATED: Record<string, string> = {
 
 /** Carries the defect, but the file belongs to another live row or to no row at all. */
 export const HELD: Record<string, string> = {
-  accounts: 'CARRIES THE DEFECT at 20.3%: the aside always renders and holds an Empty at rest in '
-    + 'a fixed 24rem track. M1-107 holds src/pages/accounts, so this row does not touch it. Moves '
-    + 'to NO_RESTING_COLUMN when that row lands.',
+  // EMPTY, AND THAT IS A RESULT RATHER THAN A GAP: every detail column in the console is now
+  // either collapsed or populated. accounts was the last entry and M2-24 moved it out. The list
+  // stays because the next held unit needs somewhere to be named, and because an empty
+  // disposition list is only meaningful while the wall can still say which units it covers.
 };
 
 /** Named `-detail` but is not a second grid track, so the wall does not and should not see it. */

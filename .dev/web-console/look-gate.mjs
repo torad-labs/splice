@@ -49,6 +49,10 @@ const has = (name) => ARGS.includes(`--${name}`);
 const HERE     = path.dirname(fileURLToPath(import.meta.url));
 const ROOT     = flag('root', path.resolve(HERE, '..', '..'));
 const CAPTURES = flag('captures', 'webui/.impeccable/review/sections');
+/** The boot axes' own directory (M1-106), NOT `sections/`: checkFieldGrid reads every PNG in the
+ *  captures directory, so a frame of a modal over a page would be judged as a rack row and would
+ *  red a leg it has nothing to do with. An axis is evidence about a surface, not about the grid. */
+const AXES_DIR = flag('axes', 'webui/.impeccable/review/axes');
 const SRC      = flag('src', 'webui/src');
 const TOKENS   = flag('tokens', 'webui/src/shared/tokens.css');
 const COMP     = flag('comp', 'webui/.impeccable/mocks/team-board-a.png');
@@ -58,6 +62,43 @@ const record = (id, blocking, ok, detail) => {
   findings.push({ id, blocking, ok, detail });
   return ok;
 };
+
+/**
+ * ---- THE PER-PAGE LEDGER (M1-124): WHICH PAGE DID EACH LEG ACTUALLY LOOK AT ----
+ *
+ * M1-108 fixed the empty-SET case (a leg that read no captures reporting ok) and M1-114 fixed the
+ * unjudgeable-SET case (a leg that read captures and judged none of them). Both are set-level. The
+ * PER-PAGE case was never swept, and it hid the one page this campaign has a comp of record for:
+ * teams paints no `--strip-field-line` ink anywhere on its rack rows, so `mid.length < 2` dropped
+ * it at a bare `continue` with no counter, and the field-grid leg has never judged it. The leg said
+ * "aligned on 11 captures" and nothing anywhere said which eleven.
+ *
+ * A COUNT IS NOT A DISPOSITION. `staleCount++` tells a reader that something was skipped and never
+ * which page, so "covered 13/13" and "judged 11 of 13" could both be true at once and neither named
+ * the gap. §24's rule is that every item needs a disposition and absence is not one; this is that
+ * rule applied to pages instead of to tables.
+ *
+ * WHAT THIS IS NOT: a floor. Nothing here reddens a page for being dropped. A page dropped for a
+ * stated structural reason -- settings' rack is not `.myx-strip` (M1-92), so its dump declares none
+ * -- is a legitimate drop and stays green; it simply becomes VISIBLE. The only thing the table
+ * asserts is that no page is missing from it, which is the one failure an audit can have.
+ */
+const COVERAGE = new Map();
+/** Record what one leg did with one address. `why === null` means it judged it. */
+const covers = (leg, address, why = null) => { COVERAGE.set(`${leg}\u0000${address}`, why); };
+const coverageOf = (leg, address) => {
+  const key = `${leg}\u0000${address}`;
+  return COVERAGE.has(key) ? { known: true, why: COVERAGE.get(key) } : { known: false, why: null };
+};
+/** The address a capture filename belongs to, against the ADDRESSES table rather than by splitting
+ *  on the first dash: `fleet-rule-check.png` starts with `fleet-` and is not fleet's capture. Only
+ *  the canonical name the capture leg writes counts, so a stray file in the directory is reported
+ *  as a stray rather than silently standing in for a page. */
+function addressOf(file, list) {
+  const [w, h] = CAPTURE_FRAME;
+  const found = (list ?? []).find((a) => file === `${a}-${CAPTURE_THEME}-${w}x${h}.png`);
+  return found ?? null;
+}
 
 // ---------------------------------------------------------------- static checks (no browser)
 
@@ -487,6 +528,8 @@ function checkFieldGrid(capturesDir) {
   const expected = addresses();
   const needed = expected === null ? null : expected.length;
   if (files.length === 0) {
+    // Same rule as tonal-drift's comp refusal: a whole-leg exit drops every page by name (M1-124).
+    for (const a of expected ?? []) covers('field-grid', a, `no captures at all in ${capturesDir}`);
     return record('field-grid', true, false,
       `DID NOT RUN: got 0 captures in ${capturesDir}, needed at least 1 `
       + (needed === null
@@ -506,18 +549,38 @@ function checkFieldGrid(capturesDir) {
   // captures the grid could not be compared on -- each named in the output rather than folded into a
   // count, because "nothing was declared" and "nothing was looked at" read the same in a number.
   const honoured = [], excluded = [], thin = [], staleDump = [], undeclaredNoDump = [], skippedDetail = [];
-  let checked = 0, skipped = 0, unthemed = 0;
+  let checked = 0, skipped = 0, unthemed = 0, scanty = 0;
+  // EVERY DROP BELOW NAMES ITS PAGE (M1-124). The counters stay -- they are what the detail line
+  // reads -- but each one is now paired with a disposition against the ADDRESS, so a reader can ask
+  // "what did this leg do with teams" and get an answer instead of a total.
   for (const f of files) {
+    const at = addressOf(f, expected);
+    const drop = (why) => { if (at !== null) covers('field-grid', at, why); };
     let mtime = 0; try { mtime = fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { mtime = 0; }
-    if (mtime < bar) { staleCount++; continue; }
+    if (mtime < bar) { staleCount++; drop(`capture is older than ${SRC}`); continue; }
     const im = pixels(path.join(ROOTREF.root, capturesDir, f));
-    if (!im) { skipped++; continue; }
+    if (!im) { skipped++; drop('capture could not be decoded (no PIL?)'); continue; }
     const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
-    if (mid.length < 2) continue;
+    // A SILENT DROP WITH NO COUNTER AT ALL (M1-124), AND IT IS NOT THE ONE THAT HID TEAMS.
+    // This was a bare `continue`: not a count, not a name, nothing. A page whose paper produced
+    // fewer than two strip scanlines left the leg without a trace of any kind.
+    // MEASURED, AND STATED BECAUSE IT WOULD BE EASY TO CLAIM OTHERWISE: no address in the console
+    // currently reaches this line -- `scanty` is 0 on a full run of all thirteen. teams IS dropped,
+    // but one step further down, at the painted-strip guard, which M1-114 already named: teams
+    // yields four scanlines and then paints no `--strip-field-line` ink on any of them
+    // (`fieldBorders` returns [] at y=98, 342 and 437 from either anchor), so `onStrip` is empty
+    // rather than `mid` being short. Two different silent sites, one page. This one is closed on
+    // the evidence that it EXISTS, not on evidence that it has bitten -- which is the whole reason
+    // an audit enumerates from the source instead of from the list of pages that happen to be red.
+    if (mid.length < 2) {
+      scanty++;
+      drop(`only ${mid.length} strip scanline(s) found, needed 2 — the page paints no field-line ink the detector can pair`);
+      continue;
+    }
     // A capture that names no theme is skipped AND COUNTED, so the leg can say it did not run
     // for that file rather than passing it by default (law 23).
     const theme = captureTheme(f);
-    if (theme === null) { unthemed++; continue; }
+    if (theme === null) { unthemed++; drop('filename names no theme'); continue; }
     // `checked` IS INCREMENTED WHERE THE VERDICT IS REACHED, NOT HERE (M1-114). It used to count
     // every capture that named a theme, which made it a count of files opened rather than of grids
     // judged -- and M1-108 made that number the leg's DID-NOT-RUN floor, so it has to mean what it
@@ -556,7 +619,10 @@ function checkFieldGrid(capturesDir) {
     // all (M1-92), so its dump enumerates zero strips and the leg must refuse it out loud rather
     // than report a clean grid over nothing.
     const declaresPaint = known !== null && known.every((s) => typeof s.painted === 'boolean' && typeof s.x === 'number');
-    if (known !== null && !declaresPaint) { staleDump.push(f); continue; }
+    // A REFUSAL IS A DROP (M1-124). This one is correct and transitional -- it clears on the first
+    // run that captures, because the PNG and its dump are written together -- but it still means
+    // the page was not looked at, so it lands in the table rather than reading as a pass.
+    if (known !== null && !declaresPaint) { staleDump.push(f); drop('dump predates `painted` and cannot say which scanlines are strips'); continue; }
     const rows = gridRows(im, mid, line, known);
     // OFF-STRIP SCANLINES ARE EXCLUDED AND NAMED, NOT SILENTLY DROPPED. This is the count that
     // would have told M1-110 what it was looking at in one line, so it is in the output whether or
@@ -565,16 +631,29 @@ function checkFieldGrid(capturesDir) {
     const off = rows.filter((r) => !r.onStrip).length;
     const onStrip = rows.filter((r) => r.onStrip && r.x !== undefined);
     if (off > 0) excluded.push(`${f}: ${off} of ${rows.length} scanline(s) sit on no painted strip`);
-    if (onStrip.length < 2) { thin.push(`${f}: ${onStrip.length} of ${rows.length} scanline(s) left on a painted strip, needed at least 2`); continue; }
+    if (onStrip.length < 2) {
+      thin.push(`${f}: ${onStrip.length} of ${rows.length} scanline(s) left on a painted strip, needed at least 2`);
+      drop(`${onStrip.length} of ${rows.length} scanline(s) left on a painted strip, needed 2`);
+      continue;
+    }
     checked++;
     const judged = judgeGrid(onStrip);
-    if (judged.ok === undefined) { skippedDetail.push(`${f}: ${judged.detail}${honouredClause(judged)}`); continue; }
+    if (judged.ok === undefined) {
+      skippedDetail.push(`${f}: ${judged.detail}${honouredClause(judged)}`);
+      drop(judged.detail);
+      continue;
+    }
+    // JUDGED -- the one disposition that is not a drop. Recorded explicitly rather than inferred
+    // from the absence of a drop, because "no drop recorded" is exactly the silence this row exists
+    // to remove: a page the loop never reached at all would otherwise read as judged.
+    drop(null);
     if (!judged.ok) bad.push(`${f}: ${judged.detail}${honouredClause(judged)}`);
     else if (judged.honoured.length > 0) honoured.push(`${f}: ${judged.honoured.join(', ')}`);
   }
   const detail = (bad.length ? bad.join(' · ') : `aligned on ${checked} captures`)
     + (honoured.length ? ` · honoured a declared span: ${honoured.join(' · ')}` : '')
     + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
+    + (scanty ? ` · ${scanty} skipped (fewer than 2 strip scanlines found — see page-coverage for which)` : '')
     + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '')
     + (undeclaredNoDump.length ? ` · ${undeclaredNoDump.length} capture(s) read with no declaration dump beside them, so nothing could be honoured by declaration: ${undeclaredNoDump.slice(0, 3).join(', ')}${undeclaredNoDump.length > 3 ? ', …' : ''}` : '')
     + (excluded.length ? ` · ${excluded.length} capture(s) with scanlines excluded as not-a-strip: ${excluded.slice(0, 3).join(', ')}${excluded.length > 3 ? ', …' : ''}` : '')
@@ -662,7 +741,14 @@ function checkTonalDrift(capturesDir, compPath) {
   // load, so the selftest's temp-tree redirect never reached this line and this branch could not be
   // driven from a test at all. A branch no test can reach is how it kept the wrong verdict.
   const comp = pixels(path.join(ROOTREF.root, compPath));
-  if (!comp) return record('tonal-drift', false, false, `DID NOT RUN: comp unreadable at ${compPath} (no PIL, or the file moved) — nothing was compared`);
+  if (!comp) {
+    // A WHOLE-LEG REFUSAL DROPS EVERY PAGE, and the table has to say so for each of them (M1-124).
+    // Left silent, this early return is the one shape that makes the audit itself lie: no address
+    // carries a disposition, so a reader asking "what did tonal-drift do with teams" gets the same
+    // answer as if the loop had never been written.
+    for (const a of addresses() ?? []) covers('tonal-drift', a, `comp unreadable at ${compPath}, so nothing was compared`);
+    return record('tonal-drift', false, false, `DID NOT RUN: comp unreadable at ${compPath} (no PIL, or the file moved) — nothing was compared`);
+  }
   const ref = tonal(comp);
   const files = (() => { try { return fs.readdirSync(path.join(ROOTREF.root, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
   const bar = newestSourceMtime();
@@ -670,10 +756,24 @@ function checkTonalDrift(capturesDir, compPath) {
   const { fresh, stale } = partitionFresh(files.map((f) => ({ f, mtime: stat(f) })), bar);
   const rows = [];
   let unreadable = 0;
+  // PER-PAGE DISPOSITIONS (M1-124). This leg already named the addresses with NO fresh capture,
+  // which is more than its sibling did -- but a capture that was fresh and then failed to decode
+  // was only ever a number, so `read 12 of 13` never said which one went missing.
+  const list = addresses();
+  for (const { f } of stale) {
+    const at = addressOf(f, list);
+    if (at !== null) covers('tonal-drift', at, `capture is older than ${SRC}`);
+  }
   for (const { f } of fresh) {
+    const at = addressOf(f, list);
     const im = pixels(path.join(ROOTREF.root, capturesDir, f));
-    if (!im) { unreadable++; continue; }
+    if (!im) {
+      unreadable++;
+      if (at !== null) covers('tonal-drift', at, 'capture could not be decoded (no PIL?)');
+      continue;
+    }
     const t = tonal(im);
+    if (at !== null) covers('tonal-drift', at, null);
     rows.push({ f, mid: t.mid, ratio: t.mid / ref.mid });
   }
   // The provenance rides on every outcome: a number with no denominator is what this row is about.
@@ -939,6 +1039,73 @@ function addresses() {
 
 /** Capture the set into CAPTURES with the gate's own `<address>-<theme>-<w>x<h>.png` naming,
  *  immediately before judging it. Returns the count and the measured runtime. */
+/**
+ * THE BOOT AXES (M1-106): the states the app is built around that no CAPTURE instrument could
+ * reach, because every one of them seeded the management key before boot.
+ *
+ * M1-100 established six of them and M1-80 found the cost: `features/unlock-mgmt` renders its
+ * modal ONLY when the console has no management key, so `.myx-modal-title`, `.myx-modal-field-label`
+ * and two siblings could not have rendered in ANY capture ever taken here. Not dead rules and not
+ * missing fixtures - a fixture that was always seeded past. The ink instrument already drives this
+ * axis (exercise.mjs:355-356 seeds `keyed` and `unkeyed`), so THE AXIS EXISTED AND ONLY THE CAMERA
+ * LACKED IT: an instrument measured the surface while no picture of it existed, which is the gap
+ * this leg closes.
+ *
+ * IT IS A SEPARATE LEG AND A SEPARATE DIRECTORY ON PURPOSE. `checkFieldGrid` reads every PNG in the
+ * captures directory, so an unkeyed frame - a modal over a page - would be collected as a rack row
+ * and would red a grid leg it has nothing to say about. An axis is evidence about a surface.
+ *
+ * WHAT IT ASSERTS IS THE OPPOSITE OF THE KEYED PASS, and that is the point rather than a detail.
+ * The keyed capture refuses a frame whose fixture marker did not load; on this axis the fixture
+ * CANNOT load, because the console never gets far enough to ask for it. So the rule inverts: a
+ * frame is written only when the console has put the unlock surface on the glass, by name.
+ */
+async function captureAxes(dir) {
+  const list = addresses();
+  if (list === null) return { ok: false, detail: `${ADDRESSES_FILE}: the ADDRESSES table was not found` };
+  fs.mkdirSync(path.join(ROOTREF.root, dir), { recursive: true });
+  const [w, h] = CAPTURE_FRAME;
+  const started = Date.now();
+  const wrong = [];
+  let wrote = 0;
+  try {
+    // NO KEY IS SEEDED. This is the whole axis: the console boots without one and must answer with
+    // the unlock surface rather than a blank, and nothing else in this file withholds it.
+    await withChrome({ 'splice.theme': CAPTURE_THEME }, async (send) => {
+      for (const address of list) {
+        const file = path.join(ROOTREF.root, dir, `${address}-unkeyed-${CAPTURE_THEME}-${w}x${h}.png`);
+        // The fixture still rides in the URL: a page that never gets its key renders the unlock
+        // modal, and asking for the fixture anyway is what makes this the SAME address in the one
+        // state that differs, rather than a different address that also happens to be unkeyed.
+        await show(send, captureUrl(address), w, h);
+        const seen = await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+          const scrim = document.querySelector('.myx-modal-scrim[role="dialog"]');
+          const title = document.querySelector('.myx-modal-title');
+          return JSON.stringify({
+            unlock: scrim !== null,
+            label: scrim === null ? null : (scrim.getAttribute('aria-label') || ''),
+            title: title === null ? null : title.textContent.trim(),
+            planes: document.querySelectorAll('.myx-bay, .myx-strip, .myx-scope, .myx-fbox').length,
+          });
+        })()` });
+        const got = JSON.parse(seen.result.value);
+        if (!got.unlock) {
+          wrong.push(`${address} (no unlock dialog: planes=${got.planes})`);
+          covers('boot-axes', address, 'rendered no unlock dialog without a key');
+          continue;
+        }
+        await shoot(send, file);
+        wrote++;
+      }
+    });
+  } catch (e) { return { ok: false, detail: `axis capture failed after ${wrote} file(s): ${e.message}` }; }
+  const ms = Date.now() - started;
+  if (wrong.length > 0) return { ok: false, detail: `${wrong.length} address(es) rendered no unlock dialog while unkeyed: ${wrong.join(', ')}` };
+  if (wrote !== list.length) return { ok: false, detail: `captured ${wrote} of ${list.length}` };
+  return { ok: true, count: wrote, ms,
+    detail: `unkeyed (no myx-mgmt-key) x ${CAPTURE_THEME} x ${w}x${h}: ${wrote} captures in ${(ms / 1000).toFixed(1)}s · the unlock surface, which no keyed capture can reach` };
+}
+
 async function captureSet(dir) {
   const list = addresses();
   if (list === null) return { ok: false, detail: `${ADDRESSES_FILE}: the ADDRESSES table was not found` };
@@ -946,7 +1113,12 @@ async function captureSet(dir) {
   const [w, h] = CAPTURE_FRAME;
   const started = Date.now();
   const blanks = [];
+  const wrongRoom = [];
   let wrote = 0;
+  // Every address starts as NOT ATTEMPTED. A page the loop never reaches -- because the browser
+  // threw halfway, which is the `catch` below -- keeps this disposition, so an aborted run says
+  // which pages it never got to instead of reporting a total (M1-124).
+  for (const a of list) covers('capture-set', a, 'not attempted (the capture run ended first)');
   try {
     await withChrome({ 'myx-mgmt-key': mgmtKey(), 'splice.theme': CAPTURE_THEME }, async (send) => {
       for (const address of list) {
@@ -963,7 +1135,19 @@ async function captureSet(dir) {
         // own background is read back from the render, and a capture that did not come back in
         // the room it claims is not written at all.
         const room = await send('Runtime.evaluate', { returnByValue: true, expression: 'getComputedStyle(document.documentElement).colorScheme' });
-        if (room.result.value !== CAPTURE_THEME) return;
+        // `continue`, NOT `return` -- AND THE DIFFERENCE IS TWELVE PAGES (M1-124). This was a bare
+        // `return`, and it does not return from the per-address step: it returns from the
+        // `withChrome` callback, ABORTING THE LOOP. One page coming back in the wrong room meant
+        // every address after it was never attempted, and all of them were reported as the single
+        // set-level line `captured N of M (the room did not take)` -- a count with no names, for
+        // pages that were never even asked. Every sibling refusal in this loop already used
+        // `continue` and named its address; this one was the odd one out, and it is the largest
+        // silent per-page drop in the file.
+        if (room.result.value !== CAPTURE_THEME) {
+          wrongRoom.push(`${address} (asked for ${CAPTURE_THEME}, got ${room.result.value})`);
+          covers('capture-set', address, `page rendered in ${room.result.value}, not ${CAPTURE_THEME}`);
+          continue;
+        }
         // A BLANK CAPTURE PASSES EVERY GEOMETRIC CHECK SILENTLY (M1-83): a field grid holds
         // perfectly across zero strips, so twelve empty rack frames scored as a clean grid all
         // night. So the gate asks the page what it actually put on the glass, and refuses to write
@@ -994,6 +1178,7 @@ async function captureSet(dir) {
         const blank = wanted === undefined ? seen.planes === 0 : seen.sample !== wanted;
         if (blank) {
           blanks.push(`${address}${wanted === undefined ? '' : ` (fixture=${wanted} did not load: sample=${seen.sample})`}`);
+          covers('capture-set', address, wanted === undefined ? 'no content plane' : `fixture=${wanted} did not load (sample=${seen.sample})`);
           continue;
         }
         await shoot(send, file);
@@ -1008,6 +1193,7 @@ async function captureSet(dir) {
         if (decl.result && decl.result.value !== undefined) {
           fs.writeFileSync(path.join(ROOTREF.root, dir, declName(path.basename(file))), decl.result.value);
         }
+        covers('capture-set', address, null);
         wrote++;
       }
     });
@@ -1019,7 +1205,15 @@ async function captureSet(dir) {
     // NAMED, not counted: which address, and whether its fixture failed to load.
     return { ok: false, detail: `${blanks.length} capture(s) refused with no content plane: ${blanks.join(', ')}` };
   }
-  if (wrote !== list.length) return { ok: false, detail: `captured ${wrote} of ${list.length} (the room did not take)` };
+  // NAMED, not counted: this used to be `captured N of M (the room did not take)` for pages that,
+  // after the `return` above, had never been asked at all (M1-124).
+  if (wrongRoom.length > 0) {
+    return { ok: false, detail: `${wrongRoom.length} capture(s) came back in the wrong room: ${wrongRoom.join(', ')}` };
+  }
+  if (wrote !== list.length) {
+    const missed = list.filter((a) => coverageOf('capture-set', a).why !== null);
+    return { ok: false, detail: `captured ${wrote} of ${list.length} — not written: ${missed.join(', ')}` };
+  }
   // WHAT EACH CAPTURE ASKED FOR, printed rather than implied: the strengthened verify greps for
   // `fixture=hero` precisely because the old one passed on thirteen blank pages, so the set must
   // say which fixtures it loaded rather than that it loaded thirteen files.
@@ -1027,6 +1221,55 @@ async function captureSet(dir) {
   return { ok: true, count: wrote, ms,
     detail: `${wrote} captures in ${(ms / 1000).toFixed(1)}s (${(ms / wrote / 1000).toFixed(1)}s each)`
       + ` · fixtures: ${loaded.join(' ')}` };
+}
+
+/**
+ * ---- THE TABLE (M1-124): EVERY ADDRESS-SCOPED LEG, EVERY PAGE, JUDGED OR DROPPED AND WHY ----
+ *
+ * THE DENOMINATOR IS TAKEN FROM TWO SOURCES AND NEITHER IS THIS FUNCTION. The addresses come from
+ * the ADDRESSES table in webui/src/app/rows.ts, the same list the capture leg enumerates; the legs
+ * come from the list below, which is the set of legs that READ CAPTURES. §24's rule is that a check
+ * whose denominator comes from the same list it checks cannot fail for anything absent from that
+ * list, so neither half is written out here as a literal count.
+ *
+ * WHICH LEGS ARE IN SCOPE, AND WHY THE OTHER FIVE ARE NOT. `ladder-steps`, `type-distribution`,
+ * `spacing-distribution`, `no-type-transform` and `absence-vocabulary` read the SOURCE TREE -- a
+ * glob of .css files, or a directory walk -- and never enumerate addresses at all. A page cannot be
+ * dropped from a leg that has no notion of pages, so those five are out of scope BY A STATED
+ * REASON rather than by omission, which is the same distinction this table exists to draw.
+ *
+ * WHAT IT ASSERTS, AND WHAT IT DELIBERATELY DOES NOT. It fails ONLY when an address has no
+ * disposition from a leg that should have given it one -- a hole in the audit itself. It does NOT
+ * fail because a page was dropped: settings' rack is not `.myx-strip` (M1-92) and teams paints no
+ * field-line ink, and both are legitimate drops that belong in the open rather than in a counter.
+ * Adding a floor here would redden pages this row was explicitly told not to redden, and would also
+ * be the wrong instrument: the fixes are page-side and live on other rows.
+ */
+const PAGE_LEGS = ['capture-set', 'field-grid', 'tonal-drift'];
+
+function checkPageCoverage() {
+  const list = addresses();
+  if (list === null) {
+    return record('page-coverage', false, false,
+      `DID NOT RUN: ${ADDRESSES_FILE} carries no ADDRESSES table, so there is no denominator to audit against`);
+  }
+  const holes = [];
+  const lines = [];
+  for (const a of list) {
+    const cells = PAGE_LEGS.map((leg) => {
+      const { known, why } = coverageOf(leg, a);
+      if (!known) { holes.push(`${leg}/${a}`); return `${leg}=UNACCOUNTED`; }
+      return why === null ? `${leg}=judged` : `${leg}=DROPPED (${why})`;
+    });
+    lines.push(`    ${a.padEnd(11)} ${cells.join(' · ')}`);
+  }
+  const dropped = list.filter((a) => PAGE_LEGS.some((leg) => coverageOf(leg, a).why !== null));
+  const head = `${list.length} address(es) x ${PAGE_LEGS.length} address-scoped leg(s) = ${list.length * PAGE_LEGS.length} dispositions`
+    + `, ${holes.length} unaccounted`
+    + ` · ${dropped.length} page(s) dropped by at least one leg${dropped.length ? `: ${dropped.join(', ')}` : ''}`
+    + ` · the other legs read the source tree and enumerate no addresses, so no page can be dropped from them`
+    + (holes.length ? ` · UNACCOUNTED: ${holes.join(', ')}` : '');
+  return record('page-coverage', false, holes.length === 0, `${head}\n${lines.join('\n')}`);
 }
 
 /** THE FRESHNESS RULE, and it outlives this row. A check that reads an artifact it did NOT
@@ -1291,6 +1534,102 @@ function selftest() {
       fs.rmSync(tmp, { recursive: true, force: true });
       return findings[0];
     }, false],
+    // ---- THE TABLE, MUTATION-PROVED ON ITS OWN TERMS (M1-124) ----
+    //
+    // A coverage report that cannot tell dropped-and-named from judged-and-passed is the vacuous
+    // green this campaign keeps finding -- the same shape as the diff of two empty files that
+    // reported them identical in my own measuring harness on M1-108. So the proof is: plant one
+    // address every leg must drop and one that must be judged, run the real legs over a real
+    // directory, and require the table to say something DIFFERENT about each. A table that said
+    // `judged` for both, or `DROPPED` for both, would pass a weaker assertion than this one.
+    ['page-coverage', () => {
+      findings.length = 0; COVERAGE.clear();
+      const good = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-table-');
+      seedCaptures(tmp, ['fleet'], { im: good.im, strips: good.known });
+      // `settings` gets the SAME pixels and a dump that declares no strips -- M1-92's real shape,
+      // and the only difference between the two pages. Identical glass, opposite dispositions.
+      seedCaptures(tmp, ['settings'], { im: good.im, strips: [] });
+      fs.writeFileSync(path.join(tmp, 'webui/src/app/rows.ts'),
+        "export const ADDRESSES = ['fleet', 'settings'] as const;\n");
+      fs.mkdirSync(path.join(tmp, 'mocks'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'mocks/comp.png'), encodePng(good.im));
+      // THE FRESHNESS BAR IS `webui/src`, AND THIS FIXTURE WRITES rows.ts LAST, so without this the
+      // captures are older than the source they claim to measure and BOTH pages drop as stale --
+      // which is the leg working correctly and the fixture lying. Caught because the assertion
+      // demanded two DIFFERENT dispositions and got the same one twice; a case that only checked
+      // "settings is dropped" would have passed while proving nothing.
+      const future = new Date(Date.now() + 10_000);
+      for (const f of fs.readdirSync(path.join(tmp, 'caps'))) fs.utimesSync(path.join(tmp, 'caps', f), future, future);
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      // capture-set's dispositions are seeded the way a capture run leaves them; this case is
+      // about the table, and captureSet itself needs a browser.
+      covers('capture-set', 'fleet', null); covers('capture-set', 'settings', null);
+      checkFieldGrid('caps');
+      checkTonalDrift('caps', 'mocks/comp.png');
+      checkPageCoverage();
+      ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      const table = findings[findings.length - 1];
+      const ok = /fleet\s+capture-set=judged · field-grid=judged/.test(table.detail)
+        && /settings\s+capture-set=judged · field-grid=DROPPED/.test(table.detail)
+        && !/UNACCOUNTED/.test(table.detail);
+      findings.length = 0;
+      record('page-coverage', false, ok,
+        ok ? 'the planted judged page reads judged and the planted dropped page reads DROPPED, by name'
+           : `the table did not distinguish them: ${table.detail.replace(/\n/g, ' | ')}`);
+      return findings[0];
+    }, true],
+    // A LEG THAT NEVER RAN LEAVES A HOLE, AND THE HOLE IS THE ONE THING THIS TABLE FAILS FOR.
+    // Without this the table would be satisfied by recording nothing at all: every address absent,
+    // every cell blank, and a clean green over an empty denominator (law 34, one level up).
+    ['page-coverage', () => {
+      findings.length = 0; COVERAGE.clear();
+      const tmp = fs.mkdtempSync('/tmp/lookgate-hole-');
+      fs.mkdirSync(path.join(tmp, 'webui/src/app'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'webui/src/app/rows.ts'),
+        "export const ADDRESSES = ['fleet', 'teams'] as const;\n");
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      // fleet is fully accounted for; teams is accounted for by two legs and missed by the third.
+      for (const leg of PAGE_LEGS) covers(leg, 'fleet', null);
+      covers('capture-set', 'teams', null); covers('field-grid', 'teams', 'paints no field-line ink');
+      checkPageCoverage(); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
+    // The boring case §24 names: no denominator at all. A table with no addresses to audit must
+    // refuse rather than report zero holes over zero pages.
+    ['page-coverage', () => {
+      findings.length = 0; COVERAGE.clear();
+      const tmp = fs.mkdtempSync('/tmp/lookgate-noaddr-');
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkPageCoverage(); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
+    // ---- THE DROP SITE NO PAGE CURRENTLY REACHES (M1-124). `mid.length < 2` was a bare `continue`
+    // with no counter, and `scanty` is 0 on a full run of all thirteen addresses -- so if it is
+    // ever to be visible, a synthetic page is the only thing that can prove it. One band of paper:
+    // one scanline, which cannot be compared against itself.
+    ['page-coverage', () => {
+      findings.length = 0; COVERAGE.clear();
+      const one = rackProbe([{ bay: 0, left: 219, edges: [373, 527] }]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-scanty-');
+      seedCaptures(tmp, ['fleet'], { im: one.im, strips: one.known });
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      covers('capture-set', 'fleet', null); covers('tonal-drift', 'fleet', null);
+      checkFieldGrid('caps'); checkPageCoverage(); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      const table = findings[findings.length - 1];
+      const ok = /fleet.*field-grid=DROPPED \(only 1 strip scanline/.test(table.detail);
+      findings.length = 0;
+      record('page-coverage', false, ok,
+        ok ? 'a page dropped at the no-counter site is named in the table'
+           : `the silent site stayed silent: ${table.detail.replace(/\n/g, ' | ')}`);
+      return findings[0];
+    }, true],
     ['field-grid', () => fieldProbe('dark', 'dark'), false],
     ['field-grid', () => fieldProbe('light', 'light'), false],
     ['field-grid', () => fieldProbe('light', 'dark'), true],
@@ -1374,6 +1713,21 @@ if (freshness && freshness.stale > 0) {
 // has to state what it cost, and a reader has to be able to see it without opening the ledger.
 record('capture-set', false, true, `${CAPTURE_NOTE} · set: ${(addresses() || []).length} addresses x ${CAPTURE_THEME} x ${CAPTURE_FRAME.join('x')} · freshness bar: newest mtime under ${SRC}`);
 
+// THE BOOT AXIS (M1-106), its own line so a reader sees WHICH state was reached rather than a
+// count of files. Non-blocking for the same reason capture-set is: a leg that cannot run is a
+// DID NOT RUN, and the surfaces it is about are pages, not the grid this gate exists to protect.
+let AXES_OK = false;
+let AXES_NOTE = 'axes not produced this run';
+if (!has('no-capture')) {
+  const axes = await captureAxes(AXES_DIR);
+  AXES_OK = axes.ok;
+  AXES_NOTE = axes.ok ? axes.detail : `DID NOT RUN: ${axes.detail}`;
+  if (!axes.ok) process.stderr.write(`  ! boot-axes: ${axes.detail}\n`);
+} else {
+  AXES_NOTE = 'axes not produced (--no-capture)';
+}
+record('boot-axes', false, AXES_OK, AXES_NOTE);
+
 const files = cssFiles(SRC);
 checkLadderSteps(readIf(TOKENS) || '');
 checkTypeDistribution(files);
@@ -1382,6 +1736,8 @@ checkNoTypeTransform(files);
 checkAbsenceVocabulary(SRC);
 checkFieldGrid(CAPTURES);
 checkTonalDrift(CAPTURES, COMP);
+// LAST, because it audits what the legs above recorded (M1-124).
+checkPageCoverage();
 
 if (has('json')) {
   console.log(JSON.stringify({ findings }, null, 2));

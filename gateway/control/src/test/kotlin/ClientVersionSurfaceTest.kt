@@ -35,7 +35,6 @@ import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.version.ClientVersionTracker
 import java.net.ServerSocket
-import java.net.Socket
 import java.nio.file.Files
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -64,9 +63,8 @@ class ClientVersionSurfaceTest {
             log = {},
             clientVersions = versions,
         )
-        server.start()
+        server.start() // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
         try {
-            awaitPort(port)
             val expected =
                 "Claude Code 2.1.258 is newer than the version splice $GATEWAY_VERSION was tested with (2.1.257)"
             assertEquals(expected, healthWarning(port))
@@ -121,12 +119,4 @@ class ClientVersionSurfaceTest {
     )
 
     private fun availablePort(): Int = ServerSocket(0).use { it.localPort }
-
-    private fun awaitPort(port: Int) {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
-            check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
-            Thread.sleep(50)
-        }
-    }
 }

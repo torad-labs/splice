@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.AsyncFileIo
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -36,9 +37,13 @@ class AsyncFileIoTest {
         val accepted = AtomicInteger(0)
         val rejected = AtomicInteger(0)
         val ran = AtomicInteger(0)
+        val ranPermits = Semaphore(0)
         val extraCount = maxPendingTasks + margin
         repeat(extraCount) {
-            val ok = AsyncFileIo.submit { ran.incrementAndGet() }
+            val ok = AsyncFileIo.submit {
+                ran.incrementAndGet()
+                ranPermits.release()
+            }
             if (ok) accepted.incrementAndGet() else rejected.incrementAndGet()
         }
 
@@ -56,11 +61,13 @@ class AsyncFileIoTest {
         // Wait for every accepted task to actually run before calling drain(): drain() itself
         // calls submit() for its completion marker, and while the queue is still draining, pending
         // can transiently sit AT the cap (the just-finished blocking task's own decrement races the
-        // marker's increment) — polling ran first removes that race instead of masking it.
-        val deadline = System.currentTimeMillis() + 10_000
-        while (ran.get() < accepted.get() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-        }
+        // marker's increment) — waiting for every run first removes that race instead of masking it.
+        // Each task releases one permit, so acquiring `accepted` of them IS every accepted task having
+        // run: an event with a deadline, not a poll of real time.
+        assertTrue(
+            ranPermits.tryAcquire(accepted.get(), 10, TimeUnit.SECONDS),
+            "accepted tasks never all ran once the worker was released",
+        )
         assertEquals(accepted.get(), ran.get(), "expected every accepted task to run once the worker was released")
 
         assertTrue(AsyncFileIo.drain(10_000), "drain timed out waiting for the queue to empty")

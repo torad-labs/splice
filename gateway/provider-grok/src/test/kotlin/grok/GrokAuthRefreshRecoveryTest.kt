@@ -24,6 +24,7 @@ import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -177,8 +178,10 @@ class GrokAuthRefreshRecoveryTest {
         })
         assertNull(auth.refresh())
         assertEquals(1, calls.get())
-        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        val before = Files.getLastModifiedTime(file).toMillis()
         authFile(dir, access = "grok-access", refresh = "fresh-refresh") // re-login rewrites the file
+        // the mtime is STEPPED rather than waited for, so a coarse-grained filesystem still advances it
+        Files.setLastModifiedTime(file, FileTime.fromMillis(before + 1_000))
         granted = true
         assertEquals("rotated-access", bearerToken(auth.refresh()))
         assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it

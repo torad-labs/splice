@@ -12,15 +12,21 @@
 // and continue, and launchTotalCap owns the only whole-turn cancel. The sentinel is per-turn and
 // sticky, so resetRound clears a stale Idle between rounds while leaving TotalCap standing.
 //
-// CLOCK POLICY (HD-19): the two IDLE cases still ride a real clock with generous margins, because
-// what they prove is idleness measured by InflightGate.Slot, whose clock is its own and outside this
-// wave's seams. The two TOTAL-CAP cases do NOT: TurnWatchdog now takes an injected Ticker, so
-// [VirtualTicks] advances an injected clock by exactly the interval the production loop asked for
-// and returns instantly. Those two used to be the file's slowest (1.67s and ~0.4s of real sleeping);
-// they are now microseconds AND stricter — the cadence itself is asserted rather than waited out.
+// CLOCK POLICY (HD-19, corrected by V4-139 on 2026-09-18): no arm here waits on the wall clock.
+// The TOTAL-CAP cases run on [VirtualTicks]: TurnWatchdog takes an injected Ticker and clock, so a
+// cap is proven in instant iterations and the cadence itself is asserted rather than waited out.
+// The IDLE cases run on [SteppedTicks]. This header used to say they had to ride a real clock
+// because InflightGate.Slot's clock had no seam. It was never true: InflightGate has taken an
+// injectable clock since it was created (c2abdd3f, 2026-07-16; today an ElapsedClock at
+// InflightGate.kt:40-44, which Slot.idleForMs reads), and the note kept these arms on ~7 s of real
+// sleeping for no reason. The gate and the dog now share one virtual clock that the
+// test steps: run to an instant, assert, change the world, release.
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -28,6 +34,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.turn.WatchdogBudget
+import splice.core.util.ElapsedClock
 import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.Ticker
@@ -82,6 +89,48 @@ class WatchdogTest {
         }
     }
 
+    /** V4-139: virtual time the TEST steps, for the idle arms. The gate's slot and the watchdog read
+     *  the same [clock]; each poll tick advances it by the interval the production loop asked for,
+     *  and a tick that would cross [horizon] parks until the test raises it. [runTo] steps to a
+     *  virtual instant and returns once the poller is parked there; [release] lifts the horizon for
+     *  an arm that ends by the poller FIRING. Everything runs on runBlocking's one thread, so the
+     *  hand-off is deterministic: no real time passes between two virtual instants. */
+    private class SteppedTicks {
+        var now: Long = 0L
+            private set
+        private var horizon = 0L
+        private var resume = CompletableDeferred<Unit>()
+        private var parked = CompletableDeferred<Unit>()
+        val clock = ElapsedClock { now }
+        val ticker = Ticker { ms ->
+            while (now + ms > horizon) {
+                parked.complete(Unit)
+                resume.await()
+            }
+            now += ms
+            true
+        }
+
+        /** The only real time in these arms, and it is a BACKSTOP, never a wait: if the poller has
+         *  fired and exited, nothing will ever park at [instantMs], and without this the arm hangs
+         *  instead of going red. Measured: a mutant that flips the client-frame probe wedged the
+         *  suite until it was killed. A healthy step returns in microseconds. */
+        suspend fun runTo(instantMs: Long) {
+            parked = CompletableDeferred()
+            raise(instantMs)
+            withTimeout(PARK_BACKSTOP_MS) { parked.await() }
+        }
+
+        fun release() = raise(Long.MAX_VALUE)
+
+        private fun raise(to: Long) {
+            horizon = to
+            val waking = resume
+            resume = CompletableDeferred()
+            waking.complete(Unit)
+        }
+    }
+
     private fun budget(firstByteMs: Long, idleMs: Long, capMs: Long) = WatchdogBudget(
         firstByteTimeout = firstByteMs.milliseconds,
         streamIdle = idleMs.milliseconds,
@@ -91,9 +140,14 @@ class WatchdogTest {
     @Test
     fun `prefill silence beyond streamIdle is NOT reaped before the first client frame - the v35 case`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000))
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
             val cancelled = AtomicBoolean(false)
             val target = launch {
                 try {
@@ -103,7 +157,7 @@ class WatchdogTest {
                 }
             }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
-            delay(900) // silent 3x streamIdle, still under firstByteTimeout
+            ticks.runTo(900) // silent 3x streamIdle, still under firstByteTimeout
             assertNull(dog.fired, "prefill was reaped — the compaction-ate-my-quota regression")
             target.cancel()
             poller.cancel()
@@ -115,14 +169,19 @@ class WatchdogTest {
     // compaction is never reaped by THIS poller — not at firstByteTimeout, not at totalCap, which is
     // launchTotalCap's cancel and the wall that alone may end it. Before this the tier was RAISED to
     // totalCap, and two pollers on one deadline flipped a coin over which verdict named the stall
-    // (gate run 33575037270 on a loaded runner). Rides a real clock like the v35 arm above: it
-    // proves idleness as the slot measures it, and the slot's clock has no seam.
+    // (gate run 33575037270 on a loaded runner). Like the v35 arm above, it proves idleness as the
+    // slot measures it, on the stepped virtual clock the slot shares.
     @Test
     fun `the compact budget never reaps pre-output silence from the idle poller, even past totalCap`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 600).forCompact())
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 5_000, idleMs = 300, capMs = 600).forCompact(),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
             val cancelled = AtomicBoolean(false)
             val target = launch {
                 try {
@@ -132,7 +191,7 @@ class WatchdogTest {
                 }
             }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
-            delay(1_200) // silent 4x streamIdle and 2x totalCap, no client frame yet
+            ticks.runTo(1_200) // silent 4x streamIdle and 2x totalCap, no client frame yet
             assertNull(dog.fired, "the idle poller reaped a compaction's pre-output silence — the wall alone owns it")
             assertFalse(cancelled.get(), "the round was cancelled without a verdict")
             target.cancel()
@@ -149,18 +208,23 @@ class WatchdogTest {
     @Test
     fun `a handshake byte before any client frame keeps the first-output tier - the compaction stall case`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000))
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
             val frameSeen = AtomicBoolean(false)
             val target = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { frameSeen.get() })
             slot.touch() // response.created: bytes on the wire, no output
-            delay(900) // silent 3x streamIdle after the ack, still under firstByteTimeout
+            ticks.runTo(900) // silent 3x streamIdle after the ack, still under firstByteTimeout
             assertNull(dog.fired, "a handshake is not output — the ack must not flip the tier")
             assertTrue(target.isActive)
             frameSeen.set(true) // the first content frame reaches the client
-            delay(900) // and the same silence is now a mid-output stall
+            ticks.release() // and the same silence is now a mid-output stall
             target.join()
             val fired = dog.fired
             assertTrue(fired is WatchdogFired.Idle, "expected Idle once the client has seen output, got $fired")
@@ -176,18 +240,25 @@ class WatchdogTest {
     // time; eleven turns that day were reaped at the 300 s tier with a server ping 5-20 s old on every
     // close line, each re-POSTed cold by the client. A round past its tier on a path that is still
     // being pinged is HELD, and reaped only once the pings stop too. The hold is recorded once and
-    // logged once. Real clock, like every other idle arm: it proves idleness as the slot measures it.
+    // logged once. Stepped virtual clock, like every other idle arm: it proves idleness as the slot
+    // measures it.
     @Test
     fun `a silent round on a live path is held past its tier, and reaped once the path goes quiet`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
             val lines = mutableListOf<String>()
-            val dog = TurnWatchdog(budget(firstByteMs = 300, idleMs = 300, capMs = 30_000), log = { lines += it })
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 300, idleMs = 300, capMs = 30_000),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+                log = { lines += it },
+            )
             val pingAgo = AtomicLong(8_000) // the last server ping is 8 s old: a live path
             val target = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false }, WsPathPulse { pingAgo.get() })
-            delay(900) // silent 3x the first-output tier
+            ticks.runTo(900) // silent 3x the first-output tier
             assertNull(dog.fired, "a round on a path the server still pings was reaped")
             assertTrue(target.isActive)
             val held = checkNotNull(dog.held) { "the hold must be recorded" }
@@ -198,6 +269,7 @@ class WatchdogTest {
             assertEquals(1, lines.size, "one line per turn, not one per poll: $lines")
             assertTrue("on a live path" in lines.single() && "holding the round" in lines.single(), lines.single())
             pingAgo.set(90_000) // three pings missed: the path itself has gone quiet
+            ticks.release()
             target.join()
             val fired = dog.fired
             assertTrue(fired is WatchdogFired.Idle, "a quiet path is the stall the tier exists for, got $fired")
@@ -211,13 +283,18 @@ class WatchdogTest {
     @Test
     fun `idle after the first client frame is reaped with a typed sentinel`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
             val target = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
             slot.touch()
-            delay(900)
+            ticks.release() // the silence runs on until the poller reaps it
             target.join()
             val fired = dog.fired
             assertTrue(fired is WatchdogFired.Idle, "expected Idle, got $fired")
@@ -235,13 +312,18 @@ class WatchdogTest {
     @Test
     fun `resetRound clears a stale Idle so the next round is not born stalled - DR-7`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
             val target = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
             slot.touch()
-            delay(900)
+            ticks.release() // the silence runs on until the poller reaps it
             target.join()
             assertTrue(dog.fired is WatchdogFired.Idle, "setup: the round must actually have been reaped")
             poller.cancel()
@@ -282,13 +364,18 @@ class WatchdogTest {
     @Test
     fun `a stale Idle would block the later TotalCap from recording - DR-7`() {
         runBlocking {
-            val gate = InflightGate({ 0 })
+            val ticks = SteppedTicks()
+            val gate = InflightGate({ 0 }, clock = ticks.clock)
             val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 1_200))
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 10_000, idleMs = 300, capMs = 1_200),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
             val stalled = launch { delay(10.seconds) }
             val poller = dog.launchIn(this, slot, stalled, ClientFrameEmitted { true })
             slot.touch()
-            delay(900)
+            ticks.release() // round one's silence runs on until the idle poller reaps it
             stalled.join()
             assertTrue(dog.fired is WatchdogFired.Idle, "setup: round one must be reaped")
             poller.cancel()
@@ -344,9 +431,10 @@ class WatchdogTest {
                 clock = ticks.clock,
                 ticker = ticks.ticker,
             )
+            // Lively by construction, and never done: it yields forever, so only the cap ends it.
             val target = launch {
                 while (true) {
-                    delay(50)
+                    yield()
                 }
             }
             val capPoller = dog.launchTotalCap(this, target)
@@ -384,7 +472,7 @@ class WatchdogTest {
     fun `turn-scoped cap poller stays silent under the cap`() {
         runBlocking {
             val dog = TurnWatchdog(budget(2_000, 2_000, 60_000))
-            val target = launch { delay(150) }
+            val target = launch { yield() } // any duration under the 60 s cap proves the same thing
             val capPoller = dog.launchTotalCap(this, target)
             target.join()
             capPoller.cancel()
@@ -398,7 +486,7 @@ class WatchdogTest {
             val gate = InflightGate({ 0 })
             val slot = gate.admittedSlot()
             val dog = TurnWatchdog(budget(2_000, 2_000, 5_000))
-            val target = launch { delay(100) }
+            val target = launch { yield() } // any duration under the 5 s cap proves the same thing
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
             target.join()
             poller.cancel()
@@ -424,3 +512,7 @@ class WatchdogTest {
 // past every cap in this file's budgets, so "nothing fired" is proven against a clock that really
 // did run out rather than one that never got going.
 private const val BOUNDED_SAMPLES = 4
+
+// SteppedTicks.runTo's hang backstop — see its comment. Not a timing assumption: a step that has a
+// poller to park returns instantly, and only a poller that has ALREADY exited can reach this.
+private const val PARK_BACKSTOP_MS = 10_000L

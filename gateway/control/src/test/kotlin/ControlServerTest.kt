@@ -46,8 +46,9 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.net.ServerSocket
-import java.net.Socket
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 private class FakeHead(
@@ -82,6 +83,7 @@ class ControlServerTest {
     private val json = Json { ignoreUnknownKeys = true }
     private val head = FakeHead("codex", 3099)
     private val shutdownRequests = AtomicInteger()
+    private val shutdownRequested = CountDownLatch(1)
 
     // Two rows one and two hours old, the files reaching back nine days: /api/perf/summary input.
     private val perfNow = System.currentTimeMillis()
@@ -147,13 +149,15 @@ class ControlServerTest {
             launchService = LaunchService(
                 splice.core.launch.ClaudeConfigMaterializer(tmp),
             ),
-            shutdownDaemon = { shutdownRequests.incrementAndGet() },
+            shutdownDaemon = {
+                shutdownRequests.incrementAndGet()
+                shutdownRequested.countDown()
+            },
             topologyDigest = "boot-digest-abc",
             configPath = "/tmp/splice.toml",
             topologyStale = { true },
         )
         control.start()
-        awaitListening(port)
     }
 
     private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
@@ -236,7 +240,6 @@ class ControlServerTest {
         )
         degraded.start()
         try {
-            awaitListening(degradedPort)
             val body = json.parseToJsonElement(
                 client.get("http://127.0.0.1:$degradedPort/health").bodyAsText(),
             ).jsonObject
@@ -341,13 +344,15 @@ class ControlServerTest {
             header("Authorization", "Bearer $key")
         }
         assertEquals(HttpStatusCode.Accepted, accepted.status)
-        // POLLED, NOT READ INSTANTLY — and the reason is this test's own subject. The handler ACKS
+        // AWAITED, NOT READ INSTANTLY — and the reason is this test's own subject. The handler ACKS
         // FIRST and calls shutdownDaemon() afterwards (ControlServer.kt:110-115); that ordering is
         // what the test exists to pin, and it is exactly why the client can observe 202 before the
         // server has reached the call. Reading the counter on the next line therefore races the
         // very window being asserted. Caught in CI 2026-07-30 (0/10 locally — a load-dependent
-        // window looks like that). Same discipline as awaitOne below: poll with a bound.
-        awaitCount(shutdownRequests, 1, "shutdown request after a 202")
+        // window looks like that). The callback counts a latch down, so the wait is on the call
+        // itself, bounded (V4-139; it was a 5 ms poll of the counter).
+        assertTrue(shutdownRequested.await(10, TimeUnit.SECONDS), "no shutdown request after a 202")
+        assertEquals(1, shutdownRequests.get(), "exactly one shutdown request after a 202")
     }
 
     @Test
@@ -555,31 +560,13 @@ class ControlServerTest {
 }
 
 // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
-// collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.
+// collide at bind time on busy hosts; ports are OS-assigned. No readiness poll: ControlServer.start
+// returns routed and bound (Ktor's default SEQUENTIAL startup runs the modules before
+// NettyApplicationEngine's bind(...).sync(); V4-139).
 private const val HOUR_MS = 3_600_000L
 private const val DAY_MS = 24 * HOUR_MS
 
 private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
-
-private fun awaitListening(vararg ports: Int) {
-    for (p in ports) awaitOne(p)
-}
-
-private fun awaitCount(counter: AtomicInteger, expected: Int, what: String) {
-    val deadline = System.currentTimeMillis() + 10_000
-    while (counter.get() != expected) {
-        check(System.currentTimeMillis() < deadline) { "$what: expected $expected, still ${counter.get()}" }
-        Thread.sleep(5)
-    }
-}
-
-private fun awaitOne(port: Int) {
-    val deadline = System.currentTimeMillis() + 10_000
-    while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
-        check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
-        Thread.sleep(50)
-    }
-}
 
 // JW-06 lives in its own class: ControlServerTest sits at detekt's LargeClass ceiling.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -613,7 +600,6 @@ class ControlServerPerHeadConfigTest {
         )
         server.start()
         try {
-            awaitListening(perHeadPort)
             val bearer = mgmt.get()
             suspend fun getConfig(path: String) = json.parseToJsonElement(
                 client.get("http://127.0.0.1:$perHeadPort$path") {

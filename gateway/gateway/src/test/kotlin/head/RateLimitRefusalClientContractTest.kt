@@ -91,8 +91,7 @@ private class RefusalRig(tmp: Path) {
     )
 
     suspend fun start() {
-        head.start()
-        Thread.sleep(700) // Netty warmup
+        head.start() // binds before returning (Ktor Netty bind(...).sync()); no warm-up (V4-139)
     }
 
     suspend fun close() {

@@ -2,10 +2,12 @@
 // watchdog aborts a turn after 600 s with no yielded stream event; the SSE-comment keepalive never
 // reaches its parser, a ping event does (its query loop yields every one as progress). Driven
 // through the REAL production path: a real HeadServer, a raw client socket, an upstream parked
-// after its first delta (SCENARIO:hold), and a ticker paced at 10 ms so 15 silent ticks fit a test.
+// after its first delta (SCENARIO:hold), and a ticker the test feeds, so the silent ticks are sent
+// rather than waited for (V4-139; it was paced at 10 ms of wall clock).
 package head
 
 import campaign.v4105.headDeps
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
@@ -39,6 +41,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 import kotlin.time.Duration.Companion.seconds
 
+// ClientChannel's HEARTBEAT_EVERY_TICKS is 15; five heartbeats' worth of silent ticks.
+private const val SILENT_TICKS_SENT = 75
+
 private class HeartbeatAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-hb", "acct-hb")
     override suspend fun refresh(): Credentials = credentials()
@@ -52,6 +57,7 @@ class HeadServerHeartbeatTest {
     private val port = freshPort()
     private val gate = InflightGate({ 0 })
     private val lines = CopyOnWriteArrayList<String>()
+    private val ticks = Channel<Unit>(Channel.UNLIMITED)
     private lateinit var head: HeadServer
 
     @BeforeAll
@@ -83,10 +89,12 @@ class HeadServerHeartbeatTest {
                 upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),
                 gate = gate,
                 log = { lines += it },
-                // 15 silent ticks = one heartbeat; at 10 ms a tick the test sees several per second.
+                // 15 silent ticks = one heartbeat. The TEST supplies the ticks (V4-139): the pinger is
+                // the ticker's only consumer (ClientChannel.launchClientPinger), so each tick sent is
+                // one cadence step, with no wall-clock pacing at all.
                 seams = HeadDeps.HeadSeams(
                     ticker = Ticker {
-                        delay(10)
+                        ticks.receive()
                         true
                     },
                 ),
@@ -122,11 +130,14 @@ class HeadServerHeartbeatTest {
     private fun counter(line: String, name: String): Long? =
         Regex("(?:^| )${Regex.escape(name)}=(\\d+)").find(line)?.groupValues?.get(1)?.toLong()
 
+    // A deadline poll, the rule's sanctioned shape: the perf line lands server-side after the wire
+    // closes, with no signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 20L
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            delay(20)
+            delay(pollMs)
         }
         return cond()
     }
@@ -156,6 +167,9 @@ class HeadServerHeartbeatTest {
             waitFor(15_000) { text().contains("event: content_block_delta") },
             "the first delta must arrive: ${text()}",
         )
+        // The upstream is parked after that delta, so every tick from here on is a silent one:
+        // five heartbeats' worth, for an assertion that needs three pings.
+        repeat(SILENT_TICKS_SENT) { ticks.trySend(Unit) }
         assertTrue(
             waitFor(10_000) { pingsAfterDelta() >= 3 },
             "the silent wire must carry ping events: ${text()}",

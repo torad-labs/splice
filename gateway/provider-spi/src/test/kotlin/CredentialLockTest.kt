@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.spi.CredentialLock
+import splice.spi.PollRuntime
+import splice.spi.Waiter
 import java.nio.file.Files
 
 // DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
@@ -127,15 +129,25 @@ class CredentialLockTest {
             java.nio.file.StandardOpenOption.WRITE,
         )
         val held = holder.lock()
-        val releaser = launch {
-            kotlinx.coroutines.delay(300)
-            held.release()
-            holder.close()
+        // The peer yields at the lock's FIRST backoff wait: that call is the proof withLock found the
+        // lock held and entered its poll, so the hand-over is exercised on an event rather than on a
+        // 300ms bet that the poll had started by then.
+        var waits = 0
+        val peerYieldsOnFirstWait = Waiter {
+            if (waits++ == 0) {
+                held.release()
+                holder.close()
+            }
         }
         val logs = mutableListOf<String>()
-        val result = CredentialLock.withLock(path, waitMs = 10_000, log = logs::add) { "locked-run" }
-        releaser.join()
+        val result = CredentialLock.withLock(
+            path,
+            waitMs = 10_000,
+            log = logs::add,
+            runtime = PollRuntime(waiter = peerYieldsOnFirstWait),
+        ) { "locked-run" }
         assertEquals("locked-run", result)
+        assertEquals(1, waits, "the lock must have been contended exactly once before the hand-over")
         assertTrue(logs.none { it.contains("proceeding unlocked") }, "no degrade when the peer yields: $logs")
     }
 }

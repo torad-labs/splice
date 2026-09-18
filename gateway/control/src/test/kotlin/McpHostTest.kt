@@ -1,3 +1,4 @@
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -90,8 +91,12 @@ class McpHostTest : McpHostFixture() {
             val b = init()
             val streamB = checkNotNull(host.openStream("fake", b))
             val streamA = checkNotNull(host.openStream("fake", a))
-            val slow = async { call(a, 7, "slow", "1") }
-            kotlinx.coroutines.delay(300)
+            // The child's hold op writes its ready file on RECEIVING request 7 and then stays in
+            // flight for 1 s: the file's creation is the event that 7 is live at the child, so the
+            // cancels below are timed from it rather than from a 300 ms guess (V4-139).
+            val ready = dir.resolve("request-7-live")
+            val slow = async(Dispatchers.IO) { call(a, 7, "hold", ready.toString()) }
+            awaitFile(ready)
             val cancel = """{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}}"""
             // B has no request 7: the cancel must not reach the child under A's host id.
             assertEquals(202, host.post("fake", b, cancel).status)

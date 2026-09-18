@@ -915,6 +915,8 @@ title = "CHOICE, FLAG, AND THE FIVE CONTROLS CORRECTED (m1 design review section
 files = ["webui/src/shared/controls/**", "webui/tests/controls.test.ts"]
 status = "todo"
 verify = "cd webui && npx tsc --noEmit && npx eslint src/shared/controls tests/controls.test.ts && npx vitest run tests/controls.test.ts tests/labels.test.ts tests/primitives.test.ts && cd .. && ast-grep scan -c sgconfig.yml webui/src/shared/controls && node /home/user/.claude/skills/impeccable/scripts/detect.mjs webui/src/shared/controls"
+# [2026-09-18] DISPATCH: to=design-builder4 (packet emitted)
+# [2026-09-18] 2026-09-18 orchestrator: dispatched to design-builder4 after M1-12 landed (29369f50); D6 blocks the page sweep's last native controls.
 
 [[items]]
 id = "M1-14"

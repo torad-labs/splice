@@ -101,11 +101,11 @@ done
 
 # ── generator contracts ──────────────────────────────────────────────────────
 # DR-188: nothing anywhere exercised the GENERATOR. This script read the .txt and the gate ran
-# `--check` against the real tree, so every rejection path in gen-secret-scan-allow.py — anchors,
+# `--check` against the real tree, so every rejection path in gen-secret-scan-allow.ts — anchors,
 # missing reason, invalid ERE — was unexercised: a wall nobody has watched fail. The arms below run
 # it against fixture inputs in a throwaway tree (the generator resolves its paths from __file__, so
 # copying it is enough to relocate its whole world).
-GEN="$ROOT/checks/gen-secret-scan-allow.py"
+GEN="$ROOT/checks/gen-secret-scan-allow.ts"
 if [ ! -f "$GEN" ]; then
   bad "the generator is missing — the allowlist's source of truth cannot be verified"
 else
@@ -117,7 +117,7 @@ else
   # $1 label · $2 expected rc (0 generated / 1 refused) · $3 TOML body
   gen_arm() {
     printf '%s\n' "$3" > "$gtmp/.github/secret-scan-allow.toml"
-    ( cd "$gtmp" && python3 checks/gen-secret-scan-allow.py >/dev/null 2>&1 )
+    ( cd "$gtmp" && bun checks/gen-secret-scan-allow.ts --write >/dev/null 2>&1 )
     local rc=$?
     [ "$rc" = "$2" ] || bad "generator: $1 — expected rc=$2, got rc=$rc"
   }

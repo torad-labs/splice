@@ -107,7 +107,7 @@ run "campaign selftest" npm run --silent gate:campaign:selftest
 # MEMORY itself. On 2026-09-01 drift-repair.toml lost 164 rows and 2604 lines, was committed and
 # pushed, and this ladder passed 13 of 13 — because no leg read the file. A green gate said nothing
 # about the one artifact whose entire purpose is to outlive the session that wrote it.
-run "campaign ledger floor" python3 checks/campaign-ledger-floor.py --check
+run "campaign ledger floor" bun checks/campaign-ledger-floor.ts --check
 run "campaign ledger floor selftest" bash checks/campaign-ledger-floor-selftest.sh
 # DR-184: and the CLI's own suite, which nothing ran. The leg two lines up named "campaign
 # selftest" is campaign_wall_gate.py's, not manifest.py's — so every arm guarding the instrument
@@ -226,7 +226,7 @@ run "one conventional type list selftest" bash checks/one-conventional-type-list
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.
-run "secret-scan allowlist generated" python3 checks/gen-secret-scan-allow.py --check
+run "secret-scan allowlist generated" bun checks/gen-secret-scan-allow.ts --check
 run "secret-scan allowlist" bash checks/secret-scan-allow-selftest.sh
 run "webui lint"     npm run lint -w webui
 run "webui tests"    npm test -w webui

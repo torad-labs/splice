@@ -8,11 +8,21 @@
   min-width: 0;
 }
 
+/* THE FILTER ROW'S TRACK. The head sits on the rack's ruled floor like any strip does, and the rail
+   — the bay's repeating-linear-gradient slot rule — is the topmost painted thing under anything
+   here that has no ground of its own. That is what drew a rule through the word `search` at its
+   x-height (M1-46's second defect), and measuring the first fix at 3840 showed the follow control
+   had the same hole: a 3x crop of `15new lines` carries the rail straight through both words. So
+   the track is the ROW's, not the field's: the whole filter row sits on strip paper and the fields
+   are boxes a step above it, which is the two-plane construction the rack itself already uses. */
 .myx-lt-head {
   display: flex;
   align-items: flex-start;
   gap: var(--space-4);
   flex-wrap: wrap;
+  background: var(--strip);
+  border: var(--hair) solid var(--strip-field-line);
+  padding: var(--space-3) var(--space-4);
 }
 
 .myx-lt-controls {
@@ -20,10 +30,22 @@
   gap: var(--space-3);
 }
 
+/* A FILTER FIELD IS A BOXED PLANE, like every other field in this world (M1-46).
+   Two defects came from this row not being one. Its label had no opaque ground at any level of its
+   chain — label, field, controls, head, .myx-lt and .myx-bay-rows all measured transparent at 3840
+   in the light room — so the rack's own ruled floor, the bay's repeating-linear-gradient slot rail,
+   was the topmost painted thing under it and drew a rule through the word `search` at its x-height.
+   And its input was painted `--strip` while the StripField beside it is painted `--strip-field`, so
+   one control row showed two different papers side by side (+0 against +24 on R−B in dark; #F5EDDD
+   against #FFFFFF in light). A field is label and box on ONE paper: that is what the StripField
+   module does, and it is what stops a structural rule reading as a strike-through. */
 .myx-lt-field {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  padding: var(--space-2) var(--space-3);
 }
 .myx-lt-field-label {
   font-family: var(--font-label);
@@ -32,7 +54,9 @@
 }
 .myx-lt-field input {
   padding: var(--space-1) var(--space-2);
-  background: var(--strip);
+  /* The field's own paper is the ground; the input keeps the hairline that makes it read as a box
+     inside it, and its fill is the field's rather than the strip's. */
+  background: transparent;
   color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;

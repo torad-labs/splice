@@ -22,6 +22,16 @@
 // This COMPOSES with dropDisallowed below rather than replacing it: the same drop is reported once
 // per type on the anomaly channel AND leaves the message with a substitute block, so a head that
 // silently ate a screenshot now both says so in the log and tells the model something true.
+//
+// V4-157 (2026-09-18): [isEmptyThinking] used to require the SIGNATURE to be empty as well, so a
+// blank-but-signed thinking block was judged content-bearing and rode upstream. Anthropic rejects
+// the WHOLE request for it — 400 invalid_request_error, `messages.903.content.0.thinking: each
+// thinking block must contain thinking`, request_id req_011CfBPZe8HG2qTVWNVXBmZm — and because
+// Claude Code replays the transcript every turn, index 903 came back on every retry: no layer above
+// this one could recover the turn. Measured that day on a live operator session, which lost the turn,
+// had to switch model mid-session, and could not compact afterwards, since a compaction replays the
+// same messages. A signature records WHO wrote a block, never that it contains anything, so the rule
+// is now about the thinking text alone.
 package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonArray
@@ -84,8 +94,8 @@ internal class PassthroughMessageScrubber(
     }
 
     /** What this message became: one block naming the count, the proxy that removed them, and why.
-     *  The reasons a block does not survive are the allowlist and an empty unsigned thinking block;
-     *  the sentence covers both without pretending to know which, because a wrong specific is worse
+     *  The reasons a block does not survive are the allowlist and an empty thinking block; the
+     *  sentence covers both without pretending to know which, because a wrong specific is worse
      *  than an honest general. */
     private fun omittedBlock(removed: Int): JsonObject = buildJsonObject {
         put(TYPE, TYPE_TEXT)
@@ -116,11 +126,14 @@ internal class PassthroughMessageScrubber(
         return null
     }
 
-    /** A whitespace-only thinking block that carries no signature holds nothing worth keeping. */
+    /** A whitespace-only thinking block holds nothing worth keeping, SIGNED OR NOT (V4-157 in the
+     *  header). The shape has two possible authors and the rule must not care which: an upstream
+     *  that signed a block it then sent no thinking for, and splice itself, since a synthesizing
+     *  profile stamps `splice-synth-v1` at close on any thinking block that never saw a signature
+     *  delta — an empty one included (PassthroughBlockRegistry.retire). */
     private fun isEmptyThinking(type: String, block: JsonObject): Boolean {
         if (type != TYPE_THINKING) return false
-        return JsonScalars.strOrEmpty(block["thinking"]).isBlank() &&
-            JsonScalars.strOrEmpty(block["signature"]).isEmpty()
+        return JsonScalars.strOrEmpty(block["thinking"]).isBlank()
     }
 
     private fun rebuildBlock(block: JsonObject, type: String): JsonObject = buildJsonObject {

@@ -45,7 +45,7 @@ export default tseslint.config(
       'boundaries/element-types': ['error', {
         default: 'disallow',
         rules: [
-          { from: 'app', allow: ['pages', 'features', 'entities', 'shared', 'shared-root'] },
+          { from: 'app', allow: ['pages', 'widgets', 'features', 'entities', 'shared', 'shared-root'] },
           { from: 'pages', allow: ['widgets', 'features', 'entities', 'shared'] },
           { from: 'widgets', allow: ['features', 'entities', 'shared'] },
           { from: 'features', allow: ['entities', 'shared'] },

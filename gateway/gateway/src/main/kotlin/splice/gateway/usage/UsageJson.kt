@@ -16,7 +16,7 @@ internal const val OUTPUT_TOKENS = "output_tokens"
 /** Usage-JSON scalar reading, shared by [TurnUsage] construction, the HUD payload and the store.
  *  A collaborator rather than file-level helpers: a Kotlin `private` member is CLASS-private, and
  *  three types here need the same reader — a second copy is exactly what CX-18 forbade. */
-public class UsageJson {
+internal class UsageJson {
     internal fun num(el: JsonElement?): Long? =
         (el as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
 
@@ -40,7 +40,7 @@ public class UsageJson {
 }
 
 /** Usage aliases: Anthropic names + OpenAI Responses names + cached-token detail. */
-public data class TurnUsage(
+internal data class TurnUsage(
     val inputTokens: Long,
     val outputTokens: Long,
     val cacheCreationInputTokens: Long,

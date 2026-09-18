@@ -15,7 +15,7 @@ import splice.spi.WireSink
 /** The reasoning mirror: the gate predicate, the wire format, and the single [mirrorInto].
  *  Collaborators construct one (`private val mirror = Mirror()`); it holds no state, so the
  *  L2 "one definition" law is unchanged — the definition just moved inside the type. */
-public class Mirror {
+internal class Mirror {
     /** WIRE CONTRACT (external): the mirror block format transcript tooling keys on. */
     public fun mirrorWireText(thinking: String): String = "\n[reasoning summary]\n${thinking.trim()}\n"
 
@@ -51,7 +51,7 @@ public class Mirror {
     }
 
     /** Join the thinking blocks of an Anthropic content list (non-stream path). */
-    public fun extractThinking(content: List<ContentBlock>): String =
+    fun extractThinking(content: List<ContentBlock>): String =
         content.filterIsInstance<ThinkingBlock>()
             .map { it.thinking.trim() }
             .filter { it.isNotEmpty() }

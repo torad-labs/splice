@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** The one construction seam for [SseEmitter] (its constructor stays `internal`) — injected as a
  *  collaborator rather than reached as a static `SseEmitter.create`. */
-public class SseEmitterFactory {
+internal class SseEmitterFactory {
     /**
      * [progressWrite] is where the KEEPALIVE PINGER's own frames go — the heartbeat ping and the
      * status line splice writes on a wire that has gone quiet (SseEmitter.heartbeat / progress).

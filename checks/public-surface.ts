@@ -132,9 +132,57 @@ interface Declaration {
   kind: string;
   rel: string;
   line: number;
+  /** V4-149: the declaration's HEADER text — its own line plus the continuation lines up to the
+   *  body. This is where a type in a parameter or return position lives, and it is the whole reason
+   *  the interface grew a field: a type reached only through someone else's signature is part of the
+   *  public contract even though no source file spells its name. */
+  signature: string;
+}
+
+/** How many lines a declaration header may span before the scan gives up. A cap rather than
+ *  "until the body", because a declaration whose header never closes would otherwise swallow the
+ *  rest of the file and justify every name in it — the failure mode this whole row is about,
+ *  inverted. Twenty is well past the widest real data class here. */
+const SIGNATURE_MAX_LINES = 20;
+
+/** A PUBLIC MEMBER of a declaration — the second half of the surface, and the half that defeated
+ *  this checker in V4-104. `EconomicsStore.read(): List<EconomicsBucket>` is a member, so its return
+ *  type is part of the contract, but it is neither a top-level declaration nor in its class's header.
+ *  Requires the explicit `public`, which explicitApi() makes mandatory, so an indented `public` line
+ *  is a member signature and not prose. */
+const MEMBER_DECL = /^\s+(?:public\s|override\s+public\s|public\s+override\s)/;
+
+/** The text that carries a declaration's reachable type names: its own header, plus the signature
+ *  lines of its PUBLIC members.
+ *
+ *  Two approximations, both stated rather than hidden, because the honest shape of this wall is
+ *  "close enough to stop lying" rather than "a Kotlin parser":
+ *   · the header scan is CAPPED (SIGNATURE_MAX_LINES) so a header that never closes cannot swallow
+ *     the file;
+ *   · members are found by their `public` line, so a member's body is excluded and only the
+ *     signature is read — but a type named ONLY inside a private member still slips through, which
+ *     OVER-justifies. That direction is chosen deliberately: over-justifying costs a missed
+ *     declaration, and under-justifying is what cost five good ones in V4-104. */
+function signatureOf(lines: string[], at: number): string {
+  const out: string[] = [];
+  // The header: this line, through the continuation, to the body.
+  let head = at;
+  for (; head < lines.length && head - at < SIGNATURE_MAX_LINES; head += 1) {
+    out.push(lines[head]);
+    if (lines[head].includes("{") || /=\s*$/.test(lines[head])) break;
+  }
+  // The public members, to the next top-level declaration.
+  for (let i = head + 1; i < lines.length; i += 1) {
+    if (PUBLIC_DECL.test(lines[i])) break;
+    if (MEMBER_DECL.test(lines[i])) out.push(lines[i]);
+  }
+  return out.join("\n");
 }
 
 const fqnOf = (d: Declaration): string => (d.pkg ? `${d.pkg}.${d.name}` : d.name);
+/** Identifiers inside a declaration header — how the closure reads the type names a signature
+ *  mentions. Matched on the SIMPLE name, because that is how a signature spells it. */
+const IDENT = /[A-Za-z_][A-Za-z0-9_]*/g;
 /** Baseline identity: module + FQN. Deliberately NOT the file or the line — those churn on a
  *  move that changes nothing about the surface, and a baseline that goes stale on a rename
  *  teaches the reader to regenerate it without reading. */
@@ -201,10 +249,19 @@ function declarations(root: string, module: string): Declaration[] {
   for (const [rel, text] of sourceText(root, module, "src/main/kotlin")) {
     const packageMatch = PACKAGE.exec(text);
     const pkg = packageMatch ? packageMatch[1] : "";
-    text.split(/\r\n|\r|\n/).forEach((line, i) => {
+    const lines = text.split(/\r\n|\r|\n/);
+    lines.forEach((line, i) => {
       const match = PUBLIC_DECL.exec(line);
       if (match === null) return;
-      found.push({ module, pkg, name: match[2], kind: match[1], rel, line: i + 1 });
+      found.push({
+        module,
+        pkg,
+        name: match[2],
+        kind: match[1],
+        rel,
+        line: i + 1,
+        signature: signatureOf(lines, i),
+      });
     });
   }
   return found;
@@ -246,22 +303,64 @@ function unjustified(root: string): { offenders: Declaration[]; examined: number
   }
   const every = consumers(root, included);
   const offenders: Declaration[] = [];
-  let examined = 0;
-  for (const module of libraries) {
-    for (const declaration of declarations(root, module)) {
-      examined += 1;
-      const fqn = fqnOf(declaration);
-      const token = new RegExp(`(?<![\\w.])${fqn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`);
-      let justified = false;
-      for (const [other, { blob, stars }] of every) {
-        if (other === module) continue;
-        if (stars.has(declaration.pkg) || token.test(blob)) {
-          justified = true;
-          break;
+  const all: Declaration[] = [];
+  for (const module of libraries) all.push(...declarations(root, module));
+  const examined = all.length;
+
+  // ── ROOTS: a declaration another module NAMES, or whose package it star-imports. ──
+  const justified = new Set<string>();
+  for (const declaration of all) {
+    const fqn = fqnOf(declaration);
+    const token = new RegExp(`(?<![\\w.])${fqn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`);
+    for (const [other, { blob, stars }] of every) {
+      if (other === declaration.module) continue;
+      if (stars.has(declaration.pkg) || token.test(blob)) {
+        justified.add(fqn);
+        break;
+      }
+    }
+  }
+
+  // ── V4-149: THE CLOSURE OVER PUBLIC SIGNATURES. ──
+  //
+  // A name-reference census measures the wrong denominator, and V4-104 proved it by hand: a public
+  // member's parameter or return type is part of the contract even when no source file spells it,
+  // because the call site binds it by inference and a name-based blob scan cannot see that. Five
+  // declarations could not be internalised for exactly this reason, and the Kotlin compiler — not
+  // this checker — was the thing that said so.
+  //
+  // So justification propagates: if a declaration is consumed by another module, every declaration
+  // its SIGNATURE mentions is reachable from that consumer too. Iterated to a fixpoint rather than
+  // one hop, because a chain (consumed type -> parameter type -> field type) is the same argument
+  // applied twice, and stopping at depth one would just relocate the blind spot.
+  //
+  // Deliberately matched on the SIMPLE name, since a signature says `List<EconomicsBucket>` and not
+  // the FQN. That is a wider net than the roots' FQN token, and the width is the point: over-
+  // justification here costs a missed declaration, while under-justification cost five good ones.
+  const byName = new Map<string, Declaration[]>();
+  for (const declaration of all) {
+    const list = byName.get(declaration.name) ?? [];
+    list.push(declaration);
+    byName.set(declaration.name, list);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const declaration of all) {
+      if (!justified.has(fqnOf(declaration))) continue;
+      for (const name of new Set(declaration.signature.match(IDENT) ?? [])) {
+        for (const target of byName.get(name) ?? []) {
+          if (!justified.has(fqnOf(target))) {
+            justified.add(fqnOf(target));
+            changed = true;
+          }
         }
       }
-      if (!justified) offenders.push(declaration);
     }
+  }
+
+  for (const declaration of all) {
+    if (!justified.has(fqnOf(declaration))) offenders.push(declaration);
   }
   if (examined === 0) {
     return {
@@ -290,16 +389,18 @@ const BASELINE_LAW =
 
 const RECORDED = /^\d{4}-\d{2}-\d{2}$/;
 
-function readBaseline(root: string): { baseline: Set<string>; recorded: string; problems: string[] } {
+function readBaseline(
+  root: string,
+): { baseline: Set<string>; kept: Map<string, string>; recorded: string; problems: string[] } {
   const path = join(root, BASELINE_REL);
   if (!existsSync(path)) {
-    return { baseline: new Set(), recorded: "", problems: [`${BASELINE_REL}: missing — the ratchet has no baseline to grade against. Write one with \`${SELF} --write-baseline\`.`] };
+    return { baseline: new Set(), kept: new Map(), recorded: "", problems: [`${BASELINE_REL}: missing — the ratchet has no baseline to grade against. Write one with \`${SELF} --write-baseline\`.`] };
   }
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   } catch (error) {
-    return { baseline: new Set(), recorded: "", problems: [`${BASELINE_REL}: is not valid JSON (${error}) — a baseline nobody can parse grades nothing`] };
+    return { baseline: new Set(), kept: new Map(), recorded: "", problems: [`${BASELINE_REL}: is not valid JSON (${error}) — a baseline nobody can parse grades nothing`] };
   }
   const recorded = String(data.recorded ?? "");
   const problems: string[] = [];
@@ -313,9 +414,25 @@ function readBaseline(root: string): { baseline: Set<string>; recorded: string; 
   const entries = data.offenders;
   if (!Array.isArray(entries) || !entries.every((e) => typeof e === "string")) {
     problems.push(`${BASELINE_REL}: \`offenders\` must be a list of '<module> <fqn>' strings`);
-    return { baseline: new Set(), recorded, problems };
+    return { baseline: new Set(), kept: new Map(), recorded, problems };
   }
-  return { baseline: new Set(entries as string[]), recorded, problems };
+  // V4-149: `kept` is the companion to `offenders` — entries that CANNOT be burned, each with the
+  // reason it cannot. Absent is legal (a baseline that needs no reasons has none); present but
+  // malformed is not, because a reason nobody can read is the absence it was written to remove.
+  const kept = new Map<string, string>();
+  const rawKept = data.kept;
+  if (rawKept !== undefined) {
+    if (typeof rawKept !== "object" || rawKept === null || Array.isArray(rawKept)) {
+      problems.push(`${BASELINE_REL}: \`kept\` must be an object mapping '<module> <fqn>' to a reason string`);
+    } else {
+      for (const [entry, reason] of Object.entries(rawKept as Record<string, unknown>)) {
+        // The `law` key is the block's own prose header, not an entry, and is skipped by name.
+        if (entry === "law") continue;
+        kept.set(entry, typeof reason === "string" ? reason : "");
+      }
+    }
+  }
+  return { baseline: new Set(entries as string[]), kept, recorded, problems };
 }
 
 function writeBaseline(root: string, offenders: Declaration[], today: string): void {
@@ -330,7 +447,7 @@ function writeBaseline(root: string, offenders: Declaration[], today: string): v
 
 function ratchet(root: string): number {
   const { offenders, examined, problems: measureProblems } = unjustified(root);
-  const { baseline, recorded, problems: baselineProblems } = readBaseline(root);
+  const { baseline, kept, recorded, problems: baselineProblems } = readBaseline(root);
   const problems = [...measureProblems, ...baselineProblems];
   const measured = new Map<string, Declaration>();
   for (const d of offenders) measured.set(idOf(d), d);
@@ -341,7 +458,18 @@ function ratchet(root: string): number {
   out.push(`  ${"unjustified (no other-module use)".padEnd(34)} measured ${String(measured.size).padStart(4)}   baseline ${String(baseline.size).padStart(4)}   [GATED]`);
 
   const growth = [...measured.keys()].filter((k) => !baseline.has(k)).sort();
-  const stale = [...baseline].filter((k) => !measured.has(k)).sort();
+  // V4-149: STALE NOW MEANS "NOTHING EXPLAINS IT". `kept` is where a burn-proof entry carries the
+  // reason it cannot move, so the union of what is measured and what is explained is the set the
+  // baseline is allowed to hold; an entry in neither is the unearned room this leg exists to catch.
+  const stale = [...baseline].filter((k) => !measured.has(k) && !kept.has(k)).sort();
+  // A blank reason is an absence wearing a label, which is worse than no reason at all: it reads as
+  // discharged in a diff and discharges nothing. Checked separately from `stale` so the message can
+  // say which failure this is.
+  const blankReason = [...kept.keys()].filter((k) => (kept.get(k) ?? "").trim() === "").sort();
+  // A reason for an entry the baseline does not hold is stale bookkeeping in the other direction —
+  // and, since a burnt entry is REMOVED from `offenders`, it is also the shape a half-finished
+  // burn-down leaves behind.
+  const orphanKept = [...kept.keys()].filter((k) => !baseline.has(k)).sort();
   if (growth.length > 0) {
     problems.push(
       `GROWTH: ${growth.length} public declaration(s) no other module consumes are not in the ` +
@@ -359,6 +487,22 @@ function ratchet(root: string): number {
         `\`${SELF} --write-baseline\`. A baseline held above the ` +
         "measured surface is unearned room for the next regression to hide in:\n    " +
         stale.join("\n    "),
+    );
+  }
+  if (blankReason.length > 0) {
+    problems.push(
+      `BLANK REASON: ${blankReason.length} \`kept\` entry(ies) carry no reason. A blank reason is an ` +
+        "absence wearing a label — it reads as discharged in a diff and discharges nothing, which " +
+        "is worse than no reason at all because it stops the next reader asking:\n    " +
+        blankReason.join("\n    "),
+    );
+  }
+  if (orphanKept.length > 0) {
+    problems.push(
+      `ORPHAN KEPT: ${orphanKept.length} \`kept\` entry(ies) explain something the baseline does ` +
+        "not hold. A burnt entry is REMOVED from `offenders`, so a reason left behind is either " +
+        "stale bookkeeping or a half-finished burn-down wearing a justification:\n    " +
+        orphanKept.join("\n    "),
     );
   }
 
@@ -426,6 +570,15 @@ function baselineFixture(root: string, entries: string[], recorded = "2026-09-17
   const path = join(root, BASELINE_REL);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify({ recorded, law: BASELINE_LAW, offenders: entries }, null, 2) + "\n", "utf8");
+}
+
+/** V4-149: the same, with a `kept` block. A separate helper rather than an optional argument,
+ *  because the arms that need it are ABOUT the block and an argument nobody passes reads as
+ *  incidental. */
+function keptFixture(root: string, entries: string[], kept: Record<string, string>): void {
+  const path = join(root, BASELINE_REL);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ recorded: "2026-09-17", law: BASELINE_LAW, offenders: entries, kept }, null, 2) + "\n", "utf8");
 }
 
 function selftest(): number {
@@ -569,6 +722,42 @@ function selftest(): number {
   };
   arm("13. a missing module law is a hard error — the producer/consumer split is derived from it", noLaw, "missing");
 
+  // ── V4-149 ──────────────────────────────────────────────────────────────────────────
+  //
+  // THE CLOSURE, PROVEN BOTH WAYS. The pair below differs in ONE character of intent: the first has
+  // the member `public`, the second `internal`, and they must land on opposite verdicts. This is
+  // V4-104's five declarations in miniature — a type named nowhere, reachable only through a
+  // consumed class's public member — and the arm exists because the FIRST cut of the closure walked
+  // top-level headers only and missed exactly this shape. An arm that only proved the green half
+  // would have passed that broken cut.
+  const closingSignature = (member: string): ((root: string) => void) => (root: string) => {
+    fixture(root);
+    writeModule(root, ":lib", "src/main/kotlin", "Store.kt", `package fix.lib\n\npublic class Store {\n    ${member} fun read(): Hidden = Hidden()\n}\n\npublic class Hidden\n`);
+    writeModule(root, ":other", "src/main/kotlin", "Use.kt", "package fix.other\nimport fix.lib.Store\ninternal class Use(val s: Store)\n");
+    baselineFixture(root, []);
+  };
+  arm("14. CLOSURE — a public member's return type rides its consumed class (green)", closingSignature("public"), null);
+  arm("15. CLOSURE guard — the SAME member made internal leaves the type offending (red)", closingSignature("internal"), "GROWTH");
+
+  // A reason that is present but empty. It must fail, because "documented-but-unenforced" is the
+  // state this row removes: an entry in `kept` is a claim to have explained something, and a blank
+  // reason performs the explanation without making it.
+  const blankReason = (root: string): void => {
+    fixture(root);
+    writeModule(root, ":lib", "src/main/kotlin", "Api.kt", "package fix.lib\npublic class One(val v: Int)\n");
+    keptFixture(root, [":lib fix.lib.One"], { ":lib fix.lib.One": "   " });
+  };
+  arm("16. a blank `kept` reason is an absence wearing a label (red)", blankReason, "BLANK REASON");
+
+  // And the other direction: a reason for something the baseline does not hold is a half-finished
+  // burn-down wearing a justification.
+  const orphanReason = (root: string): void => {
+    fixture(root);
+    writeModule(root, ":lib", "src/main/kotlin", "Api.kt", "package fix.lib\npublic class One(val v: Int)\n");
+    keptFixture(root, [":lib fix.lib.One"], { ":lib fix.lib.Gone": "explaining something absent" });
+  };
+  arm("17. a `kept` reason for an entry the baseline does not hold (red)", orphanReason, "ORPHAN KEPT");
+
   if (failures.length > 0) {
     process.stdout.write("public-surface SELFTEST FAIL:\n");
     for (const failure of failures) process.stdout.write("  x " + failure + "\n");
@@ -576,10 +765,12 @@ function selftest(): number {
   }
   process.stdout.write(
     "public-surface SELFTEST OK — a consumed declaration, an internal one, a " +
-      "testFixtures consumer, a star import and a recorded offender are green; a synthetic " +
+      "testFixtures consumer, a star import, a recorded offender and a public member's return type " +
+      "reached through its consumed class are green; a synthetic " +
       "unjustified public type, a sibling test-only caller, a stale baseline entry (justified " +
       "and deleted), an undated baseline, a tree with no library modules, a tree with no public " +
-      "declarations and a missing module law are all red\n",
+      "declarations, a missing module law, that SAME return type once its member is internal, a " +
+      "blank `kept` reason and an orphan `kept` reason are all red\n",
   );
   return 0;
 }

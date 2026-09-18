@@ -18,13 +18,13 @@ import splice.core.util.LogSink
  * parameter is the hud's return value at every call site, so this is ONE role and now one type.
  * Identity (`{ it }`) is the correct clamp for a turn with no client `max_tokens`.
  */
-public fun interface OutputClamp {
+internal fun interface OutputClamp {
     public operator fun invoke(outputTokens: Long): Long
 }
 
 /** Builds [OutputClamp] instances. `object` (not companion, not top-level fun) mirrors the
  *  sanctioned `UsageWarnPolicy` idiom already in splice.core.usage. */
-public object OutputClampPolicy {
+internal object OutputClampPolicy {
     /** Clamp REPORTED output_tokens to the client's max_tokens (v26). */
     public fun makeOutputClamp(
         clientMaxTokens: Long?,

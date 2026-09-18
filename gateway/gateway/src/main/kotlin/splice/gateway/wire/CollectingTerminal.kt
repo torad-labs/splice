@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val OK_STATUS = 200
 
-public class CollectingTerminal(
+internal class CollectingTerminal(
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
     private val messageId: String = MessageIds().generateMessageId(),

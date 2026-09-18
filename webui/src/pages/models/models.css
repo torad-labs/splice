@@ -28,15 +28,26 @@
    removing it returns to it. */
 .myx-models-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-5);
   align-items: start;
   min-width: 0;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
 }
 
-/* The open state, and ONLY the open state, declares the 24rem track. Nothing else changes: the
-   column is a track when there is a model in it and no track when there is not. */
-.myx-models-body-open { grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); }
+/* The open state, and ONLY the open state, declares the 24rem track and the gap that separates it.
+   The column is a track when there is a model in it and a ZERO track when there is not -- and a
+   zero track that still costs a gap is not zero, which is why column-gap moves with it. */
+.myx-models-body-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  column-gap: var(--space-5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-models-body { transition: none; }
+}
 
 .myx-models-bays {
   display: flex;
@@ -52,22 +63,12 @@
   min-width: 0;
 }
 
-/* THE COLUMN ARRIVES ON THE SWELL, mirrored verbatim from `myx-cfeed-swell` (compact-feed.css:25-39),
-   which is the implementation of CONTRACTS.md section 6's "swell: a strip opening into its detail
-   column, --dur-2". Mirrored rather than re-invented, reduced-motion rule included: under reduce the
-   column holds still entirely. */
-.myx-models-detail > * {
-  animation: myx-models-swell var(--dur-2) var(--ease-out) both;
-}
-
-@keyframes myx-models-swell {
-  from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .myx-models-detail > * { animation: none; }
-}
+/* THE SWELL IS THE TRACK, NOT A KEYFRAME (M1-116 rules collapse over unmount). M1-112 mirrored
+   `myx-cfeed-swell` here because an UNMOUNTED column has nothing to animate FROM: it must mount and
+   then fade its content up, which pops if the mount lands a frame late. A transition on
+   grid-template-columns IS CONTRACTS.md section 6's swell -- "a strip opening into its detail
+   column, --dur-2" -- in one declaration. The keyframes that stood here are gone with the idiom
+   that needed them; turns, sessions and projects have never carried them. */
 
 .myx-models-sub {
   font-size: var(--text-4);
@@ -88,6 +89,7 @@
    into it on the right — holds at every width above this floor. The rule belongs in the shell, in
    one place, for every page row; until it is hoisted there it is repeated here with this note. */
 @media (max-width: 1120px) {
-  .myx-models-body,
+  /* Only the OPEN class, mirroring sessions: at rest the second track is already 0, so a 1fr-plus-0
+     board is the full width here too. */
   .myx-models-body-open { grid-template-columns: minmax(0, 1fr); }
 }

@@ -81,20 +81,20 @@ export function ModelsBoard({ catalog, sample }: {
             )}
           </div>
 
-          {/* THE COLUMN ARRIVES WITH ITS CONTENT (M1-112, following M1-102 on fleet). It is not
-              rendered at rest at all: the resting column measured a 432x784 dead region, 21.5% of
-              the frame, against the comp's own 11.2%. THE EMPTY GOES WITH IT, deliberately rather
-              than by oversight -- an honest empty says what a panel is missing and which source
-              supplies it, and at rest there is no panel to be missing anything; the console has not
-              been asked for a model yet, so a card reading "none open" is not reporting an absence,
-              it is a caption for a panel that does not exist. The strips are the affordance, and
-              the comp of record has no resting detail column anywhere in its frame.
-              `EMPTIES.noneOpen` is left in model.ts, which is outside this row's fence. */}
-          {opened === null ? null : (
-            <aside className="myx-models-detail" aria-label={S.catalog}>
-              <ModelDetail model={opened.model} head={opened.head} />
-            </aside>
-          )}
+          {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M1-116 rules the collapse idiom;
+              M1-112 measured the defect). The resting column was a 432x784 dead region, 21.5% of
+              the frame, against the comp's own 11.2% -- a fifth of the page reserved for a response
+              to a click nobody has made. The aside STAYS MOUNTED and empty, which is what gives the
+              track something to transition FROM: M1-112 unmounted it, and an unmounted column has
+              to mount and then fade its content up, which pops if the mount lands a frame late.
+              This shape is turns', sessions' and projects', mirrored rather than re-invented.
+              THE EMPTY STAYS GONE, deliberately: an honest empty says what a panel is missing and
+              which source supplies it, and at rest there is no panel to be missing anything, so a
+              card reading "none open" captions a panel that does not exist. `EMPTIES.noneOpen` is
+              left in model.ts, which is outside this row's fence. */}
+          <aside className="myx-models-detail" aria-label={S.catalog}>
+            {opened === null ? null : <ModelDetail model={opened.model} head={opened.head} />}
+          </aside>
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@
 # checks/silent-constants-selftest.sh — red-green proof for the silent-constants ratchet, AGAINST
 # THE REAL TREE.
 #
-# WHY THIS EXISTS on top of `silent-constants.py --selftest`. The python selftest proves the logic
+# WHY THIS EXISTS on top of `silent-constants.ts --selftest`. That selftest proves the logic
 # against hand-written fixtures; that answers "does the ratchet work", not "does it work on THIS
 # source". A ratchet's whole value is the claim "the recorded census is what the tree measures, and
 # a regression moves it", and the way that claim dies is silently: a parser that stops matching the
@@ -37,7 +37,7 @@ trap 'rm -rf "$tmp"' EXIT
 fail=0
 err() { echo "  ✗ silent-constants-selftest: $1"; fail=1; }
 
-CHECKER="$tmp/checks/silent-constants.py"
+CHECKER="$tmp/checks/silent-constants.ts"
 BASELINE="$tmp/checks/config/silent-constants-baseline.json"
 # the module whose src/main is materialised as real files so a fixture can mutate one (7 .kt
 # files; every other module stays a symlink so the census is the real one)
@@ -48,7 +48,7 @@ MUTABLE_FILE="gateway/$MUTABLE_MODULE/src/main/kotlin/splice/provider/muse/MuseK
 build_harness() {
   rm -rf "$tmp/gateway" "$tmp/checks"
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
-  cp "$ROOT/checks/silent-constants.py" "$CHECKER"
+  cp "$ROOT/checks/silent-constants.ts" "$CHECKER"
   cp "$ROOT/checks/config/silent-constants-baseline.json" "$BASELINE"
   for main in "$ROOT"/gateway/*/src/main; do
     [ -d "$main" ] || continue
@@ -65,7 +65,7 @@ build_harness() {
   [ -f "$tmp/$MUTABLE_FILE" ] || { echo "  ✗ silent-constants-selftest: $MUTABLE_FILE did not materialise"; exit 1; }
 }
 
-ratchet() { python3 "$CHECKER" --ratchet --root "$tmp" 2>&1; }
+ratchet() { bun "$CHECKER" --ratchet --root "$tmp" 2>&1; }
 
 expect_red() { # label, needle...
   local label="$1"; shift
@@ -110,7 +110,7 @@ control_out="$(ratchet)"; control_code=$?
 if [ "$control_code" -ne 0 ]; then
   echo "  ✗ silent-constants-selftest: CONTROL FAILED — the real tree does not match its own"
   echo "    baseline, so every fixture below is UNPROVEN. Re-record with"
-  echo "    'python3 checks/silent-constants.py --record > checks/config/silent-constants-baseline.json'"
+  echo "    'bun checks/silent-constants.ts --record > checks/config/silent-constants-baseline.json'"
   echo "$control_out" | sed 's/^/      /'
   exit 1
 fi
@@ -139,24 +139,23 @@ expect_green "3. the same const with an adjacent '// why:' reason is GREEN" "rat
 
 # ── 4. STALE: a baseline entry raised above the measurement ───────────────────────────────────
 build_harness
-python3 - "$BASELINE" "$MUTABLE_FILE" <<'PY'
-import json, sys
-path, rel = sys.argv[1], sys.argv[2]
-doc = json.load(open(path))
-doc["files"][rel] = doc["files"].get(rel, 0) + 5
-doc["total"] += 5
-json.dump(doc, open(path, "w"), indent=2)
-PY
+bun -e '
+const [path, rel] = process.argv.slice(1);
+const doc = JSON.parse(await Bun.file(path).text());
+doc.files[rel] = (doc.files[rel] ?? 0) + 5;
+doc.total += 5;
+await Bun.write(path, JSON.stringify(doc, null, 2));
+' "$BASELINE" "$MUTABLE_FILE"
 expect_red "4. a baseline entry held above the measurement is STALE" "STALE" "$MUTABLE_FILE"
 
 # ── 5. STALE: a baseline entry naming a file that does not exist ──────────────────────────────
 build_harness
-python3 - "$BASELINE" <<'PY'
-import json, sys
-doc = json.load(open(sys.argv[1]))
-doc["files"]["gateway/core/src/main/kotlin/splice/core/ZzVanished.kt"] = 0
-json.dump(doc, open(sys.argv[1], "w"), indent=2)
-PY
+bun -e '
+const path = process.argv[1];
+const doc = JSON.parse(await Bun.file(path).text());
+doc.files["gateway/core/src/main/kotlin/splice/core/ZzVanished.kt"] = 0;
+await Bun.write(path, JSON.stringify(doc, null, 2));
+' "$BASELINE"
 expect_red "5. a baseline naming a vanished file is STALE" "STALE" "ZzVanished.kt" "no longer exists"
 
 # ── 6. the baseline removed: the instrument is untrustworthy, not green ───────────────────────
@@ -174,7 +173,7 @@ fi
 
 # ── 7. the documented gate line is the line that gates ────────────────────────────────────────
 # The ledger note tells the orchestrator to wire exactly:
-#   run "silent constants"  python3 checks/silent-constants.py --ratchet
+#   run "silent constants"  bun checks/silent-constants.ts --ratchet
 # Proven here verbatim (with --root, which is the only difference between this harness and the
 # repo root) against fixture 1, so the note cannot document a command that does not gate.
 build_harness
@@ -184,7 +183,7 @@ package splice.selftest
 
 private const val SELFTEST_UNEXPLAINED_MS = 31_337L
 KT
-if python3 "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
+if bun "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
   err "7. the documented gate line exited 0 on a tree with a synthetic regression"
 else
   echo "  ✓ 7. the documented gate line fails on a regression"
@@ -192,7 +191,7 @@ fi
 
 # ── --top is an instrument, not a gate: it must report without failing ────────────────────────
 build_harness
-if ! python3 "$CHECKER" --top 15 --root "$tmp" | grep -q 'carry no adjacent reason'; then
+if ! bun "$CHECKER" --top 15 --root "$tmp" | grep -q 'carry no adjacent reason'; then
   err "--top 15 did not report the census"
 else
   echo "  ✓ --top 15 reports the worst files without gating"

@@ -173,7 +173,7 @@ run "env vars documented" python3 checks/config/env-vars-documented.py check .
 run "env vars selftest" bash checks/env-vars-documented-selftest.sh
 run "const single source" python3 checks/const-single-source.py --ratchet
 run "const single source selftest" bash checks/const-single-source-selftest.sh
-run "silent constants" python3 checks/silent-constants.py --ratchet
+run "silent constants" bun checks/silent-constants.ts --ratchet
 run "silent constants selftest" bash checks/silent-constants-selftest.sh
 run "role registry" python3 checks/role-registry.py check .
 run "role registry selftest" bash checks/role-registry-selftest.sh

@@ -15,10 +15,13 @@
 // A `.ts` test cannot hold JSX (TS1161), so elements are built with React.createElement and
 // asserted against renderToStaticMarkup's string.
 import * as React from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headOf, levelOf, timeOf } from '../src/entities/logs';
-import { LogLine, edgeOfLevel, messageOf } from '../src/widgets/log-tail';
+import { LogColumns, LogLine, edgeOfLevel, messageOf } from '../src/widgets/log-tail';
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
 
@@ -49,6 +52,41 @@ describe('a tail row prints each fact once', () => {
     // the cell drops what is printed beside it; the accessible name keeps the daemon's own line
     const out = renderToStaticMarkup(React.createElement(LogLine, { line: LINE }));
     expect(out).toContain('[2026-09-18 01:14:02] [claude-deepseek]');
+  });
+});
+
+// THE RACK PRINTS ITS COLUMN NAMES ONCE (M3-04). Every tail row printed `time head level text` above its
+// own four values, so a 40-line tail spent half its height on forty copies of one header. The labels
+// now live on one label-only strip above the scroll, and a row prints values only.
+describe('the rack prints its column names once', () => {
+  const labels = (html: string) => [...html.matchAll(/class="myx-sfield-label">([^<]*)</g)].map((m) => m[1]);
+
+  test('a row prints no column name', () => {
+    expect(labels(renderToStaticMarkup(React.createElement(LogLine, { line: LINE })))).toEqual([]);
+  });
+
+  test('the column strip prints all four, in the row order', () => {
+    expect(labels(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['time', 'head', 'level', 'text']);
+  });
+});
+
+// A ROW CUT BY THE TOP OF THE TAIL KEEPS ITS FACTS (M3-04). Following scrolls the tail to its end, so
+// the top row is usually cut through and its time, head and level -- on its first line -- were above
+// the fold. They stick while any of the row shows. Sticky resolves in LAYOUT space, so the rows must
+// be placed by `top`: a translated row still sits at 0 there, and every value was pushed to its
+// cell's floor (measured: 53px down a 90px row that was fully in view). Both halves are read here.
+describe('a row cut by the top of the tail keeps its facts', () => {
+  const webui = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const css = readFileSync(path.join(webui, 'src/widgets/log-tail/log-tail.css'), 'utf8');
+  const tsx = readFileSync(path.join(webui, 'src/widgets/log-tail/index.tsx'), 'utf8');
+
+  test('the fact cells stick and the text cell does not', () => {
+    expect(css).toMatch(/^\.myx-lt-row \.myx-sfield:not\(:last-child\) \.myx-sfield-value \{ position: sticky; top: 0; \}$/m);
+  });
+
+  test('the rows are placed by top, never by a transform sticky cannot see', () => {
+    expect(tsx).toMatch(/style=\{\{ top: item\.start \}\}/);
+    expect(tsx).not.toMatch(/translateY\(\$\{item\.start\}/);
   });
 });
 

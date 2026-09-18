@@ -323,6 +323,81 @@ describe('the chat panel', () => {
   });
 });
 
+// THE ACTIVITY RACK NAMES ITS COLUMNS ON THE FIRST STRIP ONLY (M3-04). The comp prints `time member
+// activity detail` once, on the lead strip, and the rows under it carry values alone; the board had a
+// separate label rack above the strips AND labels on every strip. Counted on the hero render.
+describe('the board activity rack', () => {
+  const acts = boardHtml.slice(boardHtml.indexOf('myx-board-acts'));
+  const strips = acts.split(/\bmyx-board-act\b(?!s)/).slice(1);
+  const labels = (html: string) => [...html.matchAll(/class="myx-sfield-label">([^<]*)</g)].map((m) => m[1]);
+
+  test('the first strip names the four columns', () => {
+    expect(labels(strips[0])).toEqual(['time', 'member', 'activity', 'detail']);
+  });
+
+  test('every strip after it prints values only', () => {
+    expect(strips.length).toBeGreaterThan(1);
+    expect(strips.slice(1).flatMap(labels)).toEqual([]);
+  });
+});
+
+// THE NARROW BAY PRINTS AUTHORED SHORT NAMES (M3-04). A column name prints once per rack, so one the
+// builder bay's columns cannot hold was a machine ellipsis with no second copy: `acco…`, `wind…`,
+// `tokens …`, `context…`. The bay now prints the forms strings.ts authors, and the lead bay, whose
+// columns hold them, keeps the comp's words. The sheet's side: no board name spends a glyph on `…`.
+describe('the head bays print names their columns hold', () => {
+  const bay = (n: number) => {
+    const at = boardHtml.indexOf(`myx-board-bay-${n}`);
+    const next = boardHtml.indexOf('myx-board-bay-', at + 16);
+    return boardHtml.slice(at, next < 0 ? undefined : next);
+  };
+  const labels = (html: string) => [...html.matchAll(/class="myx-sfield-label">([^<]*)</g)].map((m) => m[1]);
+
+  test('the builder bay prints acct, wndw, tok out and ctx left', () => {
+    const names = labels(bay(1));
+    for (const short of ['acct', 'wndw', 'tok out', 'ctx left']) expect(names).toContain(short);
+    for (const long of ['account', 'window', 'tokens out', 'context left']) expect(names).not.toContain(long);
+  });
+
+  test("the lead bay keeps the comp's words", () => {
+    const names = labels(bay(0));
+    for (const long of ['account', 'window', 'tokens out', 'context left']) expect(names).toContain(long);
+  });
+
+  test('a board name that fits to a fraction of a pixel is clipped, not elided', () => {
+    expect(read('webui/src/widgets/team-board/board.css'))
+      .toMatch(/^\.myx-board \.myx-sfield-label \{ text-overflow: clip; \}$/m);
+  });
+});
+
+// A LABEL ON THE PHONE BELONGS TO THE VALUE UNDER IT (M3-04). The desktop cell has no floor and its
+// value carries 8px above it, so once the phone wrapped the cells every label sat twice as close to
+// the value ABOVE it as to its own. Read from the phone block: the cell's floor must be deeper than
+// the gap between a label and its value, or the pair reads the wrong way round.
+describe('the phone stack binds each label to its value', () => {
+  const css = read('webui/src/widgets/team-board/board.css');
+  const phone = (sheet: string) => sheet.slice(sheet.indexOf('@media (max-width: 720px)'));
+  const px = (token: string | undefined) => ({ 'var(--space-1)': 2, 'var(--space-2)': 4, 'var(--space-3)': 8 })[token ?? ''] ?? 0;
+  const floorAndLead = (sheet: string) => {
+    const block = phone(sheet);
+    const floor = /\.myx-board-frame \.myx-sfield \{ padding-block-end: ([^;]+);/.exec(block)?.[1];
+    const lead = /\.myx-board-frame \.myx-board-act \.myx-sfield-value \{ padding-block-start: ([^;]+);/.exec(block)?.[1];
+    return { floor: px(floor), lead: lead === undefined ? 8 : px(lead) };
+  };
+
+  test("the cell's floor is deeper than the value's lead", () => {
+    const { floor, lead } = floorAndLead(css);
+    expect(floor).toBeGreaterThan(lead);
+  });
+
+  test('the wall can fail: without the phone rule the floor is 0 against an 8px lead', () => {
+    const unfixed = css.replace(/^ {2}\.myx-board-frame \.myx-sfield \{ padding-block-end[^\n]*\n {2}\.myx-board-frame \.myx-sfield-value,\n[^\n]*\n/m, '');
+    expect(unfixed).not.toBe(css);
+    const { floor, lead } = floorAndLead(unfixed);
+    expect(floor).toBeLessThanOrEqual(lead);
+  });
+});
+
 describe('the activity feed', () => {
   test('nothing sampled and a client that stopped matching are different answers', () => {
     expect(feedEmpty({ activity: [], clientMatching: true })?.text).toBe('nothing sampled yet');

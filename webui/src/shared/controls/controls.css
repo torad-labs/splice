@@ -182,7 +182,13 @@
 .myx-choice-label {
   font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--strip-ink-mute);
+  /* THE LABEL TAKES ITS GROUND'S INK (M3-04, the cascade detector). This was --strip-ink-mute, a
+     PAPER ink, but the label is a sibling of the paper box above it in the column (choice.tsx), so
+     it stands on whatever ground the Choice stands on -- on the logs head that is the room, where
+     #5A5749 on #0B0E0E measured 2.67:1 in the dark. It is the edge label's defect run the other way
+     (M2R-01 stranded room ink on paper), and it gets the same cure rather than a room ink written
+     into a shared primitive: it inherits, so a Choice on paper will print paper ink unasked. */
+  color: inherit;
 }
 /* The box is the field box every other value is printed in, with the value on the left and the
    state word on the right. No chevron: the world has no icon set. */

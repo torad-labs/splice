@@ -51,16 +51,38 @@ export function messageOf(line: string): string {
 
 /** One log line as a printed strip. Exported because a virtualized list renders nothing without a
  *  viewport, so this is the part a test can hold. */
+/* THE RACK PRINTS ITS COLUMNS ONCE (M3-04, the finish review's item 5; m1 design review B9). Every
+   one of the tail's lines carried its own `time head level text` row, fifteen times down a capture,
+   and the rack is homogeneous -- one row shape -- which is the case StripField's own `label` doc
+   names for omitting it. The names print once, on the strip below, above the scroll.
+   AND THE LINE WRAPS INSIDE ITS CELL. The text cell was 160ch in a rack that scrolled sideways, so
+   at 1536 every long line was cut at the bay's edge (`first_byt…`) and read only by scrolling. The
+   virtualizer measures each row, so a wrapped line takes its own height; the cell declares a modest
+   ch count and takes the rack's slack, and the other three keep the grid. */
+const COLS = { time: 11, head: 18, level: 8, text: 60 } as const;
+
+/** The rack's column names, once, on a strip of the same grid as the lines under it. */
+export function LogColumns() {
+  return (
+    <Strip className="myx-lt-cols" edge="grey" edgeLabel={S.line} ariaLabel="log columns">
+      <StripField w={COLS.time} label={S.time} value="" />
+      <StripField w={COLS.head} label={S.head} value="" />
+      <StripField w={COLS.level} label={S.level} value="" />
+      <StripField w={COLS.text} label={S.text} value="" />
+    </Strip>
+  );
+}
+
 export function LogLine({ line }: { line: string }) {
   const level = levelOf(line);
   // ariaLabel keeps the WHOLE line: the cell drops what the row prints beside it, and a screen
   // reader reading the row aloud should still get the daemon's line as the daemon wrote it.
   return (
     <Strip edge={edgeOfLevel(level)} edgeLabel={level ?? S.line} ariaLabel={line.slice(0, 120)}>
-      <StripField w={11} label={S.time} value={timeOf(line) ?? '-'} />
-      <StripField w={18} label={S.head} value={headOf(line) ?? '-'} mono={false} />
-      <StripField w={8} label={S.level} value={level ?? '-'} mono={false} />
-      <StripField w={160} label={S.text} value={messageOf(line)} />
+      <StripField w={COLS.time} value={timeOf(line) ?? '-'} />
+      <StripField w={COLS.head} value={headOf(line) ?? '-'} mono={false} />
+      <StripField w={COLS.level} value={level ?? '-'} mono={false} />
+      <StripField w={COLS.text} value={messageOf(line)} />
     </Strip>
   );
 }
@@ -134,6 +156,8 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
       {filtered.length === 0 ? (
         <Empty text="no lines in this tail" source={payload?.path ?? '/api/logs/{head}'} />
       ) : (
+        <>
+        <LogColumns />
         <div className="myx-lt-scroll" ref={scrollRef}>
           <div className="myx-lt-inner" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => (
@@ -142,13 +166,17 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
                 className="myx-lt-row"
                 data-index={item.index}
                 ref={virtualizer.measureElement}
-                style={{ transform: `translateY(${item.start}px)` }}
+                // `top`, not a translate (M3-04): a row's time, head and level stick while any of the
+                // row is in view (log-tail.css), and sticky resolves in layout space, where a
+                // translated row still sits at 0 and every value was pushed to its cell's floor
+                style={{ top: item.start }}
               >
                 <LogLine line={filtered[item.index]} />
               </div>
             ))}
           </div>
         </div>
+        </>
       )}
     </div>
   );

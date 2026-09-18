@@ -33,6 +33,13 @@ export const S = {
   base: 'base',
   diff: 'diff',
   checks: 'checks',
+  /** AUTHORED SHORT FORMS for the narrow head bay (M3-04). A column name prints once per rack, so
+   *  a clipped one has no second copy to recover from: `acco…` carries less than `acct`. These
+   *  are the builder bay's four names that overflow its measured columns by 1.3 to 5.3px. */
+  accountShort: 'acct',
+  windowShort: 'wndw',
+  tokensOutShort: 'tok out',
+  contextLeftShort: 'ctx left',
   /** the message strips */
   time: 'time',
   from: 'from',

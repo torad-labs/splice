@@ -361,3 +361,37 @@ detected by its response: `@shared/api` exports `PendingRoute` (`{ pending: stri
 unknown route and `null` for everything else; a store carries the returned value, never mocked
 rows, and any other failure is shown as an error. Entities import both; nothing redeclares them
 (M2-D1's local copies are removed by the finish row).
+
+### 8.1 The transcript reader's denominator (declared 2026-09-18, from V4-130)
+
+The transcript reader publishes three fields beside its records and `entities/transcript` declares
+all three: `unparseable_lines`, `skipped_records` (by type) and `sidechain_records`. They are not
+diagnostics and they are not optional — they are the reader's **denominator disclosure**. A page
+that prints N messages without saying it skipped M records and failed to parse K lines is a ratio
+claim with a hidden denominator, which is the one defect this console has paid for repeatedly in
+another plane. Three transcripts on the development box already carry pre-existing unparseable
+lines, and sidechain records are excluded from the conversation by design, so all three counts are
+routinely non-zero and a reader who is not told will read N as the whole.
+
+A non-zero count is shown, not logged. Zero may be silent.
+
+### 8.2 The error envelope is read wrong today (V4-140, fix in `m3-review`)
+
+Section 8 above says `request<T>` "carries the management key, the 401 lockout and the error
+envelope". It does not carry the envelope. `shared/api/index.ts` reads `error?.message`, while the
+daemon sends `{"error": "<text>"}` — `error` is a **string** — so every refusal falls through to
+`HTTP <status>` and the daemon's sentence is discarded at the transport. The cast on that line
+declares the shape it expected, which is why TypeScript never objected: a declaration standing in
+for a measurement.
+
+Two consequences, both already paid for:
+
+- The turns page has 400d on every poll since it was written (`pages/turns/index.tsx` and
+  `widgets/rule/wire.ts` both call for perf turns with no head; `PerfRoutes.kt` refuses a blank
+  head) and nothing in the UI could say so.
+- `pendingOf(err, 'V4-1NN')`'s second branch is dead. It is documented to match "a 404 **or** an
+  `error.message` naming an unknown route", and the message is never the daemon's text, so only
+  the 404 branch can ever fire. A route that refuses with a 400 naming itself unknown is not
+  detected as pending.
+
+Until this is fixed, no console row may treat `MgmtError.message` as the daemon's words.

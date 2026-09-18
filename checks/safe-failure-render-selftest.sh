@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/safe-failure-render-selftest.sh — mutation-proves checks/config/safe-failure-render.py
+# checks/safe-failure-render-selftest.sh — mutation-proves checks/config/safe-failure-render.ts
 # (DR-140). Same defence-in-depth idiom as the rule-routing, config-guard, catalog and secret-scan
 # selftests: the leg guards the tree, this canary guards the LEG.
 #
@@ -26,7 +26,7 @@ fail=0
 err() { echo "  ✗ safe-failure-render-selftest: $1"; fail=1; }
 
 mkdir -p "$tmp/checks/config"
-cp "$ROOT/checks/config/safe-failure-render.py" "$tmp/checks/config/" || {
+cp "$ROOT/checks/config/safe-failure-render.ts" "$tmp/checks/config/" || {
   echo "  ✗ safe-failure-render-selftest: the checker is missing — the gate leg cannot be trusted"
   exit 1
 }
@@ -39,7 +39,7 @@ mkdir -p "$SRC"
 arm() {
   local label="$1" want="$2" name="$3" body="$4"
   printf '%s\n' "$body" > "$SRC/$name"
-  ( cd "$tmp" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 )
+  ( cd "$tmp" && bun checks/config/safe-failure-render.ts check . >/dev/null 2>&1 )
   local rc=$?
   [ "$rc" = "$want" ] || err "$label: expected rc=$want, got rc=$rc"
   rm -f "$SRC/$name"
@@ -54,7 +54,7 @@ arm_at() {
   local label="$1" line="$2" phrase="$3" name="$4" body="$5"
   printf '%s\n' "$body" > "$SRC/$name"
   local out
-  out=$( cd "$tmp" && python3 checks/config/safe-failure-render.py check . 2>&1 )
+  out=$( cd "$tmp" && bun checks/config/safe-failure-render.ts check . 2>&1 )
   echo "$out" | grep -q "$name:$line:" || err "$label: expected the blame on line $line, got: $(echo "$out" | head -1)"
   echo "$out" | grep -q -- "$phrase" || err "$label: expected reason to mention '$phrase'"
   rm -f "$SRC/$name"
@@ -956,7 +956,7 @@ fun a(items: List<String>) {
 }'
 
 # 14 — the real gate must be green on the real tree, or the leg is reporting on nothing.
-( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
+( cd "$ROOT" && bun checks/config/safe-failure-render.ts check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
 # Counted FROM THE FILE. Round 3 recorded that the previous count had been hand-maintained and was

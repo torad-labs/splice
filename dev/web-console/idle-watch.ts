@@ -229,7 +229,24 @@ function tick(): string[] {
 }
 
 if (once) {
-  for (const line of tick()) console.log(line);
+  // THE SELF-CHECK REPORTS STATE, NOT CHANGE (M1-95). tick() emits only on a TRANSITION - BUSY needs
+  // prev === "idle" and on a cold start prev is undefined, STILL needs idleSince to already hold the
+  // seat, and the branch above it is the one that populates idleSince without emitting - so run
+  // against six working seats this printed ZERO LINES and exited 0, which is exactly what it would
+  // print if it were broken. A self-check indistinguishable from a broken self-check is not a check;
+  // this path walks every seat and prints what it sees, so an empty output can only mean the seats
+  // list was empty.
+  const holding = inFlightBySeat();
+  for (const seat of seats) {
+    const p = files.get(seat) ?? fileFor(seat);
+    if (p === null || p === undefined || !existsSync(p)) {
+      console.log(`LOST  ${seat}: no transcript found`);
+      continue;
+    }
+    const { state, detail } = reading(p);
+    const row = holding.get(seat);
+    console.log(`${(state === "working" ? "BUSY " : "IDLE ")} ${seat} ${row ?? "no row"}: ${detail}`);
+  }
   process.exit(0);
 }
 while (true) {

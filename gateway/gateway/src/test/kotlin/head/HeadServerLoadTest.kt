@@ -227,8 +227,7 @@ class HeadServerLoadTest {
                 log = {},
             ),
         )
-        head.start()
-        Thread.sleep(700) // Netty warmup
+        head.start() // binds before returning (Ktor Netty bind(...).sync()); no warm-up (V4-139)
     }
 
     @AfterAll
@@ -314,11 +313,14 @@ class HeadServerLoadTest {
         assertTrue(upstreamTorn, "upstream connections still parked: ${mock.held.get()} — cancel did not propagate")
     }
 
+    // A deadline poll, the rule's sanctioned shape: gate slots and parked upstream connections are
+    // released server-side after the clients leave, with no signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 100L
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            kotlinx.coroutines.delay(100)
+            kotlinx.coroutines.delay(pollMs)
         }
         return cond()
     }

@@ -158,9 +158,11 @@ class CodexAuthTest {
         val first = auth.credentials() as Credentials.Bearer
         assertEquals("tok-1", first.token)
         assertEquals("acct-1", first.accountId)
-        // external rewrite with a new mtime -> re-read even within TTL
-        Thread.sleep(5)
+        // external rewrite with a new mtime -> re-read even within TTL. The mtime is STEPPED, not
+        // waited for: a coarse-grained filesystem can stamp both writes identically.
+        val before = Files.getLastModifiedTime(path).toMillis()
         path.writeText("""{"tokens":{"access_token":"tok-2"}}""")
+        Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
         assertEquals("tok-2", (auth.credentials() as Credentials.Bearer).token)
     }
 
@@ -220,9 +222,10 @@ class CodexAuthTest {
             Files.createDirectories(path.parent)
             path.writeText("""{"tokens":{"access_token":"token-A","refresh_token":"R1","account_id":"acct-1"}}""")
             assertEquals("token-A", (auth.credentials() as Credentials.Bearer).token) // cache holds A
-            // a concurrent process rotates the file to token B.
-            Thread.sleep(5)
+            // a concurrent process rotates the file to token B (mtime stepped, never waited for).
+            val before = Files.getLastModifiedTime(path).toMillis()
             path.writeText("""{"tokens":{"access_token":"token-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
             val beforeContent = path.readText()
             val served = auth.refresh() as Credentials.Bearer
             assertEquals("token-B", served.token) // adopts B, no POST
@@ -479,8 +482,10 @@ class CodexAuthTest {
         path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
         assertNull(auth.refresh())
         assertEquals(1, calls.get())
-        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        val before = Files.getLastModifiedTime(path).toMillis()
         path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"fresh-refresh"}}""") // re-login
+        // the mtime is STEPPED rather than waited for, so a coarse-grained filesystem still advances it
+        Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
         granted = true
         assertEquals("rotated-access", (auth.refresh() as Credentials.Bearer).token)
         assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it

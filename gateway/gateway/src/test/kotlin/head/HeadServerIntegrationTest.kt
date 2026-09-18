@@ -17,7 +17,10 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import mock.MockChatGptUpstream
 import mock.TestResponsesProvider
 import mock.awaitListening
@@ -143,14 +146,20 @@ class HeadServerIntegrationTest {
     // and 5s was not enough for a starved runner: gate run 33608202738 (2026-09-02) saw the line
     // arrive AFTER the wait while the whole module suite ran alongside. 30s buys nothing on the
     // pass path and stops a slow box from reading as a missing line.
-    private fun awaitLog(from: Int, timeoutMs: Long = 30_000, match: (String) -> Boolean): String? {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            synchronized(logs) { logs.drop(from).lastOrNull(match) }?.let { return it }
-            if (System.currentTimeMillis() >= deadline) return null
-            Thread.sleep(20)
+    // A deadline poll, the rule's sanctioned shape: the perf line is written on a server thread
+    // after the response, with no signal to await. Run on IO so the wait is real time even from
+    // inside runTest, and the test scheduler's thread is never blocked by it.
+    private suspend fun awaitLog(from: Int, timeoutMs: Long = 30_000, match: (String) -> Boolean): String? =
+        withContext(Dispatchers.IO) {
+            val pollMs = 20L
+            val deadline = System.currentTimeMillis() + timeoutMs
+            var found = synchronized(logs) { logs.drop(from).lastOrNull(match) }
+            while (found == null && System.currentTimeMillis() < deadline) {
+                delay(pollMs)
+                found = synchronized(logs) { logs.drop(from).lastOrNull(match) }
+            }
+            found
         }
-    }
 
     @Test
     fun `health carries version and port`() = runTest {

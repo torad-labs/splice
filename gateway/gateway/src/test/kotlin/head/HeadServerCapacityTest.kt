@@ -122,8 +122,9 @@ class HeadServerCapacityTest {
                 log = {},
             ),
         )
+        // No warm-up: HeadEngine.start calls engine.start(wait = false), and Ktor 3.5.2's Netty
+        // engine binds with ServerBootstrap.bind(...).sync() before start returns (V4-139).
         head.start()
-        Thread.sleep(700) // Netty warmup
     }
 
     @AfterAll
@@ -133,11 +134,13 @@ class HeadServerCapacityTest {
         mock.stop()
     }
 
+    // A deadline poll, the rule's sanctioned shape: gate, mock and file state change server-side
+    // after the client's response, and none of them offers a signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            delay(100)
+            delay(POLL_MS)
         }
         return cond()
     }
@@ -259,7 +262,6 @@ class HeadServerCapacityTest {
         assertTrue(upstreamClient.rateLimitedForMs > 0L, "the 429 should have armed the cooldown")
         head.restart()
         assertEquals(0L, upstreamClient.rateLimitedForMs, "restart must clear the armed horizon")
-        Thread.sleep(700) // Netty warmup before the next test reuses the port
     }
 
     // V4-50: the turn AFTER the horizon is armed is the one the operator kept reporting. The test
@@ -319,18 +321,12 @@ class HeadServerCapacityTest {
         // (this head discards the journal with log = {}); the append is best-effort on a bounded
         // file lane, so it is polled rather than read once.
         val perfFile = tmp.resolve("perf.jsonl")
-        var recorded = false
-        repeat(40) {
-            if (!recorded) {
-                recorded = Files.exists(perfFile) &&
-                    Files.readString(perfFile).contains("error:rate-limited")
-                if (!recorded) Thread.sleep(50)
-            }
+        val recorded = waitFor(2_000) {
+            Files.exists(perfFile) && Files.readString(perfFile).contains("error:rate-limited")
         }
         assertTrue(recorded, "the refusal must record a perf row; a refused turn with no trace is unfalsifiable")
 
         upstreamClient.clearRateLimitCooldown()
-        Thread.sleep(700) // Netty warmup before the next test reuses the port
     }
 
     // V4-77: THE POOLED TWIN OF THE ARM ABOVE, and the law is the same one. A head whose every
@@ -382,7 +378,6 @@ class HeadServerCapacityTest {
             assertBoundedRejectedRefusal(refused, sentAtSeconds, receivedAtSeconds)
         } finally {
             pooled.stop()
-            Thread.sleep(700) // Netty teardown, matching this class's convention
         }
     }
 
@@ -465,6 +460,7 @@ class HeadServerCapacityTest {
 }
 
 private const val MS_PER_S = 1_000L
+private const val POLL_MS = 100L
 
 // V4-61's ceiling on the client-facing deadline. V4-100: READS RateLimitCooldown's
 // MAX_RATE_LIMIT_COOLDOWN_MS itself, which is now public — the pin used to restate 120 because both

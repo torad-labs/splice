@@ -1,3 +1,5 @@
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -11,7 +13,11 @@ import splice.control.mcp.McpHostConfig
 import splice.core.launch.DirectoryProbe
 import splice.core.launch.McpSharing
 import splice.core.util.LogSink
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardWatchEventKinds
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -72,6 +78,11 @@ internal const val MCP_HOST_INIT =
 internal const val MCP_HOST_LIST = """{"jsonrpc":"2.0","id":3,"method":"tools/list"}"""
 internal const val MCP_HOST_STREAM_WAIT_MS = 5_000L
 
+/** One pending [McpHostFixture.awaitLogged]: completed by the log sink on the first matching line. */
+private class LogWaiter(val fragment: String) {
+    val done = CompletableDeferred<Unit>()
+}
+
 class McpFakeClock(var now: Long = 1_000_000L) : HostClock {
     override fun millis() = now
 }
@@ -81,7 +92,41 @@ abstract class McpHostFixture {
     protected val json = Json { ignoreUnknownKeys = true }
     protected val clock = McpFakeClock()
     protected val log = StringBuilder()
+    private val logWaiters = CopyOnWriteArrayList<LogWaiter>()
     protected lateinit var host: McpHost
+
+    /** V4-139: a line the host logs, awaited as the EVENT of its being logged: the fixture's sink
+     *  completes every waiter whose fragment the line carries. Registered before the log is
+     *  checked, so a line that lands in between is caught by one or the other. */
+    protected suspend fun awaitLogged(fragment: String, timeoutMs: Long = MCP_HOST_STREAM_WAIT_MS) {
+        val waiter = LogWaiter(fragment)
+        logWaiters += waiter
+        try {
+            if (synchronized(log) { log.contains(fragment) }) waiter.done.complete(Unit)
+            withTimeout(timeoutMs) { waiter.done.await() }
+        } finally {
+            logWaiters -= waiter
+        }
+    }
+
+    /** V4-139: a file the fake child creates, awaited on the filesystem's own creation event
+     *  (WatchService, inotify on Linux) with a deadline — never a poll of the clock. Registered
+     *  before the existence check, so a file created in between is seen by one or the other. */
+    protected fun awaitFile(path: Path, timeoutMs: Long = MCP_HOST_STREAM_WAIT_MS) {
+        val dir = checkNotNull(path.parent) { "$path has no parent to watch" }
+        dir.fileSystem.newWatchService().use { watch ->
+            dir.register(watch, StandardWatchEventKinds.ENTRY_CREATE)
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            while (!Files.exists(path)) {
+                val left = deadline - System.nanoTime()
+                check(left > 0) { "$path was never created within ${timeoutMs}ms" }
+                watch.poll(left, TimeUnit.NANOSECONDS)?.let { key ->
+                    key.pollEvents()
+                    key.reset()
+                }
+            }
+        }
+    }
 
     protected fun boot(dir: Path, maxServers: Int = 32, requestTimeout: Duration = 20.seconds): McpHost {
         val script = dir.resolve("fake_mcp.py")
@@ -98,7 +143,10 @@ abstract class McpHostFixture {
             sharing,
             { global },
             McpHostConfig(idleTimeout = 30.minutes, maxServers = maxServers, requestTimeout = requestTimeout, clock = clock),
-            log = LogSink { log.append(it) },
+            log = LogSink { line ->
+                synchronized(log) { log.append(line) }
+                logWaiters.forEach { if (line.contains(it.fragment)) it.done.complete(Unit) }
+            },
         )
         return host
     }

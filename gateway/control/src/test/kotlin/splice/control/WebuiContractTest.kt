@@ -35,7 +35,6 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.net.ServerSocket
-import java.net.Socket
 import java.nio.file.Files
 
 private class ContractHead(override val key: String, override val port: Int) : Head {
@@ -98,7 +97,6 @@ class WebuiContractTest {
             log = {},
         )
         runBlocking { control.start() }
-        awaitListening(port)
     }
 
     @AfterAll
@@ -320,17 +318,7 @@ private fun snakeCase(name: String): String =
     name.replace(Regex("(?<!^)(?=[A-Z])"), "_").lowercase()
 
 // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
-// collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.
+// collide at bind time on busy hosts; ports are OS-assigned. No readiness poll: ControlServer.start
+// returns routed and bound (Ktor's default SEQUENTIAL startup runs the modules before
+// NettyApplicationEngine's bind(...).sync(); V4-139).
 private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
-
-private fun awaitListening(vararg ports: Int) {
-    for (p in ports) awaitOne(p)
-}
-
-private fun awaitOne(port: Int) {
-    val deadline = System.currentTimeMillis() + 10_000
-    while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
-        check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
-        Thread.sleep(50)
-    }
-}

@@ -18,7 +18,10 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import mock.MockChatGptUpstream
 import mock.SUMMARY_SECTION_A
 import mock.SUMMARY_SECTION_B
@@ -353,10 +356,15 @@ class HeadServerFoldTest {
             assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $diag")
             assertTrue(sse.contains("stalled (watchdog)"), "expected the watchdog-named reason: $diag")
             assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall: $diag")
-            // the slot must come back within ~one poll interval, not ride the stall
-            val deadline = System.currentTimeMillis() + 2_000
-            while (System.currentTimeMillis() < deadline && gate.snapshot().inflight != 0) {
-                Thread.sleep(50)
+            // the slot must come back within ~one poll interval, not ride the stall. A deadline poll
+            // (the release happens on a server thread, with no signal to await), on IO so it waits in
+            // real time from inside runTest without blocking the test scheduler's thread.
+            withContext(Dispatchers.IO) {
+                val pollMs = 50L
+                val deadline = System.currentTimeMillis() + 2_000
+                while (System.currentTimeMillis() < deadline && gate.snapshot().inflight != 0) {
+                    delay(pollMs)
+                }
             }
             assertEquals(0, gate.snapshot().inflight, "the reaped turn must release its gate slot")
         } finally {

@@ -34,7 +34,6 @@ import splice.core.launch.DirectoryProbe
 import splice.core.launch.McpAccessKey
 import splice.core.launch.McpSharing
 import java.net.ServerSocket
-import java.net.Socket
 import java.nio.file.Files
 import kotlin.io.path.writeText
 
@@ -79,8 +78,7 @@ class McpRoutesTest {
             log = { },
             mcpHost = host,
         )
-        control.start()
-        awaitMcpPort(port)
+        control.start() // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
     }
 
     @AfterAll
@@ -214,14 +212,3 @@ for line in sys.stdin:
 """
 
 private fun freshMcpPort(): Int = ServerSocket(0).use { it.localPort }
-
-private fun awaitMcpPort(port: Int) {
-    repeat(100) {
-        try {
-            Socket("127.0.0.1", port).use { return }
-        } catch (_: java.io.IOException) {
-            Thread.sleep(50)
-        }
-    }
-    error("control server never listened on $port")
-}

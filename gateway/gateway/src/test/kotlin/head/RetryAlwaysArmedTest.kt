@@ -191,8 +191,7 @@ class RetryAlwaysArmedTest {
                 log = {},
             ),
         )
-        head.start()
-        Thread.sleep(700)
+        head.start() // binds before returning (Ktor Netty bind(...).sync()); no warm-up (V4-139)
     }
 
     @AfterAll

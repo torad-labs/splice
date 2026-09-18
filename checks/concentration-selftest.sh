@@ -25,6 +25,13 @@
 #   4  gate:concentration rewritten to `true`                   -> routing guard, inverse half
 #   5  gate:concentration defanged by a shell comment           -> routing guard, inverse half
 #   6  the concentration leg removed from / commented out of gate.sh -> routing guard, forward half
+#  13  85 band-low files in ONE package, file census green      -> PACKAGE REGRESSION arm (V4-93)
+#  14  PACKAGE_MAX_FILES held above the measured worst package   -> PACKAGE SLACK arm (V4-93)
+#  16  SRC_GLOB pointed at nothing                              -> empty-census refusal (V4-93)
+#
+# plus the GREEN arms, which assert a census rather than a refusal: 7/7b (the type census against
+# ast-grep's own AST) and 15 (the PACKAGE census's files / summed C / median C for a planted
+# package). A refusal-only selftest proves a wall can fail and never that it measures anything.
 #
 # EVERYTHING RUNS OUT OF TREE. The harness is a mktemp -d containing COPIES of the two checkers and
 # of package.json / checks/gate.sh, plus one SYMLINK per gateway module — so the oracle measures the
@@ -530,7 +537,98 @@ grep -q "SelftestLoneGod.kt" "$tmp/out" ||
   err "12. zero-neighbour arm — the gated HIGH list does not name SelftestLoneGod.kt, so the arm went red for something other than the lone god object it planted"
 rm -rf "$tmp/gateway/zz-selftest-lone"
 
+# -- 13. PACKAGE SCALE: a clumped package is red even with the file census green (V4-93) -------
+# The plane the file census cannot see: 85 files in ONE package, every one of them band low, the
+# whole file-scale gate green. Pre-V4-93 this tree passed that with zero findings.
+#
+# THE FIXTURE IS SIZED, not arbitrary, for the same reason fixture 1 brings its own neighbourhood.
+# The oracle's global median is the median of the per-package medians, so ADDING a package moves it
+# and therefore moves the floor every zero-neighbour file is graded against. Each planted file is
+# built to C = 45.5 (logic 75 plus one type), which is where this tree's global median already sits
+# (45.625 over 52 packages), so the median moves by 0.125 and the floor by 0.06. MEASURED
+# collateral at that size: exactly ONE real file's ratio moves at all
+# (fir-checks/MustConsumeDiscardChecker.kt 1.52 -> 1.53), no real file changes band, and band HIGH
+# stays 0 -- so when this arm goes red it is the package plane talking and not a perturbation of
+# the plane it is not testing. Both facts are asserted below rather than trusted.
+CLUMP="$tmp/gateway/zz-selftest-clump/src/main/kotlin/splice/selftestclump"
+mkdir -p "$CLUMP"
+python3 - "$ORACLE" "$CLUMP" <<'CLUMPPY'
+import importlib.util, pathlib, sys
+
+spec = importlib.util.spec_from_file_location("concentration_selftest_clump", sys.argv[1])
+oracle = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(oracle)
+out = pathlib.Path(sys.argv[2])
+
+# One file over the gated baseline: the arm is "a package absorbed a file nothing recorded".
+count = oracle.PACKAGE_MAX_FILES + 1
+# C = 0.5*logic + 3*non_type_exports + 8*concerns; one type, no splice imports, no top-level
+# funs => C = 0.5*logic + 8. logic 75 => 45.5, this tree's own global median.
+for n in range(count):
+    body = ["package splice.selftestclump", "class SelftestClump%d(val v: String) {" % n]
+    body += ["    fun f%d(): Int = %d" % (i, i) for i in range(73)]
+    body += ["}"]
+    (out / ("SelftestClump%d.kt" % n)).write_text("\n".join(body) + "\n")
+CLUMPPY
+oracle --ratchet --max-ratio 1.8
+must_fail "13. PACKAGE REGRESSION — 85 band-low files in one package, file census green" "PACKAGE REGRESSION"
+grep -q "splice.selftestclump" "$tmp/out" ||
+  err "13. PACKAGE arm — the failure does not NAME the clumped package, so it went red for something else"
+if grep -q "REGRESSION: band HIGH rose" "$tmp/out"; then
+  err "13. PACKAGE arm — the FILE plane also went red, so this fixture is perturbing the plane it is not testing"
+fi
+grep -qE 'band HIGH +baseline +0 +measured +0' "$tmp/out" ||
+  err "13. PACKAGE arm — band HIGH is not still 0, so the arm does not prove the file census passes over a clump: $(grep -m1 'band HIGH' "$tmp/out")"
+rm -rf "$tmp/gateway/zz-selftest-clump"
+
+# -- 14. PACKAGE SLACK: a baseline held above the measured worst package -----------------------
+python3 - "$ORACLE" <<'SLACKPY'
+import pathlib, re, sys
+
+path = pathlib.Path(sys.argv[1])
+text, n = re.subn(r"^PACKAGE_MAX_FILES = \d+", "PACKAGE_MAX_FILES = 999", path.read_text(), count=1, flags=re.M)
+assert n == 1, "PACKAGE_MAX_FILES assignment not found — the PACKAGE SLACK fixture cannot be built"
+path.write_text(text)
+SLACKPY
+oracle --ratchet --max-ratio 1.8
+must_fail "14. PACKAGE SLACK — PACKAGE_MAX_FILES held above the measured worst package" "PACKAGE SLACK"
+reset_oracle
+
+# -- 15. the package CENSUS itself, green and arithmetically checkable -------------------------
+# A gated number whose census cannot be reproduced from the run's own output is not auditable --
+# the same rule that makes REPORT-THE-DIVISOR mandatory on the file plane. Three files of known C
+# in one package, and all three columns asserted.
+SMALL="$tmp/gateway/zz-selftest-census-pkg/src/main/kotlin/splice/selftestsmall"
+mkdir -p "$SMALL"
+for n in 0 1 2; do
+  printf 'package splice.selftestsmall\nclass SelftestSmall%s(val v: String)\n' "$n" > "$SMALL/SelftestSmall$n.kt"
+done
+oracle --packages
+if [ "$rc" -ne 0 ]; then
+  err "15. package census — --packages must succeed (exit $rc): $(head -3 "$tmp/out" | tr '\n' ' ')"
+elif ! grep -qE 'splice\.selftestsmall +3 +25\.5 +8\.5' "$tmp/out"; then
+  err "15. package census — want 'splice.selftestsmall 3 files, sum C 25.5, median 8.5', got: $(grep selftestsmall "$tmp/out" | tr '\n' ' ')"
+else
+  note "ok 15. the package census reports files, summed C and median C for a planted package"
+fi
+rm -rf "$tmp/gateway/zz-selftest-census-pkg"
+
+# -- 16. the BORING case: an empty package census must REFUSE, not pass (CLAUDE.md s24) --------
+# The file plane already passes over an empty tree -- high == baseline == 0 and no debt -- so
+# without this arm a lost SRC_GLOB would read as a perfectly clean repo.
+python3 - "$ORACLE" <<'EMPTYPY'
+import pathlib, re, sys
+
+path = pathlib.Path(sys.argv[1])
+text, n = re.subn(r'^SRC_GLOB = .*$', 'SRC_GLOB = "gateway/*/src/nowhere"', path.read_text(), count=1, flags=re.M)
+assert n == 1, "SRC_GLOB assignment not found — the empty-census fixture cannot be built"
+path.write_text(text)
+EMPTYPY
+oracle --ratchet --max-ratio 1.8
+must_fail "16. an empty package census must REFUSE rather than report a clean tree" "the census is EMPTY"
+reset_oracle
+
 if [ "$fail" -eq 0 ]; then
-  note "concentration selftest: control green, 13 mutation fixtures red for their stated reasons, 6 DR-51 arms green"
+  note "concentration selftest: control green, 16 mutation fixtures red for their stated reasons, 7 census arms green"
 fi
 exit "$fail"

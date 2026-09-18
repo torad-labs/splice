@@ -246,7 +246,16 @@ export function viewStoreFor(pageId: string, defaults: readonly View[]): ViewSto
   if (existing !== undefined) return existing;
   const store = createViewStore(pageId, defaults, browserStorage());
   stores.set(pageId, store);
-  for (const listener of created) listener();
+  // The notification is DEFERRED, and the creation above is not. `useViews` calls this during
+  // render, so firing the listeners here ran a reader's setState inside another component's render
+  // — React's "Cannot update a component (Console) while rendering a different component
+  // (ProjectsBoard)", printed on every load of projects and sessions, and an error rather than a
+  // warning in a later React. The store itself must exist synchronously because
+  // `useSyncExternalStore` subscribes to it in that same render; only the side effect has to wait.
+  // A microtask still lands before paint, so the palette's re-read is not visibly late.
+  queueMicrotask(() => {
+    for (const listener of created) listener();
+  });
   return store;
 }
 

@@ -50,7 +50,7 @@ internal class DoctorReport(
     /** Print or write the report; true when no check FAILED (the same verdict as the text doctor). */
     internal fun emit(run: DoctorRun, options: DoctorReportOptions): Boolean {
         val report = build(run, options.withLogs)
-        val text = json.encodeToString(JsonObject.serializer(), report)
+        val text = jsonText(report)
         val out = options.out
         if (out == null) {
             println(text)
@@ -64,6 +64,12 @@ internal class DoctorReport(
         }
         return run.sections.flatMap { it.second }.none { it.status == CheckStatus.FAIL }
     }
+
+    /** The report as the JSON TEXT the CLI writes. ONE RENDERING: [emit] calls this too, so the
+     *  console's /api/doctor and `splice doctor --json` cannot emit different bytes for one run. A
+     *  second assembly would also carry a second redaction path list, which is the harm the console
+     *  route's own header names. */
+    internal fun jsonText(report: JsonObject): String = json.encodeToString(JsonObject.serializer(), report)
 
     internal fun build(run: DoctorRun, withLogs: Boolean): JsonObject = buildJsonObject {
         put("schema_version", SCHEMA_VERSION)

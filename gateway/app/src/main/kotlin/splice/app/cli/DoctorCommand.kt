@@ -71,6 +71,23 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
         return failures == 0
     }
 
+    /** The `--json` report as TEXT, for a caller that SHIPS it rather than printing it — the
+     *  console's /api/doctor. It shares the assembly AND the encoder with [doctor]'s own --json path
+     *  (DoctorReport.jsonText), so the console and `splice doctor --json` cannot disagree about one
+     *  run; a second assembly here would have meant a second redaction path list.
+     *
+     *  [withLogs] defaults to false, which is what a bare `splice doctor --json` does: log lines
+     *  leaving the machine are an explicit opt-in, and a console poll is not a person asking. */
+    internal fun reportJson(
+        envReader: EnvReader = EnvReader(System::getenv),
+        live: Boolean = false,
+        withLogs: Boolean = false,
+    ): String {
+        val run = collect(envReader, live)
+        val report = DoctorReport(envReader, claudeVersion = { installProbes.capturedVersion(CLAUDE_VERSION) })
+        return report.jsonText(report.build(run, withLogs))
+    }
+
     /** Every section, collected once; both renderings read this. */
     internal fun collect(envReader: EnvReader, live: Boolean = false): DoctorRun {
         val configPath = TopologyLoader.configPath(envReader)

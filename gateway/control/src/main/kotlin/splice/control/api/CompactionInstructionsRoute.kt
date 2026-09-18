@@ -32,12 +32,14 @@ internal const val COMPACTION_UNWIRED =
 
 internal class CompactionInstructionsRoute(
     private val resolver: HeadResolver,
-    /** Read at CALL time, not construction time: ControlPlane assigns it right after the server is
-     *  built, so a route that captured the value would capture null forever. */
-    private val compaction: () -> CompactionInstructions?,
 ) {
 
-    suspend fun instructions(call: ApplicationCall) {
+    /** [table] ARRIVES AT CALL TIME, not construction time: ControlPlane assigns the property right
+     *  after the server is built, so a route that captured the value would capture null forever. It
+     *  was a `() -> CompactionInstructions?` constructor seam until kt-no-lambda-seam flagged it —
+     *  the same unnamed transposable shape, fixed the same way, by the argument rather than by a new
+     *  role invented to name the lambda. */
+    suspend fun instructions(call: ApplicationCall, table: CompactionInstructions?) {
         val head = call.request.queryParameters["head"].orEmpty()
         val matches = if (head.isBlank()) emptyList() else resolver.headByName(head)
         if (matches.isEmpty()) {
@@ -49,8 +51,7 @@ internal class CompactionInstructionsRoute(
             )
             return
         }
-        val instructions = compaction()
-        if (instructions == null) {
+        if (table == null) {
             call.respondText(
                 buildJsonObject { put("error", COMPACTION_UNWIRED) }.toString(),
                 ContentType.Application.Json,
@@ -59,7 +60,7 @@ internal class CompactionInstructionsRoute(
             return
         }
         val roster = matches.mapNotNull { it.catalog }.flatMap { it.availableModelIds() }.toSet()
-        val scopes = instructions.rules().filter { belongsToHead(it, roster) }.map { rule ->
+        val scopes = table.rules().filter { belongsToHead(it, roster) }.map { rule ->
             buildJsonObject {
                 put("scope", rule.scope.wire)
                 put("source", rule.source)

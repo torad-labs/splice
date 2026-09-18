@@ -34,6 +34,7 @@ import splice.control.api.CompactionInstructionsRoute
 import splice.control.api.ConfigRoutes
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
+import splice.control.api.DoctorRoute
 import splice.control.api.EconomicsPayloads
 import splice.control.api.EventBus
 import splice.control.api.EventsRoute
@@ -42,9 +43,12 @@ import splice.control.api.HeadRoutes
 import splice.control.api.JsonBody
 import splice.control.api.LaunchRoutes
 import splice.control.api.McpRoutes
+import splice.control.api.ModelsRoute
 import splice.control.api.PerfPayloads
+import splice.control.api.PerfRoutes
 import splice.control.api.SessionsRoutes
 import splice.control.api.StatuslineRoute
+import splice.control.api.UpgradeRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.compaction.CompactionInstructions
@@ -132,7 +136,30 @@ public class ControlServer(
 
     /** Reads [compaction] at CALL time through a lambda: ControlPlane assigns the property after
      *  the server is constructed, so a route that captured the value would capture null forever. */
-    private val compactionRoute = CompactionInstructionsRoute(resolver) { compaction }
+    private val compactionRoute = CompactionInstructionsRoute(resolver)
+
+    /** V4-127: the console's four injected ports, each a SETTABLE PROPERTY for the same reason
+     *  [compaction] is — the constructor sits at the width ratchet's ceiling and V4-105 is burning it
+     *  down, so a new route input arrives as an assignment ControlPlane makes after construction.
+     *
+     *  EVERY ONE OF THEM IS READ AT CALL TIME through a lambda ([modelsRoute], [doctorRoute],
+     *  [upgradeRoute], [daemonRoutes] below), never captured: a route that captured the value at
+     *  construction would capture null forever and answer its unwired 5xx against a daemon that had
+     *  wired it a moment later. That is the same trap [compaction] was written to avoid.
+     *
+     *  NULL MEANS UNWIRED, and every route below answers a NAMED 5xx for it rather than an empty
+     *  payload. This is the one discipline all four share, and it is why they are declared together:
+     *  an absent declared-model roster, doctor report, upgrade status or restart control would each
+     *  render as a confident negative — no tiers declared, nothing wrong, nothing to upgrade, no
+     *  restart coming — every one of them a did-not-run wearing a legitimate answer. */
+    public var declaredHeads: DeclaredHeads? = null
+    public var doctor: DoctorReport? = null
+    public var upgrade: UpgradeStatus? = null
+
+    private val modelsRoute = ModelsRoute(heads)
+    private val perfRoutes = PerfRoutes(resolver)
+    private val doctorRoute = DoctorRoute()
+    private val upgradeRoute = UpgradeRoute()
     private val jsonBody = JsonBody()
     private val audit = ControlAudit(log)
     private val configRoutes = ConfigRoutes(config, jsonBody, payloads)
@@ -200,7 +227,15 @@ public class ControlServer(
                 get("/api/events") { guarded(call) { eventsRoute.stream(call) } }
                 // V4-136: additive too. ?head=<key> is REQUIRED and an unknown one is a 400 naming
                 // it, never a 404 — the console reads 404 on this path as route-not-built.
-                get("/api/compaction/instructions") { guarded(call) { compactionRoute.instructions(call) } }
+                get("/api/compaction/instructions") { guarded(call) { compactionRoute.instructions(call, compaction) } }
+                // V4-127: the console's read routes, under the same two rules as the line above —
+                // ?head= is REQUIRED where the resource is per-head and a bad one is a 400 NAMING it
+                // (never a 404, which the console reads as route-not-built), and every unwired port
+                // answers a named 5xx rather than a payload that reads as a confident negative.
+                get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
+                get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }
+                get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, doctor) } }
+                get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, upgrade) } }
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
                 get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }

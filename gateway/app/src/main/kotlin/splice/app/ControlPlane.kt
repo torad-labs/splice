@@ -5,17 +5,24 @@
 // caller's responsibility is to stop what it already started and exit cleanly in that case.
 package splice.app
 
+import java.nio.file.Path
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.cancel
+import splice.app.cli.DoctorCommand
+import splice.app.console.ConsoleUpgradeStatus
 import splice.app.launch.HookProcessExec
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.control.ControlServer
 import splice.control.DashboardPage
+import splice.control.DeclaredHeads
+import splice.control.DoctorReport
 import splice.control.FailedHeads
 import splice.control.LaunchService
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
 import splice.control.TurnPathStalled
+import splice.control.UpgradeStatus
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
 import splice.core.compaction.CompactionInstructions
@@ -35,8 +42,6 @@ import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
-import java.nio.file.Path
-import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
     private val statePaths: StatePaths,
@@ -55,6 +60,11 @@ internal class ControlPlane(
     /** V4-136: the daemon's ONE compaction resolver, handed on to the control server so
      *  /api/compaction/instructions reports the resolver the daemon actually compacts with. */
     private val compactionInstructions: CompactionInstructions = CompactionInstructions(),
+    /** V4-127: what the topology declared about every head — the provider key and the declared model
+     *  list — for the whole daemon at once. A CONSTRUCTOR parameter here and a post-construction
+     *  assignment on [ControlServer] below, because only [Daemon] holds the Topology: this class has
+     *  the digest and the path, never the object. */
+    private val declaredHeads: DeclaredHeads = DeclaredHeads { emptyMap() },
 ) {
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
@@ -127,6 +137,15 @@ internal class ControlPlane(
         // cannot check this line, which is exactly why a pin exists: removing it must fail a test,
         // not just leave the route answering its named 5xx in production.
         srv.compaction = compactionInstructions
+        // V4-127: the console's three read ports, assigned for the same reason [compaction] is and
+        // carrying the same hazard — the compiler cannot check any of these four lines, so deleting
+        // one does not break the build. Each route then answers its NAMED 5xx, and the upgrade one
+        // is the worst of them: an unwired port there reads as a measured payload saying nothing is
+        // newer, which tells an operator they are up to date when nobody has ever looked. The
+        // deletion pins in DaemonWiringTest are what make that a red instead of a quiet lie.
+        srv.declaredHeads = declaredHeads
+        srv.doctor = DoctorReport(DoctorCommand()::reportJson)
+        srv.upgrade = UpgradeStatus(ConsoleUpgradeStatus()::json)
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

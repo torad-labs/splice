@@ -159,6 +159,15 @@ internal class EventSubscription internal constructor(private val capacity: Int)
 
 /** Fan-out with a replay ring. Every method that touches [subscribers] or the ring holds [lock];
  *  publishing never suspends, so the lock is only ever held for the length of a trySend loop. */
+/** Names the seam [EventBus.publish] takes: a raw `(Long) -> ConsoleEvent` said how many arguments
+ *  arrive and nothing about what the thing is for, which is the unnamed transposable shape
+ *  kt-no-lambda-seam forbids. The sequence number is the bus's, minted per publish, so a builder is
+ *  handed it rather than reading it. SAM conversion keeps every `publish { seq -> ... }` call site
+ *  byte-identical. */
+public fun interface ConsoleEventBuild {
+    public operator fun invoke(seq: Long): ConsoleEvent
+}
+
 public class EventBus(private val backlog: Int = DEFAULT_BACKLOG) {
     private val lock = Any()
     private val subscribers = mutableSetOf<EventSubscription>()
@@ -171,7 +180,7 @@ public class EventBus(private val backlog: Int = DEFAULT_BACKLOG) {
      *  one method that crosses the module boundary. `subscribe` and `unsubscribe` stay internal
      *  because only the route subscribes, which keeps a subscriber handle out of the public surface
      *  where nothing could do anything useful with it anyway. */
-    public fun publish(build: (Long) -> ConsoleEvent): ConsoleEvent {
+    public fun publish(build: ConsoleEventBuild): ConsoleEvent {
         val event = build(nextSeq.getAndIncrement())
         synchronized(lock) {
             ring.addLast(event)

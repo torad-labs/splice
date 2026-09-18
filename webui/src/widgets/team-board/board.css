@@ -135,7 +135,10 @@
 .myx-board .myx-sfield-value {
   font-family: var(--font-label);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  /* THE WEIGHT IS THE PRIMITIVE'S (M1-89). This carried 600 while ui.css bound none, so the role was
+     bold on this page and regular everywhere else; the comp's own strips measure at or below its
+     recorded regular weight, and dropping to 400 halves the cells this page clips. See ui.css for
+     both readings. */
   padding-block-start: var(--space-3);
 }
 

@@ -30,6 +30,7 @@ export type {
   SessionRow,
   SessionsPayload,
 } from './model/types';
+export { LIVE_KINDS } from './model/live';
 export const useSession = sessionStore;
 export const useSessionRegistry = sessionRegistryStore.use;
 export const useSessionEdges = sessionEdgesStore.use;

@@ -196,13 +196,12 @@ describe('connect', () => {
     expect(seen.length).toBe(3);
   });
 
-  test('a 401 stops the stream and hands it to the shared client, which owns the lock', async () => {
+  test('a 401 stops the stream and hands the 401 to the shared client, which owns the lock', async () => {
     vi.useFakeTimers();
     const urls: string[] = [];
     vi.stubGlobal('fetch', (url: unknown) => {
       urls.push(String(url));
-      if (String(url) === '/api/events') return Promise.resolve(new Response('nope', { status: 401 }));
-      return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      return Promise.resolve(new Response('nope', { status: 401 }));
     });
 
     connect();
@@ -210,8 +209,9 @@ describe('connect', () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(eventsStore.get().status).toBe('off');
-    // One stream attempt, then one read that lets the shared client see the 401. Nothing retries.
-    expect(urls).toEqual(['/api/events', '/api/status']);
+    // The stream attempt, and NOTHING after it: no retry, and no second request to trip the lock
+    // (which is what the row replaced with the shared client's own noteUnauthorized).
+    expect(urls).toEqual(['/api/events']);
   });
 
   test('with no management key it does not open a stream at all', async () => {

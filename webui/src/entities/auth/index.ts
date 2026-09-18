@@ -21,5 +21,6 @@ export type {
   LoginStatusPayload,
   SwitchPayload,
 } from './model/types';
+export { LIVE_KINDS } from './model/live';
 export const useAuth = authStore.use;
 export const useAuthAction = authActionStore.use;

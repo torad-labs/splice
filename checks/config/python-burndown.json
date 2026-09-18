@@ -60,7 +60,6 @@
     ".dev/campaigns/proxy-hardening/walls/cx_18_usage_aliases.py",
     ".dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.py",
     ".dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.py",
-    ".dev/campaigns/proxy-hardening/walls/inf_02_every_law_walled.py",
     ".dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.py",
     ".dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.py",
     ".dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.py",

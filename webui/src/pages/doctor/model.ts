@@ -7,7 +7,7 @@
 // console must not either. A pure machine that returns the response inside its own state is a
 // thing a test can prove holds nothing anywhere else; a component that quietly wrote to the store
 // or to localStorage could not be.
-import type { DoctorCheck, DoctorStatus } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, DoctorStatus } from '@entities/doctor';
 import { checkSection } from '@entities/doctor';
 import type { Edge } from '@shared/ui';
 
@@ -67,6 +67,43 @@ export function groupChecks(checks: readonly DoctorCheck[], view: { sort: { fiel
 /** How many checks are not `ok`. The report's one number, and the one the page leads with. */
 export function attentionCount(checks: readonly DoctorCheck[]): number {
   return checks.filter((check) => wantsAttention(check.status)).length;
+}
+
+/**
+ * THE REPORT'S OWN FACTS, AS SERVED (M2-22).
+ *
+ * The page was served twenty-six typed fields and printed nine, and the seventeen it did not print
+ * were not pending anything: `generated_at`, `schema_version`, `os.*` and `jvm.*` arrive in the
+ * same payload every check does. This is that surface, printed.
+ *
+ * THE FIELD NAME IS THE LABEL, and that is a decision rather than a shortcut. A hand-written
+ * caption per row would be seven chances to invent a meaning the payload does not carry -- whether
+ * `os.version` is a kernel, a distribution release or a build number is a fact about the daemon's
+ * host and not about this page, and a caption that guessed would be read as authoritative. The
+ * payload's own key cannot be wrong about what it names.
+ *
+ * THE EXCLUSIONS, because a list that does not say what it left out reads as complete:
+ *   - `splice.version` and `claude_code.version` are PRINTED, in the detail column's version strip
+ *     and its note; printing them again would be the page saying one fact twice (M1-34, B10).
+ *   - `topology`, `accounts` and `perf` are DELIBERATELY UNTYPED on `DoctorPayload`: the entity
+ *     carries them as opaque values so the redaction pass can walk them, and says in its own words
+ *     that a page wanting one "has to narrow it first rather than read fields off a shape nobody
+ *     typed". Narrowing one means typing a daemon shape with no route behind it, which is the
+ *     invented member this row refuses.
+ *   - `checks` is the rack below, and `logs`, `logs_dropped_in_tail` and `logs_error` arrive only
+ *     with `--with-logs`, which the console's doctor route does not ask for; the log tail has its
+ *     own page.
+ */
+export function reportFacts(payload: DoctorPayload): { field: string; value: string }[] {
+  return [
+    { field: 'generated_at', value: payload.generated_at },
+    { field: 'schema_version', value: String(payload.schema_version) },
+    { field: 'os.name', value: payload.os.name },
+    { field: 'os.version', value: payload.os.version },
+    { field: 'os.arch', value: payload.os.arch },
+    { field: 'jvm.version', value: payload.jvm.version },
+    { field: 'jvm.vendor', value: payload.jvm.vendor },
+  ];
 }
 
 // ── the playground ───────────────────────────────────────────────────────────

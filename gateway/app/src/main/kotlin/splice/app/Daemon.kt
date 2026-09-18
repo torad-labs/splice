@@ -61,11 +61,25 @@ public class Daemon(
     )
     private val mgmtKey = MgmtKey(statePaths)
     private val clientVersions = ClientVersionTracker()
+
+    /** The topology's directory: a relative `system_prompt_file` or `[compaction] file =` resolves
+     *  against it. Hoisted above [controlPlane] (V4-136) because the shared compaction resolver
+     *  below needs it, and that resolver is handed to the control plane. */
+    private val topologyDir = topologyPath?.parent ?: TopologyLoader.configPath().parent
+
+    /** V4-136: ONE compaction resolver, SHARED. The console route reports the resolver the daemon
+     *  actually compacts with — including its live file cache — rather than a rebuilt copy that
+     *  would agree with this one only by luck. Constructed once and handed to both [compactionTail]
+     *  and [controlPlane], so there is no second instance to drift. */
+    private val compactionInstructions =
+        CompactionInstructions(topology.compaction, topologyDir, log = log)
+
     private val controlPlane = ControlPlane(
         statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
         topologyDigest, topologyPath, refreshCall,
         mcpHosting = McpHostingSettings().with(topology.daemon),
         clientVersions = clientVersions,
+        compactionInstructions = compactionInstructions,
     )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
@@ -82,11 +96,7 @@ public class Daemon(
 
     // The directory a relative `file =` / `system_prompt_file =` resolves against: the topology's
     // own directory, so a config kept beside its text files moves as one unit.
-    private val topologyDir = topologyPath?.parent ?: TopologyLoader.configPath().parent
-    private val compactionTail = CompactionTail(
-        CompactionInstructions(topology.compaction, topologyDir, log = log),
-        SessionProject(),
-    )
+    private val compactionTail = CompactionTail(compactionInstructions, SessionProject())
     private val headServerFactory =
         HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions, topologyDir)
     private val launchSpecFactory = LaunchSpecFactory(

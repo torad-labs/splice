@@ -18,6 +18,7 @@ import splice.control.ShutdownDaemon
 import splice.control.TurnPathStalled
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
+import splice.core.compaction.CompactionInstructions
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
@@ -51,6 +52,9 @@ internal class ControlPlane(
     /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
     private val mcpHosting: McpHostingSettings = McpHostingSettings(),
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    /** V4-136: the daemon's ONE compaction resolver, handed on to the control server so
+     *  /api/compaction/instructions reports the resolver the daemon actually compacts with. */
+    private val compactionInstructions: CompactionInstructions = CompactionInstructions(),
 ) {
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
@@ -118,6 +122,11 @@ internal class ControlPlane(
             ),
             clientVersions = clientVersions,
         )
+        // V4-136: assigned HERE, immediately after construction, because a constructor parameter
+        // would widen ControlServer to 18 and the width ratchet forbids it. The compiler therefore
+        // cannot check this line, which is exactly why a pin exists: removing it must fail a test,
+        // not just leave the route answering its named 5xx in production.
+        srv.compaction = compactionInstructions
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

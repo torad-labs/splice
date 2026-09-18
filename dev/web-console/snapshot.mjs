@@ -72,8 +72,21 @@ const COLLECT = `(async () => {
   return '<!doctype html>\\n' + clone.outerHTML;
 })()`;
 
-export async function snapshot(url, out, width = 1536, height = 1024) {
+/**
+ * `theme` is seeded into localStorage BEFORE the document runs, the same way gate.mjs does it.
+ *
+ * Added 2026-09-18. Until then nothing here touched the theme, so every rendered rule pass this
+ * campaign has run saw one room — and it was not the room with the problem. The light theme has
+ * 9.2 L of headroom above its paper against dark's 216.7, three of twelve materials clip in it,
+ * and the ghost that recedes on dark ADVANCES on light. None of that was reachable by any check.
+ * M1-33 found the general form: no leg of the exit gate seeds a theme, so the light room is
+ * unobserved by every automatic instrument we have.
+ */
+export async function snapshot(url, out, width = 1536, height = 1024, theme = 'dark') {
   return withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `try { localStorage.setItem('splice.theme', ${JSON.stringify(theme)}); } catch (e) {}`,
+    });
     await show(send, url, width, height);
     const result = await send('Runtime.evaluate', {
       expression: COLLECT,
@@ -92,13 +105,13 @@ export async function snapshot(url, out, width = 1536, height = 1024) {
 
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/^.*?(?=\/dev\/|$)/, ''));
 if (isMain) {
-  const [, , url, given, w = '1536', h = '1024'] = process.argv;
+  const [, , url, given, w = '1536', h = '1024', theme = 'dark'] = process.argv;
   if (url === undefined || url === '--help') {
-    console.log("usage: node dev/web-console/snapshot.mjs '<url>' [<out.html>] [<width> <height>]");
+    console.log("usage: node dev/web-console/snapshot.mjs '<url>' [<out.html>] [<width> <height>] [<theme>]");
     console.log(`       default out: ${LOOK_DIR}/<address>.html`);
     process.exit(url === '--help' ? 0 : 2);
   }
   const out = resolve(given ?? `${LOOK_DIR}/${nameFor(url)}`);
-  const { bytes } = await snapshot(url, out, Number(w), Number(h));
-  console.log(`wrote ${out} (${bytes} bytes, ${statSync(out).size} on disk)`);
+  const { bytes } = await snapshot(url, out, Number(w), Number(h), theme);
+  console.log(`wrote ${out} (${bytes} bytes, ${statSync(out).size} on disk, ${Number(w)}x${Number(h)} ${theme})`);
 }

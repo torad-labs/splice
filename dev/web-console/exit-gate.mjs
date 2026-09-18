@@ -58,6 +58,9 @@ const LOOK_URL = 'http://localhost:5173/#/teams?fixture=hero';
  */
 const FRAMES = ['1536x1024', '3840x2160'];
 
+/** The rendered-rule pass's cells: [frame, theme]. See the `look` leg for why this is a diagonal. */
+const LOOKS = [['1536x1024', 'dark'], ['3840x2160', 'dark'], ['3840x2160', 'light']];
+
 /** Run a command; never throw. Returns {code, out} with stdout and stderr merged. */
 function sh(cmd, args, cwd) {
   try {
@@ -190,18 +193,33 @@ const LEGS = [
     probeProof: /usage: node dev\/web-console\/look\.mjs '<url>'/,
     // it takes a URL: called with none it prints usage and exits 2, which the old wiring reported
     // as a FAILED look pass rather than as a missing argument
-    // Both frames, same reason as comp-check: look.mjs takes --width/--height and defaulted to
-    // 1536x1024, so the rendered rule pass had never seen the size the console is used at. The
-    // rendered rules that care most about size — clipped-overflow-container, text-occlusion,
-    // cramped-padding, line-length — are exactly the ones a single frame cannot exercise.
+    // THREE CELLS, and the shape is deliberate: a diagonal, not a full cross.
+    //
+    //   dark  1536x1024   the historical baseline, so a regression against every past run shows
+    //   dark  3840x2160   the size the console is actually used at
+    //   light 3840x2160   the room no automatic check in this campaign has ever rendered
+    //
+    // Two axes were missing, both found by M1-33. look.mjs defaulted to 1536x1024 with no way to
+    // ask for another size, and NOTHING here seeded a theme — so the rendered rules that care
+    // about size (clipped-overflow-container, text-occlusion, cramped-padding, line-length) only
+    // ever saw one frame, and the rules that care about tone (low-contrast, design-system-color)
+    // only ever saw one room. Light is the room with 9.2 L of headroom above its paper against
+    // dark's 216.7, where three of twelve materials clip and the ghost that recedes on dark
+    // advances on light.
+    //
+    // light-at-1536 is the omitted cell. The light defects measured so far are tonal rather than
+    // size-dependent, so the 3840 light run reaches them; if one ever turns out to need the comp
+    // frame specifically, this is the cell to add and this comment is the reason it was not here.
     run: () => {
-      const runs = FRAMES.map((f) => {
-        const [w, h] = f.split('x');
-        return sh('node', ['dev/web-console/look.mjs', LOOK_URL, '--width', w, '--height', h], ROOT);
+      const runs = LOOKS.map(([frame, theme]) => {
+        const [w, h] = frame.split('x');
+        return sh('node', ['dev/web-console/look.mjs', LOOK_URL, '--width', w, '--height', h, '--theme', theme], ROOT);
       });
-      return { code: runs.some((r) => r.code !== 0) ? 1 : 0, out: runs.map((r, i) => `--- ${FRAMES[i]}\n${r.out}`).join('\n') };
+      return { code: runs.some((r) => r.code !== 0) ? 1 : 0, out: runs.map((r, i) => `--- ${LOOKS[i].join(' ')}\n${r.out}`).join('\n') };
     },
-    proof: /look — \S+/,
+    // One headline per cell, each naming its own frame and room. A single /look — \S+/ would have
+    // been satisfied by one run out of three, which is how a gate reports three passes over one.
+    proof: new RegExp(LOOKS.map(([f, t]) => `look — [^\\n]*${f} ${t}`).join('[\\s\\S]*'), 'm'),
     failIf: /LOOK: BLOCKED|look-gate\s+FAIL/,
     failHint: 'the look gate found blocking findings on this page; fix them or put them on the punch list',
   },

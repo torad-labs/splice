@@ -150,22 +150,31 @@ function compReference() {
 
 const URL_ARG = ARGS.find((a) => !a.startsWith('--'));
 if (URL_ARG === undefined || has('help')) {
-  console.log("usage: node dev/web-console/look.mjs '<url>' [--out DIR] [--width W] [--height H] [--json]");
+  console.log("usage: node dev/web-console/look.mjs '<url>' [--out DIR] [--width W] [--height H] [--theme dark|light] [--json]");
   console.log('  freezes the address, runs the rendered detector and the look-gate on it, and');
   console.log('  reports the two area-weighted distributions (type area, sibling-gap area).');
   process.exit(URL_ARG === undefined && !has('help') ? 2 : 0);
 }
 
 const outDir = flag('out', LOOK_DIR);
-const out = resolve(outDir, nameFor(URL_ARG));
 const width = Number(flag('width', '1536'));
 const height = Number(flag('height', '1024'));
+// The theme is part of the snapshot's IDENTITY, not a setting applied to it, so it is in the
+// filename. Two themes writing one path would have the second silently overwrite the first and
+// the run would report two passes over one room — the shape of defect this campaign keeps
+// finding, arriving this time as a filename collision.
+const theme = flag('theme', 'dark');
+if (theme !== 'dark' && theme !== 'light') {
+  console.error(`REFUSED: --theme ${theme} is not dark or light. An unknown theme renders the default and reports on a room nobody asked for.`);
+  process.exit(2);
+}
+const out = resolve(outDir, nameFor(URL_ARG).replace(/\.html$/, `-${theme}.html`));
 const blocks = [];
 
 // 1 — the snapshot
 let bytes = 0;
 try {
-  ({ bytes } = await snapshot(URL_ARG, out, width, height));
+  ({ bytes } = await snapshot(URL_ARG, out, width, height, theme));
   if (!existsSync(out) || statSync(out).size < 1000) throw new Error('the snapshot is empty');
 } catch (error) {
   blocks.push(['snapshot', error.message]);
@@ -248,7 +257,9 @@ const ref = compReference();
 if (has('json')) {
   console.log(JSON.stringify({ url: URL_ARG, snapshot: out, bytes, dom: domFindings, layout, measured, comp: ref, blocks }, null, 2));
 } else {
-  console.log(`look — ${URL_ARG}\n`);
+  // frame and theme in the headline: this is run more than once per gate now, and two reports that
+  // do not say which room and which size they read are two reports nobody can tell apart.
+  console.log(`look — ${URL_ARG}  ${width}x${height} ${theme}\n`);
   console.log(`  snapshot   ${out} (${bytes} bytes)`);
   console.log(`  dom        ${domError === null ? `${domFindings.length} findings (static-HTML engine: markup + resolved cascade)` : `DID NOT RUN - ${domError}`}`);
   for (const finding of domFindings.slice(0, 8)) {

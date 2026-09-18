@@ -6,9 +6,13 @@ package splice.gateway.head
 import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.spi.NEVER_PINGED_MS
+import splice.spi.PathEvidence
 import splice.spi.Provider
 import splice.spi.TurnSignals
 import splice.spi.UpstreamResponse
+import splice.spi.UpstreamTransport
+import splice.spi.WsPathPulse
 import java.io.IOException
 
 internal class SseRoundConsume(
@@ -52,7 +56,32 @@ internal class SseRoundConsume(
         val roundJob = Job(inputs.turnJob)
         val body = resp.bodyChannel()
         roundJob.invokeOnCompletion { cause -> if (cause != null) body.cancel(IOException(REAPED, cause)) }
-        val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, roundJob, inputs.frameEmittedThisRound)
+        val poller = drive.watchdog.launchIn(
+            inputs.scope,
+            drive.slot,
+            roundJob,
+            inputs.frameEmittedThisRound,
+            // V4-125: THE SSE PATH PASSES A PULSE NOW. It used to pass none, so the watchdog read
+            // the NEVER_PINGED_MS default and every SSE round past its tier was reaped by
+            // construction — the idle tier was a verdict the transport had no way to answer, which
+            // is how a silent-but-alive backend (a model reasoning, a prefill still running) became
+            // a client-visible error. An SSE body has no heartbeat to date, so the evidence is the
+            // connection itself: still open and un-errored reads as alive, and the round is HELD.
+            // Nothing is lost by holding, because a genuinely dead peer is not discovered here —
+            // the transport's TCP keepalive errors the socket out in about a minute and the read
+            // failure tears the round, which the re-anchor machinery already owns and acts on at
+            // once. The whole-turn cap remains the only wall.
+            WsPathPulse { if (body.isClosedForRead) NEVER_PINGED_MS else 0L },
+            PathEvidence.OPEN_CONNECTION,
+            // V4-125 fallback: the socket reading above says "still open", which is a claim about what
+            // the kernel has told us rather than about whether anyone is listening — a half-open
+            // connection reads exactly like an idle one. TCP keepalive would make the kernel find out
+            // and error the socket, but the engine that exposes a socket seam could not be resolved
+            // offline (V4-141 carries it), so the question is asked out of band instead. It can only
+            // ever SHORTEN a wait the socket alone would have held: a refusal ends the round, an
+            // inconclusive probe holds it.
+            UpstreamTransport().reachabilityProbe(provider.upstreamUrl),
+        )
         // Leak wall (review 2026-07-19): the attempt's poller dies on EVERY exit of this
         // block — a torn-then-reissued stream used to leak it into `self`, pinning the
         // admission slot ~streamIdle past turn completion. (The client pinger is whole-turn

@@ -660,8 +660,23 @@ command = "claude-splice"
 # retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
 # retryBackoffCapMs = 10000                                 # ms; the generic retry curve's ceiling
 # retryBackoffJitterPct = 10                                # percent; the generic retry curve's plus-or-minus jitter
-# firstByteTimeoutMs = 300000                               # ms; headers-phase timeout, the first byte must land
-# streamIdleMs = 300000                                     # ms; stream silence before the stall watchdog fires
+# firstByteTimeoutMs = 90000                                # ms; headers-phase timeout, the first byte must land,
+#                                                           #     and (through WatchdogBudget) the watchdog's
+#                                                           #     FIRST-OUTPUT tier, so one number judges a stream
+#                                                           #     before and after its first frame
+# streamIdleMs = 90000                                      # ms; stream silence before the stall watchdog ASKS.
+#                                                           #     Since V4-125 a breach is a PROBE, not a verdict:
+#                                                           #     the round's path is asked whether it is alive, a live
+#                                                           #     path is HELD (polled on, never reaped short of
+#                                                           #     upstreamTimeoutMs) and only a path that cannot answer
+#                                                           #     is reaped at all. So this buys how long you wait
+#                                                           #     before splice starts healing, NOT how long a silent
+#                                                           #     backend is tolerated — which is why 90s replaced the
+#                                                           #     old 300s. That 300s was pinned to codex-rs parity
+#                                                           #     after the idle tier ended 129 compactions in one day
+#                                                           #     (2026-09-01) at 180s; it was safe then because a
+#                                                           #     breach was fatal. It no longer is. A head that
+#                                                           #     genuinely needs the long wait names 300000 here.
 # stallReanchorMs = 20000                                   # ms; mid-output silence (content already delivered)
 #                                                           #     before splice CANCELS the round and re-anchors it
 #                                                           #     itself (re-POST from the salvage). Only arm it for a

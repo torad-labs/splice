@@ -100,7 +100,7 @@ docker run --rm --network none \
 RC=$?
 set -e
 if [ -f "$RUN_OUT/receipt.json" ]; then
-  python3 "$ROOT/checks/e2e/docker/receipt-selftest.py" "$RUN_OUT/receipt.json" || RC=1
+  bun "$ROOT/checks/e2e/docker/receipt-selftest.ts" "$RUN_OUT/receipt.json" || RC=1
   cp "$RUN_OUT/receipt.json" "$OUT/docker-$STAMP.json"
   mkdir -p "$OUT/docker-$STAMP" && cp -r "$RUN_OUT"/. "$OUT/docker-$STAMP/"
   echo "run.sh: receipt $OUT/docker-$STAMP.json (steps + daemon.log in $OUT/docker-$STAMP/)"

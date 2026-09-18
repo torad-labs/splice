@@ -4,7 +4,7 @@
 # A new operator's first hour, as a script: bring up mock upstreams, write a topology, install from
 # release-style artifacts (install.sh: checksum → init → install --all → doctor), let doctor grade
 # the machine, cold-start the daemon, drive a real streaming turn through every head at the wire
-# (stream_probe.py, the live e2e's contract oracle), count tokens, launch the REAL Claude Code
+# (stream_probe.ts, the live e2e's contract oracle), count tokens, launch the REAL Claude Code
 # wrapper for one print-mode turn, restart, read logs, uninstall. Every upstream is a mock inside
 # the container and the container has no network, so a byte that leaves is a failure.
 #
@@ -124,7 +124,7 @@ step "Claude Code version matches the splice tested pin" client_version_receipt
 start_mocks() {
   nohup node "$REPO/checks/e2e/docker/mock_codex.mjs" "$REPO" 0 > "$OUT/mock_codex.out" 2> "$OUT/mock_codex.err" &
   echo $! > "$OUT/mock_codex.pid"
-  MOCK_CHAT_HOLD_S=45 nohup python3 "$REPO/checks/e2e/docker/mock_chat.py" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
+  MOCK_CHAT_HOLD_S=45 nohup bun "$REPO/checks/e2e/docker/mock_chat.ts" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
   echo $! > "$OUT/mock_chat.pid"
   for _ in $(seq 1 50); do
     [ -s "$OUT/mock_codex.out" ] && [ -s "$OUT/mock_chat.out" ] && break
@@ -285,7 +285,7 @@ step "/api/heads lists all three heads running" api_heads
 
 # ── 6. the wire contract, per head, through the real translators ───────────────────────────────
 probe() { # head port model
-  SPLICE_PROBE_BEARER="$(mgmt)" python3 "$REPO/checks/e2e/stream_probe.py" \
+  SPLICE_PROBE_BEARER="$(mgmt)" bun "$REPO/checks/e2e/stream_probe.ts" \
     --head "$1" --port "$2" --model "$3" --prompt "Count from 1 to 3 then say END." \
     --ttfb-ms 10000 --first-delta-ms 10000 --total-ms 30000 --gap-ms 10000
 }

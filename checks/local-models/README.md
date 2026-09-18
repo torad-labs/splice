@@ -4,14 +4,14 @@ Live proof that a user-managed local runtime is first-class on the openai-chat d
 never downloads a model or manages the runtime: the operator starts Ollama, LM Studio or vLLM,
 declares rows, and splice validates the rows against what the runtime reports.
 
-What `e2e.py` proves, against a daemon it starts itself from a jar and a config:
+What `e2e.ts` proves, against a daemon it starts itself from a jar and a config:
 
 | check | how |
 |---|---|
 | unavailable model refused at boot | a head whose row names a model the runtime does not list is DEGRADED, absent from `/api/heads`, with the reason in the daemon log |
 | context limit refused at boot | a head whose row declares more than the runtime serves for the loaded model is DEGRADED the same way |
 | context limit recorded | the good row's `context_window` equals the served window the runtime reports (Ollama `/api/ps`, LM Studio `loaded_context_length`); the model card is only a ceiling |
-| streaming | `checks/e2e/stream_probe.py` validates the Anthropic SSE contract and incremental delivery at the head port |
+| streaming | `checks/e2e/stream_probe.ts` validates the Anthropic SSE contract and incremental delivery at the head port |
 | cancellation | a streaming turn is dropped mid-answer; the next turn succeeds and the head's perf log records a client-gone row (`client_abort` or `error:conn-reset`); on Ollama the journal's `cancel task` line is recorded too |
 | tool-result continuity | a turn with one tool yields a `tool_use` block; the follow-up turn carrying the `tool_result` yields text that uses it |
 | doctor | `splice doctor --json` names the runtime and version, marks the good row OK and each refused row FAIL |
@@ -20,12 +20,12 @@ One run proves one runtime; run it once per runtime, each against an isolated st
 config with one good head and two deliberately bad heads:
 
 ```bash
-python3 checks/local-models/e2e.py --runtime ollama \
+bun checks/local-models/e2e.ts --runtime ollama \
   --jar gateway/app/build/libs/app-all.jar \
   --config /path/to/splice-local.toml --home /path/to/isolated-home \
   --good-head ollama --bad-heads ollama-unlisted,ollama-overclaim \
   --out checks/local-models/receipts/local-models-ollama.json
-python3 checks/local-models/e2e.py --runtime lmstudio \
+bun checks/local-models/e2e.ts --runtime lmstudio \
   --jar gateway/app/build/libs/app-all.jar \
   --config /path/to/splice-lmstudio.toml --home /path/to/isolated-home \
   --good-head lmstudio --bad-heads lmstudio-unlisted,lmstudio-overclaim \

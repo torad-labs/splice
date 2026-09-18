@@ -69,7 +69,6 @@
     ".dev/research/wire-compare/codex-0.145.0-responses-request.json",
     ".dev/web-console/census/build-punch-list.mjs",
     ".dev/web-console/law-check.mjs",
-    ".dev/web-console/look-gate.mjs",
     "docs/assets/doctor.svg",
     "docs/superpowers/plans/2026-08-15-head-decoupling.md",
     "gateway/app/src/main/kotlin/splice/app/cli/DoctorBinaryTable.kt",

@@ -13,6 +13,7 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -28,6 +29,12 @@ import splice.core.topology.Topology
 
 private const val CONTEXT_WINDOW = "context_window"
 private const val MODELS = "models"
+
+/** V4-127 §6: the oldest file a state-directory scan found, and how long it has been there. The
+ *  MEASUREMENT is not this file's job — every shaper here takes values and returns JSON — so the
+ *  route walks the directory and hands the result in. [ageMs] is an age rather than a timestamp for
+ *  the same reason the perf rows report latency: an age survives being read on another machine. */
+internal data class StateDirFile(val name: String, val ageMs: Long)
 internal class DoctorReportShape(private val redaction: DoctorRedaction, private val names: SafeNames) {
 
     fun topology(t: Topology): JsonObject = buildJsonObject {
@@ -43,6 +50,23 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         }
         putJsonObject("providers") { t.providers.forEach { (key, p) -> put(names.provider(key), provider(p)) } }
         putJsonObject("heads") { t.heads.forEach { (key, h) -> put(names.head(key), head(h)) } }
+    }
+
+    /** V4-127 §6, the state directory's own footprint: how much the daemon is holding on disk and
+     *  the oldest file it is still holding. The console shows this beside the topology block because
+     *  "which directory" without "how big" is the question the page was opened to ask — a state dir
+     *  that has grown for months is the one thing a doctor report can see and a config dump cannot.
+     *
+     *  THE NAME IS REDACTED, deliberately: a state filename carries an account label on several
+     *  heads, which is exactly the operator-authored text [redaction] exists for, and [topology]
+     *  already redacts the directory itself for the same reason. */
+    fun stateDirUsage(sizeBytes: Long, fileCount: Int, oldest: StateDirFile?): JsonObject = buildJsonObject {
+        put("size_bytes", sizeBytes)
+        put("file_count", fileCount)
+        // An EMPTY state dir reports nulls rather than a 1970 timestamp or a fabricated name: the
+        // console renders "no files" from an explicit null, and a sentinel would render as data.
+        put("oldest_file", oldest?.let { JsonPrimitive(redaction.text(it.name)) } ?: JsonNull)
+        put("oldest_age_ms", oldest?.let { JsonPrimitive(it.ageMs) } ?: JsonNull)
     }
 
     /** Exactly {id, status, detail} (schema 1): the fix rides inside the detail. A check's name and

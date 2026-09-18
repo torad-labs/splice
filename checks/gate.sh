@@ -129,12 +129,12 @@ run "oracle replay" npm run --silent oracle:replay
 # The live `e2e:heads` lane is billed and stays out of this ladder.
 run "heads-e2e selftest" bash checks/e2e/heads-e2e-selftest.sh
 # Budget/oracle canaries are local; the explicit code-mode A/B lane consumes subscription quota.
-run "code-mode probe selftest" python3 checks/e2e/code_mode_probe.py --selftest
-run "code-mode startup receipt selftest" python3 checks/e2e/code_mode_compare_test.py
-run "code-mode guidance selftest" python3 checks/e2e/code_mode_guidance.py --selftest
-run "code-mode mock selftest" python3 checks/e2e/code_mode_mock.py --selftest
+run "code-mode probe selftest" bun checks/e2e/code_mode_probe.ts --selftest
+run "code-mode startup receipt selftest" bun checks/e2e/code_mode_compare_test.ts
+run "code-mode guidance selftest" bun checks/e2e/code_mode_guidance.ts --selftest
+run "code-mode mock selftest" bun checks/e2e/code_mode_mock.ts --selftest
 # Exercise the fat JAR built by clean check, with synthetic auth and loopback-only tools.
-run "code-mode packaged mock" python3 checks/e2e/code_mode_mock.py \
+run "code-mode packaged mock" bun checks/e2e/code_mode_mock.ts \
   --artifact gateway/app/build/libs/app-all.jar \
   --receipt "checks/e2e/receipts/code-mode-mock-$(date -u +%Y%m%dT%H%M%S)-$$.json"
 run "config guard"   bash checks/config-guard.sh

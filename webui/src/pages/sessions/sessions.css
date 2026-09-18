@@ -43,18 +43,37 @@
 }
 
 /* The board: the bays, and the detail column at zero width until a strip is
-   opened. The swell is the one motion, --dur-2. */
+   opened. The swell is the one motion, --dur-2.
+
+   A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-116, measured at 1536 dark). `gap` applies
+   BETWEEN a 1fr track and a 0 track, so the collapsed column was charging the frame a --space-4 it
+   did not use: this rack read 1353.8px at rest against fleet's 1365.8 on the same frame, and the
+   12.0px difference was the whole of it. The column-gap belongs to the OPEN state, like the track
+   it separates, and it transitions with that track so the swell stays ONE movement rather than a
+   width that grows while a gap snaps. row-gap stays unconditional: below 1120px the open board is
+   a single column and the aside wraps to a second ROW, where the row gap is the one that matters.
+
+   AND THE TRANSITION HOLDS STILL UNDER REDUCE. The collapse idiom shipped without that guard on
+   all three pages carrying it; fleet's unmount idiom had one, so converting fleet to collapse
+   without this rule would have traded a dead column for a regression nobody asked for. */
 .myx-sx-board {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;
-  gap: var(--space-4);
+  column-gap: 0;
+  row-gap: var(--space-4);
   align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
-  transition: grid-template-columns var(--dur-2) var(--ease-out);
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
 }
 .myx-sx-board-open {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-sx-board { transition: none; }
 }
 
 .myx-sx-bays {

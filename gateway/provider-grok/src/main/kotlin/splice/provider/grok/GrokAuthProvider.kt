@@ -42,6 +42,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
+import splice.core.wire.HttpStatus
 import splice.spi.AccountCredentialIdentitySource
 import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
 import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
@@ -56,14 +57,13 @@ import java.time.Instant
 
 private const val LOG_TAG = "grok-auth"
 
-/** The one status whose auth meaning xAI overloads (expiry AND billing), so the one status a
- *  freshness judgement can arbitrate. See allowRefreshAfterFailure. */
-private const val FORBIDDEN_STATUS = 403
+// The one status whose auth meaning xAI overloads (expiry AND billing), so the one status a
+// freshness judgement can arbitrate, is HttpStatus.FORBIDDEN — V4-135 reads it from the single
+// declaration site instead of a local copy. See allowRefreshAfterFailure.
 
 // SH-02(b): CLIProxyAPI's refreshIneffectiveBackoff value — long enough to stop a tight
 // success/re-check loop, short enough that a genuinely recovering endpoint retries soon.
 private const val REFRESH_INEFFECTIVE_BACKOFF_MS = 30_000L
-private const val DEFAULT_CACHE_MS = 30_000L
 private const val MS_PER_S = 1000L
 
 /** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
@@ -75,7 +75,7 @@ private const val STALE_FLOOR_MS = 30_000L
 
 public class GrokAuthProvider(
     private val authPath: Path,
-    private val authCacheMs: Long = DEFAULT_CACHE_MS,
+    private val authCacheMs: Long,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val nowIso: WallClockIso = WallClockIso { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the classified attempt. */
@@ -223,7 +223,7 @@ public class GrokAuthProvider(
         // while the file still reads hours out — vetoing that refresh would serve a dead token and
         // REGRESS, not protect. The only statuses reaching this call are 401 and 403 (the transport
         // consults the veto solely for `isAuthRefreshableFailure`), so this is the whole surface.
-        if (status != FORBIDDEN_STATUS) return true
+        if (status != HttpStatus.FORBIDDEN) return true
         // The DECLARED expiry — the file's own `expires` — never a synthesized ceiling. parseSnapshot
         // rethrows anything that is not proven absence, so the guard is the caller's here just as it
         // is inside readSnapshot; an unreadable file yields null and vetoes nothing.
@@ -262,7 +262,7 @@ public class GrokAuthProvider(
      *  including the freshness rule above: this rewrite never widens what counts as a quota wall.
      */
     override fun isQuotaExhausted(status: Int, body: String): Boolean =
-        status == FORBIDDEN_STATUS && oauth.isEntitlementRejection(body)
+        status == HttpStatus.FORBIDDEN && oauth.isEntitlementRejection(body)
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.

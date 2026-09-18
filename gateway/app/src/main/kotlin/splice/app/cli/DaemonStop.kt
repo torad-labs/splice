@@ -9,6 +9,7 @@ package splice.app.cli
 
 import splice.app.DaemonBoundary
 import splice.app.DaemonProbe
+import splice.core.wire.HttpStatus
 
 /** Stopping the daemon: ask over the control plane, then escalate through OS signals until every
  *  port it owned is free. Constructed by the `restart` verb (Kotlin style law, 2026-08-15: main
@@ -26,7 +27,7 @@ internal class DaemonStop {
         // the old fire-and-forget silently swallowed, then escalated as if the daemon were merely
         // slow (observed twice on 2026-08-11). statusOf does not gate on 2xx the way request() does.
         when (val status = ControlPlaneClient.statusOf("http://127.0.0.1:$port/api/daemon/shutdown", "POST", key)) {
-            HTTP_UNAUTHORIZED, HTTP_FORBIDDEN -> println(
+            HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN -> println(
                 "splice: shutdown request REJECTED — the mgmt key on disk does not match the " +
                     "running daemon's. Escalating to OS signals (scoped to the daemon on :$port).",
             )
@@ -114,8 +115,9 @@ internal class DaemonStop {
 internal const val GRACEFUL_POLLS = 240
 internal const val SIGTERM_POLLS = 248 // 62s: past the 57s halt(0) floor the SIGTERM hook guarantees
 private const val SIGKILL_POLLS = 12 // 3s: kernel teardown + port release
+
+// HTTP_OK and HTTP_LAST_SUCCESS stay local: HttpStatus declares no 2xx constant, and the wall is
+// silent on them. The two ERROR statuses below are gone — they read HttpStatus now.
 private const val HTTP_OK = 200
 private const val HTTP_LAST_SUCCESS = 299
-private const val HTTP_UNAUTHORIZED = 401
-private const val HTTP_FORBIDDEN = 403
 private const val POLL_INTERVAL_MS = 250L

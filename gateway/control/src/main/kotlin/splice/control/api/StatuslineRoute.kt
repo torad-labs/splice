@@ -28,12 +28,12 @@ import splice.core.config.ConfigService
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.version.ClientVersionTracker
+import splice.core.wire.HttpStatus
 import java.io.ByteArrayOutputStream
 
 private const val MAX_STATUSLINE_BYTES = 64 * 1024
 private const val STATUSLINE_READ_BUFFER_BYTES = 8 * 1024
 private const val STATUSLINE_READ_TIMEOUT_MS = 2_000L
-private const val CONTENT_TOO_LARGE_STATUS = 413
 
 // A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups means
 // the client is broken — end the read honestly rather than pin a core. Mirrors SseReader's bound
@@ -112,7 +112,7 @@ internal class StatuslineRoute(
             call.respondText(
                 "statusline body exceeds $MAX_STATUSLINE_BYTES bytes",
                 ContentType.Text.Plain,
-                HttpStatusCode(CONTENT_TOO_LARGE_STATUS, "Content Too Large"),
+                HttpStatusCode(HttpStatus.CONTENT_TOO_LARGE, "Content Too Large"),
             )
             null
         } catch (_: TimeoutCancellationException) {

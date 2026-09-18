@@ -20,15 +20,15 @@ public fun interface AccountQuotaSource {
     public fun snapshot(): QuotaSnapshot?
 }
 
-/** Epoch time seam used to compare provider reset timestamps without a process-global clock in policy code.
- *
- *  V4-122 RECONCILED THIS onto [splice.core.util.WallClock], which is the same role: a reading of
- *  calendar time in epoch milliseconds. The registry had marked it DELIBERATELY ABSENT — red by name
- *  until a fix row reconciled it — because disposing of it in prose would have closed the wall
- *  without merging the two declarations the wall exists to catch. A typealias is the merge: every
- *  call site keeps compiling, SAM conversion included, and there is no longer a second declaration
- *  of one role for the next wall to find. */
-public typealias AccountNow = WallClock
+// V4-101: AccountNow IS GONE. This module names [splice.core.util.WallClock] directly — the same role
+// the alias stood for: a reading of calendar time in epoch milliseconds, used to compare provider
+// reset timestamps without a process-global clock in policy code.
+//
+// V4-122 reconciled the second declaration onto the core one and kept a typealias so every call site
+// (SAM conversion included) compiled unchanged. That was the right intermediate and the wrong
+// destination: an alias is still a second spelling of one role, and this row exists to leave one
+// name. The registry note that marked this pair DELIBERATELY ABSENT was correct, and it is discharged
+// by the merge rather than by prose about it.
 
 /** One OAuth identity in a head-local pool. Secrets remain behind [auth]. */
 public data class PoolAccount(
@@ -55,7 +55,7 @@ public data class PoolAccount(
         identitySource.refresh()
     }
 
-    internal fun acquireCredential(at: Long, now: AccountNow): AccountCredentialEligibility.Lease? =
+    internal fun acquireCredential(at: Long, now: WallClock): AccountCredentialEligibility.Lease? =
         credentialEligibility.acquire(at, now)
 
     internal fun credentialStatus(at: Long): AccountCredentialEligibility.Status = credentialEligibility.status(at)

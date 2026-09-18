@@ -12,7 +12,6 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.gateway.usage.HeaderLookup
 import splice.gateway.usage.QuotaTracker
 import splice.spi.QuotaHeaderFamily
 import java.nio.file.Path
@@ -43,14 +42,14 @@ class QuotaTrackerTest {
             "x-codex-secondary-window-minutes" to "10080",
             "x-codex-secondary-reset-at" to "1788500000",
         )
-        t.observe(HeaderLookup { codex[it] })
+        t.observe(QuotaHeaderRead { codex[it] })
         val out = t.clientHeaders()
         assertEquals("0.1400", out["anthropic-ratelimit-unified-5h-utilization"])
         assertEquals("1788010000", out["anthropic-ratelimit-unified-5h-reset"])
         assertEquals("0.4200", out["anthropic-ratelimit-unified-7d-utilization"])
         assertEquals("allowed", out["anthropic-ratelimit-unified-status"])
 
-        t.observe(HeaderLookup { null })
+        t.observe(QuotaHeaderRead { null })
         assertEquals(out, t.clientHeaders(), "a round without either family changes nothing")
         assertEquals(t.snapshot(), tracker().snapshot(), "the file is the restart truth")
     }
@@ -65,7 +64,7 @@ class QuotaTrackerTest {
             "x-codex-primary-window-minutes" to "300",
             "x-codex-primary-reset-at" to "1788010000",
         )
-        t.observe(HeaderLookup { both[it] })
+        t.observe(QuotaHeaderRead { both[it] })
         val out = t.clientHeaders()
         assertEquals("0.1000", out["anthropic-ratelimit-unified-5h-utilization"])
         assertEquals("1788011111", out["anthropic-ratelimit-unified-5h-reset"])
@@ -112,7 +111,7 @@ class QuotaTrackerTest {
             "x-codex-secondary-window-minutes" to "10080",
             "x-codex-secondary-reset-at" to "1788500000",
         )
-        t.observe(HeaderLookup { codex[it] })
+        t.observe(QuotaHeaderRead { codex[it] })
         val withWindows = t.clientHeadersRejected(1_788_030_000L)
         assertEquals("rejected", withWindows["anthropic-ratelimit-unified-status"])
         assertEquals("1788030000", withWindows["anthropic-ratelimit-unified-reset"])

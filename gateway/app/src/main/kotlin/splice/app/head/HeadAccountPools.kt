@@ -7,8 +7,8 @@ import splice.control.HeadAccountPoolSource
 import splice.control.HeadAccountPoolView
 import splice.control.HeadAccountSwitchView
 import splice.control.HeadAccountView
+import splice.core.util.WallClock
 import splice.gateway.usage.QuotaTracker
-import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountPoolView
 import splice.spi.AccountQuotaSource
@@ -18,7 +18,7 @@ import splice.spi.RateLimitCooldown
 
 internal class HeadAccountPools {
     private val elapsedNow = ProcessElapsedNow()
-    private val accountNow = AccountNow(System::currentTimeMillis)
+    private val accountNow = WallClock(System::currentTimeMillis)
 
     /** A pool is a CHOICE. Discovery always yields the primary, so a head holding one account keeps
      *  the pre-0.4.0 path end to end (no per-turn selection, no account segment on the statusline,

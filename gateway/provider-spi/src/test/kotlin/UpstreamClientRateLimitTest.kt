@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import splice.spi.ElapsedNow
+import splice.core.util.ElapsedClock
 import splice.spi.PostContext
 import splice.spi.RateLimitCooldown
 import splice.spi.RemainingTurnWait
@@ -37,7 +37,7 @@ class UpstreamClientRateLimitTest {
             maxRetries = 3,
             client = HttpClient(engine),
             backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) },
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(3, calls.get(), "every attempt in the budget is spent before the turn fails")
@@ -56,14 +56,14 @@ class UpstreamClientRateLimitTest {
             calls.incrementAndGet()
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
         }
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val client = UpstreamClient(
             firstByteTimeoutMs = 5_000L,
             totalTimeoutMs = 5_000L,
             maxRetries = 3,
             client = HttpClient(engine),
             waiter = waiter,
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         fun context() = PostContext(
             url = "https://api.example.test/v1",

@@ -2,6 +2,7 @@
 package splice.spi
 
 import splice.core.usage.QuotaWindow
+import splice.core.util.WallClock
 import java.util.concurrent.atomic.AtomicReference
 
 private const val FULLY_USED = 100.0
@@ -36,7 +37,7 @@ public sealed class Selection {
 /** A head-local OAuth account pool. A returned [AccountSelection] is immutable for the whole turn. */
 public class AccountPool(
     accounts: List<PoolAccount>,
-    private val now: AccountNow,
+    private val now: WallClock,
 ) {
     private val accounts = accounts.toList()
     private val byLabel = accounts.associateBy(PoolAccount::label)

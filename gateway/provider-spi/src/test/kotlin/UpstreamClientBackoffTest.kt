@@ -17,7 +17,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.spi.ElapsedNow
+import splice.core.util.ElapsedClock
 import splice.spi.PostContext
 import splice.spi.RemainingTurnWait
 import splice.spi.UpstreamClient
@@ -316,7 +316,7 @@ class UpstreamClientBackoffTest {
                 waits.add(ms)
                 elapsed += ms
             },
-            clock = ElapsedNow { elapsed },
+            clock = ElapsedClock { elapsed },
         )
         private val context = PostContext(
             url = "https://api.example.test/v1",

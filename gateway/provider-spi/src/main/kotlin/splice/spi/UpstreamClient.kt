@@ -34,6 +34,7 @@ package splice.spi
 
 import io.ktor.client.HttpClient
 import splice.core.util.ERR_SNIPPET
+import splice.core.util.ElapsedClock
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -69,7 +70,7 @@ public class UpstreamClient(
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
-    private val clock: ElapsedNow = ProcessElapsedNow(),
+    private val clock: ElapsedClock = ProcessElapsedNow(),
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one

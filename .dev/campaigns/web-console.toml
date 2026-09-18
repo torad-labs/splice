@@ -67,6 +67,7 @@
 # LAW [2026-09-18]: LAW [2026-09-18]: canvas measureText IGNORES A VARIABLE-FONT WIDTH AXIS. The board runs wdth 62, so measureText read its headers about 1.45x too wide. Measure text by cloning a LIVE field in place -- the only width method that held all night.
 # LAW [2026-09-18]: LAW [2026-09-18]: A SEAT THAT ENDS ITS TURN WITHOUT REPORTING IS INDISTINGUISHABLE FROM ONE STILL WORKING. Three rounds, three stop_sequence endings, zero bytes and zero messages -- at the third, stop dispatching and do the work. The threshold is three, not patience.
 # LAW [2026-09-18]: LAW [2026-09-18]: THE CONSOLE IS NOT OVERSIZED -- IT IS SET WIDER. Ink height matches the comp exactly (15px vs 15px); our lettering runs 1.25x comp-a and 1.42x comp-b at that same height, and wdth 62 is already Archivos axis FLOOR. Digits match (0.407 vs 0.389em); letters do not. Width problems trace here, not to type size.
+# LAW [2026-09-18]: LAW [2026-09-18]: .dev/campaigns/manifest.py IS ON THE PYTHON BURNDOWN (python-burndown.json:12 and :82) AND IS FROZEN WHILE ANY ROW IS IN FLIGHT. It is the only channel to this ledger -- flock, retirement guard, claim liveness, receipts. Converting it mid-campaign is an outage for every open row, not a refactor.
 [campaign]
 name = "web-console"
 created = "2026-09-17"

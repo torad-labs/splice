@@ -1,0 +1,56 @@
+/* Models: the racks and the opened model's rate card. Tokens only for spacing
+   and type; radius 0; no shadow or glow. */
+.myx-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+}
+
+.myx-models-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-models-title {
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+.myx-models-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-5);
+  align-items: start;
+  min-width: 0;
+}
+
+.myx-models-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.myx-models-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-models-sub {
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+  margin: 0;
+  font-family: var(--font-figure);
+}
+
+.myx-models-note {
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  margin: 0;
+}

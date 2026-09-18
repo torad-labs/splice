@@ -1,0 +1,49 @@
+/* The compaction feed: two bays of strips and the opened event's detail beside
+   them. Tokens only for spacing and type; radius 0; no shadow or glow. */
+.myx-cfeed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  gap: var(--space-5);
+  align-items: start;
+  padding: var(--space-5) var(--space-6);
+}
+
+.myx-cfeed-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.myx-cfeed-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The swell: the opened strip's detail arrives over --dur-2, the world's one
+   opening gesture, and holds still entirely under reduced motion. */
+.myx-cfeed-detail > * {
+  animation: myx-cfeed-swell var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes myx-cfeed-swell {
+  from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-cfeed-detail > * { animation: none; }
+}
+
+.myx-cfeed-error {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: var(--strip-field);
+  border: 1px solid var(--strip-field-line);
+  padding: var(--space-3);
+  margin: 0;
+  overflow-wrap: anywhere;
+}

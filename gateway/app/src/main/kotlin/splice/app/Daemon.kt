@@ -112,7 +112,7 @@ public class Daemon(
     // own directory, so a config kept beside its text files moves as one unit.
     private val compactionTail = CompactionTail(compactionInstructions, SessionProject())
     private val headServerFactory =
-        HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions, topologyDir)
+        HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions, topologyDir, topology.projects)
     private val launchSpecFactory = LaunchSpecFactory(
         topology,
         controlPlane.signInPlanner,

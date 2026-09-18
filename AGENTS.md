@@ -94,6 +94,14 @@ timeouts — must be read via `getConfig(headKey)` and set under
 is the flat GLOBAL layer sourced from the topology file. The per-head map is
 `perHeadOverrides`.
 
+Standing system prompts are NOT knobs; they are three topology LAYERS, applied in this order:
+head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), project
+(`[projects."<root>"]`, same keys, a relative file resolves against the root) and project-head
+(`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
+session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
+field and every earlier layer. No projects table = V4-36's bytes. Resolver:
+`gateway/core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
+
 ## Control plane (spliced)
 
 > **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now

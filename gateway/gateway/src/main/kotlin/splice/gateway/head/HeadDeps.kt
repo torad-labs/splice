@@ -9,6 +9,7 @@ package splice.gateway.head
 
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
+import splice.core.prompt.SystemPromptLayers
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -97,6 +98,9 @@ public data class HeadDeps(
         val ticker: Ticker = ProcessTicker(),
         val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
         val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+        /** V4-124: a session id to its working directory, for the per-project prompt layers. The
+         *  default knows no session, so a head built without it carries the head layer only. */
+        val sessionProject: SessionProjectLookup = SessionProjectLookup { null },
     )
 
     /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather
@@ -107,6 +111,9 @@ public data class HeadDeps(
         val mirrorReasoning: Boolean = false,
         val progressLine: Boolean = true,
         val forwardClientAuth: Boolean = false,
-        val systemPrompt: HeadSystemPrompt = HeadSystemPrompt(),
+        /** V4-124: the head layer plus any per-project layers, resolved per turn against the
+         *  session's working directory ([HeadSeams.sessionProject]). No projects = the head layer
+         *  alone, which is exactly V4-36's bytes. */
+        val systemPrompt: SystemPromptLayers = SystemPromptLayers(HeadSystemPrompt()),
     )
 }

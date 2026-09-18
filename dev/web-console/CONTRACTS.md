@@ -155,7 +155,9 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
 - `coverage.ts` beside a page: `export const dispositions: Disposition[] = [...]` where
   `Disposition = { kind: 'knob' | 'topology' | 'route'; name: string; disposition: 'editable'
   | 'read-only' | 'excluded' | 'pending'; where?: string; reason?: string }`. `excluded`
-  requires a reason; `pending` requires `where` naming the v0.4.0 row (V4-126 .. V4-133).
+  requires a reason; `pending` requires `where`: in the baseline (`shared/coverage/baseline.ts`)
+  it names the M2 page row that will disposition the item; in a page's own `coverage.ts` it
+  names the v0.4.0 row (V4-126 .. V4-133) that serves the route the page is waiting for.
   The coverage wall (row M1-04) globs `src/**/coverage.ts` plus the baseline
   `src/shared/coverage/baseline.ts`; a page declaration overrides the baseline for that name;
   two page declarations for one name fail. The denominator is parsed at test time, never

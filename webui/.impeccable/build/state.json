@@ -6,7 +6,7 @@
   "direction": "7d8e221a",
   "breakpoint": "1536x1024",
   "artifact": null,
-  "phase": "sections",
+  "phase": "responsive",
   "phases": {
     "comps": {
       "status": "closed",
@@ -370,26 +370,36 @@
       ]
     },
     "sections": {
-      "status": "open",
+      "status": "closed",
       "openedAt": "2026-09-18T08:29:56.435Z",
-      "closedAt": null,
-      "attempts": 0,
+      "closedAt": "2026-09-18T19:03:20.163Z",
+      "attempts": 1,
       "notes": [],
-      "gate": null,
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no mechanical gate",
+        "at": "2026-09-18T19:03:20.163Z"
+      },
       "forced": null
     },
     "motion": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
-      "attempts": 0,
+      "status": "closed",
+      "openedAt": "2026-09-18T19:03:20.163Z",
+      "closedAt": "2026-09-18T19:03:29.252Z",
+      "attempts": 1,
       "notes": [],
-      "gate": null,
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no mechanical gate",
+        "at": "2026-09-18T19:03:29.252Z"
+      },
       "forced": null
     },
     "responsive": {
-      "status": "pending",
-      "openedAt": null,
+      "status": "open",
+      "openedAt": "2026-09-18T19:03:29.252Z",
       "closedAt": null,
       "attempts": 0,
       "notes": [],

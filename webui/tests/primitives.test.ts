@@ -305,3 +305,29 @@ describe('the log tail head prints its count in paper ink', () => {
     expect(onHead(unfixed, 'dark', 'value')).toBeLessThan(1.2);
   });
 });
+
+// The rule's connection and pending cells declared --ink-mute for the whole cell, written for the
+// age beside the word. Once the edge label took its ground's ink, the STATE WORD inherited that
+// mute (11.03 -> 6.93:1 dark): passing AA, and still wrong, because the word is the colorblind
+// fallback. The word's ink must resolve to the room's full --ink, whatever the cell declares.
+describe('the rule prints its state words in the room ink', () => {
+  const ui = sheet('src/shared/ui/ui.css');
+  const rule = sheet('src/widgets/rule/rule.css');
+  const labelInk = (css: string) => {
+    const base = declared(ui, '.myx-edge-label', 'color');
+    if (base !== 'inherit') return base;
+    // the two cells share one rule, whose selector list starts with the connection cell
+    return declared(css, '.myx-rule-connection,\n.myx-rule-pending', 'color') ?? declared(sheet('src/app/app.css'), 'body', 'color');
+  };
+
+  test('reconnecting, live, off and restart pending print in --ink', () => {
+    expect(labelInk(rule)).toBe('var(--ink)');
+  });
+
+  test('the wall can fail: a muted cell mutes the word', () => {
+    const muted = rule.replace(/(\.myx-rule-pending \{[^}]*gap: var\(--space-2\);)/, '$1\n  color: var(--ink-mute);');
+    expect(muted).not.toBe(rule);
+    expect(labelInk(muted)).toBe('var(--ink-mute)');
+  });
+});
+

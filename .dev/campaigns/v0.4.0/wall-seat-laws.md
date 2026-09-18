@@ -61,3 +61,4 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    (e) deviations. Then `set-status <ID> done`. Final message to the orchestrator: ONE line per row
    ("V4-xx done — see ledger") plus the red-inventory COUNTS per wall and any blocker. Keep prose
    out of the final message; the ledger is the report.
+9. A ROW THAT AUTHORS A RULE IS ALSO SCANNED BY IT (added 2026-09-17 22:45): a wall seat proves its rule against a SYNTHETIC violation in the rule-test, never against the live tree, and then runs its own rule (and the whole sgconfig.yml) over every file it touched — a new rule must not fire on its author's own edits, and the author's edits must add zero new findings under any other rule (fix-seat law 11).

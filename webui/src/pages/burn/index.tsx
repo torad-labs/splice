@@ -373,3 +373,6 @@ function Trace({ heads, now }: { heads: HeadEconomics[]; now: number }) {
     </section>
   );
 }
+
+// The shell discovers pages by directory and renders the default export.
+export default BurnPage;

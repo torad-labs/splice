@@ -1,0 +1,92 @@
+/* View tabs: the page's saved views beside its title, default first. Tabs are
+   printed labels, not chips: a hairline under the active one, no radius. */
+
+.myx-views {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  border-bottom: var(--hair) solid var(--hairline);
+}
+
+.myx-views-tabs { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+
+.myx-views-tab {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+  background: none;
+  border: none;
+  border-bottom: var(--focus-width) solid transparent;
+  padding: var(--space-2) var(--space-1);
+  cursor: pointer;
+}
+.myx-views-tab:hover { color: var(--ink); }
+.myx-views-tab-active {
+  color: var(--ink-strong);
+  border-bottom-color: var(--ink-strong);
+}
+.myx-views-tab:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.myx-views-edit {
+  margin-inline-start: auto;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-1);
+  cursor: pointer;
+}
+.myx-views-edit:hover { color: var(--ink); }
+
+.myx-views-panel {
+  flex-basis: 100%;
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-0);
+}
+
+.myx-views-rename { display: flex; align-items: end; gap: var(--space-2); }
+.myx-views-field { display: grid; gap: var(--space-1); }
+.myx-views-field-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+.myx-views-field input {
+  font-family: var(--font-label);
+  font-size: var(--text-3);
+  color: var(--strip-ink);
+  background: var(--strip);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+}
+.myx-views-field input:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.myx-views-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.myx-views-action {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: none;
+  border: var(--hair) solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.myx-views-action:hover:not(:disabled) { border-color: var(--ink); color: var(--ink-strong); }
+.myx-views-action:disabled { color: var(--ink-mute); cursor: not-allowed; }
+.myx-views-action:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

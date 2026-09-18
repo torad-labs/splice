@@ -39,3 +39,6 @@ export function AuthPage() {
     </div>
   );
 }
+
+// The shell discovers pages by directory and renders the default export.
+export default AuthPage;

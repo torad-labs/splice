@@ -67,3 +67,6 @@ export function ConfigPage() {
     </div>
   );
 }
+
+// The shell discovers pages by directory and renders the default export.
+export default ConfigPage;

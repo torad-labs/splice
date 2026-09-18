@@ -31,7 +31,7 @@ internal class CountTokens(
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
         // flood cannot camp the shared permits) plus the maxRequestBytes cap.
         val body = admission.materializeOrRespond(call, fastFail = true) {
-            bodyReader.receiveBodyBounded(call, deps.maxRequestBytes)
+            bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
         } ?: return
         val parsed = bodyParse.parseOrNull(body.text)
         if (parsed == null) {

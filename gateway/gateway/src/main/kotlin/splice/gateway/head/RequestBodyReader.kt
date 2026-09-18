@@ -28,11 +28,13 @@ internal class RequestBodyTooLarge(val limit: Int) : RuntimeException()
 
 /** Reads a request body into memory with a hard byte cap and the head's read timeout. */
 internal class RequestBodyReader(
-    private val deps: HeadDeps,
+    /** The ONE thing this collaborator needs from the head (V4-105 item 3): the read timeout. Name
+     *  the SEAM, not the 25-parameter bundle it happened to live in. */
+    private val requestReadTimeoutMs: Long,
     private val read: RequestBodyRead = processRequestBodyRead,
 ) {
     suspend fun receiveBodyBounded(call: ApplicationCall, limit: Int): ReceivedBody {
-        return withTimeout(deps.requestReadTimeoutMs) {
+        return withTimeout(requestReadTimeoutMs) {
             val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
             if (declared != null && declared > limit) throw RequestBodyTooLarge(limit)
             val channel = call.receiveChannel()

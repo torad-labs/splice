@@ -52,8 +52,8 @@ internal class TurnPreparation(
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
         val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
-        deps.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
-        val body = bodyReader.receiveBodyBounded(call, deps.maxRequestBytes)
+        deps.seams.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
+        val body = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)
@@ -86,7 +86,7 @@ internal class TurnPreparation(
     ): Preparation {
         // One scan of system + last-user text: classification and shadow instrumentation share it.
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
-        deps.shadow.record(parsed.typed, compactProbe)
+        deps.stores.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
         val fromProvider = buildProviderTurn(parsed, compactProbe.compact, sessionId)
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
@@ -100,7 +100,7 @@ internal class TurnPreparation(
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.
-        val built = if (deps.forwardClientAuth) {
+        val built = if (deps.policy.forwardClientAuth) {
             prepared.copy(extraHeaders = prepared.extraHeaders + clientAuth.forwardedClientHeaders(call))
         } else {
             prepared
@@ -147,7 +147,7 @@ internal class TurnPreparation(
      *  returns the request as it was, and the meta then says so instead of claiming text the wire
      *  never carried. */
     private fun applySystemPrompt(turn: BuiltTurn): BuiltTurn {
-        val prompt = deps.systemPrompt.resolve() ?: return turn
+        val prompt = deps.policy.systemPrompt.resolve() ?: return turn
         val prompted = provider.withSystemPrompt(turn, prompt.text, prompt.mode)
         val applied = prompted.requestBody != turn.requestBody
         return prompted.copy(

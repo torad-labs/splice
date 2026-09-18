@@ -5,6 +5,7 @@
 // honesty rule for a dialect that cannot place the prompt.
 package head
 
+import campaign.v4105.headDeps
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -39,8 +40,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.AdmissionResponses
 import splice.gateway.head.AnthropicBodyParse
 import splice.gateway.head.ClientAuth
@@ -48,8 +47,6 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.Preparation
 import splice.gateway.head.RequestBodyReader
 import splice.gateway.head.TurnPreparation
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.BuiltTurn
 import splice.spi.InflightGate
 import splice.spi.Provider
@@ -247,21 +244,17 @@ class TurnPreparationSystemPromptTest {
     }
 
     private fun preparation(tmp: Path, provider: Provider, prompt: HeadSystemPrompt): TurnPreparation {
-        val deps = HeadDeps(
+        val deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
-            inferenceToken = "test-inference-token",
             gate = InflightGate({ 1 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("perf.jsonl")),
-            systemPrompt = prompt,
             log = {},
+            policy = HeadDeps.HeadPolicy(systemPrompt = prompt),
         )
         return TurnPreparation(
             provider,
             deps,
-            RequestBodyReader(deps),
+            RequestBodyReader(deps.policy.requestReadTimeoutMs),
             parser,
             ClientAuth(deps, AdmissionResponses()),
         )

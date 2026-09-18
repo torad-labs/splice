@@ -41,7 +41,7 @@ internal class TurnOneDrive(
                     drive.channel.launchClientPinger(
                         self,
                         turnJob,
-                        deps.ticker,
+                        deps.seams.ticker,
                         provider.key,
                         deps.log,
                         drive.sessionTag(),
@@ -50,12 +50,12 @@ internal class TurnOneDrive(
                         // it off — the status line that makes the wait visible instead of blank.
                         heartbeat = Heartbeat {
                             drive.emitter.heartbeat()
-                            if (deps.progressLine) {
+                            if (deps.policy.progressLine) {
                                 // Composed only if the emitter actually writes it: a line built for
                                 // a dropped write spends the intro and the clock reading with it.
                                 drive.emitter.progress {
                                     progress.next(
-                                        elapsedMs = deps.clock() - drive.t0,
+                                        elapsedMs = deps.seams.clock() - drive.t0,
                                         model = drive.upstreamModel,
                                         sawOutput = drive.perf.hasMark(PerfKeys.FIRST_DELTA),
                                     )

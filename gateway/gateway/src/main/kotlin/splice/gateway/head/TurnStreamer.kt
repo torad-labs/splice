@@ -92,12 +92,12 @@ internal class TurnStreamer(
             )
             val emitter = emitters.create(
                 write = { frame ->
-                    channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, deps.clock) }
+                    channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, deps.seams.clock) }
                 },
                 // The pinger's own frames (heartbeat ping, status line) — same socket, same mutex,
                 // never counted as model output. See ClientChannel.timedProgressWrite.
                 progressWrite = { frame ->
-                    channel.writeMutex.withLock { channel.timedProgressWrite(frame, perf, deps.clock) }
+                    channel.writeMutex.withLock { channel.timedProgressWrite(frame, perf, deps.seams.clock) }
                 },
                 // V4-81: the content-reached answer the emitter's failure rule turns on, read off
                 // the SAME TurnPerf this writer increments through (ClientChannel.timedClientWrite
@@ -109,7 +109,7 @@ internal class TurnStreamer(
                 usagePayload = wiring.usagePayloadBuilder(
                     provider.catalog,
                     built.meta,
-                    deps.clientWindows.windowFor(built.meta.sessionId),
+                    deps.stores.clientWindows.windowFor(built.meta.sessionId),
                 ),
             )
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)

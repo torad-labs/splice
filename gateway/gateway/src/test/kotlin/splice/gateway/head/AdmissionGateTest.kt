@@ -1,5 +1,7 @@
 package splice.gateway.head
 
+import campaign.v4105.headStores
+import campaign.v4105.noQuota
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
@@ -20,10 +22,6 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.SseSpuriousWakeupException
@@ -37,22 +35,24 @@ private class AdmissionTestAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
 }
 
+// This file KEEPS its own local builder rather than importing the campaign.v4105 one: the two would
+// share the name `headDeps` and the import would collide with this declaration. It composes the same
+// bundles instead, which is all the fixture does anyway.
 private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
     upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
     inferenceToken = "test-inference-token",
     gate = InflightGate({ 1 }),
-    shadow = ShadowClassifier(log = {}),
-    compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-    usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-    perfStats = PerfStats(tmp.resolve("perf.jsonl")),
     log = {},
-    mirrorReasoning = mirrorReasoning,
+    stores = headStores(tmp),
+    quotaBundle = noQuota(),
+    policy = HeadDeps.HeadPolicy(mirrorReasoning = mirrorReasoning),
+    seams = HeadDeps.HeadSeams(),
 )
 
 class AdmissionGateTest {
     @Test
     fun `head dependencies keep the reasoning mirror locked off`(@TempDir tmp: Path) {
-        assertFalse(headDeps(tmp).mirrorReasoning)
+        assertFalse(headDeps(tmp).policy.mirrorReasoning)
         assertThrows(IllegalArgumentException::class.java) { headDeps(tmp, mirrorReasoning = true) }
     }
 
@@ -83,13 +83,16 @@ class AdmissionGateTest {
         val deps = headDeps(tmp)
         val responses = AdmissionResponses()
         val admission = AdmissionGate(provider, deps, AdmissionWindow(), responses)
-        val reader = RequestBodyReader(deps, RequestBodyRead { _, _ -> throw SseSpuriousWakeupException(1024) })
+        val reader = RequestBodyReader(
+            deps.policy.requestReadTimeoutMs,
+            RequestBodyRead { _, _ -> throw SseSpuriousWakeupException(1024) },
+        )
 
         application {
             routing {
                 post("/probe") {
                     admission.materializeOrRespond(call) {
-                        reader.receiveBodyBounded(call, deps.maxRequestBytes)
+                        reader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
                     }
                 }
             }

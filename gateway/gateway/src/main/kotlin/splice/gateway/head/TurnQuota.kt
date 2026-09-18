@@ -3,7 +3,7 @@
 // "Which quota tracker does this turn read?" used to be answered with an elvis chain at seven call
 // sites, three different left operands, two right operands. The precedence is selected-account
 // tracker, else the head's primary — and `?:` types nothing about that, so a site reaching for
-// deps.quota first compiles, runs, and stamps the WRONG account's anthropic-ratelimit-* headers.
+// deps.quotaBundle.quota first compiles, runs, and stamps the WRONG account's anthropic-ratelimit-* headers.
 // HeadAdmission.kt once carried a hand-written comment recording that exact bug fixed at ONE site
 // while six siblings kept the old shape. This file is the single place the decision lives.
 package splice.gateway.head

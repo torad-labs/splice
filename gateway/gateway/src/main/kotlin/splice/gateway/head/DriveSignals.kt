@@ -5,6 +5,7 @@ package splice.gateway.head
 
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.LogSink
 import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.ClientChannel
 import splice.spi.Provider
@@ -15,7 +16,10 @@ private const val ROUND_FAILURE_SNIPPET = 160
 
 internal class DriveSignals(
     private val provider: Provider,
-    private val deps: HeadDeps,
+    /** The ONE thing this collaborator needs from the head (V4-105 item 3). It took the whole
+     *  [HeadDeps] to reach `deps.log`, which meant every change anywhere in that 25-parameter bundle
+     *  reported this file as a caller — the coupling was to the bundle, not to the seam. */
+    private val log: LogSink,
     private val health: HeadHealthCounters,
 ) {
     fun make(watchdog: TurnWatchdog, channel: ClientChannel, perf: TurnPerf): RunnerSignals =
@@ -24,7 +28,7 @@ internal class DriveSignals(
             clientGone = { channel.clientGone.get() },
             onRoundFailure = { f ->
                 // Absorbed round failures still count for the G20 health split (code-review 2026-07-24).
-                deps.log(
+                log(
                     "[${provider.key}] mid-stream ${f.type.wireName} absorbed by " +
                         "re-anchor: ${f.message.take(ROUND_FAILURE_SNIPPET)}\n",
                 )

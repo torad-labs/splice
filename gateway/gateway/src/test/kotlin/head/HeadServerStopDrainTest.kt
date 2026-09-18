@@ -17,6 +17,7 @@
 // 45s ladder the turn finishes comfortably inside the drain.
 package head
 
+import campaign.v4105.headDeps
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -42,12 +43,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -101,14 +97,10 @@ class HeadServerStopDrainTest {
                 configSummary = "detailed",
             ),
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 60_000, maxRetries = 1),
-                inferenceToken = "test-inference-token",
                 gate = gate,
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = {},
             ),
         )

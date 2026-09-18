@@ -27,12 +27,17 @@ import splice.spi.RetryNotice
 internal class TurnDriver(
     private val provider: Provider,
     private val deps: HeadDeps,
-    private val compactionReplay: CompactionReplay = CompactionReplay(),
+    /** NO DEFAULT (V4-105): the driver does not own this, it SHARES it — the same instance is what
+     *  makes a replay visible to the server that will serve it, and a defaulted `CompactionReplay()`
+     *  let a caller get a private empty one that compiled, ran, and silently could not replay
+     *  anything. A value that must be shared is exactly the parameter a default must not supply, so
+     *  the compiler now asks every construction site for it. */
+    private val compactionReplay: CompactionReplay,
 ) {
     private val log get() = deps.log
 
     private val telemetry =
-        TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock, deps.economicsStore)
+        TurnTelemetry(provider.key, deps.stores.perfStats, deps.log, deps.seams.clock, deps.stores.economicsStore)
     private val health = HeadHealthCounters()
     private val failures = TurnFailures(provider)
     private val zeroEvent = ZeroEventFailure(provider, log)
@@ -54,7 +59,7 @@ internal class TurnDriver(
         SseRoundPost(
             provider,
             deps.upstream,
-            deps.usageStore,
+            deps.stores.usageStore,
             deps.turnQuota,
             SseRoundConsume(provider, zeroEvent, telemetry, TearAwareEvents(provider, deps.log)),
             RetryNotice { log("[${provider.key}] $it\n") },
@@ -67,10 +72,10 @@ internal class TurnDriver(
         TurnConnEnd(provider, log, telemetry, failures, health),
         TurnKnownEnd(provider, log, telemetry, failures, health),
     )
-    private val usageStamp = TurnUsageStamp(deps.usageStore, log, telemetry)
+    private val usageStamp = TurnUsageStamp(deps.stores.usageStore, log, telemetry)
     private val cancellationSeal = CancellationSeal(provider, log, telemetry, health, usageStamp)
     private val turnFinish = TurnFinish(
-        deps.clock,
+        deps.seams.clock,
         log,
         usageStamp,
         health,
@@ -93,7 +98,13 @@ internal class TurnDriver(
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.
-    private val collectTurn = CollectTurn(provider, driveFactory, sealedDrive, deps.turnQuota, deps.clientWindows)
+    private val collectTurn = CollectTurn(
+        provider,
+        driveFactory,
+        sealedDrive,
+        deps.turnQuota,
+        deps.stores.clientWindows,
+    )
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
@@ -143,7 +154,7 @@ internal class TurnDriver(
      *  counters lived through control-plane restarts before — review 2026-07-19). */
     internal fun resetHealth() {
         health.reset()
-        deps.accountPool?.reset()
+        deps.quotaBundle.accountPool?.reset()
     }
 
     /** Head stop: end the detached compactions this head still drives; the scope stays usable for

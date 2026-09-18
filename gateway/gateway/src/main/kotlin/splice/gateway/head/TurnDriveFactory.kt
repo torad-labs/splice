@@ -19,7 +19,7 @@ internal class TurnDriveFactory(
     private val deps: HeadDeps,
     private val health: HeadHealthCounters,
 ) {
-    private val driveSignals = DriveSignals(provider, deps, health)
+    private val driveSignals = DriveSignals(provider, deps.log, health)
     private val drivePipeline = DrivePipeline(provider, deps)
 
     /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
@@ -43,15 +43,15 @@ internal class TurnDriveFactory(
         // A compact turn's silence before its first output is bounded by totalCap only — see
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
         val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
-        val watchdog = TurnWatchdog(budget, deps.clock, log = { deps.log("[${provider.key}] $it") })
+        val watchdog = TurnWatchdog(budget, deps.seams.clock, log = { deps.log("[${provider.key}] $it") })
         val totalCapMs = budget.totalCap.inWholeMilliseconds
         // The wait budget's origin is the watchdog's: this instant, after admission and preparation.
         // Measured from inputs.t0 it charged time queued behind the inflight gate to the provider, so
         // a turn queued longer than the cap was refused on its first attempt with zero upstream
         // calls (review 2026-09-14). t0 stays the end-to-end latency origin (TurnFinish).
-        val driveStart = deps.clock()
+        val driveStart = deps.seams.clock()
         val remainingTurnWait = RemainingTurnWait {
-            (totalCapMs - (deps.clock() - driveStart)).coerceAtLeast(0L)
+            (totalCapMs - (deps.seams.clock() - driveStart)).coerceAtLeast(0L)
         }
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(

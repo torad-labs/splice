@@ -9,6 +9,8 @@
 //   failure AFTER a frame           -> stay on the WS path; re-serving would duplicate output
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -60,7 +62,6 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
@@ -70,11 +71,9 @@ import splice.gateway.head.WsRoundDriver
 import splice.gateway.head.WsRoundInputs
 import splice.gateway.head.WsRoundResult
 import splice.gateway.head.ZeroEventClassifier
-import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.round.RunnerSignals
 import splice.gateway.usage.OutputClamp
-import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
@@ -298,17 +297,12 @@ class WsRoundDriverTest {
     private fun head(port: Int, runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = provider(runner),
         listenPort = port,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-            inferenceToken = "test-inference-token",
-            gate = InflightGate({ 0 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
-            usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
-            perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
             log = log,
-            requestMaterializationGate = RequestMaterializationGate(2),
-        ),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(2)),
+        ).copy(stores = headStores(tmp, suffix = "-$port")),
     )
 
     private suspend fun coldFlowInputs(

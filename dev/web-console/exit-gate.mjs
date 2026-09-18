@@ -151,6 +151,21 @@ const LEGS = [
     proof: /fixture/i,
   },
   {
+    name: 'law-check',
+    why: 'laws 25 and 27 over the whole ledger — the one property no other leg observes',
+    // REPORTS, DOES NOT GATE. law-check.mjs exits 1 on the violations that are history (M1-08/09/10
+    // carry the negation shape and are done; the CSS rows predate law 25), and whether that blocks
+    // the milestone is the orchestrator's call — so this leg runs --report, which always exits 0 and
+    // prints the violations and their row ids. The proof requires the row count, so a run that read
+    // no ledger is DID NOT RUN rather than a clean report.
+    probe: () => sh('node', ['dev/web-console/law-check.mjs', '--selftest'], ROOT),
+    probeProof: /selftest \d+\/\d+ PASS/,
+    run: () => sh('node', ['dev/web-console/law-check.mjs', '--report'], ROOT),
+    proof: /law-check: [1-9]\d* row\(s\) read from the ledger/,
+    // The leg passes and still says the number, because the number is the deliverable.
+    note: (out) => out.split('\n').filter((line) => /dispositions|narrow reading|done rows|law 2[57]:/.test(line)).map((l) => l.trim()).join('\n'),
+  },
+  {
     name: 'scan',
     why: 'the structural walls, through the wrapper that refuses a path they did not read',
     // NOT `ast-grep scan` directly: it prints "ERROR: no such file" and exits 0, and
@@ -247,7 +262,10 @@ function runLeg(leg) {
   }
   const late = leg.after?.(startedAt);
   if (late) return { status: DID_NOT_RUN, detail: late };
-  return { status: PASSED, detail: '' };
+  // A REPORTING LEG has to be able to say something while passing. Until this hook existed a leg
+  // could only speak by failing or by going DID NOT RUN, so a leg whose whole job is to surface a
+  // count for the orchestrator (law-check, M1-42) printed nothing at all: it was green and mute.
+  return { status: PASSED, detail: leg.note ? leg.note(r.out) : '' };
 }
 
 // --selftest: the gate's own mutation proof. A leg that exits 0 while doing nothing must

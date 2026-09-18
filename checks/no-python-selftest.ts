@@ -6,7 +6,7 @@
  *  refused and the mutation never happened. An arm that grades a mutation it
  *  did not make is the failure this whole wall family exists to catch. */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,6 +19,9 @@ function git(cwd: string, ...args: string[]) {
 }
 function tracked(cwd: string): string[] {
   return git(cwd, "ls-files", "*.py").out.split("\n").map((s) => s.trim()).filter(Boolean);
+}
+function untrackedPy(cwd: string): string[] {
+  return git(cwd, "ls-files", "--others", "--exclude-standard", "*.py").out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 function run(cwd: string) {
   const r = spawnSync("bun", ["checks/no-python.ts"], { cwd, encoding: "utf8" });
@@ -110,6 +113,34 @@ arm("a .py whose docstring names python3", "green", (r) => {
   writeFileSync(join(r, LIST), list(["a.py"], []));
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
 }, (r) => tracked(r).includes("a.py"));
+
+// ── the third census: Python that is not in git at all ────────────────────────
+// Added after webui/.m1-34.py was found sitting untracked in the worktree twenty
+// minutes after this wall landed — 196 lines of Python rewriting six .tsx files,
+// and both censuses above read it as a clean tree. Tracked is what SHIPS; it is
+// not what a session WROTE, and the drift is written before it is added.
+
+arm("an UNTRACKED scratch .py in the worktree", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+  writeFileSync(join(r, "scratch.py"), "import pathlib\n"); // written, never added
+}, (r) => !tracked(r).includes("scratch.py") && untrackedPy(r).includes("scratch.py"));
+
+// The leg must charge the AUTHOR, never the package manager: node_modules carries
+// a vendored flatted.py in this repo, and flagging it would make the wall unpassable
+// for a reason no session can fix. --exclude-standard is what makes the leg usable,
+// so it gets its own arm rather than riding on the red one.
+// The setup asserts only that the file is on disk and untracked — asserting it is
+// absent from the census would be asserting the very thing this arm grades.
+arm("a .gitignore'd vendor .py is NOT charged", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  writeFileSync(join(r, ".gitignore"), "vendor/\n");
+  mkdirSync(join(r, "vendor"), { recursive: true });
+  writeFileSync(join(r, "vendor", "dep.py"), "x\n");
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "vendor", "dep.py")) && !tracked(r).includes("vendor/dep.py"));
 
 arm("an unparseable burn-down list", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");

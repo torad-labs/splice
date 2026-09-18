@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.dialect.passthrough.PassthroughReanchorController
 import splice.spi.ReanchorRound
@@ -78,10 +79,19 @@ class PassthroughReanchorTest {
         body: JsonObject,
         partial: TurnOutcome.PartialRound?,
         attempt: Int = 0,
-        type: ErrorType = ErrorType.API_ERROR,
+        // V4-117: the helper varies the CAUSE now, not the type. The controller keys its decision on
+        // the failure's type (`type !in RETRYABLE`), and the type is DERIVED from (cause, phase) — so
+        // choosing a cause is the only way to state the case, and the default here maps to the same
+        // API_ERROR this helper defaulted to before.
+        cause: FailureCause = FailureCause.UPSTREAM_REPORTED,
     ) = ReanchorRound(
         requestBody = body,
-        failure = TurnOutcome.Failure(type = type, message = "stream ended without message_stop", partial = partial),
+        failure = TurnOutcome.Failure(
+            "stream ended without message_stop",
+            cause = cause,
+            phase = FailurePhase.MID_OUTPUT,
+            partial = partial,
+        ),
         attempt = attempt,
     )
 
@@ -232,13 +242,13 @@ class PassthroughReanchorTest {
 
     @Test
     fun `a failure type outside the retryable set is not eligible`() {
-        val requests = round(body(), partial(bodyText = "1"), type = ErrorType.INVALID_REQUEST)
+        val requests = round(body(), partial(bodyText = "1"), cause = FailureCause.UPSTREAM_STATUS_4XX)
         assertNull(controller.continuationForFailure(requests))
     }
 
     @Test
     fun `overloaded is retryable, so the set is pinned from both sides`() {
-        val overloaded = round(body(), partial(bodyText = "1"), type = ErrorType.OVERLOADED)
+        val overloaded = round(body(), partial(bodyText = "1"), cause = FailureCause.UPSTREAM_STALLED)
         assertNotNull(controller.continuationForFailure(overloaded))
     }
 
@@ -257,7 +267,7 @@ class PassthroughReanchorTest {
         //
         // What this must NOT become: a continuation whose every round is a blind re-POST. The
         // attempt budget below is the bound, shared with OVERLOADED rather than special-cased.
-        val limited = round(body(), partial(bodyText = "1"), type = ErrorType.RATE_LIMIT)
+        val limited = round(body(), partial(bodyText = "1"), cause = FailureCause.VENDOR_RATE_LIMITED)
         assertNotNull(controller.continuationForFailure(limited))
     }
 
@@ -265,7 +275,7 @@ class PassthroughReanchorTest {
     fun `a rate limit past the attempt budget still stops`() {
         // Pinned from both sides like the budget itself: RATE_LIMIT earns continuation on the same
         // terms as every other retryable type, so the ceiling that bounds OVERLOADED bounds it too.
-        val limited = round(body(), partial(bodyText = "1"), attempt = 5, type = ErrorType.RATE_LIMIT)
+        val limited = round(body(), partial(bodyText = "1"), attempt = 5, cause = FailureCause.VENDOR_RATE_LIMITED)
         assertNull(controller.continuationForFailure(limited))
     }
 

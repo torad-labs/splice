@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.PROMOTE_MIN_CHARS
 import splice.core.turn.ReasoningDisplayParser
@@ -176,28 +178,32 @@ class TurnPipelineTest {
     fun `no text block or error message splice emits is json`() = runTest {
         val payload = """{"detail":"Rate limit exceeded — this gateway is holding retries for 120s"}"""
         val offending = mutableListOf<String>()
-        for (type in ErrorType.entries) {
+        // V4-117: the denominator is FailureCause.entries now, not ErrorType.entries. It has to be:
+        // the type is DERIVED from (cause, phase), so a cause is the thing that can be added without
+        // this file knowing. What the test asserts — that no byte splice emits is JSON — is a
+        // property of the presentation seam, and every cause still crosses it.
+        for (cause in FailureCause.entries) {
             // Both endings: the deterministic one is the visible leak, and the error event carries
             // the identical body — presenting one and not the other leaves most failures leaking.
             val explained = RecTerminal()
             pipeline().finishStream(
                 explained,
-                TurnOutcome.Failure(type, payload, deterministic = true),
+                TurnOutcome.Failure(payload, cause = cause, phase = FailurePhase.MID_OUTPUT, deterministic = true),
                 meta("text"),
                 elapsedMs = 1,
             )
-            offending += inspect("text block for $type", explained.texts.joinToString(" "))
+            offending += inspect("text block for $cause", explained.texts.joinToString(" "))
 
             val errored = RecTerminal()
             pipeline().finishStream(
                 errored,
-                TurnOutcome.Failure(type, payload),
+                TurnOutcome.Failure(payload, cause = cause, phase = FailurePhase.MID_OUTPUT),
                 meta("text"),
                 elapsedMs = 1,
                 // The assertion here is about BYTES, not the type; `true` keeps the wire type the
                 // one the case names, so this wall stays a statement about presentation alone.
             )
-            offending += inspect("error event for $type", errored.errorMessage)
+            offending += inspect("error event for $cause", errored.errorMessage)
         }
         assertTrue(offending.isEmpty(), "JSON reached the client:\n" + offending.joinToString("\n"))
     }
@@ -225,7 +231,12 @@ class TurnPipelineTest {
         val rec = RecTerminal()
         pipeline().finishStream(
             rec,
-            TurnOutcome.Failure(ErrorType.API_ERROR, """{"foo":1,"bar":[1,2,3],"baz":null}""", deterministic = true),
+            TurnOutcome.Failure(
+                """{"foo":1,"bar":[1,2,3],"baz":null}""",
+                cause = FailureCause.UPSTREAM_REPORTED,
+                phase = FailurePhase.MID_OUTPUT,
+                deterministic = true,
+            ),
             meta("text"),
             elapsedMs = 1,
         )
@@ -242,20 +253,33 @@ class TurnPipelineTest {
         val explained = RecTerminal()
         val tag = pipeline().finishStream(
             explained,
-            TurnOutcome.Failure(ErrorType.API_ERROR, "code-mode cell is unavailable", deterministic = true),
+            TurnOutcome.Failure(
+                "code-mode cell is unavailable",
+                cause = FailureCause.CODE_MODE_PROTOCOL,
+                phase = FailurePhase.MID_OUTPUT,
+                deterministic = true,
+            ),
             meta("text"),
             elapsedMs = 1,
         )
         assertEquals("terminal", explained.ending)
         // V4-59: the verb is unchanged \u2014 still a text block, still marked as the proxy speaking \u2014
         // and what changed is the words: the failure now names its stable code before the sentence.
-        assertEquals(listOf("\u26A0 splice [SPLICE-API-ERROR] code-mode cell is unavailable"), explained.texts)
-        assertEquals("failure:api_error", tag)
+        // V4-117: the code is INVALID-REQUEST because the type is DERIVED, and the matrix gives
+        // CODE_MODE_PROTOCOL an empty ceiling \u2014 a non-retryable class \u2014 so the wire type is the
+        // client's bad-request one rather than api_error. The assertions follow the matrix; they are
+        // not relaxed to whatever the code happens to emit.
+        assertEquals(listOf("\u26A0 splice [SPLICE-INVALID-REQUEST] code-mode cell is unavailable"), explained.texts)
+        assertEquals("failure:invalid_request_error", tag)
 
         val retried = RecTerminal()
         pipeline().finishStream(
             retried,
-            TurnOutcome.Failure(ErrorType.API_ERROR, "upstream stream ended without response.completed"),
+            TurnOutcome.Failure(
+                "upstream stream ended without response.completed",
+                cause = FailureCause.UPSTREAM_REPORTED,
+                phase = FailurePhase.MID_OUTPUT,
+            ),
             meta("text"),
             elapsedMs = 1,
             // AFTER content: the type the outcome carries is the type the client receives. The
@@ -480,23 +504,34 @@ class TurnPipelineTest {
 
     @Test
     fun `the pipeline hands the emitter the failure's own type and permanence - V4-81`() = runTest {
-        for (type in listOf(ErrorType.API_ERROR, ErrorType.RATE_LIMIT)) {
+        // V4-117: the pair is (cause, expected wire type). The expectation is written out rather
+        // than computed from the cause, so a cause that started deriving a DIFFERENT type would
+        // redden here instead of silently redefining what the test asserts.
+        val cases = listOf(
+            FailureCause.UPSTREAM_REPORTED to ErrorType.API_ERROR,
+            FailureCause.VENDOR_RATE_LIMITED to ErrorType.RATE_LIMIT,
+        )
+        for ((cause, expected) in cases) {
             val rec = RecTerminal()
             val tag = pipeline().finishStream(
                 rec,
-                TurnOutcome.Failure(type, "upstream stream ended without response.completed"),
+                TurnOutcome.Failure(
+                    "upstream stream ended without response.completed",
+                    cause = cause,
+                    phase = FailurePhase.MID_OUTPUT,
+                ),
                 meta("text"),
                 elapsedMs = 1,
             )
             assertEquals("error", rec.ending)
-            assertEquals(type, rec.errorType, "the pipeline reports the failure; the emitter types the wire")
+            assertEquals(expected, rec.errorType, "the pipeline reports the failure; the emitter types the wire")
             assertEquals(false, rec.errorPermanent, "an unclassified failure is not permanent by default")
             // The words and the journal tag keep the honest class either way.
             assertTrue(
                 rec.errorMessage.contains("response.completed"),
                 "the diagnosis must survive: ${rec.errorMessage}",
             )
-            assertEquals("failure:${type.wireName}", tag, "the log must still name the failure honestly")
+            assertEquals("failure:${expected.wireName}", tag, "the log must still name the failure honestly")
         }
     }
 
@@ -507,7 +542,12 @@ class TurnPipelineTest {
         val rec = RecTerminal()
         val tag = pipeline().finishStream(
             rec,
-            TurnOutcome.Failure(ErrorType.API_ERROR, "upstream: model refused", permanent = true),
+            TurnOutcome.Failure(
+                "upstream: model refused",
+                cause = FailureCause.MODEL_REFUSED,
+                phase = FailurePhase.MID_OUTPUT,
+                permanent = true,
+            ),
             meta("text"),
             elapsedMs = 1,
         )

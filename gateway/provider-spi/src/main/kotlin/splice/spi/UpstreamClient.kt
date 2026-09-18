@@ -124,7 +124,7 @@ public class UpstreamClient(
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return retryRules.giveUp(state.lastErr, activeCooldown(ctx))
+        return retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -184,13 +184,13 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx))
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         }
         if (turnWaitExhausted(ctx)) {
             ctx.onRetry(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
-            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx))
+            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
             return LoopStep.TurnWaitExhausted
         }
         activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
@@ -304,10 +304,10 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx))
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         }
         val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
-        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr, activeCooldown(ctx))
+        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
@@ -381,16 +381,12 @@ public class UpstreamClient(
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx))
+            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         }
     }
 
     private fun activeCooldown(ctx: PostContext): RateLimitCooldown = ctx.rateLimitCooldown ?: cooldown
 }
-
-// The width of an upstream error quoted into a retry notice. Read here and by RetryPolicy.kt's
-// give-up / attempt notices, which quote the same failure text.
-internal const val ERR_SNIPPET = 160
 
 /**
  * What [UpstreamClient.post] answers: the handler's value, or the one refusal the loop DECIDES.

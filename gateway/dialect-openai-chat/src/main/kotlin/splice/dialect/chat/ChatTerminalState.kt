@@ -4,7 +4,8 @@
 // passthrough dialect's PassthroughFailureRules idiom (commit 6868086).
 package splice.dialect.chat
 
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 
 /** The chat dialect's honesty state machine: the flags that decide whether a turn's terminal is an
@@ -48,16 +49,31 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     internal fun providerFailure(): TurnOutcome.Failure? {
         val runaway = runawayGuard
         return when {
-            runaway != null -> TurnOutcome.Failure(ErrorType.API_ERROR, runaway, providerReported = false)
+            runaway != null -> TurnOutcome.Failure(
+                runaway,
+                providerReported = false,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
+            )
             // CX-01: a terminated turn whose tool arguments are corrupt must not reach the client
             // as a Success — provider-reported (the backend produced the bytes), so it retries.
             toolCalls.toolArgsInvalid != null -> TurnOutcome.Failure(
-                ErrorType.API_ERROR,
                 "chat backend: ${toolCalls.toolArgsInvalid} in tool call — retry",
                 providerReported = true,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
             )
             failure != null ->
-                TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
+                TurnOutcome.Failure(
+                    "chat backend: $failure",
+                    providerReported = true,
+                    // V4-117: UPSTREAM_REPORTED, derived from the source rather than assumed.
+                    // ChatEventRouter.kt:27 sets this text straight from an SSE event message and
+                    // never calls UpstreamFailureClassifier, so there is no status here to read and
+                    // no classification to inherit — the in-band statusless case by construction.
+                    cause = FailureCause.UPSTREAM_REPORTED,
+                    phase = FailurePhase.MID_OUTPUT,
+                )
             // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is
             // the only honest verdict available. Ranked above the content_filter branch below
             // because it carries the model's own words instead of a generic phrase; it outranks
@@ -65,7 +81,6 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // isNotBlank, not isNotEmpty: a buffer of only whitespace fragments must still read as
             // "no refusal" now that fragments are accepted verbatim (round-2 review).
             refusalBuf.isNotBlank() -> TurnOutcome.Failure(
-                ErrorType.API_ERROR,
                 "chat backend: model refused — $refusalBuf",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
                 // V4-81, the responses dialect's sibling (found by sweeping rather than by being
@@ -73,15 +88,18 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
                 // refusal again — see PreContentWireType. The two dialects answer the same question
                 // the same way or the behaviour depends on which head the operator happens to run.
                 permanent = true,
+                cause = FailureCause.MODEL_REFUSED,
+                phase = FailurePhase.TERMINAL,
             )
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
             // blocked generation masquerade as complete (honesty invariant); it outranks
             // `finished` (the same frame sets both). Retry an api_error honestly.
             contentFiltered -> TurnOutcome.Failure(
-                ErrorType.API_ERROR,
                 "chat backend: generation stopped by content filter",
                 providerReported = true, // finish_reason the backend sent, not a local verdict (G20)
                 permanent = true, // V4-81: the identical prompt is filtered identically.
+                cause = FailureCause.CONTENT_FILTERED,
+                phase = FailurePhase.TERMINAL,
             )
             else -> null
         }

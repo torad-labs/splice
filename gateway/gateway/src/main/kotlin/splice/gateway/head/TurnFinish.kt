@@ -74,6 +74,15 @@ internal class TurnFinish(
             log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag — client received an error terminal"))
             health.local()
         }
-        telemetry.recordPerf(drive, outcomeTag)
+        // V4-117: the failing outcome is in scope here, so the perf row gets its cause and the
+        // attempt count the retry loop stamped on it. A Success carries neither, and both default to
+        // absent — the row for a healthy turn is byte-identical to what it was before this field.
+        val failure = outcome as? TurnOutcome.Failure
+        telemetry.recordPerf(
+            drive,
+            outcomeTag,
+            cause = failure?.cause?.name,
+            layers = failure?.layers ?: 0,
+        )
     }
 }

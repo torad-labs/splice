@@ -2,7 +2,8 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.spi.CodeModeCapacityException
@@ -130,7 +131,7 @@ internal class CodexCodeModeDriver(
             continuityReplay = continuity.replayItems,
         )
         return if (!registry.add(record)) {
-            null to failure("code-mode registry capacity reached", ErrorType.API_ERROR)
+            null to failure("code-mode registry capacity reached")
         } else {
             startRuntime(record, context)
         }
@@ -142,7 +143,7 @@ internal class CodexCodeModeDriver(
     ): Pair<CodeModeRecord, TurnOutcome> = try {
         val cell = startWithEviction(record, context)
         if (!registry.attach(record, cell)) {
-            record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
+            record to failure(record.error.orEmpty())
         } else {
             record to machine.advance(
                 record,
@@ -167,13 +168,13 @@ internal class CodexCodeModeDriver(
         record to machine.interrupt(record, CAPACITY_DETAIL)
     } catch (_: CodeModeTimeoutException) {
         registry.lose(record, "code-mode runtime timed out during startup; source was not rerun")
-        record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
+        record to failure(record.error.orEmpty())
     } catch (error: CodeModeInfrastructureException) {
         registry.lose(
             record,
             "code-mode infrastructure failure ${error.category}/${error.faultClass}; source was not rerun",
         )
-        record to failure(record.error.orEmpty(), ErrorType.API_ERROR)
+        record to failure(record.error.orEmpty())
     } catch (error: IOException) {
         record to startFailure(record, error)
     } catch (_: RuntimeException) {
@@ -199,11 +200,21 @@ internal class CodexCodeModeDriver(
                 "runtime failed to start — $chain",
         )
         registry.lose(record, "code-mode runtime failed to start; source was not rerun")
-        return failure(record.error.orEmpty(), ErrorType.API_ERROR)
+        return failure(record.error.orEmpty())
     }
 
-    private fun failure(message: String, type: ErrorType = ErrorType.INVALID_REQUEST): TurnOutcome.Failure =
-        TurnOutcome.Failure(type, message, deterministic = true)
+    private fun failure(message: String): TurnOutcome.Failure =
+        TurnOutcome.Failure(
+            message,
+            deterministic = true,
+            // V4-117: every path through this helper is the code-mode machine reporting its own
+            // protocol state, so they share ONE cause rather than each borrowing an upstream one.
+            // The type PARAMETER this used to take is gone with the hand-picked type itself: the
+            // callers were choosing between INVALID_REQUEST and API_ERROR for the same cause, which
+            // is exactly the second author the derived type removes.
+            cause = FailureCause.CODE_MODE_PROTOCOL,
+            phase = FailurePhase.MID_OUTPUT,
+        )
 }
 
 private const val RECORD_ID_LOG_CHARS: Int = 8

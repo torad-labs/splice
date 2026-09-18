@@ -60,7 +60,16 @@ internal class TurnKnownEnd(
             // DR-128: account BEFORE the emit — same law as the auth-missing arm above.
             // A 429 is the quota instrument's most load-bearing event: it is the exact moment the
             // plan said no, and it must be countable in the rollup, not just greppable in the log.
-            telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FAILED.wire, failure.type == ErrorType.RATE_LIMIT)
+            // V4-117: the cause is the classifier's own, and layers is the count the LOOP stamped on
+            // the exception before throwing it (UpstreamFailed.layers) — this is the site where an
+            // attempt count actually exists, because this is the arm the retry loop exits through.
+            telemetry.recordPerf(
+                drive,
+                OutcomeTag.UPSTREAM_FAILED.wire,
+                failure.type == ErrorType.RATE_LIMIT,
+                cause = failure.cause.name,
+                layers = e.layers,
+            )
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
             // V4-71 re-sited by V4-81: the FIRST turn to meet a persistent 429 must reach the
             // client RETRYABLE, and a 200 is already committed at TurnStreamer.stream before the

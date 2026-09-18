@@ -44,7 +44,13 @@ internal class TurnTelemetry(
 
     /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws.
      *  [rateLimited] marks the one turn the upstream refused with a 429 — see [recordEconomics]. */
-    fun recordPerf(drive: TurnDrive, outcomeTag: String, rateLimited: Boolean = false) {
+    fun recordPerf(
+        drive: TurnDrive,
+        outcomeTag: String,
+        rateLimited: Boolean = false,
+        cause: String? = null,
+        layers: Int = 0,
+    ) {
         drive.perf.mark(PerfKeys.TOTAL)
         val snap = drive.perf.snapshot()
         val session = drive.sessionTag()
@@ -57,6 +63,11 @@ internal class TurnTelemetry(
                 session,
                 account?.account?.label,
                 account?.cacheCold == true,
+                // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
+                // outcome TAG is not replaced — it is what the operator already greps — so this is an
+                // addition to the row, never a change to the string that identifies it.
+                cause = cause,
+                layers = layers,
             ),
             snap,
         )

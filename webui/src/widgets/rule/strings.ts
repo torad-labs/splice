@@ -14,5 +14,9 @@ export const S = {
   nearest: 'nearest window',
   /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */
   restartPending: 'restart pending',
+  /** The live connection, printed beside health: the word follows the holder edge's state. */
+  live: 'live',
+  reconnecting: 'reconnecting',
+  off: 'off',
   noneTail: 'heads report none',
 } as const;

@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { headsReportingNone, nearestWindow } from '../src/entities/usage';
 import type { AuthPayload, UsagePayload } from '../src/shared/api';
-import { NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
+import { ConnectionCell, NoneCell, PendingRestartCell, WindowCell, healthOf } from '../src/widgets/rule';
 
 const h = React.createElement;
 const render = (el: React.ReactElement): string => renderToStaticMarkup(el);
@@ -94,6 +94,38 @@ describe('the rule restart signal', () => {
 
   test('is gone when the store clears', () => {
     expect(render(h(PendingRestartCell, { pending: [] }))).toBe('');
+  });
+});
+
+describe('the rule connection cell', () => {
+  test('prints the state word beside its holder edge, in all three states', () => {
+    const live = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() }));
+    expect(live).toContain('>live<');
+    expect(live).toContain('myx-edge-green');
+
+    const reconnecting = render(h(ConnectionCell, { status: 'reconnecting', lastFrameAt: null }));
+    expect(reconnecting).toContain('>reconnecting<');
+    expect(reconnecting).toContain('myx-edge-amber');
+
+    const off = render(h(ConnectionCell, { status: 'off', lastFrameAt: null }));
+    expect(off).toContain('>off<');
+    expect(off).toContain('myx-edge-grey');
+  });
+
+  test('a stream that has never delivered a frame says so, and never reads as an age', () => {
+    const out = render(h(ConnectionCell, { status: 'live', lastFrameAt: null }));
+    expect(out).toContain('no frame yet');
+    expect(out).not.toContain('ago');
+  });
+
+  test('the age of the last frame is stale past the console-wide fifteen seconds', () => {
+    const fresh = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() - 2_000 }));
+    expect(fresh).not.toContain('>stale<');
+
+    const old = render(h(ConnectionCell, { status: 'live', lastFrameAt: Date.now() - 60_000 }));
+    expect(old).toContain('>stale<');
+    // The state word still says the stream is up: a quiet daemon is not a dead one.
+    expect(old).toContain('>live<');
   });
 });
 

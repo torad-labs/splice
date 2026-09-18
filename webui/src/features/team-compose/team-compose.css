@@ -1,0 +1,67 @@
+/* The composer: a form printed on the strip's paper, built from the world's controls (Input, Key,
+   Flag in shared/controls) and the section 1 tokens only. Radius 0, both themes. The inputs bring
+   their own box and label; this sheet lays them out and nothing else. */
+.myx-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+}
+.myx-compose-title {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-3);
+  font-weight: 500;
+  color: var(--strip-ink);
+}
+.myx-compose-head,
+.myx-compose-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+}
+.myx-compose-lines { flex: 1 1 32ch; }
+.myx-compose-lines .myx-input-box { width: 100%; resize: vertical; font-family: var(--font-label); }
+.myx-compose-slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--hair) solid var(--strip-field-line);
+}
+.myx-compose-slots legend {
+  padding-inline: var(--space-2);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--strip-ink-mute);
+}
+.myx-compose-slot {
+  padding-block-end: var(--space-3);
+  border-bottom: var(--hair) solid var(--strip-field-line);
+}
+.myx-compose-slot-actions,
+.myx-compose-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.myx-compose-problems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--strip-ink);
+}
+.myx-compose-problems-label { color: var(--strip-ink-mute); font-size: var(--text-1); }
+.myx-compose-problems ul { margin: 0; padding-inline-start: var(--space-4); }
+/* THE FLAG'S WORD TAKES THE PAPER'S INK HERE. A Flag is a key on --strip paper, and its holder
+   edge's label inherits ui.css:196 (`.myx-edge-label { color: var(--ink) }`), the ROOM's light
+   ink, so the printed state was near-invisible on the key in this form's capture. shared/controls
+   is outside this row's fence, so the fix is scoped here and the primitive is reported. */
+.myx-compose .myx-flag .myx-edge-label { color: var(--strip-ink); }

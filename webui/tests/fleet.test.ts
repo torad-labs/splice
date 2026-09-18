@@ -183,7 +183,11 @@ describe('nearest window text', () => {
     expect(headsReportingNone(null)).toBeNull();
   });
 
-  test('a head with no window prints not reported by provider, never 0%', () => {
+  // NAMED FOR WHAT IT ASSERTS (M2-29). This read `prints not reported by provider`, a sentence
+  // no code path produces: windowText returns NOT_REPORTED and NOT_REPORTED is the single word
+  // `unknown`. The assertion was always right and the name described the phrase this widget was
+  // moved off; a test whose name and assertion disagree is read by the next person as the name.
+  test('a head with no window prints the unknown glyph, never 0%', () => {
     expect(headWindow(usage, 'silent')).toEqual({ pct: null, level: 'none', reset: null });
     expect(headWindow(usage, 'claudex').pct).toBe(12);
   });

@@ -162,6 +162,8 @@ const edgeTokens = bothRooms.filter((name) => name.startsWith('--edge-'));
 
 const TEXT_MIN = 4.5;
 const EDGE_MIN = 3;
+const PLANE_MIN = 1.6;
+const FIELD_MIN = 1.05;
 
 /** ink that must clear AA text contrast on each ground it is printed on */
 const TEXT_ON: ReadonlyArray<[ink: string, grounds: string[]]> = [
@@ -201,6 +203,37 @@ function pairingsFor(tokens: Tokens, room: string): Pairing[] {
   return pairings;
 }
 
+// ------------------------------------------------------- the plane ladder
+
+/**
+ * A room is a ladder of planes, and the rungs are GEOMETRY, not taste: the bay
+ * paints its own ground (ui.css:310, `background: var(--room-deep)`) and the
+ * strip paints its own (ui.css:222, `background: var(--strip)`), so the planes
+ * that touch on screen are room|room-deep and room-deep|strip. Below 1.6:1 a
+ * boundary between two planes is a gradient, not an edge: the light room shipped
+ * a page, a bay floor and a strip all within 1.3:1 of each other and read as one
+ * sheet of paper (measured 2026-09-18 off the gate's own captures: strip-field
+ * 1.30:1, strip 1.20:1, room-deep 1.14:1 against the room).
+ *
+ * The field box is a box ON the strip, not a plane: it is carried by its own
+ * step and by `--strip-field-line` (the dark room's line measures 1.79:1 on its
+ * strip), so it is held to a step and never to the plane floor.
+ *
+ * The dark room's rail pair is deliberately NOT held to the floor, and the
+ * exemption is asserted rather than skipped: tokens.css declares the graphite
+ * room one field whose rule, rail and floor between bays all measure
+ * #0A0C0D..#0C1010, so room and room-deep stay within a step of each other
+ * there. Pulling them apart on the way to a green light room fails that test by
+ * name, which is the point: the light room's rungs are not the dark room's.
+ */
+const PLANES: ReadonlyArray<[room: string, upper: string, lower: string, min: number]> = [
+  ['dark', '--room-deep', '--strip', PLANE_MIN],
+  ['light', '--room', '--room-deep', PLANE_MIN],
+  ['light', '--room-deep', '--strip', PLANE_MIN],
+  ['dark', '--strip', '--strip-field', FIELD_MIN],
+  ['light', '--strip', '--strip-field', FIELD_MIN],
+];
+
 // ------------------------------------------------------------------- tests
 
 describe('the token sheet carries what the contract names', () => {
@@ -232,6 +265,20 @@ describe('WCAG AA in both rooms', () => {
   }
 });
 
+describe('the plane ladder holds in both rooms', () => {
+  for (const [room, upper, lower, min] of PLANES) {
+    const tokens = room === 'dark' ? dark : light;
+    test(`${room}: ${upper} stands off ${lower} by >= ${min}:1`, () => {
+      const measured = ratio(value(tokens, upper, room), value(tokens, lower, room));
+      expect(measured).toBeGreaterThanOrEqual(min);
+    });
+  }
+
+  test('dark: the rail stays one field with the room', () => {
+    expect(ratio(value(dark, '--room', 'dark'), value(dark, '--room-deep', 'dark'))).toBeLessThan(PLANE_MIN);
+  });
+});
+
 describe('the wall can fail', () => {
   test('a pair below AA is reported by name', () => {
     const fixture: Pairing = {
@@ -241,6 +288,19 @@ describe('the wall can fail', () => {
       min: 4.5,
     };
     expect(contrastFailures([fixture])).toEqual([fixture.label]);
+  });
+
+  test('a flat room is reported by name', () => {
+    // Today's values: the light room against the light bay floor, 1.14:1. This is
+    // the pair the light block shipped, so the wall is proven against the real
+    // defect and not only against a synthetic grey.
+    const flat: Pairing = {
+      label: 'fixture: light room above the light bay floor',
+      ink: '#E0E2DF',
+      ground: '#D2D5D1',
+      min: PLANE_MIN,
+    };
+    expect(contrastFailures([flat])).toEqual([flat.label]);
   });
 
   test('a pair at the threshold passes', () => {

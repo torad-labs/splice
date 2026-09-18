@@ -199,10 +199,14 @@
 }
 
 /* ============================================================
-   THE PAPER BAY — the light set. Measured from
+   THE PAPER BAY — the light set. Sampled from
    .impeccable/mocks/decision/assigned.png: page ground #E0E2DF, strip paper
-   #F6F6F3, strip ink near-black, holder edge blue #2869D5 and red #E63521,
-   green #029703, chart inset ground #1F2422.
+   #F6F6F3, rail #1F2422, strip ink near-black, holder edge blue #2869D5 and
+   red #E63521, green #029703, chart inset ground #1F2422.
+   Re-derived 2026-09-18 (M1-11): the comp's three planes all measure within
+   1.20:1 of each other and read as one sheet, so the BAY FLOOR was moved to a
+   genuinely deeper matte. The panel and the strip are the comp's own measured
+   values and do not move. The measured rungs are in the GROUND section below.
    ============================================================ */
 
 :root[data-theme="light"] {
@@ -219,26 +223,51 @@
   --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
   --font-figure:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
-  /* ---------- GROUND ---------- */
-  --room:#E0E2DF;      /* the paper floor of the bay, measured */
-  --room-deep:#D2D5D1; /* one step darker, and it has to be a step and not the
-                          comp's dark rail (#1F2422): --ink must clear 4.5:1 on
-                          the rail in both themes, and near-black paper cannot
-                          carry paper ink. */
+  /* ---------- GROUND ----------
+     The paper bay is a LADDER, not one sheet of paper. The page is the matte
+     panel, the bay floor (`.myx-bay`, ui.css:310) is a deeper matte, and the
+     strip is paper racked on the two. Re-derived 2026-09-18 (M1-11) from the
+     sampled comp (.impeccable/mocks/decision/assigned.png: floor #E0E2DF, strip
+     #F6F6F3, rail #1F2422) with the numbers the room has to hold. The comp itself
+     is flat here — its strip measures 1.20:1 on its floor and reads only by its
+     outline — so the FLOOR is the plane that moves, and the two values the comp
+     measured are the ones that stay: the panel and the strip. The measured rungs
+     are room|room-deep 1.69:1 and room-deep|strip 2.03:1. The comp's dark rail is
+     not reachable: `--ink` and `--ink-mute` are printed on the bay floor
+     (`.myx-bay-label`, `.myx-bay-count`), and near-black paper cannot carry paper
+     ink, so the deeper matte stops at the value that does. Dark is untouched: its
+     room and its rail are one field by declaration, and every dark pigment in this
+     sheet is the comp's own measurement. */
+  --room:#E0E2DF;      /* the matte panel: the comp's own floor, measured, and the
+                          value every edge and every ink in this block was landed
+                          against, so it is the plane that does not move */
+  --room-deep:#ABB0AC; /* the bay floor and the rail, a deeper matte: 1.69:1 under
+                          the panel, 2.03:1 under the strip */
   --hairline:rgba(31,36,34,.16);
   --hairline-strong:rgba(31,36,34,.32);
 
   /* ---------- INK ON THE ROOM ---------- */
   --ink:#161A19;
-  --ink-mute:#565955;   /* the lightest grey that still clears 4.5:1 on the
-                           deeper paper (4.80:1); the comp's greys sit above it */
+  --ink-mute:#3F413F;   /* darkened from #565955 (M1-11): the bay floor moved down
+                           to separate the planes, and the mute is printed on it
+                           (`.myx-bay-count`), where #565955 now measures 3.23:1.
+                           This clears 4.68:1 there and 7.90:1 on the panel, and it
+                           stays the lightest of the three inks. The alternative —
+                           holding the mute and the floor where they were — cannot
+                           reach the plane floor at all: ink at 4.5:1 needs a bay
+                           floor at 0.615 luminance and the rung needs one below
+                           0.438, so one of the three has to give. */
   --ink-strong:#0A0C0B;
 
-  /* ---------- THE STRIP (white paper on the paper floor) ---------- */
-  --strip:#F6F6F3;
+  /* ---------- THE STRIP (comp paper on the deeper matte) ---------- */
+  --strip:#F6F6F3;            /* the strip stays the comp's own #F6F6F3, now 2.03:1
+                                 above the bay floor it is racked on */
   --strip-ink:#141414;
   --strip-ink-mute:#5A5749;
-  --strip-field:#FFFFFF;      /* the field box is the brightest paper on the sheet */
+  --strip-field:#FFFFFF;      /* the field box, one step above the strip as the dark
+                                 block steps it (1.08:1), reading by
+                                 --strip-field-line the way the dark block's 1.07:1
+                                 box reads by its own */
   --strip-field-line:rgba(31,36,34,.55);
 
   /* ---------- HOLDER EDGE ---------- */

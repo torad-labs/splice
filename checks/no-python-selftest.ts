@@ -297,5 +297,118 @@ arm("a burn-down key that did not exist at the first commit", "green", (r) => {
   git(r, "add", "-A"); git(r, "commit", "-qm", "the second census arrives");
 }, (r) => !git(r, "show", `HEAD~1:${LIST}`).out.includes("invokers") && git(r, "show", `HEAD:${LIST}`).out.includes("s.sh"));
 
+// ---- THE SEVENTH CENSUS: a live caller running the WRONG runtime for the extension. ----
+// The red arm below carries splice-builder2's ACTUAL slip, character for character, quotes and
+// all: `python3 "$HERE/mock_chat.ts"`. That spelling is the arm's whole value. The first cut of
+// the census matched only an unquoted path, read 0/0 [GATED] on a tree containing that exact
+// line, and was caught here rather than in review — a paraphrased arm (`python3 wall.ts`) passes
+// against the broken regex and would have shipped a census blind to the only form it has ever
+// had to catch. When a defect arrives with a real spelling, the arm gets the real spelling.
+arm("a .sh running a .ts through python3, path QUOTED", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "checks", "mock_chat.ts"), "//\n");
+  writeFileSync(join(r, "inside.sh"), 'HERE=checks\npython3 "$HERE/mock_chat.ts" --port 8080 &\n');
+  writeFileSync(join(r, LIST), list(["a.py"], ["inside.sh"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => readFileSync(join(r, "inside.sh"), "utf8").includes('python3 "$HERE/mock_chat.ts"'));
+
+arm("the same caller with the interpreter fixed", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "checks", "mock_chat.ts"), "//\n");
+  writeFileSync(join(r, "inside.sh"), 'HERE=checks\nbun "$HERE/mock_chat.ts" --port 8080 &\n');
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => readFileSync(join(r, "inside.sh"), "utf8").includes('bun "$HERE/mock_chat.ts"'));
+
+arm("a .sh running a .py through bun", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), "bun a.py\n");
+  writeFileSync(join(r, LIST), list(["a.py"], ["run.sh"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "a.py")));
+
+// THE ARM THAT LICENSES THE WHOLE CENSUS. Over raw text the mismatched form finds five hits on
+// the caller surface and FOUR are notes quoting a command — which is why the existing
+// runtime-vs-extension check was scoped to ledger verify= fields and never widened. Excluding
+// comment lines is what takes it from four false positives to zero, so a green here is not a
+// nicety: without it this census would charge every seat that documented the defect it fixed.
+arm("a COMMENT quoting the wrong-runtime form", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), '# was: python3 "$HERE/mock_chat.ts", fixed in this commit\nbun a.ts\n');
+  writeFileSync(join(r, "a.ts"), "//\n");
+  writeFileSync(join(r, LIST), list(["a.py"], ["run.sh"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => readFileSync(join(r, "run.sh"), "utf8").startsWith("#"));
+
+// ---- THE THIRD DISPOSITION: a caller excused ONLY because the tool it calls is still Python. ----
+// Forced by a real collision: converting the 21 hook scripts to .ts made four of them NEW invokers,
+// purely because they name `python3 .dev/campaigns/manifest.py` — a tool V4-143 has not converted
+// yet. The .py originals named the same string and were invisible only because the invoker census
+// skips .py files. So doing the work reddened the wall.
+//
+// THE RED ARMS BELOW MATTER MORE THAN THE GREEN ONE. An exclusion mechanism is worth exactly what
+// its expiry is worth, and "temporary" allowlists in this repo's history have all been permanent.
+// Each of the three ways this entry can stop being true reds the wall BY NAME.
+const pending = (files: string[], invokers: string[], pendingTools: object[]) =>
+  JSON.stringify({ recorded: "2026-09-18", law: "selftest", files, invokers, pendingTools });
+const entry = (tool: string, callers: string[] = []) => ({ tool, row: "T-9", reason: "selftest", recorded: "2026-09-18", callers });
+
+arm("a .ts caller excused by a pending tool", "green", (r) => {
+  writeFileSync(join(r, "tool.py"), "x\n");
+  writeFileSync(join(r, "caller.ts"), 'spawnSync("python3", ["tool.py", "get"]);\n');
+  writeFileSync(join(r, LIST), pending(["tool.py"], [], [entry("tool.py", ["caller.ts"])]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "tool.py")) && existsSync(join(r, "caller.ts")));
+
+// The control. Without it the arm above proves only that the wall is green, not that the entry is
+// what made it green — the two-lists-agreeing failure applied to the exclusion itself.
+arm("the same caller with NO pending entry", "red", (r) => {
+  writeFileSync(join(r, "tool.py"), "x\n");
+  writeFileSync(join(r, "caller.ts"), 'spawnSync("python3", ["tool.py", "get"]);\n');
+  writeFileSync(join(r, LIST), list(["tool.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !readFileSync(join(r, LIST), "utf8").includes("pendingTools"));
+
+// EXPIRY, the property that makes this a disposition. When V4-143 lands and the tool is gone, every
+// exclusion it granted has to die in the same instant — with no edit to the wall and no seat
+// remembering to do it.
+arm("a pending entry whose tool is GONE", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, LIST), pending(["a.py"], [], [entry("tool.py")]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !existsSync(join(r, "tool.py")));
+
+arm("a pending entry for a tool that was never debt", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "tool.py"), "x\n");
+  writeFileSync(join(r, LIST), pending(["a.py"], [], [entry("tool.py")]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "tool.py")));
+
+// THE NARROWNESS ARM. The strip removes the pending tool's own invocations and nothing else, so a
+// caller that also shells python for its own reasons keeps its charge in full. Without this, one
+// entry would launder every python mention in every file that happens to call the pending tool.
+// THE NARROWNESS ARM, and it is where this mechanism is honest about its limit. The entry NAMES
+// the files it excuses, so a second caller of the same pending tool is charged until somebody adds
+// it deliberately and dates it. That is the property a regex cannot give: `spawnSync("python3",
+// [manifest])` and `spawnSync("python3", ["-c", ...])` are indistinguishable without dataflow, so
+// the boundary is an enumerated list rather than a pattern, and every excused file is PRINTED on
+// every run so the list cannot grow unread.
+arm("a second caller the entry does NOT name", "red", (r) => {
+  writeFileSync(join(r, "tool.py"), "x\n");
+  writeFileSync(join(r, "caller.ts"), 'spawnSync("python3", ["tool.py"]);\n');
+  writeFileSync(join(r, "other.ts"), 'spawnSync("python3", ["tool.py"]);\n');
+  writeFileSync(join(r, LIST), pending(["tool.py"], [], [entry("tool.py", ["caller.ts"])]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "other.ts")));
+
+// A named caller that stopped needing the exclusion is stale in the same way a burn-down line is.
+arm("a named caller that no longer mentions python", "red", (r) => {
+  writeFileSync(join(r, "tool.py"), "x\n");
+  writeFileSync(join(r, "caller.ts"), "export const a = 1;\n");
+  writeFileSync(join(r, LIST), pending(["tool.py"], [], [entry("tool.py", ["caller.ts"])]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !readFileSync(join(r, "caller.ts"), "utf8").includes("python"));
+
 console.log(failures ? `\nFAIL: no-python selftest — ${failures} arm(s)` : "\nOK: no-python selftest — every arm graded a setup it verified");
 process.exit(failures ? 1 : 0);

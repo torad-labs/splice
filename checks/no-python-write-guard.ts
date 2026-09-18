@@ -30,7 +30,12 @@
  * early-warning half, and they share one predicate so neither can drift from the other.
  */
 import { resolve, relative } from "node:path";
-import { ALLOW, SELF, burndown, namesPython } from "./no-python.ts";
+import { existsSync } from "node:fs";
+import { ALLOW, SELF, burndown, mismatchedRuntimes, namesPython, pendingStrip } from "./no-python.ts";
+
+/** The caller surface whose invocations are literal command lines — the same one the wall's
+ *  seventh census reads, so the two halves are the same rule and not two readings of it. */
+const CALLER = /(?:\.sh|\.mjs|package\.json)$/;
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -86,7 +91,33 @@ async function main(): Promise<number> {
     );
   }
 
-  if (namesPython(proposedText(tool, input)) && !invokers.has(rel)) {
+  // BEFORE the invoker exemption below, because the file this actually happens to is a LISTED
+  // invoker: a seat converting wall.py to wall.ts edits the caller, changes the filename and
+  // leaves the interpreter. Being on the invokers list earns an exemption from naming python;
+  // it never earns an exemption from naming it in front of a .ts.
+  const crossed = CALLER.test(rel) ? mismatchedRuntimes(proposedText(tool, input)) : [];
+  if (crossed.length) {
+    block(
+      `REFUSED — wrong runtime for the file's extension.\n\n` +
+        `  ${rel}\n    ` +
+        crossed.join("\n    ") +
+        `\n\nThis is a half-finished conversion: the filename moved and the interpreter did not. It would\n` +
+        `not fail here — the path resolves and the file exists, so every census on the no-python wall\n` +
+        `stays green — it would fail later at run time with a syntax error that reads like a broken\n` +
+        `script rather than a broken call. Change the interpreter to match the extension.`,
+    );
+  }
+
+  // The same third disposition the wall's invoker census applies, and it has to be here too or
+  // the two halves disagree about the same file: a hook module that calls the still-Python
+  // manifest tool would be refused at write time and passed at gate time. Only entries whose
+  // tool still exists AND is still burn-down debt strip anything.
+  let charged = proposedText(tool, input);
+  for (const p of list.pendingTools ?? []) {
+    if (!existsSync(p.tool) || !(list.files ?? []).includes(p.tool)) continue;
+    if (p.callers.includes(rel)) charged = pendingStrip(charged, p.tool);
+  }
+  if (namesPython(charged) && !invokers.has(rel)) {
     block(
       `REFUSED — this repo has no Python; tooling is bun/TypeScript.\n\n` +
         `  ${rel} is not a listed invoker, and this write makes it run or name python.\n\n` +

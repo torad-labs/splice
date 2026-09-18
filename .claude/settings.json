@@ -6,12 +6,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py pretooluse",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.ts pretooluse",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/pretooluse.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/pretooluse.ts",
             "timeout": 10
           },
           {
@@ -28,17 +28,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py stop",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.ts stop",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/stop.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/stop.ts",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/gradle-stop-guard.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/gradle-stop-guard.ts",
             "timeout": 30
           }
         ]
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py stop",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.ts stop",
             "timeout": 30
           }
         ]
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/posttooluse.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/posttooluse.ts",
             "timeout": 10
           }
         ]
@@ -74,7 +74,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/sessionstart.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/sessionstart.ts",
             "timeout": 10
           }
         ]
@@ -86,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/userpromptsubmit.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/userpromptsubmit.ts",
             "timeout": 10
           }
         ]

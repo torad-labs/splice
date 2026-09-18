@@ -56,11 +56,37 @@
   min-width: 0;
 }
 
+/* THE COLUMN SCROLLS ITS STRIPS, because the brief says the strips do not shrink (M1-121).
+   MEASURED at 1536 dark: this column is 384px and holds a 631px strip that ended at x=1743 on a
+   1536 frame with overflow-x visible -- 247.3px past the column's own edge and about 207px of it
+   off the frame entirely, painted where nothing can reach it. fleet and sessions measure 0px past
+   their edges, so this was models alone.
+
+   WHY NOT NARROW THE FIELD GRID, which is the only remedy that would have made this READABLE
+   rather than merely reachable -- ruled out by measuring the labels rather than counting their
+   characters. Both strips carry FOUR cells and all four matter (input/cache read/cache write/
+   output is not a rate card with one removed; head/default/extra/rules is not a window card).
+   After the 53px holder edge this column leaves 331px, so four cells get 82.8px each. The widest
+   label ink plus the cell's own 16px padding needs 93px in the rates strip ("cache write", 77px)
+   and 112px in the window strip ("default window", 96px). Four cells therefore need 425px and
+   501px against 331px available. NARROWING w DOES NOT MAKE THIS READABLE, it moves the clipping
+   out of the strip's right edge and into every label. And no column this console ships is wide
+   enough either: sessions' minmax(320px, 36%) measures 491.7px and turns' 40% is about 503px,
+   both short of the window strip's 501px once its edge is counted.
+
+   SO IT SCROLLS, which is not a fourth idiom but the brief's own sentence, quoted in ui.css:731 --
+   "strips keep fixed field widths in ch units and scroll inside their bay" -- and the reason
+   .myx-sfield carries flex: 0 0 auto at ui.css:393, whose comment says a ch count must never
+   shrink and the bay should scroll instead. This is that rule applied to the box that actually
+   holds these strips. overflow-y is hidden for the same reason .myx-bay-rows hides it: a
+   horizontal scrollport must not grow a vertical one. */
 .myx-models-detail {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* THE SWELL IS THE TRACK, NOT A KEYFRAME (M1-116 rules collapse over unmount). M1-112 mirrored

@@ -7,7 +7,13 @@
   font-size: var(--text-2);
   color: var(--strip-ink);
   background: var(--strip);
-  border: 1px solid var(--hair-strong);
+  /* --hair-strong was never defined, here or at any point in history, and an undefined custom
+     property in a var() with no fallback is invalid at computed-value time -- so this border
+     painted currentColor, not a hairline. The obvious repair, --hairline-strong, would have been
+     wrong the way the Flag was: this box sets background:var(--strip), so it is PAPER, and the
+     hairline tokens are the ROOM's. Paper's line is --strip-field-line, which is what the other
+     81 hairline borders in this tree pair with --hair. */
+  border: var(--hair) solid var(--strip-field-line);
   max-height: 34rem;
   overflow: auto;
 }

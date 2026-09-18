@@ -4,7 +4,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 import { fileURLToPath } from 'node:url';
 
 // Single inlined HTML — the control server serves dist/index.html at / (and
-// /dashboard) with no frontend toolchain. Fonts (Plex Mono woff2) inline as
+// /dashboard) with no frontend toolchain. Fonts (Archivo and JetBrains Mono woff2) inline as
 // data URIs via the assetsInlineLimit; serif faces fall back to system serif
 // to keep it small.
 export default defineConfig({

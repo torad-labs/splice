@@ -9,7 +9,7 @@
 // WHAT IT DOES NOT DO: it subscribes nothing. Entities that refetch on an event do that in their
 // own rows (M3-01); this row builds the transport and proves it with hand-written frames, because
 // the daemon route (V4-126) is still in flight.
-import { control, getStoredKey } from '@shared/api';
+import { getStoredKey, noteUnauthorized } from '@shared/api';
 import { backoffMs, parseFrames } from '@shared/lib/live';
 import type { EventFrame, EventKind } from '@shared/lib/live';
 import { eventsStore } from '../model/store';
@@ -107,11 +107,10 @@ async function loop(): Promise<void> {
       const res = await fetch(STREAM_PATH, { headers, signal: controller.signal });
 
       if (res.status === 401) {
-        // The management key is stale. The LOCK and the listener the shell's gate reacts to both
-        // live in the shared client, so the 401 is handed to it rather than re-implemented here:
-        // one small read whose only job is to let the client see what the stream just saw. A
-        // stream that armed its own lock would be a second lock that the key gate could not clear.
-        void control.status().catch(() => undefined);
+        // The management key is stale. The lock and the listener the shell's gate reacts to both
+        // live in the shared client, so the stream hands it the 401 rather than arming a second
+        // lock of its own: a lock the key gate did not own is one the gate could not clear.
+        noteUnauthorized();
         running = false;
         eventsStore.set({ status: 'off' });
         return;

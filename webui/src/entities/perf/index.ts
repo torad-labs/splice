@@ -30,6 +30,7 @@ export type {
   TurnRow,
   TurnsState,
 } from './model/types';
+export { LIVE_KINDS } from './model/live';
 export const usePerf = perfStore.use;
 export const usePerfSummary = perfSummaryStore.use;
 export const usePerfTurns = perfTurnsStore.use;

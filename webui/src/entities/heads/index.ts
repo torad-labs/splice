@@ -19,4 +19,5 @@ export type {
   HeadState,
   ProviderFamily,
 } from './model/derive';
+export { LIVE_KINDS } from './model/live';
 export const useHeads = headsStore.use;

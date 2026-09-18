@@ -21,6 +21,7 @@ import { startAuthPolling, useAuth } from '@entities/auth';
 import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
 import { useRestartPending } from '@entities/config';
 import { connect, useEvents } from '@entities/events';
+import { wireLive } from './wire';
 import type { ConnectionStatus } from '@entities/events';
 import { timeAgo } from '@shared/lib';
 import { Figure, HolderEdge } from '@shared/ui';
@@ -160,7 +161,13 @@ export function Rule() {
     // the surface that prints the connection; connect() is idempotent, so whoever else asks for it
     // gets the same one stream.
     connect();
-    return () => stops.forEach((stop) => stop());
+    // The entities follow the stream from here: one subscription per (entity, kind), refetching
+    // through each entity's own api. See wire.ts for why the wiring is not inside the entities.
+    const unwire = wireLive();
+    return () => {
+      stops.forEach((stop) => stop());
+      unwire();
+    };
   }, []);
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
@@ -181,13 +188,20 @@ export function Rule() {
         <HolderEdge state={health} label={S.health[health]} />
       </div>
 
-      <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} />
+      {/* The four signal cells FLOW in the band after the measured identity cells. A fixed slot
+          per cell was tried first and cannot work: the band is exactly as wide as its content, so
+          reserving one slot for a cell that is usually empty (a pending restart) made three other
+          cells clip by 4 to 32 pixels. Flowing them means every cell is as wide as what it prints,
+          and nothing clips whatever the connection word or the window happens to be. */}
+      <div className="myx-rule-signals">
+        <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} />
 
-      <PendingRestartCell pending={pendingRestart} />
+        <PendingRestartCell pending={pendingRestart} />
 
-      <WindowCell usage={usage} auth={auth} />
+        <WindowCell usage={usage} auth={auth} />
 
-      <NoneCell usage={usage} />
+        <NoneCell usage={usage} />
+      </div>
     </header>
   );
 }

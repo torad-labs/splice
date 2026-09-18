@@ -146,7 +146,7 @@ run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
 # substring (V4-29). Fields are enumerated by parsing every shared *Quirks primary constructor on
 # disk, so a field added tomorrow is in scope without editing the checker; there is no allowlist.
 run "shared-quirks no vendor defaults" bun checks/config/shared-quirks-no-vendor-defaults.ts check .
-run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defaults.py --selftest
+run "shared-quirks selftest" bun checks/config/shared-quirks-no-vendor-defaults.ts --selftest
 # V4-44: the OTHER half of the same surface. The check above keeps a VENDOR FACT out of a shared
 # dialect default; this one keeps a quirk KEY from drifting away from its documentation. The
 # denominator is parsed from QuirksConfig.kt — the keys an operator may write under

@@ -78,12 +78,38 @@ function tracked(): string[] {
  *  what teaches the next session which language this repo writes tooling in. */
 const SELF = new Set([ALLOW, "checks/no-python.ts", "checks/no-python-selftest.ts"]);
 
+/** Does this text RUN or NAME python?
+ *
+ *  The wall's own NAME is not a python reference, and on 2026-09-18 that distinction
+ *  was the difference between a green gate and a red one. webui/.impeccable/review/
+ *  ink/sweep-d7.mjs is the PORT AWAY FROM PYTHON — its header explains that the repo
+ *  runs no Python and that the prose teaching it goes stale in silence, which is the
+ *  rule stated correctly — and the only lowercase `python` anywhere in it is the
+ *  phrase "the no-python rule". A hyphen is not a word character, so `\bpython\b`
+ *  matched inside the rule's own name and charged the file as an invoker. Every other
+ *  mention in it is capitalized prose about the language's history and never matched.
+ *
+ *  So the wall was failing the act of COMPLYING with it, which is worse than a plain
+ *  false positive: the remedy it suggested was to un-write the sentence explaining the
+ *  port. Fix-the-gate, not reword-the-file.
+ *
+ *  THIS IS A NARROWING, SO IT IS MEASURED RATHER THAN ARGUED — a wall that quietly
+ *  stops charging real invokers is the exact failure this whole campaign is named for.
+ *  Across all 79 charged files, excluding the literal `no-python` drops EXACTLY ONE:
+ *  sweep-d7.mjs, the false positive. The other 78 keep their charge, because every one
+ *  of them names python for a reason that survives deleting the rule's name from the
+ *  text. It cannot become a dodge either: a file that actually invokes `python3` still
+ *  matches on that token no matter how often it also writes "no-python". */
+function namesPython(text: string): boolean {
+  return /\bpython3?\b/.test(text.replaceAll("no-python", ""));
+}
+
 function invokers(): string[] {
   return gitLs()
     .filter((f) => !f.endsWith(".py") && !SELF.has(f))
     .filter((f) => {
       try {
-        return /\bpython3?\b/.test(readFileSync(f, "utf8"));
+        return namesPython(readFileSync(f, "utf8"));
       } catch {
         return false; // a binary or unreadable blob invokes nothing
       }
@@ -116,6 +142,114 @@ function invokers(): string[] {
  *  session WROTE, never what a package manager unpacked. */
 function untracked(): string[] {
   return gitLs("--others", "--exclude-standard", "*.py");
+}
+
+/** THE FOURTH CENSUS: a CALLER that outlived the file it calls.
+ *
+ *  This leg exists because the wall was green on 2026-09-18 while the gate of
+ *  record was red, and it was green for the most ordinary reason there is.
+ *  checks/config/shared-quirks-no-vendor-defaults was converted to .ts; the
+ *  burn-down line was removed, the .py was deleted, the .ts ran its check, its
+ *  report and its selftest byte-identically to the .py on both streams. Every
+ *  arm above passed, correctly. But checks/gate.sh named that script on TWO
+ *  lines — a `check .` leg and a `--selftest` leg — and only the first was
+ *  converted. The second still read `python3 ...py --selftest`, so the gate's
+ *  own invocation failed with "No such file or directory", exit 2.
+ *
+ *  Both the builder and the orchestrator had called the row green. Neither was
+ *  careless: each had verified the FILES against each other, and neither had
+ *  verified the WIRING. That is the whole family this campaign is about — a
+ *  check that returns green while measuring the wrong thing — so the remedy is
+ *  a census, not a reminder.
+ *
+ *  THE STALE ARM ABOVE IS THE SAME HALF-MIGRATION SEEN FROM THE OTHER SIDE. It
+ *  catches a burn-down LINE that outlived its file. This catches a CALL SITE
+ *  that outlived its file. A conversion has to satisfy both to land, which is
+ *  what makes "I updated the one invocation I remembered" fail loudly instead
+ *  of silently.
+ *
+ *  NO ALLOWLIST, deliberately: a caller naming a file that does not exist is
+ *  never a state worth recording, only one worth fixing.
+ *
+ *  SCOPE AND ITS ONE ASSUMPTION, measured rather than asserted. It reads every
+ *  tracked .sh, .mjs and package.json — 45 literal invocations today, 40 of
+ *  them in shell, 5 in package.json, 0 in .mjs — and resolves each path from
+ *  the REPO ROOT, which is the house convention and how the gate runs. A script
+ *  that invoked a sibling by a path relative to its own directory would be a
+ *  false positive; there are none today, and the honest reading of a red here
+ *  is "go look", not "the path is wrong". Interpolated paths are invisible to
+ *  it, which is a limit of the instrument and not a pass. */
+const INVOCATION = /(?:python3|bun)\s+([A-Za-z0-9_./-]+\.(?:py|ts))/g;
+
+function dangling(): string[] {
+  const out = new Set<string>();
+  for (const caller of gitLs("*.sh", "*.mjs", "package.json")) {
+    let text: string;
+    try {
+      text = readFileSync(caller, "utf8");
+    } catch {
+      continue; // a path git tracks but the worktree lacks is the stale arm's business, not this one
+    }
+    for (const [, target] of text.matchAll(INVOCATION)) {
+      if (!existsSync(target)) out.add(`${caller} -> ${target}`);
+    }
+  }
+  return [...out].sort();
+}
+
+/** THE FIFTH CENSUS: a ledger instruction that names a file the burn-down is about to delete.
+ *
+ *  Asked for by splice-builder2 on 2026-09-18, from a shape it found that the fourth
+ *  census cannot see BY CONSTRUCTION. The fourth grades call sites against what exists,
+ *  so it catches a caller that is ALREADY broken. builder2 found the form one move
+ *  earlier: proxy-hardening.toml's INF-01 carries `verify = "python3 ...inf_01....py"`
+ *  while the wall registry already names the .ts. Nothing is broken, because the .py
+ *  still exists. It breaks the moment the conversion deletes it — inside a commit about
+ *  a different wall, which is the worst place for a failure to first appear.
+ *
+ *  ONLY ROWS THAT WILL ACTUALLY RUN ARE GRADED, and that boundary is the whole design.
+ *  A `verify` on a done/verified row is a HISTORICAL RECORD of the gate that ran when
+ *  the row landed; a todo/in_flight row's `verify` is an INSTRUCTION that has not run
+ *  yet. Measured 2026-09-18 across every tracked campaign ledger: 12 verify strings name
+ *  a .py that no longer exists, and all 12 sit on done/verified rows — DR-187, V4-26,
+ *  V4-29, V4-31, V4-92, V4-122 and the rest are records of conversions that have already
+ *  happened. Charging those would demand rewriting the record of what was run, which is
+ *  falsifying history to make a wall green, so they are deliberately out of scope. On
+ *  rows that will run, the count today is ZERO — and the three todo rows INF-01, INF-02
+ *  and INF-04 are each exactly one deletion away from entering it.
+ *
+ *  It reads the ledgers as TEXT rather than through the CLI on purpose: the CLI is the
+ *  only WRITE channel (campaign law), and a wall that had to boot the write path to take
+ *  a reading would be a checker with a side effect. */
+function staleVerifies(): string[] {
+  const out: string[] = [];
+  for (const ledger of gitLs(".dev/campaigns/*.toml")) {
+    let text: string;
+    try {
+      text = readFileSync(ledger, "utf8");
+    } catch {
+      continue;
+    }
+    for (const block of text.split(/^\[\[items\]\]$/m).slice(1)) {
+      const status = block.match(/^status\s*=\s*"([^"]+)"/m)?.[1] ?? "";
+      if (status !== "todo" && status !== "in_flight") continue;
+      const id = block.match(/^id\s*=\s*"([^"]+)"/m)?.[1] ?? "(unidentified row)";
+      const quoted = block.match(/^verify\s*=\s*(?:"""([\s\S]*?)"""|"((?:[^"\\]|\\.)*)")/m);
+      const verify = quoted ? (quoted[1] ?? quoted[2] ?? "") : "";
+      // .py ONLY, and the asymmetry is load-bearing rather than lazy. A live row may
+      // legitimately name a .ts that does not exist yet, because the row is what CREATES
+      // it — that is declare-then-earn working, not a dangling reference. This census
+      // charged exactly three such forward declarations the first time it ran (V4-143 ->
+      // manifest.ts, V4-144 -> test_orchestrator.ts, M2-08 -> tests/teams.test.ts) and
+      // every one was correct ledger authorship. A missing .py can never be that: the
+      // burn-down only shrinks, so no row is ever permitted to bring a new .py into
+      // existence, and a live verify naming one that is gone is unambiguously stale.
+      for (const target of new Set(verify.match(/[A-Za-z0-9_./-]+\.py\b/g) ?? [])) {
+        if (!existsSync(target)) out.push(`${ledger} ${id} [${status}] -> ${target}`);
+      }
+    }
+  }
+  return out.sort();
 }
 
 function burndown(): Burndown {
@@ -163,11 +297,35 @@ function main(): number {
   const runners = invokers();
   const allowedInvokers = list.invokers ?? [];
   const scratch = untracked();
+  const broken = dangling();
+  const willRun = staleVerifies();
 
   console.log(`NO-PYTHON WALL — burn-down recorded ${list.recorded || "(none)"}`);
   console.log(`  tracked .py files                  measured ${String(measured.length).padStart(4)}   allowed ${String(list.files.length).padStart(4)}   [GATED]`);
   console.log(`  files that RUN or name python      measured ${String(runners.length).padStart(4)}   allowed ${String(allowedInvokers.length).padStart(4)}   [GATED]`);
   console.log(`  UNTRACKED .py in the worktree      measured ${String(scratch.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+  console.log(`  call sites naming a missing file   measured ${String(broken.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+  console.log(`  live ledger verify= gone missing   measured ${String(willRun.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+
+  if (willRun.length) {
+    problems.push(
+      `LEDGER VERIFY NAMES A MISSING FILE: ${willRun.length} row(s) that have NOT run yet carry a verify command ` +
+        `naming a script that does not exist. Unlike a done/verified row — whose verify is a record of what ran, ` +
+        `and is deliberately not graded here — these are instructions, and each one will fail the moment someone ` +
+        `runs the row. Repoint it with the manifest CLI's edit-verify, in the SAME commit that converted the ` +
+        `script, because the gap between the two is where this defect lives:\n    ` + willRun.join("\n    "),
+    );
+  }
+
+  if (broken.length) {
+    problems.push(
+      `DANGLING INVOCATION: ${broken.length} call site(s) name a script that does not exist. A conversion ` +
+        `deleted the file and left a caller pointing at it, so the leg fails at run time with "No such file or ` +
+        `directory" while every census above reports a clean burn-down. Repoint the call at the .ts — and grep ` +
+        `for the stem before you report, because a converted script usually has more than one call site and the ` +
+        `one you remember is not the one that breaks:\n    ` + broken.join("\n    "),
+    );
+  }
 
   if (scratch.length) {
     problems.push(

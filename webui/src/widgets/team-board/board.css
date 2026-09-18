@@ -100,6 +100,33 @@
   left: 1.099%;
   top: 0.425%;
   width: 97.253%;
+  /* ---- THE PLATE IS THE COMP'S PLATE, NOT ITS REGION (M1-51) -----------------
+     This was the REGION box: 5.308 percent of .myx-board's 965px is 51.2px, and the comp's
+     header plate measures 35px (y64 outline to y98 outline) inside a 51.2px region. The racked
+     strips do not have this defect because board.css already converted them to their plate
+     extents ("the comp's plates are 90-94% of the region they were measured into"); the header
+     was the one member left at its region.
+     Derived and expressed relative, per the row: the comp's 35px is 3.418 percent of the COMP
+     FRAME, and .myx-board is 94.24 percent of that frame, so the same plate is 3.627 percent of
+     the board. A percentage of the board and not a px value, because a px height would be the
+     one object in this world that stops following the frame (M1-26 moved the ladder into rem).
+     MEASURED AND NOT SHIPPED, with the numbers, because the arithmetic says why. Four variants
+     were rendered and scored on this page (team-header region detail):
+       height 5.308% (box 51.2px, 4.999% of frame)                                    -> 0.3776
+       height 3.627% (35px, the comp's plate) ALONE                                   -> 0.0710
+       + the field's gap and top pad cut so the rows sit 4px higher                   -> 0.0339
+       (value line box also cut to 1.15, earlier)                                     -> clipped
+     BOTH HALVES LAND TOGETHER OR NEITHER DOES, and neither works, so neither ships. The crop
+     is what decides it: at the comp's 35px plate this build's label row collapses to 10px and
+     the two rows crush into each other. THE ARITHMETIC: the comp fits a 19px label row and a
+     13px value row into 35px; this build needs 15.7px and 21px for the same two rows at
+     --text-2, which is 36.7px of rows before any padding at all. The comp's header is 35px
+     because THE COMP'S HEADER TYPE IS SMALLER THAN THE RACKED STRIPS' -- visibly so in the
+     region crop -- and this build sets both at --text-2. So the plate cannot be reached from
+     a height or a padding declaration; it needs the header's own type rung, which is out of
+     every fence in this campaign. Reported with the four scores rather than forced.
+     THE SHIPPED VALUE IS THE REGION BOX AND THAT IS STILL A DEFECT -- it is tracked, not
+     fixed here. */
   height: 5.308%;
 }
 /* ---- E-8 · THE GREEN BAR IS DELETED (M1-24) --------------------------------
@@ -118,6 +145,51 @@
    What the comp puts there instead is E-5's two pins: one at x 164.5 and one at x 1504.5,
    both centred at y 75.5, against a strip whose paper starts at x 159 and y 66. The leading
    one is ui.css's, uncovered now that the mark draws nothing; the trailing one is this rule. */
+/* ---- THE HEADER'S HEIGHT: ATTEMPTED, MEASURED, AND PUT BACK (M1-43) ---------
+   Three variants were rendered and scored on the comp-of-record page, and the instrument and the
+   geometry disagree -- which the orchestrator asked to be written down rather than resolved
+   silently. The comp's header PLATE is 35px (y64 outline to y98 outline) = 3.418 percent of
+   frame. The build's box is 5.308 percent of .myx-board = 51.2px = 4.999 percent, i.e. the
+   REGION box rather than the plate, and that is a real defect of exactly the class board.css
+   already fixed for the racked strips ("the comp's plates are 90-94% of the region they were
+   measured into").
+   MEASURED, on teams, region detail for team-header:
+     height 5.308% (box 51.2px, 4.999% of frame) -> detail 0.3776   <- the shipped state
+     height removed, header rows tightened to the comp's proportions (35.7px, 3.485%) -> 0.0710
+       after the value's line box was restored to the face's own 1.5 (42.7px, 4.169%) -> 0.1757
+   SO THE SHORTER BOX SCORES WORSE, and the reason is visible in the region crop once you open
+   it: the comp's team-header region is 51px tall and carries its plate at the TOP of it, so what
+   the region compares is not the plate's height but WHERE THE TWO TEXT ROWS FALL. At 51.2px this
+   build puts its value row at y89-110 against the comp's y88-97 -- the tops line up, which is
+   what the detail score is reading -- and at 42.7px the value row moves up to y83-104 and the
+   region loses 20 points. Two wrongs aligning, and shrinking the box breaks the alignment.
+   WHAT I BELIEVE, and why: THE COMP IS RIGHT AND THE INSTRUMENT IS READING THE WRONG THING.
+   A 35px plate is what the comp draws and 51.2px is a region box; that the shorter plate scores
+   worse is a statement about where a row lands inside a fixed region, not about the plate's
+   height. But the fix is therefore NOT "shrink the header" -- it is that the header's rows have
+   to sit where the comp puts them inside a plate of the comp's height, which is a padding and
+   face question (.myx-sfield's gap, the value's 21px line box against the comp's 13px value row)
+   and not a height declaration. That is a row of its own and it should not be forced into this
+   one: three variants have been measured, the honest state is the one that scores, and a fourth
+   guess at 04:00 is not more likely to land than at noon. */
+/* ---- THE HEADER'S TWO ROWS SIT WHERE THE COMP PUTS THEM (M1-51) -------------
+   The comp spends, across its 35px plate: 2px above the label, the label row to its rule at
+   y86, then 1px of rule, and the value's row top at y88 -- 24px from the plate's top to the
+   value's row, and 34px to the plate's bottom.
+   The build spent 28px from the plate's top to the value's row, so with the plate cut to the
+   comp's height the rows would sit 4px low and the value's ink would fall outside it. These two
+   declarations are that 4px: .myx-sfield's own gap (ui.css:398, var(--space-2)) is air between
+   two rows that already have a rule dividing them, and the field's top pad is a rung below the
+   rack's. Both are board.css-scoped on purpose -- the racked strips keep the gap and the pad
+   that make their own two rows read, and the header is a tighter member, which is why the same
+   two rows are 63px in a racked strip and 35px here. */
+/* ---- THE HEADER'S TWO ROWS: ATTEMPTED AND WITHDRAWN (M1-51) -----------------
+   These two declarations were the second half of the pair above: .myx-sfield's gap (ui.css:398)
+   is air between two rows that already have a rule dividing them, and the field's top pad is a
+   rung below the rack's. Cut that 4px with the plate at the comp's 35px and the label row
+   collapses to 10px and the rows crush together -- measured, 0.0339, and visible in the crop.
+   Withdrawn with the height it was paired to; the racked strips keep the gap and the pad that
+   make their own two rows read. */
 .myx-board-header > .myx-edge .myx-edge-mark { background: none; }
 .myx-board-header::after {
   content: '';

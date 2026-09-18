@@ -137,7 +137,7 @@ run "config-guard selftest" bash checks/config-guard-selftest.sh
 # reasoned exemption; an undispositioned sink fails BY NAME. DR-73 swept this class by hand and
 # its denominator was files rather than sinks, so UsageRingFile's write half kept a raw render for
 # another eight days (DR-139) — a hand sweep closes the instance, a checker closes the class.
-run "safe-failure-render" python3 checks/config/safe-failure-render.py check .
+run "safe-failure-render" bun checks/config/safe-failure-render.ts check .
 run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
 # V4-29: a non-null default on a SHARED dialect's quirks is inherited by every provider that does
 # not override it, so a vendor fact parked there rides to other vendors' endpoints. Two defects

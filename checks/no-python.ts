@@ -341,6 +341,79 @@ function staleVerifies(): string[] {
   return out.sort();
 }
 
+/** THE SIXTH CENSUS: the burn-down may only SHRINK, and until now that was only prose.
+ *
+ *  FOUND BY MUTATION-TESTING THIS WALL END TO END on 2026-09-18, against a scratch copy
+ *  of HEAD, walking the three moves a session actually makes when it wants a green gate:
+ *
+ *    1. write a new .py into the worktree            -> RED (untracked census)
+ *    2. `git add` it, to look tidy                   -> RED (NEW PYTHON census)
+ *    3. add its path to the burn-down list           -> GREEN.
+ *
+ *  Step 3 passed. Two of the five censuses print, in their own failure text, "Do NOT add
+ *  the file to checks/config/python-burndown.json — growing it is the violation this wall
+ *  exists to catch" — and nothing enforced that sentence. The rule lived where every rule
+ *  in this repo used to live before the wall existed: in prose, addressed to a reader who
+ *  has every incentive to skip it. A wall whose last line of defence is a comment asking
+ *  you not to edit the allowlist is the same shape as the drift it was built to stop, and
+ *  step 3 is the CHEAPEST of the three moves, so it is the one a session under pressure
+ *  reaches for.
+ *
+ *  THE DENOMINATOR IS GIT, NOT THE FILE. Reading today's list to decide whether today's
+ *  list grew is the tautology law 24 names. The baseline is the list AS FIRST COMMITTED —
+ *  `git log --diff-filter=A` for the path, then that revision's bytes — so the comparison
+ *  is against a record no working copy can edit. Current must be a SUBSET of birth, in
+ *  both `files` and `invokers`. Shrinking is always allowed and is the entire point;
+ *  growth by even one line fails by name.
+ *
+ *  A LEGITIMATE-LOOKING GROWTH IS STILL GROWTH. Moving a .py to a new path, or noticing
+ *  one the baseline missed, both want a new line, and both are refused here on purpose:
+ *  the first is Python being reorganised rather than converted, and the second is a file
+ *  the NEW PYTHON census is already reporting, whose remedy is the conversion. If the
+ *  operator ever genuinely needs to re-baseline, that is a deliberate, dated, reviewable
+ *  act — re-record the file and say why in the commit — not something a gate should make
+ *  frictionless at 3am. */
+function burndownGrowth(): string[] {
+  // EACH ARRAY GETS ITS OWN BIRTH, and the first cut of this census got that wrong in a
+  // way worth keeping: it took the FILE's first commit as the baseline for both keys and
+  // charged all 77 invokers as growth. `invokers` was added days after `files` — it is
+  // the second census, written once the first read a triumphant 90 while 29 .sh files
+  // shelled into python3 — so at the file's birth that key did not exist, and "absent"
+  // read as "never allowed". A ratchet whose baseline predates the thing it measures
+  // reports the measurement itself as the violation.
+  const log = spawnSync("git", ["log", "--format=%H", "--reverse", "--", ALLOW], { encoding: "utf8" });
+  if (log.status !== 0) return []; // no history here (a fresh fixture tree): the censuses above still gate.
+  const revs = log.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+  const now = burndown();
+  const out: string[] = [];
+  for (const key of ["files", "invokers"] as const) {
+    const today = now[key] ?? [];
+    if (!today.length) continue;
+    let base: string[] | undefined;
+    let baseRev = "";
+    for (const rev of revs) {
+      const shown = spawnSync("git", ["show", `${rev}:${ALLOW}`], { encoding: "utf8" });
+      if (shown.status !== 0) continue;
+      let v: Burndown;
+      try {
+        v = JSON.parse(shown.stdout) as Burndown;
+      } catch {
+        continue; // a revision nobody can parse cannot be a baseline; keep walking forward.
+      }
+      const arr = v[key];
+      if (Array.isArray(arr) && arr.length) {
+        base = arr;
+        baseRev = rev;
+        break;
+      }
+    }
+    if (!base) continue; // this key has never been committed with content: nothing to ratchet against yet.
+    const was = new Set(base);
+    for (const entry of today) if (!was.has(entry)) out.push(`${key}: ${entry} (not in the list as first recorded at ${baseRev.slice(0, 8)})`);
+  }
+  return out.sort();
+}
+
 function burndown(): Burndown {
   if (!existsSync(ALLOW)) {
     console.error(`no-python: ${ALLOW} missing — the wall has no burn-down list to grade against`);
@@ -388,6 +461,7 @@ function main(): number {
   const scratch = untracked();
   const broken = dangling();
   const willRun = staleVerifies();
+  const grown = burndownGrowth();
 
   console.log(`NO-PYTHON WALL — burn-down recorded ${list.recorded || "(none)"}`);
   console.log(`  tracked .py files                  measured ${String(measured.length).padStart(4)}   allowed ${String(list.files.length).padStart(4)}   [GATED]`);
@@ -395,6 +469,18 @@ function main(): number {
   console.log(`  UNTRACKED .py in the worktree      measured ${String(scratch.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
   console.log(`  call sites naming a missing file   measured ${String(broken.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
   console.log(`  live ledger verify= gone missing   measured ${String(willRun.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+  console.log(`  burn-down lines ADDED since birth  measured ${String(grown.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+
+  if (grown.length) {
+    problems.push(
+      `THE BURN-DOWN GREW: ${grown.length} entry(ies) are in ${ALLOW} that were not there when it was first ` +
+        `recorded. This list may only SHRINK. Adding a line is how a new .py gets past every other census on ` +
+        `this wall — it is the cheapest way to a green gate and therefore the one that gets taken — so it is ` +
+        `graded against the list AS FIRST COMMITTED in git, which no working copy can edit. Delete the line and ` +
+        `convert the file to .ts. Moving a .py to a new path is refused here too: that is Python being ` +
+        `reorganised rather than converted:\n    ` + grown.join("\n    "),
+    );
+  }
 
   if (willRun.length) {
     problems.push(

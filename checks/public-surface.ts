@@ -246,9 +246,10 @@ function sourceText(root: string, module: string, ...subs: string[]): [string, s
     const directory = join(root, GRADLE_ROOT_REL, module.replace(/^:/, ""), sub);
     if (!existsSync(directory)) continue;
     const pattern = new Bun.Glob("**/*.kt");
-    // followSymlinks, because python's pathlib.rglob descends through a symlinked directory and
-    // Bun.Glob does not by default. Measured on this repo's own harness shape: a symlinked module
-    // yields its files only with this flag, and the census silently reads zero without it.
+    // followSymlinks, because the recursive glob this census was ported from descends through a
+    // symlinked directory and Bun.Glob does not by default. Measured on this repo's own harness
+    // shape: a symlinked module yields its files only with this flag, and the census silently
+    // reads zero without it.
     const files = [...pattern.scanSync({ cwd: directory, followSymlinks: true })].sort();
     for (const rel of files) {
       const full = join(directory, rel);

@@ -28,10 +28,19 @@ import splice.spi.UpstreamClient
 import splice.spi.Waiter
 
 /** Was `HeadDeps.DEFAULT_MAX_REQUEST_BYTES` / `HeadDeps.DEFAULT_REQUEST_READ_TIMEOUT_MS`
- *  (companion consts); same names, now at file scope in the same package. */
-public const val DEFAULT_MAX_REQUEST_BYTES: Int = 8 * 1024 * 1024
+ *  (companion consts); same names, now at file scope in the same package.
+ *
+ *  V4-150: `internal`, which is the module boundary stated rather than a narrowing. These are DEFAULTS
+ *  for two members of the [HeadDeps.HeadPolicy] bundle and nothing outside :gateway ever named them —
+ *  the only other consumer is HeadServerFailureBranchTest, in this module's own test source set, where
+ *  `internal` is visible. Unlike the five declarations V4-104 had to keep, these are CONSTANTS and not
+ *  types, so the inference escape does not apply: a default expression is not part of a signature, and
+ *  no consumer can bind one by inference. The compiler is the judge of that and it agrees — a public
+ *  value parameter defaulting to an internal const is legal Kotlin, which is exactly what makes these
+ *  two burnable where the others were not. */
+internal const val DEFAULT_MAX_REQUEST_BYTES: Int = 8 * 1024 * 1024
 
-public const val DEFAULT_REQUEST_READ_TIMEOUT_MS: Long = 30_000
+internal const val DEFAULT_REQUEST_READ_TIMEOUT_MS: Long = 30_000
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(

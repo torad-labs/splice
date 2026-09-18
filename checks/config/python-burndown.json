@@ -24,7 +24,6 @@
     ".claude/hooks/tests/test_one_committer.py",
     ".claude/hooks/tests/test_orchestrator.py",
     "checks/autocloseable-closed.py",
-    "checks/catalog-metadata-sync.py",
     "checks/concentration.py",
     "checks/config/ast-grep-rule-docs.py",
     "checks/config/concentration-leg-routed.py",

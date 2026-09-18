@@ -64,7 +64,7 @@ echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
 # Dependabot edits the catalog but cannot regenerate verification metadata, so gradle bumps used
 # to arrive red six minutes into the gradle leg (#91). State the same fact statically, first and
 # in under a second, with the regeneration remedy attached. Selftest guards the checker itself.
-run "catalog metadata sync" python3 checks/catalog-metadata-sync.py
+run "catalog metadata sync" bun checks/catalog-metadata-sync.ts
 run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
 # --no-build-cache is CORRECTNESS here, not paranoia. Kotlin's compile-avoidance ABI snapshot does
 # not track `internal` members, so changing an `internal fun interface`'s method signature does not

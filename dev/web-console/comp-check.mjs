@@ -54,7 +54,19 @@ import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
 import { FIXTURES, urlFor as fixtureUrl } from './lib/fixtures.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
-const FRAMES = [[1536, 1024]];
+// The comp's own frame, and the default because every constant here was measured on it.
+//
+// It was spelled `FRAMES = [[1536, 1024]]` until 2026-09-18 and only `FRAMES[0]` was ever read —
+// generality that looked like multi-frame support and was not. M1-33 found what that cost: nothing
+// in the milestone exit gate rendered at a second frame, so every finding of the 3840 blind pass
+// (13.7% paper coverage, 9px ink on knob names, 801px voids in the rule bar) passed all nine legs.
+// The operator's monitors are 3840x2160 and the console was checked at 1536 for two days.
+//
+// A constant is still only COMPARED against the comp at the comp's frame — the comp is 1536x1024
+// and a delta against it at another size would be a number about the scalar, not about the build.
+// What a second frame buys is the rest of the run: the text roles, the box measures and the
+// overflow they expose are real at any size, and that is where the 3840 defects live.
+const DEFAULT_FRAME = [1536, 1024];
 
 // ---------------------------------------------------------------------- the comp
 
@@ -221,11 +233,25 @@ const CONSTANTS = [
   // measured against the bay's own width (the plate is centred on the rack, not pinned to its left
   // edge — the comp's two bays put it at 45.0% and 47.0% of their widths, so the band is 2 points
   // and the tolerance is the box's 1 point around the first).
+  // BAY-CLAUDE on both sides, corrected 2026-09-18 (found by design-builder on M1-24).
+  //
+  // This compared two DIFFERENT BAYS and had done since it was written: the comp side read
+  // bay-DEEPSEEK's plate (45.45% of its rack) while `got` takes the FIRST bay in the DOM, which is
+  // bay-claude. It therefore failed on all thirteen pages with the build correct — the comp's own
+  // bay-claude plate sits at 47.14% and the build renders 47.13%.
+  //
+  // It is worth naming what the failure looked like, because it is the reason it survived: a
+  // constant that is red everywhere reads as a real world-wide defect, and a red row nobody can
+  // fix eventually gets a punch-list entry instead of an audit. The tell was that the delta never
+  // moved no matter what anyone did to the bays.
+  //
+  // The two bays genuinely differ (45.45% and 47.14%), so there is no single number here and no
+  // averaging it: the comp side must name the bay the `got` side reads.
   { id: 'bay.label-centre', kind: 'box',
-    comp: () => ((pct('bay-deepseek-label', 'x') + pct('bay-deepseek-label', 'w') / 2 - pct('bay-deepseek', 'x')) / pct('bay-deepseek', 'w')) * 100,
+    comp: () => ((pct('bay-claude-label', 'x') + pct('bay-claude-label', 'w') / 2 - pct('bay-claude', 'x')) / pct('bay-claude', 'w')) * 100,
     got: (m) => { const bay = m.bays.find((b) => b.labelCentre !== null && b.labelCentre !== undefined);
       return bay ? bay.labelCentre : null; },
-    note: 'comp bays put the plate at 45.0% and 47.0% of the rack width' },
+    note: 'first bay in the DOM against the comp\'s first bay; the comp\'s two bays differ (47.1% and 45.5%)' },
   // The rack's rails: spec.json carries the bay as a region whose rails the comp's crop shows as
   // hairlines, but carries no rail WIDTH, so the rule is the shape rather than a number: a bay with
   // no top and bottom rail did not apply the comp.
@@ -295,20 +321,38 @@ const fmt = (value, kind) => {
 /** Record one constant. `fails` is the verdict rule: the tolerance by default, and a named rule
  *  where the comp carries a shape rather than a number (a bay whose rail is missing). */
 function record(address, id, kind, compValue, gotValue, note, fails) {
-  const numeric = typeof compValue === 'number' && typeof gotValue === 'number'
-    && Number.isFinite(compValue) && Number.isFinite(gotValue);
-  const delta = numeric ? gotValue - compValue : null;
-  const failed = compValue === null
+  // An absolute-pixel constant is compared against the comp's value SCALED BY THE FRAME, not
+  // dropped and not compared raw.
+  //
+  // Raw would be wrong: since M1-26 the root tracks the viewport, so the comp's 10.9px cap is a
+  // CORRECT 27.25px cap at 3840 and failing it there measures the scalar rather than the build.
+  // Dropping it would be worse, and was this function's first draft tonight — it would have taken
+  // the only rows that can see ink-too-small and made them invisible at exactly the frame where
+  // the operator's 9px labels live. The whole finding of 2026-09-18 is that the console was
+  // measured at 1536 and used at 3840; a check that stops measuring type at 3840 re-creates it.
+  //
+  // Scaled is also the sharper test, because it is M1-26's own claim stated as an assertion: the
+  // console at any viewport IS the comp frame's render scaled. A cap that holds its ratio passes
+  // at every size; one that was pinned in px fails here and nowhere else.
+  const absolute = kind === 'px' || kind === 'cap';
+  const ratio = width / DEFAULT_FRAME[0];
+  const target = compValue !== null && absolute && !atComp ? compValue * ratio : compValue;
+  const tolerance = absolute && !atComp ? TOLERANCE[kind].limit * ratio : TOLERANCE[kind]?.limit;
+  const comparable = typeof target === 'number' && typeof gotValue === 'number'
+    && Number.isFinite(target) && Number.isFinite(gotValue);
+  const delta = comparable ? gotValue - target : null;
+  const failed = target === null
     ? (fails === undefined ? false : fails(gotValue))
-    : (numeric ? Math.abs(delta) > TOLERANCE[kind].limit : true);
+    : (comparable ? Math.abs(delta) > tolerance : true);
   if (failed) failures.push(`${address} ${id}`);
+  const scaledHere = absolute && !atComp && compValue !== null;
   rows.push({
     address, id,
-    comp: compValue === null ? 'comp n/a' : `comp ${fmt(compValue, kind)}`,
+    comp: target === null ? 'comp n/a' : `comp ${fmt(target, kind)}`,
     got: gotValue === null || gotValue === undefined ? 'got n/a' : `got ${fmt(gotValue, kind)}`,
     delta: delta === null ? '' : `delta ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`,
-    verdict: compValue === null && fails === undefined ? 'comp n/a' : failed ? 'FAIL' : 'ok',
-    note,
+    verdict: target === null && fails === undefined ? 'comp n/a' : failed ? 'FAIL' : 'ok',
+    note: scaledHere ? `${note ? `${note}; ` : ''}comp value scaled ${ratio}x for this frame` : note,
   });
 }
 
@@ -351,10 +395,19 @@ function report(measurement, address) {
 const [, , ...flags] = process.argv;
 const wantsHelp = flags.includes('--help');
 const wantsList = flags.includes('--list');
-const only = flags.find((f) => !f.startsWith('--'));
+// Flags that take a value. Without this set the value is also the first non-`--` token, so
+// `--frame 3840x2160` silently became the ADDRESS and the run measured a nonexistent page while
+// printing a clean-looking table — caught by running it rather than by reading it, one edit after
+// adding the flag. `--address` was in the usage text and never implemented for the same reason:
+// its value was landing in the positional slot and working by accident.
+const VALUED = new Set(['--frame', '--address']);
+const valueOf = (name) => flags.find((f) => f.startsWith(`${name}=`))?.slice(name.length + 1)
+  ?? (flags.includes(name) ? flags[flags.indexOf(name) + 1] : undefined);
+const positional = flags.filter((f, i) => !f.startsWith('--') && !(i > 0 && VALUED.has(flags[i - 1])));
+const only = valueOf('--address') ?? positional[0];
 
 if (wantsHelp) {
-  console.log(`usage: node dev/web-console/comp-check.mjs [--list] [--address <name>] [--json]
+  console.log(`usage: node dev/web-console/comp-check.mjs [--list] [--address <name>] [--json] [--frame WxH]
 
 Measures the approved comp's own constants on the live console, address by address, and fails by
 name on any delta outside the tolerance that constant is held to.
@@ -364,7 +417,13 @@ Constants (${CONSTANTS.length} geometry + ${TEXT_ROLES.length} text roles):
 ${[...CONSTANTS.map((c) => c.id), ...TEXT_ROLES.map((r) => r.id)].map((id) => `  ${id}`).join('\n')}
 
 Tolerances: box ${TOLERANCE.box.limit}% of frame, cap ${TOLERANCE.cap.limit}px, family and scale exact.
-Exit 0 when every measured constant is inside its tolerance, 1 when any is not.`);
+Exit 0 when every measured constant is inside its tolerance, 1 when any is not.
+
+--frame renders at another viewport, default ${DEFAULT_FRAME.join('x')} which is the comp's own.
+Away from the comp's frame the absolute-pixel rows (px, cap) print as \`scaled\` and do not fail —
+since M1-26 the root tracks the viewport, so those values are SUPPOSED to move — while every
+percentage-of-frame and count row is compared exactly as it is at 1536. Those are the rows that
+should hold at any size, and at 3840x2160 they are the ones that do not.`);
   process.exit(0);
 }
 
@@ -375,7 +434,22 @@ if (wantsList) {
 }
 
 const list = only === undefined ? addresses() : [only];
-const [width, height] = FRAMES[0];
+
+// --frame WxH, defaulting to the comp's own. Refused rather than silently defaulted when it does
+// not parse: a gate that asked for 3840x2160 and quietly measured 1536x1024 would report a clean
+// run at a frame it never rendered, which is the failure this flag exists to end.
+const frameFlag = valueOf('--frame');
+const [width, height] = frameFlag === undefined
+  ? DEFAULT_FRAME
+  : (() => {
+      const m = /^(\d{3,5})x(\d{3,5})$/.exec(frameFlag);
+      if (m === null) {
+        console.error(`REFUSED: --frame ${frameFlag} is not WxH (e.g. 3840x2160). A frame that does not parse would silently measure ${DEFAULT_FRAME.join('x')}.`);
+        process.exit(2);
+      }
+      return [Number(m[1]), Number(m[2])];
+    })();
+const atComp = width === DEFAULT_FRAME[0] && height === DEFAULT_FRAME[1];
 const urlFor = (address) => fixtureUrl(address);
 await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
   for (const address of list) {
@@ -403,6 +477,9 @@ for (const row of rows) {
 }
 
 const compared = rows.filter((row) => row.comp.startsWith('comp ') && row.comp !== 'comp n/a').length;
-console.log(`\n${list.length} addresses, ${rows.length} rows, ${compared} compared against the comp, ${failures.length} outside tolerance`);
-for (const failure of failures) console.error(`FAIL ${failure}`);
+const scaled = rows.filter((row) => (row.note ?? '').includes('comp value scaled')).length;
+// The frame is in the summary line because the gate runs this twice and two identical-looking
+// clean runs at one size is exactly the report M1-33 found the gate was giving.
+console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list.length} addresses, ${rows.length} rows, ${compared} compared against the comp${scaled ? `, ${scaled} px rows compared against a ${(width / DEFAULT_FRAME[0])}x-scaled comp value` : ''}, ${failures.length} outside tolerance`);
+for (const failure of failures) console.error(`FAIL ${width}x${height} ${failure}`);
 process.exit(failures.length === 0 ? 0 : 1);

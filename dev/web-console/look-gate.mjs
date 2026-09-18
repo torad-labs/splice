@@ -32,6 +32,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { mgmtKey, shoot, show, withChrome } from './lib/cdp.mjs';
 
 const ARGS = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -291,10 +292,19 @@ function stripScanlines(im, x0, x1) {
 
 function checkFieldGrid(capturesDir) {
   const files = (() => { try { return fs.readdirSync(path.join(ROOT, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
-  if (files.length === 0) return record('field-grid', true, true, `skipped: no captures in ${capturesDir}`);
+  if (files.length === 0) return record('field-grid', true, true, `DID NOT RUN: no captures in ${capturesDir}`);
+  // FRESHNESS, PER FILE (M1-68; the build leg's dist/index.html rule, applied to the capture
+  // set). A capture older than the source it claims to measure is not evidence about the current
+  // build, so it is SKIPPED AND COUNTED rather than judged -- and rather than taking the whole
+  // leg down with it, which is what a leg-wide rule did on the first run of this: eight fresh
+  // captures were refused because nineteen stale ones shared their directory.
+  const bar = newestSourceMtime();
+  let staleCount = 0;
   const bad = [];
   let checked = 0, skipped = 0, unthemed = 0;
   for (const f of files) {
+    let mtime = 0; try { mtime = fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { mtime = 0; }
+    if (mtime < bar) { staleCount++; continue; }
     const im = pixels(path.join(ROOT, capturesDir, f));
     if (!im) { skipped++; continue; }
     const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
@@ -324,7 +334,8 @@ function checkFieldGrid(capturesDir) {
   }
   const detail = (bad.length ? bad.join(' · ') : `aligned on ${checked} captures`)
     + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
-    + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '');
+    + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '')
+    + (staleCount ? ` · ${staleCount} skipped (older than webui/src, so not evidence about this build)` : '');
   if (checked === 0) return record('field-grid', true, true, `skipped: ${detail}`);
   return record('field-grid', true, bad.length === 0, detail);
 }
@@ -384,6 +395,103 @@ function fieldProbe(declareAs, drawIn) {
   return findings[0];
 }
 
+
+// ------------------------------------------------- the captures this gate judges (M1-68)
+
+/** THE GATE PRODUCES WHAT IT JUDGES. It read `webui/.impeccable/review/sections`, a directory it
+ *  did not produce and nothing tracked (gitignored): measured 2026-09-18, the twelve PNGs there
+ *  were dated 03:31-04:19 against a 12:25 run -- eight hours and about forty commits stale,
+ *  including every tonal, rail, rung and token change landed in between. So every tonal and
+ *  grid finding this gate printed all night described a build that no longer existed, in the
+ *  confident voice of a measurement.
+ *  THE SET, decided and recorded rather than taken cheaply. THIRTEEN ADDRESSES x DARK x
+ *  1536x1024, because that is what the twelve stale files were trying to be (the comp of record
+ *  is a 1536x1024 dark frame) and because it is the set every other instrument in this campaign
+ *  is calibrated at. LIGHT IS EXCLUDED ON EVIDENCE, not on cost: law 32, every light finding
+ *  produced before 12:40 on 2026-09-18 is suspect because look.mjs named and printed a theme
+ *  its browser sessions never seeded, and seeding a state and rendering it are different
+ *  claims. 3840 IS EXCLUDED ON COST: it quadruples the runtime for a frame the comp is not
+ *  drawn at, and the exit gate runs this on every milestone. The address list is read from the
+ *  shell's own table for gate.mjs's own reason -- a fourteenth address must appear here without
+ *  an edit, and a list written out in this file cannot fail for one missing from itself. */
+const ADDRESSES_FILE = 'webui/src/app/rows.ts';
+const CAPTURE_THEME = 'dark';
+const CAPTURE_FRAME = [1536, 1024];
+
+function addresses() {
+  const src = readIf(ADDRESSES_FILE);
+  if (src === null) return null;
+  const block = src.match(/export const ADDRESSES = \[([\s\S]*?)\] as const;/);
+  if (block === null) return null;
+  return [...block[1].matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
+}
+
+/** Capture the set into CAPTURES with the gate's own `<address>-<theme>-<w>x<h>.png` naming,
+ *  immediately before judging it. Returns the count and the measured runtime. */
+async function captureSet(dir) {
+  const list = addresses();
+  if (list === null) return { ok: false, detail: `${ADDRESSES_FILE}: the ADDRESSES table was not found` };
+  fs.mkdirSync(path.join(ROOTREF.root, dir), { recursive: true });
+  const [w, h] = CAPTURE_FRAME;
+  const started = Date.now();
+  let wrote = 0;
+  try {
+    await withChrome({ 'myx-mgmt-key': mgmtKey(), 'splice.theme': CAPTURE_THEME }, async (send) => {
+      for (const address of list) {
+        const file = path.join(ROOTREF.root, dir, `${address}-${CAPTURE_THEME}-${w}x${h}.png`);
+        await show(send, `http://localhost:5173/#/${address}`, w, h);
+        // PROVE THE ROOM TOOK before trusting the filename: law 32 -- look.mjs named and printed
+        // a theme its sessions never seeded, and seeding a state is not rendering it. The page's
+        // own background is read back from the render, and a capture that did not come back in
+        // the room it claims is not written at all.
+        const room = await send('Runtime.evaluate', { returnByValue: true, expression: 'getComputedStyle(document.documentElement).colorScheme' });
+        if (room.result.value !== CAPTURE_THEME) return;
+        await shoot(send, file);
+        wrote++;
+      }
+    });
+  } catch (e) {
+    return { ok: false, detail: `capture failed after ${wrote} file(s): ${e.message}` };
+  }
+  const ms = Date.now() - started;
+  if (wrote !== list.length) return { ok: false, detail: `captured ${wrote} of ${list.length} (the room did not take)` };
+  return { ok: true, count: wrote, ms, detail: `${wrote} captures in ${(ms / 1000).toFixed(1)}s (${(ms / wrote / 1000).toFixed(1)}s each)` };
+}
+
+/** THE FRESHNESS RULE, and it outlives this row. A check that reads an artifact it did NOT
+ *  produce must compare that artifact's mtime against the thing it claims to measure and say
+ *  DID NOT RUN when the artifact is older. The build leg in exit-gate.mjs has done exactly this
+ *  for dist/index.html since it was written ("dist/index.html is older than this run: the build
+ *  did not rewrite it"); the captures never got the same treatment. Here the thing they claim
+ *  to measure is the console's own source, so the newest mtime under webui/src is the bar. */
+function newestSourceMtime() {
+  let newest = 0;
+  const walk = (d) => {
+    let ents; try { ents = fs.readdirSync(path.join(ROOTREF.root, d), { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const rel = path.join(d, e.name);
+      if (e.isDirectory()) walk(rel);
+      else if (/\.(css|tsx|ts)$/.test(e.name)) {
+        try { const m = fs.statSync(path.join(ROOTREF.root, rel)).mtimeMs; if (m > newest) newest = m; } catch { /* unreadable */ }
+      }
+    }
+  };
+  walk(SRC);
+  return newest;
+}
+function staleCaptures(dir) {
+  let files; try { files = fs.readdirSync(path.join(ROOTREF.root, dir)).filter((f) => f.endsWith('.png')); } catch { return null; }
+  if (files.length === 0) return { files: [], stale: 0, oldest: null };
+  const bar = newestSourceMtime();
+  let stale = 0, oldest = Infinity, oldestName = null;
+  for (const f of files) {
+    let m; try { m = fs.statSync(path.join(ROOTREF.root, dir, f)).mtimeMs; } catch { continue; }
+    if (m < oldest) { oldest = m; oldestName = f; }
+    if (m < bar) stale++;
+  }
+  return { files, stale, oldest, oldestName, bar };
+}
+
 function selftest() {
   // §24: a gate that has never failed is a tautology. Each check is run against a synthetic
   // violation and must FAIL, then against a compliant form and must PASS.
@@ -430,6 +538,26 @@ function selftest() {
 // ---------------------------------------------------------------- main
 
 if (has('selftest')) selftest();
+
+// ---- THE CAPTURES THIS GATE JUDGES (M1-68). It produces them, then checks they are not older
+// than the source they claim to measure. A run that cannot capture (no dev server) is a
+// DID NOT RUN for every capture-reading check, never a pass -- law 23, and the same shape the
+// build leg uses when dist/index.html is older than the run.
+let CAPTURE_NOTE = 'captures not produced this run';
+if (!has('no-capture')) {
+  const result = await captureSet(CAPTURES);
+  CAPTURE_NOTE = result.ok ? result.detail : `DID NOT RUN: ${result.detail}`;
+  if (!result.ok) process.stderr.write(`  ! captures: ${result.detail}\n`);
+} else {
+  CAPTURE_NOTE = 'captures not produced (--no-capture)';
+}
+const freshness = staleCaptures(CAPTURES);
+if (freshness && freshness.stale > 0) {
+  process.stderr.write(`  ! captures: ${freshness.stale} of ${freshness.files.length} are older than webui/src (oldest ${freshness.oldestName})\n`);
+}
+// THE SET AND ITS COST, in the output rather than in a note (M1-68): the row that chose the set
+// has to state what it cost, and a reader has to be able to see it without opening the ledger.
+record('capture-set', false, true, `${CAPTURE_NOTE} · set: ${(addresses() || []).length} addresses x ${CAPTURE_THEME} x ${CAPTURE_FRAME.join('x')} · freshness bar: newest mtime under ${SRC}`);
 
 const files = cssFiles(SRC);
 checkLadderSteps(readIf(TOKENS) || '');

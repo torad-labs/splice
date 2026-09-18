@@ -88,7 +88,10 @@ public class UpstreamTransport {
      * healthy here. It is a weaker instrument than TCP keepalive, which is why keepalive is the
      * preferred route and this is the fallback (V4-141 carries the engine work).
      */
-    public fun reachabilityProbe(url: String, timeoutMs: Long = PROBE_TIMEOUT_MS): ProviderProbe = ProviderProbe {
+    public fun reachabilityProbe(
+        url: String,
+        timeoutMs: Long = REACHABILITY_PROBE_TIMEOUT_MS,
+    ): ProviderProbe = ProviderProbe {
         val target = probeTarget(url) ?: return@ProviderProbe true
         try {
             Socket().use { socket -> socket.connect(target, timeoutMs.toInt()) }
@@ -152,7 +155,17 @@ private const val CONNECT_TIMEOUT_MS = 10_000L
 // round is parked past its idle tier, so a long probe would delay the very decision it exists to
 // inform; and a timeout is treated as inconclusive rather than as death, so being impatient here
 // costs nothing but a poll.
-private const val PROBE_TIMEOUT_MS = 3_000L
+//
+// NAMED FOR ITS CALLER, not for "a probe" (2026-09-18). This was PROBE_TIMEOUT_MS, which made it the
+// FIFTH file to spell that name and tripped const-single-source's collision ratchet against a
+// recorded baseline of four. The four are not one number copied around — they are 400 in
+// DaemonLock, 400 in DaemonHealth, 400 in ControlPlaneClient and 5_000 in TurnPathProbeLoop — so the
+// hazard the ratchet is naming is real and is about READING, not linking: five private consts cannot
+// collide at the language level, but a reader who has seen PROBE_TIMEOUT_MS twice assumes the third
+// is the same number, and here it would be wrong by 7.5x. Unifying them would be worse than the
+// disease, since these are four unrelated probes with genuinely different budgets. So the growth is
+// removed by giving this one the name of the single function that reads it.
+private const val REACHABILITY_PROBE_TIMEOUT_MS = 3_000L
 
 // The port a provider URL without an explicit one means. Tencent/Anthropic-style upstreams are all
 // https, and the probe is a TCP connect, so the scheme only decides this number.

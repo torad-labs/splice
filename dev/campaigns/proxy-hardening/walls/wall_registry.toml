@@ -29,7 +29,7 @@ wall = "dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.ts"
 [[item]]
 id = "NF-01"
 phase = "W1-bounded-failure"
-wall = "dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.py"
+wall = "dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.ts"
 
 [[item]]
 id = "NF-02"
@@ -39,32 +39,32 @@ wall = "dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.ts"
 [[item]]
 id = "NF-03"
 phase = "W1-bounded-failure"
-wall = "dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.py"
+wall = "dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.ts"
 
 [[item]]
 id = "NF-04"
 phase = "W1-bounded-failure"
-wall = "dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.py"
+wall = "dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.ts"
 
 [[item]]
 id = "NF-06"
 phase = "W1-bounded-failure"
-wall = "dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.py"
+wall = "dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.ts"
 
 [[item]]
 id = "SH-06"
 phase = "W1-bounded-failure"
-wall = "dev/campaigns/proxy-hardening/walls/sh_06_credential_lock_bounded.py"
+wall = "dev/campaigns/proxy-hardening/walls/sh_06_credential_lock_bounded.ts"
 
 [[item]]
 id = "SH-01"
 phase = "W2-auth-lifecycle"
-wall = "dev/campaigns/proxy-hardening/walls/sh_01_missing_expiry_synthesized.py"
+wall = "dev/campaigns/proxy-hardening/walls/sh_01_missing_expiry_synthesized.ts"
 
 [[item]]
 id = "SH-02"
 phase = "W2-auth-lifecycle"
-wall = "dev/campaigns/proxy-hardening/walls/sh_02_refresh_ineffective_guard.py"
+wall = "dev/campaigns/proxy-hardening/walls/sh_02_refresh_ineffective_guard.ts"
 
 [[item]]
 id = "SH-04"
@@ -75,17 +75,17 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_04_auth_probe_supervised.ts"
 id = "SH-10"
 phase = "W2-auth-lifecycle"
 # The Muse entry delegates Kimi's scan and selftest, then enforces Muse with the same detector.
-wall = "dev/campaigns/proxy-hardening/walls/sh_10_muse_merge_never_rewrite.py"
+wall = "dev/campaigns/proxy-hardening/walls/sh_10_muse_merge_never_rewrite.ts"
 
 [[item]]
 id = "SH-11"
 phase = "W2-auth-lifecycle"
-wall = "dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.py"
+wall = "dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.ts"
 
 [[item]]
 id = "SH-12"
 phase = "W2-auth-lifecycle"
-wall = "dev/campaigns/proxy-hardening/walls/sh_12_mgmtkey_loud_remint.py"
+wall = "dev/campaigns/proxy-hardening/walls/sh_12_mgmtkey_loud_remint.ts"
 
 [[item]]
 id = "SH-14"
@@ -95,7 +95,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_14_daemon_log_rotate_selfheals.ts
 [[item]]
 id = "JW-01"
 phase = "W3-see-the-daemon"
-wall = "dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.py"
+wall = "dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.ts"
 
 [[item]]
 id = "JW-02"
@@ -110,7 +110,7 @@ wall = ""
 [[item]]
 id = "JW-04"
 phase = "W3-see-the-daemon"
-wall = "dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py"
+wall = "dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.ts"
 
 [[item]]
 id = "JW-05"
@@ -120,12 +120,12 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.ts"
 [[item]]
 id = "JW-06"
 phase = "W3-see-the-daemon"
-wall = "dev/campaigns/proxy-hardening/walls/jw_06_perhead_config_visible.py"
+wall = "dev/campaigns/proxy-hardening/walls/jw_06_perhead_config_visible.ts"
 
 [[item]]
 id = "JW-08"
 phase = "W3-see-the-daemon"
-wall = "dev/campaigns/proxy-hardening/walls/jw_08_splice_logs_verb.py"
+wall = "dev/campaigns/proxy-hardening/walls/jw_08_splice_logs_verb.ts"
 
 [[item]]
 id = "JW-13"
@@ -135,17 +135,17 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_13_port_collision_preflight.ts"
 [[item]]
 id = "JW-17"
 phase = "W3-see-the-daemon"
-wall = "dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.py"
+wall = "dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.ts"
 
 [[item]]
 id = "CX-01"
 phase = "W4-correctness-walls"
-wall = "dev/campaigns/proxy-hardening/walls/cx_01_tool_args_validated.py"
+wall = "dev/campaigns/proxy-hardening/walls/cx_01_tool_args_validated.ts"
 
 [[item]]
 id = "CX-02"
 phase = "W4-correctness-walls"
-wall = "dev/campaigns/proxy-hardening/walls/cx_02_compaction_is_a_turn.py"
+wall = "dev/campaigns/proxy-hardening/walls/cx_02_compaction_is_a_turn.ts"
 
 [[item]]
 id = "CX-04"
@@ -170,12 +170,12 @@ wall = "dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.ts"
 [[item]]
 id = "CX-11"
 phase = "W4-correctness-walls"
-wall = "dev/campaigns/proxy-hardening/walls/cx_11_is_error_structured.py"
+wall = "dev/campaigns/proxy-hardening/walls/cx_11_is_error_structured.ts"
 
 [[item]]
 id = "CX-18"
 phase = "W4-correctness-walls"
-wall = "dev/campaigns/proxy-hardening/walls/cx_18_usage_aliases.py"
+wall = "dev/campaigns/proxy-hardening/walls/cx_18_usage_aliases.ts"
 
 [[item]]
 id = "CX-20"

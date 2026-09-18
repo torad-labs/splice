@@ -2,7 +2,7 @@
 # checks/role-registry-selftest.sh — red-green proof for the role registry (V4-89), against BOTH
 # fixtures and the REAL tree.
 #
-# WHY A SECOND SELFTEST when role-registry.py already has --selftest. The python selftest proves the
+# WHY A SECOND SELFTEST when role-registry.ts already has --selftest. The checker selftest proves the
 # LOGIC on hand-built temp trees: it can say "a third name joining a dispositioned group is red"
 # without ever reading a line of splice. That is necessary and not sufficient, because every claim
 # it makes is about a tree it wrote itself. The claim this file adds is about REALITY: that the
@@ -15,7 +15,7 @@
 # WHAT IT ENCODES — a control that MUST be green, then fixtures that must each be red FOR THEIR
 # STATED REASON. A fixture that goes red for the wrong reason has stopped testing anything:
 #
-#   A  control  the python fixture selftest passes
+#   A  control  the checker fixture selftest passes
 #   B  control  the real tree with a FULLY-dispositioned config is GREEN  <- the green path, proven
 #              against reality rather than against a fixture
 #   1  the real tree with the SHIPPED config is red with EXACTLY the three duplicate names
@@ -23,11 +23,11 @@
 #   3  UNREASONED a shipped entry's reason blanked -> red, and its names stop being accounted for
 #   4  ABSENCE  a shipped entry deleted -> every name under it red BY NAME
 #   5  STALENESS a name added to `names` that no interface carries -> red BY NAME
-#   6  DENOMINATOR the python census equals ast-grep's independent AST census, and is non-zero
+#   6  DENOMINATOR the checker census equals ast-grep independent AST census, and is non-zero
 #
 # EVERYTHING RUNS OUT OF TREE, on the concentration-selftest.sh pattern: a mktemp -d holding a COPY
-# of the checker and of the disposition file, plus one SYMLINK per gateway module. role-registry.py
-# derives its ROOT from its own __file__, so the copy under $tmp/checks measures $tmp — it reads the
+# of the checker and of the disposition file, plus one SYMLINK per gateway module. The checker
+# derives its ROOT from its own module URL, so the copy under $tmp/checks measures $tmp — it reads the
 # real sources through the symlinks while every mutation lands on a throwaway. Nothing is ever
 # written into gateway/ or checks/, and the working tree is not touched at all.
 set -uo pipefail
@@ -40,7 +40,7 @@ fail=0
 err() { echo "  ✗ role-registry-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-CHECKER="$tmp/checks/role-registry.py"
+CHECKER="$tmp/checks/role-registry.ts"
 CONFIG="$tmp/checks/config/role-registry.toml"
 SYNTH_DIR="$tmp/gateway/zz-selftest-role/src/main/kotlin/splice/selftest"
 
@@ -54,14 +54,14 @@ done
 [ -e "$tmp/gateway/core" ] || { echo "  ✗ role-registry-selftest: no gateway modules found under $ROOT"; exit 1; }
 
 reset() {
-  cp "$ROOT/checks/role-registry.py" "$CHECKER"
+  cp "$ROOT/checks/role-registry.ts" "$CHECKER"
   cp "$ROOT/checks/config/role-registry.toml" "$CONFIG"
   rm -rf "$tmp/gateway/zz-selftest-role"
 }
 reset
 
 rc=0
-run_check() { python3 "$CHECKER" "$tmp" >"$tmp/out" 2>&1; rc=$?; }
+run_check() { bun "$CHECKER" "$tmp" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then
@@ -74,8 +74,8 @@ must_fail() { # must_fail <label> <substring the failure must name>
 }
 
 # ── A. control: the fixture selftest ─────────────────────────────────────────────────────────────
-if ! python3 "$ROOT/checks/role-registry.py" --selftest >"$tmp/out" 2>&1; then
-  err "CONTROL A: python --selftest must pass: $(tail -6 "$tmp/out" | tr '\n' ' ')"
+if ! bun "$ROOT/checks/role-registry.ts" --selftest >"$tmp/out" 2>&1; then
+  err "CONTROL A: --selftest must pass: $(tail -6 "$tmp/out" | tr '\n' ' ')"
 else
   note "✓ CONTROL A: the fixture selftest passes"
 fi
@@ -143,15 +143,15 @@ reset
 # ── 3. UNREASONED: a shipped entry's reason blanked ──────────────────────────────────────────────
 # The entry is still present, still lists every name, still dated. Only the words are gone, which
 # is the "absence wearing a label" this wall is built to refuse.
-python3 - "$CONFIG" <<'PY'
-import pathlib, re, sys
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-at = text.index('signature = "(Thread)->Unit"')
-start = text.index('reason = """', at)
-end = text.index('"""', start + len('reason = """'))
-path.write_text(text[:start] + 'reason = """   """' + text[end + 3:])
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const text = fs.readFileSync(path, "utf8");
+const at = text.indexOf("signature = \"(Thread)->Unit\"");
+const start = text.indexOf("reason = \"\"\"", at);
+const end = text.indexOf("\"\"\"", start + "reason = \"\"\"".length);
+fs.writeFileSync(path, text.slice(0, start) + "reason = \"\"\"   \"\"\"" + text.slice(end + 3));
+' "$CONFIG"
 run_check
 must_fail "3. UNREASONED — a reason blanked to whitespace" "carries no reason"
 grep -q "(Thread)->Unit" "$tmp/out" ||
@@ -159,16 +159,16 @@ grep -q "(Thread)->Unit" "$tmp/out" ||
 reset
 
 # ── 4. ABSENCE: a shipped entry deleted outright ─────────────────────────────────────────────────
-python3 - "$CONFIG" <<'PY'
-import pathlib, sys
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-at = text.index('signature = "(Thread)->Unit"')
-start = text.rindex("[[groups]]", 0, at)
-nxt = text.find("[[groups]]", at)
-end = len(text) if nxt < 0 else nxt
-path.write_text(text[:start] + text[end:])
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const text = fs.readFileSync(path, "utf8");
+const at = text.indexOf("signature = \"(Thread)->Unit\"");
+const start = text.lastIndexOf("[[groups]]", at);
+const nxt = text.indexOf("[[groups]]", at);
+const end = nxt < 0 ? text.length : nxt;
+fs.writeFileSync(path, text.slice(0, start) + text.slice(end));
+' "$CONFIG"
 run_check
 must_fail "4. ABSENCE — a dispositioned group's entry deleted" "NO DISPOSITION: ShutdownHookAdd"
 grep -q "NO DISPOSITION: ShutdownHookRemove " "$tmp/out" ||
@@ -178,15 +178,15 @@ reset
 # ── 5. STALENESS: a name in `names` that no interface carries ────────────────────────────────────
 # This is the arm that detects the FIX row's success: the moment ElapsedNow is deleted from the
 # tree, an entry still listing it must go red rather than quietly keep a dead exemption.
-python3 - "$CONFIG" <<'PY'
-import pathlib, sys
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-at = text.index('signature = "(Thread)->Unit"')
-names_at = text.index("names = [", at)
-close = text.index("]", names_at)
-path.write_text(text[:close] + '    "SelftestVanishedRole",\n' + text[close:])
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const text = fs.readFileSync(path, "utf8");
+const at = text.indexOf("signature = \"(Thread)->Unit\"");
+const namesAt = text.indexOf("names = [", at);
+const close = text.indexOf("]", namesAt);
+fs.writeFileSync(path, text.slice(0, close) + "    \"SelftestVanishedRole\",\n" + text.slice(close));
+' "$CONFIG"
 run_check
 must_fail "5. STALENESS — a disposition naming an interface that no longer exists" "STALE DISPOSITION"
 grep -q "SelftestVanishedRole" "$tmp/out" ||
@@ -199,30 +199,19 @@ reset
 if ! command -v ast-grep >/dev/null 2>&1; then
   err "6. DENOMINATOR — ast-grep is unavailable, so the independent census cannot run"
 else
-  python3 - "$ROOT/checks/role-registry.py" "$ROOT" >"$tmp/denominator" 2>&1 <<'PY'
-import importlib.util, pathlib, sys
-
-spec = importlib.util.spec_from_file_location("role_registry_denominator", sys.argv[1])
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-root = pathlib.Path(sys.argv[2]).resolve()
-roles, problems = module.collect(root)
-external, detail = module.denominator(root)
-problems = list(problems)
-if external < 0:
-    problems.append(f"the independent census could not be taken: {detail}")
-elif external == 0:
-    problems.append("the independent census found ZERO fun interfaces — refusing a vacuous agreement")
-elif external != len(roles):
-    problems.append(
-        f"regex census {len(roles)} != AST census {external} — one of the two is wrong, and a "
-        "denominator nobody can reproduce is not a denominator"
-    )
-for problem in problems:
-    print(problem)
-print(f"census: regex {len(roles)}, {detail}")
-sys.exit(1 if problems else 0)
-PY
+  bun -e '
+const mod = await import(process.argv[1]);
+const root = process.argv[2];
+const { roles, problems: collectProblems } = mod.collect(root);
+const { count: external, detail } = mod.denominator(root);
+const problems = [...collectProblems];
+if (external < 0) problems.push(`the independent census could not be taken: ${detail}`);
+else if (external === 0) problems.push("the independent census found ZERO fun interfaces — refusing a vacuous agreement");
+else if (external !== roles.length) problems.push(`regex census ${roles.length} != AST census ${external} — one of the two is wrong, and a denominator nobody can reproduce is not a denominator`);
+for (const problem of problems) console.log(problem);
+console.log(`census: regex ${roles.length}, ${detail}`);
+process.exit(problems.length ? 1 : 0);
+' "$ROOT/checks/role-registry.ts" "$ROOT" >"$tmp/denominator" 2>&1
   if [ "$?" -ne 0 ]; then
     err "6. DENOMINATOR — $(tail -3 "$tmp/denominator" | tr '\n' ' ')"
   else

@@ -34,7 +34,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-CHECKER="$ROOT/checks/model-catalogs-single-source.py"
+CHECKER="$ROOT/checks/model-catalogs-single-source.ts"
 EXAMPLE="config/splice.example.toml"
 CATALOG="gateway/app/src/main/kotlin/splice/app/cli/AddProfileCatalog.kt"
 STARTER="gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt"
@@ -52,7 +52,7 @@ reset_tree() {
 }
 
 rc=0
-wall() { python3 "$CHECKER" check "$tmp/tree" >"$tmp/out" 2>&1; rc=$?; }
+wall() { bun "$CHECKER" check "$tmp/tree" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then
@@ -78,16 +78,16 @@ fi
 # also proves the constant resolution is live: if the parser had hardcoded windows, this is the
 # mutation that would sail through.
 reset_tree
-python3 - "$tmp/tree/$CATALOG" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-s = p.read_text(encoding="utf-8")
-before = s
-s = s.replace("WINDOW_200K = 200_000L", "WINDOW_200K = 199_999L", 1)
-if s == before:
-    sys.exit("MUTATION-NOT-APPLIED: WINDOW_200K constant not found")
-p.write_text(s, encoding="utf-8")
-PY
+# The harness mutates with bun rather than an inline heredoc for the retired interpreter, so this
+# file stops being an invoker at all. `bun -e '<script>' ARG` puts ARG at process.argv[1].
+bun -e '
+const fs = require("fs");
+const p = process.argv[1];
+const before = fs.readFileSync(p, "utf8");
+const after = before.replace("WINDOW_200K = 200_000L", "WINDOW_200K = 199_999L");
+if (after === before) { console.error("MUTATION-NOT-APPLIED: WINDOW_200K constant not found"); process.exit(1); }
+fs.writeFileSync(p, after);
+' "$tmp/tree/$CATALOG"
 if [ $? -ne 0 ]; then err "1 — mutation could not be applied to the real catalog copy"; else
   wall
   must_fail "1 catalog window drift (WINDOW_200K 200000 -> 199999)" "declares context_window 199999"
@@ -95,17 +95,17 @@ fi
 
 # ── 2. a context window edited in the real TopologyLoader DEFAULT_TOML ─────────────────────────
 reset_tree
-python3 - "$tmp/tree/$STARTER" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-s = p.read_text(encoding="utf-8")
-before = s
-s = s.replace('id = "meta-llama/llama-4-maverick"\nlabel = "Llama 4 Maverick"\ncontext_window = 1048576',
-              'id = "meta-llama/llama-4-maverick"\nlabel = "Llama 4 Maverick"\ncontext_window = 131072', 1)
-if s == before:
-    sys.exit("MUTATION-NOT-APPLIED: the llama-4-maverick starter row not found")
-p.write_text(s, encoding="utf-8")
-PY
+bun -e '
+const fs = require("fs");
+const p = process.argv[1];
+const before = fs.readFileSync(p, "utf8");
+const after = before.replace(
+  "id = \"meta-llama/llama-4-maverick\"\nlabel = \"Llama 4 Maverick\"\ncontext_window = 1048576",
+  "id = \"meta-llama/llama-4-maverick\"\nlabel = \"Llama 4 Maverick\"\ncontext_window = 131072",
+);
+if (after === before) { console.error("MUTATION-NOT-APPLIED: the llama-4-maverick starter row not found"); process.exit(1); }
+fs.writeFileSync(p, after);
+' "$tmp/tree/$STARTER"
 if [ $? -ne 0 ]; then err "2 — mutation could not be applied to the real starter copy"; else
   wall
   must_fail "2 DEFAULT_TOML window drift (llama-4-maverick 1048576 -> 131072)" "declares context_window 131072"
@@ -116,26 +116,27 @@ fi
 # Deleting it from the source must make BOTH emitters go red on that id — the arm that proves the
 # example is the denominator rather than a third opinion.
 reset_tree
-python3 - "$tmp/tree/$EXAMPLE" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-s = p.read_text(encoding="utf-8")
-lines = s.split("\n")
-out, i, dropped = [], 0, False
-while i < len(lines):
-    if lines[i].strip() == "[[providers.openrouter.models]]" and i + 1 < len(lines) \
-            and lines[i + 1].startswith('id = "z-ai/glm-5.3"'):
-        i += 1
-        while i < len(lines) and not lines[i].startswith("["):
-            i += 1
-        dropped = True
-        continue
-    out.append(lines[i])
-    i += 1
-if not dropped:
-    sys.exit("MUTATION-NOT-APPLIED: the z-ai/glm-5.3 example row not found")
-p.write_text("\n".join(out), encoding="utf-8")
-PY
+bun -e '
+const fs = require("fs");
+const p = process.argv[1];
+const lines = fs.readFileSync(p, "utf8").split("\n");
+const out = [];
+let i = 0;
+let dropped = false;
+while (i < lines.length) {
+  if (lines[i].trim() === "[[providers.openrouter.models]]" && i + 1 < lines.length &&
+      lines[i + 1].startsWith("id = \"z-ai/glm-5.3\"")) {
+    i += 1;
+    while (i < lines.length && !lines[i].startsWith("[")) i += 1;
+    dropped = true;
+    continue;
+  }
+  out.push(lines[i]);
+  i += 1;
+}
+if (!dropped) { console.error("MUTATION-NOT-APPLIED: the z-ai/glm-5.3 example row not found"); process.exit(1); }
+fs.writeFileSync(p, out.join("\n"));
+' "$tmp/tree/$EXAMPLE"
 if [ $? -ne 0 ]; then err "3 — mutation could not be applied to the real example copy"; else
   wall
   must_fail "3 example row deleted (z-ai/glm-5.3)" "z-ai/glm-5.3 (context_window 1310720) is absent from"
@@ -148,7 +149,7 @@ if [ $? -ne 0 ]; then err "3 — mutation could not be applied to the real examp
 fi
 
 # ── 4. the checker's own fixture arms ──────────────────────────────────────────────────────────
-if python3 "$CHECKER" --selftest >"$tmp/out" 2>&1; then
+if bun "$CHECKER" --selftest >"$tmp/out" 2>&1; then
   note "✓ 4 checker --selftest OK"
 else
   err "4 — the checker's own --selftest FAILED: $(tail -5 "$tmp/out" | tr '\n' ' ')"

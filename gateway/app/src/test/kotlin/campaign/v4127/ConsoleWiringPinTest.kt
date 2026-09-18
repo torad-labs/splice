@@ -67,6 +67,22 @@ class ConsoleWiringPinTest {
         )
     }
 
+    /** V4-137's port joins the same block and gets the same pin, but for the opposite reason. The
+     *  three read ports above are dangerous UNWIRED; this one is safe unwired — ControlServer's
+     *  `supervised` is null until assigned and the route refuses on null, so a forgotten line
+     *  declines to drain rather than draining a daemon nothing would bring back. The pin exists
+     *  because the refusal is still the WRONG answer on a host where systemd does run the daemon:
+     *  losing this line turns a working restart button into a permanent 409 nobody would think to
+     *  question, since a refusal reads as the feature behaving correctly. */
+    @Test
+    fun `the control plane wires the draining restart's supervision probe`() {
+        assertTrue(
+            controlPlaneSource().contains("srv.supervised = DrainingRestartAdapter()"),
+            "ControlPlane must assign `srv.supervised`, or POST /api/daemon/restart refuses forever " +
+                "on a supervised host — and a refusal is indistinguishable from the guard working",
+        )
+    }
+
     /** The roster is a MAP so an absent key and a present-key-null stay different facts — a head the
      *  wiring never named versus a head whose operator declared no tiers. Collapsing them is what a
      *  per-head nullable list would have done, and the page exists to show the second. */

@@ -78,9 +78,17 @@ internal const val MCP_HOST_INIT =
 internal const val MCP_HOST_LIST = """{"jsonrpc":"2.0","id":3,"method":"tools/list"}"""
 internal const val MCP_HOST_STREAM_WAIT_MS = 5_000L
 
-/** One pending [McpHostFixture.awaitLogged]: completed by the log sink on the first matching line. */
-private class LogWaiter(val fragment: String) {
-    val done = CompletableDeferred<Unit>()
+/** One pending [McpHostFixture.awaitLogged]: [offer] completes it on the first text carrying its
+ *  fragment — the log sink offers each line, the caller offers the log it already holds — and
+ *  [await] is that completion, bounded. */
+private class LogWaiter(private val fragment: String) {
+    private val done = CompletableDeferred<Unit>()
+
+    fun offer(text: String) {
+        if (text.contains(fragment)) done.complete(Unit)
+    }
+
+    suspend fun await(timeoutMs: Long) = withTimeout(timeoutMs) { done.await() }
 }
 
 class McpFakeClock(var now: Long = 1_000_000L) : HostClock {
@@ -102,8 +110,8 @@ abstract class McpHostFixture {
         val waiter = LogWaiter(fragment)
         logWaiters += waiter
         try {
-            if (synchronized(log) { log.contains(fragment) }) waiter.done.complete(Unit)
-            withTimeout(timeoutMs) { waiter.done.await() }
+            waiter.offer(synchronized(log) { log.toString() })
+            waiter.await(timeoutMs)
         } finally {
             logWaiters -= waiter
         }
@@ -145,7 +153,7 @@ abstract class McpHostFixture {
             McpHostConfig(idleTimeout = 30.minutes, maxServers = maxServers, requestTimeout = requestTimeout, clock = clock),
             log = LogSink { line ->
                 synchronized(log) { log.append(line) }
-                logWaiters.forEach { if (line.contains(it.fragment)) it.done.complete(Unit) }
+                logWaiters.forEach { it.offer(line) }
             },
         )
         return host

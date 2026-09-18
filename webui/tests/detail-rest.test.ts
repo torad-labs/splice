@@ -127,10 +127,6 @@ export const HELD: Record<string, string> = {
   accounts: 'CARRIES THE DEFECT at 20.3%: the aside always renders and holds an Empty at rest in '
     + 'a fixed 24rem track. M1-107 holds src/pages/accounts, so this row does not touch it. Moves '
     + 'to NO_RESTING_COLUMN when that row lands.',
-  'compact-feed': 'CARRIES THE DEFECT at 17.2% (it is the compaction page\'s column): the aside '
-    + 'always renders and holds an Empty at rest. It is a widget, not a page -- M1-112\'s fence '
-    + 'named the compaction PAGE, which does not own this markup, and no live row holds '
-    + 'src/widgets/compact-feed. It needs a row of its own.',
 };
 
 /** Named `-detail` but is not a second grid track, so the wall does not and should not see it. */
@@ -150,6 +146,13 @@ describe('no detail column holds width at rest', () => {
     expect(columns.length).toBeGreaterThanOrEqual(9);
     expect(columns.map((c) => c.unit)).toContain('turns');
   });
+
+/** Takes no second track at rest: it collapses rather than unmounting, so the swell has a track
+ *  to open FROM and CONTRACTS section 6's --dur-2 gesture can actually perform. */
+NO_RESTING_COLUMN['compact-feed'] =
+  'src/widgets/compact-feed/compact-feed.css: .myx-cfeed second track is 0 at rest and the '
+  + '-open class widens it, with column-gap moving with the track so the collapse leaves no '
+  + 'gutter of its own (M1-117, mirroring sessions and M1-119).';
 
   test.each(Object.keys(NO_RESTING_COLUMN))('%s takes no track at rest', (unit) => {
     const col = columns.find((c) => c.unit === unit);

@@ -15,6 +15,7 @@ import type { CompactPayload, CompactRow } from '@shared/api';
 import { fmtInt, fmtMs, timeAgo } from '@shared/lib';
 import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
+import { cx } from '@shared/lib';
 import { S } from './strings';
 import './compact-feed.css';
 
@@ -39,8 +40,21 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
   const tail = [...payload.stats.tail].reverse();
   const opened = tail.find((row, index) => eventKey(row, index) === open) ?? null;
 
+  // THE RESTING COLUMN COLLAPSES RATHER THAN UNMOUNTING (M1-117, the idiom of M1-116). The body
+  // grid's second track is 0 until an event is opened; this class is what widens it, and the
+  // transition on grid-template-columns is what performs the --dur-2 swell CONTRACTS section 6
+  // asks for. An unmounted column has nothing to animate from, which is why the instrument that
+  // cited the swell while choosing unmount could not have made it.
+  // AND THE COMMENT LIVES HERE, ABOVE THE RETURN, RATHER THAN AS THE FIRST CHILD OF IT: a JSX
+  // comment is only a comment INSIDE an element. First child of `return (`, the brace opens an
+  // object literal, the parser reads the block comment as an empty object, and tsc wants `)` and
+  // gets an identifier -- TS1005 plus a cascade. It broke the tree-wide leg for every seat for
+  // the length of one row, and I did not see it because I had filtered tsc's output with a grep
+  // for the one error I already knew about. THE FILTER IS THE LESSON: a censored gate reads
+  // clean, and the only reason this was caught is that another seat ran the same leg and read
+  // ALL of it.
   return (
-    <div className="myx-cfeed">
+    <div className={cx('myx-cfeed', opened !== null && 'myx-cfeed-open')}>
       <div className="myx-cfeed-bays">
         <Bay
           label={S.outcomes}

@@ -23,15 +23,29 @@
   color: var(--ink-strong);
 }
 
+/* A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-119, mirroring M1-116's mechanism rather than
+   choosing a fourth repair). The track collapses to literal 0 at rest, but `gap` was still
+   var(--space-4), and gap is paid BETWEEN a 1fr track and a 0 track like any other pair - so the
+   rack was 12px narrower than the board on every rest render. Measured at 1536 dark before this:
+   board 1366, bays 1354, columnGap 12.0004px, tracks "1353.77px 0px". The gutter is the OPEN
+   column's, so it moves with the column: column-gap 0 at rest, var(--space-4) when open, and the
+   transition carries both so the room is taken rather than snapped. */
 .myx-tn-board {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;
-  gap: var(--space-4);
+  column-gap: 0;
+  row-gap: var(--space-4);
   align-items: start;
-  transition: grid-template-columns var(--dur-2) var(--ease-out);
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
 }
 .myx-tn-board-open {
   grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-tn-board { transition: none; }
 }
 
 .myx-tn-bays {

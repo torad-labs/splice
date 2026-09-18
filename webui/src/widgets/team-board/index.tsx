@@ -22,27 +22,28 @@ const HEAD_BAY = ['myx-board-bay-0', 'myx-board-bay-1'];
 /* The field grid, measured off the comp rather than guessed: a column scan of
    each strip region finds its vertical rules, and every one of the six sets sums
    to exactly the region's 392px, which is how the grid was confirmed rather than
-   assumed. The numbers are those px widths over the field's own advance width at
-   --text-1, the size board.css sets (0.6em on the figure face, the label face's
-   own advance otherwise), which is the unit StripField takes. Recompute them if
-   that size ever moves: they are ch, and ch moves with it.
+   assumed. The numbers are those px widths over one ch of the field box itself --
+   the box declares its ch count on a 14px figure face, so a count is 8.4px --
+   which is the unit StripField takes. They are ch, so they move with that size:
+   this set was recomputed when the board's type moved to --text-2 on the wdth
+   axis (see board.css), and the previous set was 0.8204 of these.
    The comp sizes each row's columns to its own content, so the two heads' lines
    carry different grids rather than sharing one table. */
-const LEAD_COLS = [14.66, 5.22, 6.68, 7.4, 6.11, 6.25, 8.27];
-const BUILDER_COLS = [12.19, 5.8, 10.01, 5.37, 4.58, 5.69, 11.03];
-const LEAD_COLS_2 = [7.11, 8.19, 7.22, 6.39, 4.86, 6.39, 6.66, 6.25];
-const BUILDER_COLS_2 = [11.17, 7.5, 6.11, 5.28, 4.86, 6.11, 6.25, 5.97];
-const LEAD_COLS_3 = [6.8, 6.94, 15.24, 9.43, 4.06, 6.11, 5.66];
-const BUILDER_COLS_3 = [6.11, 7.08, 15.67, 9.87, 3.77, 6.11, 5.66];
+const LEAD_COLS = [12.02, 4.29, 5.48, 6.07, 5.24, 5.36, 6.79];
+const BUILDER_COLS = [10.00, 4.76, 8.22, 4.41, 3.93, 4.88, 9.05];
+const LEAD_COLS_2 = [5.83, 7.02, 6.19, 5.48, 4.17, 5.48, 5.71, 5.36];
+const BUILDER_COLS_2 = [9.17, 6.43, 5.24, 4.53, 4.17, 5.24, 5.36, 5.12];
+const LEAD_COLS_3 = [5.83, 5.95, 12.50, 7.74, 3.33, 5.24, 4.64];
+const BUILDER_COLS_3 = [5.24, 6.07, 12.86, 8.10, 3.10, 5.24, 4.64];
 /** The header's five boxes, from the same scan of the header strip. */
-const HEAD_COLS = [33.38, 48.03, 51.52, 25.98, 36.57];
+const HEAD_COLS = [27.38, 39.41, 42.26, 21.31, 30.00];
 const BAY_COLS = [
   { l1: LEAD_COLS, l2: LEAD_COLS_2, l3: LEAD_COLS_3 },
   { l1: BUILDER_COLS, l2: BUILDER_COLS_2, l3: BUILDER_COLS_3 },
 ];
 /** The chat's columns and the activity's, from the same scan of their bays. */
-const MSG_COLS = [6.39, 12.34, 2.76, 14.8, 5.37, 23.22];
-const ACT_COLS = [5.83, 13.93, 20.46, 24.67];
+const MSG_COLS = [5.48, 10.12, 2.26, 12.14, 4.41, 19.05];
+const ACT_COLS = [5.00, 11.43, 16.79, 20.24];
 
 /* The two racks below are pitched, not stacked: the comp spaces its chat strips
    and its activity strips down the full height of their regions instead of

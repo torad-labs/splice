@@ -1,8 +1,16 @@
 /* The two faces of the strip bay, embedded in the single-file build.
    A compact workhorse grotesque for labels and copy (Archivo, variable), and a
    tabular monospace for figures (JetBrains Mono, variable). Both are variable
-   files, so one @font-face rule covers the whole weight axis and the build
+   files, so one @font-face rule covers the whole axis range and the build
    inlines two files instead of six.
+
+   Archivo carries BOTH of its axes here: wght 100-900 and wdth 62-125. The
+   wdth axis is not decoration -- the comp's lettering is condensed (its strip
+   type measures about 0.31em of advance per character against a full-height
+   ascender), and a face without a width axis can only be squeezed with a
+   transform, which scales the glyph and lies to every size check downstream
+   (design review B2). The first cut loaded the wght-only file; this one is the
+   full variable font, same family, same OFL-Archivo.txt beside it.
 
    url() rather than a bare path keeps them under Vite's assetsInlineLimit, so
    the shipped artifact carries no font request. The IBM Plex Mono files and
@@ -13,6 +21,7 @@
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 100 900;
+  font-stretch: 62% 125%;
   font-display: swap;
   src: url('./fonts/archivo-var.woff2') format('woff2-variations');
 }

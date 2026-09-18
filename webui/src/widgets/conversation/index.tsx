@@ -10,7 +10,8 @@
 import { useEffect } from 'react';
 import { loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
 import type { TranscriptSlice } from '@entities/transcript';
-import { Empty, ErrorNote, Reveal, Strip, StripField } from '@shared/ui';
+import { Fault } from '@shared/controls';
+import { Empty, Reveal, Strip, StripField } from '@shared/ui';
 import { S } from './strings';
 import './conversation.css';
 
@@ -34,7 +35,7 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
     if (slice === undefined) void loadTranscript(sessionId);
   }, [sessionId, slice]);
 
-  if (slice === undefined && state.error !== null) return <ErrorNote message={state.error} />;
+  if (slice === undefined && state.error !== null) return <Fault message={state.error} />;
   const data = slice ?? state.data;
   if (data === null) return null;
   if ('pending' in data) {

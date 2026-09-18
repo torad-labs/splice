@@ -52,7 +52,7 @@
 /* The honest sentence for a head whose capture is off. It is printed on the room, not framed:
    there is nothing to look at and the frame would imply there was. */
 .myx-wf-off {
-  margin: var(--space-0);
+  margin: 0;
   color: var(--ink-mute);
   font-family: var(--font-label);
   font-size: var(--text-2);
@@ -70,7 +70,7 @@
 }
 
 .myx-wf-body {
-  margin: var(--space-0);
+  margin: 0;
   padding: var(--space-3);
   max-height: 40vh;
   overflow: auto;

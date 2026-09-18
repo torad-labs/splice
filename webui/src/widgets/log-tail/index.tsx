@@ -13,7 +13,8 @@ import { useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogFilter, LogLevel, LogsPayload } from '@entities/logs';
-import { Empty, ErrorNote, Figure, Strip, StripField } from '@shared/ui';
+import { Fault } from '@shared/controls';
+import { Empty, Figure, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
 import { S } from './strings';
 import './log-tail.css';
@@ -74,7 +75,7 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
     virtualizer.scrollToIndex(filtered.length - 1, { align: 'end' });
   }, [follow, filtered.length, virtualizer, reset]);
 
-  if (error !== null) return <ErrorNote message={error} />;
+  if (error !== null) return <Fault message={error} />;
 
   return (
     <div className="myx-lt">

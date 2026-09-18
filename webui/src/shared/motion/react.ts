@@ -151,6 +151,9 @@ export function useBayGestures(rows: readonly MotionRow[]): BayGestures {
         paired = true;
         // FLIP: move it back to where it came from with no transition, then release it on the next
         // frame so the CSS transition carries it the rest of the way.
+        // NOT AN ABSENCE PHRASE (M1-69): this is the CSS keyword `none`, on a style assignment.
+        // The absence census counts it because its regex cannot tell a CSS value from a display
+        // word, which is one of the ways its denominator over-counts.
         element.style.transition = 'none';
         element.style.transform =
           `translate(${handoff.dx}px, ${handoff.dy}px) scale(${handoff.sx}, ${handoff.sy})`;

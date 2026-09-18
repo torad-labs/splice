@@ -63,6 +63,8 @@ function HeadPlate({ head, lastUpdated }: { head: HeadStatus; lastUpdated: numbe
       </header>
 
       <div className="myx-plate-metrics">
+        {/* `unknown` IS THE RIGHT WORD (M1-69): the head did not report a version. Never `none`,
+            which would read as a version of zero. */}
         <Metric label="version" value={head.version ?? 'unknown'} />
         {head.mode && head.mode !== head.name ? <Metric label="mode" value={head.mode} tone="amber" /> : null}
         {head.running && head.gate ? (
@@ -79,6 +81,10 @@ function HeadPlate({ head, lastUpdated }: { head: HeadStatus; lastUpdated: numbe
       <div className="myx-plate-usage">
         {!usage ? (
           <p className="myx-plate-usage-none">no usage tracking</p>
+        // NOT AN ABSENCE PHRASE (M1-69): `none` is a value the DAEMON puts on the wire for
+        // `warn.source`, and this compares against it rather than printing anything. The console
+        // may translate a wire value for display; the contract is not ours to change, and the
+        // census counts the comparison as a display word.
         ) : usage.warn.source === 'none' ? (
           // No rate-limit headroom and no configured cap: a 0% meter would read as
           // "barely used" when it is really N tokens uncapped. Show the count plainly.

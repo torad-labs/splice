@@ -34,13 +34,33 @@ const ABSENT = S.absent;
 // ONE declaration per column - label and width together - so a row cannot print a name that
 // disagrees with its own width. The comp's strip carries its field names IN the strip (its two
 // strips in one bay carry different sets), so the rows print them and no bay head does.
+// ---- THE BUDGET STAYS AND THE SHARES MOVE (M2-31, the diagnostic M2-29 brought) --------------
+// Declared width over content held, per column, measured rack-wide at 1536 dark with every cell
+// cloned unconstrained so the number is what the column ACTUALLY holds rather than what it was
+// once sized for. Healthy reads 1.0 to 1.5. This rack read, before:
+//
+//   name 1.95 · head 1.51 · project 2.84 · started 2.08 · seen 2.13 · PEER 4.63
+//
+// 578px of content inside a rack declaring 1287px. `peer` at 4.63 holds `n/r` in 190px; `project`
+// at 2.84 holds `repo v0.4.0` in 274px; and `head`, which holds the longest string on the page
+// after `name`, was the most starved of the six.
+//
+// THE TOTAL IS UNCHANGED AT 122ch, which is not a nicety -- it is the whole constraint. A strip is
+// `width: max-content` and each cell carries `flexGrow: w`, so rendered width is proportional to
+// declared ch and the rack has no slack to redistribute; fitting every column to its content does
+// not tighten the rack, it ends the rack early and leaves bare ground to the bay edge (M2-29
+// measured 453px of it on fleet, past tsc, forty tests and a zero-clipped check). So each column
+// now takes the share of the SAME budget that its content actually needs.
+//
+// Widths went to the two columns holding real names and away from the four holding tokens and
+// absences. No phrase was shortened and no absence renamed to buy the pixels.
 const COLUMNS: Record<string, { label: string; w: number }> = {
-  name: { label: S.name, w: 26 },
-  head: { label: S.head, w: 20 },
-  project: { label: S.project, w: 26 },
-  started: { label: S.started, w: 16 },
-  seen: { label: S.seen, w: 16 },
-  peer: { label: S.peer, w: 18 },
+  name: { label: S.name, w: 30 },
+  head: { label: S.head, w: 29 },
+  project: { label: S.project, w: 20 },
+  started: { label: S.started, w: 17 },
+  seen: { label: S.seen, w: 17 },
+  peer: { label: S.peer, w: 9 },
 };
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs

@@ -32,15 +32,59 @@ import { existsSync, readFileSync } from "node:fs";
 
 const ALLOW = "checks/config/python-burndown.json";
 
-type Burndown = { recorded: string; law: string; files: string[] };
+type Burndown = { recorded: string; law: string; files: string[]; invokers?: string[] };
 
-function tracked(): string[] {
-  const r = spawnSync("git", ["ls-files", "*.py"], { encoding: "utf8" });
+function gitLs(...pathspec: string[]): string[] {
+  const r = spawnSync("git", ["ls-files", ...pathspec], { encoding: "utf8" });
   if (r.status !== 0) {
     console.error(`no-python: git ls-files failed (${r.stderr.trim()}) — refusing to report a pass for a census that did not run`);
     process.exit(2);
   }
   return r.stdout.split("\n").map((s) => s.trim()).filter(Boolean).sort();
+}
+
+function tracked(): string[] {
+  return gitLs("*.py");
+}
+
+/** THE SECOND CENSUS, and the wall was a lie without it.
+ *
+ *  Counting files named `.py` is not counting PYTHON. Measured 2026-09-18, after
+ *  five gate legs had been converted and the first census read a triumphant 90:
+ *  29 tracked .sh files invoked python3 a total of 167 times, six package.json
+ *  scripts did, and three .mjs files did. Every .py in the repo could have been
+ *  deleted, this wall would have reported ZERO, and the build would still have
+ *  shelled into Python 167 times from inside heredocs it could not see.
+ *
+ *  That is this campaign's own law pointed at its own instrument: the bug is in
+ *  the shape of the check, not the shape of the fix. The denominator has to be
+ *  "files that RUN python", enumerated from their contents, not "files whose name
+ *  ends in .py".
+ *
+ *  A mention counts. A comment or a README saying `python3 checks/foo.py` is a
+ *  live instruction to the next session to write more Python, and prose goes
+ *  quietly stale where an invocation fails loudly — which is the half nobody
+ *  notices. `.py` files are excluded only because the first census already owns
+ *  them; the burn-down deletes them wholesale. */
+/** EXCLUDED WITH A WRITTEN REASON, which is a disposition and not a hole (law 24).
+ *  These three files exist to TALK about Python: the wall, its selftest, and the
+ *  burn-down list. Their prose necessarily contains the word, and counting them
+ *  would make the wall permanently report itself. Nothing else is exempt — a file
+ *  that merely explains a python command is drift and IS counted, because prose is
+ *  what teaches the next session which language this repo writes tooling in. */
+const SELF = new Set([ALLOW, "checks/no-python.ts", "checks/no-python-selftest.ts"]);
+
+function invokers(): string[] {
+  return gitLs()
+    .filter((f) => !f.endsWith(".py") && !SELF.has(f))
+    .filter((f) => {
+      try {
+        return /\bpython3?\b/.test(readFileSync(f, "utf8"));
+      } catch {
+        return false; // a binary or unreadable blob invokes nothing
+      }
+    })
+    .sort();
 }
 
 function burndown(): Burndown {
@@ -56,31 +100,58 @@ function burndown(): Burndown {
   }
 }
 
+/** One census graded against its own list, both directions. Returns the problems. */
+function grade(
+  label: string,
+  measured: string[],
+  allowed: string[],
+  newHelp: string,
+): string[] {
+  const set = new Set(allowed);
+  const added = measured.filter((f) => !set.has(f));
+  const stale = allowed.filter((f) => !measured.includes(f)).sort();
+  const out: string[] = [];
+  if (added.length) {
+    out.push(`NEW PYTHON (${label}): ${added.length} file(s) not in the burn-down list. ${newHelp}\n    ` + added.join("\n    "));
+  }
+  if (stale.length) {
+    out.push(
+      `STALE (${label}): ${stale.length} burn-down entry(ies) name a file that no longer offends — gone, ` +
+        `or already converted. Remove the line — a list held above the measured surface is unearned room ` +
+        `for Python to come back into:\n    ` + stale.join("\n    "),
+    );
+  }
+  return out;
+}
+
 function main(): number {
   const measured = tracked();
   const list = burndown();
-  const allowed = new Set(list.files);
   const problems: string[] = [];
 
-  const added = measured.filter((f) => !allowed.has(f));
-  const stale = list.files.filter((f) => !measured.includes(f)).sort();
+  const runners = invokers();
+  const allowedInvokers = list.invokers ?? [];
 
   console.log(`NO-PYTHON WALL — burn-down recorded ${list.recorded || "(none)"}`);
-  console.log(`  tracked .py files                  measured ${String(measured.length).padStart(4)}   allowed ${String(allowed.size).padStart(4)}   [GATED]`);
+  console.log(`  tracked .py files                  measured ${String(measured.length).padStart(4)}   allowed ${String(list.files.length).padStart(4)}   [GATED]`);
+  console.log(`  files that RUN or name python      measured ${String(runners.length).padStart(4)}   allowed ${String(allowedInvokers.length).padStart(4)}   [GATED]`);
 
-  if (added.length) {
-    problems.push(
-      `NEW PYTHON: ${added.length} tracked .py file(s) are not in the burn-down list. This repo is bun/TypeScript; ` +
-        `write it as .ts and run it with bun. Do NOT add the file to ${ALLOW} — that list is a dated record of what ` +
-        `already existed, and growing it is the violation this wall exists to catch:\n    ` + added.join("\n    "),
-    );
-  }
-  if (stale.length) {
-    problems.push(
-      `STALE: ${stale.length} burn-down entry(ies) name a file that is gone or already converted. Remove the line — ` +
-        `a list held above the measured surface is unearned room for Python to come back into:\n    ` + stale.join("\n    "),
-    );
-  }
+  problems.push(
+    ...grade(
+      "file",
+      measured,
+      list.files,
+      `This repo is bun/TypeScript; write it as .ts and run it with bun. Do NOT add the file to ${ALLOW} — that ` +
+        `list is a dated record of what already existed, and growing it is the violation this wall exists to catch.`,
+    ),
+    ...grade(
+      "invocation",
+      runners,
+      allowedInvokers,
+      `A file that shells into python3, or documents a python3 command, is Python this repo still runs and still ` +
+        `teaches. Convert the call to bun; if it is prose, update the prose. Do NOT add a line to ${ALLOW}.`,
+    ),
+  );
 
   if (problems.length) {
     console.error(`\nFAIL: no-python wall — ${problems.length} problem(s):`);
@@ -88,8 +159,8 @@ function main(): number {
     return 1;
   }
   console.log(
-    `\nOK: no-python wall holds — the ${measured.length} tracked Python file(s) are exactly the ${list.recorded} ` +
-      `burn-down, and nothing listed there has already been converted`,
+    `\nOK: no-python wall holds — ${measured.length} tracked .py file(s) and ${runners.length} file(s) that run or ` +
+      `name python, both exactly the ${list.recorded} burn-down, and nothing listed has already been converted`,
   );
   return 0;
 }

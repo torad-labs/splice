@@ -2,7 +2,7 @@
 # checks/public-surface-selftest.sh — red-green proof for the V4-92 public-surface ratchet,
 # taken against the REAL tree rather than against fixtures alone.
 #
-# WHY BOTH HALVES EXIST. `public-surface.py --selftest` proves the LOGIC on temp fixtures: a
+# WHY BOTH HALVES EXIST. `public-surface.ts --selftest` proves the LOGIC on temp fixtures: a
 # consumed declaration, a star import, a sibling test-only caller, a stale baseline entry. What it
 # cannot prove is that the checker still finds this tree — that its module parse, its
 # nonLibrary derivation and its consumer walk are pointed at the real source sets. A checker whose
@@ -27,7 +27,7 @@ fail=0
 err() { echo "  x public-surface-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-CHECK="$tmp/checks/public-surface.py"
+CHECK="$tmp/checks/public-surface.ts"
 BASELINE="$tmp/checks/config/public-surface-baseline.json"
 SETTINGS="$tmp/gateway/settings.gradle.kts"
 SYNTH_MODULE="zz-selftest-surface"
@@ -51,7 +51,7 @@ done
 tree_state="$(cd "$ROOT/gateway" && ls -1A)"
 
 reset_all() {
-  cp "$ROOT/checks/public-surface.py" "$CHECK"
+  cp "$ROOT/checks/public-surface.ts" "$CHECK"
   cp "$ROOT/checks/config/public-surface-baseline.json" "$BASELINE"
   cp "$ROOT/gateway/settings.gradle.kts" "$SETTINGS"
   rm -rf "$tmp/gateway/$SYNTH_MODULE"
@@ -59,7 +59,7 @@ reset_all() {
 reset_all
 
 rc=0
-check() { python3 "$CHECK" "$@" >"$tmp/out" 2>&1; rc=$?; }
+check() { bun "$CHECK" "$@" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then
@@ -72,7 +72,7 @@ must_fail() { # must_fail <label> <substring the failure must name>
 }
 
 # -- control ---------------------------------------------------------------------------------
-python3 "$ROOT/checks/public-surface.py" --selftest >"$tmp/out" 2>&1 || {
+bun "$ROOT/checks/public-surface.ts" --selftest >"$tmp/out" 2>&1 || {
   err "CONTROL: the fixture selftest must be green: $(tail -6 "$tmp/out" | tr '\n' ' ')"
 }
 check --ratchet
@@ -102,14 +102,14 @@ cat > "$tmp/gateway/$SYNTH_MODULE/src/main/kotlin/splice/selftest/SelftestLeak.k
 package splice.selftest
 public class SelftestLeakedType(val v: String)
 KT
-python3 - "$SETTINGS" "$SYNTH_MODULE" <<'PY'
-import pathlib, sys
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-needle = '    ":fir-checks",\n'
-assert needle in text, "settings.gradle.kts no longer includes :fir-checks — the injection point moved"
-path.write_text(text.replace(needle, needle + f'    ":{sys.argv[2]}",\n', 1))
-PY
+bun -e "$(cat <<'JS'
+const [path, mod] = process.argv.slice(1);
+const text = await Bun.file(path).text();
+const needle = '    ":fir-checks",\n';
+if (!text.includes(needle)) throw new Error("settings.gradle.kts no longer includes :fir-checks - the injection point moved");
+await Bun.write(path, text.replace(needle, needle + `    ":${mod}",\n`));
+JS
+)" "$SETTINGS" "$SYNTH_MODULE"
 check --ratchet
 must_fail "1. GROWTH — an unjustified public type no baseline entry records" "GROWTH"
 grep -q "SelftestLeakedType" "$tmp/out" ||
@@ -117,39 +117,39 @@ grep -q "SelftestLeakedType" "$tmp/out" ||
 reset_all
 
 # -- 2. GROWTH: a baseline entry deleted while its offender stands ----------------------------
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-assert data["offenders"], "the baseline is empty — this arm has nothing to delete"
-data["offenders"].pop(0)
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e "$(cat <<'JS'
+const path = process.argv[1];
+const data = JSON.parse(await Bun.file(path).text());
+if (!data.offenders || data.offenders.length === 0) throw new Error("the baseline is empty - this arm has nothing to delete");
+data.offenders.shift();
+await Bun.write(path, JSON.stringify(data, null, 2) + "\n");
+JS
+)" "$BASELINE"
 check --ratchet
 must_fail "2. GROWTH — an offender whose baseline line was deleted" "GROWTH"
 reset_all
 
 # -- 3. STALE: a baseline entry naming a declaration that does not exist ----------------------
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-data["offenders"].append(":core splice.core.selftest.NeverExisted")
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e "$(cat <<'JS'
+const path = process.argv[1];
+const data = JSON.parse(await Bun.file(path).text());
+data.offenders.push(":core splice.core.selftest.NeverExisted");
+await Bun.write(path, JSON.stringify(data, null, 2) + "\n");
+JS
+)" "$BASELINE"
 check --ratchet
 must_fail "3. STALE — a baseline entry naming a declaration the tree does not have" "STALE"
 grep -q "NeverExisted" "$tmp/out" || err "3. STALE — the failure does not NAME the stale entry"
 reset_all
 
 # -- 4. an undated baseline is a hard error, not a pass ---------------------------------------
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-data["recorded"] = ""
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e "$(cat <<'JS'
+const path = process.argv[1];
+const data = JSON.parse(await Bun.file(path).text());
+data.recorded = "";
+await Bun.write(path, JSON.stringify(data, null, 2) + "\n");
+JS
+)" "$BASELINE"
 check --ratchet
 must_fail "4. an undated baseline is a hard error" "recorded"
 reset_all
@@ -163,10 +163,11 @@ reset_all
 # -- 6. a lost denominator refuses, it does not report a clean surface ------------------------
 # The boring case, which is the one that gets waved through (CLAUDE.md §24): if the module law
 # stops parsing, every module reads as a consumer and NOTHING is graded. That must be red.
-python3 - "$tmp/gateway/settings.gradle.kts" <<'PY'
-import pathlib, sys
-pathlib.Path(sys.argv[1]).write_text('rootProject.name = "splice-gateway"\ninclude(\n    ":app",\n)\n')
-PY
+bun -e "$(cat <<'JS'
+const path = process.argv[1];
+await Bun.write(path, 'rootProject.name = "splice-gateway"\ninclude(\n    ":app",\n)\n');
+JS
+)" "$tmp/gateway/settings.gradle.kts"
 check --ratchet
 must_fail "6. a settings file whose every module is nonLibrary must REFUSE" "vacuously"
 reset_all

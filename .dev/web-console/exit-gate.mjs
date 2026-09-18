@@ -31,13 +31,18 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEBUI = path.join(ROOT, 'webui');
-const PORT = 5173;
+// --port exists so the browser legs' DID NOT RUN path can be exercised deliberately against a
+// dead port (M1-23's check) without stopping the dev server every other seat is capturing from.
+const PORT = Number(process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : 5173);
 
 const ARGS = process.argv.slice(2);
 const has = (f) => ARGS.includes(`--${f}`);
 const flag = (f, d) => { const i = ARGS.indexOf(`--${f}`); return i === -1 ? d : ARGS[i + 1]; };
 
 const PASSED = 'PASSED', FAILED = 'FAILED', DID_NOT_RUN = 'DID NOT RUN';
+
+/** The page the look leg reads: the campaign's own comp-of-record surface. */
+const LOOK_URL = 'http://localhost:5173/#/teams?fixture=hero';
 
 /** Run a command; never throw. Returns {code, out} with stdout and stderr merged. */
 function sh(cmd, args, cwd) {
@@ -60,6 +65,10 @@ function serverUp(port) {
  * FAILED — without it, a missing binary and a real defect are the same exit code.
  * `proof` (optional) is a regex the RUN output must match for the run to count as having
  * happened, for tools that can exit 0 while doing nothing.
+ * `failIf` (optional) is the third shape, found by M1-23 reading look.mjs: a tool that exits
+ * 0 while its own output says FAIL. look.mjs prints `LOOK: BLOCKED` and exits 0, so a
+ * code-only leg calls a blocked page a pass; `failIf` reads the verdict the tool printed
+ * instead of the one its exit code did not carry.
  */
 const LEGS = [
   {
@@ -82,7 +91,10 @@ const LEGS = [
     probe: () => sh('npx', ['vitest', '--version'], WEBUI),
     probeProof: /\d+\./,
     run: () => sh('npx', ['vitest', 'run'], WEBUI),
-    proof: /Tests\s+\d+ passed/,
+    // `Tests  12 passed` and `Tests  5 failed | 22 passed` are both evidence the runner ran;
+    // requiring the word `passed` immediately after the count made a suite WITH FAILURES read
+    // as DID NOT RUN instead of FAILED (M1-23: the runner did its job and the gate mis-filed it)
+    proof: /Tests\s+\d+ (?:failed|passed)/,
   },
   {
     name: 'build',
@@ -96,6 +108,22 @@ const LEGS = [
       if (fs.statSync(dist).mtimeMs < startedAt) return 'dist/index.html is older than this run: the build did not rewrite it';
       return null;
     },
+  },
+  {
+    // LAW 25 (M1-23, from M1-17 shipping an orphaned declaration): A ROW THAT TOUCHES CSS RUNS A
+    // BUILD LEG. The other legs cannot see CSS at all -- eslint does not lint it here, tsc never
+    // reads it, vitest renders to a string with no stylesheet, ast-grep's rules are TS, and
+    // detect reads it as text -- so the bundler is the only real CSS parser in this repo. This
+    // leg is `npx vite build` and NOT `npm run build -w webui`, because that script is
+    // tsc-then-vite and a peer's live type error would mask exactly this defect: M1-17's orphan
+    // made lightningcss die with "Invalid token in pseudo element" while the npm script never
+    // reached vite, and every verify line in the campaign stayed green.
+    name: 'bundle',
+    why: 'the bundler is the only CSS parser here; a row that touches CSS needs it',
+    probe: () => sh('npx', ['vite', '--version'], WEBUI),
+    probeProof: /vite\/v?\d+/i,
+    run: () => sh('npx', ['vite', 'build'], WEBUI),
+    proof: /built in \d+\s*ms|modules transformed/i,
   },
   {
     name: 'fixture-leak',
@@ -123,14 +151,26 @@ const LEGS = [
     probe: () => sh('node', ['.dev/web-console/comp-check.mjs', '--list'], ROOT),
     probeProof: /rail/,
     run: () => sh('node', ['.dev/web-console/comp-check.mjs'], ROOT),
+    // its line format is `PASS <page> <constant>` / `FAIL <page> <constant>`; with no proof a run
+    // that checked nothing reads the same as one that checked everything
+    proof: /^(?:PASS|FAIL) /m,
+    failIf: /^FAIL /m,
+    failHint: 'comp-check found a comp constant off on a live page; those belong on the punch list, not in a weakened proof',
   },
   {
     name: 'look',
     why: 'the rendered rule pass and the look gate; needs the dev server',
     needsServer: true,
     probe: () => sh('node', ['.dev/web-console/look.mjs', '--help'], ROOT),
-    probeProof: /./,
-    run: () => sh('node', ['.dev/web-console/look.mjs'], ROOT),
+    // was /./ , which matches the usage text and therefore any output at all: a probe that cannot
+    // fail. The usage line is the proof that the file runs and still takes a url.
+    probeProof: /usage: node dev\/web-console\/look\.mjs '<url>'/,
+    // it takes a URL: called with none it prints usage and exits 2, which the old wiring reported
+    // as a FAILED look pass rather than as a missing argument
+    run: () => sh('node', ['.dev/web-console/look.mjs', LOOK_URL], ROOT),
+    proof: /look — \S+/,
+    failIf: /LOOK: BLOCKED|look-gate\s+FAIL/,
+    failHint: 'the look gate found blocking findings on this page; fix them or put them on the punch list',
   },
 ];
 
@@ -146,6 +186,10 @@ function runLeg(leg) {
   const r = leg.run();
   if (leg.proof && !leg.proof.test(r.out)) {
     return { status: DID_NOT_RUN, detail: `exited ${r.code} but produced no evidence it ran (expected ${leg.proof})` };
+  }
+  if (leg.failIf) {
+    const m = leg.failIf.exec(r.out);
+    if (m) return { status: FAILED, detail: `exited ${r.code} but its own output reports a failure: ${m[0].trim()}${leg.failHint ? ` — ${leg.failHint}` : ''}` };
   }
   if (r.code !== 0) {
     return { status: FAILED, detail: r.out.trim().split('\n').slice(-12).join('\n') };
@@ -168,6 +212,8 @@ function selftest() {
       leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 1, out: 'ran: 3 errors' }), proof: /ran/ } },
     { label: 'a clean run is PASSED', want: PASSED,
       leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 0, out: 'ran' }), proof: /ran/ } },
+    { label: 'a tool that exits 0 while its output reports failure is FAILED', want: FAILED,
+      leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 0, out: 'ran\nLOOK: BLOCKED (1)' }), proof: /ran/, failIf: /LOOK: BLOCKED/ } },
     { label: 'a stale artifact is DID NOT RUN', want: DID_NOT_RUN,
       leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 0, out: 'ran' }), proof: /ran/, after: () => 'artifact older than the run' } },
   ];

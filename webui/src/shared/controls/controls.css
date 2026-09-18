@@ -1,6 +1,10 @@
 /* The world's controls. CONTRACTS.md section 1 tokens only; radius 0 everywhere; the two faces
-   only (--font-label for words, --font-figure for values). Nothing here paints a ground of its own
-   except the strip paper: a key is a strip, a field is a strip's box, and a fault is a strip. */
+   only -- and since M1-17 they are --font-label and --font-code: a FIGURE (a number or an
+   identifier that lines up in a column) is the label face with tabular figures, and CODE (a TOML
+   body, a log line, a transcript, a path) is the monospace. Every box below prints a value, so
+   every one of them is FIGURE; --font-code appears here only where a control shows a path.
+   Nothing here paints a ground of its own except the strip paper: a key is a strip, a field is a
+   strip's box, and a fault is a strip. */
 
 /* ---------- the key: a printed strip that can be pressed ---------- */
 
@@ -96,7 +100,9 @@
   color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
+  /* FIGURE: an input box prints the value that was typed. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -155,7 +161,9 @@
   min-width: 0;
 }
 .myx-fault-message {
+  /* FIGURE: a fault prints the daemon's own words in a box. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   line-height: 1.5;
   color: var(--strip-ink);
@@ -188,7 +196,9 @@
   color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
+  /* FIGURE: a choice box prints a value. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   text-align: start;
   cursor: pointer;

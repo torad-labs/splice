@@ -297,8 +297,8 @@
   display: flex;
   flex-direction: column;
   background: var(--room-deep);
-  border-top: var(--hair) solid var(--hair-strong);
-  border-bottom: var(--hair) solid var(--hair-strong);
+  border-top: var(--hair) solid var(--hairline-strong);
+  border-bottom: var(--hair) solid var(--hairline-strong);
   border-radius: 0;
 }
 .myx-bay-head {
@@ -414,7 +414,7 @@
   font-size: var(--text-2);
   color: var(--ink);
   background: transparent;
-  border: var(--hair) solid var(--hair-strong);
+  border: var(--hair) solid var(--hairline-strong);
   border-radius: 0;
   padding: var(--space-1) var(--space-2);
   cursor: pointer;
@@ -430,7 +430,7 @@
   gap: var(--space-1);
   margin: var(--space-0);
   padding: var(--space-4);
-  border: var(--hair) dashed var(--hair-strong);
+  border: var(--hair) dashed var(--hairline-strong);
   border-radius: 0;
 }
 .myx-empt-text {

@@ -113,6 +113,49 @@ export function groupTurns(turns: readonly TurnRow[], by: GroupBy): TurnGroup[] 
  * order the daemon lists heads and their turns. A head whose gate snapshot is absent (not running,
  * or no gate published yet) contributes nothing rather than an empty turn.
  */
+export interface TurnBucket {
+  start: number;
+  end: number;
+  rows: TurnRow[];
+}
+
+export interface TurnTimeline {
+  /** Every bucket in the window, oldest first, EMPTY ONES INCLUDED: an idle hour has to be a gap,
+   *  and a bucket list with holes would restate the day. */
+  buckets: TurnBucket[];
+  /** Rows the window cannot place because the row carries no `ts`. Rows that fall OUTSIDE the
+   *  window are not listed here: the window is what the caller asked for. */
+  undated: TurnRow[];
+}
+
+export interface TurnWindow {
+  /** Window start, epoch ms. Included. */
+  from: number;
+  /** Window end, epoch ms. EXCLUDED, so adjacent windows never count a turn twice. */
+  to: number;
+  bucketMs: number;
+}
+
+export function timelineOf(rows: readonly TurnRow[], window: TurnWindow): TurnTimeline {
+  const { from, to, bucketMs } = window;
+  if (bucketMs <= 0) throw new Error(`timelineOf needs a positive bucketMs, got ${bucketMs}`);
+  const buckets: TurnBucket[] = [];
+  for (let start = from; start < to; start += bucketMs) {
+    buckets.push({ start, end: Math.min(start + bucketMs, to), rows: [] });
+  }
+  const undated: TurnRow[] = [];
+  for (const row of rows) {
+    if (typeof row.ts !== 'number') {
+      undated.push(row);
+      continue;
+    }
+    if (row.ts < from || row.ts >= to) continue;
+    const bucket = buckets[Math.floor((row.ts - from) / bucketMs)];
+    if (bucket !== undefined) bucket.rows.push(row);
+  }
+  return { buckets, undated };
+}
+
 export function inflightFrom(heads: readonly HeadStatus[]): InflightTurn[] {
   const inflight: InflightTurn[] = [];
   for (const head of heads) {

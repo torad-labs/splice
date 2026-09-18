@@ -120,6 +120,9 @@ export const NO_FILTER: LogFilter = { head: null, level: null, substring: '' };
  *  own `[logs unavailable: ...]` band, a wrapped continuation) has no tag and reads as null. */
 const TAG = /^\[[^\]]*\]\s*\[([^\]]*)\]/;
 
+/** The daemon's own timestamp, which is the first bracket of the line. */
+const TIME = /^\[(\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}))\]/;
+
 /** An explicit severity marker. Anchored to a whole uppercase word so `failed`, `retrying` and
  *  `failure_share` in prose and in counter fields stay unmarked. */
 const SEVERITY = /\b(ERROR|WARN|WARNING|FATAL|INFO|DEBUG|TRACE)\b/;
@@ -129,6 +132,14 @@ const SEVERITY = /\b(ERROR|WARN|WARNING|FATAL|INFO|DEBUG|TRACE)\b/;
 export function headOf(line: string): string | null {
   const match = TAG.exec(line);
   return match === null ? null : match[1];
+}
+
+/** The daemon's own clock reading for the line as `HH:MM:SS`, or null when the line carries no
+ *  timestamp (a continuation, or the daemon's own in-band unavailable band). The console prints
+ *  the time, never the date: a log tail is read as "when in the session did this happen". */
+export function timeOf(line: string): string | null {
+  const match = TIME.exec(line);
+  return match === null ? null : match[2];
 }
 
 /** The severity the daemon marked on the line, or null when it marked none. */

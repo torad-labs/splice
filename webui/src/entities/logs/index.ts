@@ -1,5 +1,9 @@
 import { logsStore } from './model/store';
 
+// The payload type lives in the shared client (it is the client's contract), re-exported here so a
+// page or widget that reads this slice does not have to reach past it for the type.
+export type { LogsPayload } from '@shared/api';
+
 export { fetchLogs, startLogsPolling, setLogTail, currentLogTail, setLogHead, currentLogHead } from './api';
 export {
   advance,
@@ -11,6 +15,7 @@ export {
   matches,
   overlap,
   tailOf,
+  timeOf,
   LEVELS,
   NO_FILTER,
 } from './model/derive';

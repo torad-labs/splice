@@ -130,8 +130,15 @@ export function ModelDetail({ model, head }: { model: CatalogModel; head: HeadCa
   // The edge is the state, so it has to read the same absence the fields do: a missing key used to
   // paint GREEN and label the strip `rates` for a model that declares none (M1-41).
   const noRates = model.rates === undefined || model.rates === null;
+  // A FRAGMENT, NOT A SECOND .myx-models-detail (M1-121). This returned <div
+  // className="myx-models-detail"> while index.tsx already wraps it in <aside
+  // className="myx-models-detail">, so the class was on two NESTED boxes and every rule for it
+  // applied twice. It surfaced when this row put overflow-x on that class: the scrollport landed
+  // on the inner div by accident, the outer aside measured scrollWidth === clientWidth, and the
+  // instrument read "nothing to scroll" on a column that could in fact scroll. One box now, so the
+  // aside is the column and the scrollport, and there is one place to read its rules.
   return (
-    <div className="myx-models-detail">
+    <>
       <h3 className="myx-models-sub">{model.id}</h3>
       <p className="myx-models-note">{model.description}</p>
       <Strip edge={noRates ? 'grey' : 'green'} edgeLabel={noRates ? S.noRates : S.rates} ariaLabel={S.rates}>
@@ -146,7 +153,7 @@ export function ModelDetail({ model, head }: { model: CatalogModel; head: HeadCa
         <StripField w={15} label={S.extraWindows} value={head.extra_windows.length} />
         <StripField w={15} label={S.windowRules} value={head.window_rules.length} />
       </Strip>
-    </div>
+    </>
   );
 }
 

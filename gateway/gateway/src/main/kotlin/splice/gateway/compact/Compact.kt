@@ -26,12 +26,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** Primary summarizer marker (kept for the canary test + shadow key). */
-public const val COMPACT_MARKER: String = "tasked with summarizing conversations"
+internal const val COMPACT_MARKER: String = "tasked with summarizing conversations"
 
 /** Every verbatim summarizer instruction Claude Code 2.1.207 emits (binary-traced).
  *  On drift: add the new verbatim sentence here + a fixture. The values are the ported contract;
  *  the identifier is camelCase per Kotlin convention (only the singular `const` stays UPPER_SNAKE). */
-public val compactMarkers: List<String> = listOf(
+internal val compactMarkers: List<String> = listOf(
     "tasked with summarizing conversations",
     "your task is to create a detailed summary of this conversation",
     "your task is to create a detailed summary of the conversation",

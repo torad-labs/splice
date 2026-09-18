@@ -23,18 +23,18 @@ import java.util.concurrent.atomic.AtomicLong
  * Held here (both terminal implementations already live in this file's package) rather than
  * duplicated per sink, the same reasoning [MessageIds] below states for the message-id minter.
  */
-public fun interface UsagePayloadBuilder {
+internal fun interface UsagePayloadBuilder {
     public operator fun invoke(usage: Usage?): JsonObject
 }
 
 /** One status line, composed at the instant the wire takes it. A seam rather than a String because
  *  composing a line CONSUMES the caller's ticker state and reads its live clock — see
  *  [TurnTerminal.progress]. `operator fun invoke` keeps every call site a plain lambda. */
-public fun interface ProgressLine {
+internal fun interface ProgressLine {
     public operator fun invoke(): String
 }
 
-public interface TurnTerminal : WireSink {
+internal interface TurnTerminal : WireSink {
     /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
      *  abandon sealed it, or a failed error write made retrying pointless. NOT merely "attempted":
      *  implementations keep it false after a cancelled/failed terminal so the cancellation seal
@@ -128,7 +128,7 @@ private val messageIdSeq = AtomicLong(0)
 /** The message-id minter. A class, not a file-scope function: both terminal sinks read it from a
  *  constructor DEFAULT (so it cannot be a member of either), and it stays stateless — the
  *  process-wide sequence above is what actually carries the uniqueness. */
-public class MessageIds {
+internal class MessageIds {
     /** A fresh Anthropic-shaped message id, unique even across turns starting in the same ms. */
     public fun generateMessageId(): String = "msg_${System.currentTimeMillis()}_${messageIdSeq.incrementAndGet()}"
 }

@@ -28,7 +28,7 @@ import splice.core.util.WallClock
 // gateway-side shape was the same (String) -> String? role living a module away.
 
 /** Ratelimit header codec: [QuotaHeaderRead] in, [PendingRateLimit] or a parsed [RateLimitState] out. */
-public class RateLimitHeaders(private val clock: WallClock) {
+internal class RateLimitHeaders(private val clock: WallClock) {
     private val usageJson = UsageJson()
 
     /** Parses x-ratelimit-limit-tokens / -remaining-tokens / -reset-tokens into a pending payload

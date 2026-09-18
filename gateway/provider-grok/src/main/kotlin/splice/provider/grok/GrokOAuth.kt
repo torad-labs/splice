@@ -86,7 +86,7 @@ public class GrokOAuth {
         )
 
     /** Form body for the refresh-token grant. */
-    public fun grokRefreshForm(refreshToken: String, clientId: String): String =
+    internal fun grokRefreshForm(refreshToken: String, clientId: String): String =
         FormEncoding.formEncode(
             "grant_type" to WIRE_REFRESH_TOKEN,
             "client_id" to clientId,

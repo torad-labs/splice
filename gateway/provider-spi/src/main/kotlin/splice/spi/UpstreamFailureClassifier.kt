@@ -279,7 +279,7 @@ public object UpstreamFailureClassifier {
     }
 
     /** 502 from the ChatGPT gateway is transient — surface as 529 so Claude Code retries. */
-    public fun mapOutStatus(status: Int): Int =
+    internal fun mapOutStatus(status: Int): Int =
         if (status == HttpStatus.BAD_GATEWAY) HttpStatus.OVERLOADED else status
 
     private sealed class ExtractResult {

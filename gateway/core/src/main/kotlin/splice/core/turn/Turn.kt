@@ -164,7 +164,7 @@ public class SharedSummaryParts(
     /** Explicit occurrence-safe count trim for tests and non-registry callers. Production instances
      *  apply both constructor bounds at every [endRound]. */
     @Synchronized
-    public fun trimToLast(n: Int) {
+    internal fun trimToLast(n: Int) {
         finishRoundLocked()
         retainedParts = trimRecords(retainedParts, minOf(n, maxParts))
         previousRoundItems = previousRoundItems.mapNotNull { previous ->

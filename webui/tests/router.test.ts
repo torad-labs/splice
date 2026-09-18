@@ -164,12 +164,24 @@ describe('page discovery against the tree', () => {
     }
   });
 
-  test('no page directory is renamed: every alias target is still in the tree', () => {
-    for (const [address, alias] of Object.entries(PAGE_ALIAS)) {
-      expect(has(alias), `${address} -> ${alias}`).toBe(true);
+  test('no address resolves through PAGE_ALIAS: its own directory always wins', () => {
+    // THE PROPERTY, NOT THE SET (M1-48). The three legacy directories the alias table was written
+    // for are gone: pages/burn, pages/auth and pages/config, which nothing could reach because
+    // `pageModuleKey` checks the address's OWN directory first and usage, accounts and settings all
+    // exist. A test that pinned WHICH aliases are dead would go red the day somebody legitimately
+    // adds a pages/burn for some new purpose, and would say nothing about the property that
+    // matters: every address that renders at all renders from its own directory.
+    for (const address of ADDRESSES) {
+      const key = pageModuleKey(address, PAGE_KEYS);
+      if (key === null) continue;
+      expect(key, address).toBe(`../pages/${address}/index.tsx`);
     }
-    expect(has('fleet')).toBe(true);
-    expect(has('logs')).toBe(true);
-    expect(has('compaction')).toBe(true);
+  });
+
+  test('every address with a directory resolves to it, and the rest are honest empties', () => {
+    for (const address of ADDRESSES) {
+      const expected = has(address) ? `../pages/${address}/index.tsx` : null;
+      expect(pageModuleKey(address, PAGE_KEYS), address).toBe(expected);
+    }
   });
 });

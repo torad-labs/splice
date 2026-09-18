@@ -26,7 +26,7 @@ const R = '/home/user/Documents/dev/projects/atlas/repo/.claude/worktrees/v0.4.0
 const { mgmtKey, withChrome, show } = await import(`${R}/.dev/web-console/lib/cdp.mjs`);
 const { urlFor } = await import(`${R}/.dev/web-console/lib/fixtures.mjs`);
 
-const PAGES = ['models'];
+const PAGES = ['mcp', 'projects', 'sessions', 'teams', 'turns'];
 
 // NO BACKTICKS INSIDE THIS LITERAL. One in a comment terminated a sibling instrument's template and
 // cost a SyntaxError that read like a logic bug; the load-time guard below is why that is mechanical

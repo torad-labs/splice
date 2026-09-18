@@ -1,0 +1,233 @@
+// The Settings page's pure half: what the parsed topology looks like as a flat list of fields,
+// how a field writes back into it, the TOML text the raw view shows, and the three views the page
+// ships with. No React, no stores, no network — every one of these is a function of its argument,
+// which is what lets the tests exercise the page's whole data story without a DOM.
+import type { View } from '@features/views';
+import { S } from './strings';
+
+/** The honest empties this page prints. Sentences, not labels, so they live here and not in the
+ *  string table (CONTRACTS.md section 4), and each one names the thing that did not answer. */
+export const EMPTIES = {
+  noConfig: { text: 'no config from the daemon yet', source: 'GET /api/config' },
+  noKnobs: { text: 'this view holds no knobs', source: 'the other view tabs' },
+  noHeads: { text: 'no heads declared', source: 'splice.toml' },
+  topologyPending: { text: 'the console cannot read the file yet', source: 'V4-128 serves /api/topology' },
+  claudePending: { text: 'the console cannot read the mode yet', source: 'V4-129 serves /api/claude-head' },
+  nothingChanged: { text: 'nothing changed yet', source: 'the loaded topology' },
+} as const;
+
+/** The page's saved views. `all knobs` is first because it is the default (CONTRACTS.md section 3). */
+export const DEFAULT_VIEWS: readonly View[] = [
+  { id: 'all', name: S.allKnobs, layout: 'rack', filter: {}, sort: null, group: null, fields: [] },
+  { id: 'live', name: S.live, layout: 'rack', filter: { hot: 'true' }, sort: null, group: null, fields: [] },
+  { id: 'restart', name: S.restart, layout: 'rack', filter: { hot: 'false' }, sort: null, group: null, fields: [] },
+];
+
+export type TopologyLeaf = {
+  /** Dotted path inside the document, with array indices: `heads.claudex.port`, `models[0].id`. */
+  path: string;
+  value: string | number | boolean;
+};
+
+function isTable(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isLeaf(value: unknown): value is string | number | boolean {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+function pushLeaves(value: unknown, path: string, out: TopologyLeaf[]): void {
+  if (isLeaf(value)) {
+    out.push({ path, value });
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => pushLeaves(entry, `${path}[${index}]`, out));
+    return;
+  }
+  if (isTable(value)) {
+    for (const [key, child] of Object.entries(value)) {
+      pushLeaves(child, path === '' ? key : `${path}.${key}`, out);
+    }
+  }
+}
+
+/** Every scalar the document holds, as a dotted path. Sorted, so the form is stable across reads. */
+export function flattenTopology(topology: Record<string, unknown>): TopologyLeaf[] {
+  const out: TopologyLeaf[] = [];
+  pushLeaves(topology, '', out);
+  return out.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+type Segment = { key: string; index: number | null };
+
+function segmentsOf(path: string): Segment[] {
+  return path.split('.').map((part) => {
+    const match = /^(.*)\[(\d+)\]$/.exec(part);
+    if (match === null) return { key: part, index: null };
+    return { key: match[1], index: Number.parseInt(match[2], 10) };
+  });
+}
+
+/** Read the value at a dotted path, or undefined when the document has nothing there. */
+export function valueAtPath(topology: Record<string, unknown>, path: string): unknown {
+  let cursor: unknown = topology;
+  for (const { key, index } of segmentsOf(path)) {
+    if (!isTable(cursor)) return undefined;
+    cursor = cursor[key];
+    if (index !== null) {
+      if (!Array.isArray(cursor)) return undefined;
+      cursor = cursor[index];
+    }
+  }
+  return cursor;
+}
+
+/**
+ * Write a value at a dotted path, returning a new document and never touching the old one.
+ *
+ * The copy-on-write is the point: the page holds the daemon's document and a draft side by side,
+ * and the diff between them is what the operator reviews before a write.
+ */
+export function setAtPath(
+  topology: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): Record<string, unknown> {
+  const segments = segmentsOf(path);
+  const clone = (node: unknown): unknown => {
+    if (Array.isArray(node)) return [...node];
+    if (isTable(node)) return { ...node };
+    return node;
+  };
+  const root = clone(topology) as Record<string, unknown>;
+
+  let cursor: Record<string, unknown> | unknown[] = root;
+  for (let at = 0; at < segments.length - 1; at += 1) {
+    const segment = segments[at];
+    const container = cursor as Record<string, unknown>;
+    const next = clone(container[segment.key]);
+    container[segment.key] = next;
+    if (segment.index !== null) {
+      const list = next as unknown[];
+      const element = clone(list[segment.index]);
+      list[segment.index] = element;
+      cursor = element as Record<string, unknown>;
+    } else {
+      cursor = next as Record<string, unknown>;
+    }
+  }
+
+  const last = segments[segments.length - 1];
+  const target = cursor as Record<string, unknown>;
+  if (last.index !== null) {
+    const list = target[last.key] as unknown[];
+    list[last.index] = value;
+  } else {
+    target[last.key] = value;
+  }
+  return root;
+}
+
+/**
+ * Keep the value's own type when an edit round-trips through a text field.
+ *
+ * A TOML scalar's type is part of the document — `port = 3096` and `port = "3096"` are different
+ * keys to the daemon — so the field edits the text and this restores the type it found, falling
+ * back to the original rather than inventing a value out of an unparseable edit.
+ */
+export function coerce(raw: string, reference: string | number | boolean): string | number | boolean {
+  if (typeof reference === 'boolean') return raw === 'true';
+  if (typeof reference === 'number') {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : reference;
+  }
+  return raw;
+}
+
+/** The paths two documents disagree on, in stable order. This is the review before a write. */
+export function changedPaths(
+  loaded: Record<string, unknown>,
+  draft: Record<string, unknown>,
+): string[] {
+  const paths = new Set(flattenTopology(loaded).map((leaf) => leaf.path));
+  for (const leaf of flattenTopology(draft)) paths.add(leaf.path);
+  return [...paths]
+    .filter((path) => {
+      const before = valueAtPath(loaded, path);
+      const after = valueAtPath(draft, path);
+      return JSON.stringify(before) !== JSON.stringify(after);
+    })
+    .sort();
+}
+
+function tomlValue(value: string | number | boolean): string {
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function tomlInline(value: readonly unknown[]): string {
+  return `[${value
+    .map((entry) => (isLeaf(entry) ? tomlValue(entry) : '?'))
+    .join(', ')}]`;
+}
+
+function writeTable(table: Record<string, unknown>, path: string, lines: string[]): void {
+  const scalars: string[] = [];
+  const tables: Array<[string, Record<string, unknown>]> = [];
+  const arrays: Array<[string, readonly unknown[]]> = [];
+
+  for (const [key, value] of Object.entries(table)) {
+    // TOML has no null: an absent key is how "unset" is spelled on disk, so it is not written.
+    if (value === null || value === undefined) continue;
+    if (isTable(value)) tables.push([key, value]);
+    else if (Array.isArray(value)) arrays.push([key, value]);
+    else if (isLeaf(value)) scalars.push(`${key} = ${tomlValue(value)}`);
+  }
+
+  for (const line of scalars) lines.push(line);
+  for (const [key, value] of arrays) {
+    const child = path === '' ? key : `${path}.${key}`;
+    if (value.every((entry) => isTable(entry))) {
+      for (const entry of value) {
+        if (lines.length > 0) lines.push('');
+        lines.push(`[[${child}]]`);
+        writeTable(entry as Record<string, unknown>, child, lines);
+      }
+    } else {
+      lines.push(`${key} = ${tomlInline(value)}`);
+    }
+  }
+  for (const [key, value] of tables) {
+    const child = path === '' ? key : `${path}.${key}`;
+    if (lines.length > 0) lines.push('');
+    lines.push(`[${child}]`);
+    writeTable(value, child, lines);
+  }
+}
+
+/**
+ * The document as TOML text, for the read-only raw view.
+ *
+ * THIS IS A RENDERER, NOT A WRITER, and the distinction is load-bearing: it serializes the parsed
+ * document it was handed, so the comments and layout of the operator's own file are not in it, and
+ * its output is never sent anywhere. Writes go through the forms and the daemon's structured
+ * writer, which is the only thing that can round-trip the file faithfully.
+ */
+export function toToml(topology: Record<string, unknown>): string {
+  const lines: string[] = [];
+  writeTable(topology, '', lines);
+  return `${lines.join('\n')}\n`;
+}
+
+/** The knobs the active view shows. An unknown filter key shows everything, never nothing. */
+export function knobsForView<T extends { key: string; hot: boolean }>(
+  dispositions: readonly T[],
+  view: View,
+): T[] {
+  const wanted = view.filter.hot;
+  if (wanted === undefined) return [...dispositions];
+  const hot = wanted === 'true';
+  return dispositions.filter((disposition) => disposition.hot === hot);
+}

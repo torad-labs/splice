@@ -1,0 +1,41 @@
+/* The knob rack: a numbered list of field boxes. Spacing and type sizes come
+   from the token scales only (ast-grep wall webui-css-tokens-only); radius is 0
+   and there is no shadow or glow anywhere in the world. */
+.myx-knobs {
+  display: flex;
+  flex-direction: column;
+}
+
+.myx-knob {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--hair);
+}
+
+.myx-knob:last-child {
+  border-bottom: 0;
+}
+
+/* The number is a printed field: tabular, right aligned, never decoration. */
+.myx-knob-num {
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  padding-bottom: var(--space-1);
+}
+
+.myx-knob-act {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+}
+
+/* A knob waiting on a restart is the one row that carries attention outward. */
+.myx-knob[data-knob] .myx-edge-label {
+  white-space: nowrap;
+}

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.launch.McpSharing
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.wire.HttpStatus
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -23,11 +24,11 @@ import java.util.concurrent.TimeUnit
 private const val RPC_INVALID = -32600
 private const val RPC_UNKNOWN_SESSION = -32001
 private const val RPC_SERVER_ERROR = -32000
+
+// HTTP_OK and HTTP_ACCEPTED stay local: HttpStatus declares no 2xx constant, and the wall is silent
+// on them. The three ERROR statuses read HttpStatus now.
 private const val HTTP_OK = 200
 private const val HTTP_ACCEPTED = 202
-private const val HTTP_BAD_REQUEST = 400
-private const val HTTP_NOT_FOUND = 404
-private const val HTTP_UNAVAILABLE = 503
 private const val SWEEP_PERIOD_S = 60L
 
 /** What the transport writes back: status, an optional session header, and a JSON body (or none for 202). */
@@ -79,14 +80,14 @@ public class McpHost(
      *  [protocolVersion] is the `MCP-Protocol-Version` header a client sends after initialize. */
     public suspend fun post(name: String, sessionId: String?, body: String, protocolVersion: String? = null): McpReply {
         val msg = codec.parse(body)
-            ?: return bad(HTTP_BAD_REQUEST, JsonPrimitive(0), RPC_INVALID, "not a JSON-RPC object")
+            ?: return bad(HttpStatus.BAD_REQUEST, JsonPrimitive(0), RPC_INVALID, "not a JSON-RPC object")
         val kind = codec.kind(msg)
         val id = msg["id"] ?: JsonPrimitive(0)
         return when {
-            kind == RpcKind.INVALID -> bad(HTTP_BAD_REQUEST, id, RPC_INVALID, "invalid JSON-RPC")
+            kind == RpcKind.INVALID -> bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "invalid JSON-RPC")
             kind == RpcKind.REQUEST && codec.method(msg) == "initialize" -> initialize(name, msg)
             !protocolAccepted(name, sessionId, protocolVersion) ->
-                bad(HTTP_BAD_REQUEST, id, RPC_INVALID, "unsupported MCP-Protocol-Version '$protocolVersion'")
+                bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "unsupported MCP-Protocol-Version '$protocolVersion'")
             else -> forSession(name, sessionId, msg, kind)
         }
     }
@@ -152,7 +153,7 @@ public class McpHost(
         val server = try {
             servers.acquire(name)
         } catch (e: McpHostException) {
-            return bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
+            return bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
         }
         var session: McpSession? = null
         var failure = ""
@@ -170,18 +171,19 @@ public class McpHost(
         }
         val minted = session?.takeIf { failure.isEmpty() }
         return minted?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
-            ?: bad(HTTP_UNAVAILABLE, id, RPC_SERVER_ERROR, failure)
+            ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, failure)
     }
 
     private suspend fun forSession(name: String, sessionId: String?, msg: JsonObject, kind: RpcKind): McpReply {
         val id = msg["id"] ?: JsonPrimitive(0)
         val session = sessions.get(name, sessionId)
-            ?: return bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
+            ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
         sessions.touch(session)
-        val server = servers.reserve(name) ?: return bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "server not hosted")
+        val server = servers.reserve(name)
+            ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "server not hosted")
         return try {
             if (sessions.get(name, sessionId) !== session) {
-                bad(HTTP_NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
+                bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
             } else {
                 when (kind) {
                     RpcKind.REQUEST -> forward(server, session, msg)
@@ -211,7 +213,12 @@ public class McpHost(
         return if (delivered) {
             McpReply(HTTP_ACCEPTED, null)
         } else {
-            bad(HTTP_UNAVAILABLE, JsonPrimitive(0), RPC_SERVER_ERROR, "hosted MCP server '$name' is not running")
+            bad(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                JsonPrimitive(0),
+                RPC_SERVER_ERROR,
+                "hosted MCP server '$name' is not running",
+            )
         }
     }
 

@@ -1,0 +1,78 @@
+/* Settings: a page of bays holding forms. The world reaches it through the bay
+   frames, the plate labels, the holder edges and the figure face, not through a
+   rack of strips — a strip is a focusable button and a form field inside one is
+   a nested interactive element. Tokens only for spacing and type; radius 0. */
+.myx-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+}
+
+.myx-settings-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.myx-settings-title {
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+.myx-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-settings-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.myx-settings-note {
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-settings-path {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.myx-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.myx-settings-findings {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+/* A bay's rows are field boxes, not strips, so the rack needs the padding the
+   strip module would otherwise bring. */
+.myx-settings .myx-bay-rows .myx-fbox {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--hair);
+}
+
+.myx-settings .myx-bay-rows .myx-fbox:last-child {
+  border-bottom: 0;
+}
+
+.myx-settings-topology,
+.myx-settings-claude {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

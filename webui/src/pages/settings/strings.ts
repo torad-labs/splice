@@ -1,0 +1,28 @@
+// Every label this page prints. Lowercase, three words or fewer, no em-dash (CONTRACTS.md
+// section 4, enforced by the label wall). Sentences — the honest empties, the wrap side effects,
+// the validator messages — are not labels and live in the components.
+export const S = {
+  title: 'settings',
+  knobs: 'runtime knobs',
+  topology: 'topology',
+  claudeHead: 'claude head',
+  mode: 'head mode',
+  separate: 'separate',
+  wrap: 'wrap',
+  unwrapLabel: 'unwrap',
+  rawToml: 'raw topology',
+  showDiff: 'show diff',
+  write: 'write topology',
+  discard: 'discard changes',
+  reload: 'reload',
+  count: 'fields',
+  changed: 'changed fields',
+  allKnobs: 'all knobs',
+  live: 'applies live',
+  restart: 'restart to apply',
+  sample: 'sample data',
+  onPath: 'claude on path',
+  shim: 'shim',
+  rewritten: 'rewritten files',
+  backups: 'backup files',
+} as const;

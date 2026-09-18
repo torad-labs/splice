@@ -9,6 +9,17 @@ export const S = {
   inflight: 'in flight',
   landed: 'landed',
   summary: 'summary',
+  /** THE TWO NEW MEMBERS (M2-20). Each is a small table with its own header, which is what M1-109
+   *  measured the comp earning its printed area with -- not a wider rack. */
+  stages: 'time per stage',
+  stage: 'stage',
+  share: 'share',
+  tokens: 'tokens',
+  tokIn: 'in',
+  tokCached: 'cached',
+  tokWrite: 'cache write',
+  tokOut: 'out',
+  hit: 'hit',
   detail: 'turn detail',
   close: 'close',
   /** The strip fields, in the order the views declare them. */

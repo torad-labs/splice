@@ -45,6 +45,11 @@
  *        node webui/.impeccable/review/ink/census-light.mjs --selftest
  */
 import fs from 'node:fs';
+// THE TREE STAMP (M1-104), shared rather than copied: this census reads the same stylesheets the
+// D7 sweep does, so the stamp that says WHICH TREE those stylesheets were is the same stamp. A
+// second copy of it would drift while both kept printing good numbers, which is the failure
+// lib/fixtures.mjs carries in its own header.
+import { treeState, describeTree } from './tree-state.mjs';
 
 const R = '/home/marcos/Documents/dev/projects/mythos/repo/.claude/worktrees/v0.4.0';
 const INK = `${R}/webui/.impeccable/review/ink`;
@@ -127,7 +132,17 @@ if (!sweepPath) {
   console.error('usage: census-light.mjs <sweep-d7.json>   (bun sweep-d7.mjs <path> writes it)');
   process.exit(2);
 }
-const sweep = read(sweepPath);
+const sweepFile = read(sweepPath);
+// A sweep artifact written before M1-104 is a bare array of rows; one written after carries
+// {tree, rows}. Read both rather than refusing the older one - a stamp added today must not
+// invalidate yesterday's proof.
+const sweep = Array.isArray(sweepFile) ? sweepFile : sweepFile.rows;
+const sweepTree = Array.isArray(sweepFile) ? null : sweepFile.tree;
+if (!Array.isArray(sweep)) {
+  console.error(`census-light: ${sweepPath} carries no rows array - a denominator that cannot be read is not an empty denominator`);
+  process.exit(1);
+}
+const censusTree = treeState(['webui/src']);
 const frames = {
   '3840': light(read(`${INK}/light-census-3840.json`)),
   '1536': light(read(`${INK}/light-census-1536.json`)),
@@ -278,6 +293,13 @@ say();
 
 say(`## The ${unrendered.length}-of-${sweep.length} gap: what this census cannot see, and what now fills part of it`);
 say();
+// M1-104: a denominator without a tree is not a denominator. It goes ABOVE the numbers, not in a
+// footnote, because a reader who takes the number and skips the footnote has been misled by layout.
+say(`**The tree this was read from: ${describeTree(censusTree)}.**`);
+if (sweepTree) say(`The sweep's own stamp, which is the denominator below: ${describeTree(sweepTree)}.`);
+else say(`The sweep artifact carried no tree stamp: it predates M1-104.`);
+say();
+say();
 say(`The census is over pairs that RENDER. A rule that never renders contributes no pair, so it is`);
 say(`invisible here by construction - which is not the same as being safe, and the row says so. The`);
 say(`denominator is M1-52's, re-derived here by re-running \`sweep-d7.mjs\` rather than restating it:`);
@@ -313,7 +335,9 @@ if (dispositioned !== unrendered.length) {
   say(`return 189 rules / 73 unresolved and then ${sweep.length} / ${unrendered.length} minutes apart in one session, while a live`);
   say(`seat edited CSS - so ${dispositioned - unrendered.length} of the rules M1-80 dispositioned are simply gone from the`);
   say(`source, or have changed kind. A disposition record is a photograph of a moving denominator, and`);
-  say(`the only honest way to quote one is beside its date.`);
+  say(`the only honest way to quote one is beside its date. **The reconciliation is written down once,`);
+  say(`with the tree it was read from, in \`reconcile-m1-80.md\`** - it names the ${dispositioned - unrendered.length} rules that`);
+  say(`moved, what happened to each, and which of them are landed rather than merely uncommitted.`);
   say();
 }
 if (exLight.length) {
@@ -441,6 +465,10 @@ say('```');
 fs.writeFileSync(`${INK}/light-census.md`, lines.join('\n') + '\n');
 fs.writeFileSync(`${INK}/light-census.json`, JSON.stringify({
   floor: FLOOR,
+  // WHICH TREE THIS READING IS (M1-104). Every number in this file is a reading of a tree, and
+  // without these two lines the next reader cannot tell whether it still applies.
+  tree: censusTree,
+  sweepTree,
   frames: Object.fromEntries(Object.entries(graded).map(([t, g]) => [t, {
     pairs: g.pairs, pages: g.pages, classes: g.classes, below: g.below.length,
     belowByLargeOnly: g.belowByLargeOnly.length, min: g.min,

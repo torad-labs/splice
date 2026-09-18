@@ -59,8 +59,6 @@
     ":dialect-openai-responses splice.dialect.responses.WsConnection",
     ":dialect-openai-responses splice.dialect.responses.WsConnector",
     ":dialect-openai-responses splice.dialect.responses.WsUpstream",
-    ":gateway splice.gateway.head.DEFAULT_MAX_REQUEST_BYTES",
-    ":gateway splice.gateway.head.DEFAULT_REQUEST_READ_TIMEOUT_MS",
     ":provider-grok splice.provider.grok.GrokEffortVocabulary",
     ":provider-muse splice.provider.muse.MuseMintWriteGuard",
     ":provider-spi splice.spi.BodyAmendment",
@@ -70,6 +68,7 @@
     ":provider-spi splice.spi.FinishedOutcome",
     ":provider-spi splice.spi.MalformedLine",
     ":provider-spi splice.spi.PollRuntime",
+    ":provider-spi splice.spi.ProviderProbe",
     ":provider-spi splice.spi.RawTextObserver",
     ":provider-spi splice.spi.StreamStart",
     ":provider-spi splice.spi.UnfinishedOutcome",
@@ -77,6 +76,7 @@
     ":provider-spi splice.spi.WatchdogOutcome"
   ],
   "kept": {
-    "law": "V4-149. The companion to `offenders`: a public declaration that has been MEASURED as unconsumed but CANNOT be made internal, carrying the reason it cannot. `bun checks/public-surface.ts --ratchet` fails on an entry here with a blank reason, and on an entry here that the baseline does not also list. EMPTY IS THE HONEST STATE TODAY, and that is a result rather than an oversight: V4-104 recorded five entries here by hand — CompactProbe, CompactStatsSummary, EconomicsBucket, TurnEconomics, UsageState — each proven burn-proof because a public member of a consumed class exposed it and the Kotlin compiler refused the internalisation. V4-149 then fixed the census to walk public signatures, and all five stopped offending on their own. They were never debt; the instrument was measuring the wrong denominator, which is exactly what this row exists to stop."
+    "law": "V4-149. The companion to `offenders`: a public declaration that has been MEASURED as unconsumed but CANNOT be made internal, carrying the reason it cannot. `bun checks/public-surface.ts --ratchet` fails on an entry here with a blank reason, and on an entry here that the baseline does not also list. V4-104 recorded five entries here by hand — CompactProbe, CompactStatsSummary, EconomicsBucket, TurnEconomics, UsageState — each proven burn-proof because a public member of a consumed class exposed it and the Kotlin compiler refused the internalisation. V4-149 then fixed the census to walk public signatures, and all five stopped offending on their own: they were never debt, the instrument was measuring the wrong denominator.",
+    ":provider-spi splice.spi.ProviderProbe": "CONSUMED, BUT NOT NAME-DETECTABLE, AND A DEFECT IN V4-149 RATHER THAN IN THIS DECLARATION. :gateway passes a ProviderProbe value into TurnWatchdog.launchIn — SseRoundConsume.kt builds one from UpstreamTransport().reachabilityProbe(...) and hands it over — so it is a real cross-module contract. The V4-149 closure should justify it and cannot, because the closure propagates only FROM declarations justified BY NAME, and TurnWatchdog is itself never named outside :provider-spi: the gateway reaches it through an instance it was handed. So the propagation root is unreachable and the type in its signature stays invisible. THAT IS THE NEXT INCREMENT OF THIS INSTRUMENT, not something to keep: the root set needs to include declarations reached by INFERENCE, which is the same blindness in one more place. Recorded here with its reason rather than silently burned or silently allowlisted. NOT burnable in V4-150 either, whose fence is the head package and the baseline only — checks/public-surface.ts is outside it. NOTE ALSO: this entry was IN the baseline that V4-104's commit recorded, and V4-149's --write-baseline dropped it, so the re-measure and the closure disagree about the same declaration in opposite directions."
   }
 }

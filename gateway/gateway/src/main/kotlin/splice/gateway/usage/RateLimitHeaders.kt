@@ -20,21 +20,21 @@ import splice.core.util.WallClock
  * Absent headers are the ordinary case — most upstreams send no rate-limit family at all, and the
  * whole persist is a no-op without a limit.
  */
-public typealias HeaderLookup = QuotaHeaderRead
-// V4-122 RECONCILED THIS onto [QuotaHeaderRead] rather than leaving it a second declaration of the
-// same role. QuotaHeaderRead's own KDoc already ADMITTED the duplication — that the gateway's
-// HeaderLookup lived a module away with the identical (String) -> String? shape — and an admitted
-// duplication is still a duplication: two declarations of one role drift the moment one is changed.
-// The typealias keeps every call site and SAM conversion compiling while leaving one declaration.
+// V4-101 FINISHED WHAT V4-122 STARTED HERE: the typealias is gone and every call site names
+// [QuotaHeaderRead] directly. V4-122 reconciled the second declaration onto the core one and kept an
+// alias so the call sites compiled; an alias is still a second spelling, and the row that collapses
+// duplicate ROLES does not stop at making two names agree — it leaves one. The rationale is not
+// dropped with the name: it lives in QuotaHeaderRead's own KDoc, which already recorded that this
+// gateway-side shape was the same (String) -> String? role living a module away.
 
-/** Ratelimit header codec: HeaderLookup in, [PendingRateLimit] or a parsed [RateLimitState] out. */
+/** Ratelimit header codec: [QuotaHeaderRead] in, [PendingRateLimit] or a parsed [RateLimitState] out. */
 public class RateLimitHeaders(private val clock: WallClock) {
     private val usageJson = UsageJson()
 
     /** Parses x-ratelimit-limit-tokens / -remaining-tokens / -reset-tokens into a pending payload
      *  paired with its already-parsed state (see [PendingRateLimit]); null without a limit.
      *  `internal`, not `public`: it returns the internal [PendingRateLimit]. */
-    internal fun pendingFrom(header: HeaderLookup): PendingRateLimit? {
+    internal fun pendingFrom(header: QuotaHeaderRead): PendingRateLimit? {
         val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return null
         val remaining = header("x-ratelimit-remaining-tokens")?.toLongOrNull()
         val reset = header("x-ratelimit-reset-tokens")?.takeIf { it.isNotEmpty() }

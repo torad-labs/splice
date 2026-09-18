@@ -14,14 +14,14 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.spi.AccountCredentialIdentitySource
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
-import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.AccountSelection
 import splice.spi.AccountView
-import splice.spi.ElapsedNow
 import splice.spi.PoolAccount
 import splice.spi.RateLimitCooldown
 import splice.spi.RateLimitTurn
@@ -394,11 +394,11 @@ class AccountPoolTest {
                 primary = primary,
                 auth = source,
                 quota = AccountQuotaSource { null },
-                cooldown = RateLimitCooldown(ElapsedNow { 0L }),
+                cooldown = RateLimitCooldown(ElapsedClock { 0L }),
             )
         }
 
-        val pool = AccountPool(listOf(account("primary", true), account("plus-a", false)), AccountNow(now::get))
+        val pool = AccountPool(listOf(account("primary", true), account("plus-a", false)), WallClock(now::get))
         val sessions = AccountPool::class.java.getDeclaredField("sessions").apply { isAccessible = true }.get(pool)
         monitorHolder.set(sessions)
 
@@ -415,7 +415,7 @@ class AccountPoolTest {
         private var elapsed = 0L
         private var revision = 1L
 
-        fun pool(vararg accounts: PoolAccount): AccountPool = AccountPool(accounts.toList(), AccountNow(now::get))
+        fun pool(vararg accounts: PoolAccount): AccountPool = AccountPool(accounts.toList(), WallClock(now::get))
 
         fun account(
             label: String,
@@ -453,7 +453,7 @@ class AccountPoolTest {
                 primary = primary,
                 auth = auth,
                 quota = AccountQuotaSource(quota::get),
-                cooldown = RateLimitCooldown(ElapsedNow { elapsed }),
+                cooldown = RateLimitCooldown(ElapsedClock { elapsed }),
                 credentialPresent = credentialPresent,
             ).also {
                 quotas[it] = quota

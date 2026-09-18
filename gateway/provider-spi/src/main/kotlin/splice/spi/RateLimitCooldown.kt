@@ -32,6 +32,7 @@
 package splice.spi
 
 import splice.core.util.Cancellables
+import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
@@ -46,7 +47,7 @@ import java.util.concurrent.atomic.AtomicLong
  * cooldown starts when it is armed, not when the response headers were first received.
  */
 public class RateLimitCooldown public constructor(
-    private val clock: ElapsedNow,
+    private val clock: ElapsedClock,
     /** V4-47: WALL clock, used for exactly one thing — converting the provider's absolute reset
      *  instant (an ISO8601 time or epoch seconds in the 429 body) into the elapsed-clock DELAY this
      *  class stores. The two bases must never mix: every horizon above is elapsed, the provider

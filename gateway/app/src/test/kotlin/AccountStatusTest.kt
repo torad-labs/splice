@@ -17,10 +17,10 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
-import splice.spi.AccountNow
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
-import splice.spi.ElapsedNow
 import splice.spi.PoolAccount
 import splice.spi.RateLimitCooldown
 import splice.spi.Selection
@@ -307,18 +307,18 @@ class AccountSwitchVocabularyTest {
                 primary = true,
                 auth = auth,
                 quota = AccountQuotaSource { quota },
-                cooldown = RateLimitCooldown(ElapsedNow { now }),
+                cooldown = RateLimitCooldown(ElapsedClock { now }),
                 credentialPresent = block != Block.CREDENTIAL,
             )
             val backup = primary.copy(
                 label = "backup",
                 primary = false,
                 quota = AccountQuotaSource { null },
-                cooldown = RateLimitCooldown(ElapsedNow { now }),
+                cooldown = RateLimitCooldown(ElapsedClock { now }),
                 credentialPresent = true,
             )
             if (block == Block.COOLDOWN) primary.cooldown.markUnavailable(30_000L)
-            val pool = AccountPool(listOf(primary, backup), AccountNow { now })
+            val pool = AccountPool(listOf(primary, backup), WallClock { now })
             reasons += requireNotNull((pool.select("session") as Selection.Chosen).account.switch).reason
             now = 2_000_001L
             if (block != Block.CREDENTIAL) {

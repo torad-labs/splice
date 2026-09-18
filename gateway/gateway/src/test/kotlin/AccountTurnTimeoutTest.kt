@@ -46,7 +46,6 @@ import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.UsagePayloadBuilder
 import splice.spi.ClientFrameEmitted
-import splice.spi.ElapsedNow
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
 import splice.spi.ProviderTuning
@@ -132,7 +131,7 @@ class AccountTurnTimeoutTest {
             totalTimeoutMs = 30_000L,
             maxRetries = 3,
             client = client,
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(

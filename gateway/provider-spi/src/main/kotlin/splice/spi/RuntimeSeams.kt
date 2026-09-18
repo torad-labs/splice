@@ -18,7 +18,6 @@ package splice.spi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import splice.core.util.ElapsedClock
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -32,21 +31,16 @@ public fun interface Waiter {
     public suspend fun wait(ms: Long)
 }
 
-/**
- * A monotonic now-reading in milliseconds. The seam behind retry deadlines and the shared 429
- * cooldown — same base as [Waiter], a named port so a test can step time without sleeping.
- *
- * Production wires [ProcessElapsedNow]. A test wires a lambda (SAM) it advances by hand.
- *
- * V4-122 RECONCILED THIS onto [splice.core.util.ElapsedClock] rather than leaving it as a second
- * declaration of one role. The registry had listed it as DELIBERATELY ABSENT with the note that
- * listing it would be a lie that closes the wall — and that was right: the two names described ONE
- * monotonic-now port, so the honest fix was to make them one, not to dispose of the second name in
- * prose. A typealias keeps every existing call site compiling (SAM conversion included, since
- * ElapsedClock is a fun interface too) while removing the duplicate declaration the wall exists to
- * catch.
- */
-public typealias ElapsedNow = ElapsedClock
+// V4-101: ElapsedNow IS GONE. This module names [splice.core.util.ElapsedClock] directly — the
+// monotonic now-reading in milliseconds that the seam behind retry deadlines and the shared 429
+// cooldown has always been, same base as [Waiter], a named port so a test can step time without
+// sleeping. Production wires [ProcessElapsedNow]; a test wires a lambda (SAM) it advances by hand.
+//
+// V4-122 reconciled the second declaration onto the core one and kept a typealias so every call site
+// — SAM conversions included, since ElapsedClock is a fun interface too — compiled unchanged. That
+// was the right INTERMEDIATE and the wrong DESTINATION: an alias is still a second spelling of one
+// role, and this row exists to leave one name. The registry note that called this pair DELIBERATELY
+// ABSENT was correct, and it is discharged by there being one name rather than by prose about two.
 
 /**
  * The pacing seam for an unbounded loop — the `while (isActive) { work(); delay(interval) }` shape.

@@ -18,10 +18,11 @@ package splice.spi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 
-/** The production [ElapsedNow]: [MonoClock.nowMs] and nothing else. */
-public class ProcessElapsedNow : ElapsedNow {
+/** The production [ElapsedClock]: [MonoClock.nowMs] and nothing else. */
+public class ProcessElapsedNow : ElapsedClock {
     override fun invoke(): Long = MonoClock.nowMs()
 }
 

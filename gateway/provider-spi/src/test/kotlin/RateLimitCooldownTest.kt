@@ -14,8 +14,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.spi.ElapsedNow
 import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.PostContext
 import splice.spi.RateLimitCooldown
@@ -35,7 +35,7 @@ class RateLimitCooldownTest {
     fun `pooled 429 at the interactive ceiling terminates the observed request wave`() {
         var elapsed = 1_000L
         val notices = mutableListOf<String>()
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = 15_000L,
@@ -59,7 +59,7 @@ class RateLimitCooldownTest {
 
     @Test
     fun `a dying turn gives up a short 429 without evicting the account`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val notices = mutableListOf<String>()
 
         val plan = cooldown.rateLimitedPlan(
@@ -85,7 +85,7 @@ class RateLimitCooldownTest {
     // waiting the 15s floor and retrying HERE is the whole recovery.
     @Test
     fun `a long retry-after on a non-pooled 429 backs off at the 15s floor instead of giving up`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val notices = mutableListOf<String>()
 
         val plan = cooldown.rateLimitedPlan(
@@ -111,7 +111,7 @@ class RateLimitCooldownTest {
     // give-up. The absent header is the COMMON case, not the edge.
     @Test
     fun `an absent retry-after on a 429 with budget left backs off at the 15s floor`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = null,
@@ -130,7 +130,7 @@ class RateLimitCooldownTest {
     // exhaustion, never on the retries that precede it.
     @Test
     fun `a 429 with no budget left gives up and arms the follower horizon`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = null,
@@ -147,7 +147,7 @@ class RateLimitCooldownTest {
     @Test
     fun `pooled 429 above the interactive ceiling removes only this account`() {
         var elapsed = 10L
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
 
         val plan = cooldown.rateLimitedPlan(
             pushbackMs = 15_001L,
@@ -167,7 +167,7 @@ class RateLimitCooldownTest {
     @Test
     fun `hostile reset horizon is clamped instead of poisoning the account`() {
         var elapsed = 42L
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
 
         cooldown.markUnavailable(Long.MAX_VALUE)
 
@@ -182,7 +182,7 @@ class RateLimitCooldownTest {
     @Test
     fun `a capped provider delay still saturates near the elapsed clock limit`() {
         var elapsed = Long.MAX_VALUE - 1_000_000L
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
 
         cooldown.markUnavailable(Long.MAX_VALUE)
 
@@ -195,7 +195,7 @@ class RateLimitCooldownTest {
 
     @Test
     fun `multi-day 429 names the bounded follower-protection horizon`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val notices = mutableListOf<String>()
 
         cooldown.rateLimitedPlan(
@@ -214,7 +214,7 @@ class RateLimitCooldownTest {
 
     @Test
     fun `bare 429 does not invent an account-unavailable reset`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
         cooldown.rateLimitedPlan(
             pushbackMs = null,
@@ -234,7 +234,7 @@ class RateLimitCooldownTest {
     @Test
     fun `the arming line names the Retry-After header and distinguishes absent from present`() {
         val notices = mutableListOf<String>()
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
 
         cooldown.rateLimitedPlan(
             pushbackMs = null,
@@ -268,7 +268,7 @@ class RateLimitCooldownTest {
     @Test
     fun `a fail-fast 429 attributes the wait to the gateway and stays silent about the provider`() {
         var elapsed = 1_000L
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
         cooldown.arm(19_000L)
         elapsed += 1_000L
 
@@ -290,7 +290,7 @@ class RateLimitCooldownTest {
     @Test
     fun `the live muse episode shrinking gateway countdown must not read as a retry schedule`() {
         var elapsed = 0L
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
 
         cooldown.rateLimitedPlan(
             pushbackMs = 488_000L,
@@ -331,7 +331,7 @@ class RateLimitCooldownTest {
     fun `the live muse episode names the provider reset so 120s cannot read as a retry schedule`() {
         var elapsed = 0L
         val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
-        val cooldown = RateLimitCooldown(ElapsedNow { elapsed }, WallClock { wall })
+        val cooldown = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall })
         val body = """{"error":{"message":"Subscription quota exhausted. Your usage window resets """ +
             """at 2026-09-16T20:02:52Z","type":"rate_limit_error"},"type":"error"}"""
 
@@ -371,7 +371,7 @@ class RateLimitCooldownTest {
     @Test
     fun `a single-account head records the provider reset where markUnavailable never fired`() {
         val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L }, WallClock { wall })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { wall })
 
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
@@ -391,7 +391,7 @@ class RateLimitCooldownTest {
         val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
 
         fun captured(body: String): Long {
-            val cooldown = RateLimitCooldown(ElapsedNow { 0L }, WallClock { wall })
+            val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { wall })
             cooldown.rateLimitedPlan(
                 pushbackMs = 5_301_000L,
                 turn = RateLimitTurn(cooldown, pooledAccount = false),
@@ -411,7 +411,7 @@ class RateLimitCooldownTest {
 
     @Test
     fun `a body naming no reset keeps the V4-46 wording and still claims nothing`() {
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L }, WallClock { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 0L })
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
             turn = RateLimitTurn(cooldown, pooledAccount = false),
@@ -457,7 +457,7 @@ class RateLimitCooldownBudgetTest {
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         val context = PostContext(
             url = "https://api.example.test/v1",
@@ -494,7 +494,7 @@ class RateLimitCooldownBudgetTest {
             maxRetries = 3,
             client = HttpClient(engine),
             waiter = waiter,
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         val context = PostContext(
             url = "https://api.example.test/v1",
@@ -530,7 +530,7 @@ class RateLimitCooldownBudgetTest {
             maxRetries = 3,
             client = HttpClient(engine),
             waiter = waiter,
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         val context = PostContext(
             url = "https://api.example.test/v1",
@@ -559,7 +559,7 @@ class RateLimitCooldownBudgetTest {
     fun `a short pooled 429 now waits and retries instead of giving up`() = runTest {
         val calls = AtomicInteger()
         val waiter = RecordingWaiter()
-        val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L })
         val engine = MockEngine {
             calls.incrementAndGet()
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "1"))
@@ -570,7 +570,7 @@ class RateLimitCooldownBudgetTest {
             maxRetries = 3,
             client = HttpClient(engine),
             waiter = waiter,
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         val context = PostContext(
             url = "https://api.example.test/v1",
@@ -593,7 +593,7 @@ class RateLimitCooldownBudgetTest {
     fun `UP-001 - a retryable 503 with a long retry-after DOES arm the shared cooldown`() = runTest {
         for (status in listOf(HttpStatusCode.ServiceUnavailable, HttpStatusCode.RequestTimeout)) {
             val calls = AtomicInteger()
-            val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+            val cooldown = RateLimitCooldown(ElapsedClock { 0L })
             val engine = MockEngine {
                 calls.incrementAndGet()
                 respond("busy", status, headersOf("Retry-After", "30"))
@@ -603,7 +603,7 @@ class RateLimitCooldownBudgetTest {
                 totalTimeoutMs = 60_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),
-                clock = ElapsedNow { 0L },
+                clock = ElapsedClock { 0L },
             )
             val context = PostContext(
                 url = "https://api.example.test/v1",
@@ -631,14 +631,14 @@ class RateLimitCooldownBudgetTest {
                 calls.incrementAndGet()
                 respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", retryAfter))
             }
-            val cooldown = RateLimitCooldown(ElapsedNow { 0L })
+            val cooldown = RateLimitCooldown(ElapsedClock { 0L })
             val client = UpstreamClient(
                 firstByteTimeoutMs = 5_000L,
                 totalTimeoutMs = 60_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),
                 waiter = waiter,
-                clock = ElapsedNow { 0L },
+                clock = ElapsedClock { 0L },
             )
             val context = PostContext(
                 url = "https://api.example.test/v1",
@@ -678,7 +678,7 @@ class RateLimitCooldownOuterTurnTest {
             maxRetries = 3,
             client = HttpClient(engine),
             backoff = { _, _ -> remaining = 0L },
-            clock = ElapsedNow { 0L },
+            clock = ElapsedClock { 0L },
         )
         val context = PostContext(
             url = "https://api.example.test/v1",
@@ -714,7 +714,7 @@ class RateLimitCooldownOuterTurnTest {
                 totalTimeoutMs = 5_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),
-                clock = ElapsedNow { elapsed },
+                clock = ElapsedClock { elapsed },
             )
             val context = PostContext(
                 url = "https://api.example.test/v1",

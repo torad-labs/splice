@@ -1,0 +1,31 @@
+/* The file view: a stack of file strips, each with its reveal under it. Tokens
+   only (CONTRACTS.md section 1); no radius, no shadow. */
+
+.myx-fv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-fv-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The contents are read, not measured: the figure face would set every line as
+   a value. They stay on the room, inside the reveal's own body, and scroll
+   rather than stretching the column. */
+.myx-fv-text {
+  margin: var(--space-0);
+  padding: var(--space-3);
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--scope);
+  color: var(--scope-ink);
+  border: var(--hair) solid var(--scope-grid);
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -10,6 +10,7 @@
 // fields already on the wire (availability) are typed from the daemon's own enum. Because the route
 // itself exists, this store is NOT a PendingRoute union: a 404 here is an error, not "not built
 // yet", and the pending part is the two optional fields.
+import type { PendingRoute } from '@shared/api';
 
 /** What the daemon writes when splice did not launch the session (SessionsRoutes.kt:12). */
 export const UNKNOWN_HEAD = 'unknown head';
@@ -81,3 +82,32 @@ export interface SessionsPayload {
   error?: string;
   sessions: SessionRow[];
 }
+
+/** Which way a message went from the session the edges were asked for. */
+export type EdgeDirection = 'out' | 'in';
+
+/**
+ * One message edge: that a session sent a message and to which address, read on the wire from the
+ * SendMessage tool call's input (FEATURES.md 4.13). NO TEXT: the message itself is read from the
+ * transcripts on demand and never stored, which is why this carries an address and a time and
+ * nothing else.
+ *
+ * PENDING V4-130 (route /api/sessions/{id}/edges).
+ */
+export interface SessionEdge {
+  /** The session that sent the message. */
+  from: string;
+  /** The recipient ADDRESS (`uds:<socket path>`), resolved against the registry by the page:
+   *  SessionRow.address is the same string for the session that owns that socket. */
+  to: string;
+  /** Epoch ms of the call. */
+  at: number;
+  direction: EdgeDirection;
+}
+
+export interface SessionEdgesPayload {
+  session_id: string;
+  edges: SessionEdge[];
+}
+
+export type SessionEdgesSlice = SessionEdgesPayload | PendingRoute;

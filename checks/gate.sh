@@ -157,8 +157,8 @@ run "shared-quirks selftest" bun checks/config/shared-quirks-no-vendor-defaults.
 # absence is not a disposition and fails BY NAME. The selftest proves it red on a synthetic key
 # appended to a temp copy of the source, on a retirement carrying no reason, and on a key named
 # only in a runtime doctor map — the map that would otherwise make this wall green for free.
-run "quirks keys documented" python3 checks/config/quirks-keys-documented.py check .
-run "quirks keys selftest" python3 checks/config/quirks-keys-documented.py --selftest
+run "quirks keys documented" bun checks/config/quirks-keys-documented.ts check .
+run "quirks keys selftest" bun checks/config/quirks-keys-documented.ts --selftest
 # ARCH-AUDIT 2026-09-17 (#924, walls V4-87..V4-98): each violation class the architecture audit
 # found became an instrument BEFORE its instances were fixed, and every instrument is red-green
 # proven by a selftest that runs beside it. The `check` legs are red BY NAME until the sibling fix

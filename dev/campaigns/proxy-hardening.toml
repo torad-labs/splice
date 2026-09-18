@@ -1042,7 +1042,8 @@ phase = "W-INFRA"
 title = "Slot CX-05, CX-06, CX-10 and CX-17 out of W12-unscheduled — all four have full subsections in section 8 of the audit but were assigned to NO wave in its section 10 plan; CX-17 is named only as a dependency of CX-01. Parked so they stay visible rather than silently lost. OPERATOR DECISION: pick the wave for each (CX-17 depends on CX-01 in W4-correctness-walls)."
 files = ["dev/campaigns/proxy-hardening.toml"]
 status = "todo"
-verify = "python3 dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.py"
+verify = "bun dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.ts"
+# [2026-09-18] VERIFY-EDITED: verify = "python3 dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.py" -> verify = "bun dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.ts" (by=orchestrator implied; no flag)
 
 [[items]]
 id = "INF-05"
@@ -1058,4 +1059,5 @@ phase = "W-INFRA"
 title = "Every campaign item names an enforcing wall — the gate reports the UNWALLED count as its standing worklist, but until this item existed the LEDGER had ZERO items about building walls (2026-07-26 self-review finding #5: work visible only in a gate's output is work nobody is assigned). DONE = wall_registry.toml has no row with wall = ''. Each new wall must be RED on today's tree AND pass its own --selftest positive control (gate C6), so a do-nothing exit(1) cannot count as enforcement. FENCE NOTE: scoped to wall_registry.toml, the only shared mutable surface — each new wall is a NEW file and collides with nothing."
 files = ["dev/campaigns/proxy-hardening/walls/wall_registry.toml"]
 status = "todo"
-verify = "python3 dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.py"
+verify = "bun dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.ts"
+# [2026-09-18] VERIFY-EDITED: verify = "python3 dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.py" -> verify = "bun dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.ts" (by=orchestrator implied; no flag)

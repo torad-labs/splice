@@ -14,6 +14,7 @@ import { Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/
 import { poll } from '@shared/lib';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, stepMessage } from './model';
 import type { LoginEvent } from './model';
+import { NOT_REPORTED } from '@entities/account';
 import { S } from './strings';
 import './account-login.css';
 
@@ -277,7 +278,7 @@ export function HeadAuthStrip({ head, kind, present, masked, note, selected, onO
           'chatgpt-oauth' is 13 characters and truncated in a 13ch box. */}
       <StripField w={16} label={S.head} value={head} mono={false} />
       <StripField w={16} label={S.provider} value={kind} mono={false} />
-      <StripField w={20} label={S.account} value={masked ?? S.notReported} mono={false} />
+      <StripField w={20} label={S.account} value={masked ?? NOT_REPORTED} mono={false} />
       {note === null ? null : <StripField w={24} label={S.note} value={note} mono={false} />}
     </Strip>
   );

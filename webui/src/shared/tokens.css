@@ -22,35 +22,26 @@
    ============================================================ */
 
 /* ============================================================
-   THE OLD WORLD — kept until M2 replaces the last consumer.
-   Names survive; new code never reads them. Themed through light-dark()
-   driven by the color-scheme each theme block below sets.
+   WHAT IS LEFT OF THE OLD WORLD (M3-04, the finish row).
+   This block held the retired plate world's whole vocabulary -- 129 names of pigments, scales,
+   layout tracks, burin widths and a z-index ladder -- kept while the old pages rendered. M3-04
+   deleted the last of those pages' surfaces and then MEASURED what was still read: every name
+   below has a reader in webui/src today (the legacy Btn, Field, Well and ConfirmBtn rules, the
+   modal gate, and the pages that still use --surface-sunk, --line-mute or --data-neg), and 115
+   names had none -- counted TRANSITIVELY, because a pigment read only by a dead semantic token is
+   dead too: --ink-900 looked live through --tick, and --tick had no reader. Those 115 are gone.
+   Themed through light-dark() driven by the color-scheme each theme block below sets.
    ============================================================ */
 
 :root {
   color-scheme: dark;
 
-  /* ---------- PRIMITIVE · color ---------- */
-  /* the plate pigments of the retired world: kept so old pages still render */
-  --paper-0:#fbf3df; --paper-50:#efe6d2; --paper-100:#e7dcc2; --paper-200:#e0d4b8;
-  --ink-900:#241d14; --ink-700:#5d5240; --ink-500:#635741; --ink-400:#8c8068; --ink-200:#bdb39c;
-  --obsidian-900:#1c1610; --obsidian-800:#241a12; --obsidian-700:#150f09;
-  --mist-100:#efe2c6; --mist-300:#cbbd9d; --mist-400:#b6a888; --mist-500:#968969;
-  --vermilion-800:#8f2412; --vermilion-700:#a62815; --vermilion-600:#bb301a; --vermilion-500:#c5331d; --vermilion-400:#e2563b; --vermilion-300:#f06a4c;
-  --prussian-600:#1c3c5c; --prussian-400:#6fa8cf;
-  --verdigris-600:#2c6555; --verdigris-400:#5bb59c;
-  --ormolu-600:#7d5419; --ormolu-400:#e7c069;
+  /* the four pigments the surviving semantic tokens below still read */
+  --paper-200:#e0d4b8; --obsidian-700:#150f09;
   --red-600:#a53b39; --red-400:#e85d5d;
-  --gold-700:#8a5e1f; --gold-600:#a9762d; --gold-500:#c2922f; --gold-400:#d4a853; --gold-300:#e0bd72; --gold-800:#7d5419;
-  --cyan-600:#2a7d76; --cyan-400:#4ecdc4; --green-600:#3f7d46; --green-400:#7bc47f;
-  --amber-600:#9a6a12; --amber-400:#d9a441;
 
-  /* ---------- SCALE · the rungs the new ladder does not cover ---------- */
-  --space-0:0; --space-9:6rem; --space-10:8rem; --space-11:10rem; --space-12:14rem;
-  --text-0:.54rem; --text-7:2.1rem; --text-8:3rem; --text-9:clamp(2.9rem, 6.4vw, 5rem);
-  --text-10:clamp(3.4rem, 9vw, 7.5rem);
-
-  --radius-0:0; --radius-1:2px; --radius-2:6px;
+  --space-0:0;
+  --radius-0:0;
   /* a hairline is a width here, and a color in the two theme blocks below
      (--hairline / --hairline-strong): a rail reads
      `border-top: var(--hair) solid var(--hairline)`. */
@@ -79,76 +70,15 @@
      percentage of the frame, and the hand-off lift are frame objects - the lift scaling with this
      was the accident that proved the rule. */
   --root-size:max(16px, 1.0417vw);
-  --ease-snap:cubic-bezier(.16,.84,.18,1);
-  --ease-in-out:cubic-bezier(.65,0,.35,1);
-  --icon-1:1rem; --icon-2:1.5rem; --icon-3:2.25rem;
   --focus-width:2px; --focus-offset:2px;
-  --control-box:1.15rem; --field-control-h:2.4rem;
 
-  /* the retired faces alias to the two in the new world (fonts.css) */
-  --font-display:var(--font-label);
-  --font-body:var(--font-label);
+  /* the retired mono face aliases to the new world's code face (fonts.css) */
   --font-mono:var(--font-code);
 
   /* ---------- SEMANTIC · themed via light-dark(LIGHT, DARK) ---------- */
-  --surface:        light-dark(var(--paper-50),  var(--obsidian-900));
-  --surface-raised: light-dark(var(--paper-100), var(--obsidian-800));
   --surface-sunk:   light-dark(var(--paper-200), var(--obsidian-700));
-  --ink-body:       light-dark(var(--ink-700), var(--mist-400));
-  --accent:         light-dark(var(--vermilion-700), var(--vermilion-400));
-  --accent-bright:  light-dark(var(--vermilion-800), var(--vermilion-300));
-  --on-accent:      light-dark(var(--paper-0), var(--obsidian-900));
-  --line:        light-dark(rgba(36,29,20,.14),  rgba(239,226,198,.16));
-  --line-strong: light-dark(rgba(36,29,20,.30),  rgba(239,226,198,.32));
   --line-mute:   light-dark(rgba(36,29,20,.07),  rgba(239,226,198,.10));
-  --tick:        light-dark(var(--ink-900), var(--vermilion-400));
-  --tick-soft:   light-dark(rgba(36,29,20,.4), rgba(239,226,198,.5));
-  --grid:        light-dark(rgba(36,29,20,.04),  rgba(239,226,198,.05));
-  --selection:   light-dark(rgba(197,51,29,.20), rgba(226,86,59,.26));
-  --data-pos:    light-dark(var(--verdigris-600), var(--verdigris-400));
   --data-neg:    light-dark(var(--red-600),   var(--red-400));
-  --data-info:   light-dark(var(--prussian-600),  var(--prussian-400));
-  --data-amber:  light-dark(var(--ormolu-600), var(--ormolu-400));
-  --control-surface: light-dark(var(--paper-0), var(--obsidian-800));
-  --control-fill:    var(--accent);
-
-  /* ---------- SEMANTIC · layout ---------- */
-  --container: 940px;
-  --measure: 38rem;
-  --gap-section: clamp(3rem, 4vw, 4rem);
-  --gap-block: var(--space-5);
-  --measure-text:   66ch;
-  --measure-narrow: 56ch;
-  --measure-wide:   74ch;
-  --gap-track: clamp(var(--space-5), 4vw, var(--space-7));
-  --track-content: min(var(--measure-text), 100% - var(--gap-track) * 2);
-  --track-popout:  minmax(0, var(--space-7));
-  --track-feature: minmax(0, 8vw);
-  --track-full:    minmax(var(--space-6), 1fr);
-  --track-rail:    minmax(0, 13rem);
-  --canvas:      min(100% - (2 * var(--space-6)), 1480px);
-  --canvas-wide: min(100% - (2 * var(--space-6)), 1600px);
-  --pad-section:  var(--gap-section);
-  --pad-chapter:  clamp(4.5rem, 8vw, 7.5rem);
-  --pad-overture: clamp(5.5rem, 10vw, 9rem);
-  --rail-top: calc(var(--space-9) + var(--space-2));
-
-  /* ---------- THE BURIN (retired with the plate world) ---------- */
-  --bw-1:.34; --bw-2:.55; --bw-3:.8; --bw-4:1.15; --bw-5:1.7; --bw-6:2.6;
-  --plate-well:  light-dark(92%, 84%);
-  --plate-sink:  light-dark(rgba(36,29,20,.32), rgba(0,0,0,.56));
-  --plate-rise:  light-dark(rgba(255,250,235,.72), rgba(239,226,198,.08));
-  --plate-bevel: light-dark(rgba(36,29,20,.42), rgba(239,226,198,.26));
-  --plate-leaf:
-    inset 2px 2px 0 light-dark(rgba(255,250,235,.7),  rgba(239,226,198,.10)),
-    inset -2px -3px 7px light-dark(rgba(36,29,20,.16), rgba(0,0,0,.42)),
-    0 1px 0 light-dark(rgba(255,250,235,.6), rgba(0,0,0,0)),
-    0 22px 50px -34px light-dark(rgba(36,29,20,.5), rgba(0,0,0,.7));
-
-  /* z-index scale (depth via stacking, never shadow) · single source */
-  --z-base:0; --z-raised:1; --z-dropdown:10; --z-flyout:90;
-  --z-sticky:100; --z-drawer:110; --z-overlay:190; --z-modal:200;
-  --z-skip:210; --z-toast:300;
 }
 
 /* ============================================================

@@ -45,9 +45,17 @@ const LEAD_COLS_2 = [5.83, 7.02, 6.19, 5.48, 4.17, 5.48, 5.71, 5.36];
 const BUILDER_COLS_2 = [9.17, 6.43, 5.24, 4.53, 4.17, 5.24, 5.36, 5.12];
 const LEAD_COLS_3 = [5.83, 5.95, 12.50, 7.74, 3.33, 5.24, 4.64];
 const BUILDER_COLS_3 = [5.24, 6.07, 12.86, 8.10, 3.10, 5.24, 4.64];
+/* Each bay carries the names its columns can hold (M3-04): the builder's are narrower, and four
+   of its names print their authored short form (strings.ts) rather than a machine ellipsis. */
 const BAY_COLS = [
-  { l1: LEAD_COLS, l2: LEAD_COLS_2, l3: LEAD_COLS_3 },
-  { l1: BUILDER_COLS, l2: BUILDER_COLS_2, l3: BUILDER_COLS_3 },
+  { l1: LEAD_COLS, l2: LEAD_COLS_2, l3: LEAD_COLS_3, names: S },
+  {
+    l1: BUILDER_COLS, l2: BUILDER_COLS_2, l3: BUILDER_COLS_3,
+    names: {
+      ...S, account: S.accountShort, window: S.windowShort, tokensOut: S.tokensOutShort,
+      contextLeft: S.contextLeftShort,
+    },
+  },
 ];
 /** The activity rack's columns, from the same scan of its bay. The chat's live in parts.tsx,
    where the message strip that uses them does. */
@@ -70,8 +78,21 @@ const chatRow = (index: number) => CHAT_ROWS[Math.min(index, CHAT_ROWS.length - 
 /** The hand-off's strips are the same strip lifted into a 618px box, so their
  *  columns are the chat's scaled by that wider box rather than re-measured. */
 const HANDOFF_COLS = MSG_COLS.map((w) => Number((w * 1.34).toFixed(2)));
-const ACT_TOP = 9.8;
-const ACT_PITCH = 16.9;
+/* The activity plates are not on one pitch either (M3-04): the first carries the rack's column
+   names, so the comp draws it 58px tall from 619, and the four under it at 682, 721, 758 and 795,
+   32-34px tall -- as percentages of the 225px region from 624. The first plate starts above the
+   region, which is where the comp puts it. A sixth sample takes the last row's pitch. */
+const ACT_ROWS = [
+  { top: -2.35, height: 25.74 },
+  { top: 25.43, height: 15.09 },
+  { top: 42.74, height: 14.2 },
+  { top: 59.16, height: 14.2 },
+  { top: 75.59, height: 14.65 },
+];
+const actRow = (index: number) => {
+  const last = ACT_ROWS[ACT_ROWS.length - 1];
+  return ACT_ROWS[index] ?? { top: last.top + (index - ACT_ROWS.length + 1) * 16.43, height: last.height };
+};
 
 const money = (value: number | null): string => (value === null ? 'n/r' : `$${value.toFixed(3)}`);
 const thousand = (value: number): string => value.toLocaleString('en-US');
@@ -84,50 +105,51 @@ const kb = (value: number | null): string => (value === null ? 'n/r' : `${value}
 function MemberStrips({ member, line, cols }: {
   member: TeamMemberRow;
   line: number;
-  cols: { l1: number[]; l2: number[]; l3: number[] };
+  cols: { l1: number[]; l2: number[]; l3: number[]; names: Record<keyof typeof S, string> };
 }) {
   /* The comp marks a slot once, on its identity line: the holder bar of the
      lead's first line prints green and every other bar on the board prints
      grey, including the lead's own second and third lines. */
   const edge = line === 0 && member.role === 'lead' ? 'green' : 'grey';
+  const N = cols.names;
   const cls = `myx-board-strip myx-board-strip-${line}`;
 
   if (line === 0) {
     return (
       <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} first line`}>
-        <StripField w={cols.l1[0]} label={S.name} value={member.name} mono={false} />
-        <StripField w={cols.l1[1]} label={S.role} value={member.role} mono={false} />
-        <StripField w={cols.l1[2]} label={S.model} value={member.model ?? 'n/r'} mono={false} />
-        <StripField w={cols.l1[3]} label={S.account} value={member.account ?? 'n/r'} mono={false} />
-        <StripField w={cols.l1[4]} label={S.window} value={member.window ?? 'n/r'} />
-        <StripField w={cols.l1[5]} label={S.lastTurn} value={member.lastTurn ?? 'n/r'} />
-        <StripField w={cols.l1[6]} label={S.state} value={member.state} mono={false} />
+        <StripField w={cols.l1[0]} label={N.name} value={member.name} mono={false} />
+        <StripField w={cols.l1[1]} label={N.role} value={member.role} mono={false} />
+        <StripField w={cols.l1[2]} label={N.model} value={member.model ?? 'n/r'} mono={false} />
+        <StripField w={cols.l1[3]} label={N.account} value={member.account ?? 'n/r'} mono={false} />
+        <StripField w={cols.l1[4]} label={N.window} value={member.window ?? 'n/r'} />
+        <StripField w={cols.l1[5]} label={N.lastTurn} value={member.lastTurn ?? 'n/r'} />
+        <StripField w={cols.l1[6]} label={N.state} value={member.state} mono={false} />
       </Strip>
     );
   }
   if (line === 1) {
     return (
       <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} second line`}>
-        <StripField w={cols.l2[0]} label={S.head} value={member.head} mono={false} />
-        <StripField w={cols.l2[1]} label={S.sessionId} value={member.sessionId} />
-        <StripField w={cols.l2[2]} label={S.created} value={member.created} />
-        <StripField w={cols.l2[3]} label={S.uptime} value={member.uptime} />
-        <StripField w={cols.l2[4]} label={S.turns} value={member.turns} />
-        <StripField w={cols.l2[5]} label={S.tokensIn} value={thousand(member.tokensIn)} />
-        <StripField w={cols.l2[6]} label={S.tokensOut} value={thousand(member.tokensOut)} />
-        <StripField w={cols.l2[7]} label={S.costEst} value={money(member.costEst)} />
+        <StripField w={cols.l2[0]} label={N.head} value={member.head} mono={false} />
+        <StripField w={cols.l2[1]} label={N.sessionId} value={member.sessionId} />
+        <StripField w={cols.l2[2]} label={N.created} value={member.created} />
+        <StripField w={cols.l2[3]} label={N.uptime} value={member.uptime} />
+        <StripField w={cols.l2[4]} label={N.turns} value={member.turns} />
+        <StripField w={cols.l2[5]} label={N.tokensIn} value={thousand(member.tokensIn)} />
+        <StripField w={cols.l2[6]} label={N.tokensOut} value={thousand(member.tokensOut)} />
+        <StripField w={cols.l2[7]} label={N.costEst} value={money(member.costEst)} />
       </Strip>
     );
   }
   return (
     <Strip className={cls} edge={edge} edgeLabel="" ariaLabel={`${member.name} third line`}>
-      <StripField w={cols.l3[0]} label={S.contextLeft} value={pct(member.contextLeftPct)} />
-      <StripField w={cols.l3[1]} label={S.scratchpad} value={kb(member.scratchpadKb)} />
-      <StripField w={cols.l3[2]} label={S.workspace} value={member.workspace} mono={false} />
-      <StripField w={cols.l3[3]} label={S.branch} value={member.branch} mono={false} />
-      <StripField w={cols.l3[4]} label={S.base} value={member.base} mono={false} />
-      <StripField w={cols.l3[5]} label={S.diff} value={member.diff} />
-      <StripField w={cols.l3[6]} label={S.checks} value={member.checks} mono={false} />
+      <StripField w={cols.l3[0]} label={N.contextLeft} value={pct(member.contextLeftPct)} />
+      <StripField w={cols.l3[1]} label={N.scratchpad} value={kb(member.scratchpadKb)} />
+      <StripField w={cols.l3[2]} label={N.workspace} value={member.workspace} mono={false} />
+      <StripField w={cols.l3[3]} label={N.branch} value={member.branch} mono={false} />
+      <StripField w={cols.l3[4]} label={N.base} value={member.base} mono={false} />
+      <StripField w={cols.l3[5]} label={N.diff} value={member.diff} />
+      <StripField w={cols.l3[6]} label={N.checks} value={member.checks} mono={false} />
     </Strip>
   );
 }
@@ -218,15 +240,12 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
         <Bay
           className="myx-board-bay myx-board-bay-activity"
           label={`${S.activityLabel}, sampled every 30 s`}
-          fields={(
-            <>
-              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[0]}ch` }}>{S.time}</span>
-              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[1]}ch` }}>{S.member}</span>
-              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[2]}ch` }}>{S.activity}</span>
-              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[3]}ch` }}>{S.detail}</span>
-            </>
-          )}
         >
+          {/* ONCE, BUT IN THE FIRST SLIP (M3-04). The names printed as a band of their own pressed
+              against the plate, outside every cell rule; the comp prints them as the FIRST strip's
+              label row, under that strip's own rules and clear of the plate, and the rows below
+              carry none. The bisect put -0.071 on activity-label at the commit that added the band
+              (c173d7b9, M1-38). */}
           <div className="myx-board-acts">
             {board.activity.map((entry, index) => (
               <Strip
@@ -234,13 +253,13 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
                 className="myx-board-act"
                 edge="grey"
                 edgeLabel=""
-                style={{ top: `${ACT_TOP + index * ACT_PITCH}%` }}
+                style={{ top: `${actRow(index).top}%`, height: `${actRow(index).height}%` }}
                 ariaLabel={`${entry.member} ${entry.activity}`}
               >
-                <StripField w={ACT_COLS[0]} value={entry.time} />
-                <StripField w={ACT_COLS[1]} value={entry.member} mono={false} />
-                <StripField w={ACT_COLS[2]} value={entry.activity} mono={false} />
-                <StripField w={ACT_COLS[3]} value={entry.detail} mono={false} />
+                <StripField w={ACT_COLS[0]} {...(index === 0 ? { label: S.time } : {})} value={entry.time} />
+                <StripField w={ACT_COLS[1]} {...(index === 0 ? { label: S.member } : {})} value={entry.member} mono={false} />
+                <StripField w={ACT_COLS[2]} {...(index === 0 ? { label: S.activity } : {})} value={entry.activity} mono={false} />
+                <StripField w={ACT_COLS[3]} {...(index === 0 ? { label: S.detail } : {})} value={entry.detail} mono={false} />
               </Strip>
             ))}
           </div>

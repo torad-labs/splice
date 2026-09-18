@@ -13,9 +13,10 @@
    full variable font, same family, same OFL-Archivo.txt beside it.
 
    url() rather than a bare path keeps them under Vite's assetsInlineLimit, so
-   the shipped artifact carries no font request. The IBM Plex Mono files and
-   OFL.txt stay beside these, unreferenced, until the finish row removes them;
-   an unreferenced font is never inlined. */
+   the shipped artifact carries no font request. These two faces and their two
+   licences (OFL-Archivo.txt, OFL-JetBrainsMono.txt) are the whole of fonts/: the
+   finish row (M3-04) deleted the retired IBM Plex Mono files and their OFL.txt,
+   which had stood beside them unreferenced since the world changed faces. */
 
 @font-face {
   font-family: 'Archivo';

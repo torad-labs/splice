@@ -85,8 +85,10 @@ const DELETION_LIST = [
   // first, and usage, accounts and settings all exist — but they still SHIPPED, because the page
   // glob matches every directory and the single-file build inlines every chunk. An entry naming a
   // path that is gone is a denominator that lies about what it excludes, so the three come out.
-  'src/widgets/head-plate', 'src/widgets/fleet-banner',
-  'src/features/edit-config', 'src/features/unlock-mgmt', 'src/features/refresh-auth',
+  // M3-04 deleted widgets/head-plate, widgets/fleet-banner, features/edit-config and
+  // features/refresh-auth, so their four entries came out by the same rule. unlock-mgmt stays:
+  // it is live and still renders the old Field and Well.
+  'src/features/unlock-mgmt',
   'src/shared/tokens.css', 'src/shared/fonts.css',
 ];
 

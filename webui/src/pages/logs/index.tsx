@@ -90,7 +90,9 @@ export function LogsBoard({
           value={String(tail)}
           options={TAIL_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
           onChange={(next) => onTail?.(Number(next))}
-          w={8}
+          // 12, not 8 (M3-04): the box prints the value AND its state word, and at 8 the finish
+          // review read `2…` where 200 stood
+          w={12}
         />
         <Choice
           label={S.tag}

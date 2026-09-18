@@ -15,44 +15,44 @@ comp: .impeccable/mocks/team-board-a.png (1536x1024), caps from its measured spe
        2.6px  team-header (2 glyphs)
 
   BUILD at 1536x1024
-     17.00px  rule.wordmark      Archivo 500 23.0007px   comp 15.9px  delta +1.10
-     17.00px  page.title         Archivo 500 23.0007px
-     14.00px  rule.clocks        Archivo 400 20.0006px   comp 12px  delta +2.00
-     14.00px  rule.window        Archivo 400 20.0006px   comp 11.7px  delta +2.30
-     14.00px  rule.none          Archivo 400 20.0006px   comp 12px  delta +2.00
-     11.00px  rule.health        Archivo 400 16.0005px   comp 12.4px  delta -1.40
-     11.00px  rail.tab           Archivo 400 16.0005px
-     10.00px  strip.field-label  Archivo 600 14.0004px
-     10.00px  strip.field-value  Archivo 600 14.0004px
-      9.00px  bay.label          Archivo 600 12.0004px   comp 10.9px  delta -1.90
-      9.00px  chat.label         Archivo 600 12.0004px   comp 9.8px  delta -0.80
+     15.87px  rule.wordmark      Archivo 500 23.0007px   comp 15.9px  delta -0.03
+     15.87px  page.title         Archivo 500 23.0007px
+     11.73px  rule.clocks        Archivo 400 17.0005px   comp 12px  delta -0.27
+     11.73px  rule.health        Archivo 400 17.0005px   comp 12.4px  delta -0.67
+     11.73px  rule.window        Archivo 400 17.0005px   comp 11.7px  delta +0.03
+     11.73px  rule.none          Archivo 400 17.0005px   comp 12px  delta -0.27
+     11.04px  bay.label          Archivo 600 16.0005px   comp 10.9px  delta +0.14
+     11.04px  rail.tab           Archivo 400 16.0005px
+      9.66px  chat.label         Archivo 600 14.0004px   comp 9.8px  delta -0.14
+      9.66px  strip.field-value  Archivo 600 14.0004px
+      8.28px  strip.field-label  Archivo 600 12.0004px
 
   THE RUNG-TO-RUNG RATIOS, which is what reads as hierarchy (a mean hides a flat rung):
     pair                                     comp    build   delta
     rule.clocks / rule.none                  1.000   1.000   +0.000
     rule.none / rule.window                  1.026   1.000   -0.026
-    rule.window / bay.label                  1.073   1.556   +0.482  <-- OFF
-    bay.label / chat.label                   1.112   1.000   -0.112  <-- OFF
+    rule.window / bay.label                  1.073   1.062   -0.011
+    bay.label / chat.label                   1.112   1.143   +0.031
 
   BUILD at 3840x2160
-     40.00px  rule.wordmark      Archivo 500 57.5018px   comp 15.9px  scaled ×2.516
-     40.00px  page.title         Archivo 500 57.5018px
-     34.00px  rule.clocks        Archivo 400 50.0016px   comp 12px  scaled ×2.833
-     34.00px  rule.window        Archivo 400 50.0016px   comp 11.7px  scaled ×2.906
-     34.00px  rule.none          Archivo 400 50.0016px   comp 12px  scaled ×2.833
-     28.00px  rule.health        Archivo 400 40.0013px   comp 12.4px  scaled ×2.258
-     28.00px  rail.tab           Archivo 400 40.0013px
-     24.00px  strip.field-label  Archivo 600 35.0011px
-     24.00px  strip.field-value  Archivo 600 35.0011px
-     20.00px  bay.label          Archivo 600 30.001px   comp 10.9px  scaled ×1.835
-     20.00px  chat.label         Archivo 600 30.001px   comp 9.8px  scaled ×2.041
+     39.68px  rule.wordmark      Archivo 500 57.5018px   comp 15.9px  scaled ×2.495
+     39.68px  page.title         Archivo 500 57.5018px
+     29.33px  rule.clocks        Archivo 400 42.5014px   comp 12px  scaled ×2.444
+     29.33px  rule.health        Archivo 400 42.5014px   comp 12.4px  scaled ×2.365
+     29.33px  rule.window        Archivo 400 42.5014px   comp 11.7px  scaled ×2.506
+     29.33px  rule.none          Archivo 400 42.5014px   comp 12px  scaled ×2.444
+     27.60px  bay.label          Archivo 600 40.0013px   comp 10.9px  scaled ×2.532
+     27.60px  rail.tab           Archivo 400 40.0013px
+     24.15px  chat.label         Archivo 600 35.0011px   comp 9.8px  scaled ×2.464
+     24.15px  strip.field-value  Archivo 600 35.0011px
+     20.70px  strip.field-label  Archivo 600 30.001px
 
   THE RUNG-TO-RUNG RATIOS, which is what reads as hierarchy (a mean hides a flat rung):
     pair                                     comp    build   delta
     rule.clocks / rule.none                  1.000   1.000   +0.000
     rule.none / rule.window                  1.026   1.000   -0.026
-    rule.window / bay.label                  1.073   1.700   +0.627  <-- OFF
-    bay.label / chat.label                   1.112   1.000   -0.112  <-- OFF
+    rule.window / bay.label                  1.073   1.063   -0.011
+    bay.label / chat.label                   1.112   1.143   +0.031
 
 THE SPACING LADDER — gaps, not leading; the operator named spacing beside text size
 rack gaps measured on #/fleet; the rail plates are measured wherever they render

@@ -12,7 +12,6 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.Cancellables
-import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta

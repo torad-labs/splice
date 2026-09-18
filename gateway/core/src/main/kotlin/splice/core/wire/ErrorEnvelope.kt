@@ -43,7 +43,9 @@ public object ErrorEnvelope {
     }
 }
 
-private const val FIELD_TYPE = "type"
-private const val FIELD_ERROR = "error"
+// The two wire keys the envelope and the code-mode frame protocol both spell. PUBLIC so CodeModeWire
+// imports them rather than re-declaring its own copies — the one-spelling-each rule behind this file.
+public const val FIELD_TYPE: String = "type"
+public const val FIELD_ERROR: String = "error"
 private const val FIELD_MESSAGE = "message"
 private const val FIELD_USAGE = "usage"

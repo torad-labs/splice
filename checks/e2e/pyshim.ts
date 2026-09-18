@@ -583,16 +583,30 @@ function show(v: unknown): string {
 
 // ---------------------------------------------------------------------------------------------
 // argparse, for the option shapes these scripts declare: `--flag` (store_true), `--opt VALUE`
-// (str or int), `--opt=VALUE`, unique-prefix abbreviation, required options, and `-h`. The usage
-// and help texts are the scripts' own (argparse's rendering of the original declarations).
+// (str, int or float), `--opt=VALUE`, unique-prefix abbreviation, required options, and `-h`. The
+// usage and help texts are the scripts' own (argparse's rendering of the original declarations).
+//
+// Transcribed from CPython 3.13's _parse_known_args in its two passes, because the ORDER of the
+// passes is observable (V4-158, which found six divergences in the earlier one-pass reading):
+//   1. classify every argv string as an option ('O'), a value ('A') or the `--` marker, BEFORE
+//      anything is consumed — so a value that looks like an option is never taken as a value (an
+//      ambiguous abbreviation is an option too, refused only when the walk reaches it);
+//   2. consume left to right: an option takes its value (type-converted on the spot, so a bad int
+//      or float errors where it stands), an unknown option or a stray value is set aside as extra.
+// Only after the walk: missing required options, then the extras as `unrecognized arguments`,
+// naming only the extras. A negative number (`-5`, `-.5`) is a value, not an option, by argparse's
+// own matcher; int() and float() are pyInt and pyFloat, Unicode digits included.
 // ---------------------------------------------------------------------------------------------
 
 export interface OptSpec {
   flag: string;
-  kind: "true" | "str" | "int";
+  kind: "true" | "str" | "int" | "float";
   required?: boolean;
   dflt?: string | number | boolean | null;
 }
+
+// argparse's _negative_number_matcher; `\d` in a str pattern is any Unicode decimal digit.
+const NEGATIVE_NUMBER = /^-\p{Nd}+$|^-\p{Nd}*\.\p{Nd}+$/u;
 
 export function argparse(argv: string[], spec: OptSpec[], prog: string, usage: string, help: string):
   Record<string, string | number | boolean | null> {
@@ -602,40 +616,145 @@ export function argparse(argv: string[], spec: OptSpec[], prog: string, usage: s
   };
   const out: Record<string, string | number | boolean | null> = {};
   for (const o of spec) out[dest(o.flag)] = o.dflt ?? (o.kind === "true" ? false : null);
-  const seen = new Set<string>();
-  for (let i = 0; i < argv.length; i++) {
-    const tok = argv[i];
-    if (tok === "-h" || tok === "--help" || (tok.startsWith("--h") && "--help".startsWith(tok) && !spec.some((o) => o.flag.startsWith(tok)))) {
-      process.stdout.write(help);
-      process.exit(0);
+  // _option_string_actions, in registration order: the help action first, then the declarations.
+  const actions = new Map<string, OptSpec | "help">([["-h", "help"], ["--help", "help"]]);
+  for (const o of spec) actions.set(o.flag, o);
+  const named = (a: OptSpec | "help") => (a === "help" ? "-h/--help" : a.flag);
+  // `sep` is "=" when the explicit value came after an equals sign, "" when it was glued on.
+  type Hit = {
+    action: OptSpec | "help" | null;
+    flag: string;
+    explicit: string | null;
+    sep: string | null;
+    ambiguous?: string[];
+  };
+
+  // _get_option_tuples: every registered option the string abbreviates.
+  const optionTuples = (arg: string): Hit[] => {
+    const hits: Hit[] = [];
+    if (arg[1] === "-") {
+      const eq = arg.indexOf("=");
+      const prefix = eq >= 0 ? arg.slice(0, eq) : arg;
+      const [explicit, sep] = eq >= 0 ? [arg.slice(eq + 1), "="] : [null, null];
+      for (const [flag, action] of actions) if (flag.startsWith(prefix)) hits.push({ action, flag, explicit, sep });
+    } else {
+      const short = arg.slice(0, 2);
+      for (const [flag, action] of actions) {
+        if (flag === short) hits.push({ action, flag, explicit: arg.slice(2), sep: "" });
+        else if (flag.startsWith(arg)) hits.push({ action, flag, explicit: null, sep: null });
+      }
     }
-    if (!tok.startsWith("-") || tok === "-") fail(`unrecognized arguments: ${argv.slice(i).join(" ")}`);
-    const eq = tok.indexOf("=");
-    const flag = eq > 0 ? tok.slice(0, eq) : tok;
-    const matches = spec.filter((o) => o.flag === flag || o.flag.startsWith(flag));
-    const exact = matches.filter((o) => o.flag === flag);
-    const pick = exact.length === 1 ? exact : matches;
-    if (pick.length === 0) fail(`unrecognized arguments: ${argv.slice(i).join(" ")}`);
-    if (pick.length > 1) fail(`ambiguous option: ${flag} could match ${pick.map((o) => o.flag).join(", ")}`);
-    const o = pick[0];
-    seen.add(o.flag);
-    if (o.kind === "true") {
-      if (eq > 0) fail(`argument ${o.flag}: ignored explicit argument ${pyRepr(tok.slice(eq + 1))}`);
-      out[dest(o.flag)] = true;
+    return hits;
+  };
+  // _parse_optional: an option (known or not), or undefined for a value.
+  const parseOptional = (arg: string): Hit | undefined => {
+    if (!arg || arg[0] !== "-") return undefined;
+    const exact = actions.get(arg);
+    if (exact) return { action: exact, flag: arg, explicit: null, sep: null };
+    if (arg.length === 1) return undefined;
+    const eq = arg.indexOf("=");
+    if (eq >= 0) {
+      const action = actions.get(arg.slice(0, eq));
+      if (action) return { action, flag: arg.slice(0, eq), explicit: arg.slice(eq + 1), sep: "=" };
+    }
+    const hits = optionTuples(arg);
+    // An ambiguous abbreviation is an OPTION here and an error only when the walk reaches it.
+    if (hits.length > 1) return { action: null, flag: arg, explicit: null, sep: null, ambiguous: hits.map((h) => h.flag) };
+    if (hits.length === 1) return hits[0];
+    if (NEGATIVE_NUMBER.test(arg)) return undefined;
+    if (arg.includes(" ")) return undefined;
+    return { action: null, flag: arg, explicit: null, sep: null };
+  };
+
+  // Pass 1: classify.
+  const kinds: ("O" | "A" | "-")[] = [];
+  const hits: (Hit | undefined)[] = [];
+  let marker = false;
+  for (const arg of argv) {
+    if (marker) kinds.push("A");
+    else if (arg === "--") {
+      marker = true;
+      kinds.push("-");
+    } else {
+      const hit = parseOptional(arg);
+      kinds.push(hit ? "O" : "A");
+      hits.push(hit);
       continue;
     }
-    let value: string | undefined = eq > 0 ? tok.slice(eq + 1) : argv[++i];
-    if (value === undefined || (eq < 0 && value.startsWith("-") && value.length > 1 && !/^-\d/.test(value))) {
-      fail(`argument ${o.flag}: expected one argument`);
+    hits.push(undefined);
+  }
+
+  // Pass 2: consume.
+  const extras: string[] = [];
+  const seen = new Set<string>();
+  let i = 0;
+  while (i < argv.length) {
+    const hit = hits[i];
+    if (hit?.ambiguous) fail(`ambiguous option: ${hit.flag} could match ${hit.ambiguous.join(", ")}`);
+    if (kinds[i] !== "O" || !hit || hit.action === null) {
+      extras.push(argv[i]);
+      i++;
+      continue;
     }
-    value = value as string;
-    if (o.kind === "int") {
-      if (!/^\s*[+-]?\d+(_\d+)*\s*$/.test(value)) fail(`argument ${o.flag}: invalid int value: ${pyRepr(value)}`);
-      out[dest(o.flag)] = Number(value.trim().replaceAll("_", ""));
-    } else out[dest(o.flag)] = value;
+    let { action, flag, explicit, sep } = hit;
+    if (action === "help" || action.kind === "true") {
+      // nargs=0. A single-dash flag reads its explicit tail as more single-dash flags (`-hh`); a
+      // tail char naming no flag sets the rest aside as an extra (`-hx` still prints help); an
+      // explicit value after `=`, or after a long flag, is refused.
+      const taken: (OptSpec | "help")[] = [];
+      while (explicit !== null) {
+        if (flag[1] === "-" || explicit === "" || sep || explicit[0] === "-") {
+          fail(`argument ${named(action)}: ignored explicit argument ${pyRepr(explicit)}`);
+        }
+        taken.push(action);
+        const next = actions.get("-" + explicit[0]);
+        if (next === undefined) {
+          extras.push("-" + explicit);
+          action = null;
+          break;
+        }
+        action = next;
+        flag = "-" + explicit[0];
+        const rest = explicit.slice(1);
+        [sep, explicit] = !rest ? [null, null] : rest[0] === "=" ? ["=", rest.slice(1)] : ["", rest];
+      }
+      if (action !== null) taken.push(action);
+      for (const a of taken) {
+        if (a === "help") {
+          process.stdout.write(help);
+          process.exit(0);
+        }
+        seen.add(a.flag);
+        out[dest(a.flag)] = true;
+      }
+      i++;
+      continue;
+    }
+    // nargs=None: exactly one value, the next string, and never across the `--` marker.
+    let value: string;
+    if (explicit !== null) {
+      value = explicit;
+      i++;
+    } else if (kinds[i + 1] === "A") {
+      value = argv[i + 1];
+      i += 2;
+    } else {
+      fail(`argument ${action.flag}: expected one argument`);
+    }
+    seen.add(action.flag);
+    const convert = { int: pyInt, float: pyFloat }[action.kind as "int" | "float"];
+    if (convert) {
+      try {
+        out[dest(action.flag)] = convert(value!);
+      } catch (e) {
+        if (!(e instanceof ValueError)) throw e;
+        fail(`argument ${action.flag}: invalid ${action.kind} value: ${pyRepr(value!)}`);
+      }
+    } else out[dest(action.flag)] = value!;
   }
   const missing = spec.filter((o) => o.required && !seen.has(o.flag)).map((o) => o.flag);
   if (missing.length > 0) fail(`the following arguments are required: ${missing.join(", ")}`);
+  if (extras.length > 0) fail(`unrecognized arguments: ${extras.join(" ")}`);
   return out;
 }
 const dest = (flag: string) => flag.replace(/^--/, "").replaceAll("-", "_");

@@ -19,10 +19,21 @@
 # three minutes it is a tool for whoever changes the wall, and the wall's own selftest coverage runs
 # in the gate through checks/concentration-selftest.sh.
 #
-# WHEN checks/concentration.py BECOMES .ts: the wall's inverse half pins the gate:concentration argv
-# (the oracle's interpreter, then concentration.py as argv[1]). Those pins change in the SAME commit
-# as the oracle, and these fixtures' py.out then describe the OLD argv — re-baseline them from the
-# wall as it stood proven here, and say so where the change is recorded.
+# RE-BASELINED 2026-09-18 (V4-158), when the oracle moved to checks/concentration.ts and the wall's
+# inverse-half pins (runtime, then the oracle as argv[1]) moved with it in the same commit. The
+# corpus was carried across MECHANICALLY, never regenerated: a swap that is a bijection on the
+# tokens the wall grades, applied to each case's gate:concentration value and its py.out (gate.sh
+# untouched) —
+#   R1  py.out only: the old wall's interpreter refusal -> "does not run bun"       1170 hits
+#   R2  checks/concentration.py <-> checks/concentration.ts                          5094 hits
+#   R3  every whole-token spelling the old PYTHON pin accepted -> bun, and bun -> the
+#       old interpreter's plain spelling                                             4266 hits
+# 2664 cases in, 2664 out: 1818 transformed, 846 untouched, 1206 whose script body carried a pin
+# token; no case unmappable. A SWAP rather than a one-way rewrite because the corpus already held
+# `bun checks/concentration.ts --ratchet --max-ratio 1.8`, REJECTED by the old wall — a one-way
+# rewrite would have handed the new wall a case whose expectation silently flipped; the swap maps it
+# to the old interpreter's spelling, which the new wall must reject with the same message. Proof at
+# re-baseline: the moved wall passes the transformed corpus; the pre-move wall fails it.
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../../../.." && pwd)

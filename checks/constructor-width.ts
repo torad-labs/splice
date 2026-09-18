@@ -33,7 +33,7 @@
  *     HeadDeps names 8 (splice.core.model, splice.core.prompt, splice.core.util,
  *     splice.core.version, splice.gateway.compact, splice.gateway.perf, splice.gateway.usage,
  *     splice.spi); TurnDrive names 7. Same definition of `subsystem` as
- *     checks/concentration.py — a distinct `splice.<pkg>` an import line resolves to — so the
+ *     checks/concentration.ts — a distinct `splice.<pkg>` an import line resolves to — so the
  *     two oracles cannot disagree about what a subsystem is.
  * A constructor over EITHER width is an offender, named with the number that put it there.
  *
@@ -60,7 +60,7 @@
  *
  * THE RATCHET. Fourteen constructors are over the width today, so `12 or bust` cannot be the
  * gate leg without finishing the fix row first. What IS enforceable is the DIRECTION, in the
- * idiom checks/concentration.py uses for the HIGH band and checks/public-surface.ts for the
+ * idiom checks/concentration.ts uses for the HIGH band and checks/public-surface.ts for the
  * public surface:
  *   · GROWTH fails — a constructor that crosses a width and is not recorded, or a RECORDED one
  *     that got WIDER than its recorded number, is red by name on the commit that does it. The
@@ -68,7 +68,7 @@
  *     parameters under a green gate.
  *   · A STALE OR PADDED ENTRY fails — an entry naming a class that is gone, one that no longer
  *     offends, or one recorded ABOVE the measured width. A baseline held above the measurement
- *     is unearned room for the next regression to hide in; checks/concentration.py records that
+ *     is unearned room for the next regression to hide in; checks/concentration.ts records that
  *     exact defect twice (the 6.14 UpstreamClient ceiling against a file measuring 2.79).
  *   · IT CANNOT BE SATISFIED BY WEAKENING. Raising MAX_PARAMS would be a dated one-line diff
  *     reading as what it is; growing the baseline likewise. Shrinking it is the remedy the gate
@@ -81,7 +81,7 @@
  *     is why the hole is narrow rather than wide.
  *   · A BUNDLE ONE LEVEL DOWN. Replacing 25 parameters with one `HeadDeps` parameter satisfies
  *     both widths without reducing coupling — the parameter count moves, the knowledge does
- *     not. That is the shape checks/concentration.py's `concerns` term measures, and it is why
+ *     not. That is the shape checks/concentration.ts's `concerns` term measures, and it is why
  *     these two oracles are read together rather than either alone.
  *   · A TYPE NAMED BY AN ALIAS OR A STAR IMPORT. Subsystems are resolved through the file's own
  *     single-type import lines, so a type reached by `import splice.x.*` or a typealias
@@ -152,7 +152,7 @@ const MAX_CONFIG_KEYS = 32;
 // including `annotation` and `value`, so the census cannot become a dodge list (DR-51).
 const CLASS_DECL =
   /^[ \t]*(?:(?:public|internal|private|protected|sealed|data|abstract|open|value|enum|inner|annotation|expect|actual)[ \t]+)*class[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?:<[^<>\n]*>)?[ \t]*(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)\n]*\))?[ \t]*)*(?:(?:private|protected|internal|public)[ \t]+)*(?:constructor[ \t]*)?\(/gm;
-// Same shape as checks/concentration.py's SPLICE_IMPORT, so `subsystem` means one thing in
+// Same shape as checks/concentration.ts's SPLICE_IMPORT, so `subsystem` means one thing in
 // this repo: the `splice.<pkg>` a single-type import line resolves to.
 const SPLICE_IMPORT = /^import (splice\.[A-Za-z0-9_.]+)\.([A-Za-z0-9_]+)\s*$/gm;
 const PARAM_NAME = /\b(?:val|var)?\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/;
@@ -501,7 +501,7 @@ function readBaseline(root: string): {
   if (!RECORDED.test(recorded)) {
     problems.push(
       `${BASELINE_REL}: \`recorded\` is ${pyRepr(recorded)} — every baseline carries the ISO date it was ` +
-        "measured, exactly as checks/concentration.py's RATCHET_RECORDED does; an undated baseline " +
+        "measured, exactly as checks/concentration.ts's RATCHET_RECORDED does; an undated baseline " +
         "is how the next regression hides.",
     );
   }
@@ -890,7 +890,7 @@ function selftest(): number {
  *
  *  THE DENOMINATOR FROM OUTSIDE THIS FILE (§24). A regex checked against its own output cannot
  *  fail for a spelling it does not admit — that is exactly how `fun interface` went 92 files
- *  unbilled in checks/concentration.py (DR-51), and how a `@Suppress`-annotated or
+ *  unbilled in checks/concentration.ts (DR-51), and how a `@Suppress`-annotated or
  *  explicit-`constructor` declaration would go unbilled here. tree-sitter-kotlin has a
  *  `primary_constructor` node, so the census is graded against the GRAMMAR, and `class_parameter`
  *  nodes give the parameter count a second, independent time. checks/concentration-selftest.sh

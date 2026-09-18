@@ -97,6 +97,29 @@ public class CompactionInstructions(
             ?: EffectiveCompactionInstructions(null, CompactionScope.CLIENT, CompactionScope.CLIENT.wire)
     }
 
+    /** Every CONFIGURED rule, in the precedence order [resolve] applies — project-model, project,
+     *  model, global — each carrying its LIVE text.
+     *
+     *  IT EXISTS SO NOBODY ELSE ENUMERATES THIS TABLE. The console needs to show an operator which
+     *  compaction instructions are in play, and the tempting way to serve that is for the route to
+     *  walk the config itself — which would be a second implementation of a lookup that already has
+     *  one owner, and the two would drift the first time precedence changed. So the enumeration sits
+     *  here, over the same [global] / [models] / [projects] fields [resolve] reads and through the
+     *  same [currentText], and the pin in v4136 asserts the two cannot disagree: every resolve
+     *  outcome must appear here, by scope and by source.
+     *
+     *  Precedence ORDER, not precedence RESOLUTION: this returns all configured rules including ones
+     *  a longer project path would shadow, because the operator question is "what is configured",
+     *  and [resolve] remains the only thing that answers "what applies to this turn". */
+    public fun rules(): List<EffectiveCompactionInstructions> = buildList {
+        // project-model before project: the two project tiers differ only by whether the entry also
+        // named a model, and [resolve] prefers the model-bearing one.
+        addAll(projects.filter { it.model != null }.map { it.rule })
+        addAll(projects.filter { it.model == null }.map { it.rule })
+        addAll(models.values)
+        global?.let(::add)
+    }.map { EffectiveCompactionInstructions(currentText(it), it.scope, it.source) }
+
     /** A file rule's text as of now: re-read when the file's modification time moved since the last
      *  read (one stat per compaction), so an edit is live without a restart and a file that becomes
      *  unreadable disables the rule the way it would have at boot (review 2026-09-14). */

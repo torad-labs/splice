@@ -32,6 +32,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import zlib from 'node:zlib';
 import { mgmtKey, shoot, show, withChrome } from './lib/cdp.mjs';
 
 const ARGS = process.argv.slice(2);
@@ -358,6 +359,52 @@ const declName = (png) => png.replace(/\.png$/, '.decl.json');
  * AN EMPTY `declared` IS NOT A DECLARATION: a row whose strips could not be paired with a dump is
  * compared, not excused, so a missing or unreadable dump can never make the grid pass.
  */
+/**
+ * THE SCANLINES, TURNED INTO ROWS THE VERDICT CAN BE TAKEN OVER (M1-114).
+ *
+ * LIFTED OUT FOR judgeGrid's OWN REASON, one paragraph down: a decision reachable only through a
+ * directory of PNGs cannot be mutation-proved. The span ruling got that treatment in M1-92 and the
+ * ANCHOR -- which is what actually decides the number -- did not, so every anchor defect this
+ * campaign has found was found on live pages that move under the seat reading them. This takes the
+ * image, the scanlines, the ink and the declarations as data, so the selftest can hand it a strip
+ * the renderer clipped and watch the row disappear.
+ *
+ * ONLY STRIPS THE RENDERER ACTUALLY PAINTED. A rect is not evidence that anything was drawn at it:
+ * `getBoundingClientRect()` answers for every RENDERED element, and a virtualized rack renders into
+ * its own scroll container and then CLIPS. Measured on logs: the dump declares fifteen strips, the
+ * capture paints eleven, and clipped strip #3 (y 198..262) spans `.myx-lt-head` (203..283) -- whose
+ * own box border is `border: var(--hair) solid var(--strip-field-line)`
+ * (webui/src/widgets/log-tail/log-tail.css), the SAME INK as a cell divider. So the leg paired the
+ * header's two scanlines to a strip by y-containment, read the band's box border as that row's
+ * first field edge, and called the difference 159px. The dump said "this is a strip" about a row
+ * that is not one. `painted` is the renderer's own answer, via `elementFromPoint`.
+ *
+ * THE ANCHOR, AND WHY IT MOVED OFF THE CONSTANT 140. The rule is where a controller scanning a
+ * column lands, and a controller scans THE STRIP -- so the scan starts at that strip's own left
+ * edge rather than at a constant chosen when every rack began in the same place. The leftmost strip
+ * on the row owns the reading, because the leftmost border is its.
+ *
+ * A row with no painted strip keeps `onStrip: false` rather than being dropped here, so the caller
+ * can COUNT what it excluded. "Nothing was declared" and "nothing was looked at" read the same in a
+ * number, which is the defect this whole leg keeps re-finding at a new level.
+ */
+function gridRows(im, mid, line, known) {
+  const stripsAt = (y) => (known === null ? [] : known.filter((s) => s.painted && y >= s.y && y < s.y + s.h));
+  return mid.map((y) => {
+    const at = stripsAt(y);
+    const home = at.length === 0 ? null : at.reduce((a, b) => (a.x <= b.x ? a : b));
+    const x = home === null ? undefined : fieldBorders(im, y, Math.max(0, home.x), im.w - 4, line)[0];
+    // A declared span counts when it is the FIRST field of a strip on this row: that is the field
+    // whose edge the scanline's leftmost border is measuring.
+    const declared = at.flatMap((s) => {
+      const first = s.fields === undefined ? undefined : s.fields[0];
+      return first !== undefined && first !== null && first.span !== null && Number(first.span) > 1
+        ? [{ label: first.label, span: first.span }] : [];
+    });
+    return { y, x, declared, onStrip: home !== null, bay: home === null ? undefined : home.bay };
+  });
+}
+
 function judgeGrid(rows) {
   const declared = rows.filter((r) => r.declared.length > 0);
   const plain = rows.filter((r) => r.declared.length === 0);
@@ -367,13 +414,53 @@ function judgeGrid(rows) {
   if (plain.length < 2) {
     return { ok: undefined, honoured, detail: `only ${plain.length} scanline(s) whose first field is not a declared span, so the grid cannot be compared` };
   }
-  const xs = plain.map((r) => r.x);
-  const spread = Math.max(...xs) - Math.min(...xs);
+  // ---- THE groupBy THIS LEG NEVER HAD, WHICH IS THE WHOLE DEFECT (M1-114) ----
+  //
+  // Line 299 of this file has said since it was written that the rule fails when two strips IN ONE
+  // BAY disagree. The code then built one scanline list over the WHOLE capture and took one spread
+  // across all of it. That is the M1-70 class -- a comment describing an intention the code does
+  // not carry -- and it is the same shape as M1-108's, where the words said DID NOT RUN and the
+  // verdict said ok. The words were right both times.
+  //
+  // WHY A CROSS-BAY SPREAD IS NOT A DEFECT, MEASURED (design-builder3, M1-115, DOM-proven): turns
+  // has three bays, and the compared edge is FIELD 2's left boundary, because no rack paints field
+  // 1's. The in-flight rack is six fields at 220/412/604/720/816/912 and the landed rack is fourteen
+  // at 220/336/528/700/854/998/... -- so the leg was reading 412-1 against 336-1 and calling the
+  // 76px a misalignment. It is not one. A six-field grid and a fourteen-field grid have no shared
+  // column to disagree about, and no anchor reconciles them; each bay is internally exact. One
+  // missing groupBy explains all three reds this row was cut for: logs' 159 is a band against a
+  // rack, turns' 76 is two racks in two bays, accounts' 34 was two racks.
+  //
+  // A row whose bay is unknown groups under `undefined` and is compared with its own kind, which is
+  // what keeps a dump that carries no bay index from silently passing everything: unknown is one
+  // group, not one group each.
+  const byBay = new Map();
+  for (const r of plain) {
+    const key = r.bay === undefined ? 'unknown' : r.bay;
+    if (!byBay.has(key)) byBay.set(key, []);
+    byBay.get(key).push(r);
+  }
+  const groups = [...byBay.entries()]
+    .map(([bay, rs]) => {
+      const xs = rs.map((r) => r.x);
+      return { bay, n: rs.length, lo: Math.min(...xs), hi: Math.max(...xs), spread: Math.max(...xs) - Math.min(...xs) };
+    })
+    .filter((g) => g.n >= 2);
+  // EVERY BAY HAS ONE ROW: there is nothing to compare, and saying so beats reporting a clean grid.
+  // This is the same refusal as the `plain.length < 2` line above, one level in -- the denominator
+  // moved from the capture to the bay, so the emptiness check had to move with it (law 34).
+  if (groups.length === 0) {
+    return { ok: undefined, honoured, detail: `${plain.length} comparable scanline(s) but no bay holds two, so no column can be compared` };
+  }
+  groups.sort((a, b) => b.spread - a.spread);
+  const worst = groups[0];
+  const say = (g) => `bay ${g.bay}: ${g.spread}px across ${g.n} scanlines (x ${g.lo}..${g.hi})`;
   return {
-    ok: spread <= 2,
+    ok: worst.spread <= 2,
     honoured,
-    detail: `first field edge spans ${spread}px across ${plain.length} scanlines`
-      + `${declared.length > 0 ? ' whose first field is not a declared span' : ''} (x ${Math.min(...xs)}..${Math.max(...xs)})`,
+    detail: `first field edge spans ${worst.spread}px within a bay — ${say(worst)}`
+      + `${declared.length > 0 ? ', comparing only scanlines whose first field is not a declared span' : ''}`
+      + ` · ${groups.length} bay(s) compared${groups.length > 1 ? `: ${groups.map(say).join(' · ')}` : ''}`,
   };
 }
 
@@ -418,7 +505,7 @@ function checkFieldGrid(capturesDir) {
   // Declared spans honoured, dumps that could not be paired, captures read with no dump at all, and
   // captures the grid could not be compared on -- each named in the output rather than folded into a
   // count, because "nothing was declared" and "nothing was looked at" read the same in a number.
-  const honoured = [], unpaired = [], undeclaredNoDump = [], skippedDetail = [];
+  const honoured = [], excluded = [], thin = [], staleDump = [], undeclaredNoDump = [], skippedDetail = [];
   let checked = 0, skipped = 0, unthemed = 0;
   for (const f of files) {
     let mtime = 0; try { mtime = fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { mtime = 0; }
@@ -431,7 +518,11 @@ function checkFieldGrid(capturesDir) {
     // for that file rather than passing it by default (law 23).
     const theme = captureTheme(f);
     if (theme === null) { unthemed++; continue; }
-    checked++;
+    // `checked` IS INCREMENTED WHERE THE VERDICT IS REACHED, NOT HERE (M1-114). It used to count
+    // every capture that named a theme, which made it a count of files opened rather than of grids
+    // judged -- and M1-108 made that number the leg's DID-NOT-RUN floor, so it has to mean what it
+    // says. A capture refused below for a dump that cannot answer, or for too few scanlines left on
+    // a painted strip, is NOT a capture this leg checked.
     // the first field's right edge; it must not move between strips.
     // THE INDEX IS [0] AND IT USED TO BE [1], which is not a tuning change. `fieldBorders` finds
     // pixels in `--strip-field-line`'s colour, and that used to match the strip's own outer box
@@ -455,25 +546,28 @@ function checkFieldGrid(capturesDir) {
     const dump = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOTREF.root, capturesDir, declName(f)), 'utf8')); } catch { return null; } })();
     const known = dump !== null && Array.isArray(dump.strips) ? dump.strips : null;
     if (known === null) undeclaredNoDump.push(f);
-    const stripsAt = (y) => (known === null ? [] : known.filter((s) => y >= s.y && y < s.y + s.h));
-    const rows = mid.map((y) => {
-      const x = fieldBorders(im, y, 140, im.w - 4, line)[0];
-      const at = stripsAt(y);
-      // A declared span counts when it is the FIRST field of a strip on this row: that is the field
-      // whose edge the scanline's leftmost border is measuring.
-      const declared = at.flatMap((s) => {
-        const first = s.fields === undefined ? undefined : s.fields[0];
-        return first !== undefined && first !== null && first.span !== null && Number(first.span) > 1
-          ? [{ label: first.label, span: first.span }] : [];
-      });
-      return { y, x, declared, paired: at.length > 0 };
-    }).filter((r) => r.x !== undefined);
-    if (rows.length < 2) continue;
-    if (known !== null && rows.some((r) => !r.paired)) {
-      const orphan = rows.filter((r) => !r.paired).length;
-      unpaired.push(`${f}: ${orphan} of ${rows.length} scanline(s) matched no strip in the dump`);
-    }
-    const judged = judgeGrid(rows);
+    // A DUMP WITHOUT `painted` CANNOT ANSWER THIS LEG'S QUESTION, AND SAYS SO (M1-114, law 23).
+    // The anchor below is only as good as the claim "this scanline is a strip", and a dump written
+    // before `painted` existed cannot make that claim -- every strip it lists might be clipped. So
+    // such a capture is NAMED AND REFUSED rather than judged on the old, weaker pairing: that is
+    // the difference between honouring a declaration and failing to look, which is the rule this
+    // function's own header states. An EMPTY strips array is a different sentence and reaches the
+    // same place by the insufficient-coverage path below -- settings' rack is not `.myx-strip` at
+    // all (M1-92), so its dump enumerates zero strips and the leg must refuse it out loud rather
+    // than report a clean grid over nothing.
+    const declaresPaint = known !== null && known.every((s) => typeof s.painted === 'boolean' && typeof s.x === 'number');
+    if (known !== null && !declaresPaint) { staleDump.push(f); continue; }
+    const rows = gridRows(im, mid, line, known);
+    // OFF-STRIP SCANLINES ARE EXCLUDED AND NAMED, NOT SILENTLY DROPPED. This is the count that
+    // would have told M1-110 what it was looking at in one line, so it is in the output whether or
+    // not it changes the verdict: a rack that the leg read two extra rows of is a different claim
+    // from one it read cleanly, and "159px" said neither.
+    const off = rows.filter((r) => !r.onStrip).length;
+    const onStrip = rows.filter((r) => r.onStrip && r.x !== undefined);
+    if (off > 0) excluded.push(`${f}: ${off} of ${rows.length} scanline(s) sit on no painted strip`);
+    if (onStrip.length < 2) { thin.push(`${f}: ${onStrip.length} of ${rows.length} scanline(s) left on a painted strip, needed at least 2`); continue; }
+    checked++;
+    const judged = judgeGrid(onStrip);
     if (judged.ok === undefined) { skippedDetail.push(`${f}: ${judged.detail}${honouredClause(judged)}`); continue; }
     if (!judged.ok) bad.push(`${f}: ${judged.detail}${honouredClause(judged)}`);
     else if (judged.honoured.length > 0) honoured.push(`${f}: ${judged.honoured.join(', ')}`);
@@ -483,7 +577,9 @@ function checkFieldGrid(capturesDir) {
     + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
     + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '')
     + (undeclaredNoDump.length ? ` · ${undeclaredNoDump.length} capture(s) read with no declaration dump beside them, so nothing could be honoured by declaration: ${undeclaredNoDump.slice(0, 3).join(', ')}${undeclaredNoDump.length > 3 ? ', …' : ''}` : '')
-    + (unpaired.length ? ` · ${unpaired.length} capture(s) whose dump does not account for every scanline: ${unpaired.slice(0, 3).join(', ')}${unpaired.length > 3 ? ', …' : ''}` : '')
+    + (excluded.length ? ` · ${excluded.length} capture(s) with scanlines excluded as not-a-strip: ${excluded.slice(0, 3).join(', ')}${excluded.length > 3 ? ', …' : ''}` : '')
+    + (staleDump.length ? ` · DID NOT RUN on ${staleDump.length} capture(s) whose dump predates \`painted\` and so cannot say which scanlines are strips — re-run the capture leg: ${staleDump.slice(0, 3).join(', ')}${staleDump.length > 3 ? ', …' : ''}` : '')
+    + (thin.length ? ` · DID NOT RUN on ${thin.length} capture(s) with too few scanlines on a painted strip: ${thin.slice(0, 3).join(', ')}${thin.length > 3 ? ', …' : ''}` : '')
     + (skippedDetail.length ? ` · ${skippedDetail.join(' · ')}` : '')
     + (staleCount ? ` · ${staleCount} skipped (older than webui/src, so not evidence about this build)` : '');
   // THE SECOND EMPTY DENOMINATOR, and the one that survives a directory full of files: every
@@ -501,7 +597,15 @@ function checkFieldGrid(capturesDir) {
       `DID NOT RUN: judged 0 of ${files.length} capture(s) in ${capturesDir}, needed at least 1`
       + coverage + ' · ' + detail);
   }
-  return record('field-grid', true, bad.length === 0, detail);
+  // THE INSUFFICIENT-COVERAGE CASE THIS ANCHOR OWES, AND IT REDS (M1-114, the condition
+  // splice-design attached to reading the dump at all). Anchoring on painted strips buys exactness
+  // by taking a dependency on the declaration dump, and a dependency that can be absent needs a
+  // disposition that is not silence. A capture whose dump cannot say which scanlines are strips --
+  // because it predates `painted`, or because it enumerates none at all, which is settings, whose
+  // rack is not `.myx-strip` (M1-92) -- is a capture this leg DID NOT CHECK. It says so and it
+  // fails, for M1-108's reason: on a blocking leg the words and the verdict must agree, and
+  // "I could not look" has never been a pass.
+  return record('field-grid', true, bad.length === 0 && staleDump.length === 0 && thin.length === 0, detail);
 }
 
 /** Tonal drift against the comp. Not a pixel diff — a distribution diff, which survives content
@@ -549,8 +653,16 @@ function partitionFresh(entries, bar) {
  * a leg that silently drops its whole input reads identically to a leg that looked and approved.
  */
 function checkTonalDrift(capturesDir, compPath) {
-  const comp = pixels(path.join(ROOT, compPath));
-  if (!comp) return record('tonal-drift', false, true, 'skipped: comp unreadable (no PIL?)');
+  // M1-108'S RULING, APPLIED TO THE LAST BRANCH THAT ESCAPED IT (M1-114). The two empty-denominator
+  // exits below were made to fail; this one was not, and it is the same sentence: a leg that cannot
+  // read its own reference has not measured drift against the comp, it has failed to measure drift
+  // against the comp. `skipped` + ok=true is the M1-78 shape this file keeps finding elsewhere --
+  // prose that says one thing while the verdict says another -- and the verdict is what is read.
+  // THE PATH IS `ROOTREF.root` FOR THE REASON M1-108 CHANGED THE OTHER FOUR: `ROOT` is frozen at
+  // load, so the selftest's temp-tree redirect never reached this line and this branch could not be
+  // driven from a test at all. A branch no test can reach is how it kept the wrong verdict.
+  const comp = pixels(path.join(ROOTREF.root, compPath));
+  if (!comp) return record('tonal-drift', false, false, `DID NOT RUN: comp unreadable at ${compPath} (no PIL, or the file moved) — nothing was compared`);
   const ref = tonal(comp);
   const files = (() => { try { return fs.readdirSync(path.join(ROOTREF.root, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
   const bar = newestSourceMtime();
@@ -606,6 +718,106 @@ function checkTonalDrift(capturesDir, compPath) {
  *  in `drawIn`'s theme colour while the detector is told the capture is `declareAs`. A correct
  *  detector FAILS on it (the edges disagree); the pre-M1-65 detector told 'light' while the ink
  *  is dark finds no edges at all and passes -- which is the bug, reproduced. */
+/**
+ * A SYNTHETIC RACK, DRAWN THE WAY THE PAGES ACTUALLY DRAW ONE (M1-114).
+ *
+ * Each entry is a row of strip paper with its field boundaries painted in the field-line ink --
+ * and, as every real rack does, WITHOUT field 1's left boundary. That omission is not a shortcut in
+ * the fixture: it is the measured fact that makes the leg compare FIELD 2's left edge (M1-115's DOM
+ * reading of turns, 220/412/604/... with only 412 onward painted), and a fixture that painted field
+ * 1's edge would be testing a rack this console does not render.
+ *
+ * The declarations carry the two things the pixels cannot: which bay a row belongs to, and whether
+ * the renderer painted it at all. Both are what the live pages made impossible to test -- they move
+ * under the seat reading them, which is how this row's acceptance changed three times in one
+ * evening -- so every mechanism below is proved here instead.
+ */
+function rackProbe(spec, theme = 'dark') {
+  const w = 1200, band = 24, gap = 8;
+  const h = spec.length * (band + gap) + gap;
+  const data = Buffer.alloc(w * h * 3, 0);
+  const line = fieldLine(theme).map(Math.round);
+  const known = [];
+  spec.forEach((row, n) => {
+    const top = gap + n * (band + gap);
+    for (let y = top; y < top + band; y++) {
+      for (let x = row.left; x < w - 20; x++) {
+        const i = (y * w + x) * 3;
+        data[i] = 222; data[i + 1] = 217; data[i + 2] = 198;
+      }
+      for (const x of row.edges) {
+        const i = (y * w + x) * 3;
+        [data[i], data[i + 1], data[i + 2]] = line;
+      }
+    }
+    known.push({
+      y: top, h: band, x: row.left, w: w - 20 - row.left, bay: row.bay,
+      painted: row.painted !== false,
+      fields: [{ label: row.label ?? 'f1', span: null, w: row.edges[0] - row.left }],
+    });
+  });
+  return { im: { w, h, data }, known, line };
+}
+
+/** A REAL PNG, ENCODED HERE RATHER THAN CAPTURED (M1-114), so the coverage refusals below can be
+ *  driven through `checkFieldGrid` over a directory -- decoder, dump read and `record` included --
+ *  instead of over a hand-made pixel object. Two new conditions RED the gate in this row, and a new
+ *  red that no test can reach is the decorative check this campaign keeps cataloguing. Colour type
+ *  2 (RGB), filter 0 on every row: the smallest encoder PIL reads. */
+function encodePng(im) {
+  const chunk = (type, body) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(body.length);
+    const tagged = Buffer.concat([Buffer.from(type, 'ascii'), body]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(tagged));
+    return Buffer.concat([len, tagged, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(im.w, 0); ihdr.writeUInt32BE(im.h, 4);
+  ihdr[8] = 8; ihdr[9] = 2;                                   // 8 bits per channel, truecolour
+  const stride = 1 + im.w * 3;
+  const raw = Buffer.alloc(im.h * stride);
+  for (let y = 0; y < im.h; y++) im.data.copy(raw, y * stride + 1, y * im.w * 3, (y + 1) * im.w * 3);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** A capture directory the way the gate writes one: a PNG per address and the declaration dump
+ *  beside it, under a root the selftest can point ROOTREF at. `strips` is written verbatim so a
+ *  case can ship a dump that predates `painted`, or one that enumerates none at all. */
+function seedCaptures(tmp, addresses, { im, strips }) {
+  fs.mkdirSync(path.join(tmp, 'caps'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'webui/src/app'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'webui/src/app/rows.ts'),
+    `export const ADDRESSES = [${addresses.map((a) => `'${a}'`).join(', ')}] as const;\n`);
+  const png = encodePng(im);
+  for (const a of addresses) {
+    fs.writeFileSync(path.join(tmp, 'caps', `${a}-dark-1536x1024.png`), png);
+    fs.writeFileSync(path.join(tmp, 'caps', `${a}-dark-1536x1024.decl.json`),
+      JSON.stringify({ url: `#/${a}`, frame: [im.w, im.h], strips }));
+  }
+}
+
+/** The leg's own pipeline over a synthetic rack: scanlines, rows, exclusions, verdict. Mirrors
+ *  checkFieldGrid's body so a case proves what the gate does, not what a helper does. */
+function rackVerdict(spec, label) {
+  const { im, known, line } = rackProbe(spec);
+  const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
+  const rows = gridRows(im, mid, line, known);
+  const on = rows.filter((r) => r.onStrip && r.x !== undefined);
+  const off = rows.length - on.length;
+  findings.length = 0;
+  if (on.length < 2) {
+    record('field-grid', true, false, `DID NOT RUN: ${label} — ${on.length} of ${rows.length} scanline(s) on a painted strip`);
+    return findings[0];
+  }
+  const judged = judgeGrid(on);
+  record('field-grid', true, judged.ok === true,
+    `${label} — ${judged.detail}${off ? ` · ${off} scanline(s) excluded as not-a-strip` : ''}`);
+  return findings[0];
+}
+
 function fieldProbe(declareAs, drawIn) {
   const w = 1200, h = 40;
   const data = Buffer.alloc(w * h * 3, 0);
@@ -650,16 +862,37 @@ const CAPTURE_FRAME = [1536, 1024];
  *  every field's label, its declared track span (`data-span`, absent when it is one track) and its
  *  laid-out width. The strip order is the pairing key the field-grid leg uses, which is why the
  *  count of strips is written too: a dump that describes a different number of strips than the
- *  capture has cannot be paired, and saying so beats pairing it wrongly. */
+ *  capture has cannot be paired, and saying so beats pairing it wrongly.
+ *
+ *  `x`/`w` AND `painted` ARE M1-114'S, AND `painted` IS THE WHOLE ROW. A rect is not evidence that
+ *  anything was drawn at it. `getBoundingClientRect()` answers for every RENDERED element, and a
+ *  virtualized rack renders items its own scroll container then CLIPS -- so logs, in follow mode,
+ *  declares fifteen strips of which the capture paints eleven. Measured: strips #0..#3 (y 6..262)
+ *  sit where the logs capture is dark or is covered by `.myx-lt-head`, and #4..#14 coincide exactly
+ *  with the pale bands the pixels show. The leg paired a scanline to a strip by y-containment, so
+ *  the header's two scanlines landed inside CLIPPED strip #3 (198..262, spanning the header at
+ *  203..283) and came back `paired: true` -- the dump said "this is a strip" about a row that is
+ *  not one, and the leg then read the header's own box border as that row's first field edge.
+ *  `elementFromPoint` is the exact question the rect cannot answer: it returns what is actually
+ *  painted at a coordinate, so clipping, overlap and z-order are all decided by the renderer rather
+ *  than re-derived here. A strip counts as painted when the element at its own midpoint is the
+ *  strip or lives inside it. */
 const DECLARATIONS = `(() => {
   const strips = [...document.querySelectorAll('.myx-strip')];
+  const bays = [...document.querySelectorAll('.myx-bay')];
   return JSON.stringify({
     url: location.hash,
     frame: [window.innerWidth, window.innerHeight],
     strips: strips.map((s) => {
       const r = s.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const on = cx >= 0 && cy >= 0 && cx < window.innerWidth && cy < window.innerHeight;
+      const hit = on ? document.elementFromPoint(cx, cy) : null;
       return {
         y: Math.round(r.top), h: Math.round(r.height),
+        x: Math.round(r.left), w: Math.round(r.width),
+        bay: bays.indexOf(s.closest('.myx-bay')),
+        painted: hit !== null && hit.closest('.myx-strip') === s,
         fields: [...s.querySelectorAll('.myx-sfield')].map((f) => {
           const label = f.querySelector('.myx-sfield-label');
           return { label: label === null ? null : label.textContent.trim(),
@@ -947,6 +1180,114 @@ function selftest() {
         "export const ADDRESSES = ['fleet', 'turns', 'sessions'] as const;\n");
       const saved = ROOTREF.root; ROOTREF.root = tmp;
       checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
+    // ---- THE TWO CASES THIS ROW TURNS ON (M1-114). The leg's rule is "two strips IN ONE BAY
+    // disagree", and for as long as it has existed the code took one spread over every scanline in
+    // the capture. These two are the same disagreement -- 373 against 407 -- moved between bays,
+    // and they must answer differently. A leg that reds both has not learned the rule; a leg that
+    // greens both has been deleted. The live pages cannot make this point any more: accounts was
+    // the standing red and M1-107 greened it page-side while this row was in flight.
+    ['field-grid', () => rackVerdict([
+      { bay: 0, left: 219, edges: [373, 527, 680] },
+      { bay: 0, left: 219, edges: [373, 527, 680] },
+      { bay: 0, left: 219, edges: [407, 594, 829] },
+    ], 'two racks IN ONE BAY, field 2 at 373 against 407'), false],
+    ['field-grid', () => rackVerdict([
+      // turns' real geometry (M1-115): the in-flight rack's six fields against the landed rack's
+      // fourteen. 411 against 335 is 76px and it is not a misalignment -- a six-field grid and a
+      // fourteen-field grid share no column to disagree about. Each bay is internally exact.
+      { bay: 0, left: 219, edges: [411, 603, 719, 815, 911] },
+      { bay: 0, left: 219, edges: [411, 603, 719, 815, 911] },
+      { bay: 2, left: 220, edges: [335, 527, 699, 853, 997] },
+      { bay: 2, left: 220, edges: [335, 527, 699, 853, 997] },
+    ], 'two racks in DIFFERENT bays, field 2 at 411 against 335'), true],
+    // ---- `painted`, PROVED BY MUTATION ON ONE BOOLEAN (M1-114). Identical pixels both times; the
+    // only change is whether the declarations say the renderer painted the band. This is logs, and
+    // the red case reproduces M1-110's 159px exactly -- which is the evidence that `painted` is
+    // what does the work here, and not the anchor or the grouping.
+    ['field-grid', () => rackVerdict([
+      { bay: 0, left: 166, edges: [166, 1094, 1107], painted: false, label: 'lt-head' },
+      { bay: 0, left: 219, edges: [325, 498, 575] },
+      { bay: 0, left: 219, edges: [325, 498, 575] },
+      { bay: 0, left: 219, edges: [325, 498, 575] },
+    ], 'logs: a bay band the renderer did NOT paint as a strip'), true],
+    ['field-grid', () => rackVerdict([
+      { bay: 0, left: 166, edges: [166, 1094, 1107], painted: true, label: 'lt-head' },
+      { bay: 0, left: 219, edges: [325, 498, 575] },
+      { bay: 0, left: 219, edges: [325, 498, 575] },
+      { bay: 0, left: 219, edges: [325, 498, 575] },
+    ], 'logs: the SAME pixels with the band declared painted — M1-110\'s 159px returns'), false],
+    // ---- THE ANCHOR (M1-114). Field-line ink sits at x=166, outside the strip's own paper, on the
+    // first row only. Scanning from the constant 140 reads it and calls the rack 207px wide;
+    // scanning from the strip's own left edge reads the field boundary the rule is about. A
+    // controller scans a column of THE STRIP.
+    ['field-grid', () => rackVerdict([
+      { bay: 0, left: 219, edges: [166, 373, 527] },
+      { bay: 0, left: 219, edges: [373, 527] },
+    ], 'ink left of the strip\'s own left edge is not its field edge'), true],
+    // ---- THE INSUFFICIENT-COVERAGE CASES THIS ANCHOR OWES, END TO END (M1-114). Reading the dump
+    // buys exactness and takes a dependency, and a dependency that can be absent needs a
+    // disposition that is not silence. Both are driven through checkFieldGrid over a real
+    // directory, because both are conditions I added that RED the gate -- and a new red no test can
+    // reach is the decorative check this file keeps finding in other people's legs.
+    ['field-grid', () => {
+      findings.length = 0;
+      const { im, known } = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-olddump-');
+      // A dump as it was written before `painted` existed: it cannot say which scanlines are
+      // strips, so the leg must refuse rather than fall back to the pairing that produced M1-110.
+      seedCaptures(tmp, ['fleet'], { im, strips: known.map(({ y, h, fields }) => ({ y, h, fields })) });
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
+    ['field-grid', () => {
+      findings.length = 0;
+      const { im } = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-nostrips-');
+      // settings' shape (M1-92): a readable capture whose rack is not `.myx-strip`, so the dump
+      // enumerates ZERO strips. The pixels are a perfectly aligned grid and the leg must still
+      // refuse them, because it has nothing that says they are strips. This is the boring case
+      // §24 names -- an empty item waved through -- and it is the one that gets waved through.
+      seedCaptures(tmp, ['settings'], { im, strips: [] });
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
+    ['field-grid', () => {
+      findings.length = 0;
+      const { im, known } = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-whole-');
+      // THE COMPLIANT FORM, THROUGH THE SAME DOOR. Without this the two refusals above would be
+      // satisfied by a leg that refuses everything, which is how a gate stops being a gate.
+      seedCaptures(tmp, ['fleet'], { im, strips: known });
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, true],
+    // ---- THE LAST BRANCH THAT STILL PASSED ON AN EMPTY DENOMINATOR (M1-114, applying M1-108's
+    // ruling). `skipped: comp unreadable` returned ok=true: the leg had not read its reference, had
+    // compared nothing, and said so in prose while the verdict said fine. THE EXPECTATION FLIPS
+    // WITH THE CODE, which is the point -- a test that was asserting the old verdict is not
+    // evidence for the new one. This case also could not exist before the same edit, because the
+    // comp was read through frozen `ROOT` and the redirect below never reached it.
+    ['tonal-drift', () => {
+      findings.length = 0;
+      const tmp = fs.mkdtempSync('/tmp/lookgate-nocomp-');
+      fs.mkdirSync(path.join(tmp, 'caps'), { recursive: true });
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkTonalDrift('caps', 'mocks/absent.png'); ROOTREF.root = saved;
       fs.rmSync(tmp, { recursive: true, force: true });
       return findings[0];
     }, false],

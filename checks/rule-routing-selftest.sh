@@ -23,7 +23,7 @@ note() { printf '  %s\n' "$1"; }
 # ── mirror: everything rule-routing.sh reads ─────────────────────────────────────────────────
 mkdir -p "$tmp/checks/config"
 cp "$ROOT/checks/rule-routing.sh" "$tmp/checks/"
-cp "$ROOT/checks/config/ast-grep-rule-docs.py" "$tmp/checks/config/"
+cp "$ROOT/checks/config/ast-grep-rule-docs.ts" "$tmp/checks/config/"
 cp "$ROOT/sgconfig.yml" "$tmp/"
 cp -r "$ROOT/.rules" "$tmp/.rules"
 
@@ -89,10 +89,10 @@ cp "$ROOT/sgconfig.yml" "$tmp/"
 # A broken module returns 0 rule files for every directory, and 0 means "nothing to check here" —
 # silently turning this whole leg into a no-op. That is the bug class the leg exists to catch, one
 # level up, so an unrunnable enumerator has to be a hard failure and not a quiet fallback.
-mv "$tmp/checks/config/ast-grep-rule-docs.py" "$tmp/checks/config/ast-grep-rule-docs.py.bak"
+mv "$tmp/checks/config/ast-grep-rule-docs.ts" "$tmp/checks/config/ast-grep-rule-docs.ts.bak"
 routing
 must_fail "5. enumerator missing" "is not runnable"
-mv "$tmp/checks/config/ast-grep-rule-docs.py.bak" "$tmp/checks/config/ast-grep-rule-docs.py"
+mv "$tmp/checks/config/ast-grep-rule-docs.ts.bak" "$tmp/checks/config/ast-grep-rule-docs.ts"
 
 # ── 6. CONTROL: a dormant dir carrying a dated allowlist entry stays green ────────────────────
 # Guards against "fix" by rejecting every unreferenced directory: .rules/kotlin is deliberately

@@ -12,14 +12,17 @@ fail=0
 err() { echo "  ✗ config-guard-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-# ── mirror: everything config-guard.sh and its two python legs read ──────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/gateway" "$tmp/.github"
+# ── mirror: everything config-guard.sh and its two script legs read ──────────────────────────
+mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/gateway" "$tmp/.github"
 cp "$ROOT/checks/config-guard.sh" "$tmp/checks/"
-cp "$ROOT/checks/config/dependabot-kotlin-scope.py" "$ROOT/checks/config/concentration-leg-routed.py" "$tmp/checks/config/"
+cp "$ROOT/checks/config/dependabot-kotlin-scope.ts" "$ROOT/checks/config/concentration-leg-routed.ts" "$tmp/checks/config/"
+# V4-145: the routing leg is bun now and imports the Python-semantics shims beside it; without them
+# it fails to LOAD in every fixture, which the arms below would read as the wall refusing.
+cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
 # DR-131/DR-132: the shared rule-document enumerator the severity wall now parses with. Omitting it
 # would make config-guard.sh fail CLOSED on every fixture below — including the control — and a wall
 # that rejects everything because its checker is missing proves nothing about the checker.
-cp "$ROOT/checks/config/ast-grep-rule-docs.py" "$tmp/checks/config/"
+cp "$ROOT/checks/config/ast-grep-rule-docs.ts" "$tmp/checks/config/"
 cp "$ROOT/gateway/detekt.yml" "$tmp/gateway/"
 cp "$ROOT/.github/dependabot.yml" "$tmp/.github/"
 cp "$ROOT/package.json" "$tmp/"
@@ -173,7 +176,7 @@ fi
 rm -f "$FIXTURE"
 
 # ── DR-133: the concentration-leg routing guard's own reachability model ─────────────────────
-# config-guard.sh's fifth section runs concentration-leg-routed.py, which asserts in its docstring
+# config-guard.sh's fifth section runs concentration-leg-routed.ts, which asserts in its docstring
 # that only a TOP-LEVEL leg counts. Its DR-114 nesting model knew if/while/until/for/case and
 # nothing else, so a leg bash never executes was accepted as a routing. Mutations go on the
 # MIRRORED gate.sh, never the repo's own.

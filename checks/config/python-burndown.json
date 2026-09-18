@@ -3,7 +3,6 @@
   "law": "Operator rule, stated 2026-09-18: this repo has no Python — tooling is bun/TypeScript. Every line here is DEBT that predates the wall, not permission. The gate fails when a tracked .py file is NOT listed here (new Python) and when a listed one is gone or already converted (stale). The list may only SHRINK: adding a line to make the gate pass is the violation the wall exists to catch. Burn it down per the migration rows in .dev/campaigns/v0.4.0.toml. SECOND CENSUS (added 2026-09-18 after the first read a triumphant 90 while 29 .sh files invoked python3 167 times): `invokers` lists every tracked non-.py file that RUNS or NAMES python. Counting files called .py is not counting Python. Same rules — it may only shrink.",
   "files": [
     "checks/concentration.py",
-    "checks/config/concentration-leg-routed.py",
     ".dev/campaigns/manifest.py"
   ],
   "invokers": [
@@ -17,7 +16,6 @@
     "README.md",
     "bin/splice-launch",
     "checks/concentration-selftest.sh",
-    "checks/config-guard-selftest.sh",
     "checks/config-guard.sh",
     "checks/e2e/README.md",
     "checks/e2e/docker/Dockerfile",

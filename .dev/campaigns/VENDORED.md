@@ -36,10 +36,10 @@ temporary ledgers included — keeps the canonical behaviour.
 
 1. **flock on the ledger file (bun:ffi).** `manifest.py` takes `fcntl.flock` on the ledger file itself;
    the canonical O_EXCL `.lock` sidecar and an flock do not exclude each other. Proved in two processes
-   against a control: bun holds -> python BLOCKED; python holds -> bun BLOCKED; nobody holds -> both
-   acquire.
+   against a control: bun holds -> manifest.py BLOCKED; manifest.py holds -> bun BLOCKED; nobody holds
+   -> both acquire.
 2. **Write in place, never rename, while `manifest.py` exists.** A flock belongs to an inode; a rename
-   puts a new inode at the path. Measured: python holding its lock, a rename over the path, and a bun
+   puts a new inode at the path. Measured: manifest.py holding its lock, a rename over the path, and a bun
    probe on the path ACQUIRES — exclusion silently gone.
 3. **No provenance proof on a coexisting ledger.** `manifest.py` never maintains `.cli-sha256`, so a
    proof born here goes stale at its next write and every later mutation here refuses. The cutover's
@@ -112,8 +112,7 @@ wall of its own is a cutover question for the orchestrator, not a vendoring side
 > rows in splice, if ever wanted, are a deliberate decision with their own row.
 
 **Surface gap at `eab668e`: two pull paths, one of them missing.** A seat pulls its next row today with
-`python3 .dev/campaigns/manifest.py <ledger> next-packet --session <seat>` (claims it, sets in_flight,
-prints the packet). The canonical equivalent, `next --claim <seat>`, is NOT implemented at this sha.
+`manifest.py`'s `next-packet --session <seat>` verb (claims it, sets in_flight, prints the packet). The canonical equivalent, `next --claim <seat>`, is NOT implemented at this sha.
 Delta 5 already names it, so it refuses correctly on a coexisting ledger the day a re-vendor brings it.
 **Whoever re-vendors next must wire the two together** — the canonical verb replaces `next-packet` at
 the cutover — rather than discover two pull paths with different claim representations (see delta 5).

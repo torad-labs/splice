@@ -53,11 +53,11 @@ UNROUTED_ALLOWLIST=(
 # class the script exists to catch, one level up, so an unrunnable module is a hard failure. The
 # `|| printf 0` inside rule_file_count is only an arithmetic safety net for that already-failed
 # world; the preflight is what makes it safe, and it is not a fallback path.
-python3 checks/config/ast-grep-rule-docs.py count .rules 1 >/dev/null 2>&1 ||
-  err "checks/config/ast-grep-rule-docs.py is not runnable (needs python3 + PyYAML) — the rule-file denominator cannot be computed, so this leg can vouch for nothing."
+bun checks/config/ast-grep-rule-docs.ts count .rules 1 >/dev/null 2>&1 ||
+  err "checks/config/ast-grep-rule-docs.ts is not runnable — the rule-file denominator cannot be computed, so this leg can vouch for nothing."
 
 rule_file_count() { # rule_file_count <dir> <maxdepth>
-  python3 checks/config/ast-grep-rule-docs.py count "$1" "$2" 2>/dev/null || printf '0\n'
+  bun checks/config/ast-grep-rule-docs.ts count "$1" "$2" 2>/dev/null || printf '0\n'
 }
 
 normalize_path() { # strip surrounding quotes and any trailing slash

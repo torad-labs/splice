@@ -2,7 +2,7 @@
 // carries the management key, the 401 lockout and the error envelope (CONTRACTS.md 8), so nothing
 // here re-implements any of them.
 import { pendingOf as routePendingOf, request } from '@shared/api';
-import type { HeadsPayload, PendingRoute } from '@shared/api';
+import type { HeadsPayload } from '@shared/api';
 import { poll } from '@shared/lib';
 import { inflightFrom } from '../model/derive';
 import { captureStore, perfStore, perfSummaryStore, perfTurnsStore } from '../model/store';
@@ -26,19 +26,6 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * The perf row's binding of the shared pending rule (@shared/api), kept as a one-argument
- * function because callers that already address this slice should not have to repeat which row
- * they are waiting for. The RULE itself lives in one place now; only the row name is local.
- *
- * NOTE for the daemon: a 404 is unambiguous while the whole route family is absent. Once
- * /api/perf/turns exists, an UNKNOWN HEAD must answer something else (a named error, or 400) or a
- * typo'd head will read to the operator as "not built yet".
- */
-export function pendingOf(err: unknown): PendingRoute | null {
-  return routePendingOf(err, PENDING_TURNS);
-}
-
 export async function fetchPerf(tail = DEFAULT_TAIL): Promise<void> {
   perfStore.startLoading();
   try {
@@ -58,6 +45,10 @@ export async function fetchPerfSummary(label: PerfWindowLabel = '24h'): Promise<
 }
 
 /**
+ * NOTE for the daemon: a 404 is unambiguous while the whole route family is absent. Once
+ * /api/perf/turns exists, an UNKNOWN HEAD must answer something else (a named error, or 400) or a
+ * typo'd head will read to the operator as "not built yet".
+ *
  * The landed rows plus the in-flight set. The live half comes from GET /api/heads rather than from
  * the heads entity because a slice may not import a sibling slice (eslint-plugin-boundaries): the
  * turns store stays self-contained at the cost of one more heads read per tick.
@@ -74,7 +65,7 @@ export async function fetchPerfTurns(head?: string, n = DEFAULT_TAIL, since?: nu
     ]);
     perfTurnsStore.setData({ inflight: inflightFrom(heads.heads), landed: turns.turns });
   } catch (err) {
-    const pending = pendingOf(err);
+    const pending = routePendingOf(err, PENDING_TURNS);
     if (pending !== null) {
       perfTurnsStore.setData(pending);
       return;

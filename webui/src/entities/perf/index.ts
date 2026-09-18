@@ -5,7 +5,6 @@ export {
   fetchPerf,
   fetchPerfSummary,
   fetchPerfTurns,
-  pendingOf,
   startPerfPolling,
   startPerfSummaryPolling,
   startPerfTurnsPolling,

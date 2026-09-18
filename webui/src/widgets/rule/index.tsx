@@ -1,16 +1,25 @@
 // The fixed rule: who the console is, what time it is, whether the daemon is
-// answering, and the plan window closest to running out. It never scrolls and
-// it never guesses: every figure carries its basis, and a window no head
-// reports says so instead of reading zero.
+// answering, whether a saved knob is still waiting for a restart, and the plan
+// window closest to running out. It never scrolls and it never guesses: every
+// figure carries its basis, and a window no head reports says so instead of
+// reading zero.
 //
 // The rule reads entities through their public exports and owns nothing: the
 // only state it keeps is the clock, and the only reads it starts are the ones
 // nothing else starts for it.
+//
+// The window derivation is NOT computed here. It arrives from @entities/usage
+// (M2-01), which is the slice that owns /api/usage: this widget used to carry
+// its own copy, and two implementations of "nearest window" is one more than can
+// stay in agreement. The cells are exported so a test can render them from
+// payloads rather than from the stores (a static render sees a store's initial
+// state and never its current one).
 import { useEffect, useState } from 'react';
 import { fetchControlStatus, useControlStatus } from '@entities/control-status';
 import { useHeads } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { startUsagePolling, useUsage } from '@entities/usage';
+import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
+import { useRestartPending } from '@entities/config';
 import { Figure, HolderEdge } from '@shared/ui';
 import type { AuthPayload, UsagePayload } from '@shared/api';
 import { S } from './strings';
@@ -42,53 +51,67 @@ function useClock(): { local: string; utc: string } {
  * running and healthy (`/api/heads`). A head that is down is the daemon
  * degraded, not the console guessing.
  */
-type HealthState = 'green' | 'amber' | 'red';
+export type HealthState = 'green' | 'amber' | 'red';
 
-function healthOf(statusFailed: boolean, anyHeadDown: boolean): HealthState {
+export function healthOf(statusFailed: boolean, anyHeadDown: boolean): HealthState {
   if (statusFailed) return 'red';
   return anyHeadDown ? 'amber' : 'green';
 }
 
 /** The plan window nearest exhaustion, at its reported length. */
-export interface NearestWindow {
-  head: string;
-  /** The account's masked id or login, where the head reports one. */
-  account: string | null;
-  window: string;
-  pct: number;
-  reset: string | null;
-}
-
-/**
- * One window, from the two routes that carry one: /api/usage names the head and
- * its percentage, /api/auth names the account behind that head.
- *
- * A head whose warn source is `none` has no window to be nearest, so it is not
- * a candidate — an absence cannot be close to exhaustion.
- */
-export function nearestWindowOf(usage: UsagePayload | null, auth: AuthPayload | null): NearestWindow | null {
-  if (usage === null) return null;
-  let best: NearestWindow | null = null;
-  for (const entry of usage.heads) {
-    const head = entry.usage;
-    if (head === null || head.warn.source === 'none') continue;
-    if (best !== null && head.warn.pct <= best.pct) continue;
-    const card = auth?.[entry.key];
-    best = {
-      head: entry.key,
-      account: card?.account_id_masked ?? card?.login ?? null,
-      window: `${usage.window_hours}h`,
-      pct: head.warn.pct,
-      reset: head.warn.reset,
-    };
-  }
-  return best;
+export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: AuthPayload | null }) {
+  const nearest = nearestWindow(usage, auth);
+  return (
+    <p className="myx-rule-cell myx-rule-window">
+      <span className="myx-rule-word">{S.nearest}</span>
+      {nearest === null ? (
+        <span className="myx-rule-absent">no window reported</span>
+      ) : (
+        <>
+          <span className="myx-rule-head">{nearest.head}</span>
+          {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
+          <span className="myx-rule-period">{nearest.window}</span>
+          <Figure value={nearest.pct} unit="%" basis="measured" />
+          {nearest.reset !== null ? <span className="myx-rule-reset">resets {nearest.reset}</span> : null}
+        </>
+      )}
+    </p>
+  );
 }
 
 /** How many heads report no window at all. Null until the route answers. */
-export function headsReportingNone(usage: UsagePayload | null): number | null {
-  if (usage === null) return null;
-  return usage.heads.filter((entry) => entry.usage === null || entry.usage.warn.source === 'none').length;
+export function NoneCell({ usage }: { usage: UsagePayload | null }) {
+  const none = headsReportingNone(usage);
+  // Nothing at all until the route answers: an empty cell would take a slot in the rule's grid and
+  // read as a readout that is present and blank, which is the one thing this bar never does.
+  if (none === null) return null;
+  return (
+    <p className="myx-rule-cell myx-rule-none">
+      <Figure value={none} basis="measured" />
+      <span className="myx-rule-word">{S.noneTail}</span>
+    </p>
+  );
+}
+
+/**
+ * Knobs that were saved and are not in force yet: the daemon snapshots every
+ * knob except three at start, so a saved restart-only value does nothing until
+ * the daemon restarts, and the console must not let that read as "applied".
+ *
+ * The cell is the same gesture as everywhere else in this world - a holder edge
+ * that cocks, with a printed label and the count of pending keys as a figure. It
+ * reads the store a page's save left behind, so the rule starts no route and no
+ * poll of its own; when the store clears (what a restart does to it, and the
+ * only thing that honestly can) the cell is gone.
+ */
+export function PendingRestartCell({ pending }: { pending: readonly string[] }) {
+  if (pending.length === 0) return null;
+  return (
+    <p className="myx-rule-cell myx-rule-pending">
+      <HolderEdge state="amber" label={S.restartPending} />
+      <Figure value={pending.length} basis="measured" />
+    </p>
+  );
 }
 
 export function Rule() {
@@ -96,6 +119,7 @@ export function Rule() {
   const heads = useHeads((state) => state.data);
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
+  const pendingRestart = useRestartPending((state) => state.pending);
   const { local, utc } = useClock();
 
   useEffect(() => {
@@ -109,8 +133,6 @@ export function Rule() {
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
   const health = healthOf(status.error !== null, anyHeadDown);
-  const nearest = nearestWindowOf(usage, auth);
-  const none = headsReportingNone(usage);
 
   return (
     <header className="myx-rule">
@@ -127,29 +149,11 @@ export function Rule() {
         <HolderEdge state={health} label={S.health[health]} />
       </div>
 
-      <p className="myx-rule-cell myx-rule-window">
-        <span className="myx-rule-word">{S.nearest}</span>
-        {nearest === null ? (
-          <span className="myx-rule-absent">no window reported</span>
-        ) : (
-          <>
-            <span className="myx-rule-head">{nearest.head}</span>
-            {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
-            <span className="myx-rule-period">{nearest.window}</span>
-            <Figure value={nearest.pct} unit="%" basis="measured" />
-            {nearest.reset !== null ? <span className="myx-rule-reset">resets {nearest.reset}</span> : null}
-          </>
-        )}
-      </p>
+      <PendingRestartCell pending={pendingRestart} />
 
-      <p className="myx-rule-cell myx-rule-none">
-        {none === null ? null : (
-          <>
-            <Figure value={none} basis="measured" />
-            <span className="myx-rule-word">{S.noneTail}</span>
-          </>
-        )}
-      </p>
+      <WindowCell usage={usage} auth={auth} />
+
+      <NoneCell usage={usage} />
     </header>
   );
 }

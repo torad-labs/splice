@@ -3,8 +3,8 @@
   "dev/web-console",
   "webui/.impeccable"
  ],
- "files": 36,
- "candidates": 689,
+ "files": 40,
+ "candidates": 770,
  "claims": [
   {
    "file": "dev/web-console/capture.mjs",
@@ -2304,7 +2304,23 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 82,
+   "line": 66,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * ---- THE PER-PAGE LEDGER (M1-124): WHICH PAGE DID EACH LEG ACTUALLY LOOK AT ---- * * M1-108 fixed the empty-SET case (a leg that read no captures "
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 93,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* The address a capture filename belongs to, against the ADDRESSES table rather than by splitting * on the first dash: `fleet-rule-check.png` starts w"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 123,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2312,7 +2328,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 97,
+   "line": 138,
    "verdict": "carried",
    "check": "counts-every",
    "why": "the comment asserts a count and the code contains a counting construct",
@@ -2320,7 +2336,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 118,
+   "line": 159,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2328,7 +2344,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 139,
+   "line": 180,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2336,7 +2352,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 154,
+   "line": 195,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2344,7 +2360,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 166,
+   "line": 207,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2352,7 +2368,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 230,
+   "line": 271,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2360,15 +2376,15 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 232,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "* Minimal PNG reader: we only need raw RGB, and pulling in a dependency for a gate is how * gates stop being run. Uses `python3 -c` with PIL, which th"
+   "line": 273,
+   "verdict": "carried",
+   "check": "skip-reports-why",
+   "why": "the code carries a skip path that also reports it in words",
+   "claim": "* * Minimal PNG reader: we only need raw RGB, and pulling in a dependency for a gate is how gates * stop being run. Decoded in-process by `lib/png.mjs"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 259,
+   "line": 322,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2376,7 +2392,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 272,
+   "line": 335,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2384,7 +2400,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 298,
+   "line": 361,
    "verdict": "carried",
    "check": "bay-grouping",
    "why": "the comment asserts a per-bay rule and the code contains a grouping construct",
@@ -2392,7 +2408,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 338,
+   "line": 401,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2400,7 +2416,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 362,
+   "line": 425,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2408,7 +2424,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 397,
+   "line": 460,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2416,7 +2432,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 417,
+   "line": 480,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2424,7 +2440,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 419,
+   "line": 482,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2432,7 +2448,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 434,
+   "line": 497,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2440,7 +2456,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 480,
+   "line": 543,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2448,7 +2464,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 481,
+   "line": 544,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2456,7 +2472,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 482,
+   "line": 545,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2464,7 +2480,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 486,
+   "line": 549,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2472,7 +2488,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 499,
+   "line": 564,
    "verdict": "carried",
    "check": "skip-reports-why",
    "why": "the code carries a skip path that also reports it in words",
@@ -2480,7 +2496,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 501,
+   "line": 566,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2488,7 +2504,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 507,
+   "line": 572,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2496,123 +2512,11 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 521,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "`checked` IS INCREMENTED WHERE THE VERDICT IS REACHED, NOT HERE (M1-114). It used to count"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 522,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "every capture that named a theme, which made it a count of files opened rather than of grids"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 524,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "says. A capture refused below for a dump that cannot answer, or for too few scanlines left on"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 526,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "the first field's right edge; it must not move between strips."
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 531,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "(the material spec's own finding is that --strip-field-line, L 163, cannot carry the comp's"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 533,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "begins at the field edge it was always looking for. The rule is unchanged; only the anchor"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 539,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "THE DECLARATIONS THE PIXELS CANNOT CARRY, READ FROM THE DUMP BESIDE THIS CAPTURE (M1-92), AND"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 549,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "A DUMP WITHOUT `painted` CANNOT ANSWER THIS LEG'S QUESTION, AND SAYS SO (M1-114, law 23)."
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 551,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "before `painted` existed cannot make that claim -- every strip it lists might be clipped. So"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 552,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "such a capture is NAMED AND REFUSED rather than judged on the old, weaker pairing: that is"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 556,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "all (M1-92), so its dump enumerates zero strips and the leg must refuse it out loud rather"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 561,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "OFF-STRIP SCANLINES ARE EXCLUDED AND NAMED, NOT SILENTLY DROPPED. This is the count that"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
    "line": 587,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "and this returned ok with the word `skipped`. A leg that looked at N files and judged none of"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 588,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "them has not checked the grid; it has reported that it could not. The counts are named because"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 603,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "disposition that is not silence. A capture whose dump cannot say which scanlines are strips --"
+   "claim": "This was a bare `continue`: not a count, not a name, nothing. A page whose paper produced"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2620,7 +2524,7 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "fails, for M1-108's reason: on a blocking leg the words and the verdict must agree, and"
+   "claim": "`checked` IS INCREMENTED WHERE THE VERDICT IS REACHED, NOT HERE (M1-114). It used to count"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2628,15 +2532,55 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "\"I could not look\" has never been a pass."
+   "claim": "every capture that named a theme, which made it a count of files opened rather than of grids"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 622,
-   "verdict": "carried",
-   "check": "skip-reports-why",
-   "why": "the code carries a skip path that also reports it in words",
-   "claim": "* * WHICH CAPTURES ARE EVIDENCE ABOUT THIS BUILD (M1-94). Pure, and separated from the directory for * the same reason M1-92 lifted `judgeGrid` out of"
+   "line": 609,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "says. A capture refused below for a dump that cannot answer, or for too few scanlines left on"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 611,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "the first field's right edge; it must not move between strips."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 616,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "(the material spec's own finding is that --strip-field-line, L 163, cannot carry the comp's"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 618,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "begins at the field edge it was always looking for. The rule is unchanged; only the anchor"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 624,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "THE DECLARATIONS THE PIXELS CANNOT CARRY, READ FROM THE DUMP BESIDE THIS CAPTURE (M1-92), AND"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 634,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "A DUMP WITHOUT `painted` CANNOT ANSWER THIS LEG'S QUESTION, AND SAYS SO (M1-114, law 23)."
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2644,39 +2588,55 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "* * TONAL DRIFT, OVER THIS BUILD'S CAPTURES ONLY (M1-94). * * THE DEFECT THIS REPLACES: this leg read every PNG in the directory with no freshness bar"
+   "claim": "before `painted` existed cannot make that claim -- every strip it lists might be clipped. So"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 657,
+   "line": 637,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "exits below were made to fail; this one was not, and it is the same sentence: a leg that cannot"
+   "claim": "such a capture is NAMED AND REFUSED rather than judged on the old, weaker pairing: that is"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 658,
+   "line": 641,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "read its own reference has not measured drift against the comp, it has failed to measure drift"
+   "claim": "all (M1-92), so its dump enumerates zero strips and the leg must refuse it out loud rather"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 659,
+   "line": 649,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "against the comp. `skipped` + ok=true is the M1-78 shape this file keeps finding elsewhere --"
+   "claim": "OFF-STRIP SCANLINES ARE EXCLUDED AND NAMED, NOT SILENTLY DROPPED. This is the count that"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 662,
+   "line": 670,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "load, so the selftest's temp-tree redirect never reached this line and this branch could not be"
+   "claim": "to remove: a page the loop never reached at all would otherwise read as judged."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 677,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "capture was never written is never iterated and records nothing -- and `page-coverage` then"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 679,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "seen. It had never shown, because all thirteen captures normally exist; forcing one address to"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2684,39 +2644,15 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "COVERAGE, AGAINST A DENOMINATOR FROM THE SOURCE (M1-94). A bar that skips most of the set is"
+   "claim": "fail the capture leg made it visible at once. The distinction is the whole point of the table:"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 681,
+   "line": 699,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "not a bar, it is a filter -- so the leg must say what it covered, and the base for that can"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 682,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "never be the directory. The folder accumulates captures from every build that ever ran and"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 697,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "this row: the capture block below already states \"a run that cannot capture is a DID NOT RUN"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 698,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "for every capture-reading check, never a pass -- law 23\". A leg that read nothing reporting ok"
+   "claim": "and this returned ok with the word `skipped`. A leg that looked at N files and judged none of"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2724,11 +2660,163 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "them has not checked the grid; it has reported that it could not. The counts are named because"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 715,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "disposition that is not silence. A capture whose dump cannot say which scanlines are strips --"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 718,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "fails, for M1-108's reason: on a blocking leg the words and the verdict must agree, and"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 719,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "\"I could not look\" has never been a pass."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 734,
+   "verdict": "carried",
+   "check": "skip-reports-why",
+   "why": "the code carries a skip path that also reports it in words",
+   "claim": "* * WHICH CAPTURES ARE EVIDENCE ABOUT THIS BUILD (M1-94). Pure, and separated from the directory for * the same reason M1-92 lifted `judgeGrid` out of"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 748,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * TONAL DRIFT, OVER THIS BUILD'S CAPTURES ONLY (M1-94). * * THE DEFECT THIS REPLACES: this leg read every PNG in the directory with no freshness bar"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 769,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "exits below were made to fail; this one was not, and it is the same sentence: a leg that cannot"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 770,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "read its own reference has not measured drift against the comp, it has failed to measure drift"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 771,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "against the comp. `skipped` + ok=true is the M1-78 shape this file keeps finding elsewhere --"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 774,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "load, so the selftest's temp-tree redirect never reached this line and this branch could not be"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 781,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "answer as if the loop had never been written."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 793,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "which is more than its sibling did -- but a capture that was fresh and then failed to decode"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 794,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "was only ever a number, so `read 12 of 13` never said which one went missing."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 813,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "COVERAGE, AGAINST A DENOMINATOR FROM THE SOURCE (M1-94). A bar that skips most of the set is"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 814,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "not a bar, it is a filter -- so the leg must say what it covered, and the base for that can"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 815,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "never be the directory. The folder accumulates captures from every build that ever ran and"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 824,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "reason, never an UNACCOUNTED cell (M1-124)."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 835,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "this row: the capture block below already states \"a run that cannot capture is a DID NOT RUN"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 836,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "for every capture-reading check, never a pass -- law 23\". A leg that read nothing reporting ok"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 838,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
    "claim": "honest answer costs a visible `warn` and never the gate's exit code -- which is exactly the"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 704,
+   "line": 842,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2736,7 +2824,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 717,
+   "line": 855,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2744,7 +2832,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 721,
+   "line": 859,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2752,7 +2840,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 841,
+   "line": 979,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2760,7 +2848,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 861,
+   "line": 999,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2768,7 +2856,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 907,
+   "line": 1045,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2776,7 +2864,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 922,
+   "line": 1060,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2784,7 +2872,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 940,
+   "line": 1078,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -2792,131 +2880,19 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 957,
+   "line": 1080,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "and photographed as one. `captureUrl` was written beside `FIXTURES` and never called, so"
+   "claim": "* * THE BOOT AXES (M1-106): the states the app is built around that no CAPTURE instrument could * reach, because every one of them seeded the manageme"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 962,
+   "line": 1110,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "a theme its sessions never seeded, and seeding a state is not rendering it. The page's"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 967,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "A BLANK CAPTURE PASSES EVERY GEOMETRIC CHECK SILENTLY (M1-83): a field grid holds"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 969,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "night. So the gate asks the page what it actually put on the glass, and refuses to write"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 970,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "a frame that cannot answer. `data-sample` is the marker the page carries when its fixture"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 987,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "THE MARKER IS THE PROOF, AND A PLANE COUNT IS NOT. The first version of this refusal asked"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 992,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "refused BY NAME whatever it drew; the two fixtureless pages are judged on content alone,"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1000,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "THE MARKUP THE PIXELS CANNOT CARRY, WRITTEN BESIDE THEM (M1-92). `StripField` declares a"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1005,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "is written at the same moment as the PNG from the same render, so the two cannot describe"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1019,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "NAMED, not counted: which address, and whether its fixture failed to load."
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1024,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "`fixture=hero` precisely because the old one passed on thirteen blank pages, so the set must"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1032,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "* THE FRESHNESS RULE, and it outlives this row. A check that reads an artifact it did NOT * produce must compare that artifact's mtime against the thi"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1067,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "§24: a gate that has never failed is a tautology. Each check is run against a synthetic"
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1068,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "violation and must FAIL, then against a compliant form and must PASS."
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1093,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "and -- the one that matters -- that an all-stale directory cannot be rounded up to a pass."
-  },
-  {
-   "file": "dev/web-console/look-gate.mjs",
-   "line": 1108,
-   "verdict": "undetermined",
-   "check": null,
-   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "a partition that kept nothing must be reported as nothing, never as a clean sweep"
+   "claim": "NO KEY IS SEEDED. This is the whole axis: the console boots without one and must answer with"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2924,47 +2900,63 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "THE MUTATION: a bar of 0 is the leg as it was written -- no bar -- and it must NOT"
+   "claim": "The fixture still rides in the URL: a page that never gets its key renders the unlock"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1123,
+   "line": 1156,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "---- THE COVERAGE FLOOR (M1-94). The denominator is the address list, never the directory:"
+   "claim": "Every address starts as NOT ATTEMPTED. A page the loop never reaches -- because the browser"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1144,
+   "line": 1158,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "---- THE FIELD DETECTOR, IN BOTH THEMES (M1-65). The light case was NEVER exercised:"
+   "claim": "which pages it never got to instead of reporting a total (M1-124)."
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1146,
+   "line": 1167,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "passed by finding nothing. These two cases are the mutation proof that it can now fail"
+   "claim": "and photographed as one. `captureUrl` was written beside `FIXTURES` and never called, so"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1147,
+   "line": 1172,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "in the light room as well as the dark one, and that it still refuses the other room's"
+   "claim": "a theme its sessions never seeded, and seeding a state is not rendering it. The page's"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1153,
+   "line": 1179,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "something — a set that judges cleanly must still PASS, because a leg that fails on everything"
+   "claim": "every address after it was never attempted, and all of them were reported as the single"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1180,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "set-level line `captured N of M (the room did not take)` -- a count with no names, for"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1181,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "pages that were never even asked. Every sibling refusal in this loop already used"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2972,23 +2964,39 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "and they must answer differently. A leg that reds both has not learned the rule; a leg that"
+   "claim": "A BLANK CAPTURE PASSES EVERY GEOMETRIC CHECK SILENTLY (M1-83): a field grid holds"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1190,
+   "line": 1191,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "greens both has been deleted. The live pages cannot make this point any more: accounts was"
+   "claim": "night. So the gate asks the page what it actually put on the glass, and refuses to write"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1207,
+   "line": 1192,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "only change is whether the declarations say the renderer painted the band. This is logs, and"
+   "claim": "a frame that cannot answer. `data-sample` is the marker the page carries when its fixture"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1209,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "THE MARKER IS THE PROOF, AND A PLANE COUNT IS NOT. The first version of this refusal asked"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1214,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "refused BY NAME whatever it drew; the two fixtureless pages are judged on content alone,"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -2996,23 +3004,39 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "first row only. Scanning from the constant 140 reads it and calls the rack 207px wide;"
+   "claim": "THE MARKUP THE PIXELS CANNOT CARRY, WRITTEN BESIDE THEM (M1-92). `StripField` declares a"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1241,
+   "line": 1228,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "A dump as it was written before `painted` existed: it cannot say which scanlines are"
+   "claim": "is written at the same moment as the PNG from the same render, so the two cannot describe"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1242,
+   "line": 1243,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
-   "claim": "strips, so the leg must refuse rather than fall back to the pairing that produced M1-110."
+   "claim": "NAMED, not counted: which address, and whether its fixture failed to load."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1246,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "NAMED, not counted: this used to be `captured N of M (the room did not take)` for pages that,"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1247,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "after the `return` above, had never been asked at all (M1-124)."
   },
   {
    "file": "dev/web-console/look-gate.mjs",
@@ -3020,11 +3044,171 @@
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "`fixture=hero` precisely because the old one passed on thirteen blank pages, so the set must"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1264,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * ---- THE TABLE (M1-124): EVERY ADDRESS-SCOPED LEG, EVERY PAGE, JUDGED OR DROPPED AND WHY ---- * * THE DENOMINATOR IS TAKEN FROM TWO SOURCES AND NE"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1313,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* THE FRESHNESS RULE, and it outlives this row. A check that reads an artifact it did NOT * produce must compare that artifact's mtime against the thi"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1334,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * ---- THE BAR IS SAMPLED ONCE, BEFORE THE RUN, AND THE RULE'S OWN WORDS SAY WHY ---- * * `newestSourceMtime()` was called by each leg as it ran, wh"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1381,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "§24: a gate that has never failed is a tautology. Each check is run against a synthetic"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1382,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "violation and must FAIL, then against a compliant form and must PASS."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1407,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "and -- the one that matters -- that an all-stale directory cannot be rounded up to a pass."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1422,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "a partition that kept nothing must be reported as nothing, never as a clean sweep"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1429,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "THE MUTATION: a bar of 0 is the leg as it was written -- no bar -- and it must NOT"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1437,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "---- THE COVERAGE FLOOR (M1-94). The denominator is the address list, never the directory:"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1458,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "---- THE FIELD DETECTOR, IN BOTH THEMES (M1-65). The light case was NEVER exercised:"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1460,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "passed by finding nothing. These two cases are the mutation proof that it can now fail"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1461,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "in the light room as well as the dark one, and that it still refuses the other room's"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1467,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "something — a set that judges cleanly must still PASS, because a leg that fails on everything"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1503,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "and they must answer differently. A leg that reds both has not learned the rule; a leg that"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1504,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "greens both has been deleted. The live pages cannot make this point any more: accounts was"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1521,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "only change is whether the declarations say the renderer painted the band. This is logs, and"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1537,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "first row only. Scanning from the constant 140 reads it and calls the rack 207px wide;"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1555,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "A dump as it was written before `painted` existed: it cannot say which scanlines are"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1556,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "strips, so the leg must refuse rather than fall back to the pairing that produced M1-110."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1570,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
    "claim": "enumerates ZERO strips. The pixels are a perfectly aligned grid and the leg must still"
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1257,
+   "line": 1571,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3032,7 +3216,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1272,
+   "line": 1586,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3040,7 +3224,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1280,
+   "line": 1594,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3048,7 +3232,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1284,
+   "line": 1598,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3056,7 +3240,111 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1298,
+   "line": 1610,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "A coverage report that cannot tell dropped-and-named from judged-and-passed is the vacuous"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1613,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "address every leg must drop and one that must be judged, run the real legs over a real"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1614,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "directory, and require the table to say something DIFFERENT about each. A table that said"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1624,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "and the only difference between the two pages. Identical glass, opposite dispositions."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1633,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "demanded two DIFFERENT dispositions and got the same one twice; a case that only checked"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1656,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "A LEG THAT NEVER RAN LEAVES A HOLE, AND THE HOLE IS THE ONE THING THIS TABLE FAILS FOR."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1673,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "The boring case §24 names: no denominator at all. A table with no addresses to audit must"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1674,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "refuse rather than report zero holes over zero pages."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1685,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "ever to be visible, a synthetic page is the only thing that can prove it. One band of paper:"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1686,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "one scanline, which cannot be compared against itself."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1705,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "the DIRECTORY, so an address whose capture was never written is never iterated and records"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1708,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "address to fail the capture leg made every downstream cell for it read as an audit hole."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1709,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "`fleet` has a capture here and `teams` does not; both must end up with a stated disposition."
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1741,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3064,7 +3352,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1299,
+   "line": 1742,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3072,7 +3360,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1300,
+   "line": 1743,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3080,7 +3368,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1331,
+   "line": 1774,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3088,7 +3376,7 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1358,
+   "line": 1801,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -3096,11 +3384,19 @@
   },
   {
    "file": "dev/web-console/look-gate.mjs",
-   "line": 1359,
+   "line": 1802,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
    "claim": "DID NOT RUN for every capture-reading check, never a pass -- law 23, and the same shape the"
+  },
+  {
+   "file": "dev/web-console/look-gate.mjs",
+   "line": 1821,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "count of files. Non-blocking for the same reason capture-set is: a leg that cannot run is a"
   },
   {
    "file": "dev/web-console/look.mjs",
@@ -4455,6 +4751,54 @@
    "claim": "LAW 27: this line asserts what must be TRUE, and a census entry is not a claim it can make. It"
   },
   {
+   "file": "webui/.impeccable/review/axes/axes.mjs",
+   "line": 1,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * M1-106: THE SIX BOOT CONDITIONS, COUNTED IN RULES RATHER THAN IN FILES. * * WHY THIS EXISTS. M1-100 established that six conditions the app is bui"
+  },
+  {
+   "file": "webui/.impeccable/review/axes/axes.mjs",
+   "line": 37,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * THE CONDITIONS AND THE CLASSES THAT ONLY THEY PUT ON THE GLASS, each class read out of the * primitive that renders it rather than remembered: `Fa"
+  },
+  {
+   "file": "webui/.impeccable/review/axes/axes.mjs",
+   "line": 90,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "refused `.myx-fault-message` for the class `myx-fault` — it reported ZERO rules for the condition"
+  },
+  {
+   "file": "webui/.impeccable/review/axes/axes.mjs",
+   "line": 91,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "whose whole family is hyphenated, while the unit test beside it still had to reject"
+  },
+  {
+   "file": "webui/.impeccable/review/axes/axes.mjs",
+   "line": 94,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "rule that refuses the family it names is worse than no boundary at all, because it reads clean."
+  },
+  {
+   "file": "webui/.impeccable/review/axes/axes.mjs",
+   "line": 141,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "A count over an empty denominator is not a count (law 23)."
+  },
+  {
    "file": "webui/.impeccable/review/bands/bands.mjs",
    "line": 1,
    "verdict": "undetermined",
@@ -4501,6 +4845,158 @@
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
    "claim": "THE CENSUS IS THE DENOMINATOR, so an empty one refuses rather than printing a clean sweep."
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 1,
+   "verdict": "carried",
+   "check": "bay-grouping",
+   "why": "the comment asserts a per-bay rule and the code contains a grouping construct",
+   "claim": "* * M1-120: EVERY COMMENT THAT ASSERTS A BEHAVIOUR, AND WHETHER THE CODE CARRIES IT. * * WHY THIS EXISTS. A comment that describes the RIGHT rule whil"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 40,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* A candidate must name a CONDITION. Without one it is prose, and prose is out of scope."
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 45,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* Modality that makes a comment an assertion whatever word it opens with. `PROSE_ONLY` alone can * only EXCLUDE when none of these is present: \"this m"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 70,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* Every comment in a file, with the line it starts on. * * A CHARACTER SCANNER, NOT A LINE SEARCH, and the first cut of this was a line search. It rea"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 103,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "inside a string: escapes skip, and the matching quote (or a template's backtick) returns to code"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 129,
+   "verdict": "carried",
+   "check": "bay-grouping",
+   "why": "the comment asserts a per-bay rule and the code contains a grouping construct",
+   "claim": "M1-115's finding, as a rule: a comment claiming the comparison is per bay must be backed by"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 145,
+   "verdict": "carried",
+   "check": "skip-reports-why",
+   "why": "the code carries a skip path that also reports it in words",
+   "claim": "A comment saying something is SKIPPED must be backed by a skip that reports a reason: the"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 146,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "campaign's own law 23. The check is the presence of a skip path that carries detail."
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 147,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "THE TWO TOKENS MUST BE NEAR EACH OTHER, and the first cut only asked whether both appeared"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 148,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "SOMEWHERE. That fired on law-check.mjs:347, whose comment contains \"skipped\" while describing"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 149,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "a CLI guard that used to let an import run a real check - not a skip that reports why - and"
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 163,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "A comment saying something is COUNTED must be backed by a counting construct."
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 216,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "ALL THREE BUCKETS MUST BE REACHABLE, or one of them is a bucket nothing can ever land in."
+  },
+  {
+   "file": "webui/.impeccable/review/claims/claims.mjs",
+   "line": 226,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * THE FILE LIST COMES FROM GIT, NOT FROM A DIRECTORY WALK, and the first cut walked. `webui/ * .impeccable/review/gate/` is GITIGNORED and holds a S"
+  },
+  {
+   "file": "webui/.impeccable/review/column/column-rest.mjs",
+   "line": 4,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "re-measure it, because collapse must deliver the same room with a better transition and an"
+  },
+  {
+   "file": "webui/.impeccable/review/column/column-rest.mjs",
+   "line": 21,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "line after .click() -- that sampled-too-early mistake produced a false \"NEVER OPENED\" flag on"
+  },
+  {
+   "file": "webui/.impeccable/review/column/column-rest.mjs",
+   "line": 25,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "nothing\", which is the conclusion this row must never reach by accident. It refuses instead."
+  },
+  {
+   "file": "webui/.impeccable/review/column/column-rest.mjs",
+   "line": 79,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "own warning not to. A warning a reader can skip is not a guard."
+  },
+  {
+   "file": "webui/.impeccable/review/column/column-rest.mjs",
+   "line": 104,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "POLL for what the gesture PROVES -- the aside taking width -- never sample the next line"
   },
   {
    "file": "webui/.impeccable/review/coverage/coverage.mjs",
@@ -4944,7 +5440,15 @@
   },
   {
    "file": "webui/.impeccable/review/density/density.mjs",
-   "line": 251,
+   "line": 253,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "importing instrument's own selftest never executed. Measured: printed-bands.mjs --selftest printed"
+  },
+  {
+   "file": "webui/.impeccable/review/density/density.mjs",
+   "line": 258,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -4952,7 +5456,7 @@
   },
   {
    "file": "webui/.impeccable/review/density/density.mjs",
-   "line": 266,
+   "line": 273,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
@@ -4960,11 +5464,115 @@
   },
   {
    "file": "webui/.impeccable/review/density/density.mjs",
-   "line": 285,
+   "line": 292,
    "verdict": "undetermined",
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
    "claim": "The guard is the same one capture.mjs uses, and the same reasoning: the CLI runs only when this"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 5,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "counted as PRINTED, and clusters those runs into horizontal BANDS so a frame's printed material"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 37,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * Every run `layers()` would count as PRINTED, as { x, y, len }."
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 64,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "y -> Set of run indices, so we only compare neighbours"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 74,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "only adjacent rows need comparing: an overlapping band is connected through its rows"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 108,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "the reconstruction check: the runs must reproduce density.mjs's own printed share"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 120,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "never exceed a line box; a plate or a header strip sets a run of its own height, and a table's"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 135,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "BY COUNT IS NOT BY PIXEL, and the pixel share is what moves the percentage. A text stroke is"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 136,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "7px counted once; a vertical mid-tone bar is 60px counted once -- 60/7 of the number from the"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 215,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * THE MUTATION PROOF (M2-23). This instrument had none, and a classifier that has never failed is a * tautology. Two synthetic frames with KNOWN ans"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 252,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "200px frame has a 0.4px cut and a 2px rule counts as printed. The first version of this case"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 253,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "failed for that reason and the failure was the instrument being right about a frame no page"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 273,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "importing instrument's own selftest never executed and its verify went green for a reason it had"
+  },
+  {
+   "file": "webui/.impeccable/review/density/printed-bands.mjs",
+   "line": 276,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "it visible, so it gets the guard too. `import.meta.url === file://<argv[1]>` is true only when"
   },
   {
    "file": "webui/.impeccable/review/ink/census-light.mjs",
@@ -5517,6 +6125,46 @@
    "check": null,
    "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
    "claim": "what the console can READ, which is the only surface a page can compose from;"
+  },
+  {
+   "file": "webui/.impeccable/review/surface/surface.mjs",
+   "line": 55,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * THE SHARED CONTROL CLIENT (M2-25): the routes eight entities fetch through, and the payload * fields those routes serve. * * WHY THIS EXISTS. This"
+  },
+  {
+   "file": "webui/.impeccable/review/surface/surface.mjs",
+   "line": 84,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "THE NAME MUST BE FOLLOWED BY A PARAMETER LIST AND AN ARROW, and the first cut did not require"
+  },
+  {
+   "file": "webui/.impeccable/review/surface/surface.mjs",
+   "line": 181,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "* * THE CENSUS: per page, the served fields it holds, the ones it prints, and the headroom. * * `printed` is read from the page's own source, so a pag"
+  },
+  {
+   "file": "webui/.impeccable/review/surface/surface.mjs",
+   "line": 259,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "thing this extension exists for, and a check for it that cannot fail is worse than none."
+  },
+  {
+   "file": "webui/.impeccable/review/surface/surface.mjs",
+   "line": 271,
+   "verdict": "undetermined",
+   "check": null,
+   "why": "no named check applies to this shape, and this instrument does not read code — a verdict here would be inference, not evidence",
+   "claim": "was in for eight entities -- and it must read as serving NOTHING, or the extension is not"
   }
  ]
 }

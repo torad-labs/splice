@@ -59,6 +59,10 @@ public class ClaudeConfigMaterializer(
     /** v0.4.0 shared MCP hosting: rewrites the inherited `mcpServers` so eligible stdio servers
      *  point at the daemon's host instead of spawning per session. Null = today's behaviour. */
     private val mcpRewrite: McpRewrite? = null,
+    /** The child-process half of the hook exec-probe, implemented in :app (V4-103). Null skips the
+     *  exec-probe — a test materializer omits it; the daemon wires the real one so a noexec config
+     *  dir still fails the capture-hook launch. */
+    private val hookExec: HookExec? = null,
 ) {
 
     private val json = Json {
@@ -68,6 +72,9 @@ public class ClaudeConfigMaterializer(
     private val sessionRegistry = SessionRegistryLink()
     private val projectsLink = ProjectsLink()
     private val jsonReads = JsonStateReads(json, log)
+    private val hookExecProbe: HookExecProbe? = hookExec?.let { exec ->
+        HookExecProbe { dir, chmod -> HookScriptFiles.probeExecutability(dir, chmod, exec) }
+    }
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
     public fun materialize(spec: MaterializeSpec): MaterializeResult {
@@ -98,9 +105,15 @@ public class ClaudeConfigMaterializer(
                 tokenCapture = spec.tokenCapture,
                 loginOutcomeFile = spec.loginOutcomeFile,
                 headKey = spec.headKey,
+                execProbe = hookExecProbe,
             ),
             if (spec.advertiseKeySetup && spec.tokenCapture != null) {
-                LoginInterception.keySetupAdvertiser(spec.configDir, spec.tokenCapture, spec.loginCommand)
+                LoginInterception.keySetupAdvertiser(
+                    spec.configDir,
+                    spec.tokenCapture,
+                    spec.loginCommand,
+                    execProbe = hookExecProbe,
+                )
             } else {
                 emptyMap()
             },

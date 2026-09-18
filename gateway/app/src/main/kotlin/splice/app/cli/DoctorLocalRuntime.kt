@@ -6,18 +6,21 @@
 // tool) runs only when the operator asks with --live.
 package splice.app.cli
 
+import splice.app.provider.JdkLocalHttp
 import splice.app.provider.LocalProbeInputs
-import splice.app.provider.local.LocalModel
-import splice.app.provider.local.LocalRuntime
-import splice.app.provider.local.LocalRuntimeProbe
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.EnvReader
-import splice.dialect.chat.JdkLocalHttp
-import splice.dialect.chat.LocalHttp
+import splice.spi.LocalHttp
+import splice.spi.local.LocalLiveProbe
+import splice.spi.local.LocalModel
+import splice.spi.local.LocalRowVerdict
+import splice.spi.local.LocalRuntime
+import splice.spi.local.LocalRuntimeKind
+import splice.spi.local.LocalRuntimeProbe
 
 private const val FIX_START = "start it (Ollama / LM Studio / vLLM), then re-run"
 private const val FIX_TOOLS = "a model without tool calls cannot drive Claude Code's tools"
@@ -79,12 +82,19 @@ internal class DoctorLocalRuntime(
         // unknown id with whichever model is loaded — a green live row for a refused id would lie),
         // and BEFORE the verdicts: its one request loads the model, and a loaded model is the only
         // one whose served window the runtime reports, so the verdicts read the exact number.
+        // V4-103: the kind is bound to a NAME here rather than reached through `runtime.kind` at each
+        // use. These three types cross the :provider-spi -> :app boundary as members of
+        // LocalRuntimeProbe's public API, and a boundary consumed only by INFERENCE is invisible both
+        // to public-surface --ratchet (which measures names in another module's main sources) and to
+        // a reader asking who depends on this surface. Naming them is the same code with the boundary
+        // stated, which is the fix the ratchet asks for — not a baseline bump.
+        val kind: LocalRuntimeKind = runtime.kind
         val listed = probe.models(runtime)
             ?: return listOf(
                 DoctorCheck(
                     name,
                     CheckStatus.WARN,
-                    "${runtime.kind.label} answers at ${provider.baseUrl} but its model list does not",
+                    "${kind.label} answers at ${provider.baseUrl} but its model list does not",
                     FIX_START,
                 ),
             )
@@ -94,12 +104,16 @@ internal class DoctorLocalRuntime(
         // The probe loaded the model: read the list again so the verdicts see the window the runtime
         // actually allocated, not the pre-load snapshot (review 2026-09-14).
         val current = if (probed.isEmpty()) listed else probe.models(runtime) ?: listed
-        val verdicts = probe.validate(rows, current, runtime.kind).map { v ->
+        // The type is bound on the SEAM, not on the mapped result: `map` yields DoctorChecks, and
+        // annotating that as List<LocalRowVerdict> was a compile error I hit and read. Binding the
+        // boundary type where it actually crosses is the same evidence with the types honest.
+        val verdicts: List<LocalRowVerdict> = probe.validate(rows, current, kind)
+        val checks = verdicts.map { v ->
             val fix = "fix [[providers.$key.models]] (or the head's context_window) to a model the runtime " +
                 "lists, at or under its context"
             DoctorCheck("$name/${v.id}", if (v.ok) CheckStatus.OK else CheckStatus.FAIL, v.reason, fix.takeIf { !v.ok })
         }
-        return listOf(summary(name, provider, runtime, current)) + verdicts + probes
+        return listOf(summary(name, provider, runtime, current)) + checks + probes
     }
 
     private fun summary(
@@ -115,7 +129,7 @@ internal class DoctorLocalRuntime(
     }
 
     private fun liveCheck(name: String, probe: LocalRuntimeProbe, model: String): DoctorCheck {
-        val result = probe.live(model)
+        val result: LocalLiveProbe = probe.live(model)
         val status = if (result.streams && result.toolCalls) CheckStatus.OK else CheckStatus.WARN
         return DoctorCheck("$name/$model/live", status, result.detail, FIX_TOOLS.takeIf { !result.toolCalls })
     }

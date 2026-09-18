@@ -3517,6 +3517,7 @@ verify = "npm run --silent gate:rules; bash checks/autocloseable-closed-selftest
 # [2026-09-17] 2026-09-18 02:10 orchestrator (relayed from V4-115's gate, traced by builder2): :control:detekt is red on this row's own new code in gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt — :38:17 CyclomaticComplexMethod (escape() at complexity 10, threshold 10) and :46:72 ImplicitDefaultLocale (String.format of the \u escape takes the default locale; under tr-TR the escape differs — a correctness bug in an audit log, not style: use Locale.ROOT or a non-format hex spelling). Fix both in fence; :control:detekt gates V4-110 and V4-115 meanwhile.
 # [2026-09-17] COMPILE BLOCKED by V4-116 mid-edit (out of fence): dialect-openai-responses ResponsesStreamTranslator.kt:104 'unexpected = e' unresolved. Waiting; not fixing.
 # [2026-09-17] 2026-09-18 03:00 orchestrator (from the V4-115 review gate): :control:test ClientVersionSurfaceTest 'health stays aggregate while statusline warns once for its session' fails with {error:unauthorized} on your ControlServer.kt edit — the statusline route now refuses the session's own credential, or the test's auth fixture no longer matches the route's guard. Yours before the gate; say which.
+# [2026-09-17] 2026-09-18 03:20 orchestrator: your foreign-break waits are attributed — LaunchSpecFactory/LaunchServiceTest/LaunchSpecClientAuthTest were V4-115 (now landed whole), ResponsesStreamTranslator.kt:104 and ReanchorRunner.kt:71 are V4-116 (told to land now). Per seat law 10b: run the legs that do not need :app or :dialect-openai-responses meanwhile (:provider-spi:test :provider-codex:test :gateway:test :control:test + their detekt) and record them; the :app legs re-run once V4-116 compiles.
 
 [[items]]
 id = "V4-108"
@@ -3721,6 +3722,7 @@ verify = "cd gateway && buildgate ./gradlew --offline --no-daemon :provider-spi:
 # [2026-09-17] GRADLE FREE
 # [2026-09-17] GRADLE BUSY splice-builder (subagent V4-116) — first pin run: :provider-spi:test WatchdogStallTierTest + :gateway:test MidStreamTearContinuesTest
 # [2026-09-17] GRADLE BUSY splice-builder (subagent V4-116) — row verify: six module test tasks + detekt
+# [2026-09-17] 2026-09-18 03:20 orchestrator LAW 10 VIOLATION, fix now: this seat has held :gateway broken at ReanchorRunner.kt:71 (No value passed for parameter attempts) since ~01:45 and :dialect-openai-responses at ResponsesStreamTranslator.kt:104 — V4-107 has waited most of an hour and V4-102's three-module gate is blocked. Land each touched file WHOLE (caller + callee + tests) and run :gateway:compileKotlin :dialect-openai-responses:compileKotlin (and the other dialects you touch) through the slot before anything else. Seat law 10b added.
 
 [[items]]
 id = "V4-117"

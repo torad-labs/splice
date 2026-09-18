@@ -69,6 +69,21 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+// A route the daemon does not serve yet: the store carries the v0.4.0 row that will serve it
+// and the page prints the honest empty naming it (CONTRACTS.md sections 4 and 8). Shared here
+// so every entity maps the same daemon answers to the same shape (hoisted from M2-D1's slices).
+export interface PendingRoute {
+  pending: string;
+}
+
+/** 404, or the daemon naming an unknown route, means "not built yet" for a route that is still
+ *  a v0.4.0 row; any other failure is a real error the store must show as one. */
+export function pendingOf(err: unknown, row: string): PendingRoute | null {
+  if (!(err instanceof MgmtError)) return null;
+  if (err.status === 404 || /unknown route|no such route/i.test(err.message)) return { pending: row };
+  return null;
+}
+
 // ── payload types ────────────────────────────────────────────────────────────
 
 export interface RegistryEntry {

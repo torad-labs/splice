@@ -252,5 +252,8 @@ error envelope. An entity's `api/index.ts` imports `request` from `@shared/api`,
 payload types, and calls its routes directly: `request<PerfTurnsPayload>('/api/perf/turns?...')`.
 No entity edits `shared/api`, and no row waits on it. The existing `control` object stays for
 the routes that predate the rebuild; only the orchestrator extends it. A pending route is
-detected by its response: a 404 (or the daemon's `error.message` naming an unknown route) maps
-to `{ pending: 'V4-1NN' }` in the store, never to mocked rows.
+detected by its response: `@shared/api` exports `PendingRoute` (`{ pending: string }`) and
+`pendingOf(err, 'V4-1NN')`, which returns that shape for a 404 or an `error.message` naming an
+unknown route and `null` for everything else; a store carries the returned value, never mocked
+rows, and any other failure is shown as an error. Entities import both; nothing redeclares them
+(M2-D1's local copies are removed by the finish row).

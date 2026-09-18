@@ -38,7 +38,8 @@ function arm(label: string, expect: "red" | "green", build: (root: string) => vo
     else { console.log(`  FAIL  ${label} -> ${red ? `RED (${rc})` : "GREEN"}, expected ${expect}\n${out}`); failures++; }
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
-const list = (files: string[]) => JSON.stringify({ recorded: "2026-09-18", law: "selftest", files });
+const list = (files: string[], invokers: string[] = []) =>
+  JSON.stringify({ recorded: "2026-09-18", law: "selftest", files, invokers });
 
 arm("recorded set matches", "green", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");
@@ -68,6 +69,47 @@ arm("a listed file was converted", "red", (r) => {
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
   git(r, "rm", "-qf", "b.py");
 }, (r) => !tracked(r).includes("b.py"));
+
+// ── the second census: Python the first one cannot see ────────────────────────
+// Added after the file census read a triumphant 90 on the real tree while 29 .sh
+// files shelled into python3 167 times. Every .py could be deleted, the wall would
+// report zero, and the build would still run Python out of heredocs.
+
+arm("a .sh that shells into python3, unlisted", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), "#!/bin/sh\npython3 -c 'print(1)'\n");
+  writeFileSync(join(r, LIST), list(["a.py"], []));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => tracked(r).includes("a.py"));
+
+// The half nobody notices: prose goes stale where an invocation fails loudly.
+arm("a README that TEACHES python3, unlisted", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "README.md"), "Run the check with `python3 checks/foo.py`.\n");
+  writeFileSync(join(r, LIST), list(["a.py"], []));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => tracked(r).includes("a.py"));
+
+arm("a listed invoker that was already converted", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), "#!/bin/sh\nbun x.ts\n"); // no python any more
+  writeFileSync(join(r, LIST), list(["a.py"], ["run.sh"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => tracked(r).includes("a.py"));
+
+arm("both censuses matching their lists", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), "#!/bin/sh\npython3 -c 'print(1)'\n");
+  writeFileSync(join(r, LIST), list(["a.py"], ["run.sh"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => tracked(r).includes("a.py"));
+
+// A .py is counted ONCE, by the file census — never double-counted as its own invoker.
+arm("a .py whose docstring names python3", "green", (r) => {
+  writeFileSync(join(r, "a.py"), '"""run with python3 a.py"""\n');
+  writeFileSync(join(r, LIST), list(["a.py"], []));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => tracked(r).includes("a.py"));
 
 arm("an unparseable burn-down list", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");

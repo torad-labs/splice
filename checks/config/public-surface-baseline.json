@@ -3,12 +3,9 @@
   "law": "V4-92 ratchet. Each entry is '<module> <fqn>': a public top-level declaration no other module's main or testFixtures sources name. Every line is DEBT, not permission — the gate fails when a declaration NOT listed here joins them (growth) and when a listed one stops offending (stale). Shrink it with `bun checks/public-surface.ts --write-baseline`; the diff is the record of what moved.",
   "offenders": [
     ":control splice.control.GitBranchReader",
-    ":control splice.control.LaunchRecipe",
-    ":control splice.control.MgmtRoute",
     ":control splice.control.SessionCost",
     ":control splice.control.SessionCostSource",
     ":control splice.control.StatuslineRenderer",
-    ":control splice.control.api.SessionsRoutes",
     ":control splice.control.api.UNATTRIBUTED_OUTCOME",
     ":control splice.control.mcp.McpHostException",
     ":core splice.core.config.knobsByKey",
@@ -20,11 +17,8 @@
     ":core splice.core.reasoning.REASONING_ENVELOPE_TAG",
     ":core splice.core.reasoning.REASONING_ENVELOPE_VERSION",
     ":core splice.core.sessions.PidIdentity",
-    ":core splice.core.sessions.PidStartedAt",
     ":core splice.core.sessions.ProcPidIdentity",
-    ":core splice.core.topology.LocalProviderRule",
     ":core splice.core.wire.ContentBlockSerializer",
-    ":core splice.core.wire.UnknownBlockSerializer",
     ":dialect-anthropic-passthrough splice.dialect.passthrough.BuiltPassthroughRequest",
     ":dialect-anthropic-passthrough splice.dialect.passthrough.MfjsSanitizer",
     ":dialect-anthropic-passthrough splice.dialect.passthrough.PassthroughCompactionTail",
@@ -32,7 +26,6 @@
     ":dialect-anthropic-passthrough splice.dialect.passthrough.PassthroughSystemPrompt",
     ":dialect-anthropic-passthrough splice.dialect.passthrough.PassthroughTurnContext",
     ":dialect-anthropic-passthrough splice.dialect.passthrough.ToolNameShortener",
-    ":dialect-openai-chat splice.dialect.chat.BuiltChatRequest",
     ":dialect-openai-responses splice.dialect.responses.BuildOptions",
     ":dialect-openai-responses splice.dialect.responses.BuiltRequest",
     ":dialect-openai-responses splice.dialect.responses.EmitEncryptedReasoning",
@@ -40,7 +33,6 @@
     ":dialect-openai-responses splice.dialect.responses.InjectPriorReasoning",
     ":dialect-openai-responses splice.dialect.responses.OpenSockets",
     ":dialect-openai-responses splice.dialect.responses.ProtocolAnomaly",
-    ":dialect-openai-responses splice.dialect.responses.ReasoningEnvelopeEncoder",
     ":dialect-openai-responses splice.dialect.responses.ReasoningLookup",
     ":dialect-openai-responses splice.dialect.responses.RequestEncryptedReasoning",
     ":dialect-openai-responses splice.dialect.responses.ResponsesCompactionTail",
@@ -59,24 +51,11 @@
     ":dialect-openai-responses splice.dialect.responses.WsConnection",
     ":dialect-openai-responses splice.dialect.responses.WsConnector",
     ":dialect-openai-responses splice.dialect.responses.WsUpstream",
-    ":provider-grok splice.provider.grok.GrokEffortVocabulary",
-    ":provider-muse splice.provider.muse.MuseMintWriteGuard",
-    ":provider-spi splice.spi.BodyAmendment",
-    ":provider-spi splice.spi.BytesRead",
     ":provider-spi splice.spi.CausePredicate",
     ":provider-spi splice.spi.CredentialRefresh",
-    ":provider-spi splice.spi.FinishedOutcome",
-    ":provider-spi splice.spi.MalformedLine",
-    ":provider-spi splice.spi.PollRuntime",
-    ":provider-spi splice.spi.ProviderProbe",
-    ":provider-spi splice.spi.RawTextObserver",
-    ":provider-spi splice.spi.StreamStart",
-    ":provider-spi splice.spi.UnfinishedOutcome",
-    ":provider-spi splice.spi.UpstreamHandler",
-    ":provider-spi splice.spi.WatchdogOutcome"
+    ":provider-spi splice.spi.PollRuntime"
   ],
   "kept": {
-    "law": "V4-149. The companion to `offenders`: a public declaration that has been MEASURED as unconsumed but CANNOT be made internal, carrying the reason it cannot. `bun checks/public-surface.ts --ratchet` fails on an entry here with a blank reason, and on an entry here that the baseline does not also list. V4-104 recorded five entries here by hand — CompactProbe, CompactStatsSummary, EconomicsBucket, TurnEconomics, UsageState — each proven burn-proof because a public member of a consumed class exposed it and the Kotlin compiler refused the internalisation. V4-149 then fixed the census to walk public signatures, and all five stopped offending on their own: they were never debt, the instrument was measuring the wrong denominator.",
-    ":provider-spi splice.spi.ProviderProbe": "CONSUMED, BUT NOT NAME-DETECTABLE, AND A DEFECT IN V4-149 RATHER THAN IN THIS DECLARATION. :gateway passes a ProviderProbe value into TurnWatchdog.launchIn — SseRoundConsume.kt builds one from UpstreamTransport().reachabilityProbe(...) and hands it over — so it is a real cross-module contract. The V4-149 closure should justify it and cannot, because the closure propagates only FROM declarations justified BY NAME, and TurnWatchdog is itself never named outside :provider-spi: the gateway reaches it through an instance it was handed. So the propagation root is unreachable and the type in its signature stays invisible. THAT IS THE NEXT INCREMENT OF THIS INSTRUMENT, not something to keep: the root set needs to include declarations reached by INFERENCE, which is the same blindness in one more place. Recorded here with its reason rather than silently burned or silently allowlisted. NOT burnable in V4-150 either, whose fence is the head package and the baseline only — checks/public-surface.ts is outside it. NOTE ALSO: this entry was IN the baseline that V4-104's commit recorded, and V4-149's --write-baseline dropped it, so the re-measure and the closure disagree about the same declaration in opposite directions."
+    "law": "V4-149. The companion to `offenders`: a public declaration MEASURED as unconsumed that CANNOT be made internal, carrying the reason it cannot. `bun checks/public-surface.ts --ratchet` fails on an entry here with a blank reason, and on an entry here the baseline does not also list. EMPTY AGAIN AS OF V4-153, and the WAY it emptied is the point: its one entry, :provider-spi splice.spi.ProviderProbe, was recorded by V4-150 with a reason that named a defect in this instrument, and V4-153 fixed the defect — so the declaration became JUSTIFIED and left. It was never deleted to make the gate green; deleting it would have left the blindness in place. The defect, for the record: V4-149 walked a declaration's public member signatures to find the types they mention, but captured only each member's FIRST LINE, so a member whose parameter list spans lines hid its own types — TurnWatchdog.launchIn carries `probe: ProviderProbe?` on its fifteenth line. That is the second defect found in this instrument one level below the previous one, and it was found by reading a number that did not move rather than by reading the code."
   }
 }

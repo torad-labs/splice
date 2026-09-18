@@ -198,9 +198,15 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
       {/* the signature gesture: the newest edge caught between the bays */}
       {handoff !== null ? (
         <div className="myx-board-handoff" aria-label={`hand off ${handoff.from} to ${handoff.to}`}>
-          <div className="myx-board-ghost myx-board-ghost-2" aria-hidden="true">
-            <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
-          </div>
+          {/* ONE afterimage, and the comp is why (M1-58). It draws a lifted strip and a single
+              ghost beneath it, both inside the bay; the build drew TWO ghosts, and the second had
+              walked far enough down-left to leave the bay entirely - it hung across the bay's left
+              upright and over the rail column, a bare `message` label and a clipped packet line in
+              a box with no strip around it. It was the only element in the console that crossed a
+              bay wall, and no instrument owned it: not a contrast pair, not a coverage plane, not a
+              type rung. A gesture that reaches another bay's ground reads as a mistake rather than
+              as motion. `.myx-board-ghost-2` is now a rule with no element: board.css is not this
+              row's fence and its owner should take the rule out. */}
           <div className="myx-board-ghost myx-board-ghost-1" aria-hidden="true">
             <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
           </div>

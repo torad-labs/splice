@@ -34,4 +34,5 @@ export type {
   AccountSwitch,
   AccountWindow,
 } from './model/types';
+export { LIVE_KINDS } from './model/live';
 export const useAccounts = accountsStore.use;

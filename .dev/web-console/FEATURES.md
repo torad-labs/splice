@@ -634,9 +634,13 @@ separately.
 **A key names one create intent — not one client, not one session.** A repeated key answers the
 first team *without reading the body*, so a client that reuses a key after editing the form is
 told its new composition was created and is handed the old one. The console mints a key per
-submitted intent and a changed intent gets a new key. The daemon could refuse a used key whose
-body differs instead of trusting that rule; it does not today, and that guard is the stronger form
-of this sentence.
+submitted intent and a changed intent gets a new key. The daemon refusing a reused key whose
+create differs is the stronger form of that rule (V4-131), and **what it compares is the create
+intent fingerprinted when the team was made, never the stored team**: `upsert` carries slot
+bindings and instruction timestamps forward on purpose, so a stored team legitimately differs from
+what was submitted the moment a session binds, and a state comparison would refuse a *correct*
+replay. A record with no fingerprint replays exactly as it does today rather than refusing, which
+is what keeps the guard from carrying a migration.
 
 Neither alternative works. A `POST` makes the verb honest and leaves the defect standing — a
 retried POST after a dropped response also makes a second team; only the key fixes the duplicate.

@@ -8,6 +8,7 @@ import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
 import splice.core.perf.PerfKeys
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.spi.ClientFrameEmitted
 import splice.spi.Provider

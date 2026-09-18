@@ -26,9 +26,13 @@ package splice.dialect.passthrough
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.spi.BufferCapacity
+import splice.spi.FIRST_OUTPUT_TIER
+import splice.spi.MID_OUTPUT_TIER
+import splice.spi.MS_PER_S
 import splice.spi.SseFrameTooLargeException
 import splice.spi.StreamTornBeforeClient
 import splice.spi.StreamTranslator
@@ -149,9 +153,10 @@ public class PassthroughStreamTranslator(
      *  decision rather than this branch's. [partialRound] is deliberately the SAME builder
      *  [unfinishedOutcome] uses, so a continuation and a success read identical buffers. */
     private fun stalledOutcome(fired: WatchdogFired): TurnOutcome = TurnOutcome.Failure(
-        ErrorType.OVERLOADED,
         "${quirks.providerTag}: ${stallDetail(fired)}; retry",
         partial = partialRound(),
+        cause = FailureCause.UPSTREAM_STALLED,
+        phase = FailurePhase.MID_OUTPUT,
     )
 
     /** The stall line names the TIER that fired and the number it compared, never a generic
@@ -183,7 +188,6 @@ public class PassthroughStreamTranslator(
             TurnOutcome.ClientAbandoned()
         } else {
             TurnOutcome.Failure(
-                ErrorType.OVERLOADED,
                 // An UNRECOGNISED throwable says so in its own words rather than borrowing the
                 // truncation sentence: "truncated" is a diagnosis, and reporting a failure we did
                 // not diagnose under a diagnosis is the mislabelling the generic arm exists to
@@ -200,6 +204,12 @@ public class PassthroughStreamTranslator(
                 // may APPEND. Measured 2026-09-16: three deepseek truncations in one minute, at
                 // 196, 44 and 989 content frames already delivered, every one of them terminal.
                 partial = partialRound(),
+                // V4-117: two shapes in one expression, so two causes — the same split its chat twin
+                // makes. A TRUNCATION is the upstream going quiet; an UNRECOGNISED throwable is not
+                // attributed to the upstream at all, because the comment above already refuses to
+                // report an undiagnosed failure under a diagnosis.
+                cause = if (unexpected != null) FailureCause.INTERNAL else FailureCause.UPSTREAM_TRUNCATED,
+                phase = FailurePhase.MID_OUTPUT,
             )
         }
 
@@ -225,12 +235,6 @@ public class PassthroughStreamTranslator(
         emittedThinking = channels.emittedThinking,
     )
 }
-
-// The two tier names this translator can be judged by (see stallDetail). FILE SCOPE ON PURPOSE:
-// one spelling each, so a log line and a client-visible sentence cannot name the same tier twice.
-private const val MID_OUTPUT_TIER = "mid-output"
-private const val FIRST_OUTPUT_TIER = "first-output"
-private const val MS_PER_S = 1000L
 
 // The tail of an unrecognised-throwable sentence: it is still retryable (the operator's default),
 // and the throwable's own rendering is what makes the failure identifiable next time.

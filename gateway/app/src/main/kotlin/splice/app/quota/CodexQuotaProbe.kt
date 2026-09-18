@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.auth.AuthProvider
+import splice.core.usage.EPOCH_MILLIS_FLOOR
 import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -69,4 +70,3 @@ internal class CodexQuotaParser : QuotaParse {
 }
 
 private const val MILLIS = 1000L
-private const val EPOCH_MILLIS_FLOOR = 100_000_000_000L

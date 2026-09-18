@@ -98,16 +98,23 @@ public class UpstreamTransport {
 // socketTimeoutMillis, not TCP connect.
 private const val CONNECT_TIMEOUT_MS = 10_000L
 
-// V4-100: PUBLIC, and that is the single-sourcing rather than a widening. UpstreamClient next door
-// re-typed these five numbers as its own private consts, because it budgets a curve before sleeping
-// it and could not read these; a re-typed number is one that can drift, and the drift would be
-// silent in exactly the wrong direction — UpstreamClient would approve a wait the curve then
-// exceeds. It reads THESE now, so the budget check and the sleep read one number.
-public const val BACKOFF_BASE_MS: Long = 200L
-public const val MAX_BACKOFF_MS: Long = 10_000L
-public const val JITTER_PCT: Int = 10
-public const val DNS_BACKOFF_BASE_MS: Long = 1_000L
-public const val DNS_MAX_BACKOFF_MS: Long = 4_000L
+// V4-100: these five numbers are the single source, which is the point rather than a widening.
+// UpstreamClient next door re-typed them as its own private consts, because it budgets a curve
+// before sleeping it and could not read these; a re-typed number is one that can drift, and the
+// drift would be silent in exactly the wrong direction — UpstreamClient would approve a wait the
+// curve then exceeds. It reads THESE now, so the budget check and the sleep read one number.
+//
+// V4-122 item 9: INTERNAL, which is that same single-sourcing seen from the other side. The one
+// reader is UpstreamClient in THIS module, so `public` declared a surface no other module consumes —
+// exactly what checks/public-surface.py reds as unjustified, and the first remedy it names is this
+// one. Narrowing was checked before it was made: the only match for any of the five outside
+// :provider-spi is HostedServer.kt's own private BACKOFF_BASE_MS = 5_000L, a different declaration
+// with a different value, so no consumer is cut off. Single-sourcing is untouched either way.
+internal const val BACKOFF_BASE_MS: Long = 200L
+internal const val MAX_BACKOFF_MS: Long = 10_000L
+internal const val JITTER_PCT: Int = 10
+internal const val DNS_BACKOFF_BASE_MS: Long = 1_000L
+internal const val DNS_MAX_BACKOFF_MS: Long = 4_000L
 
 // G26: java.net.http.HttpClient/Builder expose no public API to read or set TCP_NODELAY per
 // connection (confirmed via javap on ktor-client-java-jvm; JDK-8338681 is an open

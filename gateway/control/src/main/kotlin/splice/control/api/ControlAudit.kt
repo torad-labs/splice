@@ -27,8 +27,14 @@ internal class ControlAudit(private val log: LogSink) {
  *  toString() is not a record format (an element containing ", " or "]" is read back as a
  *  delimiter). List elements are quoted, control bytes escaped, and every field length-bounded. */
 internal object LogSafe {
+    // why: a caller field past 200 chars is audit noise, not signal — the cap keeps one request from
+    // bloating a line
     private const val MAX_FIELD = 200
+
+    // why: 0x20 is the first printable ASCII, so every code below it is a control char escaped as hex
     private const val SPACE_CODE = 0x20
+
+    // why: 0x7f is DEL, the last control code, so printable text begins above it
     private const val DELETE_CODE = 0x7f
 
     fun str(value: String): String = escape(value).take(MAX_FIELD)

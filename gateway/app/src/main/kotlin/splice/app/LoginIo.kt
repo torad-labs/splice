@@ -273,4 +273,9 @@ internal class LoginIo(private val browser: BrowserOpener = SystemBrowserOpener(
         Files.isSymbolicLink(InstallPaths(envReader = envReader).binDir.resolve(command))
 }
 
-private const val ERR_BODY_CAP = 300
+// V4-122: ONE error-body truncation width for the login flow, read by both files that render one
+// (this one and OAuthLoginFlow). Two widths would make the SAME upstream error read differently
+// depending on which path surfaced it, which is the whole reason the checker held the name as a
+// scar. Internal rather than private so the sibling in this package reads this declaration instead
+// of keeping its own copy.
+internal const val ERR_BODY_CAP = 300

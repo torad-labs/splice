@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import splice.core.usage.EPOCH_MILLIS_FLOOR
 import splice.core.usage.FIVE_HOUR_SLOT_MAX_SECONDS
 import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
@@ -95,4 +96,3 @@ internal class MuseAuthUsageFields(private val auth: MuseAuthProvider) : UsageFi
 private const val SECONDS_PER_MINUTE = 60L
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L
-private const val EPOCH_MILLIS_FLOOR = 100_000_000_000L

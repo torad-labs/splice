@@ -32,8 +32,13 @@ private const val EXIT_WAIT_MS = 1_000L
 
 /** A child that lived shorter than this is a crash, and two in a row are a crash loop. */
 private const val CRASH_LOOP_MS = 30_000L
-private const val BACKOFF_BASE_MS = 5_000L
-private const val BACKOFF_MAX_MS = 60_000L
+// V4-122: MCP_-prefixed because this is the MCP hosted-server's child-restart backoff, and the
+// name BACKOFF_BASE_MS was ALSO carried by UpstreamTransport.kt for the retry curve at 200ms — one
+// name over two unrelated budgets, which the checker held as a scar because whoever greps the name
+// finds the wrong one and tunes the wrong retry. These are two different policies, so the fix is to
+// say WHICH one this is, not to make them agree.
+private const val MCP_BACKOFF_BASE_MS = 5_000L
+private const val MCP_BACKOFF_MAX_MS = 60_000L
 private const val BACKOFF_MAX_SHIFT = 4
 private const val MILLIS_PER_SECOND = 1_000L
 
@@ -166,7 +171,7 @@ internal class HostedServer(
         val sinceExit = config.clock.millis() - exitedAt
         // Bound the exponent before shifting: bounding the shifted result cannot undo Long overflow.
         val shift = (loop - 2).coerceIn(0, BACKOFF_MAX_SHIFT)
-        val wait = if (loop > 1) minOf(BACKOFF_BASE_MS shl shift, BACKOFF_MAX_MS) - sinceExit else 0L
+        val wait = if (loop > 1) minOf(MCP_BACKOFF_BASE_MS shl shift, MCP_BACKOFF_MAX_MS) - sinceExit else 0L
         if (wait > 0L) {
             val seconds = wait / MILLIS_PER_SECOND + 1
             val message = "hosted MCP server '${spec.name}' keeps crashing ($loop times); next restart in $seconds s"

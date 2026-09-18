@@ -18,6 +18,7 @@ package splice.spi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import splice.core.util.ElapsedClock
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -36,10 +37,16 @@ public fun interface Waiter {
  * cooldown — same base as [Waiter], a named port so a test can step time without sleeping.
  *
  * Production wires [ProcessElapsedNow]. A test wires a lambda (SAM) it advances by hand.
+ *
+ * V4-122 RECONCILED THIS onto [splice.core.util.ElapsedClock] rather than leaving it as a second
+ * declaration of one role. The registry had listed it as DELIBERATELY ABSENT with the note that
+ * listing it would be a lie that closes the wall — and that was right: the two names described ONE
+ * monotonic-now port, so the honest fix was to make them one, not to dispose of the second name in
+ * prose. A typealias keeps every existing call site compiling (SAM conversion included, since
+ * ElapsedClock is a fun interface too) while removing the duplicate declaration the wall exists to
+ * catch.
  */
-public fun interface ElapsedNow {
-    public operator fun invoke(): Long
-}
+public typealias ElapsedNow = ElapsedClock
 
 /**
  * The pacing seam for an unbounded loop — the `while (isActive) { work(); delay(interval) }` shape.

@@ -1,6 +1,6 @@
 // NEW: (no Node source) pure JsonObject -> JsonObject rewrite of a JSON Schema into Moonshot-
 // Flavored JSON Schema (MFJS, "walle" spec) — the shape Kimi's Anthropic tool surface accepts.
-// Invariants: total function (terminates on ANY input via DEPTH_CAP; never throws); every schema
+// Invariants: total function (terminates on ANY input via SCHEMA_DEPTH_CAP; never throws); every schema
 // node gets an explicit `type` unless it is an anyOf/oneOf/allOf hub or a $ref; a $ref node keeps ONLY
 // the $ref key; tuple `items`/`prefixItems` collapse to a single item schema; a fixed key blocklist
 // is stripped at every node. No expansion of $ref targets, so a cyclic $ref cannot recurse — the
@@ -27,7 +27,7 @@ public object MfjsSanitizer {
 
     private fun sanitizeNode(node: JsonObject, depth: Int): JsonObject {
         // Depth cap: collapse anything deeper than the cap to a bare object schema (rule 6).
-        if (depth >= DEPTH_CAP) return OBJECT_SCHEMA
+        if (depth >= SCHEMA_DEPTH_CAP) return OBJECT_SCHEMA
 
         // $ref node: keep ONLY the $ref key, drop every sibling (rule 5).
         node[REF]?.let { ref -> return buildJsonObject { put(REF, ref) } }
@@ -123,7 +123,11 @@ public object MfjsSanitizer {
         }
     }
 
-    private const val DEPTH_CAP = 10
+    // V4-122: named for the budget it IS. This was `DEPTH_CAP`, a third file carrying that name at
+    // a value of 10 while the other two carried 200 — one name over two unrelated bounds. This one
+    // caps SCHEMA nesting for a rewrite that substitutes a placeholder past the cap, which is a
+    // different purpose from the two client-JSON walk guards and cannot be unified with them.
+    private const val SCHEMA_DEPTH_CAP = 10
 
     private const val REF = "\$ref"
     private const val TYPE = "type"

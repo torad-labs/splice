@@ -48,6 +48,7 @@ const TOLERANCE = {
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
+import { decodePng, hexToRgb } from './lib/png.mjs';
 // The address-to-fixture mapping lives in ONE place and is checked against the pages. This file
 // carried the THIRD copy of it, still naming 'demo' for six addresses, which made every rack row in
 // its table a measurement of live daemon data (M1-28).
@@ -86,7 +87,48 @@ function comp() {
   return { boxes, vars, frame: spec.compSize, source: { spec: spec.comp, regions: spec.regions.length } };
 }
 
+/**
+ * THE COMP'S PRINTED PLATE, measured off the comp's own image rather than taken from its region box.
+ *
+ * WHY THIS EXISTS (M1-56): `strip.h` compared the comp's lead-strip REGION (67px, 6.543%) against the
+ * build's rendered `.myx-strip` ELEMENT (63px, 6.15%). A region is the detector's box around a thing,
+ * a plate is the thing: two different objects, so the constant was a coin that came up defect at some
+ * frames and ok at others and nothing in the output said which. Measured 2026-09-18: the comp's
+ * lead-strip region spans y205..271 (66px) while its PAPER BAND spans y209..268 (60px, 5.859%) — the
+ * region carries ~6px of the room around the printed strip.
+ *
+ * The band is found the way a reader would: within the region's own box, the rows where the strip
+ * paper is the majority colour. Both sides of the constant are then the same object — a plate — and
+ * the number is derived from the artefact rather than from the detector's box around it.
+ */
+function compPlate(spec, regionId, paperHex, tolerance = 12, majority = 0.5) {
+  const png = decodePng(readFileSync(join(ROOT, `webui/.impeccable/mocks/${spec.comp.replace(/^.*mocks\//, '')}`)));
+  const region = spec.regions.find((r) => r.id === regionId);
+  const paper = hexToRgb(paperHex);
+  const x0 = Math.round(region.box.x * png.width);
+  const x1 = Math.round((region.box.x + region.box.w) * png.width);
+  const y0 = Math.round(region.box.y * png.height);
+  const y1 = Math.round((region.box.y + region.box.h) * png.height);
+  const rows = [];
+  for (let y = y0; y < y1; y += 1) {
+    let hit = 0;
+    let seen = 0;
+    for (let x = x0; x < x1; x += 2) {
+      const i = (y * png.width + x) * png.channels;
+      if (Math.abs(png.pixels[i] - paper[0]) <= tolerance && Math.abs(png.pixels[i + 1] - paper[1]) <= tolerance
+        && Math.abs(png.pixels[i + 2] - paper[2]) <= tolerance) hit += 1;
+      seen += 1;
+    }
+    rows.push({ y, share: hit / seen });
+  }
+  const band = rows.filter((row) => row.share >= majority);
+  if (band.length === 0) throw new Error(`compPlate: no paper band found in ${regionId}`);
+  return { px: band[band.length - 1].y - band[0].y + 1, fraction: (band[band.length - 1].y - band[0].y + 1) / png.height,
+    regionPx: y1 - y0 };
+}
+
 const COMP = comp();
+const COMP_STRIP_PLATE = compPlate(JSON.parse(readFileSync(join(ROOT, 'webui/.impeccable/build/spec.json'), 'utf8')), 'lead-strip', '#DDD8C6');
 const box = (id) => COMP.boxes[id];
 const pct = (id, key) => box(id)[key] * 100;
 const custom = (name) => {
@@ -233,7 +275,12 @@ const CONSTANTS = [
   // The rack: a strip's own inset inside the bay it is racked in, which is what a stagger moves.
   { id: 'strip.inset-x', kind: 'box', comp: () => pct('lead-strip', 'x') - pct('bay-claude', 'x'),
     got: (m) => { const bay = m.bays.find((b) => b.strips.length > 0); return bay ? ((bay.strips[0].rect.x - bay.rect.x) / m.frame.w) * 100 : null; } },
-  { id: 'strip.h', kind: 'box', comp: () => pct('lead-strip', 'h'), got: (m) => { const s = firstStrip(m); return s && (s.rect.h / m.frame.h) * 100; } },
+  // PLATE against PLATE since M1-56. The comp side measured this off its own image (the paper band
+  // inside the lead-strip region, 60px, 5.859%) rather than from the region box (67px, 6.543%), which
+  // is what the got side never measured: the rendered strip element.
+  { id: 'strip.h', kind: 'box', comp: () => COMP_STRIP_PLATE.fraction * 100,
+    got: (m) => { const s = firstStrip(m); return s && (s.rect.h / m.frame.h) * 100; },
+    object: 'strip-plate', compVia: 'comp plate (paper band in the lead-strip region)', gotVia: 'element .myx-strip height' },
   // The head plate, as the comp actually places it: the label plate's CENTRE inside its own bay,
   // measured against the bay's own width (the plate is centred on the rack, not pinned to its left
   // edge — the comp's two bays put it at 45.0% and 47.0% of their widths, so the band is 2 points
@@ -286,6 +333,64 @@ const CONSTANTS = [
   { id: 'field.label-rule', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).labelRule,
     fails: (v) => !(v >= 1), note: 'the comp cell carries the rule at row y=229; the world declares --hair (1px)' },
 ];
+
+/**
+ * BOTH SIDES OF EVERY CONSTANT, NAMED — what object the comp side measures and what object the got
+ * side measures. M1-56's sweep, and the reason it exists: `strip.h` compared the comp's lead-strip
+ * REGION against the build's rendered PLATE, two different objects, so it was a coin that came up
+ * defect at some frames and ok at others and nothing in the output said which. design-builder proved
+ * the build's strips matched the comp's plate to three decimals while the check reported a delta.
+ *
+ * A constant whose sides name different objects is re-pointed or deleted, never tolerated: a wrong
+ * number sitting inside tolerance is a defect waiting for a frame that exposes it.
+ *
+ * The audit is two-way and drift-proof: a constant with no entry here FAILS BY NAME, and an entry
+ * with no constant fails too — so a new constant cannot be added without saying what it compares.
+ */
+const SIDES = {
+  'rail.x': ['rail', 'region rail/x', 'element .myx-rail left edge', 'same'],
+  'rail.w': ['rail', 'region rail/w', 'element .myx-rail width', 'same'],
+  'rail.column.x': ['rail-label-column', 'region rail-labels/x', 'element .myx-rail-tabs left edge', 'same'],
+  'rail.column.y': ['rail-label-column', 'region rail-labels/y', 'element .myx-rail-tabs top', 'same'],
+  'rail.column.w': ['rail-label-column', 'region rail-labels/w', 'element .myx-rail-tabs width', 'same'],
+  'rail.plate.x': ['rail-plate', 'no comp value (no plate region)', 'element .myx-rail-tab left edge', 'same'],
+  'rail.plate.w': ['rail-plate', 'no comp value (no plate region)', 'element .myx-rail-tab width', 'same'],
+  'rail.plate.h': ['rail-plate', 'no comp value (no plate region)', 'element .myx-rail-tab height', 'same'],
+  'rail.plates': ['rail-plate-count', 'the comp region note "thirteen page labels as small plates"', 'count of elements .myx-rail-tab', 'same'],
+  'rule.h': ['rule-band', 'region top-rule/h', 'element .myx-rule height', 'same'],
+  'rule.wordmark.x': ['rule-cell-x', 'region wordmark/x', 'element .myx-rule-wordmark left edge', 'same'],
+  'rule.clocks.x': ['rule-cell-x', 'region clocks/x', 'element .myx-rule-clocks left edge', 'same'],
+  'rule.health.x': ['rule-cell-x', 'region health/x', 'element .myx-rule-health left edge', 'same'],
+  'rule.window.x': ['rule-cell-x', 'region nearest-window/x', 'element .myx-rule-window left edge', 'same'],
+  'rule.none.x': ['rule-cell-x', 'region no-window/x', 'element .myx-rule-none left edge', 'same'],
+  'strip.inset-x': ['strip-inset-in-bay', 'region lead-strip/x minus region bay-claude/x', 'element .myx-strip left edge minus its bay left edge', 'same'],
+  // WAS `unlike` and re-pointed: the comp side read the lead-strip REGION (67px, 6.543%) against the
+  // build's printed plate. Both sides now measure a plate, the comp's off its own image.
+  'strip.h': ['strip-plate', 'comp plate: the paper band inside region lead-strip', 'element .myx-strip height', 'same'],
+  'bay.label-centre': ['bay-label-plate-centre', 'region bay-claude-label centre within region bay-claude', 'element .myx-bay-label centre within its own bay', 'same'],
+  'bay.rail-top': ['bay-rail', 'no comp value (the comp carries no rail width)', 'element .myx-bay border-top-width', 'nocomp'],
+  'bay.rail-bottom': ['bay-rail', 'no comp value (the comp carries no rail width)', 'element .myx-bay border-bottom-width', 'nocomp'],
+  'field.pad-start': ['field-padding', 'no comp region', 'element .myx-sfield padding-inline-start', 'nocomp'],
+  'field.pad-end': ['field-padding', 'no comp region', 'element .myx-sfield padding-inline-end', 'nocomp'],
+  'field.label-pad-start': ['field-padding', 'no comp region', 'element .myx-sfield-label padding-inline-start', 'nocomp'],
+  'field.label-ink-start': ['field-label-ink', 'no comp region', 'element .myx-sfield-label ink offset', 'nocomp'],
+  'field.divider': ['field-divider', 'no comp value (the comp cell carries a divider)', 'element .myx-sfield border-inline-end-width', 'same'],
+  'field.label-rule': ['field-label-rule', 'no comp value (the comp cell carries the rule at y=229)', 'element .myx-sfield-label border-bottom-width', 'nocomp'],
+};
+
+const SIDES_MISSING = CONSTANTS.filter((constant) => SIDES[constant.id] === undefined).map((constant) => constant.id);
+const SIDES_ORPHANED = Object.keys(SIDES).filter((id) => CONSTANTS.every((constant) => constant.id !== id));
+
+/**
+ * The comp roles the instrument CANNOT measure, carried as exclusions with their reason rather than
+ * as absence. Three roles the ladder cannot see must say so on every run, or the next seat reads the
+ * seven measured rungs as the whole ladder — which is exactly the silence that let type go
+ * unmeasured for a week while every comp-check run came back green.
+ */
+const COMP_EXCLUSIONS = (() => {
+  const spec = JSON.parse(readFileSync(join(ROOT, 'webui/.impeccable/build/spec.json'), 'utf8'));
+  return compLadder(spec).excluded;
+})();
 
 const firstStrip = (m) => { for (const b of m.bays) if (b.strips.length > 0) return b.strips[0]; return null; };
 const firstField = (m) => { const s = firstStrip(m); return s && s.field; };
@@ -504,5 +609,31 @@ const scaled = rows.filter((row) => (row.note ?? '').includes('comp value scaled
 // The frame is in the summary line because the gate runs this twice and two identical-looking
 // clean runs at one size is exactly the report M1-33 found the gate was giving.
 console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list.length} addresses, ${rows.length} rows, ${compared} compared against the comp${scaled ? `, ${scaled} px rows compared against a ${(width / DEFAULT_FRAME[0])}x-scaled comp value` : ''}, ${failures.length} outside tolerance`);
+
+// BOTH SIDES OF EVERY CONSTANT, and the comp roles the instrument cannot see. Printed on every run:
+// silence about what was NOT measured is the defect this row is about.
+// A SIDES entry must carry a verdict: 'same' if the two sides measure one object, 'unlike' if they do
+// not. A substring test cannot decide this — it flagged six constants that compare like for like —
+// so the verdict is recorded per pair and the audit enforces that every pair HAS one, and that no
+// pair is left saying 'unlike'. A constant that cannot be made like-for-like is deleted; the audit
+// is what stops one being tolerated instead.
+const VERDICTS = new Set(['same', 'unlike', 'nocomp']);
+const unverdict = Object.entries(SIDES).filter(([, side]) => !VERDICTS.has(side[3])).map(([id]) => id);
+const mismatched = Object.entries(SIDES).filter(([, side]) => side[3] === 'unlike').map(([id]) => id);
+console.log(`\nsides — every constant names the object each side measures (${Object.keys(SIDES).length} named, ${CONSTANTS.length} constants):`);
+for (const constant of CONSTANTS) {
+  const side = SIDES[constant.id];
+  if (side === undefined) { console.error(`FAIL sides-missing ${constant.id}: this constant does not say what its two sides measure`); continue; }
+  const verdict = side[3] === 'same' ? 'same  ' : side[3] === 'nocomp' ? 'n/a   ' : 'UNLIKE';
+  console.log(`  ${verdict} ${constant.id.padEnd(24)} ${side[0].padEnd(24)} comp: ${side[1]}  | got: ${side[2]}`);
+}
+for (const id of SIDES_ORPHANED) console.error(`FAIL sides-orphaned ${id}: named in SIDES and there is no such constant`);
+for (const id of unverdict) console.error(`FAIL sides-unjudged ${id}: this pair does not say whether its two sides measure one object`);
+for (const id of mismatched) console.error(`FAIL sides-mismatch ${id}: comp side says "${SIDES[id][1]}" and got side says "${SIDES[id][2]}" — re-point it at one object or delete the constant`);
+console.log(`\ncomp type roles the instrument CANNOT measure, carried as exclusions with their reason (${COMP_EXCLUSIONS.length}):`);
+for (const role of COMP_EXCLUSIONS) {
+  console.log(`  ${String(role.cap).padStart(5)}px  ${role.id.padEnd(20)} ${role.glyphs} glyph${role.glyphs === 1 ? '' : 's'} — a cap from fewer than ${6} glyphs is the matcher failing, not a measurement`);
+}
+console.log(`  the type ladder below is the ${compLadder(JSON.parse(readFileSync(join(ROOT, 'webui/.impeccable/build/spec.json'), 'utf8'))).measured.length} roles it CAN measure, not the whole ladder`);
 for (const failure of failures) console.error(`FAIL ${width}x${height} ${failure}`);
 process.exit(failures.length === 0 ? 0 : 1);

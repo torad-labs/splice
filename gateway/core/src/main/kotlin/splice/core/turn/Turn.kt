@@ -162,9 +162,17 @@ public class SharedSummaryParts(
     }
 
     /** Explicit occurrence-safe count trim for tests and non-registry callers. Production instances
-     *  apply both constructor bounds at every [endRound]. */
+     *  apply both constructor bounds at every [endRound].
+     *
+     *  PUBLIC ON PURPOSE, and narrowing it to `internal` breaks the build (2026-09-18). The caller
+     *  this exists for is in ANOTHER module — ConversationSummaryPartsTest in dialect-openai-responses
+     *  — so `internal` makes the declaration unreachable from the only code that uses it. 8a489694
+     *  burned it to `internal` while reducing the public surface and the break did not surface until
+     *  a full `clean check` reached :dialect-openai-responses:compileTestKotlin, because no other leg
+     *  compiles that module's tests. It costs the public-surface ratchet nothing: that wall gates
+     *  declarations with no other-module use, and this one's whole purpose is an other-module use. */
     @Synchronized
-    internal fun trimToLast(n: Int) {
+    public fun trimToLast(n: Int) {
         finishRoundLocked()
         retainedParts = trimRecords(retainedParts, minOf(n, maxParts))
         previousRoundItems = previousRoundItems.mapNotNull { previous ->

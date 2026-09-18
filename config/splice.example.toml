@@ -753,3 +753,10 @@ command = "claude-splice"
 #   KIMI_OAUTH_HOST         points the Kimi device flow at a different auth host
 #   CODEX_PROXY_TEST        a TEST HOOK, not an operator setting: it exists so tests can name a
 #                           scenario without touching the topology, and it does nothing in normal use
+#   INVOCATION_ID           SET BY SYSTEMD, never by an operator, and read only to answer whether
+#                           anything would restart this process. systemd puts it in the environment
+#                           of every unit it starts, so its mere presence is the supervision fact
+#                           POST /api/daemon/restart needs: unsupervised, a drain-and-exit would
+#                           leave nothing serving, so the route refuses instead. Setting it by hand
+#                           does not make the daemon supervised, it only makes the route believe it
+#                           is — which is why it is documented here rather than offered as a knob.

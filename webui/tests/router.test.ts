@@ -62,6 +62,12 @@ describe('canonicalHash', () => {
     expect(canonicalHash('#compaction')).toBe('#/compaction');
   });
 
+  test('keeps the query so a dev fixture survives boot (CONTRACTS.md section 4)', () => {
+    expect(canonicalHash('#/accounts?fixture=demo')).toBe('#/accounts?fixture=demo');
+    expect(canonicalHash('#auth?fixture=demo')).toBe('#/accounts?fixture=demo');
+    expect(canonicalHash('#?fixture=demo')).toBe('#/fleet?fixture=demo');
+  });
+
   test('a bare path lands too, because the hash history adds the slash', () => {
     // react-router's hash history prepends `/`, so `#fleet` and `#/fleet` both
     // reach the router as `/fleet` and a redirect route cannot tell them apart.
@@ -74,7 +80,7 @@ describe('canonicalHash', () => {
     expect(canonicalHash('#nowhere')).toBe('#/fleet');
     expect(canonicalHash('')).toBe('#/fleet');
     expect(canonicalHash('#')).toBe('#/fleet');
-    expect(canonicalHash('#/turns?fixture=day')).toBe('#/turns');
+    expect(canonicalHash('#/turns?fixture=day')).toBe('#/turns?fixture=day');
     expect(canonicalHash('#/fleet/')).toBe('#/fleet');
   });
 });

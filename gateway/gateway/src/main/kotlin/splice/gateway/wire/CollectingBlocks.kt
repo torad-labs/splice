@@ -143,6 +143,7 @@ internal class CollectingBlocks {
 
     private fun parseToolInput(raw: String): JsonObject {
         if (raw.isBlank()) return EMPTY_INPUT // a tool with genuinely no args — not a parse failure
+        // ast-grep-ignore: kt-no-silent-result-collapse -- null sets malformedToolInput (HEAD-003) on the next line, CollectingBlocks.kt:148
         val parsed = Cancellables.runCatchingCancellable { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
         if (parsed == null) malformedToolInput = true // HEAD-003: non-blank input that never parsed
         return parsed ?: EMPTY_INPUT

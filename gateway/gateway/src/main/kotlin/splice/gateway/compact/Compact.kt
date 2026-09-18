@@ -64,6 +64,11 @@ public class CompactStats(
 
     private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    // V4-151: a skipped row is said ONCE per instance — PerfStats.noteSkippedRow's trade. readTail
+    // already drops the partial head and the trailing tear, so a line that still fails to parse is
+    // corruption, and the totals below are LOW by it.
+    private val skippedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
     private val json = Json { ignoreUnknownKeys = true }
 
     // append is best-effort by design: the turn builds an immutable row and the bounded file lane
@@ -101,7 +106,12 @@ public class CompactStats(
         // exists() pre-gate blanked the drift instrument silently through a denied parent).
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
+                    .onFailure {
+                        if (skippedLogged.compareAndSet(false, true)) {
+                            log("[compact] $file has unreadable rows — stats totals are LOW by those rows\n")
+                        }
+                    }.getOrNull()
             }
         }.onSuccess {
             // ANY healthy read — an empty or all-skipped tail included — closes the unreadable

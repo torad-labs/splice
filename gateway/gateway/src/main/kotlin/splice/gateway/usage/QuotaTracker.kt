@@ -61,6 +61,20 @@ public class QuotaTracker(
     public fun clientHeadersRejected(resetEpochSeconds: Long?): Map<String, String> =
         headers.forClient(latest.get() ?: QuotaSnapshot(), QuotaStatus.REJECTED, resetEpochSeconds)
 
+    // V4-151 (DR-60 class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
+    // no-snapshot null; an inaccessible quota file degrades the same but leaves a trace. (Corrupt
+    // CONTENT never reaches this catch: QuotaJson.decode collapses it to null itself.) Runs once,
+    // at construction.
     private fun readFile(): QuotaSnapshot? =
-        Cancellables.runCatchingCancellable { codec.decode(Files.readString(file)) }.getOrNull()
+        Cancellables.runCatchingCancellable { codec.decode(Files.readString(file)) }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                log(
+                    "[quota] $file unreadable (${SafeFailureText.render(failure)}) — " +
+                        "no snapshot until the next round\n",
+                )
+            }
+            null
+        }
 }

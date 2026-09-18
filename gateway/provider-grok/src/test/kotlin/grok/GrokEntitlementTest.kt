@@ -142,6 +142,7 @@ class GrokEntitlementTest {
         val missing = Files.createTempDirectory("grok-absent").resolve("nope").resolve("auth.json")
         val auth = GrokAuthProvider(
             authPath = missing,
+            authCacheMs = 30_000L,
             clock = { now },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
@@ -162,6 +163,7 @@ class GrokEntitlementTest {
         )
         return GrokAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { now },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
@@ -177,6 +179,7 @@ class GrokEntitlementTest {
         )
         return GrokAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { now },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )

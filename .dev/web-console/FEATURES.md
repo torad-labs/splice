@@ -611,7 +611,35 @@ takes the honest empty — it does not get invented.
 exactly as section 8 already requires for a pending route. Removing it would change the board's
 geometry against the comp of record; faking it would be worse.
 
-**`PUT /api/teams` body shape** is unstated and stays that way until a row needs it. When one
-does, it is one team per call with the id in the path (`PUT /api/teams/{id}`), the daemon mints
-ids, and whole-list replacement is not offered — a list PUT makes every concurrent editor the
-last writer.
+**`PUT /api/teams`: create and replace are different operations, and the sentence that deferred
+them named one and authorised the other** (corrected 2026-09-18, V4-131). The deferral read "one
+team per call with the id in the path (`PUT /api/teams/{id}`), the daemon mints ids" — a *replace*
+route and a *create* authority, and no create route at all. The builder that hit the hole had one
+verb to fill it with, and `PUT /api/teams` minting a team per call is not idempotent: a retry
+after a dropped response makes a second team and answers 201, a concurrency failure presenting as
+success — which is the same reason the next sentence refuses a list PUT. The three are stated
+separately.
+
+- **`PUT /api/teams` creates one team under a required `Idempotency-Key` header.** The daemon
+  mints the id (`team-` + 12 hex, `TeamStore`), so the client cannot name what it is creating and
+  cannot tell a lost response from a refusal; the key is what makes the retry safe. A fresh key
+  answers 201, a repeated key answers 200 with the team it already made, a missing key is refused
+  naming why, and a body carrying an id is refused toward the path form.
+- **`PUT /api/teams/{id}` replaces that one team's composition.** The path names the team,
+  whatever the body says. An unknown id is refused, not created: a create through this route would
+  be a client-named id.
+- **Whole-list replacement is not offered** — a list PUT makes every concurrent editor the last
+  writer.
+
+**A key names one create intent — not one client, not one session.** A repeated key answers the
+first team *without reading the body*, so a client that reuses a key after editing the form is
+told its new composition was created and is handed the old one. The console mints a key per
+submitted intent and a changed intent gets a new key. The daemon could refuse a used key whose
+body differs instead of trusting that rule; it does not today, and that guard is the stronger form
+of this sentence.
+
+Neither alternative works. A `POST` makes the verb honest and leaves the defect standing — a
+retried POST after a dropped response also makes a second team; only the key fixes the duplicate.
+A client-supplied id on a true upsert `PUT /api/teams/{id}` is genuinely idempotent, but two
+consoles minting the same id make the second one silently replace the first's team, which moves
+the failure rather than removing it.

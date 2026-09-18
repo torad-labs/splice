@@ -72,23 +72,25 @@ echo "campaign-ledger-floor selftest"
 
 # 1 — THE INCIDENT. 180 rows replaced by a 15-row stranger that is itself perfectly valid TOML.
 d=$(fixture truncated) || exit 1
-python3 - "$d" <<'PY'
-import sys, pathlib
-led = pathlib.Path(sys.argv[1]) / ".dev/campaigns/drift-repair.toml"
-rows = led.read_text(encoding="utf-8").split("[[items]]")
-led.write_text(rows[0] + "[[items]]".join(rows[1:16]), encoding="utf-8")
-PY
+bun -e "$(cat <<'JS'
+const led = `${process.argv[1]}/.dev/campaigns/drift-repair.toml`;
+const rows = (await Bun.file(led).text()).split("[[items]]");
+// join lives on the ARRAY, not the separator: inverting the two is a silent no-op here - the
+// write never happens and the arm goes GREEN because nothing was truncated.
+await Bun.write(led, rows[0] + rows.slice(1, 16).join("[[items]]"));
+JS
+)" "$d"
 arm "a ledger truncated to a fraction of its rows" RED "$d" "rows fell"
 
 # 2 — the note-only truncation: every row header survives, every note under it is gone. Row count
 # alone cannot see this, and the notes are where the campaign's reasoning actually lives.
 d=$(fixture notes-stripped) || exit 1
-python3 - "$d" <<'PY'
-import sys, pathlib
-led = pathlib.Path(sys.argv[1]) / ".dev/campaigns/drift-repair.toml"
-kept = [l for l in led.read_text(encoding="utf-8").splitlines(True) if not l.startswith("#")]
-led.write_text("".join(kept), encoding="utf-8")
-PY
+bun -e "$(cat <<'JS'
+const led = `${process.argv[1]}/.dev/campaigns/drift-repair.toml`;
+const kept = (await Bun.file(led).text()).split("\n").filter((l) => !l.startsWith("#"));
+await Bun.write(led, kept.join("\n"));
+JS
+)" "$d"
 arm "every row kept, every note deleted" RED "$d" "lines fell"
 
 # 3 — a ledger on disk that no floor entry accounts for. Absence is not a disposition.
@@ -110,12 +112,17 @@ arm "a recorded ledger deleted outright" RED "$d" "RECORDED BUT GONE"
 #      one level deep, so "campaign memory" silently meant "whatever sits at the top of the
 #      directory". This arm is that exact file, that exact truncation.
 d=$(fixture nested-registry) || exit 1
-python3 - "$d" <<'PY'
-import sys, pathlib
-reg = pathlib.Path(sys.argv[1]) / ".dev/campaigns/proxy-hardening/walls/law_registry.toml"
-head, sep, _ = reg.read_text(encoding="utf-8").partition("[[law]]")
-reg.write_text(head + sep + '\ntag = "ONLY-ONE-LEFT"\nwall = "x.py"\n', encoding="utf-8")
-PY
+bun -e "$(cat <<'JS'
+const reg = `${process.argv[1]}/.dev/campaigns/proxy-hardening/walls/law_registry.toml`;
+const text = await Bun.file(reg).text();
+// partition, faithfully: a needle that is ABSENT leaves the whole text as the head and an EMPTY
+// separator. indexOf returns -1 there, and a bare slice(0, -1) would silently drop a character.
+const at = text.indexOf("[[law]]");
+const head = at >= 0 ? text.slice(0, at) : text;
+const sep = at >= 0 ? "[[law]]" : "";
+await Bun.write(reg, head + sep + '\ntag = "ONLY-ONE-LEFT"\nwall = "x.ts"\n');
+JS
+)" "$d"
 arm "a NESTED registry truncated to one row" RED "$d" "lines fell"
 
 # 4c — and the same file vanishing outright, which the one-level glob could not have noticed either.

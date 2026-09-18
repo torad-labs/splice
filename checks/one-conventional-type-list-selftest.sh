@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # checks/one-conventional-type-list-selftest.sh — mutation-proves
-# checks/config/one-conventional-type-list.py (V4-30).
+# checks/config/one-conventional-type-list.ts (V4-30).
 #
 # The live wall walks the tree. This canary proves the wall can fail: a second
 # copy of the conventional-type list reds, including a copy that happens to be
@@ -16,7 +16,7 @@ fail=0
 err() { echo "  ✗ one-conventional-type-list-selftest: $1"; fail=1; }
 
 mkdir -p "$tmp/checks/config"
-cp "$ROOT/checks/config/one-conventional-type-list.py" "$tmp/checks/config/" || {
+cp "$ROOT/checks/config/one-conventional-type-list.ts" "$tmp/checks/config/" || {
   echo "  ✗ one-conventional-type-list-selftest: the checker is missing — the gate leg cannot be trusted"
   exit 1
 }
@@ -30,25 +30,25 @@ grep -E "^TYPES=" "$ROOT/checks/pr-title.sh" > "$tmp/checks/pr-title.sh" || {
 }
 
 spaces_from_source() {
-  python3 -c "
-import re, pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text()
-match = re.search(r\"^TYPES='([^']+)'\", text, re.M)
-print(match.group(1).replace('|', ' '))
-" "$1"
+  bun -e "$(cat <<'JS'
+const text = await Bun.file(process.argv[1]).text();
+const match = /^TYPES='([^']+)'/m.exec(text);
+console.log(match[1].split("|").join(" "));
+JS
+)" "$1"
 }
 
 two_from_source() {
-  python3 -c "
-import re, pathlib, sys
-text = pathlib.Path(sys.argv[1]).read_text()
-match = re.search(r\"^TYPES='([^']+)'\", text, re.M)
-parts = match.group(1).split('|')
-print(parts[0], parts[1])
-" "$1"
+  bun -e "$(cat <<'JS'
+const text = await Bun.file(process.argv[1]).text();
+const match = /^TYPES='([^']+)'/m.exec(text);
+const parts = match[1].split("|");
+console.log(parts[0], parts[1]);
+JS
+)" "$1"
 }
 
-CHECKER=(python3 checks/config/one-conventional-type-list.py check .)
+CHECKER=(bun checks/config/one-conventional-type-list.ts check .)
 TYPES_SPACES="$(spaces_from_source "$tmp/checks/pr-title.sh")"
 TWO="$(two_from_source "$tmp/checks/pr-title.sh")"
 
@@ -102,7 +102,7 @@ arm "checker file is not itself a second copy" 0
 
 # 7 — untracked scratch is not in the git denominator; a tracked copy still reds.
 git -C "$tmp" init -q
-git -C "$tmp" add checks/pr-title.sh checks/config/one-conventional-type-list.py
+git -C "$tmp" add checks/pr-title.sh checks/config/one-conventional-type-list.ts
 printf '%s\n' "$TYPES_SPACES" > "$tmp/scratch.md"
 arm "untracked second copy is green under git ls-files" 0
 git -C "$tmp" add scratch.md

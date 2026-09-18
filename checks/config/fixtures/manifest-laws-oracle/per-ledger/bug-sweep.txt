@@ -1,6 +1,0 @@
-# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
-# LAW [2026-07-24]: PROVENANCE — items come from workflow wf_2238eaa2-444 (17 agents: 5 sweep
-# LAW [2026-07-24]: BASE — branch fix/bug-sweep off feat/reasoning-cache tip 8d0eded (stacked on
-# LAW [2026-07-24]: NEVER-BELOW-STATUS-QUO — every fix degrades to today's behavior on its error
-# LAW [2026-07-24]: BUILDERS EDIT + TARGETED MODULE TESTS ONLY (serial, one builder at a time);
-# LAW [2026-07-24]: NO PUSH, CLI-ONLY — agents never push or rewrite history; ledger updates only

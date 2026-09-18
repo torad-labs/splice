@@ -23,7 +23,7 @@ Scales (values are the dark theme's; the light theme keeps the same scale):
 |---|---|---|
 | `--space-1` .. `--space-8` | 2, 4, 8, 12, 16, 24, 32, 48 px | every gap, pad, inset |
 | `--text-1` .. `--text-6` | 12, 14, 16, 18, 20, 23 px (re-derived 2026-09-18 from the comp's measured cap heights in build/scaffold/layout.css: chat label 14, bay label 16, rule text 17 to 18, wordmark 23; the first ladder was authored, not measured, and rendered 22% small) | captions, labels, field values and figures, rule text and headers, page title, wordmark |
-| `--space-0`, `--space-5`, `--space-11`, `--text-10` | kept, current values | old pages until M2 replaces them |
+| `--space-0`, `--space-5` | kept, current values | read by the live sheet; `--space-11` and `--text-10` were on this row until the finish row (M3-04) measured 0 readers each and deleted them, M2 having closed |
 
 Colors (name, role):
 
@@ -63,8 +63,8 @@ unchanged clips. Magnitude comes from the comp, sign comes from headroom, and th
 `color-mix` against its own ground — never a hex, which fixes the sign, and never a `filter`, which fixes the
 direction. See campaign law 26.
 
-Old tokens (`--paper-0`, `--ink-900`, `--surface`, `--font-mono`, ...) stay defined until the
-finish row deletes the last consumer. New code never uses them.
+Old tokens: `--font-mono` alone still stands, aliased to `--font-code` and read twice. `--paper-0`, `--ink-900` and `--surface` are GONE, deleted by the finish row (M3-04)
+once their last consumer went. New code never uses them. `--ink-900` is the one worth remembering: it read as live because `--tick` named it, and `--tick` itself had no reader anywhere -- dead one level down is still dead.
 
 Theme switch (`src/features/theme`): `useTheme(): { theme: 'dark' | 'light', set(theme) }`.
 Opens dark regardless of the OS. A manual choice is stored under `localStorage['splice.theme']`.

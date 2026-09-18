@@ -7,7 +7,7 @@
 # non-namespace-aware parser must fail HERE, not on the real file.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECKER="$ROOT/checks/catalog-metadata-sync.py"
+CHECKER="$ROOT/checks/catalog-metadata-sync.ts"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -83,7 +83,7 @@ comp() { printf '      <component group="%s" name="%s" version="%s"><artifact na
   echo "$meta_tail"; } > "$tmp/markerless-plugin.xml"
 
 # ── assertions ────────────────────────────────────────────────────────────────────────────────
-run_checker() { python3 "$CHECKER" "$tmp/catalog.toml" "$tmp/$1" > "$tmp/out" 2>&1; }
+run_checker() { bun "$CHECKER" "$tmp/catalog.toml" "$tmp/$1" > "$tmp/out" 2>&1; }
 
 if run_checker good.xml; then :; else
   err "compliant fixture must exit 0 (got $?): $(head -3 "$tmp/out" | tr '\n' ' ')"

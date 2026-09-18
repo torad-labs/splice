@@ -156,10 +156,19 @@ const DISPOSITIONS = {
   'theme.mjs': {
     kind: LIBRARY, of: 'webui/.impeccable/review/coverage/coverage.mjs',
     why: 'M1-55\'s shared theme-seeding capability, which that row cut precisely so a fourth seat ' +
-      'would not rebuild it privately. ITS ONLY CONSUMER IS A ROW\'S REVIEW SCRIPT, and the finding ' +
-      'is that snapshot.mjs — edited in M1-55\'s own receipt — still seeds the theme INLINE at ' +
-      'snapshot.mjs:94 rather than importing from here. The file that exists to end duplicated ' +
-      'theme seeding is duplicated by its own row\'s other file; no leg reaches it either way',
+      'would not rebuild it privately. THE SENTENCE HERE USED TO READ "its only consumer is a ' +
+      'row\'s review script", which was true when it was written and M1-60 made false: snapshot.mjs, ' +
+      'look.mjs, capture.mjs and gate.mjs now all import it, and gate.mjs needed a second export ' +
+      '(themeSeedSource) because it drives one Chrome across both rooms and cannot hand a theme to ' +
+      'withChrome. The disposition is UNCHANGED and still verifies — the named caller does reference ' +
+      'it — but the caller named below is no longer the only one, and it is the one furthest from ' +
+      'the gate. TWO SENTENCES DIED HERE, NOT ONE, and the second was mine: this entry also said ' +
+      '"no leg reaches it either way", which M1-60 falsified in the same commit — look.mjs IS a ' +
+      'leg, and it now imports themeValues AND themeLanded and runs both, so the gate exercises ' +
+      'this file on every look pass and blocks when the room it measured is not the room it names. ' +
+      'The accurate `of` today is look.mjs; it is left as the review script because changing it is ' +
+      'a change to the DISPOSITION and this row is prose only (M1-70). That re-point is the next ' +
+      'seat\'s one-line row, and the count does not move when they make it',
   },
 
   // ---- tools that never gate

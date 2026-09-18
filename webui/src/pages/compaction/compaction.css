@@ -26,5 +26,7 @@
   color: var(--ink-mute);
   margin: 0;
   padding: 0 var(--space-6);
-  max-width: var(--measure-text);
+  /* The world carries no measure token; the craft floor's body measure is 65-75ch, so the
+     one paragraph on this page is capped in the unit the measure is actually expressed in. */
+  max-width: 66ch;
 }

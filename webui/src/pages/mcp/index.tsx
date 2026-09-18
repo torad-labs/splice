@@ -12,7 +12,8 @@ import { MCP_RESTART, startMcpPolling, useMcp } from '@entities/mcp';
 import type { McpRow } from '@entities/mcp';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, ErrorNote, FieldBox, HolderEdge, SkeletonRows, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, FieldBox, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { EMPTIES, arrangeServers, hostLimits, stateEdge, stateLabel, hosted } from './model';
 import { dispositions } from './coverage';
 import { S } from './strings';
@@ -33,14 +34,19 @@ const WIDE = 24;
  *  already serves many clients" is 44 characters. A truncated reason is the one string whose whole
  *  job is to explain why a server is not hosted. */
 const REASON = 46;
-/** Wide enough for `not running`, which three cells print when a child is down. */
+/** Wide enough for the widest number these columns carry. It was measured at `not running`, which
+ *  three cells printed before the rack cells moved to the absence glyph (m1 design review B8), so
+ *  every column here is now wider than anything it prints — clipping is the failure mode, not
+ *  slack. */
 const NARROW = 13;
 
 /** A number field that prints an absence rather than a zero. `0` sessions on a server that has
- *  never started is not the same fact as `0` on one that has, and the caller decides which it is. */
+ *  never started is not the same fact as `0` on one that has, and the caller decides which it is.
+ *  The absence is the glyph (m1 design review B8): the word `not running` said the same thing the
+ *  holder edge already prints as `not started`, in prose, in every one of the three cells. */
 function countText(value: number | undefined, running: boolean): string {
-  if (!running) return S.notRunning;
-  return value === undefined ? S.notRunning : String(value);
+  if (!running) return S.absent;
+  return value === undefined ? S.absent : String(value);
 }
 
 function ServerStrip({ row, selected, onOpen }: { row: McpRow; selected: boolean; onOpen: () => void }) {
@@ -57,10 +63,11 @@ function ServerStrip({ row, selected, onOpen }: { row: McpRow; selected: boolean
       ariaLabel={`${row.name} ${stateLabel(row.state)}`}
     >
       <StripField w={WIDE} label={S.name} value={row.name} mono={false} />
-      <StripField w={NARROW} label={S.state} value={stateLabel(row.state)} mono={false} />
+      {/* The state field is gone: the holder edge above prints the identical word, 8 px away, on
+          every strip in the rack (m1 design review B10). The edge is where a state belongs. */}
       {row.server.eligible ? (
         <>
-          <StripField w={NARROW} label={S.pid} value={live?.pid === undefined ? S.notRunning : String(live.pid)} />
+          <StripField w={NARROW} label={S.pid} value={live?.pid === undefined ? S.absent : String(live.pid)} />
           <StripField w={NARROW} label={S.sessions} value={countText(live?.sessions, running)} />
           <StripField w={NARROW} label={S.streams} value={countText(live?.streams, running)} />
           <StripField w={NARROW} label={S.restarts} value={String(live?.restarts ?? 0)} />
@@ -124,8 +131,8 @@ export function McpPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {mcp.error === null ? null : <ErrorNote message={mcp.error} />}
-      {payload === null && mcp.error === null ? <SkeletonRows rows={3} cols={6} /> : null}
+      {mcp.error === null ? null : <Fault message={mcp.error} />}
+      {payload === null && mcp.error === null ? <Blank strips={3} /> : null}
 
       <div className="myx-mcp-body">
         <div className="myx-mcp-bays">
@@ -164,12 +171,12 @@ export function McpPage() {
               </div>
               <div className="myx-mcp-head">
                 <Strip edge={stateEdge(opened.state)} edgeLabel={stateLabel(opened.state)} ariaLabel={opened.name}>
-                  <StripField w={NARROW} label={S.pid} value={hosted(opened.server)?.pid === undefined ? S.none : String(hosted(opened.server)?.pid)} />
+                  <StripField w={NARROW} label={S.pid} value={hosted(opened.server)?.pid === undefined ? S.absent : String(hosted(opened.server)?.pid)} />
                   <StripField w={NARROW} label={S.restarts} value={String(hosted(opened.server)?.restarts ?? 0)} />
                 </Strip>
               </div>
               <p className="myx-mcp-note">
-                {opened.server.eligible ? (hosted(opened.server)?.last_error ?? S.none) : opened.server.reason}
+                {opened.server.eligible ? (hosted(opened.server)?.last_error ?? S.absent) : opened.server.reason}
               </p>
             </section>
           )}

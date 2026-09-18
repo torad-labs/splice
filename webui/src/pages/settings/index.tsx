@@ -35,7 +35,9 @@ import {
 import type { TopologyWriteResult } from '@entities/topology';
 import { HeadAddForm, HeadEditRow, headRows } from '@features/head-edit';
 import { useViews, ViewTabs } from '@features/views';
-import { Bay, Btn, Empty, ErrorNote, HolderEdge, SkeletonRows } from '@shared/ui';
+import { cx } from '@shared/lib';
+import { Bay, Empty, HolderEdge } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { KnobRack } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import { DEFAULT_VIEWS, EMPTIES, knobsForView } from './model';
@@ -147,20 +149,28 @@ export function SettingsPage() {
         {fixture === null ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
-      {config.error === null ? null : <ErrorNote message={config.error} />}
-      {topology.error === null ? null : <ErrorNote message={topology.error} />}
-      {claude.error === null ? null : <ErrorNote message={claude.error} />}
+      {config.error === null ? null : <Fault message={config.error} />}
+      {topology.error === null ? null : <Fault message={topology.error} />}
+      {claude.error === null ? null : <Fault message={claude.error} />}
 
       <section className="myx-settings-section">
         <h2 className="myx-settings-title">{S.knobs}</h2>
         <div className="myx-settings-row">
+          {/* The rail's selector idiom: the active option prints a green holder edge and the rest
+              a grey one, so which head these knobs describe is a printed word and not a colour. */}
           {headOptions(configPayload?.layers.perHead).map((option) => (
-            <Btn key={option} kind={option === head ? 'primary' : 'control'} onClick={() => setHead(option)}>
-              {option}
-            </Btn>
+            <button
+              key={option}
+              type="button"
+              className={cx('myx-settings-head-option', option === head && 'myx-settings-head-option-active')}
+              aria-pressed={option === head}
+              onClick={() => setHead(option)}
+            >
+              <HolderEdge state={option === head ? 'green' : 'grey'} label={option} />
+            </button>
           ))}
         </div>
-        {configPayload === null ? <SkeletonRows rows={6} cols={3} /> : null}
+        {configPayload === null ? <Blank strips={6} /> : null}
         {pendingRestart.length === 0 ? null : (
           <div className="myx-settings-row">
             <HolderEdge state="amber" label={S.restart} />
@@ -180,7 +190,7 @@ export function SettingsPage() {
 
       <section className="myx-settings-section">
         <h2 className="myx-settings-title">{S.topology}</h2>
-        {topologyState === null ? <SkeletonRows rows={4} cols={2} /> : null}
+        {topologyState === null ? <Blank strips={4} /> : null}
         {fixture === null && topologyState === null ? (
           <Empty text={EMPTIES.noConfig.text} source={EMPTIES.noConfig.source} />
         ) : (

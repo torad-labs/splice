@@ -32,4 +32,15 @@ export const S = {
   cacheWriteRate: 'cache write rate',
   outputRate: 'output rate',
   pinned: 'pinned',
+  /** The holder edge's state for a tier a model fills, against one it does not: `not declared`,
+   *  the same word the models page prints for the same fact. It replaces the slot name, which is
+   *  the very next field on the same strip (m1 design review B10). */
+  slotted: 'auto',
+  undeclared: 'vacant',
+  /** The `slot` field of a model no tier hands out. */
+  noSlot: 'none',
+  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
+   *  It replaces four phrasings this page used for one fact: `not reported`, `no turns` (twice),
+   *  `no output`, `not declared`, `no rates` (twice) and the empty string. */
+  absent: 'n/r',
 } as const;

@@ -13,7 +13,8 @@ import type { DoctorCheck } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, ErrorNote, FieldBox, HolderEdge, Reveal, SkeletonRows, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { EMPTIES, attentionCount, canSend, groupChecks, playgroundNext, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
 import type { PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
@@ -51,6 +52,26 @@ function CopyFix({ command }: { command: string }) {
   );
 }
 
+/** The rack's columns: the check's id and the fix the daemon offers for it (CONTRACTS.md
+ *  section 2, m1 design review B9). The bay head prints them once. */
+const CHECK_COLUMNS: readonly { key: string; label: string; w: number }[] = [
+  { key: 'checks', label: S.checks, w: WIDE },
+  { key: 'fix', label: S.fix, w: WIDE },
+];
+
+/** The rack's column names, printed once on the bay head instead of on every strip. */
+function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span className="myx-doc-col" key={column.key} style={{ width: `${column.w}ch` }}>
+          <span className="myx-doc-col-name">{column.label}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; selected: boolean; onOpen: () => void }) {
   const fix = checkFix(check);
   return (
@@ -62,9 +83,12 @@ export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; se
       onOpen={onOpen}
       ariaLabel={check.id}
     >
-      <StripField w={WIDE} label={S.checks} value={check.id} mono={false} />
-      <StripField w={NARROW} label={S.status} value={check.status} mono={false} />
-      <StripField w={WIDE} label={S.fix} value={fix ?? S.noFix} mono={false} />
+      <StripField w={WIDE} value={check.id} mono={false} />
+      {/* No status field: the holder edge above prints the identical word on every strip (m1
+          design review B10). A check with nothing to fix prints the absence glyph in the fix
+          cell; the sentence `no fix offered` is what the opened check's note says, which is where
+          a Doctor fix's paragraph belongs. */}
+      <StripField w={WIDE} value={fix ?? S.absent} mono={false} />
     </Strip>
   );
 }
@@ -167,10 +191,10 @@ export function DoctorPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {doctor.error === null ? null : <ErrorNote message={doctor.error} />}
+      {doctor.error === null ? null : <Fault message={doctor.error} />}
 
       {pending !== null ? <Empty text={EMPTIES.noReport.text} source={`row ${pending}`} /> : null}
-      {payload === null && pending === null ? <SkeletonRows rows={4} cols={4} /> : null}
+      {payload === null && pending === null ? <Blank strips={4} /> : null}
 
       {/* The gate. A payload that still carries a credential shape is refused, by path, and never
           rendered: the strips below would be the leak. */}
@@ -184,7 +208,12 @@ export function DoctorPage() {
             <Empty text={EMPTIES.noChecks.text} source={EMPTIES.noChecks.source} />
           ) : (
             groups.map((group) => (
-              <Bay key={group.key} label={group.key} count={group.checks.length}>
+              <Bay
+                key={group.key}
+                label={group.key}
+                count={group.checks.length}
+                fields={<ColumnHeads columns={CHECK_COLUMNS} />}
+              >
                 {group.checks.map((check) => (
                   <CheckStrip
                     key={check.id}
@@ -206,15 +235,15 @@ export function DoctorPage() {
             <div className="myx-doc-row">
               <Strip
                 edge={upgradePayload === null ? 'grey' : upgradeVerdict(upgradePayload) === 'behind' ? 'amber' : 'green'}
-                edgeLabel={upgradePayload === null ? S.unknown : upgradeVerdict(upgradePayload)}
+                edgeLabel={upgradePayload === null ? S.absent : upgradeVerdict(upgradePayload)}
                 ariaLabel={S.upgrade}
               >
-                <StripField w={NARROW} label={S.installed} value={payload?.splice.version ?? S.unknown} />
-                <StripField w={NARROW} label={S.latest} value={upgradePayload?.latest ?? S.unknown} />
-                <StripField w={NARROW} label={S.rollback} value={upgradePayload === null ? S.unknown : String(upgradePayload.rollback_available)} mono={false} />
+                <StripField w={NARROW} label={S.installed} value={payload?.splice.version ?? S.absent} />
+                <StripField w={NARROW} label={S.latest} value={upgradePayload?.latest ?? S.absent} />
+                <StripField w={NARROW} label={S.rollback} value={upgradePayload === null ? S.absent : String(upgradePayload.rollback_available)} mono={false} />
               </Strip>
             </div>
-            <p className="myx-doc-note">{`claude code ${payload?.claude_code.version ?? S.unknown}`}</p>
+            <p className="myx-doc-note">{`claude code ${payload?.claude_code.version ?? S.absent}`}</p>
             <p className="myx-doc-note">{`${attentionCount(checks)} need attention`}</p>
             <Empty text={EMPTIES.upgrade.text} source={EMPTIES.upgrade.source} />
             <Empty text={EMPTIES.restart.text} source={EMPTIES.restart.source} />

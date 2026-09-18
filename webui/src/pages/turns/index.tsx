@@ -37,8 +37,10 @@ import type {
 import { useHeads, startHeadsPolling } from '@entities/heads';
 import { useSession } from '@entities/session';
 import { RequestDrawer, Waterfall } from '@widgets/waterfall';
-import { Bay, Empty, ErrorNote, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Fault } from '@shared/controls';
 import type { Basis } from '@shared/ui';
+import { basisProp, columnsOf } from './strip';
 import { S } from './strings';
 import { itemsOf, selectionOf } from './select';
 import type { Selection } from './select';
@@ -63,45 +65,92 @@ const DEFAULT_VIEWS: View[] = [
 
 const ROW_H = 40;
 
-/** A percentile the daemon did not compute prints `-`, never a zero. */
-function stat(value: { p50: number; p95: number } | undefined, which: 'p50' | 'p95'): string {
-  return value === undefined ? S.absent : String(value[which]);
+/** The rack's column names, printed once on the bay head instead of on every strip (CONTRACTS
+ *  section 2, m1 design review B9). The boxes carry the cell's own inline padding so a name sits
+ *  over the value it names; the bay's head row supplies the face and the colour. */
+function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span className="myx-tn-col" key={column.key} style={{ width: `${column.w}ch` }}>
+          <span className="myx-tn-col-name">{column.label}</span>
+        </span>
+      ))}
+    </>
+  );
 }
 
-function summaryFields(head: PerfSummaryHead): { key: string; label: string; value: string; basis: Basis }[] {
+/** A cell the rollup does not carry prints the absence glyph, never a zero the daemon did not
+ *  report. It carries no basis: `n/r` is the whole statement, and the word `unavailable` beside it
+ *  said the same thing twice (m1 design review B8). */
+function cell(value: number | undefined, format: (n: number) => string): { value: string; basis?: Basis | undefined } {
+  return value === undefined ? { value: S.absent } : { value: format(value), basis: 'measured' };
+}
+
+/** The summary rack's own columns (it summarizes a window, so its fields are not the landed
+ *  rack's), declared once for the bay head and the rows below it (CONTRACTS.md section 2, m1
+ *  design review B9). */
+export const SUMMARY_COLUMNS: readonly { key: string; label: string; w: number }[] = [
+  { key: 'head', label: S.head, w: 20 },
+  { key: 'window', label: S.time, w: 15 },
+  { key: 'rows', label: S.rows, w: 15 },
+  { key: 'first_p50', label: S.firstByte, w: 15 },
+  { key: 'first_p95', label: `${S.firstByte} p95`, w: 15 },
+  { key: 'total_p50', label: S.total, w: 15 },
+  { key: 'total_p95', label: `${S.total} p95`, w: 15 },
+  { key: 'failure', label: S.failureShare, w: 15 },
+  { key: 'retries', label: S.retries, w: 15 },
+  { key: 'refreshes', label: S.refreshes, w: 15 },
+  { key: 'cache', label: S.cacheHit, w: 15 },
+  { key: 'peak', label: S.peakInflight, w: 15 },
+  { key: 'drops', label: S.ioDrops, w: 15 },
+];
+
+function summaryFields(head: PerfSummaryHead): { key: string; label: string; w: number; value: string; basis?: Basis | undefined }[] {
   const first = head.time_before_first_byte_ms;
   const total = head.total_ms;
-  return [
-    { key: 'window', label: S.time, value: head.window, basis: 'measured' },
-    { key: 'rows', label: S.rows, value: String(head.count), basis: 'measured' },
-    { key: 'first_p50', label: S.firstByte, value: stat(first, 'p50'), basis: first === undefined ? 'unavailable' : 'measured' },
-    { key: 'first_p95', label: `${S.firstByte} p95`, value: stat(first, 'p95'), basis: first === undefined ? 'unavailable' : 'measured' },
-    { key: 'total_p50', label: S.total, value: stat(total, 'p50'), basis: total === undefined ? 'unavailable' : 'measured' },
-    { key: 'total_p95', label: `${S.total} p95`, value: stat(total, 'p95'), basis: total === undefined ? 'unavailable' : 'measured' },
-    { key: 'failure', label: S.failureShare, value: head.failure_share === undefined ? S.absent : head.failure_share.toFixed(2), basis: head.failure_share === undefined ? 'unavailable' : 'measured' },
-    { key: 'retries', label: S.retries, value: head.retries === undefined ? S.absent : String(head.retries), basis: head.retries === undefined ? 'unavailable' : 'measured' },
-    { key: 'refreshes', label: S.refreshes, value: head.refreshes === undefined ? S.absent : String(head.refreshes), basis: head.refreshes === undefined ? 'unavailable' : 'measured' },
-    { key: 'cache', label: S.cacheHit, value: head.cache_hit_ratio == null ? S.absent : head.cache_hit_ratio.toFixed(2), basis: head.cache_hit_ratio == null ? 'unavailable' : 'measured' },
-    { key: 'peak', label: S.peakInflight, value: head.peak_inflight === undefined ? S.absent : String(head.peak_inflight), basis: head.peak_inflight === undefined ? 'unavailable' : 'measured' },
-    { key: 'drops', label: S.ioDrops, value: head.io_drops_in_window === undefined ? S.absent : String(head.io_drops_in_window), basis: head.io_drops_in_window === undefined ? 'unavailable' : 'measured' },
-  ];
+  const values: Record<string, { value: string; basis?: Basis | undefined }> = {
+    head: { value: head.label, basis: 'measured' },
+    window: { value: head.window, basis: 'measured' },
+    rows: { value: String(head.count), basis: 'measured' },
+    first_p50: cell(first?.p50, String),
+    first_p95: cell(first?.p95, String),
+    total_p50: cell(total?.p50, String),
+    total_p95: cell(total?.p95, String),
+    failure: cell(head.failure_share, (n) => n.toFixed(2)),
+    retries: cell(head.retries, String),
+    refreshes: cell(head.refreshes, String),
+    cache: cell(head.cache_hit_ratio ?? undefined, (n) => n.toFixed(2)),
+    peak: cell(head.peak_inflight, String),
+    drops: cell(head.io_drops_in_window, String),
+  };
+  return SUMMARY_COLUMNS.flatMap((column) => {
+    const found = values[column.key];
+    return found === undefined ? [] : [{ ...column, ...found }];
+  });
 }
 
 /** The sentence an empty window prints, which is FEATURES.md 4.3's own: a window with no rows says
  *  so, and never reads as zero latency. It lives here, not in strings.ts, because an honest empty
- *  is not a label (CONTRACTS.md section 4). */
+ *  is not a label (CONTRACTS.md section 4). It is what a reader who needs the whole statement gets
+ *  — the strip's aria-label — because the printed edge carries the state in two words. */
 export const NO_ROWS = 'no turns in window';
 
-/** One head's windowed summary. An empty window says so on the edge rather than reading as fast. */
+/** One head's windowed summary. An empty window says so on the edge rather than reading as fast.
+ *  The edge prints a state and not the sentence: four words on a holder edge is over the cap and
+ *  staggered the field grid beside it (m1 design review B10). */
 function SummaryStrip({ head }: { head: PerfSummaryHead }) {
   return (
     <Strip
       edge={head.empty ? 'grey' : 'green'}
-      edgeLabel={head.empty ? NO_ROWS : head.label}
-      ariaLabel={`${S.summary} ${head.label}`}
+      /* A state, not the head's name: the name is a column of this rack now (CONTRACTS.md section
+         2, m1 design review B10), and at 15 characters it was being clipped to `claude-` by the
+         edge's 6ch budget. */
+      edgeLabel={head.empty ? S.noRows : S.hasRows}
+      ariaLabel={`${S.summary} ${head.label}${head.empty ? ` ${NO_ROWS}` : ''}`}
     >
       {summaryFields(head).map((field) => (
-        <StripField key={field.key} w={15} label={field.label} value={field.value} basis={field.basis} />
+        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );
@@ -156,7 +205,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
     : 0;
 
   if (locked) return <Empty text="console locked" source="management key" />;
-  if (error !== null && landed === null) return <ErrorNote message={error} />;
+  if (error !== null && landed === null) return <Fault message={error} />;
 
   return (
     <div className="myx-tn">
@@ -177,6 +226,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
           <Bay
             label={S.inflight}
             count={inflight.length}
+            fields={<ColumnHeads columns={columnsOf(INFLIGHT_FIELDS)} />}
             empty={{ text: 'nothing in flight', source: '/api/heads' }}
           >
             {inflight.map((turn) => (
@@ -186,6 +236,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
 
           <Bay
             label={S.summary}
+            fields={<ColumnHeads columns={SUMMARY_COLUMNS} />}
             {...(summary === null ? {} : { count: summary.heads.length })}
             empty={{ text: 'no summary read yet', source: '/api/perf/summary' }}
           >
@@ -194,6 +245,7 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
 
           <Bay
             label={S.landed}
+            fields={<ColumnHeads columns={columnsOf(active.fields)} />}
             {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
           >
             {pending ? (

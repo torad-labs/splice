@@ -28,14 +28,16 @@
   align-items: start;
 }
 
-/* The detail column drops under the bay BELOW 1600px, not below 1120px as the accounts page does.
-   Measured 2026-09-18, after --text-3 went 13px -> 16px: a nine-field head strip needs 123
-   characters of value width, which is about 1206px with its field padding. A 24rem detail column
-   beside it leaves the bay 970px, so the rack overflowed and the bay clipped the tail of the
-   window field and all of `last turn` — the clipped-text defect the operator had already seen.
-   Full width fits it with room to spare, and the brief's own rule is that the detail drops beneath
-   the bay when the bay cannot hold the rack. */
-@media (max-width: 1600px) {
+/* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
+   width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
+   was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —
+   a nine-field strip needs about 1206px of value width, so beside a detail column the rack lost
+   its tail. The bays scroll now (m1 design review B7, `.myx-bay-rows { overflow-x: auto }`), which
+   is what removes that constraint: a narrow bay scrolls its rack instead of cutting it, so the
+   brief's own topology — one detail column, the opened strip swelling into it on the right — holds
+   at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
+   place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
   .myx-fleet-body { grid-template-columns: minmax(0, 1fr); }
 }
 

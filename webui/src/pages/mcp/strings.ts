@@ -10,7 +10,6 @@ export const S = {
   hostedFirst: 'hosted first',
   detail: 'server detail',
   name: 'server',
-  state: 'state',
   pid: 'pid',
   sessions: 'sessions',
   streams: 'streams',
@@ -21,6 +20,8 @@ export const S = {
   reason: 'reason',
   limits: 'host limits',
   restart: 'restart',
-  none: 'none',
-  notRunning: 'not running',
+  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
+   *  It replaces two phrasings this page used for one fact: `not running` in the rack and `none`
+   *  in the detail. */
+  absent: 'n/r',
 } as const;

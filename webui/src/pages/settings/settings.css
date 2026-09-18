@@ -76,3 +76,20 @@
   flex-direction: column;
   gap: var(--space-3);
 }
+
+/* A selector option: the rail's idiom, a pressable whose state is a printed
+   holder edge. Styled down to the edge itself so nothing of the browser's
+   default button reads as another world's control. */
+.myx-settings-head-option {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.myx-settings-head-option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}

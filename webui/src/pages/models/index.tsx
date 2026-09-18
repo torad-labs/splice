@@ -13,7 +13,8 @@ import { useLocation } from 'react-router';
 import { startModelsPolling, useModels } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
-import { Bay, Empty, ErrorNote, HolderEdge, SkeletonRows } from '@shared/ui';
+import { Bay, Empty, HolderEdge } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { HeadCatalogBay, ModelDetail } from './components';
 import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel } from './model';
 import { fixtureCatalog, fixtureName } from './fixtures/models';
@@ -42,7 +43,7 @@ export function ModelsBoard({ catalog, sample = false }: {
         {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
       </header>
 
-      {catalog === null ? <SkeletonRows rows={5} cols={6} /> : null}
+      {catalog === null ? <Blank strips={5} /> : null}
       {pending && catalog !== null ? (
         <Empty text={EMPTIES.catalogPending.text} source={EMPTIES.catalogPending.source} />
       ) : null}
@@ -87,7 +88,7 @@ export default function ModelsPage() {
 
   return (
     <>
-      {models.error === null ? null : <ErrorNote message={models.error} />}
+      {models.error === null ? null : <Fault message={models.error} />}
       <ModelsBoard catalog={fixture === null ? models.data : fixtureCatalog} sample={fixture !== null} />
     </>
   );

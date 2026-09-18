@@ -26,6 +26,26 @@
   gap: var(--space-2);
 }
 
+/* A selector option: the rail's idiom, a pressable whose state is a printed
+   holder edge. Styled down to the edge itself so nothing of the browser's
+   default button reads as another world's control. */
+.myx-usage-window,
+.myx-usage-head-option {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.myx-usage-window:focus-visible,
+.myx-usage-head-option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+
 .myx-usage-detail {
   display: flex;
   flex-direction: column;
@@ -72,4 +92,25 @@
   flex-wrap: wrap;
   gap: var(--space-5);
   margin: 0;
+}
+
+/* One column name on a bay head, over the cell it names (CONTRACTS.md section 2, m1 design review
+   B9).
+
+   The box's `ch` must resolve in the CELL's own face and size, or a name sits left of the value it
+   names and drifts further with every column: the bay's head row sets the LABEL face at --text-1
+   so the edge column's 6ch budget resolves, and a 26ch box in that face is about a third narrower
+   than a 26ch cell in the figure face at --text-3. The width is therefore declared in the figure
+   face and only the printed name is put back in the label face. */
+.myx-us-col {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  padding-inline: var(--space-3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.myx-us-col-name {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
 }

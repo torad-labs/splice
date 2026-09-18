@@ -3,7 +3,8 @@
 // Both are exported standalone rather than inlined into the page so the tests can render them
 // directly with a fixture payload — a page that reads the router cannot be static-rendered, and a
 // section that has to be reached through one would be untestable for no reason.
-import { Bay, Btn, ConfirmBtn, Empty, FieldBox, Figure, HolderEdge, Reveal } from '@shared/ui';
+import { Bay, Empty, FieldBox, Figure, HolderEdge, Reveal } from '@shared/ui';
+import { Confirm, Key } from '@shared/controls';
 import type { ClaudeHeadState } from '@entities/claude-head';
 import { validateTopology } from '@entities/topology';
 import type { TopologyState, TopologyWriteResult } from '@entities/topology';
@@ -86,7 +87,7 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
       <div className="myx-settings-actions">
         <Figure value={changed.length} basis="measured" />
         <span className="myx-settings-note">{S.changed}</span>
-        <Btn kind="primary" busy={busy} disabled={changed.length === 0} onClick={onWrite}>{S.write}</Btn>
+        <Key busy={busy} disabled={changed.length === 0} onClick={onWrite}>{S.write}</Key>
       </div>
 
       <Reveal label={S.rawToml}>
@@ -173,9 +174,9 @@ export function ClaudeModeSection({ state, onWrap, onUnwrap, busy }: {
 
       <div className="myx-settings-actions">
         {wrapping ? (
-          <ConfirmBtn busy={busy} onConfirm={onUnwrap}>{S.unwrapLabel}</ConfirmBtn>
+          <Confirm label={S.unwrapLabel} confirmLabel={S.confirmUnwrap} busy={busy} onConfirm={onUnwrap} />
         ) : (
-          <ConfirmBtn busy={busy || card.wrap_supported === false} onConfirm={onWrap}>{S.wrap}</ConfirmBtn>
+          <Confirm label={S.wrap} confirmLabel={S.confirmWrap} busy={busy || card.wrap_supported === false} onConfirm={onWrap} />
         )}
       </div>
       {card.wrap_supported === false ? (

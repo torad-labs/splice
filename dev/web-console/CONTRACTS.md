@@ -22,7 +22,7 @@ Scales (values are the dark theme's; the light theme keeps the same scale):
 | token | value | use |
 |---|---|---|
 | `--space-1` .. `--space-8` | 2, 4, 8, 12, 16, 24, 32, 48 px | every gap, pad, inset |
-| `--text-1` .. `--text-6` | 11, 12, 13, 15, 18, 22 px | labels, figures, field values, headers, page title, wordmark |
+| `--text-1` .. `--text-6` | 12, 14, 16, 18, 20, 23 px (re-derived 2026-09-18 from the comp's measured cap heights in build/scaffold/layout.css: chat label 14, bay label 16, rule text 17 to 18, wordmark 23; the first ladder was authored, not measured, and rendered 22% small) | captions, labels, field values and figures, rule text and headers, page title, wordmark |
 | `--space-0`, `--space-5`, `--space-11`, `--text-10` | kept, current values | old pages until M2 replaces them |
 
 Colors (name, role):

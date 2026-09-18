@@ -245,3 +245,12 @@ directory no longer needed for captures.
 Payload shapes for routes that do not exist yet are the ones in `FEATURES.md` section 6. A row
 building against a pending route types the payload from that table, renders the honest empty
 with `source` naming the v0.4.0 row, and never ships mocked data.
+
+How an entity calls a route (decided 2026-09-18 on M2-D1's finding): `shared/api` exports the
+typed `request<T>(path, init?)` helper that carries the management key, the 401 lockout and the
+error envelope. An entity's `api/index.ts` imports `request` from `@shared/api`, declares its own
+payload types, and calls its routes directly: `request<PerfTurnsPayload>('/api/perf/turns?...')`.
+No entity edits `shared/api`, and no row waits on it. The existing `control` object stays for
+the routes that predate the rebuild; only the orchestrator extends it. A pending route is
+detected by its response: a 404 (or the daemon's `error.message` naming an unknown route) maps
+to `{ pending: 'V4-1NN' }` in the store, never to mocked rows.

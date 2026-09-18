@@ -172,3 +172,18 @@ export function ConfirmBtn({ children, onConfirm, busy }: {
     </span>
   );
 }
+
+// The Strip Bay world (v0.4.0). One file per primitive; the barrel above stays
+// for the old instruments, which keep working unchanged until M2 removes their
+// last consumer. New code imports from here and never from a primitive's file.
+export { HolderEdge } from './holder-edge';
+export { Strip } from './strip';
+export { StripField } from './strip-field';
+export { Bay } from './bay';
+export { ScopeInset } from './scope-inset';
+export { FieldBox } from './field-box';
+export { Reveal } from './reveal';
+export { Empty } from './empty';
+export { Figure } from './figure';
+export type { Provenance } from './field-box';
+export type { Edge, Basis } from './types';

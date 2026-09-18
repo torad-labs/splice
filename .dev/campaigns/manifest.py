@@ -4806,6 +4806,67 @@ def cmd_next_packet(path, session_id, _alive=None, _registry_dir=None, _this_fil
     cmd_packet(path, selected)
 
 
+
+# ── MILESTONE VERIFICATION (operator ruling 2026-09-17, global CLAUDE.md §16; lineage: the
+# grailseeker-scout ledger.ts patch .dev/campaigns/upstream/2026-09-17-milestone-verification,
+# vendored here in Python 2026-09-18). `verified` is redefined: NOT "the orchestrator re-gated
+# this row" but "the row's PHASE exit gate ran green and the phase review passed". Rows are
+# verified by their builder (scoped tests + compile + detekt, recorded in the landing note);
+# phases are verified by the orchestrator, once, in batch, with the exit-gate evidence quoted.
+# A phase cannot be half-verified: verify-phase refuses while any row of the phase is open.
+VERIFY_PHASE_ENV = "LEDGER_ORCHESTRATOR"
+
+
+def _phase_rows(path: str, phase: str) -> list[dict]:
+    with open(path, "rb") as handle:
+        doc = tomllib.load(handle)
+    rows = [row for row in doc.get("items", []) if row.get("phase") == phase]
+    if not rows:
+        sys.exit(f"error: no rows carry phase {phase!r}")
+    return rows
+
+
+def cmd_phase_status(path, phase):
+    """One line per row of the phase plus a readiness verdict for verify-phase. Exit 0 when every
+    row is done or verified (the phase is READY), 1 otherwise — so a script can gate on it."""
+    rows = _phase_rows(path, phase)
+    open_rows = [row["id"] for row in rows if row.get("status") not in ("done", "verified")]
+    done_rows = [row["id"] for row in rows if row.get("status") == "done"]
+    for row in rows:
+        print(f"{row['id']:<8} {row.get('status', '?'):<10} {str(row.get('title', ''))[:90]}")
+    if open_rows:
+        print(f"phase {phase}: {len(rows)} rows, {len(open_rows)} open ({', '.join(open_rows)}) — NOT ready for verify-phase")
+        return False
+    print(f"phase {phase}: {len(rows)} rows, {len(done_rows)} done, 0 open — READY for verify-phase")
+    return True
+
+
+def cmd_verify_phase(path, phase, evidence):
+    """Flip EVERY done row of the phase to verified, one dated note each quoting the exit-gate
+    evidence. Orchestrator-only (LEDGER_ORCHESTRATOR=1). Refuses while any row of the phase is
+    todo or in_flight, so a milestone is verified whole or not at all."""
+    if os.environ.get(VERIFY_PHASE_ENV) != "1":
+        sys.exit(f"error: verify-phase is orchestrator-only — run with {VERIFY_PHASE_ENV}=1")
+    evidence = (evidence or "").strip()
+    if not evidence:
+        sys.exit("error: verify-phase requires the exit-gate evidence (command + GATE: PASS + tree sha)")
+    rows = _phase_rows(path, phase)
+    open_rows = [row["id"] for row in rows if row.get("status") not in ("done", "verified")]
+    if open_rows:
+        sys.exit(
+            f"error: phase {phase!r} is not closed — open rows: {', '.join(open_rows)}; "
+            "a milestone is verified whole or not at all"
+        )
+    done_rows = [row["id"] for row in rows if row.get("status") == "done"]
+    if not done_rows:
+        sys.exit(f"error: phase {phase!r} has no done rows to verify")
+    stamp = date.today().isoformat()
+    for item_id in done_rows:
+        cmd_note(path, item_id, f"VERIFY-PHASE {phase} {stamp}: {evidence}")
+        cmd_set_status(path, item_id, "verified")
+    print(f"verify-phase {phase}: {len(done_rows)} row(s) -> verified ({', '.join(done_rows)})")
+
+
 def cmd_add_law(path, text):
     """Append a dated # LAW line to the header comment banner (before [campaign])."""
 
@@ -6865,6 +6926,52 @@ def _cmd_selftest_body(path):
     finally:
         shutil.rmtree(absent_dir, ignore_errors=True)
 
+    # VERIFY-PHASE (2026-09-18): a phase is verified whole or not at all, by the orchestrator only.
+    vp_dir = Path(tempfile.mkdtemp(prefix="manifest-verify-phase-"))
+    try:
+        vp_script = str(vp_dir / "manifest.py")
+        shutil.copy(__file__, vp_script)
+        vp_ledger = str(vp_dir / "fixture.toml")
+        Path(vp_ledger).write_text("", encoding="utf-8")
+        vp_env = dict(os.environ, TORAD_FLEET_ROOT=str(vp_dir), TORAD_LEDGER_NOTIFY="off")
+        vp_env.pop(VERIFY_PHASE_ENV, None)
+
+        def vp(*args, env=None):
+            return subprocess.run(
+                [sys.executable, vp_script, vp_ledger, *args],
+                capture_output=True, text=True, env=env or vp_env,
+            )
+
+        for iid in ("VP-1", "VP-2"):
+            assert vp("add", "--id", iid, "--phase", "m1", "--title", f"fixture {iid}",
+                      "--files", f"{iid.lower()}.py", "--verify", "true").returncode == 0
+        assert vp("set-status", "VP-1", "done").returncode == 0
+        # (a) not ready while VP-2 is todo: phase-status exits 1 and verify-phase refuses by name
+        assert vp("phase-status", "m1").returncode == 1, "phase-status must exit 1 with an open row"
+        orch_env = dict(vp_env, **{VERIFY_PHASE_ENV: "1"})
+        refused = vp("verify-phase", "m1", "gate evidence", env=orch_env)
+        assert refused.returncode != 0 and "VP-2" in refused.stderr, refused.stderr
+        assert 'status = "done"' in Path(vp_ledger).read_text(encoding="utf-8"), "a refusal must flip nothing"
+        # (b) orchestrator-only: without the env the verb refuses even when the phase is closed
+        assert vp("set-status", "VP-2", "done").returncode == 0
+        gated = vp("verify-phase", "m1", "gate evidence")
+        assert gated.returncode != 0 and VERIFY_PHASE_ENV in gated.stderr, gated.stderr
+        # (c) evidence is mandatory
+        blank = vp("verify-phase", "m1", "   ", env=orch_env)
+        assert blank.returncode != 0 and "evidence" in blank.stderr, blank.stderr
+        # (d) the closed phase verifies whole: both rows verified, each with the dated note
+        assert vp("phase-status", "m1").returncode == 0
+        ok = vp("verify-phase", "m1", "bash checks/gate.sh -> GATE: PASS @deadbeef", env=orch_env)
+        assert ok.returncode == 0, ok.stderr
+        vp_text = Path(vp_ledger).read_text(encoding="utf-8")
+        assert vp_text.count('status = "verified"') == 2, vp_text
+        assert vp_text.count("VERIFY-PHASE m1") == 2, vp_text
+        assert 'status = "done"' not in vp_text
+        # (e) an unknown phase is a hard error, never an empty success
+        assert vp("phase-status", "nope").returncode != 0
+    finally:
+        shutil.rmtree(vp_dir, ignore_errors=True)
+
     # D11: id namespaces are PER-LEDGER by design (each campaign numbers its own G-/D-/S-series),
     # and every access is ledger-path-scoped, so cross-ledger reuse is harmless — NOT an invariant
     # to enforce. selftest reports the standing count as health context only (never a per-id flood:
@@ -6875,7 +6982,7 @@ def _cmd_selftest_body(path):
         if duplicates else "; no cross-ledger id reuse"
     )
     print(
-        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
+        "selftest OK (add/set-status/note/verdict/verify-phase/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
         f"round-trip + valid TOML{dup_note})"
     )
 
@@ -7170,6 +7277,14 @@ def main(argv):
         cmd_stale_claims(path, minutes)
     elif cmd == "add-law":
         cmd_add_law(path, rest[0])
+    elif cmd == "phase-status":
+        if len(rest) != 1:
+            sys.exit("error: phase-status usage: <phase>")
+        sys.exit(0 if cmd_phase_status(path, rest[0]) else 1)
+    elif cmd == "verify-phase":
+        if len(rest) != 2:
+            sys.exit('error: verify-phase usage: <phase> "<exit-gate evidence>"  (LEDGER_ORCHESTRATOR=1)')
+        cmd_verify_phase(path, rest[0], rest[1])
     elif cmd == "laws":
         cmd_laws(path, aggregate=not explicit_path)
     elif cmd == "packet":

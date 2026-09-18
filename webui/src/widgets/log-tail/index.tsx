@@ -28,16 +28,39 @@ export function edgeOfLevel(level: LogLevel | null): Edge {
   return 'grey';
 }
 
+/** The line with the two brackets its own row already prints removed (M2-30).
+ *
+ *  A row was reading `01:14:02 | claude-deepseek | - | [2026-09-18 01:14:02] [claude-deepseek]
+ *  turn compact=false ...` -- the timestamp twice and the head twice, on every line in the tail,
+ *  costing 277px of the one column whose whole job is to be read. Measured rack-wide: the prefix is
+ *  32 to 40 characters of every line.
+ *
+ *  NEITHER BRACKET CARRIES ANYTHING THE ROW LOSES. `headOf` returns the second bracket verbatim, so
+ *  the head cell IS that string. The first bracket's time is the time cell, and its DATE is not an
+ *  omission to repair here: `timeOf`'s own comment states the console prints the time and never the
+ *  date, because "a log tail is read as when in the session did this happen". This removes what is
+ *  duplicated and what the page has already decided not to print, and nothing else.
+ *
+ *  It mirrors entities/logs' TAG and TIME anchors rather than re-parsing: strip a leading bracket
+ *  only when that parser found one there, so a continuation line with no timestamp is untouched. */
+export function messageOf(line: string): string {
+  if (headOf(line) !== null) return line.replace(/^\[[^\]]*\]\s*\[[^\]]*\]\s*/, '');
+  if (timeOf(line) !== null) return line.replace(/^\[[^\]]*\]\s*/, '');
+  return line;
+}
+
 /** One log line as a printed strip. Exported because a virtualized list renders nothing without a
  *  viewport, so this is the part a test can hold. */
 export function LogLine({ line }: { line: string }) {
   const level = levelOf(line);
+  // ariaLabel keeps the WHOLE line: the cell drops what the row prints beside it, and a screen
+  // reader reading the row aloud should still get the daemon's line as the daemon wrote it.
   return (
     <Strip edge={edgeOfLevel(level)} edgeLabel={level ?? S.line} ariaLabel={line.slice(0, 120)}>
       <StripField w={11} label={S.time} value={timeOf(line) ?? '-'} />
       <StripField w={18} label={S.head} value={headOf(line) ?? '-'} mono={false} />
       <StripField w={8} label={S.level} value={level ?? '-'} mono={false} />
-      <StripField w={160} label={S.text} value={line} />
+      <StripField w={160} label={S.text} value={messageOf(line)} />
     </Strip>
   );
 }

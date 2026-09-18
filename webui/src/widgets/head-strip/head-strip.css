@@ -1,0 +1,34 @@
+/* The head strip's own layout. The paper, the holder edge, the field boxes and the state gestures
+   are the shared primitives' (shared/ui/ui.css); nothing here re-colours them. Radius 0, tokens
+   only. */
+
+.myx-hstrip-scroll {
+  overflow-x: auto;
+}
+
+/* A strip field's width is a ch COUNT, so it must not be allowed to shrink: as a flex item its
+   default flex-shrink of 1 lets the row squeeze every column below its declared width the moment
+   the rack overflows, which truncates nine fields at once instead of scrolling the bay.
+   This belongs in shared/ui/ui.css on `.myx-sfield` itself; it is scoped here only because that
+   file is outside this row's fence, and the same one-line fix is needed there for every page.
+   Reported to the orchestrator. */
+.myx-fleet-bays .myx-sfield {
+  flex: 0 0 auto;
+}
+
+/* A field's `width: <w>ch` is declared on the BOX, so `ch` resolves against the box's own font —
+   which inherits the page's, not the value's. `--text-3` went 13px -> 16px on 2026-09-18 and every
+   strip field silently began clipping, because the text grew and the box did not. Pinning the box
+   to the value's own face and size makes `<w>ch` mean what it was always meant to mean: w
+   characters of the value.
+   Both belong on `.myx-sfield` in shared/ui/ui.css; scoped here only because that file is outside
+   this row's fence. Reported to the orchestrator, and the same two lines are needed there. */
+.myx-fleet-bays .myx-sfield {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+}
+
+/* ...and the non-figure face is restored, so a prose value still reads as prose. */
+.myx-fleet-bays .myx-sfield-value:not(.myx-sfield-figure) {
+  font-family: var(--font-label);
+}

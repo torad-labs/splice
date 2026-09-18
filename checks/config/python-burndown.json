@@ -31,7 +31,6 @@
     "checks/config/env-vars-documented.py",
     "checks/config/knob-keys-documented.py",
     "checks/config/quirks-keys-documented.py",
-    "checks/config/shared-quirks-no-vendor-defaults.py",
     "checks/config/terminal-restore-bracketed.py",
     "checks/config/tests-are-discovered.py",
     "checks/const-single-source.py",

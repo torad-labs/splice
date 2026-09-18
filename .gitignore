@@ -64,3 +64,6 @@ credentials.json
 # transient operator wall grant (/grant) — never committed
 .claude/state/walls-grant.json
 .claude/tmp/
+
+# gradle-slot.sh lock + holder (checks/gradle-slot.sh)
+gateway/.gradle-slot.lock*

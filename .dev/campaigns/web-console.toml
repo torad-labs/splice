@@ -898,6 +898,7 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/shared/ui && npx vitest
 # [2026-09-18] 2026-09-18 orchestrator: cut from the operator's line that the components repeat the old system's mistakes; shared/ui is in no live fence and the row changes no markup contract, so the three sweep rows are unaffected. Dispatched to design-builder4 after M1-08 landed (75a2bf9e).
 # [2026-09-18] CLAIM: owner=design-builder4 at=2026-09-18T08:36:00Z
 # [2026-09-18] ATTEST-START: tree=831aef1ea4b47412069b19affb59335f324e31cb at=2026-09-18T08:36:00Z
+# [2026-09-18] 2026-09-18 orchestrator: fence extended to tokens.css (M1-11 closed it) so the rack is built end to end in one row: review section E4 and B11, the comp is 11.9 percent mid-tone, the build of that same comp 7.9, the other twelve pages 3.3; the bay differs from the room by 3 of 255 and there is no slot token, no plate and no transparent ghost. This is comp fidelity, not decoration, so it is in scope under the COMP OF RECORD law.
 
 [[items]]
 id = "M1-13"
@@ -914,3 +915,4 @@ title = "THE COMP'S CONSTANTS ARE A WALL (operator ruling 2026-09-18: the comp i
 files = [".dev/web-console/comp-check.mjs"]
 status = "todo"
 verify = "node .dev/web-console/comp-check.mjs --help >/dev/null && node .dev/web-console/comp-check.mjs --list | grep -q rail && cd webui && npx eslint ../.dev/web-console/comp-check.mjs --no-config-lookup --config eslint.config.mjs >/dev/null 2>&1 || true"
+# [2026-09-18] DISPATCH: to=design-builder2 (packet emitted)

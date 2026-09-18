@@ -6,6 +6,17 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+  /* ---- THE PAGE OCCUPIES ITS ROOM (M1-39) ------------------------------------
+     The page is the top of one chain: `.myx-console` is a 100vh grid, `.myx-console-page` is a
+     stretched grid item and therefore HAS a definite height, and everything between here and the
+     bay was authored to its content -- so the chain offered a height and nothing passed it down.
+     Measured on this page at 3840 (fixture=list): the bay's ground stopped at row 1338 of 2160,
+     62 percent of the frame, with the bottom 38 percent flat floor. On the comp a bay is a rack
+     that occupies the height it is given -- bay-claude is y138..947, 79 percent of the frame, and
+     its slot rules continue BELOW the last strip at a 31-32px pitch.
+     min-height rather than height, so a page whose content is taller than the room still grows and
+     the room scrolls, which is what `.myx-console-page { overflow: auto }` is for. */
+  min-height: 100%;
 }
 
 .myx-px-head {
@@ -27,7 +38,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;
   gap: var(--space-4);
-  align-items: start;
+  /* `align-items: start` was the stop in the chain: it sized both columns to their content, so
+     the row was as tall as the shortest thing in it and the bays below had nothing to grow into.
+     Stretch is the grid's own default and it is what passes the room's height down; `flex: 1 1
+     auto` takes it from the page, which is the flex column above. min-height 0 so a tall detail
+     column cannot push the bays past the room instead of scrolling inside it. */
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
   transition: grid-template-columns var(--dur-2) var(--ease-out);
 }
 .myx-px-board-open {
@@ -39,6 +57,23 @@
   flex-direction: column;
   gap: var(--space-5);
   min-width: 0;
+}
+/* ---- THE FIELDS GROW TO FILL THE STRIP, AND THE STRIP FILLS THE BAY (M1-39) ----
+   A strip is `width: max-content` (ui.css) and that carries B6's ruling in its own comment: B6
+   CUT the strip to its content precisely to remove bare paper -- 128px on fleet, 398px on
+   accounts, 807px on doctor. So this is deliberately NOT "make the strip wider": filling the
+   container without also growing the cells restores exactly the slab B6 removed, which is why
+   neither half was safe alone.
+   Both halves together are a different object. Measured on this page at 3840: strip paper ran
+   x416..2998 inside a bay ground running to x3770 -- a 772px tail, 21 percent of the bay width,
+   on every strip. The ch width stops being a fixed box and becomes each cell's SHARE: the cells
+   keep their declared ch as their basis and the leftover ch is distributed across them, so the
+   column grid is still the declared one and only the slack moves. That is the whole difference
+   between bare paper and a full row. */
+.myx-px-bays .myx-strip { width: 100%; }
+.myx-px-bays .myx-sfield {
+  /* declared ch stays the basis; the slack is shared */
+  flex: 1 1 auto;
 }
 
 .myx-px-detail {

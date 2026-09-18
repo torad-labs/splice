@@ -90,7 +90,12 @@
 .myx-doc-fix {
   font-family: var(--font-figure);
   font-size: var(--text-2);
-  color: var(--ink);
+  /* D7 (M1-52): this box paints the STRIP's paper, so it takes the STRIP's ink. --ink* is the
+     ROOM's ink and is light in the dark theme, because the room is dark - on paper it was
+     light-on-light. Measured before: 1.33:1 in dark. The same wrong pairing is in controls.css's
+     own comment from the first D7 and was fixed there and nowhere else; this is instance 2 of
+     five the source sweep found. */
+  color: var(--strip-ink);
   background: var(--strip-field);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;

@@ -188,19 +188,26 @@ export function Rule() {
         <HolderEdge state={health} label={S.health[health]} />
       </div>
 
-      {/* The four signal cells FLOW in the band after the measured identity cells. A fixed slot
-          per cell was tried first and cannot work: the band is exactly as wide as its content, so
-          reserving one slot for a cell that is usually empty (a pending restart) made three other
-          cells clip by 4 to 32 pixels. Flowing them means every cell is as wide as what it prints,
-          and nothing clips whatever the connection word or the window happens to be. */}
-      <div className="myx-rule-signals">
+      {/* THE FIVE MEASURED CELLS SIT AT THE COMP'S OWN X, and the two signals the comp never had
+          take the tail of the no-window slot. This replaced a row that flowed window and none from
+          41% to 99%: flowing kept everything visible but moved two MEASURED cells by +18.8 and
+          +18.7 points on all thirteen addresses (M1-28's punch list). The window cell now takes its
+          measured 41% and 30%, and the no-window cell its measured 72% and 27%, leaving the band's
+          own numbers at delta 0.00. */}
+      <WindowCell usage={usage} auth={auth} />
+
+      <div className="myx-rule-tail">
+        <NoneCell usage={usage} />
+
+        {/* The two signals the comp never had. They ride in the tail of the no-window slot because
+            that is the only room the comp's own measurements leave: its 27% slot measures 414.7 px
+            and the count inside it 127.8 px, while this signal measures 157.8 px, so the pair sits
+            8.4 points clear. The connection signal is the daemon's live state and belongs beside
+            `daemon ok` by meaning, but that cell's 10% slot is 154 px and already carries the
+            health word — there is no room there. */}
         <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} />
 
         <PendingRestartCell pending={pendingRestart} />
-
-        <WindowCell usage={usage} auth={auth} />
-
-        <NoneCell usage={usage} />
       </div>
     </header>
   );

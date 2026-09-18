@@ -725,6 +725,8 @@ command = "claude-splice"
 # maxRequestBytes = 8388608                                 # bytes; largest request body the gateway decodes (413 past this)
 # requestReadTimeoutMs = 30000                              # ms; how long one client request body read may take
 # materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits
+# activityRetentionDays = 90                                # days; message edges and activity labels kept, whole days
+# activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 
 # ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
 # Precedence for every name below is env > TOML > default: an environment variable beats the TOML
@@ -760,6 +762,7 @@ command = "claude-splice"
 #   SPLICE_MCP_REQUEST_TIMEOUT_MS mcpRequestTimeoutMs SPLICE_MCP_INITIALIZE_TIMEOUT_MS mcpInitializeTimeoutMs
 #   SPLICE_MAX_REQUEST_BYTES maxRequestBytes          SPLICE_REQUEST_READ_TIMEOUT_MS requestReadTimeoutMs
 #   SPLICE_MATERIALIZATION_PERMITS materializationPermits
+#   SPLICE_ACTIVITY_RETENTION_DAYS activityRetentionDays  SPLICE_ACTIVITY_STORE_HEADS activityStoreHeads
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup

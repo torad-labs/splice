@@ -4,8 +4,9 @@
 // THE DENOMINATOR COMES FROM THE SOURCE, not from a list in this file: the families are
 // ConsoleEvent's sealed subclasses and each one's fields are its serializer descriptor's element
 // names. A new family added to EventBus.kt without a producer here fails by name, and so does a
-// family whose payload stops carrying a declared field. message.edge is the one family NOT produced,
-// and it is dispositioned by name below (V4-130 owns its wire observation) rather than skipped.
+// family whose payload stops carrying a declared field. Every family is produced: message.edge was
+// dispositioned here as deferred until V4-130 landed its wire observation (MessageEdges), and the
+// disposition was removed with it rather than left to excuse a family that now has a producer.
 //
 // Through the route, not through EventBus.subscribe: that method is internal to :control, which is
 // the point — :app reaches the bus only by publishing, and the console only by the stream.
@@ -43,6 +44,7 @@ import splice.control.api.ConsoleEvent
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.util.WallClock
 import splice.gateway.head.HeadLifecycle
 import java.net.ServerSocket
 import java.nio.file.Files
@@ -50,9 +52,8 @@ import java.nio.file.Files
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
 
-/** The one family this row does not produce, and why: its seam is V4-130's SendMessage wire
- *  observation, which has not landed. A disposition, so the family is accounted for by name. */
-private const val DEFERRED_FAMILY = "message.edge"
+/** The wall clock the publisher stamps message.edge's `at` with, so the frame's value is exact. */
+private const val EDGE_AT = 1_789_612_775_123L
 
 /** One SSE frame as the console reads it. */
 private data class Frame(val id: Long, val event: String, val data: JsonObject)
@@ -62,7 +63,7 @@ class ConsoleEventProducersTest {
 
     private val port = ServerSocket(0).use { it.localPort }
     private val client = HttpClient(CIO) { expectSuccess = false }
-    private val publisher = ConsoleEventPublisher()
+    private val publisher = ConsoleEventPublisher(clock = WallClock { EDGE_AT })
     private lateinit var control: ControlServer
     private lateinit var key: String
 
@@ -92,23 +93,20 @@ class ConsoleEventProducersTest {
     @OptIn(InternalSerializationApi::class)
     @Test
     fun `every produced family reaches the stream carrying exactly its declared fields`() = runBlocking {
-        val frames = collect(5) {
+        val frames = collect(6) {
             val head = publisher.forHead("claude")
             head.lifecycle(HeadLifecycle.STARTED)
             head.turnStarted("session-1") // turn.start, and session.change: a session seen for the first time
             head.accountSwitched("primary", "backup")
             head.turnEnded("1789612775000", "ok")
+            head.messageSent("session-1", "uds:/run/peer.sock", "toolu_1")
         }
         val declared = ConsoleEvent::class.sealedSubclasses.associate { family ->
             val descriptor = family.serializer().descriptor
             descriptor.serialName to descriptor.elementNames.toSet()
         }
         val produced = frames.associateBy { it.event }
-        assertEquals(
-            declared.keys - DEFERRED_FAMILY,
-            produced.keys,
-            "every family but the deferred one must be produced, and nothing undeclared",
-        )
+        assertEquals(declared.keys, produced.keys, "every declared family must be produced, and nothing undeclared")
         produced.forEach { (family, frame) ->
             assertEquals(declared.getValue(family), frame.data.keys, "the payload of $family moved off its serializer")
             assertEquals(frame.id, frame.data.getValue("seq").jsonPrimitive.long, "$family: the SSE id must be its seq")
@@ -120,6 +118,7 @@ class ConsoleEventProducersTest {
                 "session.change" to mapOf("session" to "session-1", "head" to "claude"),
                 "account.switch" to mapOf("head" to "claude", "from" to "primary", "to" to "backup"),
                 "turn.end" to mapOf("head" to "claude", "perfRowId" to "1789612775000", "outcome" to "ok"),
+                "message.edge" to mapOf("from" to "session-1", "to" to "uds:/run/peer.sock", "at" to EDGE_AT.toString()),
             ),
             produced.mapValues { (_, frame) ->
                 (frame.data - "seq").mapValues { (_, value) -> value.jsonPrimitive.content }

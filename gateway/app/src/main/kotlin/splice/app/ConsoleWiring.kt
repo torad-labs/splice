@@ -18,8 +18,15 @@
 //   turn.end        the one perf-row emitter (TurnTelemetry), keyed by that row's ts.
 //   account.switch  the pool's switch, reported beside the perf row that carries the new account.
 //   session.change  derived HERE from turn.start — see [HeadPublisher.turnStarted].
-//   message.edge    NOT PRODUCED. The wire observation of SendMessage is V4-130's; it publishes
-//                   through this class when it lands. Until then the family is silent by design.
+//   message.edge    V4-130: the SendMessage tool_use a head observed on the wire (MessageEdges).
+//                   Published AND recorded in the edges store, so the per-session edges route and
+//                   the live stream carry the same facts.
+//
+// V4-130 STORES: [ConsoleEventPublisher.stores] holds the edges and activity-label stores. Null (tests,
+// tools) means the bus still carries every family and nothing is written to disk; ControlPlane opens
+// the daemon's one instance under the state dir, so no test writes into the operator's state dir.
+// A label or an upstream label query without a session header is published nowhere and stored
+// nowhere: a label row is keyed by its session, and one without a session answers no console read.
 //
 // WHY IN THIS FILE: the publisher is the console's wiring seam for /api/events, the same job the
 // four ports above do for their routes, so it lives beside them rather than in a package of its own.
@@ -33,6 +40,14 @@ import splice.control.DoctorReport
 import splice.control.UpgradeStatus
 import splice.control.api.ConsoleEvent
 import splice.control.api.EventBus
+import splice.core.activity.ACTIVITY_DIRECTORY
+import splice.core.activity.ALL_HEADS
+import splice.core.activity.ActivityStores
+import splice.core.activity.MessageEdge
+import splice.core.config.ConfigService
+import splice.core.config.Knob
+import splice.core.config.StatePaths
+import splice.core.util.WallClock
 import splice.gateway.head.HeadEvents
 import splice.gateway.head.HeadLifecycle
 
@@ -56,6 +71,16 @@ internal object ConsoleWiring {
         // are: the compiler cannot see this line either.
         srv.supervised = DrainingRestartAdapter()
     }
+
+    /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with
+     *  the two knobs read once (both restartRequired). A retention below one day would keep nothing,
+     *  including today, so it is read as one. */
+    internal fun activityStores(statePaths: StatePaths, config: ConfigService): ActivityStores {
+        val knobs = config.getConfig().asMap()
+        val days = (knobs[Knob.ACTIVITY_RETENTION_DAYS.key] as? Long ?: Knob.ACTIVITY_RETENTION_DAYS.default as Long)
+        val heads = knobs[Knob.ACTIVITY_STORE_HEADS.key] as? String ?: ALL_HEADS
+        return ActivityStores(statePaths.stateDir.resolve(ACTIVITY_DIRECTORY), days.coerceAtLeast(1L).toInt(), heads)
+    }
 }
 
 /** How many sessions [ConsoleEventPublisher] remembers the head of. A session past this many
@@ -64,7 +89,10 @@ internal object ConsoleWiring {
  *  sessions one daemon serves at once. */
 private const val REMEMBERED_SESSIONS = 4096
 
-internal class ConsoleEventPublisher {
+internal class ConsoleEventPublisher(
+    internal val stores: ActivityStores? = null,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
     /** The bus GET /api/events streams from. ControlPlane assigns this exact instance to the
      *  ControlServer; nothing else constructs one for production. */
     internal val bus: EventBus = EventBus()
@@ -102,6 +130,20 @@ internal class ConsoleEventPublisher {
 
         override fun accountSwitched(from: String?, to: String) {
             bus.publish { seq -> ConsoleEvent.AccountSwitched(seq, head, from, to) }
+        }
+
+        override fun messageSent(session: String, to: String, toolUseId: String) {
+            val at = clock()
+            stores?.edges?.record(MessageEdge(session, to, at, toolUseId))
+            bus.publish { seq -> ConsoleEvent.EdgeEvent(seq, session, to, at) }
+        }
+
+        override fun activityLabel(session: String?, label: String) {
+            if (session != null) stores?.activity?.label(session, head, label, clock())
+        }
+
+        override fun labelQueryUpstream(session: String?) {
+            if (session != null) stores?.activity?.upstream(session, head, clock())
         }
 
         /** Records [session] on this head and says whether that is news. */

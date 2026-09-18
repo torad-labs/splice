@@ -412,4 +412,26 @@ public enum class Knob(
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         "",
     ),
+
+    // V4-130 (FEATURES.md 6): how many UTC days of the console's activity stores (message edges and
+    // activity labels, `activity/<store>-YYYY-MM-DD.jsonl` under the state dir) are kept. Whole day
+    // files older than the window are deleted; today counts as one of the days. Daemon-wide.
+    ACTIVITY_RETENTION_DAYS(
+        "activityRetentionDays",
+        KnobKind.NUMBER,
+        listOf("SPLICE_ACTIVITY_RETENTION_DAYS"),
+        default = 90L,
+        restartRequired = true,
+    ),
+
+    // V4-130: the per-head switch for the activity label store. `*` stores every head, an empty value
+    // stores none, otherwise a comma-separated list of head keys. Message edges are not switched: the
+    // contract keeps them by default as metadata.
+    ACTIVITY_STORE_HEADS(
+        "activityStoreHeads",
+        KnobKind.STRING,
+        listOf("SPLICE_ACTIVITY_STORE_HEADS"),
+        "*",
+        restartRequired = true,
+    ),
 }

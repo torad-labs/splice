@@ -54,6 +54,27 @@ export function FileView({ projectId, files }: { projectId: string; files?: Proj
       {data.files.map((file) => (
         <div className="myx-fv-row" key={`${file.kind}:${file.path}:${file.head ?? ''}`}>
           <Strip edge="grey" edgeLabel={file.kind === 'memory' ? S.memory : S.instructions} ariaLabel={file.path}>
+            {/* MEASURED AND DELIBERATELY NOT REDISTRIBUTED (M2-31). The declared-over-content
+                diagnostic reads path 0.41 and head 0.83 here -- both UNDER, which is the mirror
+                of the dead column it hunts and not the same defect: there is no column holding
+                more than it needs, so there is no share to move. path declares 34ch (326px) and
+                holds 82ch (789px, `/home/marcos/.claude/projects/-home-marcos-.../MEMORY.md`);
+                head declares 12ch (115px) and holds 14.5ch (`claude-deepseek`).
+                What opening the capture found instead, at 1536 with a project open: the widget
+                declares 46ch of fields plus a 56px edge holder -- 497px -- inside a 468px detail
+                pane, so the last 29px of `head` is cut by the PANE rather than by its own
+                declaration, and two different files print as the identical string, because the
+                segment that tells them apart is the one the clip removes:
+                  /home/marcos/Documents/dev/projects/mythos/repo/CLAUDE.md
+                  /home/marcos/Documents/dev/projects/mythos/repo/AGENTS.md
+                Both render `/home/marcos/Documents/dev/projects/...`. Narrowing the budget to fit
+                the pane would take characters from the column already at 0.41, so this row does
+                not do it; the fix is the pane or the clip end, and neither is a width share --
+                the campaign law for a ratio far below 1, which is a column holding a KIND of
+                value no width satisfies rather than the mirror of a column sized for a retired
+                sentence. The cut was found at the SCROLLPORT edge and not the cell's: `head`
+                reports no overflow of its own box on two of the three rows and is cut by the pane
+                all the same. */}
             <StripField w={34} label={S.path} value={file.path} />
             <StripField w={12} label={S.head} value={file.head ?? S.repo} />
           </Strip>

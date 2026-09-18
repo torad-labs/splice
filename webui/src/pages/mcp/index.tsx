@@ -30,15 +30,27 @@ export const DEFAULT_VIEWS: readonly View[] = [
 ];
 
 const WIDE = 24;
-/** Wide enough for the planner's longest reason, measured on the live host: "transport 'http'
- *  already serves many clients" is 44 characters. A truncated reason is the one string whose whole
- *  job is to explain why a server is not hosted. */
-const REASON = 46;
 /** Wide enough for the widest number these columns carry. It was measured at `not running`, which
  *  three cells printed before the rack cells moved to the absence glyph (m1 design review B8), so
  *  every column here is now wider than anything it prints — clipping is the failure mode, not
  *  slack. */
 const NARROW = 13;
+/** ---- THE REASON SPANS THE FOUR NARROW TRACKS, AND IT IS DERIVED RATHER THAN CHOSEN (M1-73) --
+ *  It was 46, "wide enough for the planner's longest reason", measured on the live host. That is
+ *  a good reason for the number to be at least 46 and it is not the number the grid needs.
+ *  THE GRID BELONGS TO THE RACK, NOT THE ROW, and on this page that is load-bearing rather than
+ *  stylistic, because `.myx-mcp-bays .myx-sfield { flex: 1 1 auto }` (mcp.css:56, M1-39's
+ *  strip-fills-its-bay rule carried here by M1-44) turns every declared ch into a SHARE of the
+ *  leftover -- and flex-grow: 1 shares it EQUALLY PER CELL. So the two row shapes on this page
+ *  got different first tracks: hosted is WIDE|NARROW x4 (76ch over 5 cells) and barred is
+ *  WIDE|REASON (70ch over 2 cells), and the first cell renders 24ch + slack/5 against
+ *  24ch + slack/2 -- a measured 87px apart, x 488 against x 575, on rows that both declare
+ *  w={WIDE}.
+ *  THE FIX IS TO MAKE EVERY ROW SHAPE DECLARE THE SAME TOTAL. A row maps onto a SUBSET of the
+ *  rack's tracks and empties the ones it has nothing for, so a cell's share is the same in every
+ *  row by construction and the declared grid is the rendered grid. WIDE + NARROW*4 = 76ch is the
+ *  rack; the reason row spans the four narrow tracks, so it is NARROW * 4 and not a number. */
+const REASON = NARROW * 4;
 
 /** A number field that prints an absence rather than a zero. `0` sessions on a server that has
  *  never started is not the same fact as `0` on one that has, and the caller decides which it is.
@@ -171,6 +183,17 @@ export function McpPage() {
               </div>
               <div className="myx-mcp-head">
                 <Strip edge={stateEdge(opened.state)} edgeLabel={stateLabel(opened.state)} ariaLabel={opened.name}>
+                  {/* THE RACK'S FIRST TRACK, DRAWN EMPTY (M1-73). This row is pid|restarts and has
+                      no name to print -- the opened server's name is on the line above it -- so it
+                      began at the SECOND track and its first field ended NARROW ch from the left,
+                      where every row above it ends WIDE (24). Measured: the first field edge spans
+                      87px across 18 strips. THE GRID BELONGS TO THE RACK AND NOT TO THE ROW: a row
+                      shape maps onto a SUBSET of the rack's tracks rather than declaring widths of
+                      its own, so a track this row has nothing to put in is drawn empty rather than
+                      skipped. That is what the comp of record does -- M1-12 measured its rules
+                      continuing below the last strip at a 31-32px pitch, a grid that exists
+                      independently of what is in it and keeps existing where there is nothing. */}
+                  <StripField w={WIDE} value="" />
                   <StripField w={NARROW} label={S.pid} value={hosted(opened.server)?.pid === undefined ? S.absent : String(hosted(opened.server)?.pid)} />
                   <StripField w={NARROW} label={S.restarts} value={String(hosted(opened.server)?.restarts ?? 0)} />
                 </Strip>

@@ -1,4 +1,4 @@
-# checks/config/role-registry.toml — the DISPOSITIONS for checks/role-registry.py (V4-89,
+# checks/config/role-registry.toml — the DISPOSITIONS for checks/role-registry.ts (V4-89,
 # ARCH-AUDIT 2026-09-17, audit B row 5).
 #
 # ONE ROLE, ONE INTERFACE. 200 `fun interface` declarations in main sources normalise to 132
@@ -36,7 +36,7 @@
 # differs from its siblings, and each carries a reason saying what it IS. The wall stays useful
 # because ADDING a lambda-shaped port still costs one sentence.
 #
-# HOW TO ADD AN ENTRY. Run `python3 checks/role-registry.py report .` for the census, then write
+# HOW TO ADD AN ENTRY. Run `bun checks/role-registry.ts report .` for the census, then write
 # the signature verbatim, today's date, the names, and a reason that says what each role IS. A
 # reason a reviewer cannot check is worse than none, because it looks like work.
 

@@ -65,22 +65,37 @@
 .myx-ink-info  { color: var(--data-info); }
 .myx-ink-amber { color: var(--data-amber); }
 
+/* THE TWO CONTROLS ARE IN THE WORLD (M1-54). They were painted from the RETIRED pigment ramp -
+   `--control-surface` is `light-dark(--paper-0, --obsidian-800)` and `--obsidian-800` is #241a12, a
+   warm brown standing against the room's #0B0E0E graphite - and on every button and text input the
+   console had left. Nothing was broken: they cleared AA (6.91 and 7.26), which is why no contrast
+   instrument would ever have found them. They were not in the world, which is the harder thing to
+   see and the thing the operator means.
+   The ramp's readers were COUNTED before it was touched, as design-reviewer's caveat requires:
+   `--ink-body` has ONE reader in the tree and `--control-surface` TWO, both rules on this page.
+   Two readers is a deletion's worth of coupling, not a migration's - a ramp with fifty would have
+   stopped this row - so the two rules are repainted from the world's own vocabulary instead, and
+   the ramp is left with no reader in the new tree at all.
+   The idiom is `Key`'s (shared/controls/controls.css), which is what the new world's button
+   already is: a printed key, radius 0, the label face, paper with a hairline box. */
 .myx-btn {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
   font-size: var(--text-2);
   padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-1);
-  border: var(--hair) solid var(--line-strong);
-  background: var(--control-surface);
-  color: var(--ink-body);
+  border-radius: 0;
+  border: var(--hair) solid var(--strip-field-line);
+  background: var(--strip);
+  color: var(--strip-ink);
   cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease-snap), background var(--dur-1) var(--ease-snap);
+  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
 }
-.myx-btn:hover { border-color: var(--accent); color: var(--ink-strong); }
+.myx-btn:hover { border-color: var(--hairline-strong); color: var(--strip-ink); }
 .myx-btn:active { transform: translateY(var(--hair)); }
 .myx-btn:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
-.myx-btn-primary { background: var(--control-fill); color: var(--on-accent); border-color: var(--accent); }
-.myx-btn-primary:hover { background: var(--accent-bright); color: var(--on-accent); }
+/* A primary key is the SAME printed key with the room's bright ink: the world has no second
+   accent, and the vermilion this used to reach for is the one pigment the world forbids by name. */
+.myx-btn-primary { background: var(--strip); color: var(--strip-ink); border-color: var(--ink-strong); }
+.myx-btn-primary:hover { background: var(--strip); border-color: var(--ink-strong); }
 .myx-btn-danger { color: var(--data-neg); border-color: color-mix(in srgb, var(--data-neg) 55%, transparent); }
 .myx-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 .myx-btn-busy { cursor: wait; }
@@ -103,14 +118,17 @@
   letter-spacing: 0.08em;
   color: var(--ink-mute);
 }
+/* An input in the world is a PRINTED FIELD BOX: the same paper, hairline and radius 0 that
+   `.myx-fbox` carries, with the figure face for the value the way a strip cell has it. This is the
+   other half of the same repaint as `.myx-btn` above. */
 .myx-field input,
 .myx-field select {
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-3);
-  color: var(--ink-strong);
-  background: var(--control-surface);
-  border: var(--hair) solid var(--line-strong);
-  border-radius: var(--radius-1);
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
   padding: var(--space-1) var(--space-2);
 }
 .myx-field input:focus-visible,
@@ -630,7 +648,19 @@
   font-variant-numeric: tabular-nums;
   font-size: var(--text-1);
   font-variant-numeric: tabular-nums;
-  color: var(--strip-ink-mute);
+  /* ---- THE PLATE'S OWN INK (M1-53, handed in from M1-52's sweep) --------------
+     This was --strip-ink-mute, at 3.63:1 on --plate in dark (5.05 in light) -- under AA, and it
+     is the visibly faint half of "summary 3" in the crop, exactly as design-reviewer read it.
+     THE CAUSE IS BORROWING, NOT THE TOKEN: M1-24 bound --plate to #C3B6A0 (L183) and the inks
+     printed on it were never re-measured. --strip-ink-mute clears AA on every plane it was
+     LANDED against (--strip-field 5.49/7.26, --strip 5.13/6.23) and fails only on the two it was
+     borrowed onto, so changing it would break three working planes to repair one. A token is
+     landed against a plane or it is not.
+     So the ink is measured against the plate it is printed on, and written against that plate
+     rather than as a hex: 0.95 x --strip-ink's L20 + 0.05 x the plate's L183 = L28, which is
+     4.79:1 on #C3B6A0 and clears AA; the same expression clears it on light's #D6D8D3. The
+     fraction is the AA floor with a little air and not a taste call. */
+  color: color-mix(in srgb, var(--strip-ink) 95%, var(--plate));
 }
 .myx-bay-actions {
   display: flex;

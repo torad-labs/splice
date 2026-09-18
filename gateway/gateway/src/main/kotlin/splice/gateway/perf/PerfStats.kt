@@ -137,6 +137,7 @@ public class PerfStats(
         // silently-blank instrument.
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
+                // ast-grep-ignore: kt-no-silent-result-collapse -- null is counted and logged by noteSkippedRow, PerfStats.kt:142 and :167
                 val row = Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
                 if (row == null) noteSkippedRow()
                 row

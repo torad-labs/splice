@@ -33,6 +33,9 @@ import kotlinx.serialization.json.put
 import splice.core.perf.ECONOMICS_RETENTION_MS
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -91,6 +94,7 @@ public data class TurnEconomics(
 public class EconomicsStore(
     private val file: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -159,14 +163,31 @@ public class EconomicsStore(
     }
 
     // best-effort by design: a missing/corrupt file reads as empty; cancellation propagates.
+    // V4-151 (DR-58/DR-60 class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the
+    // quiet first-run empty. The old exists() pre-gate read an inaccessible file as absent, and a
+    // corrupt one collapsed to empty with no log at all; either way the next coalesced persist
+    // OVERWROTE the hourly history without a trace. The degrade is unchanged; it now says so.
+    // Cold path: loadUnderLock runs this once per instance.
     private fun readFromDisk(): List<EconomicsBucket> = Cancellables.runCatchingCancellable {
-        if (!Files.exists(file) || Files.size(file) > MAX_FILE_BYTES) {
+        val size = Files.size(file)
+        if (size > MAX_FILE_BYTES) {
+            log("[economics] $file is ${size}B > ${MAX_FILE_BYTES}B cap — history treated as empty\n")
             emptyList()
         } else {
             json.parseToJsonElement(Files.readString(file)).jsonArray
                 .mapNotNull { (it as? JsonObject)?.let(::bucketFrom) }
         }
-    }.getOrDefault(emptyList())
+    }.getOrElse { failure ->
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        if (!genuinelyAbsent) {
+            log(
+                "[economics] $file unreadable/corrupt (${SafeFailureText.render(failure)}) — " +
+                    "history treated as empty and overwritten at the next persist\n",
+            )
+        }
+        emptyList()
+    }
 
     private fun flushScheduled() {
         val (snapshot, v) = synchronized(lock) { buckets.values.sortedBy { it.hour } to version }

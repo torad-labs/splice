@@ -10,6 +10,7 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
+import { NOT_REPORTED } from '../src/entities/account';
 import {
   ATTENTION_CAUSES,
   headAttention,
@@ -244,7 +245,7 @@ describe('what one strip prints', () => {
 
   test('the window prints its percentage, and not reported when there is none', () => {
     expect(strip()).toContain('84%');
-    expect(strip({ key: 'other' })).toContain('not reported by provider');
+    expect(strip({ key: 'other' })).toContain(NOT_REPORTED);
   });
 
   test('a pending field source says not built rather than inventing a value', () => {

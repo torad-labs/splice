@@ -274,6 +274,9 @@ describe('pending routes render an empty naming their row', () => {
 
 describe('what one strip prints', () => {
   test('the edge label, the window length and the not-reported text all reach the page', () => {
+    // M1-74 converged the word on the entity's NOT_REPORTED (one fact, one spelling). The assertion
+    // is the PROPERTY - the entity's word reaches the page - rather than the literal it used to be,
+    // so a future change of the word does not have to be chased through every test that shows it.
     const out = render(h(AccountStrip, {
       account: account({ label: 'quiet', windows: [window5h(null)] }),
       isNext: false,
@@ -284,7 +287,7 @@ describe('what one strip prints', () => {
     expect(out).toContain('quiet');
     expect(out).toContain('>5h<');
     expect(out).toContain(NOT_REPORTED);
-    expect(out).toContain('not reported by provider'); // and it is PRINTED, not only labelled
+    expect(out).toContain(NOT_REPORTED); // and it is PRINTED, not only labelled
   });
 
   test('the next target prints the rule that chose it', () => {

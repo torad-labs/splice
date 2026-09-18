@@ -109,8 +109,23 @@ PATHS: dict[str, pathlib.Path | list[pathlib.Path]] = {"passthrough": PASS, "cha
 # `_alts`). The carrier LIST stays ALL-OF: every carrier must still be read, no carrier is optional.
 REQUIRED = {
     "passthrough": (
-        ['"refusal" -> ErrorType.API_ERROR to',
-         '"pause_turn" -> ErrorType.OVERLOADED to',
+        # V4-154: V4-117 REWROTE THESE TWO ARMS AND THIS WALL WENT STALE AGAINST ITS OWN SOURCES.
+        # The arms used to inline the ErrorType; they now name a FailureCause per arm and the
+        # cause-to-wire-type mapping lives in ONE table in core (WireType.kt). Behaviour is unchanged
+        # — WireType maps MODEL_REFUSED to API_ERROR and UPSTREAM_STATUS_5XX to OVERLOADED, the same
+        # two verdicts — so the wall was right about the text and wrong about the world, and it read
+        # as "a backend refusal is reported to the client as success", which was never true.
+        #
+        # THE FIX IS THE ONE THIS FILE'S OWN HISTORY ARGUES FOR, applied one level better: the tokens
+        # below are the CURRENT spelling of the same two arms, AND they are paired with the mapping
+        # table in WIRE_REQUIRED. That pair is what makes this a BEHAVIOUR check rather than a grep —
+        # an arm-token alone proves only that some string exists, while the two ends together prove
+        # the chain stop_reason -> FailureCause -> ErrorType still terminates where the invariant
+        # says. A refactor that moves the spelling again breaks the first token; a refactor that
+        # moves the MAPPING breaks the second, and that one is the semantically dangerous move,
+        # because it changes what the client is told while every call site still reads correctly.
+        ['"refusal" -> FailureCause.MODEL_REFUSED to',
+         'FailureCause.UPSTREAM_STATUS_5XX to "backend paused',
          # 2026-08-30 — commit dd313db routes this arm through the shared classifier
          # (`UpstreamFailureClassifier.overflowFailure`) so the verdict carries Claude Code's
          # compaction trigger "prompt is too long" instead of a bare API_ERROR. Same carrier, same

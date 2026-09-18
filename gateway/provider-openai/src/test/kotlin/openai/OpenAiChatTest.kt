@@ -3,7 +3,6 @@
 // proving "any OpenAI-compatible vendor, zero new translator code". Request-builder shape pinned.
 package openai
 
-import splice.core.model.ClientWindows
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -26,6 +25,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse

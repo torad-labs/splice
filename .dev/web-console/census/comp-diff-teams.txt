@@ -1,0 +1,16 @@
+COMP-DIFF [teams-dark-1536x1024] overall 85% (match) structure 87% color 74% detail 85% bands 100%
+PALETTE comp #0c0e0e(63%) #ddd8c6(24%) #b6ac97(5%) #736f63(4%) #413f3b(3%)
+PALETTE build #081111(66%) #d5d4c4(26%) #646461(4%) #383837(3%) #a8a898(1%)
+REGION band-1             match         86%  structure  91%  color  79%  detail  83%
+REGION band-2             match         82%  structure  92%  color  72%  detail  80%
+REGION band-3             match         81%  structure  92%  color  70%  detail  84%
+REGION band-4             drift         77%  structure  89%  color  67%  detail  75%
+REGION band-5             contradicted  58%  structure  64%  color  68%  detail  51%
+REGION band-6             drift         66%  structure  85%  color  66%  detail  44%
+REGION band-7             drift         69%  structure  92%  color  69%  detail  40%
+REGION band-8             drift         70%  structure  87%  color  79%  detail  51%
+FILES side-by-side webui/.impeccable/review/census/diff/side-by-side.png
+FILES heatmap webui/.impeccable/review/census/diff/heatmap.png
+FILES regions 8 under webui/.impeccable/review/census/diff/regions
+WORST band-5 (contradicted, 58%); band-6 (drift, 66%); band-7 (drift, 69%)
+OPEN the side-by-side and the worst region pairs before deciding anything; the numbers rank, the crops decide.

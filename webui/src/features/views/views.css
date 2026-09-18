@@ -17,7 +17,7 @@
   color: var(--ink-mute);
   background: none;
   border: none;
-  border-bottom: var(--focus-width) solid transparent;
+  border-bottom: 2px solid transparent;
   padding: var(--space-2) var(--space-1);
   cursor: pointer;
 }
@@ -27,8 +27,8 @@
   border-bottom-color: var(--ink-strong);
 }
 .myx-views-tab:focus-visible {
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: var(--focus-offset);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .myx-views-edit {
@@ -49,7 +49,7 @@
   align-items: end;
   gap: var(--space-3);
   flex-wrap: wrap;
-  padding: var(--space-3) var(--space-0);
+  padding: var(--space-3) 0;
 }
 
 .myx-views-rename { display: flex; align-items: end; gap: var(--space-2); }
@@ -69,8 +69,8 @@
   padding: var(--space-1) var(--space-2);
 }
 .myx-views-field input:focus-visible {
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: var(--focus-offset);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .myx-views-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
@@ -87,6 +87,6 @@
 .myx-views-action:hover:not(:disabled) { border-color: var(--ink); color: var(--ink-strong); }
 .myx-views-action:disabled { color: var(--ink-mute); cursor: not-allowed; }
 .myx-views-action:focus-visible {
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: var(--focus-offset);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }

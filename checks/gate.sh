@@ -145,7 +145,7 @@ run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
 # pinned to a gpt-6 id (V4-28), and a bare `mini` effort clamp caught google/gemini-2.5-pro by
 # substring (V4-29). Fields are enumerated by parsing every shared *Quirks primary constructor on
 # disk, so a field added tomorrow is in scope without editing the checker; there is no allowlist.
-run "shared-quirks no vendor defaults" python3 checks/config/shared-quirks-no-vendor-defaults.py check .
+run "shared-quirks no vendor defaults" bun checks/config/shared-quirks-no-vendor-defaults.ts check .
 run "shared-quirks selftest" python3 checks/config/shared-quirks-no-vendor-defaults.py --selftest
 # V4-44: the OTHER half of the same surface. The check above keeps a VENDOR FACT out of a shared
 # dialect default; this one keeps a quirk KEY from drifting away from its documentation. The

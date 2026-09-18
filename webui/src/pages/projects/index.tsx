@@ -220,7 +220,15 @@ export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
         {/* The column COLLAPSES to 0 width until a strip is opened (.myx-px-board /
             .myx-px-board-open), so there is no empty to fill here: the swell only exists once
             there is something to swell to. */}
-        <aside className="myx-px-detail" aria-label={S.detail}>
+        {/* THE EMPTY LANDMARK IS HIDDEN WHILE IT IS EMPTY (M1-123, one shape across five pages).
+            At rest this aside is mounted and holds nothing, and an <aside> with a label is a
+            COMPLEMENTARY LANDMARK whatever else it carries — measured in the live accessibility
+            tree: role=complementary, ignored=false, children=0 — so a reader's landmark list
+            carried an empty "project detail". aria-hidden is gated by the SAME `open === null` that
+            gates the content, so the exposure and the content cannot desync: they are one
+            expression, not two facts kept in step. The element stays mounted, which is what gives
+            the track something to transition from — the whole reason collapse beat unmount. */}
+        <aside className="myx-px-detail" aria-label={S.detail} aria-hidden={open === null}>
           {open === null ? null : (
             <>
               <div className="myx-px-detail-head">

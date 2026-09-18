@@ -237,7 +237,15 @@ export function FleetPage() {
             "no head opened" describes a panel that does not exist. The strips are the affordance;
             the comp of record has no resting detail column either. `EMPTIES.noOpened` is unread
             here - model.ts is outside this row's fence, so it is reported in the ledger. */}
-        <aside className="myx-fleet-detail" aria-label={S.detail}>
+        {/* THE EMPTY LANDMARK IS HIDDEN WHILE IT IS EMPTY (M1-123, one shape across five pages).
+            At rest this aside is mounted and holds nothing, and an <aside> with a label is a
+            COMPLEMENTARY LANDMARK whatever else it carries — measured in the live accessibility
+            tree: role=complementary, ignored=false, children=0 — so a reader's landmark list
+            carried an empty "fleet detail". aria-hidden is gated by the SAME `opened === null` that
+            gates the content, so the exposure and the content cannot desync: they are one
+            expression, not two facts kept in step. The element stays mounted, which is what gives
+            the track something to transition from — the whole reason collapse beat unmount. */}
+        <aside className="myx-fleet-detail" aria-label={S.detail} aria-hidden={opened === null}>
           {opened === null ? null : (
             <>
               <div className="myx-fleet-detail-head">

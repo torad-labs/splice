@@ -205,7 +205,15 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
         {/* The column COLLAPSES to 0 width until a strip is opened (.myx-sx-board /
             .myx-sx-board-open): the swell only exists once there is something to swell to, so
             there is no empty to fill here. */}
-        <aside className="myx-sx-detail" aria-label={S.detail}>
+        {/* THE EMPTY LANDMARK IS HIDDEN WHILE IT IS EMPTY (M1-123, one shape across five pages).
+            At rest this aside is mounted and holds nothing, and an <aside> with a label is a
+            COMPLEMENTARY LANDMARK whatever else it carries — measured in the live accessibility
+            tree: role=complementary, ignored=false, children=0 — so a reader's landmark list
+            carried an empty "session detail". aria-hidden is gated by the SAME `open === null` that
+            gates the content, so the exposure and the content cannot desync: they are one
+            expression, not two facts kept in step. The element stays mounted, which is what gives
+            the track something to transition from — the whole reason collapse beat unmount. */}
+        <aside className="myx-sx-detail" aria-label={S.detail} aria-hidden={open === null}>
           {open === null ? null : (
             <>
               <div className="myx-sx-detail-head">

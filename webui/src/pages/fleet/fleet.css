@@ -22,14 +22,29 @@
   color: var(--ink-strong);
 }
 
+/* AT REST THE RACK TAKES THE WHOLE FRAME; THE COLUMN ARRIVES WITH ITS CONTENT (M1-102, measured).
+   The detail column was 384 of 1536 - 25.0% of the frame - in the state EVERYBODY ARRIVES IN,
+   because no head is open until one is clicked, and what it carried was a 185.5x63.4 card: 3.5%
+   of the column, 0.7% of the frame. The cost of that was not abstract. This rack's own field grid
+   declares 1200px of columns (measured: provider 134, head 163, port 67, dialect 106, model 106,
+   account 106, in flight 67, window 269, last turn 182) and the bay had 969.8px, so `window` was
+   cut 126px past the bay edge and `last turn` sat 308px past it, ENTIRELY INVISIBLE - two columns
+   of real data paid for by one column of nothing. With the resting column gone the rack gets
+   1353.8px, its own grid fits with about 98px to spare, and it stops scrolling at rest too.
+   AND THE COMP OF RECORD AGREES: team-board-a is three equal racks edge to edge with no resting
+   detail column anywhere in the frame. This is not a new idea, it is the comp's own rest state. */
 .myx-fleet-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* The open state, and ONLY the open state, declares the 24rem track. Nothing else changes: the
+   column is a track when there is a head in it and no track when there is not. */
+.myx-fleet-body-open { grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); }
 
 /* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44): the body stretches instead of
    starting at the top and the rack area takes what is left. Measured before this: the deepest bay
@@ -47,7 +62,8 @@
    at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
    place, for every page row; until it is hoisted there it is repeated here with this note. */
 @media (max-width: 1120px) {
-  .myx-fleet-body { grid-template-columns: minmax(0, 1fr); }
+  .myx-fleet-body,
+  .myx-fleet-body-open { grid-template-columns: minmax(0, 1fr); }
 }
 
 .myx-fleet-bays {
@@ -66,6 +82,24 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+}
+
+/* THE SWELL (M1-102): the column does not slide in or fade up on a rule invented here - it arrives
+   with the world's one opening gesture, exactly as compact-feed ships it for its own detail
+   (`myx-cfeed-swell`, compact-feed.css:25-39, which is the implementation of CONTRACTS.md section
+   6's "swell: a strip opening into its detail column, --dur-2"). Mirrored rather than re-invented,
+   including the reduced-motion rule: under reduce the column holds still entirely. */
+.myx-fleet-detail > * {
+  animation: myx-fleet-swell var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes myx-fleet-swell {
+  from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-fleet-detail > * { animation: none; }
 }
 
 .myx-fleet-detail-head {

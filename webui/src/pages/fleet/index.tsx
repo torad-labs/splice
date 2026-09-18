@@ -185,7 +185,7 @@ export function FleetPage() {
       {headsResource.error === null ? null : <Fault message={headsResource.error} />}
       {headsResource.data === null ? <Blank strips={4} /> : null}
 
-      <div className="myx-fleet-body">
+      <div className={opened === null ? 'myx-fleet-body' : 'myx-fleet-body myx-fleet-body-open'}>
         <div className="myx-fleet-bays">
           {headsResource.data !== null && heads.length === 0 ? (
             <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} />
@@ -221,44 +221,52 @@ export function FleetPage() {
           ) : null}
         </div>
 
-        <aside className="myx-fleet-detail" aria-label={S.detail}>
-          {opened === null ? (
-            <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
-          ) : (
-            <>
-              <div className="myx-fleet-detail-head">
-                <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
-                <span className="myx-fleet-detail-name">{opened.label}</span>
-                <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
-              </div>
+        {/* THE COLUMN ARRIVES WITH ITS CONTENT (M1-102). It is not rendered at rest at all, and
+            that is the whole of the change: the resting column cost 25.0% of the frame - 384 of
+            1536 - to carry a card covering 3.5% of itself, and it was paid for by the rack, whose
+            own 1200px grid had 969.8px to fit in, leaving `window` cut 126px past the bay edge and
+            `last turn` 308px past it, entirely invisible. Unrendered, the rack fits its own grid.
+            THE EMPTY GOES WITH IT, and that is deliberate rather than an oversight: an honest empty
+            says what a panel is missing and which source would supply it, and at rest there is no
+            panel to be missing anything - the console has not been asked for a head yet. A card
+            captioned "no head opened" is not reporting an absence, it is describing a panel that
+            does not exist. The strips are the affordance; the comp of record has no resting detail
+            column either. `EMPTIES.noOpened` is now unread here - model.ts is outside this row's
+            fence, so it is reported in the ledger rather than deleted. */}
+        {opened === null ? null : (
+          <aside className="myx-fleet-detail" aria-label={S.detail}>
+            <div className="myx-fleet-detail-head">
+              <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
+              <span className="myx-fleet-detail-name">{opened.label}</span>
+              <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
+            </div>
 
-              <section className="myx-fleet-section">
-                <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
-                <Lifecycle head={opened} />
-                <Empty text={EMPTIES.daemonRestart.text} source={EMPTIES.daemonRestart.source} />
-              </section>
+            <section className="myx-fleet-section">
+              <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
+              <Lifecycle head={opened} />
+              <Empty text={EMPTIES.daemonRestart.text} source={EMPTIES.daemonRestart.source} />
+            </section>
 
-              <section className="myx-fleet-section">
-                <h2 className="myx-fleet-section-title">{S.knobs}</h2>
-                {overrides.length === 0 ? (
-                  <p className="myx-fleet-note">{S.noOverrides}</p>
-                ) : (
-                  overrides.map((knob) => (
-                    <div key={knob.key}>
-                      <KnobRow knob={knob} />
-                      <p className="myx-fleet-note">{dispositionText(knob.hot)}</p>
-                    </div>
-                  ))
-                )}
-              </section>
+            <section className="myx-fleet-section">
+              <h2 className="myx-fleet-section-title">{S.knobs}</h2>
+              {overrides.length === 0 ? (
+                <p className="myx-fleet-note">{S.noOverrides}</p>
+              ) : (
+                overrides.map((knob) => (
+                  <div key={knob.key}>
+                    <KnobRow knob={knob} />
+                    <p className="myx-fleet-note">{dispositionText(knob.hot)}</p>
+                  </div>
+                ))
+              )}
+            </section>
 
-              <section className="myx-fleet-section">
-                <h2 className="myx-fleet-section-title">{S.pool}</h2>
-                <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />
-              </section>
-            </>
-          )}
-        </aside>
+            <section className="myx-fleet-section">
+              <h2 className="myx-fleet-section-title">{S.pool}</h2>
+              <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />
+            </section>
+          </aside>
+        )}
       </div>
     </div>
   );

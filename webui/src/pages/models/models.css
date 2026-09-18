@@ -119,3 +119,26 @@
      board is the full width here too. */
   .myx-models-body-open { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* THE RACK'S COLUMN NAMES, ONCE (m1 design review B9, wired by M2-33). components.tsx has always
+   said the bay head prints these and the strips carry values only; the names row is what makes
+   that true. It sits over cells that are `flex: 0 0 auto` with an inline flex-grow of their own
+   ch, so the name takes the same basis and the same growth (both arrive inline from ColumnNames)
+   or it drifts off its column. Here it does not shrink and it clips rather than wrapping, because
+   a wrapped name would make the head taller than the rows it labels. */
+.myx-models-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, which this page never received), AND ON THIS PAGE IT IS
+   A PRECONDITION FOR THE NAMES ROW RATHER THAN A TIDINESS. Measured at 1536 dark: every strip in
+   all three bays rendered 948px inside a 1293.8px rack, leaving 345.8px of bare bay to the right
+   of every row -- the slab M1-39 named. The names row does NOT leave it, because .myx-bay-fields
+   is a flex box at the bay's full width, so the six names spread across 1293.8px while their
+   values bunched into 948: the last name sat 301.9px right of the column it names, and the third
+   118.7px. A names row over columns it does not sit on is worse than no names row. With the rule
+   the worst disagreement across all three bays is 1px, and the bare band is gone.
+   Tried in the page before it was written, which is how the 301.9px was found at all. */
+.myx-models .myx-strip { width: 100%; }

@@ -21,8 +21,14 @@ function rateValue(model: CatalogModel, pick: (rates: NonNullable<CatalogModel['
 }
 
 /** The catalog rack's columns: the bay head prints these once and the strips below carry values
- *  only (CONTRACTS.md section 2, m1 design review B9). The struck row for a tier no model fills
- *  carries the first two, which is what a missing model means. */
+ *  only (CONTRACTS.md section 2, m1 design review B9).
+ *
+ *  THAT SENTENCE WAS TRUE OF THE INTENT AND FALSE OF THE CODE UNTIL M2-33. This table existed and
+ *  was exported for exactly the purpose it names, and then every strip was given `label={column
+ *  .label}` and the bay was given no names row at all -- so each of the thirteen strips printed
+ *  the six column names again. Measured at 1536 dark: a strip stood 63.8px and 42px of it was the
+ *  values, so a third of every row went on repeating what the rack says once. The wiring is the
+ *  fix; the design was already written down here. */
 export const MODEL_COLUMNS: readonly { key: string; label: string; w: number; prose?: boolean }[] = [
   { key: 'model', label: S.model, w: 24, prose: true },
   { key: 'slot', label: S.slot, w: 8, prose: true },
@@ -57,7 +63,6 @@ function ModelStrip({ model, slot, selected, onOpen }: {
         <StripField
           key={column.key}
           w={column.w}
-          label={column.label}
           value={modelCell(model, slot, column.key)}
           {...(column.prose ? { mono: false } : {})}
         />
@@ -77,6 +82,22 @@ function modelCell(model: CatalogModel, slot: string, key: string): string {
   return rateValue(model, (rates) => rates.output);
 }
 
+/** The rack's column names, once, at the ch of the columns they name (B9). The growth is the half
+ *  that is easy to miss: `strip-field.tsx` sets flexGrow to each cell's OWN ch (M1-73), so a name
+ *  row fixed at `w ch` drifts off the column under it -- further the more slack the rack has. The
+ *  name takes the same basis and the same growth, so the two cannot disagree. */
+function ColumnNames() {
+  return (
+    <>
+      {MODEL_COLUMNS.map((column) => (
+        <span key={column.key} className="myx-models-col" style={{ width: `${column.w}ch`, flexGrow: column.w }}>
+          {column.label}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /** One head's rack: its four tiers, then every model that fills no tier. */
 export function HeadCatalogBay({ head, selected, onSelect }: {
   head: HeadCatalog;
@@ -89,6 +110,7 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
       label={head.key}
       count={head.models.length}
       empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
+      fields={<ColumnNames />}
     >
       {slotTiers(head).map((tier) => (
         tier.model === null ? (
@@ -99,8 +121,23 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
             struck
             ariaLabel={`${S.slot} ${tier.slot}`}
           >
-            <StripField w={24} label={S.model} value={S.absent} mono={false} />
-            <StripField w={8} label={S.slot} value={tier.slot} mono={false} />
+            {/* SIX CELLS, FOUR OF THEM THE ABSENCE GLYPH -- not two cells (M1-107: a view decides
+                what a cell SHOWS, never how many cells a row has). This row carried the first two
+                only, on the reading that two cells ARE what a missing model means, and measured at
+                1536 dark that ended the strip at x=553 in a rack whose other rows run to x=1137:
+                the bay stopped being a grid at the third column and the eye had nothing to read
+                down. The sibling rack on usage already renders all six with `n/r` for the same
+                vacant tiers, from the same data, so this is the tree's own answer and not a new
+                one. `n/r` is the right word by the vocabulary in strings.ts: nobody reported a
+                value for this cell, because there is no model here to report one. */}
+            {MODEL_COLUMNS.map((column) => (
+              <StripField
+                key={column.key}
+                w={column.w}
+                value={column.key === 'slot' ? tier.slot : S.absent}
+                {...(column.prose ? { mono: false } : {})}
+              />
+            ))}
           </Strip>
         ) : (
           <ModelStrip

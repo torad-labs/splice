@@ -5,7 +5,16 @@
 // editor, so it renders readOnly rather than swallowing keystrokes.
 import { cx } from '../lib';
 
-export type Provenance = 'default' | 'defaults table' | 'head override' | 'state file' | 'env' | 'patch';
+/**
+ * The seven provenance names a field box may print.
+ *
+ * The first six are the CONFIG layers, weakest first (FEATURES.md 2.2). `splice.toml` is the
+ * seventh and answers a different question: a topology key does not come from any layer of the
+ * runtime config, it comes from the FILE, and the six config names had no honest one to give it
+ * (M2-05 finding: the topology rows had to borrow `defaults table`, which names the `[defaults]`
+ * layer specifically). When the source of a value IS the file, the field says so.
+ */
+export type Provenance = 'default' | 'defaults table' | 'head override' | 'state file' | 'env' | 'patch' | 'splice.toml';
 
 export function FieldBox({ label, value, provenance, hot, onChange }: {
   label: string;

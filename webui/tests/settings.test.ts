@@ -98,6 +98,14 @@ describe('settings: the topology section', () => {
     expect(section).toContain('unknown key');
   });
 
+  test('a topology row prints the file as its provenance, not a config layer', () => {
+    // splice.toml is the seventh provenance name (CONTRACTS.md section 2). Before it existed these
+    // rows borrowed `defaults table`, which names the [defaults] layer of the runtime config — a
+    // different thing from a [heads.<key>] field read out of the topology file.
+    expect(section).toContain('splice.toml');
+    expect(section).not.toContain('>defaults table<');
+  });
+
   test('the backup note is printed before any write', () => {
     expect(section).toContain('the daemon backs the file up first');
   });

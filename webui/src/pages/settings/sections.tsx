@@ -5,8 +5,9 @@
 // section that has to be reached through one would be untestable for no reason.
 import { Bay, Btn, ConfirmBtn, Empty, FieldBox, Figure, HolderEdge, Reveal } from '@shared/ui';
 import type { ClaudeHeadState } from '@entities/claude-head';
-import { TOPOLOGY_PROVENANCE, validateTopology } from '@entities/topology';
+import { validateTopology } from '@entities/topology';
 import type { TopologyState, TopologyWriteResult } from '@entities/topology';
+import { TOPOLOGY_PROVENANCE } from '@features/head-edit';
 import { TomlEditor, TomlMerge } from '@widgets/toml-editor';
 import { changedPaths, coerce, EMPTIES, flattenTopology, setAtPath, toToml, valueAtPath } from './model';
 import { S } from './strings';

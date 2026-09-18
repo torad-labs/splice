@@ -188,6 +188,9 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
           )}
         </div>
 
+        {/* The column COLLAPSES to 0 width until a strip is opened (.myx-sx-board /
+            .myx-sx-board-open): the swell only exists once there is something to swell to, so
+            there is no empty to fill here. */}
         <aside className="myx-sx-detail" aria-label={S.detail}>
           {open === null ? null : (
             <>

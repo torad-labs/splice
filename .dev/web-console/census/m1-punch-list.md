@@ -19,11 +19,11 @@ produces it, and that file is matched against every in-flight row's fence.
 | # | constant | address | measured | comp | delta | how far | owner |
 |---|---|---|---|---|---|---|---|
 | 1 | `rule.window.x` | all 13 | 59.77% | 41% | +18.77% | 45.8% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 2 | `strip.h` | 6: turns sessions projects usage models doctor | 4.1% | 6.5% | -2.40% | 36.9% | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| 2 | `strip.h` | 6: turns sessions projects usage models doctor | 4.1% | 6.5% | -2.40% | 36.9% | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
 | 3 | `rule.none.x` | all 13 | 90.68% | 72% | +18.68% | 25.9% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
 | 4 | `text.window.cap` | all 13 | 14px | 11.7px | +2.30px | 19.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 5 | `text.bay.label.cap` | all 13 | 9px | 10.9px | -1.90px | 17.4% | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
-| 6 | `bay.label-centre` | all 13 | 37.71% | 45.45% | -7.74% | 17.0% | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| 5 | `text.bay.label.cap` | all 13 | 9px | 10.9px | -1.90px | 17.4% | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
+| 6 | `bay.label-centre` | all 13 | 37.71% | 45.45% | -7.74% | 17.0% | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
 | 7 | `text.clocks.cap` | all 13 | 14px | 12px | +2.00px | 16.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
 | 8 | `text.none.cap` | all 13 | 14px | 12px | +2.00px | 16.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
 | 9 | `text.health.cap` | all 13 | 11px | 12.4px | -1.40px | 11.3% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
@@ -37,10 +37,10 @@ Full table: `comp-check.txt` (133 rows outside tolerance across the 13 addresses
 
 | constant | addresses | measured | what the comp shows | owner |
 |---|---|---|---|---|
-| `field.label-rule` | 7: turns sessions projects usage settings models doctor | 0.00% | the rule under the label divider (CSS cites the comp crop at row y=229) | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
-| `strip.inset-x` | 1: settings | n/a | a strip inside every bay to measure against | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
-| `strip.h` | 1: settings | n/a | a strip in the rack (the address renders none) | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
-| `field.divider` | 1: settings | n/a | a vertical divider between field boxes | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| `field.label-rule` | 7: turns sessions projects usage settings models doctor | 0.00% | the rule under the label divider (CSS cites the comp crop at row y=229) | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
+| `strip.inset-x` | 1: settings | n/a | a strip inside every bay to measure against | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
+| `strip.h` | 1: settings | n/a | a strip in the rack (the address renders none) | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
+| `field.divider` | 1: settings | n/a | a vertical divider between field boxes | M1-39 @design-builder (webui/src/shared/ui/ui.css) |
 
 **CAVEAT THAT TRAVELS WITH EVERY ROW ABOVE.** `comp-check.mjs` carries its own fixture table and it is the STALE one: `turns`, `sessions`, `projects`, `logs`, `accounts` and `doctor` were measured against LIVE daemon data rather than their fixtures, because that table still names `demo` (see section 4). The chrome constants (rail, rule, the text roles) are data-independent and stand; the rack constants for those six addresses do not.
 
@@ -78,19 +78,19 @@ Binning rule, applied to every frame including the comp's, in one run: a pixel i
 
 | address | frame | mid-tone | delta vs comp |
 |---|---|---|---|
-| logs | logs-light-1536x1024.png | 83.6% | +48.1 points |
-| turns | turns-light-1536x1024.png | 83.3% | +47.8 points |
-| mcp | mcp-light-1536x1024.png | 73.9% | +38.4 points |
-| sessions | sessions-light-1280x800.png | 71.6% | +36.1 points |
-| settings | settings-light-1536x1024.png | 70.1% | +34.6 points |
-| usage | usage-light-1280x800.png | 64.8% | +29.3 points |
-| doctor | doctor-light-1536x1024.png | 8.9% | -26.6 points |
-| teams | teams-light-1280x800.png | 59.9% | +24.4 points |
-| accounts | accounts-light-1536x1024.png | 58.7% | +23.2 points |
-| compaction | compaction-light-1536x1024.png | 57.2% | +21.7 points |
-| fleet | fleet-light-1280x800.png | 56.8% | +21.3 points |
-| models | models-light-1536x1024.png | 56.1% | +20.6 points |
-| projects | projects-dark-1536x1024.png | 15.2% | -20.3 points |
+| logs | logs-light-1536x1024.png | 83.1% | +47.6 points |
+| turns | turns-light-1536x1024.png | 82.6% | +47.1 points |
+| sessions | sessions-light-1280x800.png | 74.6% | +39.1 points |
+| mcp | mcp-light-1536x1024.png | 73.3% | +37.8 points |
+| settings | settings-light-1536x1024.png | 70.3% | +34.8 points |
+| usage | usage-light-1536x1024.png | 65.9% | +30.4 points |
+| doctor | doctor-light-1536x1024.png | 63.7% | +28.2 points |
+| teams | teams-light-1280x800.png | 60.2% | +24.7 points |
+| accounts | accounts-light-1536x1024.png | 58.6% | +23.1 points |
+| compaction | compaction-light-1536x1024.png | 57.1% | +21.6 points |
+| models | models-light-1536x1024.png | 56.3% | +20.8 points |
+| fleet | fleet-light-1280x800.png | 55.8% | +20.3 points |
+| projects | projects-light-1280x800.png | 54.5% | +19.0 points |
 
 **INSTRUMENT DISAGREEMENT, reported rather than resolved** (the row asks for both): this per-pixel rule reads the comp at 35.5% where the design review's hand census says **11.9%**. The review's number is a clustered palette share — `spec.json`'s own coverage of its top two entries, which reproduces exactly as `1 - 0.6407 - 0.24 = 11.93` — and this file's is a per-pixel distance at a stated tolerance. They are different measurements; neither is the other's check. The gap is the comp's GRAIN: its dark ground spreads over more than 8 steps, so a tight per-pixel rule under-counts it, while a loose one cannot be used at all because the light room's two grounds are only 22 steps apart and their discs overlap (at tolerance 32 in the light theme the flat share exceeds 100%).
 

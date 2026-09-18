@@ -13,7 +13,7 @@ import { describe, expect, test } from 'vitest';
 import { costOf, sum, within } from '../src/entities/economics';
 import { slotTiers } from '../src/entities/model';
 import type { HeadCatalog } from '../src/entities/model';
-import { CompactFeed, edgeFor } from '../src/widgets/compact-feed';
+import { CompactFeed, edgeFor, stateOf } from '../src/widgets/compact-feed';
 import { byteRows, peakMax, peakOf, tokenRows, totalOf, toolRows, WINDOWS, windowHours } from '../src/widgets/scope-chart';
 import { CompactionBoard } from '../src/pages/compaction';
 import { fixtureCompact } from '../src/pages/compaction/fixtures/compaction';
@@ -375,5 +375,57 @@ describe('a rack of like rows prints its column names once', () => {
     const rack = first(racks(planted));
     expect(rack.label).toBe('planted');
     expect(rack.labels).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// M2-32 follow-up, ruled 2026-09-18: THE HOLDER EDGE CARRIES THE STATE, NOT THE OUTCOME'S PREFIX.
+//
+// The edge label has a fixed 6ch budget that CLIPS (ui.css:349, B1, deliberate), and the feed was
+// passing it the daemon's outcome name — so `model_summary` and `model_fallback` both printed
+// `mode…` on adjacent rows: one label, two outcomes, and the full name already two cells to the
+// right (m1 design review B10). A per-outcome word is not available and that is a fact about the
+// payload rather than a preference: `by_outcome` is `Record<string, number>`, so the outcome set
+// is open and the console cannot enumerate it. The STATE set is closed because `stateOf` computes
+// it, which is what makes three words enough and what this wall pins.
+describe('the compaction edge states what happened, in a word that fits its column', () => {
+  const WORDS = ['ok', 'warn', 'fail'];
+
+  test('every state word fits the edge budget, and they are distinct', () => {
+    // 6ch of the label face. A word longer than its column would reintroduce the very truncation
+    // this change removes, so the budget is asserted rather than assumed — if a later state needs
+    // a longer word, THIS is the line that says the budget is the thing to change.
+    expect(WORDS.map((word) => word.length).filter((n) => n > 6)).toEqual([]);
+    expect(new Set(WORDS).size).toBe(WORDS.length);
+  });
+
+  test('an outcome earns one state, and the colour is read from the same word', () => {
+    expect(stateOf('model_summary')).toBe('ok');
+    expect(stateOf('model_fallback')).toBe('ok');
+    expect(stateOf('empty_model')).toBe('fail');
+    expect(stateOf('stream_error')).toBe('fail');
+    expect(stateOf('upstream_error')).toBe('fail');
+    expect(stateOf('truncated')).toBe('warn');
+    // An outcome name the console has never seen is `warn`, never `ok`: the daemon's set is open.
+    expect(stateOf('something_new')).toBe('warn');
+    // The colour cannot disagree with the word, because it is derived from it.
+    for (const outcome of ['model_summary', 'truncated', 'stream_error', 'something_new']) {
+      expect(edgeFor(outcome)).toBe({ ok: 'green', warn: 'amber', fail: 'red' }[stateOf(outcome)]);
+    }
+  });
+
+  test('no edge label on the page is an outcome name, and no two rows say the same thing twice', () => {
+    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
+    const labels = [...markup.matchAll(/<span class="myx-edge-label">([^<]*)</g)].map((m) => m[1]);
+    // `total` is the totals row's own edge and is not a state; every other label is one of three.
+    expect(labels.length).toBeGreaterThan(1);
+    expect([...new Set(labels)].filter((label) => label !== 'total').sort()).toEqual(['fail', 'ok', 'warn']);
+    // THE DEFECT, PINNED: an edge label that is a PREFIX of the outcome named on the same row is
+    // the state the page was in — `mode…` over `model_summary`. Nothing may print that way again.
+    for (const outcome of Object.keys(fixtureCompact.stats.by_outcome)) {
+      for (const label of labels) {
+        expect(`${outcome} / ${label}`).not.toBe(`${outcome} / ${outcome.slice(0, label.length)}`);
+      }
+    }
   });
 });

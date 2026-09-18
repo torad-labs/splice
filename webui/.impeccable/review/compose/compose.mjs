@@ -26,7 +26,7 @@ const R = '/home/marcos/Documents/dev/projects/mythos/repo/.claude/worktrees/v0.
 const { mgmtKey, withChrome, show } = await import(`${R}/dev/web-console/lib/cdp.mjs`);
 const { urlFor } = await import(`${R}/dev/web-console/lib/fixtures.mjs`);
 
-const PAGES = ['usage', 'compaction'];
+const PAGES = ['models'];
 
 // NO BACKTICKS INSIDE THIS LITERAL. One in a comment terminated a sibling instrument's template and
 // cost a SyntaxError that read like a logic bug; the load-time guard below is why that is mechanical
@@ -125,7 +125,15 @@ const READ = `(() => {
   }
   pen.remove();
   const main = document.querySelector('main') || document.body;
+  // THE CAPTURE ASSERTS IT PHOTOGRAPHED OUR PAGE, not any page (law 23's inverted face, and this
+  // instrument failed it on 2026-09-18: the dev server was down, Chrome drew its own
+  // ERR_CONNECTION_REFUSED page, and a guard counting 40 elements and 40 characters called that
+  // PHOTOGRAPHED A PAGE -- 42 and 162. An error page passes any threshold written about SIZE. So
+  // the shell is named: .myx-console is this console's root and nothing else has it, and the hash
+  // is read back because a page that redirected is not the page that was asked for.
   return JSON.stringify({ bays, strips: document.querySelectorAll('.myx-strip').length,
+                          shell: document.querySelector('.myx-console') !== null,
+                          at: String(location.hash || ''),
                           text: (main.innerText || '').trim().length,
                           frame: [window.innerWidth, window.innerHeight] });
 })()`;
@@ -145,10 +153,16 @@ for (const addr of PAGES) {
       const r = await send('Runtime.evaluate', { expression: READ, returnByValue: true });
       return JSON.parse(r.result.value);
     });
-    // A capture that measured an empty page is not a page with no repeated labels (law 23's
-    // inverted face): it is named, not silently counted as a clean result.
+    // Three outcomes and never two. PHOTOGRAPHED NOTHING is a page that is not ours at all (a dead
+    // dev server, a redirect); PHOTOGRAPHED AN EMPTY PAGE is our shell with no rack in it, which is
+    // sometimes the truth; only the third is a reading. Neither of the first two is a clean result.
+    if (!res.shell || !res.at.includes(`/${addr}`)) {
+      console.log(`NOTHING ${addr}: no .myx-console shell, at ${JSON.stringify(res.at)} -- this is not our page`);
+      fails++;
+      continue;
+    }
     if (res.text < 40) {
-      console.log(`EMPTY ${addr}: the page rendered ${res.text} characters -- not a reading`);
+      console.log(`EMPTY ${addr}: our shell rendered ${res.text} characters -- not a reading`);
       fails++;
       continue;
     }

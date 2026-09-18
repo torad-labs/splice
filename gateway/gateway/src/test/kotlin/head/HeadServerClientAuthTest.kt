@@ -11,6 +11,8 @@
 // which serves the codex-shaped dialects.
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -38,12 +40,8 @@ import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -139,16 +137,17 @@ class HeadServerClientAuthTest {
         val head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
-                inferenceToken = MGMT_KEY,
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact-$port.json")),
-                usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
-                perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
                 log = {},
-                forwardClientAuth = forwardClientAuth,
+                policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
+            ).copy(
+                // This rig carries its OWN bearer and its own store files, keyed by port so two
+                // heads in one test never share a usage file.
+                inferenceToken = MGMT_KEY,
+                stores = headStores(tmp, suffix = "-$port"),
             ),
         )
         runBlocking { head.start() }

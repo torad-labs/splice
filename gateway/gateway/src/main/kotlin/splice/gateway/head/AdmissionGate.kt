@@ -63,13 +63,13 @@ internal class AdmissionGate(
         block: MaterializedRequest<T>,
     ): T? = try {
         if (fastFail) {
-            val leased = deps.requestMaterializationGate.tryWithLease(block)
+            val leased = deps.seams.requestMaterializationGate.tryWithLease(block)
             if (leased == null) {
                 responses.respondAtCapacity(call, "gateway busy — retry")
             }
             leased
         } else {
-            deps.requestMaterializationGate.withLease(block)
+            deps.seams.requestMaterializationGate.withLease(block)
         }
     } catch (tooLarge: RequestBodyTooLarge) {
         responses.respondTooLarge(call, tooLarge.limit)

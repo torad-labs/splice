@@ -48,7 +48,39 @@ internal class HeadServerFactory(
             deps = HeadDeps(
                 upstream = upstreamFactory.upstreamFor(ctx, cfg, log),
                 inferenceToken = mgmtKey.get(),
-                forwardClientAuth = forwardClientAuth,
+                // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the
+                // feature — a head may legitimately run without economics or quota, and the tests
+                // that decline them say so through ONE testFixtures builder — but a DEFAULT let a
+                // caller that simply forgot get the same head as one that chose.
+                stores = HeadDeps.HeadStores(
+                    usageStore = stores.usageStore,
+                    perfStats = stores.perfStats,
+                    economicsStore = stores.economics,
+                    compactStats = stores.compactStats,
+                    shadow = ShadowClassifier(log = log),
+                    clientWindows = stores.clientWindows,
+                ),
+                quotaBundle = HeadDeps.HeadQuota(
+                    quota = stores.quota,
+                    accountPool = stores.accountPool,
+                    accountQuotas = stores.accountQuotas,
+                ),
+                seams = HeadDeps.HeadSeams(
+                    requestMaterializationGate = requestMaterializationGate,
+                    clientVersions = clientVersions,
+                ),
+                policy = HeadDeps.HeadPolicy(
+                    // Per HEAD, resolved once here from its own [heads.KEY] entry: a standing prompt
+                    // is a property of the head, not of the model or the project a session runs in.
+                    // This constructor is where a missing system_prompt_file becomes a load-time
+                    // config error rather than a prompt that silently never rides.
+                    systemPrompt = ctx.head.systemPromptFor(key, configDir),
+                    forwardClientAuth = forwardClientAuth,
+                    mirrorReasoning = cfg.mirrorReasoning,
+                    progressLine = cfg.progressLine,
+                    maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
+                    requestReadTimeoutMs = knobs[Knob.REQUEST_READ_TIMEOUT_MS.key] as Long,
+                ),
                 // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
                 // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
                 // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
@@ -58,28 +90,8 @@ internal class HeadServerFactory(
                     maxInflight = { config.getConfig(key).maxInflight },
                     maxQueued = { config.getConfig(key).maxQueued },
                 ),
-                shadow = ShadowClassifier(log = log),
-                compactStats = stores.compactStats,
-                mirrorReasoning = cfg.mirrorReasoning,
-                progressLine = cfg.progressLine,
-                usageStore = stores.usageStore,
-                perfStats = stores.perfStats,
-                economicsStore = stores.economics,
-                quota = stores.quota,
-                accountPool = stores.accountPool,
-                accountQuotas = stores.accountQuotas,
-                clientWindows = stores.clientWindows,
                 compactionTail = compactionTail,
-                // Per HEAD, resolved once here from its own [heads.KEY] entry: a standing prompt is
-                // a property of the head, not of the model or the project a session runs in. This
-                // constructor is where a missing system_prompt_file becomes a load-time config
-                // error rather than a prompt that silently never rides.
-                systemPrompt = ctx.head.systemPromptFor(key, configDir),
-                clientVersions = clientVersions,
                 log = log,
-                requestMaterializationGate = requestMaterializationGate,
-                maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
-                requestReadTimeoutMs = knobs[Knob.REQUEST_READ_TIMEOUT_MS.key] as Long,
             ),
         )
     }

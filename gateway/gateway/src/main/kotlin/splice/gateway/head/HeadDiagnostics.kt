@@ -14,19 +14,22 @@ import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
+import splice.spi.InflightGate
 import splice.spi.Provider
 
 internal class HeadDiagnostics(
     private val provider: Provider,
     private val listenPort: Int,
-    private val deps: HeadDeps,
+    /** The ONE thing this collaborator needs from the head (V4-105 item 3): it reads `deps.gate`
+     *  and nothing else, so the whole 25-parameter bundle was carried to reach one snapshot. */
+    private val gate: InflightGate,
     private val driver: TurnDriver,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun healthSnapshot(running: Boolean): HeadHealth {
         val counts = driver.healthCounters()
-        val gateSnap = deps.gate.snapshot()
+        val gateSnap = gate.snapshot()
         return HeadHealth(
             ok = running,
             running = running,

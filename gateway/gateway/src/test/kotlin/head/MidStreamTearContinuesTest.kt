@@ -33,6 +33,8 @@
 // truncation carrying its partial (V4-41). Arms 5 and 6 are the half that was genuinely blind.
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import kotlinx.coroutines.runBlocking
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -52,12 +54,7 @@ import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -343,15 +340,16 @@ class MidStreamTearContinuesTest {
         val head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 10_000, totalTimeoutMs = 60_000, maxRetries = 4),
-                inferenceToken = INFERENCE_TOKEN,
                 gate = InflightGate({ 4 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("ratelimit-$port.json")),
-                perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
                 log = { line -> journal.add(line) },
+            ).copy(
+                // This rig carries its OWN bearer and keys its store files by port, so both come from
+                // the site rather than the fixture's defaults.
+                inferenceToken = INFERENCE_TOKEN,
+                stores = headStores(tmp, suffix = "-$port"),
             ),
         )
         head.start()

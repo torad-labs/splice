@@ -5,6 +5,7 @@
 // after its first delta (SCENARIO:hold), and a ticker paced at 10 ms so 15 silent ticks fit a test.
 package head
 
+import campaign.v4105.headDeps
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
@@ -24,12 +25,8 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.Ticker
@@ -81,20 +78,18 @@ class HeadServerHeartbeatTest {
                 configSummary = "detailed",
             ),
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
                 gate = gate,
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = { lines += it },
                 // 15 silent ticks = one heartbeat; at 10 ms a tick the test sees several per second.
-                ticker = Ticker {
-                    delay(10)
-                    true
-                },
+                seams = HeadDeps.HeadSeams(
+                    ticker = Ticker {
+                        delay(10)
+                        true
+                    },
+                ),
             ),
         )
         head.start()

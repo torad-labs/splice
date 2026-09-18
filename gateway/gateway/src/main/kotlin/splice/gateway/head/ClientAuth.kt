@@ -1,7 +1,7 @@
 // PORT-OF: splice/gateway/head/HeadServer.kt (authorize, forwardedClientHeaders,
 // FORWARDED_CLIENT_HEADERS) @ 1caedd6 — invariants unchanged: the mgmt-key front door and the
 // inbound-header allowlist, moved as ONE unit because they are one security decision — the same
-// deps.forwardClientAuth flag (derived from the resolved ClientAuthProvider, never a config string)
+// deps.policy.forwardClientAuth flag (derived from the resolved ClientAuthProvider, never a config string)
 // decides both whether the local check is bypassed and whether caller credentials ride upstream.
 // Split out (HD-24) so that pairing is greppable and the security audit has one file to read.
 package splice.gateway.head
@@ -43,7 +43,7 @@ internal class ClientAuth(
         // head exists to serve. The listener is loopback-only, and an unauthenticated caller
         // simply forwards no valid upstream credential and gets the upstream's own 401.
         // ONE exception, below: the mgmt key itself is never a credential this head may forward.
-        if (deps.forwardClientAuth) return allowUnlessOwnKey(call)
+        if (deps.policy.forwardClientAuth) return allowUnlessOwnKey(call)
         if (matchesInferenceToken(presentedCredential(call))) return true
         responses.respondUnauthorized(call)
         return false

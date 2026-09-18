@@ -4,6 +4,9 @@
 // Anthropic error shape, instead of growing the waiter queue without limit.
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
+import campaign.v4105.quotaFor
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -37,13 +40,8 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
-import splice.gateway.usage.UsageStore
 import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
@@ -117,14 +115,10 @@ class HeadServerCapacityTest {
         head = HeadServer(
             provider = capacityProvider(),
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = upstreamClient,
-                inferenceToken = "test-inference-token",
                 gate = gate,
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = {},
             ),
         )
@@ -447,22 +441,24 @@ class HeadServerCapacityTest {
         return HeadServer(
             provider = capacityProvider(),
             listenPort = pooledPort,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
-                inferenceToken = "test-inference-token",
                 gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("pooled-compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("pooled-usage.json"), tmp.resolve("pooled-ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("pooled-perf.jsonl")),
                 log = {},
                 // V4-80: a tracker, because the defect is only observable through one — without a
                 // QuotaTracker the head emits no unified family at all and `allowed` vs `rejected`
                 // is not a question the response answers. Empty on purpose: a head that has tracked
                 // no window must still STATE the refusal (V4-51's deliberate divergence), so this
                 // pins the refusal path rather than a snapshot's window members.
-                quota = QuotaTracker(tmp.resolve("pooled-quota.json"), log = LogSink { }),
-                accountPool = AccountPool(listOf(account), AccountNow(System::currentTimeMillis)),
+                quota = quotaFor(
+                    QuotaTracker(tmp.resolve("pooled-quota.json"), log = LogSink { }),
+                    AccountPool(listOf(account), AccountNow(System::currentTimeMillis)),
+                ),
+            ).copy(
+                // The second rig writes its OWN store files: two heads in one test sharing a usage
+                // file would read each other's rows, and it would compile either way.
+                stores = headStores(tmp, suffix = "-pooled"),
             ),
         )
     }

@@ -33,7 +33,7 @@ internal class LocalResponses(
         val usage = wiring.usagePayloadBuilderFor(
             provider.catalog,
             local.model,
-            deps.clientWindows.windowFor(local.sessionId),
+            deps.stores.clientWindows.windowFor(local.sessionId),
         )
         quotaHeaders(call, local.sessionId)
         if (local.stream) {
@@ -103,7 +103,7 @@ internal class LocalResponses(
             usagePayload = wiring.usagePayloadBuilderFor(
                 provider.catalog,
                 replayed.model,
-                deps.clientWindows.windowFor(replayed.sessionId),
+                deps.stores.clientWindows.windowFor(replayed.sessionId),
             ),
         )
         emitter.emitError(

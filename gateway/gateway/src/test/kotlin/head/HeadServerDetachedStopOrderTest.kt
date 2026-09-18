@@ -18,6 +18,7 @@
 //       restart and broke HeadServerCompactionReplayTest.
 package head
 
+import campaign.v4105.headDeps
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -39,8 +40,6 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.CompactionReplay
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadHealthCounters
@@ -48,8 +47,6 @@ import splice.gateway.head.HeadServer
 import splice.gateway.head.TurnDriveFactory
 import splice.gateway.head.TurnDriver
 import splice.gateway.head.TurnStreamer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -118,16 +115,12 @@ class HeadServerDetachedStopOrderTest {
         gate: InflightGate,
         lines: CopyOnWriteArrayList<String>,
         waiter: Waiter,
-    ): HeadDeps = HeadDeps(
+    ): HeadDeps = headDeps(
+        tmp = tmp,
         upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 1),
-        inferenceToken = "test-inference-token",
         gate = gate,
-        shadow = ShadowClassifier(log = {}),
-        compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-        usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-        perfStats = PerfStats(tmp.resolve("perf.jsonl")),
         log = { lines += it },
-        waiter = waiter,
+        seams = HeadDeps.HeadSeams(waiter = waiter),
     )
 
     /** A real client whose close() is a real FIN — no HTTP-client pool or cancellation semantics. */
@@ -237,7 +230,7 @@ class HeadServerDetachedStopOrderTest {
             // V4-99 item 5: the entry takes the SEAL CONTRACT, not the whole driver — the rig
             // reaches it through the driver it already builds rather than re-assembling the four
             // collaborators the contract is composed from.
-            sealedDrive = TurnDriver(builtProvider, builtDeps).sealedDrive,
+            sealedDrive = TurnDriver(builtProvider, builtDeps, CompactionReplay()).sealedDrive,
             replay = CompactionReplay(),
             detachedScope = scope,
         )

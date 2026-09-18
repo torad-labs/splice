@@ -3,6 +3,7 @@
 // proving "any OpenAI-compatible vendor, zero new translator code". Request-builder shape pinned.
 package openai
 
+import splice.core.model.ClientWindows
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -121,16 +122,7 @@ class OpenAiChatTest {
         head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
-                upstream = UpstreamClient(5_000, 30_000, 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("c.jsonl")),
-                usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
-                perfStats = PerfStats(tmp.resolve("p.jsonl")),
-                log = {},
-            ),
+            deps = testDeps(tmp),
         )
         head.start()
         awaitListening(port)
@@ -198,3 +190,24 @@ class OpenAiChatTest {
         assertTrue(req["tools"]!!.jsonArray.isNotEmpty())
     }
 }
+
+/** A LOCAL mirror of the :gateway fixture (campaign/v4105/HeadDepsFixture.kt), because that is in
+ *  another module test source set and this module cannot see it. Small on purpose: this module has
+ *  exactly one head shape, so there is nothing here to share with a second rig. */
+private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
+    upstream = UpstreamClient(5_000, 30_000, 2),
+    inferenceToken = "test-inference-token",
+    gate = InflightGate({ 0 }),
+    log = {},
+    stores = HeadDeps.HeadStores(
+        usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
+        perfStats = PerfStats(tmp.resolve("p.jsonl")),
+        economicsStore = null,
+        compactStats = CompactStats(tmp.resolve("c.jsonl")),
+        shadow = ShadowClassifier(log = {}),
+        clientWindows = ClientWindows(),
+    ),
+    quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap()),
+    seams = HeadDeps.HeadSeams(),
+    policy = HeadDeps.HeadPolicy(),
+)

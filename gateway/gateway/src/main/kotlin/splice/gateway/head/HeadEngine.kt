@@ -20,6 +20,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
+import splice.core.util.LogSink
 import splice.spi.Provider
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -45,7 +46,9 @@ private const val WRITE_TIMEOUT_S = 60
 internal class HeadEngine(
     private val provider: Provider,
     private val listenPort: Int,
-    private val deps: HeadDeps,
+    /** The ONE thing this collaborator needs from the head (V4-105 item 3): it read `deps.log` and
+     *  nothing else, so it depended on a 25-parameter bundle to write a line. */
+    private val log: LogSink,
     private val diagnostics: HeadDiagnostics,
     private val clientAuth: ClientAuth,
     private val admission: HeadAdmission,
@@ -102,7 +105,7 @@ internal class HeadEngine(
             channelPipelineConfig = { pipeline ->
                 if (nodelayLogged.compareAndSet(false, true)) {
                     val noDelay = (pipeline.channel().config() as? SocketChannelConfig)?.isTcpNoDelay
-                    deps.log("[${provider.key}] tcp_nodelay(server)=${noDelay ?: "unknown"}\n")
+                    log("[${provider.key}] tcp_nodelay(server)=${noDelay ?: "unknown"}\n")
                 }
             }
         }

@@ -1,5 +1,15 @@
 // NEW: v0.4.0 FEATURES.md §7 — a Claude Code session id mapped to its working directory: the live registry
 // first, the transcript directory for headless runs.
+//
+// V4-130: THE PROJECTS TREES ARE A LIST, HEAD TREES FIRST. Since V4-115 a head may keep its own
+// CLAUDE_CONFIG_DIR/projects (nine heads do, measured 2026-09-18; four heads' projects dir is a
+// symlink to ~/.claude/projects), so the single vanilla default this class used to read missed every
+// headless session of a head with its own tree. The daemon passes every head's projects tree as
+// [headProjectsDirs] (the topology's config dirs, the same set LaunchSpecFactory derives HeadTrees
+// from); they are searched before [projectsDir], the vanilla tree, which stays the fallback. Each
+// tree is walked once by its real path, so a symlinked head's tree and the vanilla one are one walk. The first tree holding the transcript wins; the cwd a transcript records is the
+// same in every copy of one session, so the order decides only how soon the lookup ends, never the
+// answer. Reading only: nothing here writes into any tree (HEAD ISOLATION).
 package splice.core.compaction
 
 import kotlinx.serialization.json.Json
@@ -23,7 +33,11 @@ public class SessionProject(
     private val sessionsDir: Path = Paths.get(System.getProperty("user.home"), ".claude", "sessions"),
     private val projectsDir: Path = Paths.get(System.getProperty("user.home"), ".claude", "projects"),
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    private val headProjectsDirs: List<Path> = emptyList(),
 ) {
+    // listOf(projectsDir), never `+ projectsDir`: a Path is an Iterable of its own name elements.
+    private val projectsDirs: List<Path> = headProjectsDirs + listOf(projectsDir)
+
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = ConcurrentHashMap<String, Path>()
     private val misses = LinkedHashMap<String, Long>()
@@ -67,8 +81,10 @@ public class SessionProject(
 
     private fun transcriptProject(sessionId: String): Path? {
         val fileName = "$sessionId.jsonl"
-        return directoryEntries(projectsDir)
-            .asSequence()
+        val walked = HashSet<Path>()
+        return projectsDirs.asSequence()
+            .filter { walked.add(realPath(it)) }
+            .flatMap { directoryEntries(it).asSequence() }
             .filter { Files.isDirectory(it) }
             .map { it.resolve(fileName) }
             .filter { Files.isRegularFile(it) }
@@ -99,6 +115,10 @@ public class SessionProject(
     private fun absolutePath(raw: String): Path? = Cancellables
         .runCatchingCancellable { Paths.get(raw).normalize().takeIf { it.isAbsolute } }
         .getOrNull()
+
+    private fun realPath(dir: Path): Path = Cancellables
+        .runCatchingCancellable { dir.toRealPath() }
+        .getOrDefault(dir.toAbsolutePath().normalize())
 
     private fun directoryEntries(path: Path): List<Path> = Cancellables
         .runCatchingCancellable { Files.newDirectoryStream(path).use { it.toList() } }

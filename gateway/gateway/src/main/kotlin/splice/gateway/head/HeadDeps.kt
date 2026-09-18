@@ -136,6 +136,11 @@ public data class HeadDeps(
 // stall a turn or a restart. The bus behind the production implementation drops rather than waits
 // (EventBus.publish).
 //
+// V4-130 ADDED THREE METHODS, ALL ABSTRACT: messageSent, activityLabel, labelQueryUpstream. None has a
+// default no-op body, on purpose: a defaulted method is how a producer forgets a family. The V4-126
+// EventBus default was exactly that (a family nobody produced, silently), and V4-134 removed it; an
+// implementer of this interface must now say what it does with each fact, even if that is nothing.
+//
 // WHY IN THIS FILE: HeadSeams.events is the interface's only holder, and every other seam a head is
 // built with is declared here; the seam's type sits beside the field that carries it.
 
@@ -167,6 +172,20 @@ public interface HeadEvents {
     /** The account pool moved this turn to another account. [from] is null when the pool had no
      *  previous choice for the session. */
     public fun accountSwitched(from: String?, to: String)
+
+    /** V4-130: [session] called SendMessage addressed to [to] (an address or a name, verbatim from the
+     *  tool_use input). [toolUseId] is that block's id, unique per call. Reported once per call, from
+     *  the request that carries the assistant turn which made it (MessageEdges). */
+    public fun messageSent(session: String, to: String, toolUseId: String)
+
+    /** V4-130: the head answered Claude Code's activity side query locally with [label]. [session] is
+     *  null for a request that carried no session header. */
+    public fun activityLabel(session: String?, label: String)
+
+    /** V4-130: a request that looks like the activity side query but did not match its opening went
+     *  upstream as an ordinary turn (ActivityLabel.looksLikeSideQuery). Counted so an empty label
+     *  history can name a client mismatch instead of reading as an idle session. */
+    public fun labelQueryUpstream(session: String?)
 }
 
 /** The head that reports to nobody: a head built without a console (tests, tools). Production heads
@@ -179,4 +198,10 @@ public object NoHeadEvents : HeadEvents {
     override fun turnEnded(perfRowId: String, outcome: String): Unit = Unit
 
     override fun accountSwitched(from: String?, to: String): Unit = Unit
+
+    override fun messageSent(session: String, to: String, toolUseId: String): Unit = Unit
+
+    override fun activityLabel(session: String?, label: String): Unit = Unit
+
+    override fun labelQueryUpstream(session: String?): Unit = Unit
 }

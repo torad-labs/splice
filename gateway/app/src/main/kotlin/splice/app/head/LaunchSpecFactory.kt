@@ -106,6 +106,13 @@ internal class LaunchSpecFactory(
         )
     }
 
+    /** V4-130: each served head's CLAUDE_CONFIG_DIR/projects in topology order, for SessionProject's
+     *  headless fallback, which searches them before its own vanilla default. Derived from the topology
+     *  like [launchSpecFor]'s sibling trees, never from a listing of $HOME. Symlinked heads repeat the
+     *  vanilla tree; SessionProject walks each real path once. */
+    internal fun headProjectsTrees(): List<Path> =
+        topology.heads.map { (key, head) -> configDirOf(key, head.claude.configDir).resolve("projects") }
+
     /** One head's CLAUDE_CONFIG_DIR: the declared path, else this tree's `~/.claude-<key>` default.
      *  The kt-state-paths-single-source ignore on this file covers the one literal, and keeping it in
      *  ONE member is what stops a second spelling appearing when a second caller needs it. */

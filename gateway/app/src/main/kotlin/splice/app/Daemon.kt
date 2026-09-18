@@ -110,7 +110,18 @@ public class Daemon(
 
     // The directory a relative `file =` / `system_prompt_file =` resolves against: the topology's
     // own directory, so a config kept beside its text files moves as one unit.
-    private val compactionTail = CompactionTail(compactionInstructions, SessionProject())
+    private val launchSpecFactory = LaunchSpecFactory(
+        topology,
+        controlPlane.signInPlanner,
+        mgmtKey,
+        controlPlane.buildInputs,
+    )
+
+    // V4-130: ONE session-to-cwd resolver over every head's projects tree (then the vanilla one), for
+    // both the compaction tail and the heads' prompt layers. The vanilla-only default missed every
+    // headless session of a head that keeps its own tree.
+    private val sessionProject = SessionProject(headProjectsDirs = launchSpecFactory.headProjectsTrees())
+    private val compactionTail = CompactionTail(compactionInstructions, sessionProject)
     private val headServerFactory =
         HeadServerFactory(
             config,
@@ -123,13 +134,8 @@ public class Daemon(
             // V4-134: the control plane's publisher, so every head reports to the bus the console
             // route streams from. Pinned by OneEventBusPinTest.
             console = controlPlane.console,
+            sessionProject = sessionProject,
         )
-    private val launchSpecFactory = LaunchSpecFactory(
-        topology,
-        controlPlane.signInPlanner,
-        mgmtKey,
-        controlPlane.buildInputs,
-    )
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths,
         controlPlane.providerAssembly,

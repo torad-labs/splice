@@ -11,6 +11,10 @@
 // THIS IS ALSO THE PIN for the defaulted seams. HeadSeams.events and TurnTelemetry's events both
 // default to NoHeadEvents so the tests that build them directly keep compiling; the production path
 // passes the head's own through TurnDriver. Drop that argument and turn.end never arrives here.
+//
+// V4-130 added three facts observed on the request itself (TurnPreparation): a SendMessage edge, a
+// locally answered activity label and a near-miss label query sent upstream. The last test drives all
+// three through the same real head, including a retried request that must not report its edges twice.
 package console.v4134
 
 import campaign.v4105.headDeps
@@ -88,6 +92,18 @@ private class RecordingEvents : HeadEvents {
 
     override fun accountSwitched(from: String?, to: String) {
         calls.add("switch $from $to")
+    }
+
+    override fun messageSent(session: String, to: String, toolUseId: String) {
+        calls.add("edge $session $to $toolUseId")
+    }
+
+    override fun activityLabel(session: String?, label: String) {
+        calls.add("label $session $label")
+    }
+
+    override fun labelQueryUpstream(session: String?) {
+        calls.add("upstream $session")
     }
 
     fun turnCalls(): List<String> = calls.filterNot { it.startsWith("lifecycle") }
@@ -169,7 +185,48 @@ class HeadEventsTest {
             rig.close()
         }
     }
+
+    @Test
+    fun `edges, a local label and a near-miss label query are reported from the request that carries them`() =
+        runBlocking {
+            val rig = Rig()
+            try {
+                rig.start()
+                rig.turn(afterSendMessage("carry on"))
+                rig.turn(afterSendMessage("carry on")) // a retry: the same calls, already reported
+                rig.turn(afterSendMessage("Describe your most recent action in 3-5 words using present tense (-ing)."))
+                rig.turn(afterSendMessage("In present tense, describe your MOST RECENT ACTION in a few words."))
+                val rows = rig.perfRows(3)
+                assertEquals(
+                    listOf(
+                        "edge $SESSION uds:/run/peer.sock toolu_a",
+                        "edge $SESSION builder toolu_b",
+                        "start $SESSION",
+                        "end ${rows[0].first} ${rows[0].second}",
+                        "start $SESSION",
+                        "end ${rows[1].first} ${rows[1].second}",
+                        "label $SESSION Messaging a peer session",
+                        "upstream $SESSION",
+                        "start $SESSION",
+                        "end ${rows[2].first} ${rows[2].second}",
+                    ),
+                    rig.events.turnCalls(),
+                    "each call reported once; the exact query answered locally with no turn; the near miss served AND counted",
+                )
+            } finally {
+                rig.close()
+            }
+        }
 }
+
+/** V4-130: an assistant turn that messaged two peers, then its tool results, then [lastUser]. */
+private fun afterSendMessage(lastUser: String): String =
+    """[{"role":"user","content":"coordinate"},""" +
+        """{"role":"assistant","content":[{"type":"tool_use","id":"toolu_a","name":"SendMessage",""" +
+        """"input":{"to":"uds:/run/peer.sock","message":"never recorded"}},""" +
+        """{"type":"tool_use","id":"toolu_b","name":"SendMessage","input":{"to":"builder","message":"x"}}]},""" +
+        """{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_a","content":"sent"},""" +
+        """{"type":"tool_result","tool_use_id":"toolu_b","content":"sent"},{"type":"text","text":"$lastUser"}]}]"""
 
 /** One codex head on a mock upstream with a two-account pool, reporting to [events]. */
 private class Rig {
@@ -210,14 +267,14 @@ private class Rig {
         awaitListening(port)
     }
 
-    suspend fun turn() {
+    suspend fun turn(messages: String = """[{"role":"user","content":"go"}]""") {
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", SESSION)
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
                     "system":"You are a test. SCENARIO:basic",
-                    "messages":[{"role":"user","content":"go"}]}""",
+                    "messages":$messages}""",
             )
         }.bodyAsText()
     }

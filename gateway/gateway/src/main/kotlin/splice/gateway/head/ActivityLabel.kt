@@ -10,6 +10,10 @@
 // upstream turn happens (TurnPreparation → Preparation.Local → LocalResponses). The match is the
 // prompt's verbatim opening sentence: a reworded prompt in a later Claude Code rides upstream
 // exactly as before, and nothing else matches it short of a user typing that sentence.
+//
+// V4-130: THE NEAR MISS IS COUNTED. [looksLikeSideQuery] is a looser test (both key phrases, any case,
+// anywhere in the last user text) run only when the exact match failed, so a reworded prompt shows up
+// as label queries sent upstream (HeadEvents.labelQueryUpstream) instead of as silence.
 package splice.gateway.head
 
 import kotlinx.serialization.json.JsonObject
@@ -32,11 +36,19 @@ internal class ActivityLabel {
         }
     }
 
-    private fun isSideQuery(request: AnthropicRequest): Boolean {
-        val last = request.messages.lastOrNull()?.takeIf { it.role == ROLE_USER } ?: return false
-        val text = last.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }.trimStart()
-        return text.startsWith(SIDE_QUERY_OPENING)
+    /** True for a request that is not the side query by its exact opening but carries both of its
+     *  key phrases: a Claude Code that reworded the prompt. Call only after [labelFor] returned null. */
+    fun looksLikeSideQuery(request: AnthropicRequest): Boolean {
+        val text = lastUserText(request)?.lowercase() ?: return false
+        return NEAR_MISS_PHRASES.all { it in text }
     }
+
+    private fun isSideQuery(request: AnthropicRequest): Boolean =
+        lastUserText(request)?.trimStart()?.startsWith(SIDE_QUERY_OPENING) == true
+
+    private fun lastUserText(request: AnthropicRequest): String? =
+        request.messages.lastOrNull()?.takeIf { it.role == ROLE_USER }
+            ?.content?.filterIsInstance<TextBlock>()?.joinToString("\n") { it.text }
 
     // Present tense, 3-5 words, the file or function — Claude Code's own examples for the prompt.
     private fun describe(call: ToolUseBlock): String {
@@ -83,6 +95,7 @@ private const val ROLE_ASSISTANT = "assistant"
 private const val MCP_PREFIX = "mcp__"
 private const val MAX_ARG_CHARS = 32
 private const val SIDE_QUERY_OPENING = "Describe your most recent action in 3-5 words using present tense (-ing)."
+private val NEAR_MISS_PHRASES = listOf("most recent action", "present tense")
 private const val NO_TRANSCRIPT_LABEL = "Reading the request"
 private const val NO_TOOL_LABEL = "Replying to the user"
 private const val FILE_PATH = "file_path"

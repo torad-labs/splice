@@ -8,6 +8,10 @@
 // TWO MORE OUTCOMES (2026-09-05), both "this head answers without an upstream turn": Local — the
 // activity side query Claude Code sends every 30 s (ActivityLabel), and Replay — a compaction retry
 // whose bytes match a compaction that outlived its first client (CompactionReplay).
+//
+// V4-130: every parsed request is also where the console's session facts are observed, because this
+// is the one place that holds the typed request and the session header together: SendMessage edges
+// (MessageEdges), the locally answered activity label, and a near-miss label query sent upstream.
 package splice.gateway.head
 
 import io.ktor.http.HttpHeaders
@@ -49,6 +53,7 @@ internal class TurnPreparation(
 ) {
     private val compactClassifier = CompactClassifier()
     private val activityLabel = ActivityLabel()
+    private val messageEdges = MessageEdges(deps.seams.events)
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
         val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
@@ -62,8 +67,15 @@ internal class TurnPreparation(
         if (!provider.catalog.contains(parsed.typed.model)) {
             return Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
         }
+        messageEdges.observe(sessionId, parsed.typed)
         val label = activityLabel.labelFor(parsed.typed)
+        if (label == null) nearMissLabelQuery(parsed.typed, sessionId)
         return if (label != null) local(label, parsed.typed, sessionId, perf) else build(call, parsed, sessionId, perf)
+    }
+
+    /** A reworded activity side query rides upstream as an ordinary turn; the console counts it. */
+    private fun nearMissLabelQuery(request: AnthropicRequest, sessionId: String?) {
+        if (activityLabel.looksLikeSideQuery(request)) deps.seams.events.labelQueryUpstream(sessionId)
     }
 
     // The activity side query never reaches a model: see ActivityLabel for the measurement.
@@ -75,6 +87,7 @@ internal class TurnPreparation(
     ): Preparation.Local {
         perf.mark(PerfKeys.PARSE)
         deps.log("[${provider.key}] activity label answered locally: \"$label\" (${who(sessionId)}no upstream turn)\n")
+        deps.seams.events.activityLabel(sessionId, label)
         return Preparation.Local(label, request.model, sessionId, request.stream)
     }
 

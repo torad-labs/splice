@@ -41,12 +41,13 @@ internal class HeadServerFactory(
      *  a factory built outside the daemon (tests); Daemon passes ControlPlane's, pinned by
      *  OneEventBusPinTest, because a head built without it would serve turns the console never hears. */
     private val console: ConsoleEventPublisher? = null,
+    /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a
+     *  project is configured, and it keeps its own cache. Daemon passes the one built over every
+     *  head's projects tree (V4-130); the default reads the vanilla tree only. */
+    private val sessionProject: SessionProject = SessionProject(),
 ) {
     private val upstreamFactory = UpstreamFactory()
 
-    /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a
-     *  project is configured, and it keeps its own cache. */
-    private val sessionProject = SessionProject()
     private val requestMaterializationGate = RequestMaterializationGate(materializationPermits())
 
     internal fun headServerFor(

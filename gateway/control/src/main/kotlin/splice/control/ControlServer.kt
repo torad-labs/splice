@@ -29,6 +29,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.control.api.ActivitySource
 import splice.control.api.AuthRoutes
 import splice.control.api.CompactPayloads
 import splice.control.api.CompactionInstructionsRoute
@@ -54,6 +55,7 @@ import splice.control.api.StatuslineRoute
 import splice.control.api.UpgradeRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
+import splice.core.activity.ActivityStores
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -129,7 +131,11 @@ public class ControlServer(
      *  400-not-404 rule exists to prevent. */
     public var compaction: CompactionInstructions? = null
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
-    private val sessionsRoutes = sessions?.let(::SessionsRoutes)
+
+    /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
+     *  after construction like [events]. Null answers the two edges routes with a named 503. */
+    public var activity: ActivityStores? = null
+    private val sessionsRoutes = sessions?.let { SessionsRoutes(it, heads, config, ActivitySource { activity }) }
     private val payloads =
         ControlPayloads(
             heads,
@@ -238,9 +244,7 @@ public class ControlServer(
                 get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
                 post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
                 get("/api/compact") { guarded(call) { respond(call, compactPayloads.compactJson()) } }
-                if (sessionsRoutes != null) {
-                    get("/api/sessions") { guarded(call) { respond(call, sessionsRoutes.sessionsJson()) } }
-                }
+                sessionsRoutes?.let { sessionRoutes(this, it) }
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
                 // V4-126: additive. Every poll route above is untouched and stays the fallback.
                 get("/api/events") { guarded(call) { streamEvents(call) } }
@@ -274,6 +278,23 @@ public class ControlServer(
      *  ?head= is REQUIRED where the resource is per-head and a bad one is a 400 NAMING it, never a
      *  404, which the console reads as route-not-built; and every unwired port answers a named 5xx
      *  rather than a payload that reads as a confident negative. */
+    /** v0.4.0 /api/sessions, and V4-130's three session reads beside it. Registered only when a session
+     *  registry is wired, as /api/sessions always was. */
+    private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
+        route.get("/api/sessions") { guarded(call) { respond(call, routes.sessionsJson()) } }
+        route.get("/api/sessions/edges") { guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
+        route.get("/api/sessions/{id}/edges") {
+            guarded(call) { routes.edgeRoutes.edges(call.parameters["id"].orEmpty()).send(call) }
+        }
+        route.get("/api/sessions/{id}/transcript") {
+            guarded(call) {
+                val id = call.parameters["id"].orEmpty()
+                val query = call.request.queryParameters
+                routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull()).send(call)
+            }
+        }
+    }
+
     private fun consoleRoutes(route: Route) {
         route.get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
         route.get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }

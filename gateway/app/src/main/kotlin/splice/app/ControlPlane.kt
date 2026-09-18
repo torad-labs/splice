@@ -69,7 +69,7 @@ internal class ControlPlane(
     /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held
      *  here, like [probeScope], because both sides of it hang off this class: Daemon hands [console]
      *  to HeadServerFactory before any head exists, and [start] hands its bus to the ControlServer. */
-    internal val console = ConsoleEventPublisher()
+    internal val console = ConsoleEventPublisher(ConsoleWiring.activityStores(statePaths, config))
 
     internal fun cancelProbes() {
         probeScope.cancel()
@@ -139,6 +139,8 @@ internal class ControlPlane(
         // /api/events with a named 503 until this line runs; OneEventBusPinTest fails if the route's
         // bus and a head's are ever different instances.
         srv.events = console.bus
+        // V4-130: the SAME stores the heads write through [console], read by the sessions routes.
+        srv.activity = console.stores
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

@@ -13,6 +13,9 @@
 // A `.ts` test cannot hold JSX (TS1161), so elements are built with
 // React.createElement and asserted against renderToStaticMarkup's string.
 import * as React from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import {
@@ -197,5 +200,108 @@ describe('Figure', () => {
     const out = render(h(Figure, { value: 'not reported by provider', basis: 'unavailable' }));
     expect(out).toContain('not reported by provider');
     expect(out).toContain('unavailable');
+  });
+});
+
+// ---- THE HOLDER EDGE'S WORD READS ON EVERY GROUND IT STANDS ON (M2R-01) ----------------------
+//
+// The edge label's base rule printed the ROOM's ink, three consumers overrode it for paper, and
+// the fourth -- the log tail's Flag, a key on --strip paper -- did not: 1.24:1 in the dark room,
+// invisible, and green in every capture because the light theme reads 15.08:1. The fix moved the
+// default (the label inherits its ground's ink); this wall resolves the cascade from the sheets
+// themselves, for the two grounds a bare HolderEdge stands on -- a key on paper and the room --
+// in BOTH themes, and fails when either falls under 4.5:1. The planted arm feeds it the unfixed
+// rule and must see the 1.24, so a wall that could not fail would fail here first.
+const webui = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const sheet = (rel: string): string => readFileSync(path.join(webui, rel), 'utf8');
+
+/** The last `prop:` declared in the rule whose selector list is exactly `selector`, at a line start. */
+function declared(css: string, selector: string, prop: string): string | null {
+  const at = css.search(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`, 'm'));
+  if (at < 0) return null;
+  const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+  const hits = [...body.matchAll(new RegExp(`(?:^|[;\\s])${prop}\\s*:\\s*([^;]+);`, 'g'))];
+  return hits.length === 0 ? null : hits[hits.length - 1][1].trim();
+}
+
+/** A token's hex in one theme block of tokens.css. */
+function token(theme: 'dark' | 'light', name: string): string {
+  const tokens = sheet('src/shared/tokens.css');
+  const open = theme === 'dark' ? ':root[data-theme="dark"] {' : ':root[data-theme="light"] {';
+  const start = tokens.indexOf(open);
+  const block = tokens.slice(start, tokens.indexOf('\n}', start));
+  const hit = new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`).exec(block);
+  if (hit === null) throw new Error(`--${name} has no hex in the ${theme} block`);
+  return hit[1];
+}
+
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** The label's ink and its ground, for a HolderEdge standing on `host` (a key, or the body). */
+function edgeOn(ui: string, theme: 'dark' | 'light', host: { css: string; selector: string }): number {
+  const base = declared(ui, '.myx-edge-label', 'color');
+  const hostInk = declared(host.css, host.selector, 'color');
+  const hostGround = declared(host.css, host.selector, 'background');
+  if (base === null || hostInk === null || hostGround === null) throw new Error('a rule the wall reads is gone');
+  const ink = base === 'inherit' ? hostInk : base;
+  const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
+  return contrast(token(theme, name(ink)), token(theme, name(hostGround)));
+}
+
+describe('the holder edge label', () => {
+  const KEY = { css: sheet('src/shared/controls/controls.css'), selector: '.myx-key' };
+  const ROOM = { css: sheet('src/app/app.css'), selector: 'body' };
+  const ui = sheet('src/shared/ui/ui.css');
+
+  for (const theme of ['dark', 'light'] as const) {
+    test(`a Flag on its key reads in the ${theme} room`, () => {
+      expect(edgeOn(ui, theme, KEY)).toBeGreaterThanOrEqual(4.5);
+    });
+    test(`a HolderEdge standing in the ${theme} room reads`, () => {
+      expect(edgeOn(ui, theme, ROOM)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  test('the wall can fail: the unfixed rule puts the Flag at 1.24:1 in the dark room', () => {
+    const unfixed = ui.replace(/(^\.myx-edge-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--ink);');
+    expect(unfixed).not.toBe(ui);
+    expect(edgeOn(unfixed, 'dark', KEY)).toBeLessThan(1.3);
+  });
+});
+
+// The log tail's head is strip paper without being a .myx-strip, so the Figure beside the Flag
+// took ui.css's room ink: `15 new lines` measured 1.15:1 (value) and 1.98:1 (unit) in the dark room,
+// in the same capture that showed the Flag. Resolved from the sheets like the edge above.
+describe('the log tail head prints its count in paper ink', () => {
+  const ui = sheet('src/shared/ui/ui.css');
+  const lt = sheet('src/widgets/log-tail/log-tail.css');
+  const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
+  const onHead = (css: string, theme: 'dark' | 'light', part: 'value' | 'unit') => {
+    const ink = declared(css, `.myx-lt-head .myx-fig-${part}`, 'color') ?? declared(ui, `.myx-fig-${part}`, 'color');
+    const ground = declared(css, '.myx-lt-head', 'background');
+    if (ink === null || ground === null) throw new Error('a rule the wall reads is gone');
+    return contrast(token(theme, name(ink)), token(theme, name(ground)));
+  };
+
+  for (const theme of ['dark', 'light'] as const) {
+    for (const part of ['value', 'unit'] as const) {
+      test(`the count's ${part} reads in the ${theme} room`, () => {
+        expect(onHead(lt, theme, part)).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+
+  test('the wall can fail: without the head rule the count falls back to room ink, 1.15:1', () => {
+    const unfixed = lt.replace(/^\.myx-lt-head \.myx-fig-value[^\n]*\n/m, '');
+    expect(unfixed).not.toBe(lt);
+    expect(onHead(unfixed, 'dark', 'value')).toBeLessThan(1.2);
   });
 });

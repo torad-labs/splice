@@ -234,6 +234,26 @@ arm("a TODO row whose files= is a GLOB", "green", (r) => {
   // because the fixture creates it, so asserting on that graded nothing.
 }, (r) => readFileSync(join(r, "dev", "campaigns", "c.toml"), "utf8").includes('files = ["checks/*.py"]'));
 
+// The fifth surface: a registry row whose wall= names a file that is gone. builder2 deleted a .py
+// whose law_registry row still named it, and every census passed.
+arm("a registry wall= naming a missing file", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  mkdirSync(join(r, "walls"), { recursive: true });
+  writeFileSync(join(r, "walls", "reg.toml"), `[[law]]\ntag = "L1"\nwall = "walls/gone.py"\n`);
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !existsSync(join(r, "walls", "gone.py")));
+
+arm("a registry wall= that is EMPTY is not charged", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  mkdirSync(join(r, "walls"), { recursive: true });
+  writeFileSync(join(r, "walls", "reg.toml"), `[[law]]\ntag = "L2"\nwall = ""\n`);
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+  // An empty wall= is the registry's own spelling for "no wall yet" and is RED in the campaign
+  // gate, not here. Charging it would make this wall duplicate a verdict that already has an owner.
+}, (r) => readFileSync(join(r, "walls", "reg.toml"), "utf8").includes('wall = ""'));
+
 arm("an unparseable burn-down list", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");
   writeFileSync(join(r, LIST), "not json");

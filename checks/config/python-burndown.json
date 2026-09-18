@@ -67,7 +67,6 @@
     "dev/campaigns/proxy-hardening/walls/jw_13_port_collision_preflight.py",
     "dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.py",
     "dev/campaigns/proxy-hardening/walls/law_locked_non_goals.py",
-    "dev/campaigns/proxy-hardening/walls/law_pre_content_wire_type.py",
     "dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.py",
     "dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.py",
     "dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.py",

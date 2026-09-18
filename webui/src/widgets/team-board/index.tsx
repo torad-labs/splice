@@ -48,7 +48,16 @@ const ACT_COLS = [5.83, 13.93, 20.46, 24.67];
    and its activity strips down the full height of their regions instead of
    letting them pile up under the header. The three numbers are that spacing as
    a percentage of each region's own height, read off the comp's plate rows. */
-const CHAT_PITCH = 34.8;
+/* The comp's three chat plates are not on one pitch: it draws them at 0, 106
+   and 200px inside a 287px region, standing 82, 69 and 72px tall. Each row
+   carries its own, as the rack's empty slots carry theirs. */
+const CHAT_ROWS = [
+  { top: 0, height: 28.6 },
+  { top: 36.9, height: 24 },
+  { top: 69.7, height: 25.1 },
+];
+/** A fourth message would take the last row's pitch rather than fall off. */
+const chatRow = (index: number) => CHAT_ROWS[Math.min(index, CHAT_ROWS.length - 1)];
 /** The hand-off's strips are the same strip lifted into a 618px box, so their
  *  columns are the chat's scaled by that wider box rather than re-measured. */
 const HANDOFF_COLS = MSG_COLS.map((w) => Number((w * 1.34).toFixed(2)));
@@ -208,7 +217,10 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
               key={`${message.time}-${message.from}`}
               message={message}
               className="myx-board-msg"
-              style={{ top: `${index * CHAT_PITCH}%` }}
+              style={{
+                top: `${chatRow(index).top}%`,
+                height: `${chatRow(index).height}%`,
+              }}
             />
           ))}
         </div>

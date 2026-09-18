@@ -27,12 +27,14 @@ const read = (name) => readFileSync(join(ROOT, '.dev/web-console/census', name),
 
 /** Every in-flight row's fence, from the ledger. */
 function liveFences() {
-  const list = execFileSync('python3', ['.dev/campaigns/manifest.py', LEDGER, 'list', '--status', 'in_flight'], { cwd: ROOT, encoding: 'utf8' });
+  // V4-143: --plain and --raw are the bun CLI's machine shapes, byte-identical to manifest.py's; its
+  // human list leads with a status glyph, which the id filter below would drop to zero rows.
+  const list = execFileSync('bun', ['.dev/campaigns/manifest.ts', LEDGER, 'list', '--status', 'in_flight', '--plain'], { cwd: ROOT, encoding: 'utf8' });
   const ids = list.split('\n').map((line) => (line.trim().split(/\s+/)[0] ?? '')).filter((id) => /^[A-Z]+\d+-\d+$/.test(id));
   if (ids.length === 0) throw new Error(`the ledger listed no in-flight rows; list said: ${JSON.stringify(list.slice(0, 200))}`);
   const rows = [];
   for (const id of ids) {
-    const text = execFileSync('python3', ['.dev/campaigns/manifest.py', LEDGER, 'get', id], { cwd: ROOT, encoding: 'utf8' });
+    const text = execFileSync('bun', ['.dev/campaigns/manifest.ts', LEDGER, 'get', id, '--raw'], { cwd: ROOT, encoding: 'utf8' });
     const match = text.match(/^files = \[(.*)\]$/m);
     const files = match === null ? [] : [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     const owner = (text.match(/^# \[[^\]]+\] CLAIM: owner=(\S+)/m) ?? [])[1] ?? '?';

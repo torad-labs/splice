@@ -40,8 +40,8 @@
 // a clean report, because a law check that reads an empty ledger and reports clean is the joke
 // version of itself.
 //
-// READ THROUGH THE CLI, not by parsing TOML here: `manifest.py list` enumerates and
-// `manifest.py get <id>` returns files/status/verify, which is the ledger's own reader. (The
+// READ THROUGH THE CLI, not by parsing TOML here: `manifest.ts list --plain` enumerates and
+// `manifest.ts get <id> --raw` returns files/status/verify, which is the ledger's own reader. (The
 // ledger-only-via-CLI law is about writes and the flock — a reader cannot corrupt it — but using
 // the CLI costs nothing and keeps one reader.)
 //
@@ -64,7 +64,12 @@ function ledgerPath() {
   return at === -1 ? '.dev/campaigns/web-console.toml' : process.argv[at + 1];
 }
 
-const manifest = (args) => execFileSync('python3', ['.dev/campaigns/manifest.py', ledgerPath(), ...args], { cwd: ROOT, encoding: 'utf8' });
+// V4-143: the bun CLI's machine shapes. Its human `list` leads each line with a status glyph and its
+// human `get` is a rendered view, so without --plain/--raw the parser below reads ZERO rows and this
+// check stops at its zero-rows guard (DID NOT RUN, exit 2; measured). Both flags are byte-identical
+// to manifest.py's output.
+const MACHINE = { list: '--plain', get: '--raw' };
+const manifest = (args) => execFileSync('bun', ['.dev/campaigns/manifest.ts', ledgerPath(), ...args, MACHINE[args[0]]], { cwd: ROOT, encoding: 'utf8' });
 
 /** Every row, with its fence, status and verify line, read through the CLI. */
 export function readLedger() {

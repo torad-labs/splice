@@ -67,7 +67,7 @@
 id: kt-quota-tracker-single-resolution
 language: kotlin
 severity: error
-message: "One resolver answers which QuotaTracker a turn reads: call TurnQuota.forSession (gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt) instead of re-deriving the selected-then-primary elvis chain here."
+message: "One resolver answers which QuotaTracker a turn reads: call deps.turnQuota.forSession(sessionId, account) instead of re-deriving the selected-then-primary elvis chain here. The resolver is a constructed collaborator held on HeadDeps (HeadDeps.kt:57), not a file-local function — classes that do not hold deps take it as a constructor parameter, the way CollectTurn.kt:39 does."
 note: "`?:` is invisible precedence — nothing types the left operand as the SELECTED account's tracker, so a site that reaches for deps.quota first answers the client with the wrong account's anthropic-ratelimit-* headers and still compiles. Seven sites spell this decision three different ways today, and HeadAdmission.kt:213's V4-84 comment records the same bug being fixed by hand at one of them. Passing an already-resolved tracker as an argument is wiring, not resolution, and stays silent."
 files:
   - gateway/gateway/src/main/**/*.kt
@@ -87,4 +87,30 @@ rule:
           - regex: '\.quota$'
     # THE SELECTION. Any navigation read of the account->tracker map. A property DECLARATION is not
     # a navigation, so HeadDeps.kt's own `val accountQuotas` stays silent.
-    - pattern: $X.accountQuotas
+    #
+    # EXCEPT WHERE THE RESOLVER IS BUILT, added 2026-09-18 after this wall flagged the one construct
+    # it exists to create. The header above predicted a file-local `TurnQuota.forSession(...)` and
+    # exempted TurnQuota.kt accordingly; what V4-99 actually landed is an injected COLLABORATOR,
+    # constructed once at HeadDeps.kt:58 with the map handed in:
+    #     internal val turnQuota: TurnQuota =
+    #         TurnQuota(quotaBundle.accountPool, quotaBundle.accountQuotas, quotaBundle.quota)
+    # The design moved from a static resolver to a constructed one and the `ignores:` path did not
+    # move with it, so the selection clause fired on the resolver's own wiring. Reported from three
+    # separate rows before it was believed, which is the actual cost of a wall that cries wolf.
+    #
+    # THE EXEMPTION IS THE ARGUMENT POSITION, NOT THE FILE. Adding HeadDeps.kt to `ignores:` was the
+    # obvious fix and is wrong: it would blind the whole file, and HeadDeps is exactly where a future
+    # elvis chain would be most tempting to write. This says instead that the map may be read to
+    # BUILD the one resolver and nowhere else.
+    #
+    # THE DODGE IS CLOSED BY LEAVING THE ELVIS CLAUSE ALONE. Wrapping a re-derivation in the
+    # constructor — `TurnQuota(deps.accountQuotas[label] ?: deps.quota)` — escapes this clause and is
+    # still caught by the elvis clause above, which is why the `not:` narrows only the selection.
+    # Mutation-proven three ways before landing: the real construction green, a selection read
+    # elsewhere red, that dodge red.
+    - all:
+        - pattern: $X.accountQuotas
+        - not:
+            inside:
+              stopBy: end
+              pattern: TurnQuota($$$ARGS)

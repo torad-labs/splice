@@ -564,7 +564,7 @@ function checkFieldGrid(capturesDir) {
   // build, so it is SKIPPED AND COUNTED rather than judged -- and rather than taking the whole
   // leg down with it, which is what a leg-wide rule did on the first run of this: eight fresh
   // captures were refused because nineteen stale ones shared their directory.
-  const bar = newestSourceMtime();
+  const bar = freshnessBar();
   let staleCount = 0;
   const bad = [];
   // Declared spans honoured, dumps that could not be paired, captures read with no dump at all, and
@@ -784,7 +784,7 @@ function checkTonalDrift(capturesDir, compPath) {
   }
   const ref = tonal(comp);
   const files = (() => { try { return fs.readdirSync(path.join(ROOTREF.root, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
-  const bar = newestSourceMtime();
+  const bar = freshnessBar();
   const stat = (f) => { try { return fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { return 0; } };
   const { fresh, stale } = partitionFresh(files.map((f) => ({ f, mtime: stat(f) })), bar);
   const rows = [];
@@ -1331,10 +1331,43 @@ function newestSourceMtime() {
   walk(SRC);
   return newest;
 }
+/**
+ * ---- THE BAR IS SAMPLED ONCE, BEFORE THE RUN, AND THE RULE'S OWN WORDS SAY WHY ----
+ *
+ * `newestSourceMtime()` was called by each leg as it ran, which is AFTER `captureSet` has finished
+ * writing. In a shared worktree that is a race, and it is not theoretical: measured on 2026-09-18,
+ * another seat wrote `webui/src/pages/settings/settings.css` at 10:57:07 during a 79-second capture
+ * run, and the five addresses captured before that instant -- fleet 10:56:41 through projects
+ * 10:57:06 -- were all reported DROPPED as older than their own source, with the cut landing
+ * exactly on the write. They had captured perfectly well. The leg said `aligned on 7 captures`
+ * and the coverage table said five pages were dropped, and both were artefacts of a moving bar.
+ *
+ * WHY SAMPLING EARLIER IS THE FIX AND NOT JUST THE CONVENIENT CHOICE: the rule above states its own
+ * scope in its first line -- "a check that reads an artifact it did NOT produce". Captures written
+ * by this run are artifacts the gate DID produce. The freshness rule was written for the leftovers
+ * of an EARLIER build sharing the directory, which is real and still caught: those are older than a
+ * bar taken before this run starts. Applying it to the run's own output was a category error, and
+ * the shared worktree only made it visible.
+ *
+ * AND THE RACE IS NAMED RATHER THAN SMOOTHED. A bar frozen at the start makes the run's captures
+ * survive, but if the source really did move mid-run then the set is internally inconsistent --
+ * early frames show the old console and late ones the new. That is worth knowing and it is exactly
+ * the kind of thing that reads as a quiet number otherwise, so the second sample is kept and the
+ * difference is reported. Freezing the bar without saying the tree moved would trade a false
+ * DROPPED for a silent inconsistency, which is the worse of the two.
+ */
+const BAR = { at: null, movedTo: null };
+/** The bar every freshness question is asked against. Frozen on first call -- which the run does
+ *  before `captureSet` -- so every leg downstream asks the same question. */
+function freshnessBar() {
+  if (BAR.at === null) BAR.at = newestSourceMtime();
+  return BAR.at;
+}
+
 function staleCaptures(dir) {
   let files; try { files = fs.readdirSync(path.join(ROOTREF.root, dir)).filter((f) => f.endsWith('.png')); } catch { return null; }
   if (files.length === 0) return { files: [], stale: 0, oldest: null };
-  const bar = newestSourceMtime();
+  const bar = freshnessBar();
   let stale = 0, oldest = Infinity, oldestName = null;
   for (const f of files) {
     let m; try { m = fs.statSync(path.join(ROOTREF.root, dir, f)).mtimeMs; } catch { continue; }
@@ -1701,6 +1734,55 @@ function selftest() {
            : `a missing capture read as an audit hole: ${table.detail.replace(/\n/g, ' | ')}`);
       return findings[0];
     }, true],
+    // ---- THE FRESHNESS BAR IS FROZEN BEFORE THE RUN, AND BOTH HALVES ARE PROVED ----
+    //
+    // Measured failure: another seat wrote settings.css at 10:57:07 during a 79-second capture run
+    // and the five addresses captured before that instant were reported DROPPED as older than their
+    // own source, the cut landing exactly on the write. The mtimes here are set explicitly rather
+    // than left to the clock, because the whole defect is about ORDER and a fixture that relies on
+    // two writes landing in different milliseconds proves nothing.
+    ['field-grid', () => {
+      findings.length = 0; COVERAGE.clear(); BAR.at = null; BAR.movedTo = null;
+      const good = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-race-');
+      seedCaptures(tmp, ['fleet'], { im: good.im, strips: good.known });
+      const t = Date.now();
+      const at = (p, ms) => fs.utimesSync(path.join(tmp, p), new Date(ms), new Date(ms));
+      at('webui/src/app/rows.ts', t);                      // the source, as the run begins
+      for (const f of fs.readdirSync(path.join(tmp, 'caps'))) at(path.join('caps', f), t + 10_000);
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      freshnessBar();                                      // frozen here, as the run freezes it
+      // A CONCURRENT SEAT LANDS A ROW while the browser is still working.
+      fs.writeFileSync(path.join(tmp, 'webui/src/app/later.css'), '.x { color: red; }');
+      at('webui/src/app/later.css', t + 20_000);
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      BAR.at = null; BAR.movedTo = null;
+      return findings[0];
+    }, true],
+    // THE CONTROL, AND IT IS NOT OPTIONAL: freezing a bar could "fix" staleness by removing the
+    // protection entirely, and a leftover from an earlier build must still be caught. Same tree,
+    // same frozen bar, one capture backdated to before it.
+    ['field-grid', () => {
+      findings.length = 0; COVERAGE.clear(); BAR.at = null; BAR.movedTo = null;
+      const good = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-stale-');
+      seedCaptures(tmp, ['fleet'], { im: good.im, strips: good.known });
+      const t = Date.now();
+      const at = (p, ms) => fs.utimesSync(path.join(tmp, p), new Date(ms), new Date(ms));
+      at('webui/src/app/rows.ts', t);
+      for (const f of fs.readdirSync(path.join(tmp, 'caps'))) at(path.join('caps', f), t - 60_000);
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      freshnessBar();
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      BAR.at = null; BAR.movedTo = null;
+      return findings[0];
+    }, false],
     ['field-grid', () => fieldProbe('dark', 'dark'), false],
     ['field-grid', () => fieldProbe('light', 'light'), false],
     ['field-grid', () => fieldProbe('light', 'dark'), true],
@@ -1769,12 +1851,31 @@ if (has('selftest')) selftest();
 // DID NOT RUN for every capture-reading check, never a pass -- law 23, and the same shape the
 // build leg uses when dist/index.html is older than the run.
 let CAPTURE_NOTE = 'captures not produced this run';
+// FREEZE THE BAR BEFORE A SINGLE FRAME IS WRITTEN. Every freshness question below asks this one
+// sample, so a write into webui/src while the browser is working can no longer retroactively
+// invalidate frames this run produced itself.
+freshnessBar();
 if (!has('no-capture')) {
   const result = await captureSet(CAPTURES);
   CAPTURE_NOTE = result.ok ? result.detail : `DID NOT RUN: ${result.detail}`;
   if (!result.ok) process.stderr.write(`  ! captures: ${result.detail}\n`);
 } else {
   CAPTURE_NOTE = 'captures not produced (--no-capture)';
+  // `--no-capture` IS A STATED REASON, NOT A HOLE IN THE AUDIT. Without this every address reads
+  // capture-set=UNACCOUNTED, which is reserved for the instrument losing track of a page it should
+  // have seen — and the leg deliberately not running is the opposite of that. Found by the control
+  // for the freshness fix, which runs in exactly this mode; it is the same shape as the missing-file
+  // case on the two reading legs, one leg further up.
+  for (const a of addresses() ?? []) covers('capture-set', a, 'the capture leg did not run (--no-capture)');
+}
+// DID THE TREE MOVE WHILE WE WERE LOOKING AT IT? The frozen bar keeps this run's own captures, and
+// this is the other half: if the source really did change mid-run, the set mixes two consoles and
+// that has to be said rather than absorbed. A second sample costs one directory walk.
+const barAfter = newestSourceMtime();
+if (barAfter > BAR.at) BAR.movedTo = barAfter;
+if (BAR.movedTo !== null) {
+  process.stderr.write(`  ! captures: ${SRC} changed DURING this run (bar ${new Date(BAR.at).toISOString()} -> ${new Date(BAR.movedTo).toISOString()});`
+    + ' frames taken before that write show the previous console\n');
 }
 const freshness = staleCaptures(CAPTURES);
 if (freshness && freshness.stale > 0) {
@@ -1782,7 +1883,8 @@ if (freshness && freshness.stale > 0) {
 }
 // THE SET AND ITS COST, in the output rather than in a note (M1-68): the row that chose the set
 // has to state what it cost, and a reader has to be able to see it without opening the ledger.
-record('capture-set', false, true, `${CAPTURE_NOTE} · set: ${(addresses() || []).length} addresses x ${CAPTURE_THEME} x ${CAPTURE_FRAME.join('x')} · freshness bar: newest mtime under ${SRC}`);
+record('capture-set', false, true, `${CAPTURE_NOTE} · set: ${(addresses() || []).length} addresses x ${CAPTURE_THEME} x ${CAPTURE_FRAME.join('x')} · freshness bar: newest mtime under ${SRC}, sampled BEFORE the run`
+  + (BAR.movedTo === null ? '' : ` · ${SRC} CHANGED DURING THIS RUN, so frames taken before that write show the previous console — re-run for a set from one build`));
 
 // THE BOOT AXIS (M1-106), its own line so a reader sees WHICH state was reached rather than a
 // count of files. Non-blocking for the same reason capture-set is: a leg that cannot run is a

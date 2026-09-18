@@ -1,0 +1,45 @@
+the map — thirteen pages by four layers, both themes, at 3840x2160 (M1-67)
+
+THE COMP IS A ROW IN THE DARK COLUMN AND HAS NO LIGHT COUNTERPART: team-board-a.png is a dark
+frame with no light twin, so a light coverage figure has NO COMP TARGET and is not graded against
+it. The dark column is the one with a target.
+
+  COMP team-board-a (dark, comp frame)   paper 29.5   printed 6.5   ruled 5.8
+
+  DARK
+  page        source                    frame        paper  printed   ruled  rules  verdict
+  fleet       dark/live daemon         3840x2160     34.8   2.4   2.0    70  paper OVER (+5.3); printed short; rules short
+  turns       dark/live daemon         3840x2160     41.7   3.5   1.9    86  paper OVER (+12.2); printed short; rules short
+  sessions    dark/live daemon         3840x2160     50.5   3.1   2.1    80  paper OVER (+21.0); printed short; rules short
+  teams       dark/fixture=hero        3840x2160     31.2   7.2   3.0   147  rules short
+  accounts    dark/live daemon         3840x2160     31.9   2.1   1.9    74  printed short; rules short
+  usage       dark/live daemon         3840x2160     41.9   2.7   1.8    67  paper OVER (+12.4); printed short; rules short
+  settings    dark/live daemon         3840x2160     45.7   1.4   1.3    36  paper OVER (+16.2); printed short; rules short
+  logs        dark/live daemon         3840x2160     12.9   2.1   1.4    69  paper short (12.9 of 29.5); printed short; rules short
+  compaction  dark/live daemon         3840x2160     32.4   1.8   1.6    66  printed short; rules short
+  doctor      dark/live daemon         3840x2160      6.6   0.4   1.3    24  paper short (6.6 of 29.5); printed short; rules short
+  projects    dark/live daemon         3840x2160      1.5   0.1   1.2    24  paper short (1.5 of 29.5); printed short; rules short
+  models      dark/live daemon         3840x2160      2.0   0.1   1.2    24  paper short (2.0 of 29.5); printed short; rules short
+  mcp         NO FIXTURE DIRECTORY - c -               -    -    -     -  MISSING ROW (no fixture, cannot be captured with content)
+
+  LIGHT
+  page        source                    frame        paper  printed   ruled  rules  verdict
+  fleet       light/live daemon        3840x2160     34.5   4.2   1.7   128  paper OVER (+5.0); rules short
+  turns       light/live daemon        3840x2160     41.5   7.5   1.6   173  paper OVER (+12.0); rules short
+  sessions    light/live daemon        3840x2160     50.4   6.1   2.2   149  paper OVER (+20.9); rules short
+  teams       light/fixture=hero       3840x2160     45.2   9.2   2.0   190  paper OVER (+15.7); rules short
+  accounts    light/live daemon        3840x2160     31.4   4.2   1.4   136  rules short
+  usage       light/live daemon        3840x2160     41.9   5.7   1.7   133  paper OVER (+12.4); rules short
+  settings    light/live daemon        3840x2160     45.7   3.3   0.9    74  paper OVER (+16.2); printed short; rules short
+  logs        light/live daemon        3840x2160     12.1   4.7   0.7   115  paper short (12.1 of 29.5); rules short
+  compaction  light/live daemon        3840x2160     32.3   3.7   1.3   124  printed short; rules short
+  doctor      light/live daemon        3840x2160      6.3   0.3   0.6     9  paper short (6.3 of 29.5); printed short; rules short
+  projects    light/live daemon        3840x2160      1.2   0.0   0.5     9  paper short (1.2 of 29.5); printed short; rules short
+  models      light/live daemon        3840x2160      1.7   0.1   0.5     9  paper short (1.7 of 29.5); printed short; rules short
+
+  LIMITS, AS COLUMNS RATHER THAN FOOTNOTES
+  - bay ground: L12 against a dark room of L13.4 (1.06:1), so it is floor by every classifier
+    here and lands in no layer. A bay that grows into its room adds nothing to this table.
+  - RULES is page-dependent and fenced off where M1-53 rewrote the rack: projects and doctor
+    read 1 against a builder's 633-683. Read RULED, which is consistent, not RULES.
+  - mcp is a missing row named as missing: no fixtures directory, so no content to capture.

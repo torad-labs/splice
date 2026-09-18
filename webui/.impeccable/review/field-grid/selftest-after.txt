@@ -1,0 +1,9 @@
+  PASS  ladder-steps expected ok=false got ok=false  (rungs 12/14/16 · steps 1.167, 1.143 · 0 of 2 reach 1.25x)
+  PASS  ladder-steps expected ok=true got ok=true  (rungs 12/16/24 · steps 1.333, 1.5 · 2 of 2 reach 1.25x)
+  PASS  no-type-transform expected ok=false got ok=false  (a.css:1 scaleY(1.5)  <- ON A font-size RULE)
+  PASS  no-type-transform expected ok=true got ok=true  (no scale transform on any rule)
+  PASS  field-grid expected ok=false got ok=false  (first field edge spans 80px)
+  PASS  field-grid expected ok=false got ok=false  (first field edge spans 80px)
+  PASS  field-grid expected ok=true got ok=true  (no edges found (ink drawn in dark, read as light))
+
+selftest: 7 passed, 0 failed

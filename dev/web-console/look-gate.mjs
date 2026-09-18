@@ -213,6 +213,45 @@ const px = (im, x, y) => {
 };
 const mean = (c) => (c[0] + c[1] + c[2]) / 3;
 
+/** ---- THE FIELD LINE'S COLOUR, READ FROM THE TOKEN SHEET PER THEME (M1-65) ----
+ *  This was `line = [0xa8, 0xa3, 0x92]`, a hardcoded hex. `#A8A392` is `--strip-field-line`
+ *  IN THE DARK BLOCK ONLY: the light block defines the same token as `rgba(31,36,34,.55)`,
+ *  which is a different colour entirely. So the detector has never been able to work in the
+ *  light room -- and it did not FAIL there, which is the dangerous half: it found no edges at
+ *  all and reported whatever no-edges means, silently, on every light capture the gate took.
+ *  Reading the token is also what stops this drifting again: the anchor was a measurement of
+ *  the token, and E-1 (M1-24) then changed what `--strip-field-line` is drawn on without the
+ *  hex knowing, which is how the index below came to be off by one field for a whole row.
+ *  An alpha token is composited over the paper it is drawn on, because that is what the
+ *  renderer does and the capture is a photograph of the render. */
+function themeTokens(theme) {
+  const css = readIf(TOKENS) || '';
+  // Split at each theme block so a dark value can never answer for a light question.
+  const blocks = css.split(/:root\[data-theme="(light|dark)"\]/);
+  let body = '';
+  for (let i = 1; i < blocks.length; i += 2) if (blocks[i] === theme) body = blocks[i + 1];
+  if (!body) body = theme === 'dark' ? css.split(':root,')[1] || '' : '';
+  const read = (name) => {
+    const m = new RegExp(`--${name}\\s*:\\s*([^;]+);`).exec(body);
+    return m ? m[1].trim() : null;
+  };
+  return { read };
+}
+function parseColor(value, ground = [255, 255, 255]) {
+  if (value === null) return null;
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hex) return [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+  const rgba = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(value);
+  if (!rgba) return null;
+  const a = rgba[4] === undefined ? 1 : Number(rgba[4]);
+  return [1, 2, 3].map((i) => Number(rgba[i]) * a + ground[i - 1] * (1 - a));
+}
+/** The colour `--strip-field-line` actually paints, in one theme, on the strip it divides. */
+function fieldLine(theme) {
+  const t = themeTokens(theme);
+  const paper = parseColor(t.read('strip')) || [222, 217, 198];
+  return parseColor(t.read('strip-field-line'), paper) || [0xa8, 0xa3, 0x92];
+}
 /** THE FIELD GRID. The whole legibility of a rack is that field N is at the same x on every
  *  strip: a controller scans down a column, never across a row. Detects the vertical field
  *  rules on each strip's scanline and fails when two strips in one bay disagree. */
@@ -225,6 +264,14 @@ function fieldBorders(im, y, x0, x1, line = [0xa8, 0xa3, 0x92], tol = 26) {
   const out = []; let prev = -9;
   for (const x of xs) { if (x - prev > 2) out.push(x); prev = x; }
   return out;
+}
+/** The theme a capture was taken in, read from its own filename (the gate names them
+ *  `<address>-<theme>-<w>x<h>.png`). A filename that names no theme is reported as such
+ *  rather than defaulted, because a default here would silently check the wrong room. */
+function captureTheme(file) {
+  if (/-light-/.test(file)) return 'light';
+  if (/-dark-/.test(file)) return 'dark';
+  return null;
 }
 /** Rows whose middle is strip paper: the scanline through each strip's value row. */
 function stripScanlines(im, x0, x1) {
@@ -246,12 +293,16 @@ function checkFieldGrid(capturesDir) {
   const files = (() => { try { return fs.readdirSync(path.join(ROOT, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
   if (files.length === 0) return record('field-grid', true, true, `skipped: no captures in ${capturesDir}`);
   const bad = [];
-  let checked = 0, skipped = 0;
+  let checked = 0, skipped = 0, unthemed = 0;
   for (const f of files) {
     const im = pixels(path.join(ROOT, capturesDir, f));
     if (!im) { skipped++; continue; }
     const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
     if (mid.length < 2) continue;
+    // A capture that names no theme is skipped AND COUNTED, so the leg can say it did not run
+    // for that file rather than passing it by default (law 23).
+    const theme = captureTheme(f);
+    if (theme === null) { unthemed++; continue; }
     checked++;
     // the first field's right edge; it must not move between strips.
     // THE INDEX IS [0] AND IT USED TO BE [1], which is not a tuning change. `fieldBorders` finds
@@ -263,13 +314,17 @@ function checkFieldGrid(capturesDir) {
     // begins at the field edge it was always looking for. The rule is unchanged; only the anchor
     // it counted from moved, and reading [1] now measures the SECOND field's edge, which is a
     // different claim than the one this rule makes.
-    const seconds = mid.map((y) => fieldBorders(im, y, 140, im.w - 4)[0]).filter((v) => v !== undefined);
+    // The line's colour comes from the token, IN THIS CAPTURE'S THEME. Hardcoding the dark
+    // block's #A8A392 is what made the light room invisible to this rule since it was written.
+    const line = fieldLine(theme);
+    const seconds = mid.map((y) => fieldBorders(im, y, 140, im.w - 4, line)[0]).filter((v) => v !== undefined);
     if (seconds.length < 2) continue;
     const spread = Math.max(...seconds) - Math.min(...seconds);
     if (spread > 2) bad.push(`${f}: first field edge spans ${spread}px across ${seconds.length} strips (x ${Math.min(...seconds)}..${Math.max(...seconds)})`);
   }
   const detail = (bad.length ? bad.join(' · ') : `aligned on ${checked} captures`)
-    + (skipped ? ` · ${skipped} skipped (no PIL)` : '');
+    + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
+    + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '');
   if (checked === 0) return record('field-grid', true, true, `skipped: ${detail}`);
   return record('field-grid', true, bad.length === 0, detail);
 }
@@ -307,6 +362,28 @@ function checkTonalDrift(capturesDir, compPath) {
 
 // ---------------------------------------------------------------- selftest (the mutation proof)
 
+
+/** A synthetic one-row capture with two strips whose first field edge is at DIFFERENT x, drawn
+ *  in `drawIn`'s theme colour while the detector is told the capture is `declareAs`. A correct
+ *  detector FAILS on it (the edges disagree); the pre-M1-65 detector told 'light' while the ink
+ *  is dark finds no edges at all and passes -- which is the bug, reproduced. */
+function fieldProbe(declareAs, drawIn) {
+  const w = 1200, h = 40;
+  const data = Buffer.alloc(w * h * 3, 0);
+  const paint = (x, y, rgb) => { const i = (y * w + x) * 3; data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; };
+  for (const y of [8, 28]) for (let x = 0; x < w; x++) paint(x, y, [222, 217, 198]);   // paper rows
+  const line = fieldLine(drawIn);
+  for (const [y, xs] of [[8, [300, 700]], [28, [380, 700]]]) for (const x of xs) paint(x, y, line);
+  const im = { w, h, data };
+  const mid = [8, 28];
+  const seconds = mid.map((y) => fieldBorders(im, y, 140, w - 4, fieldLine(declareAs))[0]).filter((v) => v !== undefined);
+  findings.length = 0;
+  if (seconds.length < 2) { record('field-grid', true, true, `no edges found (ink drawn in ${drawIn}, read as ${declareAs})`); return findings[0]; }
+  const spread = Math.max(...seconds) - Math.min(...seconds);
+  record('field-grid', true, spread <= 2, `first field edge spans ${spread}px`);
+  return findings[0];
+}
+
 function selftest() {
   // §24: a gate that has never failed is a tautology. Each check is run against a synthetic
   // violation and must FAIL, then against a compliant form and must PASS.
@@ -331,6 +408,14 @@ function selftest() {
       fs.rmSync(tmp, { recursive: true, force: true });
       return findings[0];
     }, true],
+    // ---- THE FIELD DETECTOR, IN BOTH THEMES (M1-65). The light case was NEVER exercised:
+    // the colour was the dark block's hex, so a light capture found no edges and the rule
+    // passed by finding nothing. These two cases are the mutation proof that it can now fail
+    // in the light room as well as the dark one, and that it still refuses the other room's
+    // colour -- which is the exact defect, reproduced as a test rather than argued.
+    ['field-grid', () => fieldProbe('dark', 'dark'), false],
+    ['field-grid', () => fieldProbe('light', 'light'), false],
+    ['field-grid', () => fieldProbe('light', 'dark'), true],
   ];
   let pass = 0, fail = 0;
   for (const [id, run, expectOk] of cases) {

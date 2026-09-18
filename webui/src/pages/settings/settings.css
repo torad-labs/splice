@@ -63,7 +63,22 @@
    strip module would otherwise bring. */
 .myx-settings .myx-bay-rows .myx-fbox {
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--hair);
+  /* --hair IS A WIDTH AND --hairline IS A COLOUR (M1-75). This read
+     `border-bottom: 1px solid var(--hair)`, which substitutes to `1px solid 1px` - invalid at
+     computed-value time, so border-bottom-style reset to its initial `none` and THE RULE DREW
+     NOTHING. Not a currentColor fallback: measured on the live DOM, .myx-settings .myx-bay-rows .myx-fbox (n=74) computed
+     border-bottom-style `none` and border-bottom-width `0px`, against .myx-rule (which spells
+     the idiom correctly) computing solid / 1px / rgba(236,234,226,.1). The idiom is documented
+     at tokens.css:55-56: `border-top: var(--hair) solid var(--hairline)`.
+
+     THE COLOUR IS --strip-field-line AND NOT --hairline, because these rows sit on PAPER. That
+     idiom's --hairline is the ROOM's line: measured on this ground it composites to #E5E1D3 over
+     #E4E0D1 in dark, which is 1.01:1 - a rule that is drawn and still cannot be seen, which is the
+     same defect as the one above wearing a valid declaration. --strip-field-line measures 1.91:1
+     in dark and 3.56:1 in light on the same ground. The two sibling sites, .myx-knob and .myx-head,
+     DO sit on the room and keep --hairline: this is D7's shape for a border, so the line follows
+     the plane rather than the idiom. */
+  border-bottom: var(--hair) solid var(--strip-field-line);
 }
 
 .myx-settings .myx-bay-rows .myx-fbox:last-child {

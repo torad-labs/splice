@@ -205,6 +205,20 @@
   --room-deep:#080A0A;
   --hairline:rgba(236,234,226,.10);
   --hairline-strong:rgba(236,234,226,.22);
+  /* WHY THE HAIRLINE IS NOT THE SAME STRENGTH IN BOTH ROOMS (M1-82), written here so it is not
+     re-opened as a defect. The same --hairline reads 1.91:1 against the dark room and 3.56:1 against
+     light paper - nearly a factor of two, and it was reported as an asymmetry twice. IT IS NOT AN
+     ASYMMETRY, IT IS A PLANE EFFECT: contrast is a property of an ink AND its ground, and these two
+     rooms put the line on grounds 200 luminance points apart. Measured against the comp, which is dark
+     and is the only room the comp has: the comp's own rack ribs read 1.37-1.42:1 against their floor
+     (sampled from the slot rules at y 698/729/760 over the bay floor, 9,13,13), so 1.91 is the same
+     band, slightly stronger. And the comp's own separators ON PAPER - its cell dividers - read 4.13:1
+     (the divider at y229, 95,93,86 over strip 213,204,185), so light's 3.56 is the same band,
+     slightly weaker. EACH ROOM IS MEASURED AGAINST ITS OWN GROUND AND EACH IS WITHIN REACH OF THE
+     COMP'S EQUIVALENT. Equalising them would take the dark room's ribs to 3.5:1 against its floor,
+     which is twice the comp's own rib reading and over-articulates a room that separates with
+     material rather than with lines (M1-24's ruling, M1-38's measurement). Do not split the
+     difference either: both rooms are measured against their own grounds or neither is. */
 
   /* ---------- INK ON THE ROOM ---------- */
   --ink:#C9C3B4;        /* rule ink, measured #C2BBAE..#CDC6B9 */

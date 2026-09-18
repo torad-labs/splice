@@ -56,7 +56,13 @@ export function providerText(authKind: string): string {
  * What a head with nothing in flight prints. Not a strings.ts value: this is a statement, not
  * chrome, and the label wall caps a table entry at three words (CONTRACTS.md section 4).
  */
-const NO_TURN = 'no turn in flight';
+/* NOT A PHRASE BUT A FACT THE VOCABULARY ALREADY NAMES (M1-69). This said `no turn in flight` -
+   four words for "we asked which turn and the answer is none", which is exactly what `none` means
+   in the vocabulary the tables carry. It is a cell value, not a sentence in an opened note, so it
+   takes the word rather than the sentence: the eye scans a column of cells, and a cell that has to
+   be read as a sentence is the defect the absence vocabulary exists to remove.
+   Kept as a named constant so the call site reads the same. */
+const NO_TURN = S.none;
 
 /** A window as printed. Null means the head reports none, which is not a zero. */
 export function windowText(head: HeadWindow): string {

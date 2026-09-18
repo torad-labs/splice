@@ -70,7 +70,10 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
         >
           {tail.map((row, index) => {
             const key = eventKey(row, index);
-            const outcome = row.outcome ?? 'unknown';
+            // `unknown` IS THE RIGHT WORD (M1-69): the daemon did not report an outcome for this row, which
+  // is "we asked and were not told" - not `none`, which would say the answer is zero and turn a
+  // missing report into a reading.
+  const outcome = row.outcome ?? 'unknown';
             return (
               <Strip
                 key={key}

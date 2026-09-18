@@ -86,7 +86,10 @@ export function AccountStrip({ account, isNext, nextRule, columns, nowMs, select
           w={WINDOW_WIDTH}
           label={windowFieldLabel(window)}
           value={windowUsedText(window)}
-          basis={window.used_percent === null ? 'unavailable' : 'measured'}
+          /* NOT AN ABSENCE PHRASE (M1-69): `unavailable` here is a BASIS member - it tells the reader
+         what kind of figure this is, and it is printed beside the figure it qualifies. The census
+         counts it because it is quoted. */
+      basis={window.used_percent === null ? 'unavailable' : 'measured'}
         />
       ))}
       {account.windows.length === 0 ? (

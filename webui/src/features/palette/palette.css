@@ -4,14 +4,15 @@
 
 .myx-palette-scrim {
   position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-overlay);
+  inset: 0;
+  /* No z-index: the world has no stack ladder, and it does not need one here. The scrim and the
+     palette are the last things the shell renders, so they paint over the rail and the rule by
+     document order - which is the one ordering a reader can see in App.tsx. */
   background: color-mix(in srgb, var(--room) 72%, transparent);
 }
 
 .myx-palette {
   position: fixed;
-  z-index: var(--z-modal);
   left: 50%;
   top: 18%;
   transform: translateX(-50%);
@@ -41,7 +42,7 @@
 
 .myx-palette-list {
   overflow-y: auto;
-  padding: var(--space-2) var(--space-0);
+  padding: var(--space-2) 0;
 }
 
 .myx-palette-group [cmdk-group-heading] {

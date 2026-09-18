@@ -1,78 +1,255 @@
-// WCAG AA verification for every ink/surface pairing the dashboard actually
-// uses, in BOTH Plate registers (locked design gate: "AA verified in BOTH
-// registers for text, controls, focus, data inks"). Token values are pinned
-// from the vendored torad-tokens.css; if the sheet is re-vendored with new
-// pigments, this suite re-verifies the pairings.
+// COLOUR WALL (row M1-01). Every ink/surface pairing the console is allowed to
+// put text on clears WCAG AA, in BOTH rooms, and the numbers come from the
+// sheet that ships: tokens.css is PARSED at test time, never re-typed here. A
+// second copy of the values would agree with itself while the sheet drifted.
+//
+// The token list is not a hand list either. It is parsed out of section 1 of
+// .dev/web-console/CONTRACTS.md, which is the lattice every console row builds
+// against, so a token the contract names and the sheet forgets fails here BY
+// NAME, and a token added to the contract is picked up without editing this
+// file.
+//
+// The last test is the mutation proof: the same checker, handed a pair that is
+// deliberately below AA, must report that pair by name. A wall that cannot fail
+// is not a wall.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
-// primitives (torad-tokens.css)
-const C = {
-  paper0: '#fbf3df', paper50: '#efe6d2', paper100: '#e7dcc2', paper200: '#e0d4b8',
-  ink900: '#241d14', ink700: '#5d5240', ink500: '#635741',
-  obsidian900: '#1c1610', obsidian800: '#241a12', obsidian700: '#150f09',
-  mist100: '#efe2c6', mist400: '#b6a888', mist500: '#968969',
-  vermilion700: '#a62815', vermilion800: '#8f2412', vermilion400: '#e2563b', vermilion300: '#f06a4c',
-  prussian600: '#1c3c5c', prussian400: '#6fa8cf',
-  verdigris600: '#2c6555', verdigris400: '#5bb59c',
-  ormolu600: '#7d5419', ormolu400: '#e7c069',
-  red600: '#a53b39', red400: '#e85d5d',
-};
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
 
-function luminance(hex: string): number {
+const TOKENS_CSS = 'webui/src/shared/tokens.css';
+const CONTRACTS = '.dev/web-console/CONTRACTS.md';
+
+const DARK_SELECTOR = ':root[data-theme="dark"]';
+const LIGHT_SELECTOR = ':root[data-theme="light"]';
+
+/** Comments are prose about the sheet, and they name selectors the sheet itself
+ *  defines; dropping them first keeps a selector lookup from landing in a
+ *  comment and reporting the wrong block as the room. */
+const stripComments = (sheet: string): string => sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+
+const css = stripComments(read(TOKENS_CSS));
+const contracts = read(CONTRACTS);
+
+// ---------------------------------------------------------------- the sheet
+
+type Tokens = Record<string, string>;
+
+/** The body of the first rule whose selector list contains `selector`. */
+function blockBody(sheet: string, selector: string): string {
+  const at = sheet.indexOf(selector);
+  if (at < 0) throw new Error(`${TOKENS_CSS}: no rule for ${selector}`);
+  const open = sheet.indexOf('{', at);
+  let depth = 0;
+  for (let i = open; i < sheet.length; i += 1) {
+    if (sheet[i] === '{') depth += 1;
+    else if (sheet[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return sheet.slice(open + 1, i);
+    }
+  }
+  throw new Error(`${TOKENS_CSS}: unterminated rule for ${selector}`);
+}
+
+/** Every `--name: value;` declared directly in a block body. */
+function parseTokens(body: string): Tokens {
+  const tokens: Tokens = {};
+  for (const [, name, value] of body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+    tokens[name] = value.trim();
+  }
+  return tokens;
+}
+
+const dark = parseTokens(blockBody(css, DARK_SELECTOR));
+const light = parseTokens(blockBody(css, LIGHT_SELECTOR));
+const rooms: ReadonlyArray<[name: string, tokens: Tokens]> = [
+  ['dark', dark],
+  ['light', light],
+];
+
+/** The value a pairing must resolve to; a missing token is a failure with a name. */
+function value(tokens: Tokens, name: string, room: string): string {
+  const found = tokens[name];
+  if (found === undefined) throw new Error(`tokens.css ${room} room: ${name} is not defined`);
+  return found;
+}
+
+// ----------------------------------------------------------------- contrast
+
+function luminance(color: string): number {
+  const hex = color.trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    throw new Error(`contrast is computed from hex only; got ${color} (use a hex token)`);
+  }
   const n = parseInt(hex.slice(1), 16);
-  const chan = (v: number) => {
+  const channel = (v: number): number => {
     const s = v / 255;
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
   };
-  return 0.2126 * chan((n >> 16) & 255) + 0.7152 * chan((n >> 8) & 255) + 0.0722 * chan(n & 255);
+  return (
+    0.2126 * channel((n >> 16) & 255) +
+    0.7152 * channel((n >> 8) & 255) +
+    0.0722 * channel(n & 255)
+  );
 }
 
-function ratio(fg: string, bg: string): number {
-  const [a, b] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
-  return (a + 0.05) / (b + 0.05);
+function ratio(foreground: string, background: string): number {
+  const [hi, lo] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (hi + 0.05) / (lo + 0.05);
 }
 
-// every (ink, surface) pair the .myx-* composition puts text on
-const PAIRINGS: Array<[label: string, fg: string, bg: string]> = [
-  // light register (paper): body/strong/mute on surface, raised panels, sunk wells, control fields
-  ['light ink-body on surface', C.ink700, C.paper50],
-  ['light ink-body on raised', C.ink700, C.paper100],
-  ['light ink-body on control', C.ink700, C.paper0],
-  ['light ink-strong on raised', C.ink900, C.paper100],
-  ['light ink-mute on surface', C.ink500, C.paper50],
-  ['light ink-mute on raised', C.ink500, C.paper100],
-  ['light ink-mute on sunk', C.ink500, C.paper200],
-  ['light accent (links/active tab) on surface', C.vermilion700, C.paper50],
-  ['light accent on raised', C.vermilion700, C.paper100],
-  ['light on-accent on accent (primary btn)', C.paper0, C.vermilion700],
-  ['light on-accent on accent-bright (btn hover)', C.paper0, C.vermilion800],
-  ['light data-pos on raised', C.verdigris600, C.paper100],
-  ['light data-neg on raised', C.red600, C.paper100],
-  ['light data-info on raised', C.prussian600, C.paper100],
-  ['light data-amber on raised', C.ormolu600, C.paper100],
-  ['light focus ring on surface', C.vermilion700, C.paper50],
-  // dark register (observatory)
-  ['dark ink-body on surface', C.mist400, C.obsidian900],
-  ['dark ink-body on raised', C.mist400, C.obsidian800],
-  ['dark ink-strong on raised', C.mist100, C.obsidian800],
-  ['dark ink-mute on surface', C.mist500, C.obsidian900],
-  ['dark ink-mute on raised', C.mist500, C.obsidian800],
-  ['dark ink-mute on sunk', C.mist500, C.obsidian700],
-  ['dark accent on surface', C.vermilion400, C.obsidian900],
-  ['dark accent on raised', C.vermilion400, C.obsidian800],
-  ['dark on-accent on accent (primary btn)', C.obsidian900, C.vermilion400],
-  ['dark on-accent on accent-bright (btn hover)', C.obsidian900, C.vermilion300],
-  ['dark data-pos on raised', C.verdigris400, C.obsidian800],
-  ['dark data-neg on raised', C.red400, C.obsidian800],
-  ['dark data-info on raised', C.prussian400, C.obsidian800],
-  ['dark data-amber on raised', C.ormolu400, C.obsidian800],
-  ['dark focus ring on surface', C.vermilion400, C.obsidian900],
+interface Pairing {
+  /** printed on failure, so the wall names what broke */
+  label: string;
+  ink: string;
+  ground: string;
+  min: number;
+}
+
+/** The pairings that fail, by label. Empty is the pass. */
+function contrastFailures(pairings: readonly Pairing[]): string[] {
+  return pairings
+    .filter((p) => ratio(p.ink, p.ground) < p.min)
+    .map((p) => p.label);
+}
+
+// ------------------------------------------------- the contract's token set
+
+/**
+ * Section 1 of CONTRACTS.md carries the token tables. Its first column is the
+ * denominator: every token named there, with `--a` .. `--b` ranges expanded.
+ * The "kept, current values" row names retired tokens that live in the shared
+ * block rather than in both rooms, so it is collected separately.
+ */
+function contractTokens(markdown: string): { bothRooms: string[]; shared: string[] } {
+  const start = markdown.indexOf('## 1. Tokens');
+  const end = markdown.indexOf('## 2. Primitives');
+  if (start < 0 || end < 0) {
+    throw new Error(`${CONTRACTS}: section 1 (Tokens) or section 2 (Primitives) is missing`);
+  }
+  const bothRooms = new Set<string>();
+  const shared = new Set<string>();
+  const range = /`(--[a-z0-9-]+)`(?:\s*\.\.\s*`(--[a-z0-9-]+)`)?/g;
+
+  for (const line of markdown.slice(start, end).split('\n')) {
+    if (!line.trimStart().startsWith('|')) continue;
+    const cells = line.split('|');
+    if (cells.length < 4) continue;
+    const named = [...cells[1].matchAll(range)];
+    if (named.length === 0) continue;
+    const target = /kept/i.test(cells[2]) ? shared : bothRooms;
+    for (const [, from, to] of named) {
+      target.add(from);
+      if (to !== undefined) {
+        const head = from.slice(0, from.lastIndexOf('-') + 1);
+        const first = Number(from.slice(head.length));
+        const last = Number(to.slice(to.lastIndexOf('-') + 1));
+        for (let i = first; i <= last; i += 1) target.add(`${head}${i}`);
+      }
+    }
+  }
+  for (const name of bothRooms) shared.delete(name);
+  return { bothRooms: [...bothRooms].sort(), shared: [...shared].sort() };
+}
+
+const { bothRooms, shared } = contractTokens(contracts);
+const edgeTokens = bothRooms.filter((name) => name.startsWith('--edge-'));
+
+// ---------------------------------------------------------------- the pairs
+
+const TEXT_MIN = 4.5;
+const EDGE_MIN = 3;
+
+/** ink that must clear AA text contrast on each ground it is printed on */
+const TEXT_ON: ReadonlyArray<[ink: string, grounds: string[]]> = [
+  ['--ink', ['--room', '--room-deep']],
+  ['--ink-mute', ['--room', '--room-deep']],
+  ['--ink-strong', ['--room', '--room-deep']],
+  ['--strip-ink', ['--strip', '--strip-field']],
+  ['--strip-ink-mute', ['--strip', '--strip-field']],
+  ['--scope-ink', ['--scope']],
 ];
 
-describe('WCAG AA (4.5:1 normal text) across both registers', () => {
-  for (const [label, fg, bg] of PAIRINGS) {
-    test(label, () => {
-      expect(ratio(fg, bg)).toBeGreaterThanOrEqual(4.5);
+/** the holder edge carries attention, so it must be seen on the room and on a strip */
+const EDGE_ON = ['--room', '--strip'];
+
+function pairingsFor(tokens: Tokens, room: string): Pairing[] {
+  const pairings: Pairing[] = [];
+  for (const [ink, grounds] of TEXT_ON) {
+    for (const ground of grounds) {
+      pairings.push({
+        label: `${room}: ${ink} on ${ground}`,
+        ink: value(tokens, ink, room),
+        ground: value(tokens, ground, room),
+        min: TEXT_MIN,
+      });
+    }
+  }
+  for (const edge of edgeTokens) {
+    for (const ground of EDGE_ON) {
+      pairings.push({
+        label: `${room}: ${edge} on ${ground}`,
+        ink: value(tokens, edge, room),
+        ground: value(tokens, ground, room),
+        min: EDGE_MIN,
+      });
+    }
+  }
+  return pairings;
+}
+
+// ------------------------------------------------------------------- tests
+
+describe('the token sheet carries what the contract names', () => {
+  test('section 1 of CONTRACTS.md yielded a denominator', () => {
+    expect(bothRooms.length).toBeGreaterThan(20);
+    expect(edgeTokens).toHaveLength(4);
+  });
+
+  for (const [room, tokens] of rooms) {
+    test(`${room}: every contract token is defined in this room`, () => {
+      const missing = bothRooms.filter((name) => tokens[name] === undefined);
+      expect(missing, `missing from the ${room} room`).toEqual([]);
     });
   }
+
+  test('retired tokens named in section 1 survive somewhere in the sheet', () => {
+    const missing = shared.filter((name) => !new RegExp(`(^|[;{\\s])${name}\\s*:`).test(css));
+    expect(missing, 'retired tokens the old pages still read').toEqual([]);
+  });
+});
+
+describe('WCAG AA in both rooms', () => {
+  for (const [room, tokens] of rooms) {
+    for (const pairing of pairingsFor(tokens, room)) {
+      test(`${pairing.label} >= ${pairing.min}:1`, () => {
+        expect(ratio(pairing.ink, pairing.ground)).toBeGreaterThanOrEqual(pairing.min);
+      });
+    }
+  }
+});
+
+describe('the wall can fail', () => {
+  test('a pair below AA is reported by name', () => {
+    const fixture: Pairing = {
+      label: 'fixture: grey ink on grey ground',
+      ink: '#8f8f8f',
+      ground: '#7d7d7d',
+      min: 4.5,
+    };
+    expect(contrastFailures([fixture])).toEqual([fixture.label]);
+  });
+
+  test('a pair at the threshold passes', () => {
+    const atThreshold: Pairing = {
+      label: 'fixture: black on white',
+      ink: '#000000',
+      ground: '#ffffff',
+      min: 21,
+    };
+    expect(contrastFailures([atThreshold])).toEqual([]);
+  });
 });

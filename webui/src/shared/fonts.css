@@ -1,23 +1,26 @@
-/* IBM Plex Mono, embedded in the single-file build (data URIs via Vite inline).
-   Serif faces intentionally fall back to system serif to keep the artifact small. */
+/* The two faces of the strip bay, embedded in the single-file build.
+   A compact workhorse grotesque for labels and copy (Archivo, variable), and a
+   tabular monospace for figures (JetBrains Mono, variable). Both are variable
+   files, so one @font-face rule covers the whole weight axis and the build
+   inlines two files instead of six.
+
+   url() rather than a bare path keeps them under Vite's assetsInlineLimit, so
+   the shipped artifact carries no font request. The IBM Plex Mono files and
+   OFL.txt stay beside these, unreferenced, until the finish row removes them;
+   an unreferenced font is never inlined. */
+
 @font-face {
-  font-family: 'IBM Plex Mono';
+  font-family: 'Archivo';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 100 900;
   font-display: swap;
-  src: url('./fonts/ibm-plex-mono-400.woff2') format('woff2');
+  src: url('./fonts/archivo-var.woff2') format('woff2-variations');
 }
+
 @font-face {
-  font-family: 'IBM Plex Mono';
+  font-family: 'JetBrains Mono';
   font-style: normal;
-  font-weight: 500;
+  font-weight: 100 800;
   font-display: swap;
-  src: url('./fonts/ibm-plex-mono-500.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('./fonts/ibm-plex-mono-600.woff2') format('woff2');
+  src: url('./fonts/jetbrains-mono-var.woff2') format('woff2-variations');
 }

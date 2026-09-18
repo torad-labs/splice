@@ -20,6 +20,9 @@ import { useHeads } from '@entities/heads';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { headsReportingNone, nearestWindow, startUsagePolling, useUsage } from '@entities/usage';
 import { useRestartPending } from '@entities/config';
+import { connect, useEvents } from '@entities/events';
+import type { ConnectionStatus } from '@entities/events';
+import { timeAgo } from '@shared/lib';
 import { Figure, HolderEdge } from '@shared/ui';
 import type { AuthPayload, UsagePayload } from '@shared/api';
 import { S } from './strings';
@@ -79,6 +82,30 @@ export function WindowCell({ usage, auth }: { usage: UsagePayload | null; auth: 
   );
 }
 
+/**
+ * How the live connection is doing, beside health: green while a stream is open, amber while it is
+ * between attempts, grey when there is none (no management key yet, or a stale one).
+ *
+ * The age of the last FRAME is printed beside it, and its BASIS carries the distinction the age
+ * alone cannot: a quiet daemon and a dead stream both leave an old frame behind, and only the
+ * state word tells them apart. The basis turns `stale` at the same 15 s the console uses
+ * everywhere else, so an old number never reads as a fresh one.
+ */
+export function ConnectionCell({ status, lastFrameAt }: { status: ConnectionStatus; lastFrameAt: number | null }) {
+  const edge = status === 'live' ? 'green' : status === 'reconnecting' ? 'amber' : 'grey';
+  const word = status === 'live' ? S.live : status === 'reconnecting' ? S.reconnecting : S.off;
+  return (
+    <p className="myx-rule-cell myx-rule-connection">
+      <HolderEdge state={edge} label={word} />
+      {lastFrameAt === null ? (
+        <span className="myx-rule-absent">no frame yet</span>
+      ) : (
+        <Figure value={timeAgo(lastFrameAt)} basis={Date.now() - lastFrameAt < 15_000 ? 'measured' : 'stale'} />
+      )}
+    </p>
+  );
+}
+
 /** How many heads report no window at all. Null until the route answers. */
 export function NoneCell({ usage }: { usage: UsagePayload | null }) {
   const none = headsReportingNone(usage);
@@ -120,6 +147,7 @@ export function Rule() {
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
   const pendingRestart = useRestartPending((state) => state.pending);
+  const connection = useEvents((state) => state);
   const { local, utc } = useClock();
 
   useEffect(() => {
@@ -128,6 +156,10 @@ export function Rule() {
     // page it is drawn over.
     void fetchControlStatus();
     const stops = [startUsagePolling(15_000), startAuthPolling(30_000)];
+    // The live stream is opened here because the rule is the chrome that outlives every page and
+    // the surface that prints the connection; connect() is idempotent, so whoever else asks for it
+    // gets the same one stream.
+    connect();
     return () => stops.forEach((stop) => stop());
   }, []);
 
@@ -148,6 +180,8 @@ export function Rule() {
       <div className="myx-rule-cell myx-rule-health">
         <HolderEdge state={health} label={S.health[health]} />
       </div>
+
+      <ConnectionCell status={connection.status} lastFrameAt={connection.lastFrameAt} />
 
       <PendingRestartCell pending={pendingRestart} />
 

@@ -91,3 +91,12 @@
   align-items: baseline;
   gap: var(--space-2);
 }
+
+/* The live connection cell, beside health: a holder edge with its word, and the age of the last
+   frame. It always renders (unlike the pending-restart cell) because "there is no stream" is a
+   state the operator needs to see rather than an absence. */
+.myx-rule-connection {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}

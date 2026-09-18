@@ -1,0 +1,50 @@
+/* The budgets panel: a section that the usage page mounts in its actions slot. Radius 0, tokens
+   only. */
+
+.myx-bud {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--hairline);
+  border-radius: 0;
+}
+
+.myx-bud-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+.myx-bud-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-bud-btn {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: transparent;
+  border: var(--hair) solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.myx-bud-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-bud-btn:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
+.myx-bud-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* A `block` head refuses turns, so its control reads more urgent than a warning's. */
+.myx-bud-btn-block { border-color: var(--edge-red); color: var(--edge-red); }
+
+.myx-bud-note {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

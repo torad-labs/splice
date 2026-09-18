@@ -19,27 +19,28 @@ produces it, and that file is matched against every in-flight row's fence.
 | # | constant | address | measured | comp | delta | how far | owner |
 |---|---|---|---|---|---|---|---|
 | 1 | `rule.window.x` | all 13 | 59.77% | 41% | +18.77% | 45.8% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 2 | `strip.h` | 4: turns sessions usage models | 4.1% | 6.5% | -2.40% | 36.9% | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
+| 2 | `strip.h` | 6: turns sessions projects usage models doctor | 4.1% | 6.5% | -2.40% | 36.9% | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
 | 3 | `rule.none.x` | all 13 | 90.68% | 72% | +18.68% | 25.9% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
 | 4 | `text.window.cap` | all 13 | 14px | 11.7px | +2.30px | 19.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 5 | `text.bay.label.cap` | 11: fleet turns sessions teams accounts usage settings models logs compaction mcp | 9px | 10.9px | -1.90px | 17.4% | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
-| 6 | `text.clocks.cap` | all 13 | 14px | 12px | +2.00px | 16.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 7 | `text.none.cap` | all 13 | 14px | 12px | +2.00px | 16.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 8 | `text.health.cap` | all 13 | 11px | 12.4px | -1.40px | 11.3% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
-| 9 | `bay.label-centre` | 11: fleet turns sessions teams accounts usage settings models logs compaction mcp | 49.6% | 45.45% | +4.15% | 9.1% | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
+| 5 | `text.bay.label.cap` | all 13 | 9px | 10.9px | -1.90px | 17.4% | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| 6 | `bay.label-centre` | all 13 | 37.71% | 45.45% | -7.74% | 17.0% | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| 7 | `text.clocks.cap` | all 13 | 14px | 12px | +2.00px | 16.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
+| 8 | `text.none.cap` | all 13 | 14px | 12px | +2.00px | 16.7% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
+| 9 | `text.health.cap` | all 13 | 11px | 12.4px | -1.40px | 11.3% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
 | 10 | `text.wordmark.cap` | all 13 | 17px | 15.9px | +1.10px | 6.9% | webui/src/widgets/rule/rule.css — NO LIVE ROW |
 
-Full table: `comp-check.txt` (139 rows outside tolerance across the 13 addresses: 117 with a comp value to rank, 22 rule-based).
+**7 of 10 ranked constants have NO LIVE OWNER** (`rule.window.x`, `rule.none.x`, `text.window.cap`, `text.clocks.cap`, `text.none.cap`, `text.health.cap`, `text.wordmark.cap`). Their files are `webui/src/widgets/rule/rule.css`, and no in-flight row fences those paths as this list was generated — so the worst rows by distance are the ones nobody is currently able to fix.
+
+Full table: `comp-check.txt` (133 rows outside tolerance across the 13 addresses: 123 with a comp value to rank, 10 rule-based).
 
 **Rule-based failures — the comp carries the shape, not a number, so there is no delta to rank by:**
 
 | constant | addresses | measured | what the comp shows | owner |
 |---|---|---|---|---|
-| `field.label-rule` | 8: turns sessions projects usage settings models logs doctor | 0.00% | the rule under the label divider (CSS cites the comp crop at row y=229) | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
-| `strip.inset-x` | 4: projects settings logs doctor | n/a | a strip inside every bay to measure against | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
-| `strip.h` | 4: projects settings logs doctor | n/a | a strip in the rack (the address renders none) | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
-| `bay.label-centre` | 2: projects doctor | n/a | a bay label plate on the rack | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
-| `field.divider` | 4: projects settings logs doctor | n/a | a vertical divider between field boxes | M1-23 @design-builder (webui/src/shared/ui/ui.css) |
+| `field.label-rule` | 7: turns sessions projects usage settings models doctor | 0.00% | the rule under the label divider (CSS cites the comp crop at row y=229) | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| `strip.inset-x` | 1: settings | n/a | a strip inside every bay to measure against | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| `strip.h` | 1: settings | n/a | a strip in the rack (the address renders none) | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
+| `field.divider` | 1: settings | n/a | a vertical divider between field boxes | M1-24 @design-builder (webui/src/shared/ui/ui.css) |
 
 **CAVEAT THAT TRAVELS WITH EVERY ROW ABOVE.** `comp-check.mjs` carries its own fixture table and it is the STALE one: `turns`, `sessions`, `projects`, `logs`, `accounts` and `doctor` were measured against LIVE daemon data rather than their fixtures, because that table still names `demo` (see section 4). The chrome constants (rail, rule, the text roles) are data-independent and stand; the rack constants for those six addresses do not.
 

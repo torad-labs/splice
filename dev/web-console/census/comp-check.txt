@@ -125,7 +125,7 @@ sessions  (1536x1024)
   rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
   strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
   strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
-  bay.label-centre         comp 45.45%            got 46.46%       delta +1.01   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.label-centre         comp 45.45%            got 46.71%       delta +1.26   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
   bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
   bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
   field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
@@ -231,17 +231,17 @@ projects  (1536x1024)
   rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
   rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
   rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
-  strip.inset-x            comp 0.70%             got n/a                        FAIL
-  strip.h                  comp 6.50%             got n/a                        FAIL
-  bay.label-centre         comp 45.45%            got n/a                        FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
-  bay.rail-top             comp n/a               got n/a                        comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
-  bay.rail-bottom          comp n/a               got n/a                        comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
-  field.pad-start          comp n/a               got n/a                        comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
-  field.pad-end            comp n/a               got n/a                        comp n/a  (comp carries no field region; measured for the reviewer)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 47.04%       delta +1.58   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
   field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
   field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
-  field.divider            comp n/a               got n/a                        FAIL  (the comp cell carries a vertical divider; the world declares --hair (1px))
-  field.label-rule         comp n/a               got n/a                        FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
   text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
   text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
   text.wordmark.scale      comp 1                 got 1                          ok
@@ -257,9 +257,13 @@ projects  (1536x1024)
   text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
   text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
   text.none.scale          comp 1                 got 1                          ok
-  text.bay.label                                                                 absent  (this address does not render the role)
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
   text.strip.field-label                                                         absent  (this address does not render the role)
-  text.strip.field-value                                                         absent  (this address does not render the role)
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
   text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
   text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
   text.rail.tab.scale      comp 1                 got 1                          ok
@@ -282,7 +286,7 @@ accounts  (1536x1024)
   rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
   strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
   strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
-  bay.label-centre         comp 45.45%            got 49.44%       delta +3.99   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.label-centre         comp 45.45%            got 37.71%       delta -7.74   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
   bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
   bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
   field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
@@ -494,17 +498,17 @@ logs  (1536x1024)
   rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
   rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
   rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
-  strip.inset-x            comp 0.70%             got n/a                        FAIL
-  strip.h                  comp 6.50%             got n/a                        FAIL
-  bay.label-centre         comp 45.45%            got 49.60%       delta +4.15   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
+  bay.label-centre         comp 45.45%            got 49.35%       delta +3.90   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
   bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
   bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
-  field.pad-start          comp n/a               got n/a                        comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
-  field.pad-end            comp n/a               got n/a                        comp n/a  (comp carries no field region; measured for the reviewer)
-  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
-  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
-  field.divider            comp n/a               got n/a                        FAIL  (the comp cell carries a vertical divider; the world declares --hair (1px))
-  field.label-rule         comp n/a               got n/a                        FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 8.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
   text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
   text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
   text.wordmark.scale      comp 1                 got 1                          ok
@@ -659,17 +663,17 @@ doctor  (1536x1024)
   rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
   rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
   rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
-  strip.inset-x            comp 0.70%             got n/a                        FAIL
-  strip.h                  comp 6.50%             got n/a                        FAIL
-  bay.label-centre         comp 45.45%            got n/a                        FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
-  bay.rail-top             comp n/a               got n/a                        comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
-  bay.rail-bottom          comp n/a               got n/a                        comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
-  field.pad-start          comp n/a               got n/a                        comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
-  field.pad-end            comp n/a               got n/a                        comp n/a  (comp carries no field region; measured for the reviewer)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 49.44%       delta +3.99   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
   field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
   field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
-  field.divider            comp n/a               got n/a                        FAIL  (the comp cell carries a vertical divider; the world declares --hair (1px))
-  field.label-rule         comp n/a               got n/a                        FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
   text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
   text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
   text.wordmark.scale      comp 1                 got 1                          ok
@@ -685,7 +689,9 @@ doctor  (1536x1024)
   text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
   text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
   text.none.scale          comp 1                 got 1                          ok
-  text.bay.label                                                                 absent  (this address does not render the role)
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
   text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
   text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
   text.strip.field-label.scale comp 1                 got 1                          ok
@@ -696,7 +702,7 @@ doctor  (1536x1024)
   text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
   text.rail.tab.scale      comp 1                 got 1                          ok
 
-13 addresses, 671 rows, 487 compared against the comp, 139 outside tolerance
+13 addresses, 677 rows, 495 compared against the comp, 133 outside tolerance
 FAIL fleet rule.window.x
 FAIL fleet rule.none.x
 FAIL fleet bay.label-centre
@@ -739,16 +745,15 @@ FAIL teams text.none.cap
 FAIL teams text.bay.label.cap
 FAIL projects rule.window.x
 FAIL projects rule.none.x
-FAIL projects strip.inset-x
 FAIL projects strip.h
 FAIL projects bay.label-centre
-FAIL projects field.divider
 FAIL projects field.label-rule
 FAIL projects text.wordmark.cap
 FAIL projects text.clocks.cap
 FAIL projects text.health.cap
 FAIL projects text.window.cap
 FAIL projects text.none.cap
+FAIL projects text.bay.label.cap
 FAIL accounts rule.window.x
 FAIL accounts rule.none.x
 FAIL accounts bay.label-centre
@@ -795,11 +800,7 @@ FAIL models text.none.cap
 FAIL models text.bay.label.cap
 FAIL logs rule.window.x
 FAIL logs rule.none.x
-FAIL logs strip.inset-x
-FAIL logs strip.h
 FAIL logs bay.label-centre
-FAIL logs field.divider
-FAIL logs field.label-rule
 FAIL logs text.wordmark.cap
 FAIL logs text.clocks.cap
 FAIL logs text.health.cap
@@ -826,13 +827,12 @@ FAIL mcp text.none.cap
 FAIL mcp text.bay.label.cap
 FAIL doctor rule.window.x
 FAIL doctor rule.none.x
-FAIL doctor strip.inset-x
 FAIL doctor strip.h
 FAIL doctor bay.label-centre
-FAIL doctor field.divider
 FAIL doctor field.label-rule
 FAIL doctor text.wordmark.cap
 FAIL doctor text.clocks.cap
 FAIL doctor text.health.cap
 FAIL doctor text.window.cap
 FAIL doctor text.none.cap
+FAIL doctor text.bay.label.cap

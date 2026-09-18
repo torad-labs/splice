@@ -36,6 +36,8 @@ function liveFences() {
     const match = text.match(/^files = \[(.*)\]$/m);
     const files = match === null ? [] : [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     const owner = (text.match(/^# \[[^\]]+\] CLAIM: owner=(\S+)/m) ?? [])[1] ?? '?';
+    // A row that owns THIS directory is the one assembling the list, not an owner of page defects.
+    if (files.some((fence) => fence.startsWith('dev/web-console/census'))) continue;
     rows.push({ id, owner, files });
   }
   return rows;
@@ -165,6 +167,11 @@ ordered.forEach((entry, index) => {
   lines.push(`| ${index + 1} | \`${entry.id}\` | ${addresses} | ${worst.got}${worst.unit} | ${worst.comp}${worst.unit} | ${worst.delta > 0 ? '+' : ''}${worst.delta.toFixed(2)}${worst.unit} | ${(distance(worst) * 100).toFixed(1)}% | ${owner === null ? `${file} — NO LIVE ROW` : `${owner} (${file})`} |`);
 });
 lines.push('');
+{
+  const unowned = ordered.filter((entry) => ownerOf(sourceOf(entry.id), fences) === null);
+  lines.push(`**${unowned.length} of ${ordered.length} ranked constants have NO LIVE OWNER** (${unowned.map((e) => `\`${e.id}\``).join(', ')}). Their files are ${[...new Set(unowned.map((e) => sourceOf(e.id)))].map((f) => `\`${f}\``).join(' and ')}, and no in-flight row fences those paths as this list was generated — so the worst rows by distance are the ones nobody is currently able to fix.`);
+  lines.push('');
+}
 lines.push(`Full table: \`comp-check.txt\` (${allFailures.length} rows outside tolerance across the 13 addresses: ${ranked.length} with a comp value to rank, ${ruleFailures.length} rule-based).`);
 lines.push('');
 lines.push('**Rule-based failures — the comp carries the shape, not a number, so there is no delta to rank by:**');

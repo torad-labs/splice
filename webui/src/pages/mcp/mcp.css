@@ -1,0 +1,75 @@
+/* The MCP page: a rack of server strips and a detail column, the same composition the fleet and
+   accounts pages use so the three read as one console. Radius 0, tokens only. */
+
+.myx-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-mcp-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-mcp-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+.myx-mcp-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* The bay clips its scroll, so the detail column drops beneath it before the rack can be cut: a
+   clipped field is the defect, not the scroll. Measured on the fleet page at 970px against a
+   1154px rack. */
+@media (max-width: 1600px) {
+  .myx-mcp-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.myx-mcp-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-mcp-bays > * { overflow-x: auto; }
+
+.myx-mcp-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-mcp-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--hairline);
+  border-radius: 0;
+}
+
+.myx-mcp-section-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+.myx-mcp-note {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

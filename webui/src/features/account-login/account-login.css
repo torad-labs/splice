@@ -23,13 +23,6 @@
   color: var(--ink);
 }
 
-.myx-acct-kind {
-  /* FIGURE: an account kind is a printed value. */
-  font-family: var(--font-figure);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
 
 .myx-acct-note {
   margin: 0;

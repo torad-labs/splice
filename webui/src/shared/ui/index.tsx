@@ -6,22 +6,19 @@ import type { ReactNode } from 'react';
 import { cx } from '../lib';
 import './ui.css';
 
-export function Panel({ title, actions, children, tone }: {
-  title: string;
-  actions?: ReactNode;
-  children: ReactNode;
-  tone?: 'signal';
-}) {
-  return (
-    <section className={cx('myx-panel', tone === 'signal' && 'myx-panel-signal')}>
-      <header className="myx-panel-head">
-        <h2 className="myx-panel-title">{title}</h2>
-        {actions ? <div className="myx-panel-actions">{actions}</div> : null}
-      </header>
-      <div className="myx-panel-body">{children}</div>
-    </section>
-  );
-}
+/* PANEL AND EMPTYSTATE WERE EXPORTED AND PLACED NOWHERE, AND ARE DELETED (M1-101).
+   Panel had zero JSX sites in the whole console and no hand-rolled equivalent to replace: no file
+   outside this one writes a `myx-panel*` class, so nothing was waiting for it. EmptyState had zero
+   sites for a different and more interesting reason -- the console's honest empties are rendered by
+   ITS OWN SIBLING, `Empty`, fifty-five times over, and `Empty` carries the `source` field the
+   absence vocabulary needs (M1-20) while EmptyState was a bare `<p>` with a label. It did not lose
+   to copy-paste; it lost to a better primitive that already existed.
+   THREE INDEPENDENT CHECKS, because this campaign has a row that nearly deleted two finished
+   features on one clean grep: (1) zero `<Panel` or `<EmptyState` JSX sites anywhere under
+   webui/src or webui/tests, inside the library and outside it; (2) nothing outside this file NAMES
+   either identifier; (3) every class token they carried -- myx-panel, -signal, -head, -title,
+   -actions, -body and myx-empty -- appears in exactly two files, this one and ui.css, so removing
+   both leaves no dangling class. The sheet rules went with them. */
 
 export type PillTone = 'pos' | 'neg' | 'info' | 'amber' | 'mute';
 
@@ -80,9 +77,6 @@ export function Well({ children }: { children: ReactNode }) {
   return <div className="myx-well">{children}</div>;
 }
 
-export function EmptyState({ label }: { label: string }) {
-  return <p className="myx-empty" role="status">{label}</p>;
-}
 
 export function ErrorNote({ message }: { message: string }) {
   return <p className="myx-error" role="alert">error: {message}</p>;

@@ -2,32 +2,7 @@
    --text-*, radii locked to --radius-1 (instruments) / --radius-0 (wells).
    Hairline dividers over cards; depth by surface tier, never shadow. */
 
-.myx-panel {
-  background: var(--surface-raised);
-  border: var(--hair) solid var(--line);
-  border-radius: var(--radius-1);
-}
-.myx-panel-signal { border-color: color-mix(in srgb, var(--data-info) 45%, transparent); }
 
-.myx-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: var(--hair) solid var(--line);
-}
-.myx-panel-title {
-  margin: var(--space-0);
-  font-family: var(--font-mono);
-  font-size: var(--text-2);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-}
-.myx-panel-actions { display: flex; gap: var(--space-2); align-items: center; }
-.myx-panel-body { padding: var(--space-3); }
 
 .myx-pill {
   font-family: var(--font-mono);
@@ -144,16 +119,6 @@
   overflow-x: auto;
 }
 
-.myx-empty {
-  margin: var(--space-0);
-  padding: var(--space-4);
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--text-2);
-  color: var(--ink-mute);
-  border: var(--hair) dashed var(--line);
-  border-radius: var(--radius-1);
-}
 
 .myx-error {
   margin: var(--space-0);

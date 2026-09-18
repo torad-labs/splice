@@ -100,6 +100,7 @@ public class HeadServer(
         deps.quotaBundle.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
+        deps.seams.events.lifecycle(HeadLifecycle.STARTED)
     }
 
     private suspend fun stopLocked() {
@@ -107,6 +108,10 @@ public class HeadServer(
         // so clients get honest terminals (driveSealingCancellation's cancellation seal) before
         // Netty tears the engine. Bounded wait — never block restart forever.
         window.close()
+        // V4-134: reported only when there was something running to drain, so a stop of a head
+        // that never started does not tell the console it went down.
+        val wasRunning = engine.isRunning
+        if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.DRAINING)
         val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
         var inflight = gate.snapshot().inflight
         while (inflight > 0 && System.nanoTime() < deadlineNs) {
@@ -125,5 +130,6 @@ public class HeadServer(
         provider.onHeadStop()
         deps.stores.usageStore.flushNow()
         deps.stores.economicsStore?.flushNow()
+        if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.STOPPED)
     }
 }

@@ -66,6 +66,11 @@ internal class ControlPlane(
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
     internal val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)
 
+    /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held
+     *  here, like [probeScope], because both sides of it hang off this class: Daemon hands [console]
+     *  to HeadServerFactory before any head exists, and [start] hands its bus to the ControlServer. */
+    internal val console = ConsoleEventPublisher()
+
     internal fun cancelProbes() {
         probeScope.cancel()
     }
@@ -130,6 +135,10 @@ internal class ControlPlane(
         // carrying the same hazard. They live in ConsoleWiring.kt (V4-156, concentration); this call
         // is pinned by ConsoleWiringPinTest, because deleting it would unwire all four at once.
         ConsoleWiring.wire(srv, topology)
+        // V4-134: THE SAME bus the heads publish to. ControlServer has no bus of its own and answers
+        // /api/events with a named 503 until this line runs; OneEventBusPinTest fails if the route's
+        // bus and a head's are ever different instances.
+        srv.events = console.bus
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

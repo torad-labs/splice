@@ -241,6 +241,11 @@ internal class HeadAdmission(
     }
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
+        // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
+        // exit writes a perf row — the two local refusals below and the drive all go through
+        // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so
+        // announcing them would leave the console a start with no end.
+        deps.seams.events.turnStarted(prepared.built.meta.sessionId)
         if (refuseIfRateLimited(call, prepared, admitted)) return
         val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
             null -> null

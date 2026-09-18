@@ -37,6 +37,10 @@ internal class TurnTelemetry(
     /** The hourly quota rollup, or null on a head assembled without one — then a turn records no
      *  economics, which is the honest reading, never a zero-burn row. */
     private val economics: EconomicsStore? = null,
+    /** V4-134: the console's view of this head. Defaulted like [economics] because tests build this
+     *  class directly; the one production site (TurnDriver) passes the head's own, and HeadEventsTest
+     *  fails if a served turn stops reaching it. */
+    private val events: HeadEvents = NoHeadEvents,
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
@@ -54,7 +58,7 @@ internal class TurnTelemetry(
         val snap = drive.perf.snapshot()
         val session = drive.sessionTag()
         val account = drive.account
-        perfStats.record(
+        val rowTs = perfStats.record(
             PerfRowMeta(
                 drive.upstreamModel,
                 outcomeTag,
@@ -72,7 +76,11 @@ internal class TurnTelemetry(
         )
         account?.switch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
+            events.accountSwitched(switched.from, switched.to)
         }
+        // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
+        // key, so the stream never names a row /api/perf/turns has not been handed.
+        events.turnEnded(rowTs.toString(), outcomeTag)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, rateLimited)
     }
@@ -134,7 +142,9 @@ internal class TurnTelemetry(
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
         val snap = perf.snapshot()
-        perfStats.record(PerfRowMeta(meta.upstreamModel, tag, meta.compact, session), snap)
+        val rowTs = perfStats.record(PerfRowMeta(meta.upstreamModel, tag, meta.compact, session), snap)
+        // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
+        events.turnEnded(rowTs.toString(), tag)
         // The tag is printed VERBATIM, the same spelling the perf row on the next line carries
         // (kt-outcome-tag-single-source, V4-99). It used to be `substringAfter("error:")`, which
         // meant this line and the perf row spelled one field two ways — and that the rendering

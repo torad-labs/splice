@@ -13,6 +13,7 @@ package splice.app
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.control.PerfRow
 import splice.control.PerfRowsSource
@@ -37,6 +38,17 @@ private const val BASELINE_CANDIDATES = 4
 /** A baseline sample: the counter already parsed, or the raw writer-shaped line still to parse. */
 private data class Baseline(val drops: Long? = null, val raw: String? = null)
 private const val UNATTRIBUTED = "?"
+
+// V4-127: the perf ROW HEADER keys — the writer's string-and-flag facts, spelled as PerfStats.record
+// writes them. NOT PerfKeys members, because PerfKeys is the catalogue of marks and counters and these
+// five are the row's header; the header keys are literals inside PerfStats.record, one module away.
+// NAMED HERE rather than inlined five more times so that a key renamed on the write side reads as ONE
+// place to look rather than five (the split is reported; the writer is outside this row's fence).
+private const val MODEL_KEY = "model"
+private const val SESSION_KEY = "session"
+private const val ACCOUNT_KEY = "account"
+private const val CACHE_COLD_KEY = "cache_cold"
+private const val COMPACT_KEY = "compact"
 
 /** What one pass over a generation's lines does (a lambda at the call site, never a stored seam). */
 private fun interface LineScan {
@@ -161,7 +173,27 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
                 obj.forEach { (k, v) -> (v as? JsonPrimitive)?.longOrNull?.let { n -> put(k, n) } }
             }
             val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: UNATTRIBUTED
-            return PerfRow(ts, outcome, fields)
+            // V4-127: the writer's string-and-flag facts, read BY NAME off the same parsed object the
+            // numeric bag came from. Read by name, never by position, because four of the five are
+            // nullable and two of the strings are adjacent — a positional read silently swaps them.
+            return PerfRow(
+                ts = ts,
+                outcome = outcome,
+                fields = fields,
+                model = text(obj, MODEL_KEY),
+                session = text(obj, SESSION_KEY),
+                account = text(obj, ACCOUNT_KEY),
+                cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
+                compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
+            )
         }
+
+        /** A descriptive string field, ABSENT when the row does not carry it or carries it TORN.
+         *  The replacement-char rule the outcome tag above already applies, for the same reason: a
+         *  torn multi-byte char means the decoded text is not what was written, and a payload the
+         *  operator is meant to trust never carries U+FFFD as if it were a value. Absent is the
+         *  honest reading; a null and an empty string are different facts and stay different. */
+        private fun text(obj: JsonObject, key: String): String? =
+            JsonScalars.str(obj, key)?.takeUnless { REPLACEMENT_CHAR in it }
     }
 }

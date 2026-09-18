@@ -12,6 +12,7 @@
 // constructor, fields, start(), and stop(); everything else delegates to those collaborators.
 package splice.app
 
+import java.nio.file.Path
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.head.HEAD_STOP_BUDGET_MS
@@ -23,6 +24,8 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.control.ControlServer
 import splice.control.DashboardPage
+import splice.control.DeclaredHead
+import splice.control.DeclaredHeads
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
 import splice.core.compaction.CompactionInstructions
@@ -35,7 +38,6 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.gateway.head.CompactionTail
-import java.nio.file.Path
 
 public class Daemon(
     private val topology: Topology,
@@ -80,6 +82,12 @@ public class Daemon(
         mcpHosting = McpHostingSettings().with(topology.daemon),
         clientVersions = clientVersions,
         compactionInstructions = compactionInstructions,
+        // V4-127: built HERE and not in ControlPlane, because this is the only place that holds the
+        // Topology — ControlPlane carries the digest and the path, never the object, and a second
+        // read of the file the heads were built from can diverge from it.
+        declaredHeads = DeclaredHeads {
+            topology.heads.mapValues { (_, head) -> DeclaredHead(head.provider, head.models) }
+        },
     )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;

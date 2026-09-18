@@ -51,8 +51,36 @@ public fun interface HeadPerfSkipSource {
     public fun skippedRowCount(): Long
 }
 
-/** One perf row with its outcome tag — the windowed summary's input (v0.4.0, FEATURES.md §3). */
-public data class PerfRow(val ts: Long, val outcome: String, val fields: Map<String, Long>)
+/** One perf row with its outcome tag — the windowed summary's input (v0.4.0, FEATURES.md §3).
+ *
+ *  V4-127: [fields] is the NUMERIC half only, because the reader accumulated it by asking every value
+ *  in the row whether it parses as a Long. The writer's five string-and-flag facts — model, session,
+ *  account, cache_cold, compact — therefore reached no control-plane consumer at all: they were in the
+ *  file, in the JsonObject the reader had just parsed, and dropped one line later. The console's
+ *  per-turn view (FEATURES.md §6) is built out of exactly those five, so they are carried as named
+ *  properties rather than re-derived by a second reader over the same bytes.
+ *
+ *  NULL MEANS THE ROW DOES NOT CARRY THE FIELD, deliberately distinguished from a false or empty
+ *  value. `cache_cold` is written ONLY alongside an account (PerfStats.record), so a row with no
+ *  account never had the question asked — reading that as `false` would report "the cache was warm"
+ *  about a turn where nothing looked, which is a did-not-run wearing a legitimate answer, the same
+ *  defect class the unset-port named-5xx rule exists for. `compact` and `model` are unconditional in
+ *  the current writer, so null there means a LEGACY or torn row, and a payload omits the field rather
+ *  than inventing a value for it.
+ *
+ *  NAMED ARGUMENTS ARE THE CONTRACT at every construction site (the ModelRates scar, V4-127): four of
+ *  these five are nullable and two of the strings are adjacent, so a POSITIONAL call that swaps
+ *  session and account compiles, passes, and reports the wrong facts with a green suite. */
+public data class PerfRow(
+    val ts: Long,
+    val outcome: String,
+    val fields: Map<String, Long>,
+    val model: String? = null,
+    val session: String? = null,
+    val account: String? = null,
+    val cacheCold: Boolean? = null,
+    val compact: Boolean? = null,
+)
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */
 public data class PerfRowsWindow(

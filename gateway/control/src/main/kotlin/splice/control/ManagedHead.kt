@@ -99,6 +99,18 @@ public data class ManagedHead(
      *  Claude Code pipes to /statusline carries client units on a scaled row. The catalog is what
      *  turns them back into the row's declared window and its label. Null = render the blob as is. */
     val catalog: ModelCatalog? = null,
+    // V4-127: the head's DECLARED model list (`HeadConfig.models`) and its provider key are
+    // deliberately NOT fields here. Both were added first, and the constructor-width ratchet refused
+    // the change: ManagedHead is already a recorded offender at 17 parameters and this grew it to 19
+    // with a fourth subsystem, which the gate reads as WIDENED — "a recorded offender is DEBT, not
+    // permission to keep adding parameters". Re-baselining would be the bypass that gate exists to
+    // stop, so the two facts arrive through DeclaredModels instead: one injected role, assigned on
+    // ControlServer after construction (the shape V4-136 gave `compaction`). A per-route input does
+    // not belong on a whole-head record anyway.
+    //
+    // The route genuinely needs the declared list (a declared slot that resolved to NOTHING must
+    // still be its own row, and only the declared list knows it was declared), so this is a move,
+    // not a deletion.
     /** Where the statusline route records each session's real window (`session_id` +
      *  `context_window_size` from the blob) so the head scales that session's counts against it.
      *  Null = a head that never learns (tests). */

@@ -384,8 +384,29 @@ const honouredClause = (judged) => (judged.honoured.length === 0 ? ''
   : ` · honoured a declared span: ${judged.honoured.join(', ')} — ${judged.honoured.length} strip(s) excluded from the comparison by declaration, the rest still compared`);
 
 function checkFieldGrid(capturesDir) {
-  const files = (() => { try { return fs.readdirSync(path.join(ROOT, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
-  if (files.length === 0) return record('field-grid', true, true, `DID NOT RUN: no captures in ${capturesDir}`);
+  const files = (() => { try { return fs.readdirSync(path.join(ROOTREF.root, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
+  // DID NOT RUN IS A FAILURE ON A BLOCKING LEG (M1-108, orchestrator ruling).
+  //
+  // This said `DID NOT RUN` in the detail and passed `true` for ok, so the words and the verdict
+  // disagreed and the verdict is what the gate reads. It is the M1-78 shape — prose that stayed
+  // true while the code stopped matching it — and this file's own capture block states the rule
+  // three hundred lines down: a run that cannot capture is a DID NOT RUN for every capture-reading
+  // check, never a pass (law 23). It is also the type-ladder rule inverted: M1-72 proved that zero
+  // pairs compared must not read as zero rungs off.
+  //
+  // THE DENOMINATOR IS M1-94'S, NOT A NEW ONE. `addresses()` reads the ADDRESSES table in
+  // webui/src/app/rows.ts — the same list the capture leg enumerates and the same one the tonal
+  // leg counts coverage against. Two floors that disagree is a worse outcome than the bug.
+  const expected = addresses();
+  const needed = expected === null ? null : expected.length;
+  if (files.length === 0) {
+    return record('field-grid', true, false,
+      `DID NOT RUN: got 0 captures in ${capturesDir}, needed at least 1 `
+      + (needed === null
+        ? `(and ${ADDRESSES_FILE} carries no ADDRESSES table, so the address count could not be read either)`
+        : `— the set should hold one per address for ${needed} address(es) in ${ADDRESSES_FILE}`)
+      + '. Run the capture leg; if the directory moved, this path is wrong rather than the build.');
+  }
   // FRESHNESS, PER FILE (M1-68; the build leg's dist/index.html rule, applied to the capture
   // set). A capture older than the source it claims to measure is not evidence about the current
   // build, so it is SKIPPED AND COUNTED rather than judged -- and rather than taking the whole
@@ -402,7 +423,7 @@ function checkFieldGrid(capturesDir) {
   for (const f of files) {
     let mtime = 0; try { mtime = fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { mtime = 0; }
     if (mtime < bar) { staleCount++; continue; }
-    const im = pixels(path.join(ROOT, capturesDir, f));
+    const im = pixels(path.join(ROOTREF.root, capturesDir, f));
     if (!im) { skipped++; continue; }
     const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
     if (mid.length < 2) continue;
@@ -465,7 +486,21 @@ function checkFieldGrid(capturesDir) {
     + (unpaired.length ? ` · ${unpaired.length} capture(s) whose dump does not account for every scanline: ${unpaired.slice(0, 3).join(', ')}${unpaired.length > 3 ? ', …' : ''}` : '')
     + (skippedDetail.length ? ` · ${skippedDetail.join(' · ')}` : '')
     + (staleCount ? ` · ${staleCount} skipped (older than webui/src, so not evidence about this build)` : '');
-  if (checked === 0) return record('field-grid', true, true, `skipped: ${detail}`);
+  // THE SECOND EMPTY DENOMINATOR, and the one that survives a directory full of files: every
+  // capture can be present and still unjudgeable (all stale, all unreadable, none naming a theme),
+  // and this returned ok with the word `skipped`. A leg that looked at N files and judged none of
+  // them has not checked the grid; it has reported that it could not. The counts are named because
+  // the remedy differs — `0 of 19, 19 stale` means run a capture, `0 of 19, 19 skipped (no PIL)`
+  // means fix the environment, and a bare non-zero would have told the next seat neither (the
+  // defect M1-76 found in exit-gate's runLeg, one level down).
+  const coverage = expected === null
+    ? ` · coverage unknown (${ADDRESSES_FILE}: no ADDRESSES table)`
+    : ` · the set covers ${expected.filter((a) => files.some((f) => f.startsWith(`${a}-`))).length}/${expected.length} address(es)`;
+  if (checked === 0) {
+    return record('field-grid', true, false,
+      `DID NOT RUN: judged 0 of ${files.length} capture(s) in ${capturesDir}, needed at least 1`
+      + coverage + ' · ' + detail);
+  }
   return record('field-grid', true, bad.length === 0, detail);
 }
 
@@ -517,14 +552,14 @@ function checkTonalDrift(capturesDir, compPath) {
   const comp = pixels(path.join(ROOT, compPath));
   if (!comp) return record('tonal-drift', false, true, 'skipped: comp unreadable (no PIL?)');
   const ref = tonal(comp);
-  const files = (() => { try { return fs.readdirSync(path.join(ROOT, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
+  const files = (() => { try { return fs.readdirSync(path.join(ROOTREF.root, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
   const bar = newestSourceMtime();
   const stat = (f) => { try { return fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { return 0; } };
   const { fresh, stale } = partitionFresh(files.map((f) => ({ f, mtime: stat(f) })), bar);
   const rows = [];
   let unreadable = 0;
   for (const { f } of fresh) {
-    const im = pixels(path.join(ROOT, capturesDir, f));
+    const im = pixels(path.join(ROOTREF.root, capturesDir, f));
     if (!im) { unreadable++; continue; }
     const t = tonal(im);
     rows.push({ f, mid: t.mid, ratio: t.mid / ref.mid });
@@ -878,6 +913,43 @@ function selftest() {
     // passed by finding nothing. These two cases are the mutation proof that it can now fail
     // in the light room as well as the dark one, and that it still refuses the other room's
     // colour -- which is the exact defect, reproduced as a test rather than argued.
+    // ---- DID NOT RUN IS A FAILURE (M1-108), proven in BOTH directions on the REAL function against
+    // a REAL directory, not on a stub. The two emptinesses are separate branches with separate
+    // remedies, so each gets its own case: a directory with no PNG at all, and a directory FULL of
+    // PNGs none of which can be judged. The third case is the one that makes the other two mean
+    // something — a set that judges cleanly must still PASS, because a leg that fails on everything
+    // is not a gate either. All three drive checkFieldGrid through ROOTREF, which is why the
+    // readdir in that function had to stop using ROOT: it was the one reader the redirect could not
+    // reach, so this proof was unreachable until it did.
+    ['field-grid', () => {
+      findings.length = 0;
+      const tmp = fs.mkdtempSync('/tmp/lookgate-empty-');
+      fs.mkdirSync(path.join(tmp, 'caps'), { recursive: true });
+      fs.mkdirSync(path.join(tmp, 'webui/src/app'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'webui/src/app/rows.ts'),
+        "export const ADDRESSES = ['fleet', 'turns', 'sessions'] as const;\n");
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
+    ['field-grid', () => {
+      findings.length = 0;
+      const tmp = fs.mkdtempSync('/tmp/lookgate-unjudgeable-');
+      fs.mkdirSync(path.join(tmp, 'caps'), { recursive: true });
+      // Present, named for a real address and theme, and not a PNG any decoder will read: the
+      // `files.length` branch is satisfied and the `checked` branch is the one under test.
+      for (const a of ['fleet', 'turns', 'sessions']) {
+        fs.writeFileSync(path.join(tmp, 'caps', `${a}-dark-1536x1024.png`), 'not an image');
+      }
+      fs.mkdirSync(path.join(tmp, 'webui/src/app'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'webui/src/app/rows.ts'),
+        "export const ADDRESSES = ['fleet', 'turns', 'sessions'] as const;\n");
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      checkFieldGrid('caps'); ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return findings[0];
+    }, false],
     ['field-grid', () => fieldProbe('dark', 'dark'), false],
     ['field-grid', () => fieldProbe('light', 'light'), false],
     ['field-grid', () => fieldProbe('light', 'dark'), true],

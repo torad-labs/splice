@@ -55,6 +55,30 @@
      (--hairline / --hairline-strong): a rail reads
      `border-top: var(--hair) solid var(--hairline)`. */
   --hair:1px;
+  /* THE ROOT SCALAR (M1-26). THE DEFECT IT FIXES, measured: the layout is in vw while the type and
+     spacing were fixed px, so on the operator's 3840x2160 monitors every container was 2.5x wider
+     and every glyph the same 14px - rendered text fell from 15.30% of the frame at 1536x1024 to
+     2.90% at 3840, and that single cause is both of his complaints, "the font size is too small"
+     and "there is no proper spacing". It was never right on any monitor: 14px on a 24-inch
+     1920x1080 is a 2.0mm x-height, about 11.5 arcminutes at desk distance, below the 16-20
+     arcminute band comfortable display text sits in.
+
+     THE SCALAR, ruled by the orchestrator 2026-09-18: LINEAR TO THE COMP FRAME, NO CAP. 16px per
+     1536px of frame is the whole of it. At 3840 the root is 40px and the strip label 35px, which
+     on a 32-inch 4K panel (0.184mm per px) is a 6.4mm em, a 3.4mm x-height: 0.30 degrees or 18
+     arcminutes at 650mm - inside the comfortable band, not at its edge. A cap would have to be
+     argued DOWN from what the geometry asks, with no measurement behind it; that would be a fourth
+     authored number in a campaign that struck three in one day.
+
+     THE FLOOR is the comp frame itself, and the comp is its provenance: at or below 1536 the type
+     stops shrinking while the vw layout keeps going, so a narrow window holds a LARGER share of
+     type rather than becoming unreadable. The ladders above are rem so they read against this.
+
+     WHAT MUST NOT SCALE WITH IT: an object follows the TYPE when it is made of type, and the FRAME
+     when it is placed on the frame. The hairlines, the focus ring, anything positioned as a
+     percentage of the frame, and the hand-off lift are frame objects - the lift scaling with this
+     was the accident that proved the rule. */
+  --root-size:max(16px, 1.0417vw);
   --ease-snap:cubic-bezier(.16,.84,.18,1);
   --ease-in-out:cubic-bezier(.65,0,.35,1);
   --icon-1:1rem; --icon-2:1.5rem; --icon-3:2.25rem;
@@ -139,9 +163,13 @@
   color-scheme: dark;
 
   /* ---------- SCALE (theme-agnostic; both sets carry the same rungs) ---------- */
-  --space-1:2px; --space-2:4px; --space-3:8px; --space-4:12px;
-  --space-5:16px; --space-6:24px; --space-7:32px; --space-8:48px;
-  --text-1:12px; --text-2:14px; --text-3:16px; --text-4:18px; --text-5:20px; --text-6:23px;
+  /* THE SCALE IS IN rem (M1-26). Same rungs as the comp at the comp's frame - 0.75rem is
+     12px when the root is 16px - but read against a root font size that tracks the frame,
+     so the console at any viewport is the 1536x1024 render SCALED rather than 1536 type
+     inside a 3840 layout. app.css derives the root; the reason is in the comment there. */
+  --space-1:.125rem; --space-2:.25rem; --space-3:.5rem; --space-4:.75rem;
+  --space-5:1rem; --space-6:1.5rem; --space-7:2rem; --space-8:3rem;
+  --text-1:.75rem; --text-2:.875rem; --text-3:1rem; --text-4:1.125rem; --text-5:1.25rem; --text-6:1.4375rem;
 
   --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
   --ease-out:cubic-bezier(.22,1,.36,1);
@@ -249,9 +277,13 @@
   color-scheme: light;
 
   /* ---------- SCALE (same rungs as the room) ---------- */
-  --space-1:2px; --space-2:4px; --space-3:8px; --space-4:12px;
-  --space-5:16px; --space-6:24px; --space-7:32px; --space-8:48px;
-  --text-1:12px; --text-2:14px; --text-3:16px; --text-4:18px; --text-5:20px; --text-6:23px;
+  /* THE SCALE IS IN rem (M1-26). Same rungs as the comp at the comp's frame - 0.75rem is
+     12px when the root is 16px - but read against a root font size that tracks the frame,
+     so the console at any viewport is the 1536x1024 render SCALED rather than 1536 type
+     inside a 3840 layout. app.css derives the root; the reason is in the comment there. */
+  --space-1:.125rem; --space-2:.25rem; --space-3:.5rem; --space-4:.75rem;
+  --space-5:1rem; --space-6:1.5rem; --space-7:2rem; --space-8:3rem;
+  --text-1:.75rem; --text-2:.875rem; --text-3:1rem; --text-4:1.125rem; --text-5:1.25rem; --text-6:1.4375rem;
 
   --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
   --ease-out:cubic-bezier(.22,1,.36,1);

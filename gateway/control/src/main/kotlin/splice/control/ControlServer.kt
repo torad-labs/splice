@@ -69,6 +69,11 @@ private const val DEFAULT_LOG_TAIL = 200
 private const val DEFAULT_PERF_TAIL = 200
 private const val MAX_TAIL = 2_000
 
+/** V4-134: answered on /api/events until ControlPlane assigns [ControlServer.events]. NOT an empty
+ *  stream: a stream that opens and stays quiet reads as a daemon with nothing happening, which is a
+ *  confident false negative about a daemon serving turns right now. The text names what was not done. */
+private const val EVENTS_UNWIRED = "the daemon wired no console event bus; /api/events cannot stream its events"
+
 public class ControlServer(
     private val port: Int,
     private val heads: Map<String, ManagedHead>,
@@ -99,16 +104,18 @@ public class ControlServer(
     sessions: SessionRegistry? = null,
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
-    /** v0.4.0 (V4-126, FEATURES.md §6): the console event bus. PUBLIC because the daemon publishes
-     *  to it from the turn path in :app — this is the one type that crosses that boundary.
+    /** v0.4.0 (V4-126, FEATURES.md §6): the console event bus GET /api/events streams from.
      *
-     *  A BODY property, not a constructor parameter, and that is a wall decision rather than a style
-     *  one: as a parameter it widened this constructor 17 -> 18, which the constructor-width ratchet
-     *  reported as WIDENED on a file already recorded as debt ("a recorded offender is DEBT, not
-     *  permission to keep adding parameters"). The bus is a derived collaborator with no
-     *  construction-time input, so the body is also where it belongs — the same disposition HeadDeps
-     *  gave its own derived collaborator. */
-    public val events: EventBus = EventBus()
+     *  A SETTABLE PROPERTY, not a constructor parameter: as a parameter it widened this constructor
+     *  17 -> 18, which the constructor-width ratchet reports as WIDENED on a file already recorded as
+     *  debt. ControlPlane assigns it right after construction, the same shape [compaction] takes.
+     *
+     *  NO DEFAULT INSTANCE (V4-134). V4-126 gave this a fresh `EventBus()` so ControlPlane compiled
+     *  unchanged, and that default is exactly how a route ends up streaming a bus nobody publishes
+     *  to: every head reports to the daemon's ONE bus (ControlPlane's ConsoleEventPublisher), so a
+     *  private one here would stream a quiet daemon forever while the heads talked to nobody. Unset,
+     *  the route answers a NAMED 503 instead — the discipline every console port here keeps. */
+    public var events: EventBus? = null
 
     /** V4-136: how /api/compaction/instructions reaches the daemon's ONE compaction resolver.
      *
@@ -122,7 +129,6 @@ public class ControlServer(
      *  400-not-404 rule exists to prevent. */
     public var compaction: CompactionInstructions? = null
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
-    private val eventsRoute = EventsRoute(events)
     private val sessionsRoutes = sessions?.let(::SessionsRoutes)
     private val payloads =
         ControlPayloads(
@@ -237,7 +243,7 @@ public class ControlServer(
                 }
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
                 // V4-126: additive. Every poll route above is untouched and stays the fallback.
-                get("/api/events") { guarded(call) { eventsRoute.stream(call) } }
+                get("/api/events") { guarded(call) { streamEvents(call) } }
                 // V4-136: additive too. ?head=<key> is REQUIRED and an unknown one is a 400 naming
                 // it, never a 404 — the console reads 404 on this path as route-not-built.
                 get("/api/compaction/instructions") { guarded(call) { compactionRoute.instructions(call, compaction) } }
@@ -285,6 +291,21 @@ public class ControlServer(
         mcpHost?.stop()
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
+    }
+
+    /** Reads [events] at CALL time, like [compaction]: ControlPlane assigns it after construction, so a
+     *  route that captured the value would capture null forever. */
+    private suspend fun streamEvents(call: ApplicationCall) {
+        val bus = events
+        if (bus == null) {
+            call.respondText(
+                buildJsonObject { put("error", EVENTS_UNWIRED) }.toString(),
+                ContentType.Application.Json,
+                HttpStatusCode.ServiceUnavailable,
+            )
+            return
+        }
+        EventsRoute(bus).stream(call)
     }
 
     private suspend fun guarded(call: ApplicationCall, mcp: Boolean = false, block: MgmtRoute) {

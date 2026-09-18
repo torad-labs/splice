@@ -4,6 +4,7 @@
 // kt-head-scoped-config-must-be-keyed still covers this head-scoped function.
 package splice.app.head
 
+import splice.app.ConsoleEventPublisher
 import splice.app.provider.ProviderBuild
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
@@ -17,6 +18,7 @@ import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.CompactionTail
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.head.NoHeadEvents
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.head.SessionProjectLookup
 import splice.spi.InflightGate
@@ -35,6 +37,10 @@ internal class HeadServerFactory(
     private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
     /** V4-124: the topology's `[projects."ROOT"]` tables. Every head gets its own layers from them. */
     private val projects: Map<String, ProjectConfig> = emptyMap(),
+    /** V4-134: the daemon's ONE console publisher, which every head reports through. Null only for
+     *  a factory built outside the daemon (tests); Daemon passes ControlPlane's, pinned by
+     *  OneEventBusPinTest, because a head built without it would serve turns the console never hears. */
+    private val console: ConsoleEventPublisher? = null,
 ) {
     private val upstreamFactory = UpstreamFactory()
 
@@ -75,11 +81,7 @@ internal class HeadServerFactory(
                     accountPool = stores.accountPool,
                     accountQuotas = stores.accountQuotas,
                 ),
-                seams = HeadDeps.HeadSeams(
-                    requestMaterializationGate = requestMaterializationGate,
-                    clientVersions = clientVersions,
-                    sessionProject = SessionProjectLookup { sessionProject.projectFor(it) },
-                ),
+                seams = seams(key),
                 policy = HeadDeps.HeadPolicy(
                     // Per HEAD, resolved once here: its own [heads.KEY] layer plus the V4-124
                     // project layers for this head. This constructor is where a missing
@@ -110,6 +112,15 @@ internal class HeadServerFactory(
             ),
         )
     }
+
+    /** The head's shared and per-head seams. Its own function since V4-134 added the console reporter,
+     *  which took [headServerFor] past detekt's method-length ceiling. */
+    private fun seams(key: String): HeadDeps.HeadSeams = HeadDeps.HeadSeams(
+        requestMaterializationGate = requestMaterializationGate,
+        clientVersions = clientVersions,
+        sessionProject = SessionProjectLookup { sessionProject.projectFor(it) },
+        events = console?.forHead(key) ?: NoHeadEvents,
+    )
 
     /** V4-110: the process-shared materialization permit count, read from the GLOBAL knob layer (no
      *  head key) once at daemon boot. One value bounds every head's concurrent decode/translate. */

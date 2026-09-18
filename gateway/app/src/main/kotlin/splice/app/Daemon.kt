@@ -112,7 +112,18 @@ public class Daemon(
     // own directory, so a config kept beside its text files moves as one unit.
     private val compactionTail = CompactionTail(compactionInstructions, SessionProject())
     private val headServerFactory =
-        HeadServerFactory(config, mgmtKey, log, compactionTail, clientVersions, topologyDir, topology.projects)
+        HeadServerFactory(
+            config,
+            mgmtKey,
+            log,
+            compactionTail,
+            clientVersions,
+            topologyDir,
+            topology.projects,
+            // V4-134: the control plane's publisher, so every head reports to the bus the console
+            // route streams from. Pinned by OneEventBusPinTest.
+            console = controlPlane.console,
+        )
     private val launchSpecFactory = LaunchSpecFactory(
         topology,
         controlPlane.signInPlanner,

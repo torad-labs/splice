@@ -414,15 +414,19 @@
       "forced": null
     },
     "review": {
-      "status": "open",
+      "status": "closed",
       "openedAt": "2026-09-18T19:36:46.743Z",
-      "closedAt": null,
+      "closedAt": "2026-09-18T22:29:45.966Z",
       "attempts": 0,
       "notes": [],
       "gate": null,
       "forced": null
     }
   },
-  "finish": null,
+  "finish": {
+    "disposition": "ship",
+    "at": "2026-09-18T22:29:45.965Z",
+    "phaseAtFinish": "review"
+  },
   "plates": {}
 }

@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-18T23:00:00Z",
+  "title": "Design System: splice console",
+  "extensions": {
+    "colorMeta": {
+      "strip": { "role": "primary", "displayName": "Strip Paper", "canonical": "#DED9C6 (dark) / #F5EDDD (light)" },
+      "plate": { "role": "secondary", "displayName": "Plate Cream", "canonical": "#C3B6A0 (dark) / #D6D8D3 (light)" },
+      "edge-green": { "role": "tertiary", "displayName": "Edge Green (ok)", "canonical": "#548630 (dark) / #1F882C (light)" },
+      "edge-amber": { "role": "tertiary", "displayName": "Edge Amber (warn)", "canonical": "#9A6E10" },
+      "edge-red": { "role": "tertiary", "displayName": "Edge Red (error)", "canonical": "#E63521" },
+      "edge-grey": { "role": "tertiary", "displayName": "Edge Grey (neutral)", "canonical": "#6E6D68" },
+      "room": { "role": "neutral", "displayName": "Graphite Room", "canonical": "#0B0E0E (dark) / #E0E2DF (light)" },
+      "bay": { "role": "neutral", "displayName": "Bay Floor", "canonical": "#090D0D (dark) / #ABB0AC (light)" },
+      "focus": { "role": "neutral", "displayName": "Focus Blue", "canonical": "#3F76B4 (dark) / #2869D5 (light)" },
+      "scope": {
+        "role": "neutral",
+        "displayName": "Scope Inset",
+        "canonical": "#090C0C (dark) / #1F2422 (light)",
+        "note": "PROVENANCE: the light value is measured off .impeccable/mocks/decision/assigned.png, a decision-round comp never approved as the comp of record, with no re-derivation ruling covering it (unlike this file's other light-theme values, which carry an explicit M1-11 ruling). Kept because it is the only measurement on hand, not because its provenance was cleared."
+      }
+    },
+    "typographyMeta": {
+      "label": { "displayName": "Label", "purpose": "Captions, field labels, plate labels, nav." },
+      "figure": { "displayName": "Figure", "purpose": "Any number or identifier that lines up in a column; tabular-nums, one size per call site." },
+      "code": { "displayName": "Code", "purpose": "TOML bodies, log lines, transcripts, file paths — genuinely monospace content only." }
+    },
+    "shadows": [
+      { "name": "strip-border-lip", "value": "border: 1px solid color-mix(in srgb, var(--strip) 76%, white)", "purpose": "The paper's own brighter inner lip, part of the three-ring paper edge." },
+      { "name": "strip-outline-ring", "value": "box-shadow: 0 0 0 1px color-mix(in srgb, var(--strip) 52%, black)", "purpose": "Mid-tone shade ring, one step out from the strip border." },
+      { "name": "strip-room-ring", "value": "box-shadow: 0 0 0 2px color-mix(in srgb, var(--bay) 25%|87%, black)", "purpose": "Darkest outline ring, mixed against the plane (bay) it sits on so it needs no per-theme hex." },
+      { "name": "bay-inset-ring", "value": "box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--room) 27%, black)", "purpose": "The recessed frame of a rack." }
+    ],
+    "motion": [
+      { "name": "dur-1", "value": "120ms", "purpose": "Border/background hover transitions (key hover, edge mark)." },
+      { "name": "dur-2", "value": "240ms", "purpose": "The one authored entrance: a phone-mode swell fading and translating in." },
+      { "name": "dur-3", "value": "400ms", "purpose": "Reserved, longer transition rung." },
+      { "name": "ease-out", "value": "cubic-bezier(.22,1,.36,1)", "purpose": "The world's one easing curve." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Key (Button)",
+      "kind": "button",
+      "refersTo": "key",
+      "description": "A printed strip that can be pressed. Hover lifts only the border color; focus is the world's 2px ring.",
+      "html": "<button class=\"ds-key\">restart</button>",
+      "css": ".ds-key { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: #DED9C6; color: #141414; border: 1px solid #A8A392; border-radius: 0; font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; font-size: 0.875rem; cursor: pointer; transition: border-color 120ms cubic-bezier(.22,1,.36,1); } .ds-key:hover { border-color: #141414; } .ds-key:focus-visible { outline: 2px solid #3F76B4; outline-offset: 1px; }"
+    },
+    {
+      "name": "Key Armed (Confirm)",
+      "kind": "button",
+      "refersTo": "key-danger",
+      "description": "The second half of a two-step destructive key: paper steps up one rung and a filled danger tint arrives so a scan of the bench cannot mistake it for the idle stop control.",
+      "html": "<button class=\"ds-key ds-key-armed\">confirm restart?</button>",
+      "css": ".ds-key-armed { border-color: #141414; background: #E4E0D1; color: #E63521; } .ds-key-armed::before { content: ''; display: inline-block; width: 4px; align-self: stretch; background: #E63521; margin-inline-end: 4px; }"
+    },
+    {
+      "name": "StripField",
+      "kind": "custom",
+      "refersTo": "strip-field",
+      "description": "A boxed record cell: a mute label 4px above a hairline, a tabular value 4px below it, fixed ch width.",
+      "html": "<div class=\"ds-sfield\"><div class=\"ds-sfield-label\">ctx left</div><div class=\"ds-sfield-value\">74%</div></div>",
+      "css": ".ds-sfield { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 12px; background: #E4E0D1; border-inline-end: 1px solid #A8A392; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; } .ds-sfield-label { font-size: 0.75rem; color: #5A5749; border-bottom: 1px solid #5A5749; } .ds-sfield-value { font-size: 1rem; color: #141414; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "HolderEdge",
+      "kind": "custom",
+      "refersTo": "colors.edge-green",
+      "description": "The only place attention is carried by color; always paired with its own text label, never color alone.",
+      "html": "<div class=\"ds-edge ds-edge-green\"><div class=\"ds-edge-mark\"></div><div class=\"ds-edge-label\">ok</div></div>",
+      "css": ".ds-edge { display: inline-flex; align-items: stretch; gap: 4px; } .ds-edge-mark { width: 4px; background: #6E6D68; } .ds-edge-green .ds-edge-mark { background: #548630; } .ds-edge-label { font-family: Archivo, sans-serif; font-size: 0.75rem; color: inherit; }"
+    },
+    {
+      "name": "Field Input",
+      "kind": "input",
+      "refersTo": "strip-field",
+      "description": "A strip's field box with a caret: same paper, hairline and radius as a StripField, figure face for the value.",
+      "html": "<div class=\"ds-input\"><label class=\"ds-input-label\">account label</label><input class=\"ds-input-box\" value=\"acct-a\" /></div>",
+      "css": ".ds-input { display: inline-flex; flex-direction: column; gap: 2px; } .ds-input-label { font-family: Archivo, sans-serif; font-size: 0.75rem; color: #5A5749; } .ds-input-box { padding: 4px 8px; background: #E4E0D1; color: #141414; border: 1px solid #A8A392; border-radius: 0; font-family: Archivo, sans-serif; font-variant-numeric: tabular-nums; font-size: 1rem; } .ds-input-box:focus-visible { outline: 2px solid #3F76B4; outline-offset: 1px; }"
+    },
+    {
+      "name": "Bay Head Plate",
+      "kind": "card",
+      "refersTo": "bay-head",
+      "description": "The bolted head plate over a rack, carrying a live label, a count, and the rack's actions at its right end.",
+      "html": "<div class=\"ds-bay-head\"><span class=\"ds-bay-label\">claude</span><span class=\"ds-bay-count\">7</span></div>",
+      "css": ".ds-bay-head { display: flex; align-items: center; justify-content: center; gap: 4px; width: max-content; padding: 4px 8px; background-color: #C3B6A0; color: #141414; border: 1px solid color-mix(in srgb, #C3B6A0 76%, white); box-shadow: 0 0 0 1px #645F50; } .ds-bay-label { font-family: Archivo, sans-serif; font-size: 1.0625rem; color: #141414; } .ds-bay-count { font-family: Archivo, sans-serif; font-variant-numeric: tabular-nums; font-size: 0.75rem; color: color-mix(in srgb, #141414 95%, #C3B6A0); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Strip Bay",
+    "overview": "The console is a rack in a graphite room: opaque paper strips racked in steel bays, each strip a printed record — an account, a head, a turn — carrying a colored holder edge that flags its state. Nothing floats and nothing glows. A value is a printed figure in a boxed field, a label is mute ink above a hairline, and the only saturated color in the frame is the holder edge itself, because the world's one rule is that attention is a color and everything else is graphite and paper. PRODUCT.md's own voice — \"terse, lowercase, data-first... the loudest thing on screen is a real warning\" — is the strip bay's whole brief: this is an instrument panel for one operator glancing between terminal sessions, not a marketing surface. This system explicitly rejects the KPI-tile dashboard: no hero metric rendered at a jump in size, no sparkline or progress ring standing in for content, no card-and-shadow SaaS vocabulary. It also retired an entire earlier world (the \"Torad plate\" system: warm paper, cinnabar/vermilion accent, serif numerals) — that world is gone from the shipped build; nothing in this document should be read against it.",
+    "keyCharacteristics": [
+      "Flat, radius-0 paper-on-graphite construction; depth by tonal plane and hairline, never shadow.",
+      "One functional accent per state (the holder edge's green/amber/red/grey); no second accent color anywhere in the room.",
+      "Two faces only: a label/figure grotesque (Archivo, tabular figures) and a monospace for genuinely code-shaped content (JetBrains Mono).",
+      "A light-dark()-driven root scalar ties root font size to the frame's own width, so the console is the comp's render scaled, not the comp's type sitting inside a wider layout.",
+      "Every spacing and text value is a token (--space-N, --text-N); raw px in a component rule is a wall violation (webui-css-tokens-only)."
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Color is never decorative. A holder edge is the only place attention is carried by color, it always ships with a text label, and there is no second accent anywhere else in the frame — a former vermilion/cinnabar accent is the one pigment the world forbids by name.", "section": "colors" },
+      { "name": "The Own-Ground-Own-Ink Rule", "body": "Every plane declares its own ink and a shared label inherits it (color: inherit) rather than hard-coding a room ink into a primitive that also prints on paper.", "section": "colors" },
+      { "name": "The Plane-Measured Contrast Rule", "body": "Hairline and mute-ink strengths are allowed to differ between the dark and light themes because each is measured against its own ground to the same target band, not equalized numerically.", "section": "colors" },
+      { "name": "The One Size Rule", "body": "A Figure is one size at any call site; what marks a value as a figure is the tabular numeral face, never a size jump.", "section": "typography" },
+      { "name": "The Regular-Weight Rule", "body": "Strip labels and strip values are weight 400, not bold, measured against the comp's own recorded regular-weight text regions.", "section": "typography" },
+      { "name": "The Flat-By-Default, Ink-Not-Light Rule", "body": "No radius, no ambient drop shadow anywhere in the room. Depth is stacked hairline rings mixed against the exact plane they sit on, never a box-shadow blur simulating a light source.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep every color, spacing and type value bound to a token (--space-1..--space-8, --text-1..--text-6, the section-1 palette tokens); the webui-css-tokens-only wall fails a raw px or hex in a component rule.",
+      "Do carry state exclusively through the four holder-edge colors, each always paired with a text label.",
+      "Do measure a new plane's ink and border against the exact background it prints on, and record the reading in a comment, the way every existing token in tokens.css does.",
+      "Do keep radius at 0 and depth as tonal plane plus hairline everywhere.",
+      "Do use the tabular figure face for anything that lines up in a column; use the mute label face for captions; use the monospace face only for genuinely monospace content."
+    ],
+    "donts": [
+      "Don't introduce a second accent color. The room's holder edges and the focus blue are the whole of its chroma.",
+      "Don't build a hero-metric tile (a value at a jumped-up size over a small unit and basis); this system rejects the KPI-tile dashboard of the category.",
+      "Don't add a card-and-shadow surface, a sparkline, a progress ring, or a soft-shadowed rounded rectangle standing in for real content.",
+      "Don't use a dashed-box, centered-text empty state; an empty rack prints as a strip carrying no data.",
+      "Don't reintroduce a floating popover/menu layer with a z-index stack; this world's options print in flow.",
+      "Don't invent a kicker or eyebrow label, a hard-offset neobrutalist shadow, a system display face, or a Unicode/emoji glyph standing in for an icon — none appear in the shipped build and none should be added to extend the system."
+    ]
+  }
+}

@@ -34,14 +34,14 @@ fixture() {
   local dir="$TMP/$1"
   rm -rf "$dir"
   mkdir -p "$dir/checks/config" "$dir/.dev/campaigns"
-  cp "$ROOT/checks/campaign-ledger-floor.py" "$dir/checks/"
+  cp "$ROOT/checks/campaign-ledger-floor.ts" "$dir/checks/"
   # DR-189: the whole TREE of ledgers, structure preserved — copying only the top level would
   # leave every fixture blind to exactly the nested registries the check was widened to cover.
   while IFS= read -r rel; do
     mkdir -p "$dir/.dev/campaigns/$(dirname "$rel")"
     cp "$ROOT/.dev/campaigns/$rel" "$dir/.dev/campaigns/$rel"
   done < <(cd "$ROOT/.dev/campaigns" && find . -name '*.toml' -printf '%P\n')
-  python3 "$dir/checks/campaign-ledger-floor.py" >/dev/null || return 1
+  bun "$dir/checks/campaign-ledger-floor.ts" --record >/dev/null || return 1
   echo "$dir"
 }
 
@@ -52,7 +52,7 @@ fixture() {
 # integrity leg whose evidence is "it crashed" tells the reader nothing about what was lost.
 arm() {
   local label="$1" expect="$2" dir="$3" want="${4:-}" out rc
-  out=$(python3 "$dir/checks/campaign-ledger-floor.py" --check 2>&1)
+  out=$(bun "$dir/checks/campaign-ledger-floor.ts" --check 2>&1)
   rc=$?
   local got=GREEN
   [ "$rc" -ne 0 ] && got=RED

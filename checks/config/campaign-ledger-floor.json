@@ -52,12 +52,12 @@
     "rows": 6
   },
   "v0.4.0.toml": {
-    "lines": 4754,
-    "rows": 140
+    "lines": 4843,
+    "rows": 146
   },
   "web-console.toml": {
-    "lines": 1406,
-    "rows": 75
+    "lines": 1610,
+    "rows": 82
   },
   "ws-transport.toml": {
     "lines": 125,

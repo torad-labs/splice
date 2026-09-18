@@ -230,7 +230,16 @@ const PROBE = `(() => {
             labelPadStart: fl ? parseFloat(cs(fl).paddingInlineStart) || 0 : null,
             labelInkStart: lr && fr ? +((lr.x + (parseFloat(cs(fl).paddingInlineStart) || 0)) - fr.x).toFixed(1) : null,
             divider: parseFloat(fs.borderInlineEndWidth) || parseFloat(fs.borderRightWidth) || 0,
-            labelRule: fl ? parseFloat(cs(fl).borderBottomWidth) || 0 : 0 } : null };
+            labelRule: fl ? parseFloat(cs(fl).borderBottomWidth) || 0 : 0,
+            /* THE RULE'S ROW, which is the quantity the CSS actually pins and the one nothing here
+               measured (M1-70). board.css sets the label's line box as a LENGTH -- a line-height
+               of calc(var(--space-5) - var(--hair)) -- with a comment explaining why: at the old
+               ratio of 1.05 the rule's row was right only by accident of the label being 14px, and
+               when M1-64 shrank the label the rule would have printed six plate rows above where
+               the comp prints it. So the offset is the geometry, the width is a token, and the
+               offset is what moves when something else changes. Measured from the FIELD BOX top to
+               the rule itself, which is the label's bottom border edge. */
+            labelRuleOffset: lr && fr ? +((lr.y + lr.h) - fr.y).toFixed(1) : null } : null };
       }) };
   });
 
@@ -348,8 +357,27 @@ const CONSTANTS = [
     note: 'where the label ink starts inside the box, in px: the number a reviewer reads against the crop' },
   { id: 'field.divider', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).divider,
     fails: (v) => !(v >= 1), note: 'the comp cell carries a vertical divider; the world declares --hair (1px)' },
-  { id: 'field.label-rule', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).labelRule,
-    fails: (v) => !(v >= 1), note: 'the comp cell carries the rule at row y=229; the world declares --hair (1px)' },
+  // THE NAME AND THE BODY DISAGREED, and the fix is both halves (M1-70). This note read 'the comp
+  // cell carries the rule at row y=229' while the body returns a border WIDTH — an offset in the
+  // prose, a width in the code, which is the M1-56 class documented at SIDES below and which
+  // survived that very sweep. The width is what this constant asserts and the note now says only
+  // that; y=229 is a crop ROW and this check has no comp region for a field to compare it against,
+  // so quoting it here made a reader expect a comparison nothing performs.
+  // kind 'px' AND NOT 'box', which is the same defect in the unit that the note had in the object:
+  // fmt() prints 'box' with a % sign, and this value is parseFloat(borderBottomWidth) -- raw px. It
+  // reported a 1px hairline as `1.00%`, which at 1536 reads as 15px. Display-only for a constant
+  // whose comp side is null: record() scales nothing and applies no tolerance when target is null,
+  // and REPORT_ONLY holds 'cap' alone so gating is unchanged. Verified by the run: `got 1.00px`.
+  { id: 'field.label-rule', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).labelRule,
+    fails: (v) => !(v >= 1), note: 'the label carries a rule and the world declares it --hair (1px); this is its WIDTH, not its row' },
+  // AND THE ROW ITSELF, which nothing measured until now — the quantity board.css pins on purpose
+  // and the one M1-64 found moving. REPORTED, NOT GATED, which is this file's own idiom for a
+  // build-side number with no comp region (field.label-ink-start, three lines up, is the same
+  // shape): the comp carries no field region, so there is nothing to compare it against, and a
+  // threshold invented here would be a number with no source. Printed every run so a drift is
+  // visible to a reader instead of living in a CSS comment.
+  { id: 'field.label-rule-offset', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).labelRuleOffset,
+    note: 'the rule\'s row: field-box top to the label\'s bottom border, in px. board.css pins this as a LENGTH (line-height: calc(--space-5 - --hair)) because at a ratio it was right only by accident of the label being 14px — M1-64 measured that a shrunken label would print it six plate rows high' },
 ];
 
 /**
@@ -393,7 +421,8 @@ const SIDES = {
   'field.label-pad-start': ['field-padding', 'no comp region', 'element .myx-sfield-label padding-inline-start', 'nocomp'],
   'field.label-ink-start': ['field-label-ink', 'no comp region', 'element .myx-sfield-label ink offset', 'nocomp'],
   'field.divider': ['field-divider', 'no comp value (the comp cell carries a divider)', 'element .myx-sfield border-inline-end-width', 'same'],
-  'field.label-rule': ['field-label-rule', 'no comp value (the comp cell carries the rule at y=229)', 'element .myx-sfield-label border-bottom-width', 'nocomp'],
+  'field.label-rule': ['field-label-rule', 'no comp value (the comp cell carries the rule; y=229 is its crop row, not a comparable region)', 'element .myx-sfield-label border-bottom-width', 'nocomp'],
+  'field.label-rule-offset': ['field-label-rule', 'no comp value (no field region to take a row from)', 'element .myx-sfield-label bottom border edge minus the field box top', 'nocomp'],
 };
 
 const SIDES_MISSING = CONSTANTS.filter((constant) => SIDES[constant.id] === undefined).map((constant) => constant.id);
@@ -700,13 +729,28 @@ const mismatched = Object.entries(SIDES).filter(([, side]) => side[3] === 'unlik
 console.log(`\nsides — every constant names the object each side measures (${Object.keys(SIDES).length} named, ${CONSTANTS.length} constants):`);
 for (const constant of CONSTANTS) {
   const side = SIDES[constant.id];
-  if (side === undefined) { console.error(`FAIL sides-missing ${constant.id}: this constant does not say what its two sides measure`); continue; }
+  // the row cannot be printed without its entry; the FAILURE is raised with its three siblings
+  // below, so all four read the same way and SIDES_MISSING is what carries it
+  if (side === undefined) continue;
   const verdict = side[3] === 'same' ? 'same  ' : side[3] === 'nocomp' ? 'n/a   ' : 'UNLIKE';
   console.log(`  ${verdict} ${constant.id.padEnd(24)} ${side[0].padEnd(24)} comp: ${side[1]}  | got: ${side[2]}`);
 }
-for (const id of SIDES_ORPHANED) console.error(`FAIL sides-orphaned ${id}: named in SIDES and there is no such constant`);
-for (const id of unverdict) console.error(`FAIL sides-unjudged ${id}: this pair does not say whether its two sides measure one object`);
-for (const id of mismatched) console.error(`FAIL sides-mismatch ${id}: comp side says "${SIDES[id][1]}" and got side says "${SIDES[id][2]}" — re-point it at one object or delete the constant`);
+// ALL FOUR OF THESE PRINTED `FAIL` AND GATED NOTHING (M1-70). `failures` is the only thing feeding
+// the exit code, and not one of these loops pushed to it — so a constant with no SIDES entry, a
+// SIDES entry with no constant, a pair with no verdict and a pair whose two sides name DIFFERENT
+// OBJECTS all printed the word FAIL to stderr and exited 0. The doc comment above SIDES says "the
+// audit is two-way and drift-proof: a constant with no entry here FAILS BY NAME ... so a new
+// constant cannot be added without saying what it compares", and that sentence was not true: I
+// added field.label-rule-offset this row, deleted its SIDES entry to prove the audit would catch
+// it, and the run came back exit 0. This is the row's own subject — an assertion nobody re-runs
+// rots into a lie the next seat believes — found in the mechanism the row told me to rely on, and
+// the sentence was describing an intention rather than the code. All four gate now. Every one of
+// the four sets is EMPTY on this tree, so nothing changes today; what changes is that the next
+// constant added without its entry cannot pass.
+for (const id of SIDES_MISSING) { console.error(`FAIL sides-missing ${id}: this constant does not say what its two sides measure`); failures.push(`sides-missing ${id}`); }
+for (const id of SIDES_ORPHANED) { console.error(`FAIL sides-orphaned ${id}: named in SIDES and there is no such constant`); failures.push(`sides-orphaned ${id}`); }
+for (const id of unverdict) { console.error(`FAIL sides-unjudged ${id}: this pair does not say whether its two sides measure one object`); failures.push(`sides-unjudged ${id}`); }
+for (const id of mismatched) { console.error(`FAIL sides-mismatch ${id}: comp side says "${SIDES[id][1]}" and got side says "${SIDES[id][2]}" — re-point it at one object or delete the constant`); failures.push(`sides-mismatch ${id}`); }
 console.log(`\ncomp type roles the instrument CANNOT measure, carried as exclusions with their reason (${COMP_EXCLUSIONS.length}):`);
 for (const role of COMP_EXCLUSIONS) {
   console.log(`  ${String(role.cap).padStart(5)}px  ${role.id.padEnd(20)} ${role.glyphs} glyph${role.glyphs === 1 ? '' : 's'} — a cap from fewer than ${6} glyphs is the matcher failing, not a measurement`);

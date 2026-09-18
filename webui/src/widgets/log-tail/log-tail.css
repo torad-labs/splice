@@ -1,0 +1,72 @@
+/* The log tail: a header of read-outs, then one scrolling rack of virtualized line strips. Tokens
+   only (CONTRACTS.md section 1); radius 0, no shadow, no glow. */
+
+.myx-lt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-lt-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-lt-controls {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.myx-lt-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.myx-lt-field-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+.myx-lt-field input {
+  padding: var(--space-1) var(--space-2);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+}
+
+.myx-lt-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* The rack. A fixed height so the virtualizer has a viewport, and it scrolls both ways: the line's
+   text field is wider than the room, and a log line is not something to wrap. */
+.myx-lt-scroll {
+  height: 66vh;
+  overflow: auto;
+  border-top: var(--hair) solid var(--hairline-strong);
+  border-bottom: var(--hair) solid var(--hairline-strong);
+}
+
+.myx-lt-inner {
+  position: relative;
+  width: 100%;
+}
+
+
+.myx-lt-row {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+}

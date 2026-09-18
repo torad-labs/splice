@@ -1,0 +1,44 @@
+/* The logs page: a header of selectors, the tail rack, and the request drawer. Tokens only
+   (CONTRACTS.md section 1); radius 0, no shadow, no glow. */
+
+.myx-lg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-lg-head {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-lg-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-5);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+.myx-lg-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.myx-lg-field-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+.myx-lg-field select {
+  padding: var(--space-1) var(--space-2);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+}

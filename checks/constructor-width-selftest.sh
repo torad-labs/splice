@@ -199,11 +199,50 @@ check --ratchet
 must_fail "7. a source glob that matches nothing must REFUSE, not pass vacuously" "vacuously"
 reset_all
 
+# -- 8A. the CONFIG-RECORD budget: a config record one key over IS red ------------------------
+# V4-122 item 8' added the shape, so the shape needs a red-green proof of its own. 33 is one past
+# MAX_CONFIG_KEYS; the class satisfies all three clauses (@Serializable, every parameter a
+# defaulted val, no subsystem), so it is graded against the CONFIG budget and must still fail it.
+mkdir -p "$SYNTH"
+python3 - "$SYNTH/SelftestConfigOver.kt" <<'PY'
+import pathlib, sys
+params = ",\n".join(f"    val k{i}: Int = 0" for i in range(33))
+pathlib.Path(sys.argv[1]).write_text(
+    "package splice.selftest\n\nimport kotlinx.serialization.Serializable\n\n"
+    "@Serializable\npublic data class SelftestConfigOver(\n" + params + ",\n)\n"
+)
+PY
+check --ratchet
+must_fail "8A. a config record one key past MAX_CONFIG_KEYS is red" "config keys"
+grep -q "SelftestConfigOver" "$tmp/out" ||
+  err "8A. the failure does not NAME the planted class — the arm went red for something else"
+reset_all
+
+# -- 8B. ...and the exemption cannot be reached by DELETING AN ANNOTATION ---------------------
+# The same 22 defaulted vals WITHOUT @Serializable: still graded at the ordinary MAX_PARAMS, so it
+# is red at 22. This is the arm that makes 8A an exemption rather than a hole — without it, a class
+# could escape the ordinary budget by satisfying a shape whose parts are all optional in practice.
+# 22 is chosen so the two budgets cannot be confused: it is over MAX_PARAMS (12) and well under
+# MAX_CONFIG_KEYS (32), so a green here would mean the un-annotated class had been let through.
+mkdir -p "$SYNTH"
+python3 - "$SYNTH/SelftestNoAnnotation.kt" <<'PY'
+import pathlib, sys
+params = ",\n".join(f"    val k{i}: Int = 0" for i in range(22))
+pathlib.Path(sys.argv[1]).write_text(
+    "package splice.selftest\n\npublic data class SelftestNoAnnotation(\n" + params + ",\n)\n"
+)
+PY
+check --ratchet
+must_fail "8B. the same defaulted vals WITHOUT @Serializable stay red at the ordinary width" "parameters (max 12)"
+grep -q "SelftestNoAnnotation" "$tmp/out" ||
+  err "8B. the failure does not NAME the planted class — the arm went red for something else"
+reset_all
+
 if [ "$tree_state" != "$(cd "$ROOT/gateway" && ls -1A)" ]; then
   err "the harness changed gateway/ — everything here must land in mktemp"
 fi
 
 if [ "$fail" -eq 0 ]; then
-  note "constructor-width selftest: premise asserted, control green over the real tree, 8 mutation arms red for their stated reasons, gateway/ untouched"
+  note "constructor-width selftest: premise asserted, control green over the real tree, 10 mutation arms red for their stated reasons, gateway/ untouched"
 fi
 exit "$fail"

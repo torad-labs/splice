@@ -21,6 +21,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
@@ -34,6 +35,8 @@ import splice.control.api.CompactionInstructionsRoute
 import splice.control.api.ConfigRoutes
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
+import splice.control.api.DaemonRoutes
+import splice.control.api.DaemonSupervised
 import splice.control.api.DoctorRoute
 import splice.control.api.EconomicsPayloads
 import splice.control.api.EventBus
@@ -156,6 +159,16 @@ public class ControlServer(
     public var doctor: DoctorReport? = null
     public var upgrade: UpgradeStatus? = null
 
+    /** V4-137: whether anything would bring this daemon back after it drains. Assigned beside the
+     *  ports above, and read at CALL time by the routing lambda for the same reason they are.
+     *
+     *  NULL IS NOT "ASSUME SUPERVISED". The restart route REFUSES when this is unwired, because the
+     *  two possible defaults are both wrong in the same direction: assuming supervised turns the
+     *  console's restart button into a stop button on an unsupervised daemon, and assuming the
+     *  opposite would refuse a restart on the host that can actually perform one. */
+    public var supervised: DaemonSupervised? = null
+
+    private val daemonRoutes = DaemonRoutes()
     private val modelsRoute = ModelsRoute(heads)
     private val perfRoutes = PerfRoutes(resolver)
     private val doctorRoute = DoctorRoute()
@@ -228,14 +241,7 @@ public class ControlServer(
                 // V4-136: additive too. ?head=<key> is REQUIRED and an unknown one is a 400 naming
                 // it, never a 404 — the console reads 404 on this path as route-not-built.
                 get("/api/compaction/instructions") { guarded(call) { compactionRoute.instructions(call, compaction) } }
-                // V4-127: the console's read routes, under the same two rules as the line above —
-                // ?head= is REQUIRED where the resource is per-head and a bad one is a 400 NAMING it
-                // (never a 404, which the console reads as route-not-built), and every unwired port
-                // answers a named 5xx rather than a payload that reads as a confident negative.
-                get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
-                get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }
-                get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, doctor) } }
-                get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, upgrade) } }
+                consoleRoutes(this)
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
                 get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
@@ -247,6 +253,32 @@ public class ControlServer(
                 }
             }
         }
+
+    /** The console's routes, split out of [controlEngine] for the same reason that function was split
+     *  out of start(): the table outgrew the 50-line wall a row at a time, and the wall was measuring
+     *  the TABLE rather than any one job. A second level of the same split is not indirection for its
+     *  own sake — each level has a reason to be read on its own.
+     *
+     *  A PLAIN FUNCTION TAKING THE ROUTE, never a `Route.` extension: kt-no-extension-functions is a
+     *  standing wall, and it already corrected the two JsonArrayBuilder helpers next door.
+     *
+     *  Every route here is bearer-guarded, and every one reads its port AT CALL TIME through the
+     *  routing lambda — [declaredHeads], [doctor], [upgrade] and [supervised] are all assigned after
+     *  this server is constructed, so a route that captured one would answer against a null forever.
+     *  ?head= is REQUIRED where the resource is per-head and a bad one is a 400 NAMING it, never a
+     *  404, which the console reads as route-not-built; and every unwired port answers a named 5xx
+     *  rather than a payload that reads as a confident negative. */
+    private fun consoleRoutes(route: Route) {
+        route.get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
+        route.get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }
+        route.get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, doctor) } }
+        route.get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, upgrade) } }
+        // The same drain POST /api/daemon/shutdown requests, offered as a restart because the host
+        // unit brings the daemon back. REFUSED when nothing would, and the refusal takes no drain.
+        route.post("/api/daemon/restart") {
+            guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, supervised) }
+        }
+    }
 
     @Synchronized
     public fun stop() {

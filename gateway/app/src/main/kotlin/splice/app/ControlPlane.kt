@@ -8,6 +8,7 @@ package splice.app
 import kotlinx.coroutines.cancel
 import splice.app.cli.DoctorCommand
 import splice.app.console.ConsoleUpgradeStatus
+import splice.app.console.DrainingRestartAdapter
 import splice.app.launch.HookProcessExec
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
@@ -146,6 +147,13 @@ internal class ControlPlane(
         srv.declaredHeads = declaredHeads
         srv.doctor = DoctorReport(DoctorCommand()::reportJson)
         srv.upgrade = UpgradeStatus(ConsoleUpgradeStatus()::json)
+        // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
+        // unassigned is SAFE BY CONSTRUCTION — ControlServer.supervised is null until set and the
+        // route refuses on null, so an unwired port declines to drain rather than draining a daemon
+        // nothing would restart. It is assigned here anyway because the refusal is not the answer we
+        // want on a host where systemd does run the daemon, and pinned below for the same reason the
+        // others are: the compiler cannot see this line either.
+        srv.supervised = DrainingRestartAdapter()
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

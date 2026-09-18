@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scaffold reference: team-board-a.png</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300&family=Bpmf+Iansui:wght@400&display=swap">
+  <link rel="stylesheet" href="layout.css">
+  <style>html,body{margin:0}body{background:#0c0e0e}.region{box-sizing:border-box}.region.text p{white-space:pre-wrap}</style>
+</head>
+<body>
+<!-- Reference only. Every region sits at its measured box inside a comp-aspect frame. Take the boxes (layout.css), keep your own semantic structure. -->
+<main class="comp-frame" style="max-width:1536px">
+  <div class="r-top-rule region chrome" data-region="top-rule"><!-- fixed rule: hairline bottom edge, graphite --></div>
+  <div class="r-wordmark region text" data-region="wordmark"><!-- splice wordmark, lowercase grotesque --><p style="font-size:var(--r-wordmark-font);font-family:var(--r-wordmark-family),sans-serif;font-weight:var(--r-wordmark-weight);line-height:1.05;margin:0">wordmark</p></div>
+  <div class="r-clocks region text" data-region="clocks"><!-- local and utc clocks, tabular mono --><p style="font-size:var(--r-clocks-font);font-family:var(--r-clocks-family),sans-serif;font-weight:var(--r-clocks-weight);line-height:1.05;margin:0">clocks</p></div>
+  <div class="r-health region text" data-region="health"><!-- daemon ok with a small green square --><p style="font-size:var(--r-health-font);line-height:1.05;margin:0">health</p></div>
+  <div class="r-nearest-window region text" data-region="nearest-window"><!-- nearest plan window, head and account named --><p style="font-size:var(--r-nearest-window-font);line-height:1.05;margin:0">nearest-window</p></div>
+  <div class="r-no-window region text" data-region="no-window"><!-- count of heads reporting no window --><p style="font-size:var(--r-no-window-font);line-height:1.05;margin:0">no-window</p></div>
+  <div class="r-rail region chrome" data-region="rail"><!-- left rail, darker than the room, hairline right edge --></div>
+  <div class="r-rail-labels region control" data-region="rail-labels"><!-- thirteen page labels as small plates; teams active with a green holder tab: rebuild the control's chrome from the crop (comp-spec.mjs --crop rail-labels); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-team-header region text" data-region="team-header"><!-- team header strip: team, goal, repo, slots, lead driving; five boxed fields --><p style="font-size:var(--r-team-header-font);line-height:1.05;margin:0">team-header</p></div>
+  <div class="r-bay-claude region chrome" data-region="bay-claude"><!-- head bay: darker rack with hairline rails and empty slots --></div>
+  <div class="r-bay-claude-label region text" data-region="bay-claude-label"><!-- bay label plate: head: claude --><p style="font-size:var(--r-bay-claude-label-font);line-height:1.05;margin:0">bay-claude-label</p></div>
+  <div class="r-lead-strip region control" data-region="lead-strip"><!-- session strip: green holder edge, seven boxed fields: rebuild the control's chrome from the crop (comp-spec.mjs --crop lead-strip); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-lead-strip-2 region control" data-region="lead-strip-2"><!-- session strip line two: head, session id, created, uptime, turns, tokens, cost: rebuild the control's chrome from the crop (comp-spec.mjs --crop lead-strip-2); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-lead-strip-3 region control" data-region="lead-strip-3"><!-- session strip line three: context, scratchpad, workspace, branch: rebuild the control's chrome from the crop (comp-spec.mjs --crop lead-strip-3); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-bay-deepseek region chrome" data-region="bay-deepseek"><!-- head bay: claude-deepseek --></div>
+  <div class="r-bay-deepseek-label region text" data-region="bay-deepseek-label"><!-- bay label plate: head: claude-deepseek --><p style="font-size:var(--r-bay-deepseek-label-font);line-height:1.05;margin:0">bay-deepseek-label</p></div>
+  <div class="r-builder-strip region control" data-region="builder-strip"><!-- session strip: grey holder edge: rebuild the control's chrome from the crop (comp-spec.mjs --crop builder-strip); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-builder-strip-2 region control" data-region="builder-strip-2"><!-- session strip line two: rebuild the control's chrome from the crop (comp-spec.mjs --crop builder-strip-2); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-builder-strip-3 region control" data-region="builder-strip-3"><!-- session strip line three: rebuild the control's chrome from the crop (comp-spec.mjs --crop builder-strip-3); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-handoff-strip region control" data-region="handoff-strip"><!-- message strip caught mid hand-off between the bays, angled, with two ghost copies trailing; the signature gesture: rebuild the control's chrome from the crop (comp-spec.mjs --crop handoff-strip); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-chat-bay region chrome" data-region="chat-bay"><!-- team chat rack --></div>
+  <div class="r-chat-label region text" data-region="chat-label"><!-- bay label plate: team chat (newest at bottom) --><p style="font-size:var(--r-chat-label-font);line-height:1.05;margin:0">chat-label</p></div>
+  <div class="r-chat-strips region control" data-region="chat-strips"><!-- three message strips: time, from, to, packet, message; holder edge by sender: rebuild the control's chrome from the crop (comp-spec.mjs --crop chat-strips); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-activity-bay region chrome" data-region="activity-bay"><!-- activity feed rack --></div>
+  <div class="r-activity-label region text" data-region="activity-label"><!-- bay label plate: activity, sampled every 30 s --><p style="font-size:var(--r-activity-label-font);line-height:1.05;margin:0">activity-label</p></div>
+  <div class="r-activity-strips region control" data-region="activity-strips"><!-- five activity strips: time, member, activity, detail: rebuild the control's chrome from the crop (comp-spec.mjs --crop activity-strips); its ink box, border, fill, radius, and label size are the comp's --></div>
+  <div class="r-footer-strip region text" data-region="footer-strip"><!-- team id, created, updated --><p style="line-height:1.05;margin:0">footer-strip</p></div>
+</main>
+</body>
+</html>

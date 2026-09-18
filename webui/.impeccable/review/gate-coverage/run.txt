@@ -1,0 +1,182 @@
+# M1-49 run of record — the exit gate's denominator. Captured 2026-09-18T12:04:45Z.
+#
+# THE ROW'S VERIFY, AS A CHAIN, verbatim:
+#   node .dev/web-console/exit-gate.mjs --selftest && node .dev/web-console/gate-coverage.mjs --selftest \
+#     && node .dev/web-console/landed.mjs --selftest && node .dev/web-console/wire-check.mjs --selftest
+
+===== LEG 1: exit-gate --selftest
+  PASS  a silent no-op is DID NOT RUN — wanted DID NOT RUN, got DID NOT RUN
+  PASS  a missing tool is DID NOT RUN, never FAILED — wanted DID NOT RUN, got DID NOT RUN
+  PASS  a real defect is FAILED — wanted FAILED, got FAILED
+  PASS  a clean run is PASSED — wanted PASSED, got PASSED
+  PASS  a tool that exits 0 while its output reports failure is FAILED — wanted FAILED, got FAILED
+  PASS  a stale artifact is DID NOT RUN — wanted DID NOT RUN, got DID NOT RUN
+  PASS  leg typecheck is fully formed
+  PASS  leg lint is fully formed
+  PASS  leg suite is fully formed
+  PASS  leg build is fully formed
+  PASS  leg bundle is fully formed
+  PASS  leg fixture-leak is fully formed
+  PASS  leg law-check is fully formed
+  PASS  leg scan is fully formed
+  PASS  leg wire-check is fully formed
+  PASS  leg gate-coverage is fully formed
+  PASS  leg comp-check is fully formed
+  PASS  leg look is fully formed
+  PASS  leg landed is fully formed
+  PASS  an empty leg set is not a pass — wanted a non-zero exit, got 2
+
+selftest 20/20 PASS
+
+===== LEG 2: gate-coverage --selftest
+  PASS  a tree whose every checker is correctly disposed is all OK
+  PASS  a checker in the directory and in no disposition is UNDISPOSITIONED
+  PASS  and it does not drag the correctly disposed ones down with it
+  PASS  a disposition for a file that is gone is STALE
+  PASS  GATE LEG that no leg runs is MISMATCHED
+  PASS  TOOL, NEVER GATES that a leg does run is MISMATCHED
+  PASS  TOOL, NEVER GATES with a blank reason is MISMATCHED
+  PASS  LIBRARY OF a file that does not reference it is MISMATCHED
+  PASS  LIBRARY OF a caller that could not be read at all is MISMATCHED
+  PASS  LIBRARY OF a caller outside the denominator is OK when that caller really references it
+  PASS  and still MISMATCHED when that outside caller does NOT reference it
+  PASS  THE GATE ITSELF on a file the leg list did not come from is MISMATCHED
+  PASS  a library of a tool passes, and says that no leg reaches it
+  PASS  PENDING on a row that is still in flight is OK
+  PASS  PENDING on a row that has LANDED is MISMATCHED — the disposition expires
+  PASS  PENDING on a row the ledger does not have is MISMATCHED
+  PASS  a missing directory is DID NOT RUN
+  PASS  a directory with no .mjs is DID NOT RUN
+  PASS  a tree with no exit-gate.mjs is DID NOT RUN
+  PASS  an exit-gate.mjs whose LEGS array will not parse is DID NOT RUN
+  PASS  a healthy tree is NOT refused
+  PASS  a PENDING disposition with no ledger to read is DID NOT RUN
+  PASS  and with a ledger it is not refused
+  PASS  an exit-gate with no LEGS array parses to null, never to an empty answer
+  PASS  and one with an empty LEGS array is null too, not a clean zero
+  PASS  the real exit-gate.mjs parses to at least one leg
+  PASS  a path with a suffix after .mjs is NOT read as naming that file
+  PASS  and the unsuffixed form still is
+  PASS  and the scan leg is found to run scan.mjs
+  PASS  the tree as it stands comes back clean — the positive control, without which every red above proves only that this check always fails
+  PASS  a NEW .mjs dropped into the directory with no disposition turns it RED
+  PASS  and the red names the file rather than only counting it
+  PASS  and removing it comes back clean again, so the red was the plant and not the harness
+
+selftest 33/33 PASS
+
+===== LEG 3: landed --selftest
+ok   clean      a landed row whose bytes are in the history
+ok   unlanded   a landed row whose bytes were never committed
+ok   unlanded   committed at bytes other than the receipted ones
+ok   ignored    a receipted file the campaign deliberately keeps out of history
+ok   skipped    an in_flight row claims nothing yet and is not checked
+ok   noReceipt  a landed row with no receipt at all
+ok   empty      an empty ledger reads as zero rows, not as a clean bill
+ok   supersede  the last receipt is the live claim, not the union of all of them
+
+selftest 8/8 PASS
+
+===== LEG 4: wire-check --selftest
+  PASS  the defect this row was cut for is among the candidates
+  PASS  and the other real key is offered beside it rather than hidden
+  PASS  a real field is not called a near spelling of something else
+  PASS  a one-word field with no wire key raises no false near spelling
+  PASS  every property signature is a field
+  PASS  a nested object literal declares its own type
+  PASS  `?` is read as optional
+  PASS  `| null` is NOT optional — it claims the key is present
+  PASS  `| null` is read as nullable
+  PASS  a referenced interface is reachable from its root
+  PASS  an unrelated interface is NOT reachable
+  PASS  a tree with no entities directory is DID NOT RUN, not a pass
+  PASS  entity types but no api segment is DID NOT RUN, not a pass
+  PASS  a console side but no gateway tree is DID NOT RUN, not a pass
+  PASS  control kotlin that emits no keys at all is DID NOT RUN, not a pass
+  PASS  keys but no served route is DID NOT RUN, not a pass
+  PASS  a console and a daemon that AGREE come back clean
+  PASS  a planted MISMATCH is red
+  PASS  a tree whose ONLY finding is the 3b census comes back CLEAN
+  PASS  and it still printed that census, loudly, on the way to exit 0
+  PASS  one route the console fetches that nobody serves and no coverage disposes is RED
+  PASS  and the rule that fired is named the route rule, not a field or census rule
+
+selftest 22/22 PASS
+VERIFY CHAIN EXIT=0
+
+===== THE DENOMINATOR, in full
+gate-coverage: 21 checker(s) under .dev/web-console, 13 leg(s) in exit-gate.mjs
+  8 gate leg · 7 library of · 5 tool, never gates · 0 pending · 1 the gate itself — 21 of 21 settled
+
+  OK               capture.mjs                    LIBRARY OF gate.mjs
+                     used by gate.mjs, WHICH NO LEG RUNS — so nothing in the gate exercises this file
+  OK               census/build-punch-list.mjs    TOOL, NEVER GATES
+                     no leg names it
+  OK               census/tonal-census.mjs        TOOL, NEVER GATES
+                     no leg names it
+  OK               comp-check.mjs                 GATE LEG
+                     run by the comp-check leg
+  OK               exit-gate.mjs                  THE GATE ITSELF
+                     declares 13 leg(s)
+  OK               fixture-leak.mjs               GATE LEG
+                     run by the fixture-leak leg
+  OK               gate-coverage.mjs              GATE LEG
+                     run by the gate-coverage leg
+  OK               gate.mjs                       TOOL, NEVER GATES
+                     no leg names it
+  OK               landed.mjs                     GATE LEG
+                     run by the landed leg
+  OK               law-check.mjs                  GATE LEG
+                     run by the law-check leg
+  OK               lib/cdp.mjs                    LIBRARY OF look.mjs
+                     used by look.mjs, which the look leg runs
+  OK               lib/fixtures.mjs               LIBRARY OF comp-check.mjs
+                     used by comp-check.mjs, which the comp-check leg runs
+  OK               lib/png.mjs                    LIBRARY OF look.mjs
+                     used by look.mjs, which the look leg runs
+  OK               look-gate.mjs                  LIBRARY OF look.mjs
+                     used by look.mjs, which the look leg runs
+  OK               look.mjs                       GATE LEG
+                     run by the look leg
+  OK               scale.mjs                      TOOL, NEVER GATES
+                     no leg names it
+  OK               scan.mjs                       GATE LEG
+                     run by the scan leg
+  OK               snapshot.mjs                   LIBRARY OF look.mjs
+                     used by look.mjs, which the look leg runs
+  OK               theme.mjs                      LIBRARY OF webui/.impeccable/review/coverage/coverage.mjs
+                     used by webui/.impeccable/review/coverage/coverage.mjs (outside .dev/web-console), WHICH NO LEG RUNS — so nothing in the gate exercises this file
+  OK               type-ladder.mjs                TOOL, NEVER GATES
+                     no leg names it
+  OK               wire-check.mjs                 GATE LEG
+                     run by the wire-check leg
+
+gate-coverage: every checker in the directory carries a disposition, and every disposition holds against the tree
+gate-coverage EXIT=0
+
+===== MUTATION PROOF. Each mutant is ONE change off the landed files; exit-gate.mjs is copied
+# to scratch first and restored by cp, never by git.
+
+--- M1: a NEW .mjs in the directory with no disposition (the boring case, end to end)
+  UNDISPOSITIONED  .m1-probe.mjs                  —
+gate-coverage: 1 checker(s) the gate says nothing about — .m1-probe.mjs (UNDISPOSITIONED)
+  EXIT=1
+
+--- M2: a GATE LEG disposition whose leg no longer names the file (wire-check unwired)
+  MISMATCHED       wire-check.mjs                 GATE LEG
+gate-coverage: 1 checker(s) the gate says nothing about — wire-check.mjs (MISMATCHED)
+  EXIT=1
+
+--- M3: a TOOL, NEVER GATES disposition that a leg does run (scale.mjs promoted)
+  MISMATCHED       scale.mjs                      TOOL, NEVER GATES
+gate-coverage: 1 checker(s) the gate says nothing about — scale.mjs (MISMATCHED)
+  EXIT=1
+
+--- M4: a leg missing its run() — the bug this row actually shipped and then caught
+  PASS  a missing tool is DID NOT RUN, never FAILED — wanted DID NOT RUN, got DID NOT RUN
+  PASS  a real defect is FAILED — wanted FAILED, got FAILED
+  PASS  a tool that exits 0 while its output reports failure is FAILED — wanted FAILED, got FAILED
+  FAIL  leg wire-check is fully formed — missing or not callable: run
+selftest 19/20, 1 wrong
+
+# restored byte-identical: 714abd23e9d295bb32ed08c923235329842315cf -> 714abd23e9d295bb32ed08c923235329842315cf

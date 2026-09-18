@@ -26,6 +26,32 @@
   overflow: hidden;
 }
 
+/* THE BOARD'S STRIPS KEEP THEIR TRACED WIDTH (M1-97). `.myx-board-strip` declares the comp's own
+   91.071% at specificity (0,1,0), and ui.css's `.myx-strip { width: max-content }` - added by M1-12
+   for a RACK, where a strip is as long as its fields and the bay scrolls - is also (0,1,0). So the
+   winner was whichever sheet loaded last, and the board's strips grew to fit their nowrap cells
+   instead of the column the comp traced: measured at 1536 with the hero fixture, the chat message
+   cell reached x=1706 against a 1536 frame, 170px past the edge with no gutter, and the message
+   could not wrap because the strip had widened to fit it on one line. max-content is right for a
+   rack and wrong for a composition: the board does not scroll, it PLACES. This rule is deliberately
+   (0,2,0) so the traced width wins wherever the sheets land in the cascade. */
+/* THE BOARD'S CELLS SHRINK AND ITS MESSAGE WRAPS (M1-97), which is what the comp shows and what the
+   DOM said was missing. Measured at 1536 on the hero: the chat message strip reached x=1579 and a
+   field cell x=1706 against a 1536 frame - 170px past the edge with no gutter - and the message
+   could not wrap because its value cell computes white-space: nowrap. Two rules, both scoped to the
+   board: a racked strip is as wide as its fields and its bay scrolls (ui.css, M1-12, right for a
+   RACK), while the board PLACES its strips into traced columns and has nowhere to scroll, so its
+   cells take the width they are given and its message cell wraps inside the card. The comp sets the
+   same message on three lines inside its cell.
+   NOTE the first attempt at this was `.myx-board .myx-board-strip { width: 91.071% }` and it moved
+   NOTHING: the offending elements carry `.myx-board-msg`, not `.myx-board-strip`, so the selector
+   matched no element at all and the measurement was identical before and after. That is the shape
+   M1-52 measured on `head-key` (1.07 to 1.06) and the reason this fix was re-measured rather than
+   assumed. */
+.myx-board .myx-sfield { flex: 0 1 auto; min-width: 0; }
+.myx-board .myx-sfield-value { overflow: hidden; text-overflow: ellipsis; }
+.myx-board-msg .myx-sfield-value { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+
 /* --- the strip's type and grid --- */
 .myx-board .myx-strip {
   position: absolute;
@@ -61,10 +87,13 @@
      rule at y24, which is where the label's line box ends at this size.
      THE TRADE IS STILL HERE AND THE REASON HAS CHANGED (M1-71). This said the
      comp sets its strips smaller than the ladder's floor and the floor wins.
-     Measuring the comp's own plate says the opposite: its value ink band is 11
-     to 12 rows (lead-strip rows 38..48, lead-strip-2 rows 33..44) where
-     --text-2 renders a 9.66px cap, so the comp's strip type sits a step ABOVE
-     this rung rather than below it. What actually decides it is the plate's own
+     THE COMPARISON THAT STOOD HERE WAS APPLES TO ORANGES and is corrected by
+     M1-85: it set the comp's 11-12 row ink BAND against --text-2's 9.66px CAP,
+     which are different quantities - a band is a measured run of ink rows and a
+     cap is one glyph's height - so the two numbers could not be compared and the
+     step they seemed to show was an artefact of the unit. The conclusion
+     survives on the plate's own geometry, which the paragraph below gives;
+     this sentence is struck so the next reader does not quote the unit error. What actually decides it is the plate's own
      geometry: the columns are the comp's fixed percentages, so a value that
      does not fit runs out of its column rather than the page reflowing.
      Measured at 1536 on the hero: 10 of 99 value cells clip
@@ -456,6 +485,11 @@
   position: absolute;
   left: 0;
   right: 0;
+  /* WIDTH AUTO, SO left/right ACTUALLY PIN IT (M1-97). This strip is placed by its two edges, and
+     ui.css's `.myx-strip { width: max-content }` (M1-12, right for a RACK) gave it a third
+     constraint: with a width present the browser uses it and ignores `right`, so the strip sized
+     itself to its message and ran 43px past the frame. Measured: right edge 1579 against 1536. */
+  width: auto;
   /* each chat row carries its own top and height inline, read off the comp's
      plates (82, 69 and 72px on a 287px region, at 0, 106 and 200) */
   height: 100%;
@@ -524,6 +558,10 @@
   position: absolute;
   left: 0;
   right: 0;
+  /* Width auto for the same reason as the message strip above (M1-97): placed by its two edges,
+     and max-content from ui.css would give it a width that overrides `right` and runs it past the
+     frame. Measured after the message fix, this was the last offender at right=1579 of 1536. */
+  width: auto;
   /* The comp's activity plates tile their region at the same 38px as their
      pitch, not the 31px the plate-row scan first suggested: its labels sit 6px
      into a plate and its values 29px in, and a value needs the room. */

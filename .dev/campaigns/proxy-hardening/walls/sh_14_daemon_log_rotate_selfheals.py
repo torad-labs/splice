@@ -31,10 +31,24 @@ def detect(text: str | None) -> list[str]:
         return ["DaemonBoundary.kt missing — refusing to pass vacuously"]
     if "persistentLogger" not in text:
         return ["persistentLogger not found (shape changed?) — refusing to pass vacuously"]
-    m = re.search(r"\.onFailure \{.*?\n\s+\}", text, re.S)
+    # ANCHORED TO THE WRITE/ROTATE BRANCH, NOT THE FIRST `.onFailure` (V4-123). This used to be a
+    # non-anchored first-match, which was correct only while persistentLogger held exactly ONE
+    # onFailure. `written`'s size probe (.onFailure just above, in the same function) was added
+    # later and sits EARLIER in the file, so first-match started returning the PROBE — which
+    # announces but does not reconcile, exactly the state this wall treats as wedged. The result was
+    # a FALSE C5 against code that was correct, which is worse than a missed detection: it teaches
+    # the reader that a red here is noise.
+    #
+    # The rotate branch is identified by what only IT does: it clears `writer` before reconciling.
+    # Matching on the branch's purpose rather than its position is what survives the next onFailure
+    # anyone adds to this function. Refusing vacuously when no such branch exists is deliberate —
+    # a wall that silently found nothing would pass, and a logger with no reconcile is precisely
+    # the defect.
+    matches = re.finditer(r"\.onFailure \{.*?\n\s+\}", text, re.S)
+    m = next((candidate for candidate in matches if "writer = null" in candidate.group(0)), None)
     if m is None:
-        return ["persistentLogger's onFailure branch not found (shape changed?) — refusing to "
-                "pass vacuously"]
+        return ["persistentLogger's write/rotate onFailure branch not found (shape changed?) — "
+                "refusing to pass vacuously"]
     branch = m.group(0)
     problems: list[str] = []
     if "written =" not in branch:
@@ -89,6 +103,29 @@ CLOSED_FIX = """persistentLogger
                 System.err.print("rotate failed")
             }"""
 
+# THE FALSE-C5 REGRESSION (V4-123), as a fixture rather than a comment. `written`'s size probe is
+# an onFailure that ANNOUNCES but does not reconcile, and it sits EARLIER in persistentLogger than
+# the write/rotate branch — so a non-anchored first-match returned the probe and reported "onFailure
+# never reconciles written" against code that reconciled correctly. Measured on the real tree
+# 2026-09-18: the wall went red on a correct commit (3732a6a1 added that probe), which is the worst
+# kind of red because it teaches the reader that a failure here is noise.
+FALSE_C5_FIX = """persistentLogger
+            .onFailure {
+                System.err.print("size probe failed")
+            }
+            .getOrDefault(0L)
+        return LogSink { msg ->
+            }.onFailure { failure ->
+                runCatchingCancellable { writer?.close() }
+                writer = null
+                written = reconcile()
+                System.err.print("rotate failed")
+            }"""
+
+# The same shape with the ROTATE branch broken: the wall must still be red, or the anchoring above
+# would have traded a false positive for a false negative.
+FALSE_C5_BROKEN = FALSE_C5_FIX.replace("                written = reconcile()\n", "")
+
 
 def selftest() -> int:
     fails = []
@@ -96,6 +133,13 @@ def selftest() -> int:
         fails.append("writer-only reset must be RED")
     if detect(CLOSED_FIX):
         fails.append(f"reconcile + announce must be GREEN, got {detect(CLOSED_FIX)}")
+    # V4-123: a preceding unrelated onFailure must NOT shadow the rotate branch...
+    if detect(FALSE_C5_FIX):
+        fails.append(f"a size-probe onFailure before the rotate must not produce a false C5, "
+                     f"got {detect(FALSE_C5_FIX)}")
+    # ...and anchoring must not have blinded the wall to a genuinely broken rotate.
+    if not detect(FALSE_C5_BROKEN):
+        fails.append("a rotate branch missing its reconcile must still be RED")
     if not detect(CLOSED_FIX.replace("                written = reconcile()\n", "")):
         fails.append("announce without reconcile must be RED")
     if not detect(CLOSED_FIX.replace('                System.err.print("rotate failed")\n', "")):

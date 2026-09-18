@@ -21,7 +21,9 @@
 
 /* The number is a printed field: tabular, right aligned, never decoration. */
 .myx-knob-num {
+  /* FIGURE: a parsed number, printed tabular and right aligned. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-variant-numeric: tabular-nums;
   font-size: var(--text-1);
   color: var(--ink-mute);

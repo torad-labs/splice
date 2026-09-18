@@ -152,7 +152,8 @@ textarea:focus-visible {
   color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
-  font-family: var(--font-figure);
+  /* CODE: the command to paste is code, as its own comment says. */
+  font-family: var(--font-code);
   font-size: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -176,7 +177,9 @@ textarea:focus-visible {
   color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
+  /* FIGURE: a modal field prints a config value. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   font-variant-numeric: tabular-nums;
 }

@@ -6,18 +6,22 @@
 // reason is not policy for its own sake — a pin moves the reasoning off the session's model and the
 // backend's prompt cache then misses the whole transcript on the most expensive turn class there is
 // (the retired `compact_effort` quirk, refused loudly at load, carries the same story).
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { CompactPayload } from '@shared/api';
 import { startCompactPolling, useCompact } from '@entities/compact-stats';
 import { ErrorNote, SkeletonRows } from '@shared/ui';
 import { CompactFeed } from '@widgets/compact-feed';
 import { dispositions } from './coverage';
-import { fixtureCompact, fixtureName } from './fixtures/compaction';
 import { S } from './strings';
 import './compaction.css';
 
 export { dispositions };
+
+/** The name this page accepts in the hash query. Declared HERE, not in the fixture module: a
+ *  static import of that module — even for one constant — is a real dependency edge, so the
+ *  bundler would include the fixture and its strings would ship (CONTRACTS.md section 4). */
+const FIXTURE = 'compaction';
 
 /** The law, in words. A sentence, so it lives here and not in the string table. */
 export const LAW_TEXT =
@@ -50,12 +54,22 @@ export default function CompactionPage() {
   const compact = useCompact((state) => state);
   useEffect(() => startCompactPolling(5000), []);
 
-  const fixture = fixtureName(search, import.meta.env.DEV);
+  const [fixture, setFixture] = useState<CompactPayload | null>(null);
+
+  // The fixture loads through a DYNAMIC import inside the DEV branch, so the module is a build-time
+  // nothing: `import.meta.env.DEV` is statically false in a production build, the branch is dropped,
+  // and the fixture is not a dependency of anything that ships. The board renders the store's
+  // payload while the module loads, and the fixture replaces it when it arrives.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (new URLSearchParams(search).get('fixture') !== FIXTURE) return;
+    void import('./fixtures/compaction').then((module) => setFixture(module.fixtureCompact));
+  }, [search]);
 
   return (
     <>
       {compact.error === null ? null : <ErrorNote message={compact.error} />}
-      <CompactionBoard payload={fixture === null ? compact.data : fixtureCompact} sample={fixture !== null} />
+      <CompactionBoard payload={fixture === null ? compact.data : fixture} sample={fixture !== null} />
     </>
   );
 }

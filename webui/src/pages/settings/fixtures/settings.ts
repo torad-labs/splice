@@ -7,14 +7,6 @@
 // page the daemon will actually produce and not a flattering rearrangement of it.
 import type { ConfigPayload } from '@shared/api';
 
-export const FIXTURE_NAME = 'settings';
-
-/** The fixture this build was opened with, or null. Never true in a shipped dist. */
-export function fixtureName(search: string, dev: boolean): string | null {
-  if (!dev) return null;
-  const asked = new URLSearchParams(search).get('fixture');
-  return asked === FIXTURE_NAME ? asked : null;
-}
 
 /** Every runtime knob, with the provenance spread the real daemon produces. */
 const EFFECTIVE = {

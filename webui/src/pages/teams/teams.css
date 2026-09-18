@@ -27,3 +27,9 @@
   margin-top: var(--space-5);
 }
 .myx-teams .myx-compose { margin-bottom: 7vh; }
+
+/* On a phone the footer sits on the board rather than floating over the page (board.css, M3-03),
+   so the composer's clearance for it has nothing left to clear. */
+@media (max-width: 720px) {
+  .myx-teams .myx-compose { margin-bottom: 0; }
+}

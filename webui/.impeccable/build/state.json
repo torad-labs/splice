@@ -6,7 +6,7 @@
   "direction": "7d8e221a",
   "breakpoint": "1536x1024",
   "artifact": null,
-  "phase": "responsive",
+  "phase": "review",
   "phases": {
     "comps": {
       "status": "closed",
@@ -398,17 +398,24 @@
       "forced": null
     },
     "responsive": {
-      "status": "open",
+      "status": "closed",
       "openedAt": "2026-09-18T19:03:29.252Z",
-      "closedAt": null,
-      "attempts": 0,
+      "closedAt": "2026-09-18T19:36:46.743Z",
+      "attempts": 3,
       "notes": [],
-      "gate": null,
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "desktop 86% (match)",
+        "score": 0.8605,
+        "sideBySide": ".impeccable/review/diff/desktop/side-by-side.png",
+        "at": "2026-09-18T19:36:46.743Z"
+      },
       "forced": null
     },
     "review": {
-      "status": "pending",
-      "openedAt": null,
+      "status": "open",
+      "openedAt": "2026-09-18T19:36:46.743Z",
       "closedAt": null,
       "attempts": 0,
       "notes": [],

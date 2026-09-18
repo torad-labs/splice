@@ -138,111 +138,117 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
 
   const handoff = board.messages[board.messages.length - 1] ?? null;
 
+  // THE FRAME IS THE PHONE'S SCROLLER AND NOTHING ELSE (M3-03). On a desktop it is
+  // `display: contents` and draws no box, so the board lays out exactly as before; below 720 it
+  // is the one box that scrolls sideways, so the poster can be wider than the screen (one bay per
+  // screen) while the view tabs, the list and the composer under it stay where the thumb left them.
   return (
-    <section className="myx-board" aria-label={S.board}>
-      {/* the team header strip: five boxed fields, the team's own identity */}
-      <BoardHeader board={board} />
+    <div className="myx-board-frame">
+      <section className="myx-board" aria-label={S.board}>
+        {/* the team header strip: five boxed fields, the team's own identity */}
+        <BoardHeader board={board} />
 
-      {/* one bay per head, in the order the members run */}
-      {heads.slice(0, HEAD_BAY.length).map((head, index) => (
-        <Bay
-          key={head}
-          className={`myx-board-bay ${HEAD_BAY[index]}`}
-          label={`${S.headLabel} ${head}`}
-        >
-          {board.members
-            .filter((member) => member.head === head)
-            .flatMap((member) => [0, 1, 2].map((line) => (
-              <MemberStrips key={`${member.name}-${line}`} member={member} line={line} cols={BAY_COLS[index]} />
-            )))}
-          {/* the rack's empty slots: the bay holds room for sessions not here yet */}
-          {Array.from({ length: 9 }, (_, i) => (
-            <span key={i} className="myx-board-slot" style={{ top: `${42.5 + i * 6.1}%` }} aria-hidden="true" />
-          ))}
+        {/* one bay per head, in the order the members run */}
+        {heads.slice(0, HEAD_BAY.length).map((head, index) => (
+          <Bay
+            key={head}
+            className={`myx-board-bay ${HEAD_BAY[index]}`}
+            label={`${S.headLabel} ${head}`}
+          >
+            {board.members
+              .filter((member) => member.head === head)
+              .flatMap((member) => [0, 1, 2].map((line) => (
+                <MemberStrips key={`${member.name}-${line}`} member={member} line={line} cols={BAY_COLS[index]} />
+              )))}
+            {/* the rack's empty slots: the bay holds room for sessions not here yet */}
+            {Array.from({ length: 9 }, (_, i) => (
+              <span key={i} className="myx-board-slot" style={{ top: `${42.5 + i * 6.1}%` }} aria-hidden="true" />
+            ))}
+          </Bay>
+        ))}
+
+        {/* the signature gesture: the newest edge caught between the bays */}
+        {handoff !== null ? (
+          <div className="myx-board-handoff" aria-label={`hand off ${handoff.from} to ${handoff.to}`}>
+            {/* ONE afterimage, and the comp is why (M1-58). It draws a lifted strip and a single
+                ghost beneath it, both inside the bay; the build drew TWO ghosts, and the second had
+                walked far enough down-left to leave the bay entirely - it hung across the bay's left
+                upright and over the rail column, a bare `message` label and a clipped packet line in
+                a box with no strip around it. It was the only element in the console that crossed a
+                bay wall, and no instrument owned it: not a contrast pair, not a coverage plane, not a
+                type rung. A gesture that reaches another bay's ground reads as a mistake rather than
+                as motion. `.myx-board-ghost-2` is now a rule with no element: board.css is not this
+                row's fence and its owner should take the rule out. */}
+            <div className="myx-board-ghost myx-board-ghost-1" aria-hidden="true">
+              <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
+            </div>
+            <div className="myx-board-handoff-live">
+              <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
+            </div>
+          </div>
+        ) : null}
+
+        {/* the team's group chat, newest at the bottom */}
+        <Bay className="myx-board-bay myx-board-bay-chat" label={`${S.chatLabel} (newest at bottom)`}>
+          <div className="myx-board-msgs">
+            {board.messages.map((message, index) => (
+              <MessageStrip
+                key={`${message.time}-${message.from}`}
+                message={message}
+                className="myx-board-msg"
+                style={{
+                  top: `${chatRow(index).top}%`,
+                  height: `${chatRow(index).height}%`,
+                }}
+              />
+            ))}
+          </div>
         </Bay>
-      ))}
 
-      {/* the signature gesture: the newest edge caught between the bays */}
-      {handoff !== null ? (
-        <div className="myx-board-handoff" aria-label={`hand off ${handoff.from} to ${handoff.to}`}>
-          {/* ONE afterimage, and the comp is why (M1-58). It draws a lifted strip and a single
-              ghost beneath it, both inside the bay; the build drew TWO ghosts, and the second had
-              walked far enough down-left to leave the bay entirely - it hung across the bay's left
-              upright and over the rail column, a bare `message` label and a clipped packet line in
-              a box with no strip around it. It was the only element in the console that crossed a
-              bay wall, and no instrument owned it: not a contrast pair, not a coverage plane, not a
-              type rung. A gesture that reaches another bay's ground reads as a mistake rather than
-              as motion. `.myx-board-ghost-2` is now a rule with no element: board.css is not this
-              row's fence and its owner should take the rule out. */}
-          <div className="myx-board-ghost myx-board-ghost-1" aria-hidden="true">
-            <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
+        {/* the activity sample: a label every 30 seconds, and it says so.
+            L-7: THE COLUMN NAMES PRINT ONCE, ON THE RACK, NOT ON EVERY SLIP. The light-room review
+            filed it and the 3840 pass made it the most repetitive object on the page -- six data
+            rows each carrying its own `time member activity detail` row, alternating down the bay,
+            which reads as a rendering loop rather than a table. The comp's activity bay is a table:
+            the region crop shows one header row under the plate and five data rows beneath it, and
+            StripField's own contract names this case ("omit inside a bay whose head prints the
+            column names once ... which is also what a compact rack (the activity feed) needs").
+            The lead, builder, chat and hand-off bays keep their per-strip labels: those rows carry
+            DIFFERENT label sets, so there the label is a property of the row (M1-34). */}
+        <Bay
+          className="myx-board-bay myx-board-bay-activity"
+          label={`${S.activityLabel}, sampled every 30 s`}
+          fields={(
+            <>
+              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[0]}ch` }}>{S.time}</span>
+              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[1]}ch` }}>{S.member}</span>
+              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[2]}ch` }}>{S.activity}</span>
+              <span className="myx-board-act-head" style={{ width: `${ACT_COLS[3]}ch` }}>{S.detail}</span>
+            </>
+          )}
+        >
+          <div className="myx-board-acts">
+            {board.activity.map((entry, index) => (
+              <Strip
+                key={`${entry.time}-${entry.member}-${entry.activity}`}
+                className="myx-board-act"
+                edge="grey"
+                edgeLabel=""
+                style={{ top: `${ACT_TOP + index * ACT_PITCH}%` }}
+                ariaLabel={`${entry.member} ${entry.activity}`}
+              >
+                <StripField w={ACT_COLS[0]} value={entry.time} />
+                <StripField w={ACT_COLS[1]} value={entry.member} mono={false} />
+                <StripField w={ACT_COLS[2]} value={entry.activity} mono={false} />
+                <StripField w={ACT_COLS[3]} value={entry.detail} mono={false} />
+              </Strip>
+            ))}
           </div>
-          <div className="myx-board-handoff-live">
-            <MessageStrip message={handoff} className="myx-board-msg myx-board-handoff-msg" cols={HANDOFF_COLS} />
-          </div>
-        </div>
-      ) : null}
+        </Bay>
 
-      {/* the team's group chat, newest at the bottom */}
-      <Bay className="myx-board-bay myx-board-bay-chat" label={`${S.chatLabel} (newest at bottom)`}>
-        <div className="myx-board-msgs">
-          {board.messages.map((message, index) => (
-            <MessageStrip
-              key={`${message.time}-${message.from}`}
-              message={message}
-              className="myx-board-msg"
-              style={{
-                top: `${chatRow(index).top}%`,
-                height: `${chatRow(index).height}%`,
-              }}
-            />
-          ))}
-        </div>
-      </Bay>
-
-      {/* the activity sample: a label every 30 seconds, and it says so.
-          L-7: THE COLUMN NAMES PRINT ONCE, ON THE RACK, NOT ON EVERY SLIP. The light-room review
-          filed it and the 3840 pass made it the most repetitive object on the page -- six data
-          rows each carrying its own `time member activity detail` row, alternating down the bay,
-          which reads as a rendering loop rather than a table. The comp's activity bay is a table:
-          the region crop shows one header row under the plate and five data rows beneath it, and
-          StripField's own contract names this case ("omit inside a bay whose head prints the
-          column names once ... which is also what a compact rack (the activity feed) needs").
-          The lead, builder, chat and hand-off bays keep their per-strip labels: those rows carry
-          DIFFERENT label sets, so there the label is a property of the row (M1-34). */}
-      <Bay
-        className="myx-board-bay myx-board-bay-activity"
-        label={`${S.activityLabel}, sampled every 30 s`}
-        fields={(
-          <>
-            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[0]}ch` }}>{S.time}</span>
-            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[1]}ch` }}>{S.member}</span>
-            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[2]}ch` }}>{S.activity}</span>
-            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[3]}ch` }}>{S.detail}</span>
-          </>
-        )}
-      >
-        <div className="myx-board-acts">
-          {board.activity.map((entry, index) => (
-            <Strip
-              key={`${entry.time}-${entry.member}-${entry.activity}`}
-              className="myx-board-act"
-              edge="grey"
-              edgeLabel=""
-              style={{ top: `${ACT_TOP + index * ACT_PITCH}%` }}
-              ariaLabel={`${entry.member} ${entry.activity}`}
-            >
-              <StripField w={ACT_COLS[0]} value={entry.time} />
-              <StripField w={ACT_COLS[1]} value={entry.member} mono={false} />
-              <StripField w={ACT_COLS[2]} value={entry.activity} mono={false} />
-              <StripField w={ACT_COLS[3]} value={entry.detail} mono={false} />
-            </Strip>
-          ))}
-        </div>
-      </Bay>
-
-      {/* the team's identity at the foot of the console, across the rail's edge */}
-      <BoardFooter board={board} />
-    </section>
+        {/* the team's identity at the foot of the console, across the rail's edge */}
+        <BoardFooter board={board} />
+      </section>
+    </div>
   );
 }

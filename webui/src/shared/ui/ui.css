@@ -722,6 +722,9 @@
 .myx-bay-fields {
   display: flex;
   align-items: center;
+  /* clipped to the bay and scrolled with the rack by Bay (M3-03): the names live outside the rows'
+     scroller, so without this a rack wider than its bay printed them past the bay's edge */
+  overflow: hidden;
   padding-inline-start: calc(var(--space-4) + 6ch);
   font-family: var(--font-label);
   font-size: var(--text-1);
@@ -937,4 +940,44 @@
   .myx-btn:active { transform: none; }
   .myx-edge-mark { transition: none; }
   .myx-strip > .myx-edge .myx-edge-mark { transition: none; }
+}
+
+/* ---------- THE SWELL ON A PHONE (M3-03) ----------
+   A page's detail column (the aside a strip swells into) carries `myx-swell` on seven pages. On a
+   desktop it is a grid track beside the bays and every page sheet lays it out; below 720 there is
+   no second column to swell into -- at 1120 the pages already drop it under the bays, which on a
+   phone puts the opened detail a whole rack's scroll away from the strip that opened it. So on a
+   phone the opened detail IS the screen: fixed over the frame, on the room's ground, scrolling on
+   its own, and arriving with the same --dur-2 swell the column uses. It paints over the rule by
+   document order, but NOT over the rail: on a phone the rail is `order: 2` in the shell's grid
+   (app.css), grid items paint in order-modified document order, and the bottom strip was drawn
+   over the swell's last 70 pixels (seen in the 390 captures of fleet and turns). So the swell takes
+   the one stack step it needs, z-index 1, and only while it covers the screen.
+   OPEN IS "NOT aria-hidden=true", which is how all seven asides say it: six print
+   aria-hidden={closed} and turns omits the attribute when open. It is the same expression that
+   gates the content, so the swell cannot cover the screen with an empty column.
+   The close key is printed on every page but shown only here: on a desktop the strip that opened
+   the detail is still on screen and toggles it; under a full-screen swell it is not. */
+.myx-swell-close { display: none; }
+@media (max-width: 720px) {
+  .myx-swell:not([aria-hidden='true']) {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-3);
+    z-index: 1;
+    overflow: auto;
+    background: var(--room);
+    animation: myx-swell-screen var(--dur-2) var(--ease-out) both;
+  }
+  .myx-swell-close { display: inline-flex; align-self: flex-end; }
+}
+@keyframes myx-swell-screen {
+  from { opacity: 0; transform: translateY(var(--space-3)); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .myx-swell:not([aria-hidden='true']) { animation: none; }
 }

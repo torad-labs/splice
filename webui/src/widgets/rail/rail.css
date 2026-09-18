@@ -157,3 +157,43 @@
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
+
+/* ---------- THE PHONE (M3-03): THE RAIL IS A BOTTOM STRIP OF ADDRESSES ----------
+   Below 720 the rail is the last row of the shell (app.css) and its thirteen plates lie in one
+   line that scrolls sideways under the thumb. Every measured number above is a share of a
+   vertical column that does not exist here, so the tabs give up their percentages and take their
+   own size: the same plate, the same two marks, the same word. A plate is at least --space-8 tall
+   (48px), which is the touch floor, and the standing mark moves from beside the plate to under
+   it -- the same 7-in-80 green bar, turned to lie along the plate it marks. */
+@media (max-width: 720px) {
+  .myx-rail {
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-top: var(--hair) solid var(--hairline);
+    scrollbar-width: none;
+  }
+  .myx-rail-tabs {
+    position: static;
+    width: max-content;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3) var(--space-4);
+  }
+  .myx-rail-tab {
+    width: auto;
+    height: auto;
+    min-height: var(--space-8);
+    margin-inline-start: 0;
+    padding-inline: var(--space-5);
+  }
+  .myx-rail-tab[aria-current='page']::after {
+    left: 0;
+    right: 0;
+    inset-block: auto calc(-1 * var(--space-3));
+    width: auto;
+    height: var(--space-2);
+  }
+}

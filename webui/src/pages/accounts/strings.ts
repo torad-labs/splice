@@ -17,4 +17,6 @@ export const S = {
   provider: 'provider',
   heads: 'heads',
   next: 'next',
+  /** Closes the opened detail; printed only where the detail is a full-screen swell (a phone). */
+  close: 'close',
 } as const;

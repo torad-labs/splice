@@ -346,7 +346,14 @@
 .myx-board .myx-sfield-label { font-size: 1.2439cqh; }
 .myx-board .myx-board-act .myx-sfield-value,
 .myx-board .myx-board-msg .myx-sfield-value { font-size: 1.4514cqh; }
-.myx-board .myx-board-foot { font-size: 1.2439cqh; }
+/* `.myx-board-foot` (M3-03): that class is on no element in the tree -- the footer is
+   `.myx-board-footer` (parts.tsx) -- so this rule matched nothing and the footer was the one thing
+   on the poster whose type did not follow the frame. It stayed at --text-1's 12px while every
+   neighbour scaled with the board, which is invisible at the comp's own 1536 (where 12px IS the
+   comp's size) and shows the moment the board is any other width: at 1440 the responsive gate read
+   footer-strip as CONTRADICTED, structure 47 percent, its ink box 553x48 against the comp's
+   538x22. */
+.myx-board .myx-board-footer { font-size: 1.2439cqh; }
 
 .myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; }
 .myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; }
@@ -628,16 +635,24 @@
    draws across the rail's edge, so it is placed against the frame itself --- */
 .myx-board-footer {
   position: fixed;
-  left: 1%;
-  bottom: 3%;
-  width: 36%;
-  height: 3%;
+  /* THE PLATE, NOT THE REGION (M3-03). These four numbers were the region box the footer was
+     measured INTO (x1 y94 w36 h3), and a region is generous where its ink is not -- the same
+     distinction the header above carries. Scanned on the comp's own pixels: the plate's paper runs
+     x 22..558 and y 968..988, so it is 537x21 at (22, 968) and not 553x31 at (15, 963). The build
+     was therefore 16px wider and 10px taller than the comp's plate with its first word 8px early,
+     and the responsive gate read footer-strip as CONTRADICTED at structure 47 percent (ink box
+     553x48 against the comp's 538x22). Expressed as shares of the frame, which is what the rest of
+     this sheet does, because the footer follows the frame at every width. */
+  left: 1.432%;
+  bottom: 3.418%;
+  width: 34.961%;
+  height: 2.051%;
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  /* wider than it was: E-5's pin occupies the first 11px and the comp's first word
-     starts at 14px, so the text has to clear the mark it sits beside. */
-  padding: 0 var(--space-3);
+  /* The comp's first word starts at x38 against a plate opening at x22, so the text clears the pin
+     beside it by 16px -- measured with the plate itself (M3-03), where it used to be 8. */
+  padding: 0 var(--space-5);
   background: var(--plate);
   /* E-1 and E-5 on the footer, which is the strip's own material on a plate ground.
      Measured across its top edge at comp x=300: 1px outline at L 4, 1px shade at L 115,
@@ -675,3 +690,59 @@
 .myx-board-footer::before { inset-inline-start: var(--space-1); }
 .myx-board-footer::after { inset-inline-end: var(--space-1); }
 .myx-board-footer-cell { white-space: nowrap; }
+
+/* ---------- THE PHONE (M3-03): ONE BAY PER SCREEN ----------
+   The board is a poster: every box is a share of the board's own width and height, and its type is
+   a share of its height (cqh). Squeezed into a 390 screen, three bays got 110 pixels each and every
+   field clipped to its first letter. So on a phone the poster keeps its composition and gets the
+   width it needs: 280 percent of the screen, which puts each bay at 330 to 375 pixels -- one bay
+   per screen -- and the frame around it scrolls sideways and snaps to a bay's centre. 280 and not
+   300 is the arithmetic of the last snap: the chat bay starts at 64.835 percent and must fit inside
+   the final screen, so the board can be at most 1/(1 - 0.64835) = 2.84 screens wide.
+   The frame is the scroller rather than the page, so the view tabs, the list and the composer under
+   the board stay put while the thumb moves along the bays. The page's padding is --space-3 here
+   (app.css), so the frame cancels that and not the desktop's --space-5. */
+.myx-board-frame { display: contents; }
+@media (max-width: 720px) {
+  .myx-board-frame {
+    display: block;
+    height: calc(100% + var(--space-3) * 2);
+    margin: calc(-1 * var(--space-3));
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+  }
+  .myx-board-frame > .myx-board {
+    width: 280%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+  }
+  .myx-board-frame .myx-board-bay,
+  .myx-board-frame .myx-role-bay { scroll-snap-align: center; }
+
+  /* THE FOOTER SITS ON THE BOARD, NOT ON THE SCREEN. On a desktop it is fixed to the frame because
+     the comp draws it across the rail's edge, and only the frame can place it there. On a phone the
+     rail is a strip at the bottom of the screen, and a fixed footer lands behind it. Here it takes
+     the comp's own place in the board's coordinates instead -- under the first bay, in the band
+     below the bays (they end at 92 percent) -- and scrolls with the poster it belongs to. */
+  .myx-board-frame .myx-board-footer {
+    position: absolute;
+    left: 0.879%;
+    bottom: 1%;
+    width: 30.769%;
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+    column-gap: var(--space-4);
+    padding-block: var(--space-2);
+  }
+
+  /* The header plate is a share of the board's height (5.308 percent), and the board is 664 pixels
+     tall on a 390x844 phone against 965 on the comp: 35 pixels, while its label and value rows need
+     36.7 at --text-2 before any padding (the arithmetic is in the header's own rule above), so the
+     value row was cut in half. On a phone the plate takes its content's height instead; it still
+     ends above the bays, which start at 8.174 percent. */
+  .myx-board-frame .myx-board-header { height: auto; }
+}

@@ -6,7 +6,7 @@
 // appears prints in, and a strip that goes is struck and then leaves. Both are fired by a diff of
 // the children's keys, never by the page — a page that had to announce "this row is new" would be
 // announcing it from three different places and getting it wrong in one of them.
-import { Children, Fragment } from 'react';
+import { Children, Fragment, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { cx } from '../lib';
 import { useBayGestures } from '../motion';
@@ -40,6 +40,7 @@ export function Bay({ label, count, fields, empty, actions, className, style, ch
 }) {
   const items = keyedRows(children);
   const gestures = useBayGestures(items);
+  const fieldsRef = useRef<HTMLDivElement>(null);
   const hasRows = items.length > 0;
 
   // A departing row is drawn one last time, in the place it held, wrapped so the bay can tell it
@@ -57,8 +58,18 @@ export function Bay({ label, count, fields, empty, actions, className, style, ch
         {typeof count === 'number' ? <span className="myx-bay-count">{count}</span> : null}
         {actions ? <span className="myx-bay-actions">{actions}</span> : null}
       </header>
-      {fields ? <div className="myx-bay-fields">{fields}</div> : null}
-      <div className="myx-bay-rows" ref={gestures.rowsRef}>
+      {/* THE COLUMN NAMES MOVE WITH THE RACK (M3-03). They sit above the scroller, not in it, so a
+          rack wider than its bay scrolled its rows out from under their names -- and on a phone the
+          names, which nothing clipped, ran 223 to 409 pixels past the page on compaction, models and
+          usage. The names box clips to the bay (ui.css) and follows the rows' horizontal scroll. */}
+      {fields ? <div className="myx-bay-fields" ref={fieldsRef}>{fields}</div> : null}
+      <div
+        className="myx-bay-rows"
+        ref={gestures.rowsRef}
+        onScroll={(event) => {
+          if (fieldsRef.current !== null) fieldsRef.current.scrollLeft = event.currentTarget.scrollLeft;
+        }}
+      >
         {hasRows || gestures.departing.length > 0 ? (
           ordered.map(({ key, node, leaving }) =>
             leaving

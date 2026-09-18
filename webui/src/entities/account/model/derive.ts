@@ -8,6 +8,8 @@
 //     provider reports a 30-day period, which Grok already does;
 //   - "lowest used" without the primary/sticky rules names a different account than the daemon
 //     will actually take next, so the mark lands on the wrong strip.
+import { fmtDurationS } from '@shared/lib';
+import type { Edge } from '@shared/ui';
 import type { AccountRow, AccountWindow } from './types';
 
 /** What a window with no figure is called. The world's rule: never 0 (FEATURES 2.2, 4.5). */
@@ -112,4 +114,83 @@ export function nextTarget(accounts: readonly AccountRow[], stickyLabel?: string
     if (used < bestUsed) { bestUsed = used; best = account; }
   }
   return best === null ? null : { label: best.label, rule: 'lowest 7-day used' };
+}
+
+/** A window inside this much of its length is cocked: the operator wants the warning while there
+ *  is still room to move a session, not after the turn has already failed. */
+export const COCK_AT_PERCENT = 90;
+
+/** At or past its length the window is spent and the strip goes red. */
+export const EXHAUSTED_AT_PERCENT = 100;
+
+/** Printed when the pool excludes an account and the daemon sent no reason of its own. */
+export const EXCLUDED_REASON = 'excluded by the pool';
+
+/**
+ * Whether the pool will pass this account over. `available` is the pool's OWN verdict, so a false
+ * is an exclusion whatever the reason field says; the expiry is checked as well because an
+ * exclusion can lapse between polls without the flag having been recomputed.
+ */
+export function isExcluded(account: AccountRow, nowMs: number): boolean {
+  if (!account.available) return true;
+  const until = account.auth_excluded_until_epoch_millis ?? null;
+  return until !== null && until > nowMs;
+}
+
+/** The exclusion's reason, in the daemon's own words where it sent any. */
+export function exclusionText(account: AccountRow): string {
+  const reason = account.auth_exclusion_reason ?? '';
+  return reason.trim() === '' ? EXCLUDED_REASON : reason;
+}
+
+export interface AccountState {
+  edge: Edge;
+  /** True when the strip carries a warning edge: needs-me, while there is still room to act. */
+  cocked: boolean;
+  /** True when the strip is disabled: an excluded account cannot be selected, so it must not
+   *  read as merely quiet. */
+  struck: boolean;
+  /** The printed label that always rides beside the edge, so the state survives a grayscale
+   *  screenshot. */
+  label: string;
+}
+
+/**
+ * The strip's state, from the account's own numbers.
+ *
+ * Order matters and is the whole design: an excluded account is struck even when a window is
+ * nearly spent, because a struck strip is a disabled one and an excluded account cannot be taken
+ * at all. Reporting it as "nearly out" would point the operator at an account the pool is already
+ * refusing.
+ */
+export function accountState(account: AccountRow, nowMs: number): AccountState {
+  if (isExcluded(account, nowMs)) {
+    return { edge: 'grey', cocked: false, struck: true, label: 'excluded' };
+  }
+  const window = nearestWindow(account);
+  const used = window?.used_percent ?? null;
+  if (used === null) {
+    // No provider figure at all. Grey and quiet, never green: green would claim a health nobody
+    // measured.
+    return { edge: 'grey', cocked: false, struck: false, label: NOT_REPORTED };
+  }
+  if (used >= EXHAUSTED_AT_PERCENT) {
+    return { edge: 'red', cocked: true, struck: false, label: `spent ${Math.round(used)}%` };
+  }
+  if (used >= COCK_AT_PERCENT) {
+    return { edge: 'amber', cocked: true, struck: false, label: `warn ${Math.round(used)}%` };
+  }
+  return { edge: 'green', cocked: false, struck: false, label: 'ok' };
+}
+
+/**
+ * When a window resets, as printed text. Relative rather than a clock time: the operator's
+ * question is "how long until I can work again", and a wall clock would need a timezone that the
+ * rule bar already carries.
+ */
+export function resetText(resetEpochSeconds: number | null, nowMs: number): string | null {
+  if (resetEpochSeconds === null) return null;
+  const deltaS = resetEpochSeconds - Math.floor(nowMs / 1000);
+  if (deltaS <= 0) return 'now';
+  return `in ${fmtDurationS(deltaS)}`;
 }

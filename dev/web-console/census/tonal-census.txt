@@ -1,75 +1,75 @@
 tonal census, binning rule: flat = within 8/255 of the frame's room or strip on every channel
 
-  frame                              room      strip       flat    mid
-  comp team-board-a.png              #0c0e0e   #ddd8c6    64.5%  35.5%
-  accounts-dark-1280x800.png         #0B0E0E   #DED9C6    69.7%  30.3%
-  accounts-dark-1536x1024.png        #0B0E0E   #DED9C6    70.0%  30.0%
-  accounts-light-1280x800.png        #E0E2DF   #F6F6F3    47.2%  52.8%
-  accounts-light-1536x1024.png       #E0E2DF   #F6F6F3    41.3%  58.7%
-  compaction-dark-1280x800.png       #0B0E0E   #DED9C6    81.5%  18.5%
-  compaction-dark-1536x1024.png      #0B0E0E   #DED9C6    82.7%  17.3%
-  compaction-light-1280x800.png      #E0E2DF   #F6F6F3    49.1%  50.9%
-  compaction-light-1536x1024.png     #E0E2DF   #F6F6F3    42.8%  57.2%
-  doctor-dark-1280x800.png           #0B0E0E   #DED9C6    78.8%  21.2%
-  doctor-dark-1536x1024.png          #0B0E0E   #DED9C6    81.1%  18.9%
-  doctor-light-1280x800.png          #E0E2DF   #F6F6F3    40.7%  59.3%
-  doctor-light-1536x1024.png         #E0E2DF   #F6F6F3    91.1%   8.9%
-  fleet-dark-1280x800.png            #0B0E0E   #DED9C6    66.2%  33.8%
-  fleet-dark-1536x1024.png           #0B0E0E   #DED9C6    69.4%  30.6%
-  fleet-light-1280x800.png           #E0E2DF   #F6F6F3    43.2%  56.8%
-  fleet-light-1536x1024.png          #E0E2DF   #F6F6F3    48.1%  51.9%
-  logs-dark-1280x800.png             #0B0E0E   #DED9C6    36.9%  63.1%
-  logs-dark-1536x1024.png            #0B0E0E   #DED9C6    37.2%  62.8%
-  logs-light-1280x800.png            #E0E2DF   #F6F6F3    19.1%  80.9%
-  logs-light-1536x1024.png           #E0E2DF   #F6F6F3    16.4%  83.6%
-  mcp-dark-1280x800.png              #0B0E0E   #DED9C6    51.7%  48.3%
-  mcp-dark-1536x1024.png             #0B0E0E   #DED9C6    59.4%  40.6%
-  mcp-light-1280x800.png             #E0E2DF   #F6F6F3    27.6%  72.4%
-  mcp-light-1536x1024.png            #E0E2DF   #F6F6F3    26.1%  73.9%
-  models-dark-1280x800.png           #0B0E0E   #DED9C6    78.9%  21.1%
-  models-dark-1536x1024.png          #0B0E0E   #DED9C6    78.3%  21.7%
-  models-light-1280x800.png          #E0E2DF   #F6F6F3    50.4%  49.6%
-  models-light-1536x1024.png         #E0E2DF   #F6F6F3    43.9%  56.1%
-  projects-dark-1280x800.png         #0B0E0E   #DED9C6    78.1%  21.9%
-  projects-dark-1536x1024.png        #0B0E0E   #DED9C6    84.8%  15.2%
-  projects-light-1280x800.png        #E0E2DF   #F6F6F3    51.5%  48.5%
-  projects-light-1536x1024.png       #E0E2DF   #F6F6F3    59.9%  40.1%
-  sessions-dark-1280x800.png         #0B0E0E   #DED9C6    69.2%  30.8%
-  sessions-dark-1536x1024.png        #0B0E0E   #DED9C6    77.0%  23.0%
-  sessions-light-1280x800.png        #E0E2DF   #F6F6F3    28.4%  71.6%
-  sessions-light-1536x1024.png       #E0E2DF   #F6F6F3    41.7%  58.3%
-  settings-dark-1280x800.png         #0B0E0E   #DED9C6    56.1%  43.9%
-  settings-dark-1536x1024.png        #0B0E0E   #DED9C6    49.0%  51.0%
-  settings-light-1280x800.png        #E0E2DF   #F6F6F3    36.9%  63.1%
-  settings-light-1536x1024.png       #E0E2DF   #F6F6F3    29.9%  70.1%
-  teams-dark-1280x800.png            #0B0E0E   #DED9C6    80.0%  20.0%
-  teams-dark-1536x1024.png           #0B0E0E   #DED9C6    82.6%  17.4%
-  teams-light-1280x800.png           #E0E2DF   #F6F6F3    40.1%  59.9%
-  teams-light-1536x1024.png          #E0E2DF   #F6F6F3    40.3%  59.7%
-  turns-dark-1280x800.png            #0B0E0E   #DED9C6    65.1%  34.9%
-  turns-dark-1536x1024.png           #0B0E0E   #DED9C6    61.6%  38.4%
-  turns-light-1280x800.png           #E0E2DF   #F6F6F3    20.2%  79.8%
-  turns-light-1536x1024.png          #E0E2DF   #F6F6F3    16.7%  83.3%
-  usage-dark-1280x800.png            #0B0E0E   #DED9C6    76.4%  23.6%
-  usage-dark-1536x1024.png           #0B0E0E   #DED9C6    79.0%  21.0%
-  usage-light-1280x800.png           #E0E2DF   #F6F6F3    35.2%  64.8%
-  usage-light-1536x1024.png          #E0E2DF   #F6F6F3    35.6%  64.4%
+  frame                              room      strip       flat    mid  capture said
+  comp team-board-a.png              #0c0e0e   #ddd8c6    64.5%  35.5%  the comp
+  accounts-dark-1280x800.png         #0B0E0E   #DED9C6    66.1%  33.9%  page
+  accounts-dark-1536x1024.png        #0B0E0E   #DED9C6    65.4%  34.6%  page
+  accounts-light-1280x800.png        #E0E2DF   #F5EDDD    47.8%  52.2%  page
+  accounts-light-1536x1024.png       #E0E2DF   #F5EDDD    41.4%  58.6%  page
+  compaction-dark-1280x800.png       #0B0E0E   #DED9C6    77.6%  22.4%  page
+  compaction-dark-1536x1024.png      #0B0E0E   #DED9C6    77.7%  22.3%  page
+  compaction-light-1280x800.png      #E0E2DF   #F5EDDD    49.7%  50.3%  page
+  compaction-light-1536x1024.png     #E0E2DF   #F5EDDD    42.9%  57.1%  page
+  doctor-dark-1280x800.png           #0B0E0E   #DED9C6    69.3%  30.7%  page
+  doctor-dark-1536x1024.png          #0B0E0E   #DED9C6    71.8%  28.2%  page
+  doctor-light-1280x800.png          #E0E2DF   #F5EDDD    41.2%  58.8%  page
+  doctor-light-1536x1024.png         #E0E2DF   #F5EDDD    36.3%  63.7%  page
+  fleet-dark-1280x800.png            #0B0E0E   #DED9C6    63.3%  36.7%  page
+  fleet-dark-1536x1024.png           #0B0E0E   #DED9C6    66.4%  33.6%  page
+  fleet-light-1280x800.png           #E0E2DF   #F5EDDD    44.2%  55.8%  page
+  fleet-light-1536x1024.png          #E0E2DF   #F5EDDD    48.6%  51.4%  page
+  logs-dark-1280x800.png             #0B0E0E   #DED9C6    36.1%  63.9%  page
+  logs-dark-1536x1024.png            #0B0E0E   #DED9C6    35.9%  64.1%  page
+  logs-light-1280x800.png            #E0E2DF   #F5EDDD    19.8%  80.2%  page
+  logs-light-1536x1024.png           #E0E2DF   #F5EDDD    16.9%  83.1%  page
+  mcp-dark-1280x800.png              #0B0E0E   #DED9C6    48.3%  51.7%  page
+  mcp-dark-1536x1024.png             #0B0E0E   #DED9C6    54.8%  45.2%  page
+  mcp-light-1280x800.png             #E0E2DF   #F5EDDD    28.6%  71.4%  page
+  mcp-light-1536x1024.png            #E0E2DF   #F5EDDD    26.7%  73.3%  page
+  models-dark-1280x800.png           #0B0E0E   #DED9C6    71.8%  28.2%  page
+  models-dark-1536x1024.png          #0B0E0E   #DED9C6    68.9%  31.1%  page
+  models-light-1280x800.png          #E0E2DF   #F5EDDD    51.4%  48.6%  page
+  models-light-1536x1024.png         #E0E2DF   #F5EDDD    43.7%  56.3%  page
+  projects-dark-1280x800.png         #0B0E0E   #DED9C6    66.5%  33.5%  page
+  projects-dark-1536x1024.png        #0B0E0E   #DED9C6    76.4%  23.6%  page
+  projects-light-1280x800.png        #E0E2DF   #F5EDDD    45.5%  54.5%  page
+  projects-light-1536x1024.png       #E0E2DF   #F5EDDD    55.2%  44.8%  page
+  sessions-dark-1280x800.png         #0B0E0E   #DED9C6    53.1%  46.9%  page
+  sessions-dark-1536x1024.png        #0B0E0E   #DED9C6    64.5%  35.5%  page
+  sessions-light-1280x800.png        #E0E2DF   #F5EDDD    25.4%  74.6%  page
+  sessions-light-1536x1024.png       #E0E2DF   #F5EDDD    39.4%  60.6%  page
+  settings-dark-1280x800.png         #0B0E0E   #DED9C6    54.2%  45.8%  page
+  settings-dark-1536x1024.png        #0B0E0E   #DED9C6    47.0%  53.0%  page
+  settings-light-1280x800.png        #E0E2DF   #F5EDDD    37.0%  63.0%  page
+  settings-light-1536x1024.png       #E0E2DF   #F5EDDD    29.7%  70.3%  page
+  teams-dark-1280x800.png            #0B0E0E   #DED9C6    72.6%  27.4%  page
+  teams-dark-1536x1024.png           #0B0E0E   #DED9C6    75.8%  24.2%  page
+  teams-light-1280x800.png           #E0E2DF   #F5EDDD    39.8%  60.2%  page
+  teams-light-1536x1024.png          #E0E2DF   #F5EDDD    39.8%  60.2%  page
+  turns-dark-1280x800.png            #0B0E0E   #DED9C6    53.6%  46.4%  page
+  turns-dark-1536x1024.png           #0B0E0E   #DED9C6    53.3%  46.7%  page
+  turns-light-1280x800.png           #E0E2DF   #F5EDDD    19.9%  80.1%  page
+  turns-light-1536x1024.png          #E0E2DF   #F5EDDD    17.4%  82.6%  page
+  usage-dark-1280x800.png            #0B0E0E   #DED9C6    68.3%  31.7%  page
+  usage-dark-1536x1024.png           #0B0E0E   #DED9C6    73.9%  26.1%  page
+  usage-light-1280x800.png           #E0E2DF   #F5EDDD    35.7%  64.3%  page
+  usage-light-1536x1024.png          #E0E2DF   #F5EDDD    34.1%  65.9%  page
 
   comp mid-tone                                  35.5%
   build mid-tone, best frame per address:
-    logs         83.6%
-    turns        83.3%
-    mcp          73.9%
-    sessions     71.6%
-    settings     70.1%
-    usage        64.8%
-    teams        59.9%
-    doctor       59.3%
-    accounts     58.7%
-    compaction   57.2%
-    fleet        56.8%
-    models       56.1%
-    projects     48.5%
+    logs         83.1%
+    turns        82.6%
+    sessions     74.6%
+    mcp          73.3%
+    settings     70.3%
+    usage        65.9%
+    doctor       63.7%
+    teams        60.2%
+    accounts     58.6%
+    compaction   57.1%
+    models       56.3%
+    fleet        55.8%
+    projects     54.5%
 
   comp grounds #0c0e0e / #ddd8c6 (spec.json palette, measured off team-board-a.png)
-  build grounds per theme from tokens.css: dark #0B0E0E / #DED9C6, light #E0E2DF / #F6F6F3
+  build grounds per theme from tokens.css: dark #0B0E0E / #DED9C6, light #E0E2DF / #F5EDDD

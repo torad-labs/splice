@@ -13,7 +13,14 @@ import { join, resolve } from 'node:path';
 import { mgmtKey, renderHtml, shoot, show, sleep, withChrome } from './lib/cdp.mjs';
 // The address-to-fixture mapping lives in ONE place and is checked against the pages, not trusted:
 // a copy in this file drifted twice in one day and made every capture of four addresses a lie.
-import { FIXTURES, FAILURE_HEADLINE, probe as fixtureProbe, urlFor, verdict as fixtureVerdict } from './lib/fixtures.mjs';
+import { FIXTURES, urlFor } from './lib/fixtures.mjs';
+// THE PAGE PREDICATE COMES FROM capture.mjs, so a frame this gate writes and a frame capture.mjs
+// writes are checked by exactly one piece of code (M1-32). It asserts the page answered, rendered,
+// is not a flat fill, and carries data-sample for a fixture-fed address — and it WRITES NOTHING when
+// any of those fail, which is what the gate's own run needs: before this, a dead port produced a
+// 25 KB PNG of Chrome's error page, this gate scored it as room-colour 0.000, and every downstream
+// number inherited it.
+import { capturePage } from './capture.mjs';
 import { colorFraction, decodePng, hexToRgb } from './lib/png.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -117,7 +124,10 @@ function sheetHtml(theme, themeCaptures) {
   const cells = themeCaptures.map((capture) => {
     const width = Math.round(capture.width / 4);
     return `<figure><img src="${capture.file}" width="${width}"><figcaption>${capture.file}<br>`
-      + `<span class="blank">${capture.blank.toFixed(3)} room</span>${capture.blank >= BLANK_AT ? ' BLANK' : ''}`
+      + (capture.blank === null
+        ? '<span class="fail">NO FRAME WRITTEN</span>'
+        : `<span class="blank">${capture.blank.toFixed(3)} room</span>${capture.blank >= BLANK_AT ? ' BLANK' : ''}`)
+      + (capture.state === 'empty' ? ' <span class="fail">EMPTY PAGE</span>' : '')
       + (capture.fixtureOk ? '' : ` <span class="fail">FIXTURE FAILED ${capture.fixtureNote}</span>`)
       + (capture.fixture === null ? '' : ` <span class="blank">${capture.fixtureFile}</span>`)
       + '</figcaption></figure>';
@@ -170,7 +180,7 @@ await withChrome({ 'myx-mgmt-key': key }, async (send) => {
         source: `try { localStorage.setItem('splice.theme', ${JSON.stringify(theme)}); } catch (e) {}`,
       });
       themeScript = added.identifier;
-      const url = urlFor(capture.address, FIXTURES[capture.address]);
+      const url = urlFor(capture.address);
       // ALWAYS through about:blank. Every console URL is a hash route, so a navigate from one to
       // the next — and from an address to ITSELF in the other theme — is a same-document fragment
       // navigation that does not re-create the frame, so the seed above would not run and the
@@ -181,36 +191,50 @@ await withChrome({ 'myx-mgmt-key': key }, async (send) => {
       await send('Page.navigate', { url: 'about:blank' });
       await show(send, url, capture.width, capture.height);
       const fixture = FIXTURES[capture.address];
-      // ASKED BEFORE THE SHUTTER, so a frame whose fixture did not load is recorded as failed
-      // rather than captured. WAITED FOR rather than sampled once: three pages resolve their
-      // fixture through a dynamic import after first paint, and a single read at settle time made
-      // usage, settings and models fail one theme and pass the other (measured 2026-09-18). The
-      // poll asks the same question until it is answered or the budget runs out, and the LAST
-      // answer is the verdict, so a page that never loads its fixture is still a failure.
-      let verdict = fixtureVerdict(fixture, { status: -1 });
-      if (fixture !== null) {
-        for (let attempt = 0; attempt < 12; attempt += 1) {
-          const asked = await send('Runtime.evaluate', {
-            expression: fixtureProbe(capture.address, fixture),
-            awaitPromise: true, returnByValue: true,
-          });
-          verdict = fixtureVerdict(fixture, JSON.parse(asked.result.value));
-          if (verdict.ok) break;
-          await sleep(500);
-        }
+      // THE CAPTURE MUST PROVE IT CAPTURED A PAGE. capturePage runs the whole predicate and throws
+      // with the reasons; a failure means NO FRAME IS WRITTEN, so nothing downstream can score it.
+      let claim = null;
+      let frame = null;
+      let bytes = null;
+      let state = null;
+      let paper = 0;
+      let failure = null;
+      try {
+        ({ claim, frame, bytes, state, paper } = await capturePage(send, url, capture.width, capture.height, join(outDir, capture.file)));
+      } catch (error) {
+        failure = error.message;
       }
-      const bytes = await shoot(send, join(outDir, capture.file));
+      if (failure !== null) {
+        const oneLine = failure.replace(/\n\s*/g, ' | ');
+        fixtureFailures.push(oneLine);
+        manifest.push({
+          ...capture,
+          fixture: fixture === null ? null : fixture.name,
+          fixtureFile: fixture === null ? null : fixture.file,
+          fixtureOk: false,
+          fixtureNote: 'capture failed',
+          captureFailed: true,
+          state: 'nothing',
+          blank: null,
+        });
+        // PRINTED AS IT HAPPENS: a later crash in the sheet render must not be able to hide which
+        // capture failed, which is exactly what happened on this gate's first real run (2026-09-18).
+        console.error(`  NO FRAME: ${oneLine}`);
+        if (TERMINAL) process.stdout.write('F');
+        continue;
+      }
       const blank = colorFraction(decodePng(bytes), hexToRgb(room[theme]));
       manifest.push({
         ...capture,
         fixture: fixture === null ? null : fixture.name,
         fixtureFile: fixture === null ? null : fixture.file,
-        fixtureOk: verdict.ok,
-        fixtureNote: verdict.note,
+        fixtureOk: true,
+        fixtureNote: `${claim.sample === null ? 'live' : `data-sample=${claim.sample}`} top ${(frame.share * 100).toFixed(1)}%, paper ${(paper * 100).toFixed(2)}%`,
+        captureFailed: false,
+        state,
         blank: Number(blank.toFixed(4)),
       });
       if (blank >= BLANK_AT) blanks.push(capture.file);
-      if (!verdict.ok) fixtureFailures.push(`${capture.file} (${verdict.note})`);
       if (TERMINAL) process.stdout.write(!verdict.ok ? 'F' : blank >= BLANK_AT ? 'B' : '.');
     }
   }
@@ -237,11 +261,18 @@ if (blanks.length > 0) {
   console.error(`  BLANK: ${blanks.length} of ${manifest.length} captures are >= ${BLANK_AT} room colour:`);
   for (const file of blanks) console.error(`    ${file}`);
 }
+const empties = manifest.filter((row) => row.state === 'empty');
+if (empties.length > 0) {
+  // An honest empty is a legitimate frame and the gate keeps it, but no downstream number may be
+  // computed from it without being told: every one is named here and marked on the sheet.
+  console.error(`  EMPTY PAGE: ${empties.length} of ${manifest.length} frames carry no world paper (chrome and an honest empty):`);
+  for (const row of empties) console.error(`    ${row.file}`);
+}
 if (fixtureFailures.length > 0) {
   // A capture whose fixture did not load is a FAILED capture, not a captured page, and every
   // number a later row reads off these frames is a number about live data wearing a sample's name.
   // So this is not a warning: the run exits non-zero and the frames are not evidence.
-  console.error(`  FIXTURE FAILED: ${fixtureFailures.length} of ${manifest.length} ${FAILURE_HEADLINE}:`);
+  console.error(`  CAPTURE FAILED: ${fixtureFailures.length} of ${manifest.length} frames could not prove they captured a page:`);
   for (const line of fixtureFailures) console.error(`    ${line}`);
   process.exit(1);
 }

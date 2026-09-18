@@ -102,11 +102,22 @@ rows.push({
   ...census(compPng, comp.room, comp.strip), comp: true,
 });
 
+// WHAT THE CAPTURE ITSELF SAID IT PHOTOGRAPHED (M1-32). The gate writes a three-way state per
+// frame -- page, empty, nothing -- and this census READS it rather than inferring one, because the
+// failure mode it guards against is a number computed from an honest empty without being told.
+const states = new Map();
+try {
+  for (const row of JSON.parse(readFileSync(join(CAPTURES, 'manifest.json'), 'utf8'))) {
+    states.set(row.file, { state: row.state ?? 'unknown', captureFailed: row.captureFailed === true });
+  }
+} catch { /* a census can run without a manifest; every frame then reports state 'unknown' */ }
+
 const captures = readdirSync(CAPTURES).filter((name) => /-(dark|light)-\d+x\d+\.png$/.test(name)).sort();
 for (const name of captures) {
   const theme = name.includes('-light-') ? 'light' : 'dark';
   const grounds = sheet[theme];
-  rows.push({ frame: name, theme, room: grounds.room, strip: grounds.strip, ...census(join(CAPTURES, name), grounds.room, grounds.strip), comp: false });
+  const said = states.get(name) ?? { state: 'unknown', captureFailed: false };
+  rows.push({ frame: name, theme, room: grounds.room, strip: grounds.strip, ...census(join(CAPTURES, name), grounds.room, grounds.strip), comp: false, state: said.state });
 }
 
 const pct = (value) => `${(value * 100).toFixed(1)}%`;
@@ -114,12 +125,14 @@ if (process.argv.includes('--json')) {
   console.log(JSON.stringify({ tolerance: TOLERANCE, rows }, null, 1));
 } else {
   console.log(`tonal census, binning rule: flat = within ${TOLERANCE}/255 of the frame's room or strip on every channel\n`);
-  console.log(`  ${'frame'.padEnd(34)} ${'room'.padEnd(9)} ${'strip'.padEnd(9)} ${'flat'.padStart(6)} ${'mid'.padStart(6)}`);
+  console.log(`  ${'frame'.padEnd(34)} ${'room'.padEnd(9)} ${'strip'.padEnd(9)} ${'flat'.padStart(6)} ${'mid'.padStart(6)}  ${'capture said'}`);
   for (const row of rows) {
-    console.log(`  ${row.frame.padEnd(34)} ${row.room.padEnd(9)} ${row.strip.padEnd(9)} ${pct(row.flat).padStart(6)} ${pct(row.mid).padStart(6)}`);
+    console.log(`  ${row.frame.padEnd(34)} ${row.room.padEnd(9)} ${row.strip.padEnd(9)} ${pct(row.flat).padStart(6)} ${pct(row.mid).padStart(6)}  ${row.comp ? 'the comp' : row.state}`);
   }
   const compRow = rows.find((row) => row.comp);
   const build = rows.filter((row) => !row.comp);
+  const empty = build.filter((row) => row.state === 'empty');
+  const failed = build.filter((row) => row.state === 'nothing');
   const byAddress = new Map();
   for (const row of build) {
     const address = row.frame.split('-')[0];
@@ -129,6 +142,12 @@ if (process.argv.includes('--json')) {
   console.log(`\n  comp mid-tone                                  ${pct(compRow.mid)}`);
   console.log(`  build mid-tone, best frame per address:`);
   for (const [address, mid] of worst) console.log(`    ${address.padEnd(12)} ${pct(mid)}`);
+  if (empty.length > 0 || failed.length > 0) {
+    console.log(`\n  FRAMES THE CAPTURE DID NOT CALL A PAGE (not comparable to the comp, and named so no`);
+    console.log(`  number here is read as one):`);
+    for (const row of empty) console.log(`    EMPTY   ${row.frame}  mid ${pct(row.mid)}`);
+    for (const row of failed) console.log(`    NOTHING ${row.frame}  (no frame was written)`);
+  }
   console.log(`\n  comp grounds ${comp.room} / ${comp.strip} (spec.json palette, measured off ${comp.comp.split('/').pop()})`);
   console.log(`  build grounds per theme from tokens.css: dark ${sheet.dark.room} / ${sheet.dark.strip}, light ${sheet.light.room} / ${sheet.light.strip}`);
 }

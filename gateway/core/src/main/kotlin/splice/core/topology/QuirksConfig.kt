@@ -51,6 +51,15 @@ public data class QuirksConfig(
     @SerialName("websocket") val webSocket: Boolean? = null,
     /** ChatGPT responses only: splice-owned JavaScript bridge. Absent = on for that shape (0.4.0). */
     @SerialName("code_mode") val codeMode: Boolean? = null,
+    /** code-mode only: the JAR-bundled GraalJS worker pool size (JvmCodeModeRuntime maxWorkers).
+     *  NULLABLE overlay — absent keeps the code default (4). */
+    @SerialName("code_mode_workers") val codeModeWorkers: Int? = null,
+    /** code-mode only: how long one worker exchange may wait for the child's answer, in milliseconds
+     *  (JvmCodeModeRuntime advanceTimeoutMs). NULLABLE overlay — absent keeps the code default (5000). */
+    @SerialName("code_mode_timeout_ms") val codeModeTimeoutMs: Long? = null,
+    /** code-mode only: each child JVM's heap, in MB (the -Xmx). NULLABLE overlay — absent keeps the
+     *  code default (128). */
+    @SerialName("code_mode_heap") val codeModeHeapMb: Int? = null,
     /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
      *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
      *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this
@@ -96,6 +105,12 @@ public data class QuirksConfig(
      *  unmeasured vendor keeps exactly today's behaviour (the whole-stream restart still applies when
      *  nothing visible was salvaged) and measurement is what earns the upgrade. */
     @SerialName("reanchor_prefill") val reanchorPrefill: Boolean? = null,
+    /** anthropic-passthrough only: cap a forwarded tool NAME at this many characters, shortening
+     *  deterministically via ToolNameShortener. MUSE ONLY — api.meta.ai rejects a tool name over 64
+     *  characters where Anthropic accepts it (V4-32), and Claude Code's MCP names run past 80.
+     *  NULLABLE overlay — absent keeps the head's BASE profile (muse's built-in 64; 0 = no cap for
+     *  every other passthrough head), so the muse cap is overridable rather than hardcoded. */
+    @SerialName("tool_name_cap") val toolNameCap: Int? = null,
 ) {
     init {
         require(compactEffort == null) {

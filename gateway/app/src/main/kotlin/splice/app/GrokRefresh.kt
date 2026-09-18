@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokRefreshedTokens
 
@@ -85,7 +86,8 @@ public class GrokRefresh {
             refreshToken = JsonScalars.str(obj, "refresh_token"),
             expiresIn = JsonScalars.long(obj, "expires_in"),
         )
-    }.getOrNull()
+    }.onFailure { System.err.println("[grok] refresh body did not parse: ${SafeFailureText.render(it)}") }
+        .getOrNull()
 }
 
 // FILE SCOPE ON PURPOSE (Kotlin style law relocation, 2026-08-15): the lazy client is the default

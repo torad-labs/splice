@@ -108,7 +108,7 @@ internal class DoctorCommand(private val accountPools: AccountPoolRead = JdkAcco
 
     // One crashing check must not kill the report (nor masquerade as healthy).
     private fun guarded(block: DoctorProbe): List<DoctorCheck> =
-        Cancellables.runCatchingCancellable(block::invoke).getOrElse { e ->
+        Cancellables.runCatchingBestEffort(block::invoke).getOrElse { e ->
             listOf(DoctorCheck("doctor", CheckStatus.FAIL, "check crashed: ${SafeFailureText.render(e)}"))
         }
 

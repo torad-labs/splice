@@ -201,7 +201,7 @@ class TurnEndingAccountingTest {
             ),
             emitter = emitter,
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-            slot = InflightGate(LiveLimit { 1 }).acquire(),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-dr128.jsonl")),
                 log = log,

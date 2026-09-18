@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.launch.McpServerSpec
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -287,7 +288,7 @@ internal class HostedServer(
     private fun dispatch(msg: JsonObject) {
         when (codec.kind(msg)) {
             RpcKind.RESPONSE -> {
-                val hostId = (msg["id"] as? JsonPrimitive)?.content?.toLongOrNull()
+                val hostId = JsonScalars.str(msg["id"])?.toLongOrNull()
                 val slot = hostId?.let(pending::remove)
                 slot?.answer?.complete(codec.withId(msg, slot.clientId))
             }

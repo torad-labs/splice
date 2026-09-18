@@ -8,7 +8,9 @@ import splice.app.DaemonProbe
 import splice.app.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
@@ -23,17 +25,21 @@ internal class RestartCommand {
     internal fun restart(expectedVersion: String = GATEWAY_VERSION): Boolean {
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
-        val topology = runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull()
+        // Silence here re-opened F3: a null topology made headPorts empty, `none {}` went vacuously
+        // true, and the stop check silently degraded to control-port-only — the exact defect this
+        // range closed. Say it out loud, and name the failure; the live enumeration below usually
+        // covers for it anyway.
+        val topology = Cancellables
+            .runCatchingCancellable { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }
+            .onFailure { failure ->
+                println(
+                    "splice: could not read ${TopologyLoader.configPath()} " +
+                        "(${SafeFailureText.render(failure)}) — " +
+                        "falling back to the running daemon for head ports",
+                )
+            }
+            .getOrNull()
         val port = AdminSupport.controlPort(topology)
-        if (topology == null) {
-            // Silence here re-opened F3: a null topology made headPorts empty, `none {}` went vacuously
-            // true, and the stop check silently degraded to control-port-only — the exact defect this
-            // range closed. Say it out loud; the live enumeration below usually covers for it anyway.
-            println(
-                "splice: could not read ${TopologyLoader.configPath()} — " +
-                    "falling back to the running daemon for head ports",
-            )
-        }
         if (!stopIfRunning(port, topology?.heads?.values?.map { it.port } ?: emptyList())) return false
         val started = AdminSupport.ensureDaemon(port, expectedVersion)
         if (started) println("splice: daemon restarted with this shell's environment")

@@ -156,6 +156,7 @@ command = "claude-openrouter"
     /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an
      *  unreadable file must degrade the staleness signal, never break /health or a launch). */
     public fun currentDigest(path: Path): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): fail-open by design (see the doc above): an unreadable or absent splice.toml must degrade the staleness signal, never break /health or a launch, so null IS the whole reading.
         Cancellables.runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
 
     /** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the

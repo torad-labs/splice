@@ -11,7 +11,6 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.spi.Provider
 import splice.spi.TurnSignals
-import splice.spi.WsRoundNeedsSse
 import splice.spi.WsRoundRunner
 
 internal class WsRoundDrive(
@@ -27,7 +26,7 @@ internal class WsRoundDrive(
         inputs: WsRoundInputs,
         runner: WsRoundRunner,
         events: Flow<JsonObject>,
-    ): TurnOutcome {
+    ): WsRoundResult {
         val drive = inputs.drive
         // No raw-text capture on this path: ZeroEventCapture's snippet exists to classify a
         // non-SSE dead-head BODY (an HTML login page arriving where SSE was expected), and a
@@ -35,7 +34,7 @@ internal class WsRoundDrive(
         // translator's own verdict, which is the honest answer here.
         val instrumented = events.onEach { evt ->
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
-                throw WsRoundNeedsSse(failureDetail(evt))
+                throw RoundNeedsSse(failureDetail(evt))
             }
             drive.slot.touch()
             drive.perf.markOnce(PerfKeys.FIRST_BYTE)
@@ -45,7 +44,19 @@ internal class WsRoundDrive(
             watchdogFired = { drive.watchdog.fired },
             clientGone = { drive.channel.clientGone.get() },
         )
-        val raw = provider.streamTranslator(drive.meta, signals).driveTurn(instrumented, inputs.sink)
+        // V4-114: [RoundNeedsSse] is caught HERE, one frame below the throw, and leaves as a value.
+        // The three statements after it are exactly the ones this round must NOT run when it is
+        // about to be re-served over SSE — the perf mark, the zero-event classification, and
+        // roundEnded, which commits the chaining state (see the note below). That is why the abort
+        // stays a throw: the decision is made inside driveTurn's own collection, and a Kotlin
+        // suspend collect has no other way to stop early. Truncating the flow instead would let the
+        // translator author a terminal INTO inputs.sink, and the client would then see that
+        // terminal followed by the SSE round's content.
+        val raw = try {
+            provider.streamTranslator(drive.meta, signals).driveTurn(instrumented, inputs.sink)
+        } catch (needsSse: RoundNeedsSse) {
+            return WsRoundResult.NeedsSse(needsSse.detail)
+        }
         drive.perf.mark(PerfKeys.STREAM_END)
         // The report is the LAST statement, so it and the return are atomic from WsRoundDriver's
         // point of view: that caller sets `reported` only once drive() returns, and its finally
@@ -64,7 +75,7 @@ internal class WsRoundDrive(
         // caller that always said yes (DR-7, grok-splice's WS map). A Success with incomplete=true
         // is still clean: the server finished the response object, it just stopped early.
         runner.roundEnded(drive.meta, ok = outcome is TurnOutcome.Success)
-        return outcome
+        return WsRoundResult.Streamed(outcome)
     }
 
     /** The failure terminal's type and the error it carried, in every shape the dialect's reducer
@@ -85,6 +96,30 @@ internal class WsRoundDrive(
     }
 
     private val oneLine = Regex("\\s+")
+
+    /** The loop break for [drive]'s own collection, and nothing else: private to this class, thrown
+     *  and caught between two adjacent statements, never a seam. A plain RuntimeException because
+     *  the translators' catch lists (IOException / SerializationException / IllegalArgumentException)
+     *  must not swallow it — the same reason [splice.spi.StreamTornBeforeClient] is one. The ANSWER
+     *  the caller reads is [WsRoundResult], not this (V4-114). */
+    private class RoundNeedsSse(val detail: String) : RuntimeException()
+}
+
+/**
+ * How a WebSocket round ended, as a value [WsRoundDriver] branches on.
+ *
+ * V4-114 (kt-no-exception-as-outcome): [NeedsSse] used to be a thrown `splice.spi.WsRoundNeedsSse`
+ * — a head-internal control-flow signal declared in the provider SPI, where nothing threw or caught
+ * it, travelling up through every broad catch on the turn path with no signature announcing it. The
+ * fallback is an ORDINARY, expected ending of this round, so it rides the return type.
+ */
+internal sealed class WsRoundResult {
+    /** The round was served over the WebSocket; [outcome] is the turn's answer. */
+    data class Streamed(val outcome: TurnOutcome) : WsRoundResult()
+
+    /** The round failed before the client saw any frame, so it is re-served over SSE with the full
+     *  recovery machinery. [detail] is the server's failure terminal (type, code, message). */
+    data class NeedsSse(val detail: String) : WsRoundResult()
 }
 
 /** Long enough for a code and a sentence, short enough that one server message stays one line. */

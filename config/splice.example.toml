@@ -107,6 +107,11 @@ zstd_request_body = true
 # not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
 # reruns the lost JavaScript source automatically.
 # code_mode = false
+# The JAR-bundled JavaScript worker pool, shown with its code defaults. Each is an OVERLAY:
+# leave it out and the default below rides. All are code-mode only (chatgpt-oauth + responses).
+#   code_mode_workers = 4      the GraalJS child-JVM pool size
+#   code_mode_timeout_ms = 5000 ms one worker exchange may wait for the child's answer
+#   code_mode_heap = 128       MB each child JVM's -Xmx
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
 [providers.codex.quirks.tool_surface]
@@ -231,6 +236,40 @@ context_window = 256000
 dialect = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
 auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+# THE TEN ROWS `splice add openrouter` SHIPS, in the roster's own order (V4-109). This list and
+# AddProfileCatalog's are compared mechanically by checks/model-catalogs-single-source.py, and THIS
+# file is the source of truth for the windows: the roster's WINDOW_* constants must agree with the
+# context_window values below, so a vendor raising a ceiling is a one-line change here plus the
+# constant. The head below slots four of the ten — declaring a row and serving it are separate
+# decisions, and the slot note on the claudex head says what an undeclared tier does.
+[[providers.openrouter.models]]
+id = "anthropic/claude-sonnet-5"
+label = "Claude Sonnet 5"
+context_window = 1000000
+[[providers.openrouter.models]]
+id = "anthropic/claude-opus-5"
+label = "Claude Opus 5"
+context_window = 1000000
+[[providers.openrouter.models]]
+id = "z-ai/glm-5.3-flash"
+label = "GLM 5.3 Flash"
+context_window = 1310720
+[[providers.openrouter.models]]
+id = "openai/gpt-5.6-sol"
+label = "GPT-5.6 Sol"
+context_window = 1050000
+[[providers.openrouter.models]]
+id = "openai/gpt-5.6-luna"
+label = "GPT-5.6 Luna"
+context_window = 1050000
+[[providers.openrouter.models]]
+id = "google/gemini-3.8-flash"
+label = "Gemini 3.8 Flash"
+context_window = 1048576
+[[providers.openrouter.models]]
+id = "deepseek/deepseek-v4-flash-0731"
+label = "DeepSeek V4 Flash 0731"
+context_window = 1310720
 [[providers.openrouter.models]]
 id = "meta-llama/llama-4-maverick"
 label = "Llama 4 Maverick"
@@ -239,6 +278,10 @@ context_window = 1048576
 id = "z-ai/glm-5.3"
 label = "GLM 5.3"
 context_window = 1310720       # OpenRouter's declared context_length for this row
+[[providers.openrouter.models]]
+id = "anthropic/claude-haiku-4.5"
+label = "Claude Haiku 4.5"
+context_window = 200000
 
 # ── strict OpenAI-compatible vendor: reasoning_effort must be turned OFF ────────
 # This dialect emits reasoning_effort/reasoning by default (DeepSeek/xAI/OpenRouter accept and
@@ -341,6 +384,11 @@ base_url = "https://api.meta.ai"
 # ~/.config/splice/auth/muse.json, written by `claude-muse login`. Set
 # file = "~/.config/muse/auth.json" ONLY to share the Muse Code CLI's session.
 auth = { kind = "muse-oauth" }
+# Muse is the ONE head that must cap tool names: api.meta.ai rejects a tool name over 64
+# characters where Anthropic accepts it, and Claude Code's MCP names run past 80 (V4-32).
+# The cap is muse's built-in default; declaring it here keeps it visible and editable.
+[providers.muse.quirks]
+tool_name_cap = 64
 [[providers.muse.models]]
 id = "muse-spark-1.3[1m]"
 label = "Muse Spark 1.3"
@@ -361,9 +409,14 @@ context_window = 1000000
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
-# `projects` shares the transcript tree, so a session started on one head can `--resume` on any
-# other; a pre-existing per-head projects dir is migrated into ~/.claude/projects once, then linked.
-share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions", "projects"]
+# `projects` is NOT here and never comes back: a head's transcripts are head-private, so `-c` and the
+# `-r` PICKER only ever see the sessions this head started. Cross-head resume survives as an explicit
+# act on ONE named session — `<wrapper> -r SESSION_ID` resolves the id across the other heads' own
+# projects trees, COPIES SESSION_ID.jsonl and its SESSION_ID/ subdir into the calling head's tree
+# (never a link; the source is left byte-identical), rewrites every assistant row's model to this
+# head's pinned model so the resume notice cannot fire, and launches; an id that exists nowhere is
+# reported and nothing is copied.
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions"]
 
 # ── per-head system prompt: standing instructions every turn of a head carries ──
 # Set under [heads.<key>]. Either inline text or a file, NEVER both — both present is a config
@@ -582,3 +635,99 @@ context_window = 200000
 # MUST NOT be `claude`: that is the real binary this head launches, and shadowing it on PATH
 # would make the wrapper invoke itself.
 command = "claude-splice"
+
+# ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
+# A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the
+# daemon's state config.json, or at runtime through a /mgmt/config PATCH. Precedence is
+# env > TOML > default; the daemon snapshots nearly every knob at start, so a changed knob needs a
+# restart except where marked HOT. `[daemon]` spells these with underscores (`show_reasoning`);
+# everywhere else a key is spelled as the name shown below. Both name the same knob. Defaults sit
+# beside each key; nothing below is live (the whole block is commented), so copying this file keeps
+# today's behaviour.
+#
+# chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
+# codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
+# progressLine = true                                       # bool; splice's own status line on a quiet wire
+# foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold
+# foldMaxContinue = 3                                       # rounds; max hidden continuation rounds per fold
+# foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn
+# foldMaxTier = 6                                           # n; the deepest truncation tier that still folds
+# toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
+# quotaPoll = "auto"                                        # "off" stops every plan-usage poller
+# quotaPollIntervalMs = 300000                              # ms; how often a subscription head re-polls usage
+# maxQueued = 512                                           # requests; admission queue cap, 0 = unlimited (HOT)
+# upstreamRetries = 4                                       # attempts; upstream re-POSTs per round before failing
+# retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
+# retryBackoffCapMs = 10000                                 # ms; the generic retry curve's ceiling
+# retryBackoffJitterPct = 10                                # percent; the generic retry curve's plus-or-minus jitter
+# firstByteTimeoutMs = 300000                               # ms; headers-phase timeout, the first byte must land
+# streamIdleMs = 300000                                     # ms; stream silence before the stall watchdog fires
+# stallReanchorMs = 20000                                   # ms; mid-output silence (content already delivered)
+#                                                           #     before splice CANCELS the round and re-anchors it
+#                                                           #     itself (re-POST from the salvage). Only arm it for a
+#                                                           #     head whose upstream is MEASURED to continue from an
+#                                                           #     assistant prefill (reanchor_prefill); a head that
+#                                                           #     cannot be prefilled has nothing to resume into, so
+#                                                           #     streamIdleMs stays its floor. Not consulted before the
+#                                                           #     first content frame. 0 disables the tier for this head.
+# authCacheMs = 60000                                       # ms; how long an OAuth snapshot is reused
+# debug = false                                             # bool; verbose logging
+# contextWindowOverride = 200000                            # tokens; unset by default, pins the client window
+# grokPort = 3100                                           # TCP port; the grok head's listener
+# grokModel = "grok-4.6"                                    # the grok model id the head pins
+# xaiApiBase = "https://api.x.ai/v1"                        # base URL of the xAI backend
+# grokAuthPath = "~/.grok/auth.json"                        # where the grok OAuth credential file lives
+# usageWarnPct = 80                                         # percent; plan-window usage that triggers the warning
+# usageWarnTokens5h = 0                                     # tokens; absolute 5h threshold, 0 disables the warning
+# statuslineGitRoots = ""                                   # extra git roots the status line inspects
+# mcpIdleTimeoutMs = 1800000                                # ms; a hosted MCP server with no open stream is closed after this
+# mcpMaxServers = 32                                        # count; most MCP server processes hosted at once (daemon-wide)
+# mcpRequestTimeoutMs = 1800000                             # ms; how long one forwarded MCP request may wait for the child
+# mcpInitializeTimeoutMs = 60000                            # ms; the child initialize handshake budget
+# maxRequestBytes = 8388608                                 # bytes; largest request body the gateway decodes (413 past this)
+# requestReadTimeoutMs = 30000                              # ms; how long one client request body read may take
+# materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits
+
+# ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
+# Precedence for every name below is env > TOML > default: an environment variable beats the TOML
+# value, which beats the built-in default. Most are ALIASES of a knob above — the first alias
+# present wins, so exporting one is the same as writing that key in [defaults]. The rest are seam
+# reads (paths, OAuth endpoints, install locations) with no TOML spelling of their own.
+#
+# Knob aliases, with the key each one sets in the trailing column:
+#   CHATGPT_API_BASE chatgptApiBase          CODEX_AUTH_PATH codexAuthPath
+#   CLAUDEX_PROGRESS_LINE / SPLICE_PROGRESS_LINE progressLine
+#   CLAUDEX_FOLD_REASONING_MODELS foldReasoningModels    CLAUDEX_FOLD_MAX_CONTINUE foldMaxContinue
+#   CLAUDEX_FOLD_MARKER_TEXT foldMarkerText             CLAUDEX_FOLD_MAX_TIER foldMaxTier
+#   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
+#   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
+#   CLAUDEX_UPSTREAM_RETRIES upstreamRetries CLAUDEX_UPSTREAM_TIMEOUT_MS upstreamTimeoutMs
+#   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
+#   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
+#   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug
+#   CODEX_PROXY_PORT port                    CONTROL_PROXY_PORT / SPLICE_CONTROL_PORT controlPort
+#   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath
+#   CLAUDEX_MODEL / CLAUDEX_PINNED_MODEL model           CLAUDE_GROK_MODEL / CLAUDE_GROK_PINNED_MODEL model
+#   CODEX_MODEL_CONTEXT_WINDOW contextWindowOverride     CLAUDEX_STATUSLINE_GIT_ROOTS statuslineGitRoots
+#   CLAUDEX_STATE_DIR the state directory    SPLICE_USAGE_WARN_PCT usageWarnPct
+#   SPLICE_USAGE_WARN_TOKENS_5H usageWarnTokens5h        CLAUDEX_MIRROR_REASONING mirrorReasoning
+#   CLAUDEX_SHOW_REASONING / CODEX_SHOW_REASONING showReasoning
+#   CLAUDEX_REASONING_EFFORT / CODEX_REASONING_EFFORT effort
+#   CLAUDEX_REASONING_SUMMARY / CODEX_REASONING_SUMMARY summary
+#   CLAUDEX_REPLAY_REASONING / CODEX_REPLAY_REASONING replayReasoning
+#
+# Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
+#   SPLICE_CONFIG           the config file to load, overriding the default lookup
+#   SPLICE_BIN_DIR          the install bin directory        SPLICE_SHARE_DIR the install share directory
+#   SPLICE_RELEASE_BASE_URL the base URL `splice upgrade` downloads a release from
+#   XDG_CONFIG_HOME         where the config and key store live when it is set
+#   OPENROUTER_API_KEY      the openrouter head's api-key; when set it always beats the key store
+#   PATH and no_proxy / NO_PROXY are read from the ambient environment (the two proxy spellings are
+#                               separate variables and both are honoured)
+#   CODEX_OAUTH_AUTHORIZE_URL / CODEX_OAUTH_TOKEN_URL / CODEX_OAUTH_CLIENT_ID / CODEX_OAUTH_ISSUER /
+#   CODEX_OAUTH_ORIGINATOR  override the Codex login endpoints and the originator header
+#   GROK_OAUTH_AUTHORIZE_URL / GROK_OAUTH_TOKEN_URL / GROK_OAUTH_CLIENT_ID / GROK_OAUTH_ISSUER
+#                           do the same for the Grok device login
+#   KIMI_OAUTH_HOST         points the Kimi device flow at a different auth host
+#   CODEX_PROXY_TEST        a TEST HOOK, not an operator setting: it exists so tests can name a
+#                           scenario without touching the topology, and it does nothing in normal use

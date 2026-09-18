@@ -120,7 +120,7 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).post(
+        val out = clientOver(engine).posted(
             ctx(onRetry = { retries.add(it) }),
             "{}",
         ) { "reached-block" }
@@ -143,7 +143,7 @@ class UpstreamClientTransportTest {
             engine,
             backoff = { a, _ -> genericAttempts.add(a) },
             dnsBackoff = { a -> dnsAttempts.add(a) },
-        ).post(
+        ).posted(
             ctx(),
             "{}",
         ) { "reached-block" }
@@ -165,7 +165,7 @@ class UpstreamClientTransportTest {
             engine,
             backoff = { a, _ -> genericAttempts.add(a) },
             dnsBackoff = { a -> dnsAttempts.add(a) },
-        ).post(
+        ).posted(
             ctx(),
             "{}",
         ) { "reached-block" }
@@ -187,7 +187,7 @@ class UpstreamClientTransportTest {
             engine,
             backoff = { a, _ -> genericAttempts.add(a) },
             dnsBackoff = { a -> dnsAttempts.add(a) },
-        ).post(
+        ).posted(
             ctx(),
             "{}",
         ) { "reached-block" }
@@ -204,7 +204,7 @@ class UpstreamClientTransportTest {
             throw ConnectException("refused")
         }
         assertThrows<ConnectException> {
-            clientOver(engine).post(
+            clientOver(engine).posted(
                 ctx(),
                 "{}",
             ) { "unreachable" }
@@ -220,7 +220,7 @@ class UpstreamClientTransportTest {
             error("bug, not weather")
         }
         assertThrows<IllegalStateException> {
-            clientOver(engine).post(
+            clientOver(engine).posted(
                 ctx(),
                 "{}",
             ) { "unreachable" }
@@ -236,7 +236,7 @@ class UpstreamClientTransportTest {
             respond("body", HttpStatusCode.OK, headersOf())
         }
         assertThrows<ConnectException> {
-            clientOver(engine).post(
+            clientOver(engine).posted(
                 ctx(),
                 "{}",
             ) { throw ConnectException("mid-stream reset") } // retryable TYPE, but block owns it
@@ -256,7 +256,7 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).post(
+        val out = clientOver(engine).posted(
             ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
             "{}",
         ) {
@@ -282,7 +282,7 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).post(
+        val out = clientOver(engine).posted(
             ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
             "{}",
         ) {
@@ -302,7 +302,7 @@ class UpstreamClientTransportTest {
         val blockCalls = AtomicInteger()
         val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
         assertThrows<ConnectException> {
-            clientOver(engine).post(
+            clientOver(engine).posted(
                 ctx(clientFrameEmitted = { false }),
                 "{}",
             ) {
@@ -335,7 +335,7 @@ class UpstreamClientTransportTest {
             clock = { now },
         )
         assertThrows<ConnectException> {
-            client.post(
+            client.posted(
                 ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
                 "{}",
             ) {
@@ -353,7 +353,7 @@ class UpstreamClientTransportTest {
         val blockCalls = AtomicInteger()
         val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
         assertThrows<ConnectException> {
-            clientOver(engine).post(
+            clientOver(engine).posted(
                 ctx(clientFrameEmitted = { true }), // explicit: the hard no-retry-after-output case
                 "{}",
             ) {
@@ -399,7 +399,7 @@ class UpstreamClientTransportTest {
             contentEncoding = request.headers[HttpHeaders.ContentEncoding]
             respond("ok", HttpStatusCode.OK, headersOf())
         }
-        clientOver(engine).post(
+        clientOver(engine).posted(
             ctx(),
             bodyJson,
         ) { "done" }
@@ -421,7 +421,7 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).post(
+        val out = clientOver(engine).posted(
             ctx(onRetry = { retries.add(it) }),
             "{}",
         ) { "reached-block" }
@@ -439,7 +439,7 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).post(
+        val out = clientOver(engine).posted(
             ctx(onRetry = { retries.add(it) }),
             "{}",
         ) { "reached-block" }
@@ -460,7 +460,7 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).post(
+        val out = clientOver(engine).posted(
             ctx(onRetry = { retries.add(it) }),
             "{}",
         ) { "reached-block" }
@@ -501,7 +501,7 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val thrown = assertThrows<IOException> {
-            clientOver(engine).post(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
+            clientOver(engine).posted(ctx(onRetry = { retries.add(it) }), "{}") { "unreachable" }
         }
         assertEquals("HTTP/1.1 header parser received no bytes", thrown.message)
         assertEquals(3, calls.get(), "the whole attempt budget is spent before the real failure surfaces")

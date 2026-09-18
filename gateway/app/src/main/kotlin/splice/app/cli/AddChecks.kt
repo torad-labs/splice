@@ -6,7 +6,6 @@ package splice.app.cli
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -22,6 +21,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -85,7 +85,7 @@ internal class AddChecks(private val http: AddHttp = JdkAddHttp()) {
 
     private fun parsedList(body: String, url: String): ListedModels = Cancellables.runCatchingCancellable {
         (json.parseToJsonElement(body).jsonObject["data"] as? JsonArray).orEmpty()
-            .mapNotNull { (it.jsonObject["id"] as? JsonPrimitive)?.content }
+            .mapNotNull { JsonScalars.str(it.jsonObject, "id") }
     }.fold(
         onSuccess = { ListedModels.Listed(it) },
         onFailure = { ListedModels.Unreadable("$url did not answer with a model list") },

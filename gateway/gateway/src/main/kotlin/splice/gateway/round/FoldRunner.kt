@@ -69,14 +69,19 @@ internal class FoldRunner(
             // retried round re-answers cleanly from its reasoning envelopes. Live thinking
             // already on the wire stays (append-only).
             val retry = foldRounds.continuationForFailedRound(outcome, body, reanchorAttempt)
-            if (retry == null) {
+            // V4-106: `outcome !is TurnOutcome.Failure` joins the guard so the narrowing below is a
+            // SMART CAST rather than an unchecked `as`. continuationForFailedRound only ever returns
+            // a non-null retry for a Failure, so the added arm cannot fire in practice — but if that
+            // invariant ever breaks, this takes the honest null path instead of throwing a
+            // ClassCastException on the turn path, which is the whole point of the wall.
+            if (retry == null || outcome !is TurnOutcome.Failure) {
                 // health for absorbed rounds unless the final outcome is itself a Failure
                 // (attributed once by finishTurn) — see ReanchorRunner; DR-125 added abandoned.
                 if (outcome !is TurnOutcome.Failure) absorbedFailures.forEach(signals.onRoundFailure::invoke)
                 foldRounds.finalize(rounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
                 return
             }
-            val failure = outcome as TurnOutcome.Failure
+            val failure = outcome
             absorbedFailures.add(failure)
             failure.partial?.let { p ->
                 // Strip BOTH buffered-text signals: the prose never reached the client, so the

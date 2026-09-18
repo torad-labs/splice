@@ -84,7 +84,7 @@ class TurnUsageStampTest {
             ),
             emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-            slot = InflightGate(LiveLimit { 1 }).acquire(),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
                 log = log,

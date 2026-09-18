@@ -33,6 +33,10 @@ import java.nio.file.Paths
  *  guard that exists only for the test JVM has no business on the layered config path anyway. */
 private const val NO_SYSTEM_BROWSER = "splice.noSystemBrowser"
 
+/** What [SystemBrowserOpener.host] reports when the authorize URL does not parse — the classification the
+ *  parse failure is routed into, since the URL itself carries the PKCE challenge and never gets printed. */
+private const val UNKNOWN_HOST = "unknown"
+
 /** Opens a login URL; tests record the request without starting an operating-system process. */
 internal fun interface BrowserOpener {
     fun open(url: String): Boolean
@@ -61,7 +65,8 @@ private class SystemBrowserOpener : BrowserOpener {
     /** Host only — an authorize URL carries the PKCE challenge and state, which never belong in a
      *  failure message or a log. */
     private fun host(url: String): String =
-        Cancellables.runCatchingCancellable { java.net.URI(url).host }.getOrNull() ?: "unknown"
+        Cancellables.runCatchingCancellable { java.net.URI.create(url).host }
+            .fold(onSuccess = { it ?: UNKNOWN_HOST }, onFailure = { UNKNOWN_HOST })
 
     private fun launch(url: String): Boolean = Cancellables.runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
@@ -73,7 +78,8 @@ private class SystemBrowserOpener : BrowserOpener {
         ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         true
-    }.getOrDefault(false)
+    }.onFailure { println("splice: could not open a browser (${SafeFailureText.render(it)})") }
+        .getOrDefault(false)
 }
 
 /** The shared login I/O primitives, held as a collaborator by each flow (Kotlin style law,
@@ -116,6 +122,8 @@ internal class LoginIo(private val browser: BrowserOpener = SystemBrowserOpener(
     ): Boolean {
         val parsed = Cancellables.runCatchingCancellable {
             loginJson.parseToJsonElement(authJson) as? JsonObject
+        }.onFailure {
+            println("splice: token endpoint body did not parse (${SafeFailureText.render(it)})")
         }.getOrNull()
         val token = parsed?.let(::accessTokenOf)
         if (token.isNullOrBlank()) {
@@ -175,6 +183,7 @@ internal class LoginIo(private val browser: BrowserOpener = SystemBrowserOpener(
         identityHeaders.forEach { (k, v) -> request.header(k, v) }
     }
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): provider error bodies are frequently not JSON (HTML, plain prose), so 'no error code' is the normal reading; the caller already prints the status and the sanitized body.
     internal fun errorCode(body: String): String = Cancellables.runCatchingCancellable {
         (loginJson.parseToJsonElement(body) as? JsonObject)?.let { obj ->
             (obj["error"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
@@ -215,7 +224,7 @@ internal class LoginIo(private val browser: BrowserOpener = SystemBrowserOpener(
             else -> console.readPassword("$headKey API key ($envVar): ")?.let { String(it).trim() }
         }
         if (value != null && value.isEmpty()) println("splice: empty key — nothing stored.")
-        return !value.isNullOrEmpty() && runCatching {
+        return !value.isNullOrEmpty() && Cancellables.runCatchingCancellable {
             val store = KeyStore(KeyStorePath.defaultPath())
             store.write(envVar, value)
             println("$envVar stored to ${store.path} (0600) — live daemons pick it up on the next request.")

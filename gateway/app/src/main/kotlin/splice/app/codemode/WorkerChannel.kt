@@ -54,7 +54,7 @@ internal class WorkerChannel(
         // A reply is never null: only this deadline maps to an ordinary worker failure.
         withTimeoutOrNull(timeoutMs) {
             suspendCancellableCoroutine<JsonObject> { continuation ->
-                continuation.invokeOnCancellation { close() }
+                continuation.invokeOnCancellation { closeQuietly() }
                 ioDispatcher.dispatch(
                     continuation.context,
                     Runnable {
@@ -86,6 +86,19 @@ internal class WorkerChannel(
             cancellation = cleanup(cancellation, CodeModeCleanup { closeStream(input) })
             cancellation = cleanup(cancellation, CodeModeCleanup(::observeExitAfterWait))
             cancellation?.let { throw it }
+        }
+    }
+
+    /** Total by contract, for the cancellation handler: kotlinx calls it on an undefined thread,
+     *  where a throw becomes an uncaught exception and a block parks the canceller. It runs the same
+     *  cleanup as [close] but swallows the collected cancellation instead of rethrowing it, and skips
+     *  the blocking [observeExitAfterWait] wait — the synchronous exit wait stays in [close] for the
+     *  lifecycle contexts that own it. */
+    internal fun closeQuietly() {
+        if (closed.compareAndSet(false, true)) {
+            cleanup(null, CodeModeCleanup(::destroyProcess))
+            cleanup(null, CodeModeCleanup { closeStream(output) })
+            cleanup(null, CodeModeCleanup { closeStream(input) })
         }
     }
 

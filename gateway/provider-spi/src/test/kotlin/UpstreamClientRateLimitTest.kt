@@ -74,7 +74,7 @@ class UpstreamClientRateLimitTest {
             remainingTurnWait = RemainingTurnWait { 5_000L },
         )
 
-        val observer = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
+        val observer = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         assertEquals(429, observer.status)
         assertEquals("slow down", observer.body)
         // V4-48: a pushback at or under the 15s ceiling is WAITED OUT and retried, not surrendered.
@@ -82,7 +82,7 @@ class UpstreamClientRateLimitTest {
         assertTrue(waiter.waits.isNotEmpty(), "the pushback is waited out rather than skipped")
 
         val waitsAfterObserver = waiter.waits.size
-        val follower = assertThrows<UpstreamFailed> { client.post(context(), "{}") { "unreachable" } }
+        val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         assertEquals(3, calls.get(), "a follower must fail fast without reaching upstream")
         // V4-46: STRICTER than the word it replaced. The follower body must identify the GATEWAY as
         // the holder of the interval — that is the property the row guarantees — where the old

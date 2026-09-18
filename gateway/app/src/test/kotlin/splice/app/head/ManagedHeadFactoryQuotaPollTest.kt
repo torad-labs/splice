@@ -104,7 +104,7 @@ class ManagedHeadFactoryQuotaPollTest {
     fun `quota poll off does not start a poller`(@TempDir tmp: Path) = runTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("off"))
         var starts = 0
-        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _ -> starts += 1 })
+        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _, _ -> starts += 1 })
 
         factory.assembleHead(build(statePaths, quotaPoll = "off"), controlPort = 3098)
 
@@ -115,11 +115,26 @@ class ManagedHeadFactoryQuotaPollTest {
     fun `quota poll auto starts one poller for a subscription head`(@TempDir tmp: Path) = runTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("auto"))
         var starts = 0
-        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _ -> starts += 1 })
+        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _, _ -> starts += 1 })
 
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
 
         assertEquals(1, starts)
+    }
+
+    @Test
+    fun `the quota poll interval flows from the knob to the poller`(@TempDir tmp: Path) = runTest {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("interval"))
+        val captured = mutableListOf<Long>()
+        val factory = factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, _, intervalMs -> captured += intervalMs },
+        )
+
+        factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
+
+        assertEquals(listOf(300_000L), captured, "the default quotaPollIntervalMs knob must reach the poller")
     }
 
     @Test
@@ -134,7 +149,7 @@ class ManagedHeadFactoryQuotaPollTest {
             buildJsonObject {},
         )
         var starts = 0
-        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _ -> starts += 1 })
+        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _, _ -> starts += 1 })
 
         factory.assembleHead(ctx, controlPort = 3098)
 
@@ -148,7 +163,7 @@ class ManagedHeadFactoryQuotaPollTest {
         val factory = factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, tracker -> captured += tracker },
+            StartQuotaPoller { _, _, tracker, _ -> captured += tracker },
         )
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
         assertCodexRound(captured.single())
@@ -169,7 +184,7 @@ class ManagedHeadFactoryQuotaPollTest {
         val factory = factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, tracker -> captured += tracker },
+            StartQuotaPoller { _, _, tracker, _ -> captured += tracker },
         )
         factory.assembleHead(ctx, controlPort = 3098)
         assertEquals(2, captured.size)
@@ -195,7 +210,7 @@ class ManagedHeadFactoryQuotaPollTest {
         factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, _ -> starts += 1 },
+            StartQuotaPoller { _, _, _, _ -> starts += 1 },
             OnPrimaryQuota { captured += it },
         ).assembleHead(ctx, controlPort = 3100)
         assertEquals(0, starts)
@@ -211,7 +226,7 @@ class ManagedHeadFactoryQuotaPollTest {
         factory(
             chatgptPaths,
             backgroundScope,
-            StartQuotaPoller { _, probe, _ -> chatgptProbes += probe },
+            StartQuotaPoller { _, probe, _, _ -> chatgptProbes += probe },
         ).assembleHead(build(chatgptPaths, quotaPoll = "auto"), controlPort = 3098)
         assertTrue(chatgptProbes.single() is CodexQuotaProbe)
 
@@ -220,7 +235,7 @@ class ManagedHeadFactoryQuotaPollTest {
         factory(
             musePaths,
             backgroundScope,
-            StartQuotaPoller { _, probe, _ -> museProbes += probe },
+            StartQuotaPoller { _, probe, _, _ -> museProbes += probe },
         ).assembleHead(museBuild(musePaths), controlPort = 3106)
         assertTrue(museProbes.single() is MuseMintProbe)
     }

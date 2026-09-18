@@ -157,7 +157,7 @@ class ControlServerTest {
     }
 
     private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
-        configDir = tmp.resolve(".claude-codex-test"),
+        trees = splice.control.HeadTrees(tmp.resolve(".claude-codex-test")),
         pinnedModel = "gpt-5.6-sol",
         availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
         modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
@@ -501,12 +501,17 @@ class ControlServerTest {
         val body = client.post("http://127.0.0.1:$port/launch/codex") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
-            setBody("""{"args":["-c"]}""")
+            // V4-113: the null rides in the same request on purpose — JsonNull IS a JsonPrimitive
+            // whose content is the literal string "null", so the old `(it as? JsonPrimitive)?.content`
+            // chain handed a null argument to the launched client as a live word. This is
+            // CLIENT-supplied JSON becoming a process argv, the shape the wall's header names.
+            setBody("""{"args":["-c",null]}""")
         }.bodyAsText()
         val obj = json.parseToJsonElement(body).jsonObject
         val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertFalse(argv.contains("--dangerously-skip-permissions"))
         assertTrue(argv.contains("-c"))
+        assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
         assertFalse(obj.containsKey("warning"))
     }
 
@@ -527,8 +532,9 @@ class ControlServerTest {
     }
 
     @Test
-    fun `statusline renders the model from stdin json, no bearer needed`() = runTest {
+    fun `statusline renders the model from stdin json`() = runTest {
         val line = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
             setBody(
                 """{"model":{"display_name":"Codex 5.6 Sol"},"current_usage":{"input_tokens":100,"context_window":272000}}""",
@@ -540,6 +546,7 @@ class ControlServerTest {
     @Test
     fun `statusline rejects oversized input before rendering`() = runTest {
         val response = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
             setBody("x".repeat(70_000))
         }

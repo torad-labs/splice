@@ -90,7 +90,7 @@ class UpstreamClientStatusTest {
             authRefreshObserver = AuthRefreshObserver { observed.incrementAndGet() },
         )
 
-        assertEquals("ok", clientOver(engine).post(context, "{}") { "ok" })
+        assertEquals("ok", clientOver(engine).posted(context, "{}") { "ok" })
         assertEquals(2, calls.get())
         assertEquals(1, refreshes.get())
         assertEquals(1, observed.get())

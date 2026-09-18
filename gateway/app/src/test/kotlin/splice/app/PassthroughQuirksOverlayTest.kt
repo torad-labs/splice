@@ -117,4 +117,32 @@ class PassthroughQuirksOverlayTest {
             "declared false must win over a base that says true",
         )
     }
+
+    // V4-110: tool_name_cap overlays like every other passthrough quirk — absent keeps the head's
+    // base (muse's built-in 64; 0 = no cap for a neutral head), declared wins in both directions.
+    @Test
+    fun `tool_name_cap absent keeps the base profile`() {
+        val muse = PassthroughQuirks(providerTag = "muse", toolNameCap = 64)
+        assertEquals(64, assembly.passthroughQuirks(provider(QuirksConfig()), muse).toolNameCap)
+
+        val neutral = PassthroughQuirks(providerTag = "claude-splice")
+        assertEquals(0, assembly.passthroughQuirks(provider(QuirksConfig()), neutral).toolNameCap)
+    }
+
+    @Test
+    fun `tool_name_cap declared wins over the base in both directions`() {
+        val muse = PassthroughQuirks(providerTag = "muse", toolNameCap = 64)
+        assertEquals(
+            128,
+            assembly.passthroughQuirks(provider(QuirksConfig(toolNameCap = 128)), muse).toolNameCap,
+            "declared 128 must win over muse's base 64",
+        )
+
+        val neutral = PassthroughQuirks(providerTag = "claude-splice")
+        assertEquals(
+            64,
+            assembly.passthroughQuirks(provider(QuirksConfig(toolNameCap = 64)), neutral).toolNameCap,
+            "declared 64 must win over a neutral base of no cap",
+        )
+    }
 }

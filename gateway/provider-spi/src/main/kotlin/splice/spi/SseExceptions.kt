@@ -5,6 +5,10 @@ package splice.spi
 
 import java.io.IOException
 
+// V4-114 disposition: an upstream protocol violation of our own safety limit, thrown mid-walk by
+// SseReader.kt:59 / SseDecode.kt:106 with no return channel to ride. TurnFailures.kt:35 /
+// TurnConnEnd.kt:30 log it and emit an API_ERROR terminal; no caller continues the round.
+// ast-grep-ignore: kt-no-exception-as-outcome -- 2026-09-17: an upstream frame violation, never a branch
 public class SseFrameTooLargeException(kind: String, limit: Int) :
     RuntimeException("$kind exceeds the $limit-character safety limit")
 

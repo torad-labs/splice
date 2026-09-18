@@ -10,12 +10,12 @@ package splice.control
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
+import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import java.util.concurrent.TimeUnit
@@ -58,17 +58,25 @@ public class StatuslineRenderer(
     // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
     private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
-        runCatching { java.nio.file.Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
+        // A configured root that is not a usable path is simply not a trusted root. The statusline
+        // has no sink and Claude Code renders on every tick, so a line per render would be noise on
+        // the hottest cosmetic path in splice.
+        // ast-grep-ignore: kt-no-silent-result-collapse -- an unusable configured root is not a failure, it is just not a trusted root
+        Cancellables.runCatchingCancellable { java.nio.file.Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
     }
 
     // Real (symlink-resolved) trusted roots for safeGitCwd's containment check — resolved ONCE here
     // since the root set ($HOME, /tmp, extraGitRoots) is process-invariant, unlike the per-request
     // candidate cwd (still resolved fresh on each call). A root missing at construction is dropped,
     // same as the old per-call runCatching { root.toRealPath() }.getOrNull().
+    // An ABSENT trusted root is not a failure to report: /workspace and /srv do not exist on most
+    // hosts, and the containment check treats "unresolvable" and "not under a trusted root" as the
+    // same answer.
     private val trustedRoots: List<java.nio.file.Path> = (
         listOfNotNull(System.getProperty("user.home"), "/tmp").map { java.nio.file.Paths.get(it) } +
             this.extraGitRoots
-        ).mapNotNull { root -> runCatching { root.toRealPath() }.getOrNull() }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- an absent optional root proves absence, not failure
+        ).mapNotNull { root -> Cancellables.runCatchingCancellable { root.toRealPath() }.getOrNull() }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -90,7 +98,12 @@ public class StatuslineRenderer(
         warnTokens5h: Long,
         sessionId: String? = null,
     ): String {
-        val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
+        // A malformed or absent payload IS answered, on the next line, by the dim label: that is the
+        // designed degradation for the one input splice does not author. No sink here, and this runs
+        // once per statusline tick.
+        // ast-grep-ignore: kt-no-silent-result-collapse -- the failure is answered by the dim-label fallback on the next line
+        val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull()
+            ?: return dim(label)
         windowLearner.learn(root)
         val snapshot = usage?.snapshot()
         val pool = accountPool?.view(sessionId)
@@ -200,7 +213,12 @@ public class StatuslineRenderer(
     internal fun safeGitCwd(cwd: String): java.nio.file.Path? {
         if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return null
         // toRealPath resolves symlinks AND requires existence — a non-existent path returns null.
-        val real = runCatching { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull() ?: return null
+        // null IS this function's answer for an untrusted cwd: "could not be resolved" and "outside
+        // every trusted root" are deliberately the same outcome, both meaning the git probe must
+        // not run.
+        // ast-grep-ignore: kt-no-silent-result-collapse -- null is this function's ANSWER for an untrusted cwd, not a swallowed failure
+        val real = Cancellables.runCatchingCancellable { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull()
+            ?: return null
         return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
@@ -233,7 +251,11 @@ public class StatuslineRenderer(
         return branch
     }
 
-    private fun gitBranch(cwd: String): String = runCatching {
+    // Any git failure means no branch segment, which is the designed empty-string fallback: a
+    // statusline must not fail because a repository is odd, and git is not installed at all on
+    // some hosts.
+    // ast-grep-ignore: kt-no-silent-result-collapse -- every git failure means the same designed outcome: no branch segment
+    private fun gitBranch(cwd: String): String = Cancellables.runCatchingCancellable {
         val process = ProcessBuilder("git", "-C", cwd, "branch", "--show-current")
             .redirectErrorStream(false)
             .start()
@@ -270,7 +292,7 @@ private class StatuslineJson {
     // PR 99). The same class this PR fixes in SystemTextSerializer and ContentSerializer.
     fun str(element: JsonElement?): String? = JsonScalars.str(element)?.takeIf { it.isNotEmpty() }
 
-    fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+    fun num(element: JsonElement?): Long? = JsonScalars.str(element)?.toDoubleOrNull()?.toLong()
 }
 
 // StatuslineRenderer's companion constants at their sanctioned file-scope home. The ANSI values

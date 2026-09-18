@@ -27,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ErrorType
 import splice.core.util.Cancellables
+import splice.gateway.head.ERR_SNIPPET
 
 /** A failure as the client should read it: a stable, greppable [code] and a human [body]. */
 internal data class FailureText(val code: String, val body: String)
@@ -60,7 +61,7 @@ internal class FailurePresenter {
             // your session token has expired, please sign in again", and the login-hint test pins
             // that the operator keeps it. Markup is not the same as noise, and a shape test cannot
             // tell a proxy's 502 page from a vendor's prose, so this layer does not guess.
-            element == null -> message.ifBlank { UNREADABLE }
+            element == null -> message.take(ERR_SNIPPET).ifBlank { UNREADABLE }
             // A JSON string is prose wearing quotes — unwrap it rather than describing it.
             element is JsonPrimitive && element.isString -> element.content.ifBlank { UNREADABLE }
             element is JsonObject -> humanField(element) ?: UNREADABLE

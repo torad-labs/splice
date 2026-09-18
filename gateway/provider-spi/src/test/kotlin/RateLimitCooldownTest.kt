@@ -24,7 +24,7 @@ import splice.spi.RetryDecision
 import splice.spi.RetryNotice
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
-import splice.spi.UpstreamTurnWaitExhausted
+import splice.spi.UpstreamPost
 import splice.spi.Waiter
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -462,10 +462,14 @@ class RateLimitCooldownBudgetTest {
             onRetry = RetryNotice(notices::add),
         )
 
-        val failure = assertThrows<UpstreamTurnWaitExhausted> { client.post(context, "{}") { "unreachable" } }
+        // V4-114 PIN: the exhausted turn-wait budget is a VALUE on post()'s return type. This line
+        // does not compile against the old shape (post returned T and threw
+        // UpstreamTurnWaitExhausted), and a Delivered here fails the assertEquals instead of
+        // arriving as an exception any broad catch on the turn path would have taken for a bug.
+        assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, "{}") { "unreachable" })
 
         assertEquals(0, calls.get())
-        assertEquals("upstream turn wait budget exhausted", failure.message)
+        // The operator-visible line is unchanged; the class that used to carry it is gone.
         assertEquals(listOf("upstream turn wait budget exhausted before attempt 1/3"), notices)
     }
 
@@ -496,7 +500,7 @@ class RateLimitCooldownBudgetTest {
             remainingTurnWait = RemainingTurnWait { 100L },
         )
 
-        assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+        assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(1, calls.get())
         assertTrue(waiter.waits.isEmpty())
@@ -530,7 +534,7 @@ class RateLimitCooldownBudgetTest {
             remainingTurnWait = RemainingTurnWait { 60_000L },
         )
 
-        assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+        assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(3, calls.get(), "every attempt in the budget is spent before the client sees a 429")
         assertEquals(listOf(15_000L, 15_000L), waiter.waits, "the schedule is the 15s floor, not the 5301s header")
@@ -567,7 +571,7 @@ class RateLimitCooldownBudgetTest {
             remainingTurnWait = RemainingTurnWait { 20_000L },
         )
 
-        assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+        assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(3, calls.get(), "a short 429 now spends the retry budget it always had")
         // The WAITS do not arm; the FINAL give-up does, exactly as the 5xx branch arms only in its
@@ -600,11 +604,11 @@ class RateLimitCooldownBudgetTest {
                 remainingTurnWait = RemainingTurnWait { 5_000L },
             )
 
-            assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+            assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
             assertEquals(1, calls.get())
             assertEquals(30_000L, cooldown.remainingMs(), "$status must protect followers")
             assertEquals(0L, cooldown.unavailableForMs(), "$status must not remove the account from selection")
-            assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+            assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
             assertEquals(1, calls.get(), "the next $status post must fail fast without reaching upstream")
         }
     }
@@ -635,7 +639,7 @@ class RateLimitCooldownBudgetTest {
                 remainingTurnWait = RemainingTurnWait { 100L },
             )
 
-            assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+            assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
             assertEquals(1, calls.get(), "Retry-After $retryAfter must not outlive the turn budget")
             assertTrue(waiter.waits.isEmpty(), "Retry-After $retryAfter must not start the shipped backoff")
             assertEquals(0L, cooldown.unavailableForMs())
@@ -675,7 +679,7 @@ class RateLimitCooldownOuterTurnTest {
             onRetry = RetryNotice(notices::add),
         )
 
-        val failure = assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+        val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(503, failure.status)
         assertEquals("provider-specific failure", failure.body)
@@ -710,13 +714,14 @@ class RateLimitCooldownOuterTurnTest {
                 remainingTurnWait = RemainingTurnWait { 5_000L - elapsed },
             )
 
-            assertEquals("ok", client.post(context, "{}") { "ok" })
+            assertEquals("ok", client.posted(context, "{}") { "ok" })
 
             if (leftAfterFirstRound == 0L) {
-                assertThrows<UpstreamTurnWaitExhausted> { client.post(context, "{}") { "unreachable" } }
+                // V4-114 PIN: same value, on the second round of a spent turn cap.
+                assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, "{}") { "unreachable" })
                 assertEquals(1, calls.get(), "round two must make zero calls after the turn cap is spent")
             } else {
-                val failure = assertThrows<UpstreamFailed> { client.post(context, "{}") { "unreachable" } }
+                val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
                 assertEquals(2, calls.get(), "round two may attempt once but cannot spend a new retry budget")
                 assertEquals(503, failure.status)
                 assertEquals("round two unavailable", failure.body)

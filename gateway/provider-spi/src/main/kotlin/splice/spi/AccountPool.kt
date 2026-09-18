@@ -36,6 +36,11 @@ public class AccountPool(
     public fun select(sessionId: String?): AccountSelection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         val at = now()
+        // Credential evidence is read (and hashed) OUTSIDE the sticky-session monitor: the lock only
+        // keeps the LinkedHashMap consistent, and holding it across a filesystem round-trip makes its
+        // contention window the disk's latency. Each account caches the read behind a short TTL, so
+        // the in-monitor selection below reads the cache, never the credential file.
+        accounts.forEach { it.refreshCredentialEvidence() }
         if (sessionId == null) return selectStateless(at)
         return synchronized(sessions) {
             val chosen = selected(sessions[sessionId], at, sticky = true)

@@ -112,7 +112,7 @@ class TurnFinishTest {
             ),
             emitter = emitter,
             watchdog = watchdog,
-            slot = InflightGate(LiveLimit { 1 }).acquire(),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-dr8x.jsonl")),
                 log = log,
@@ -152,7 +152,7 @@ class TurnFinishTest {
             clock = ticks.clock,
             ticker = ticks.ticker,
         )
-        val slot = InflightGate(LiveLimit { 1 }, clock = ticks.clock).acquire()
+        val slot = InflightGate(LiveLimit { 1 }, clock = ticks.clock).admittedSlot()
         val target = launch { delay(10.seconds) }
         val poller = watchdog.launchIn(this, slot, target, ClientFrameEmitted { true })
         try {

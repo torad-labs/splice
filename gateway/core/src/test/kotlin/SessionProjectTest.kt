@@ -1,5 +1,6 @@
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -10,6 +11,7 @@ import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.util.ElapsedClock
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 class SessionProjectTest {
@@ -136,36 +138,38 @@ class SessionProjectTest {
         assertEquals(cwd.normalize(), resolver.projectFor("cached"))
     }
 
-    // V4-64/V4-65 (shared transcripts): a session started on a head whose projects/ was still a
-    // REAL directory is migrated into the global projects dir when the head materializes with
-    // `projects` shared. The daemon's SessionProject reads the GLOBAL dirs, so after the migration
-    // — and with NO registry entry, the headless case — it must resolve that session's cwd from the
-    // migrated transcript: compaction instructions follow the session to whichever head resumes it.
+    // V4-115 (head isolation): a head's transcripts stay in the head's OWN projects tree, and the
+    // resolver compaction builds reads that tree. This replaces the V4-64 pin, which asserted the
+    // opposite — the head's real tree migrated into ~/.claude/projects and replaced by a symlink —
+    // and whose consequence was 95 head transcripts in the vanilla tree and a vanilla client that
+    // could not restore its own sessions. The `projects` share entry is inert now and must change
+    // nothing: the tree is real either way, and materialize creates no vanilla projects dir at all.
     @Test
-    fun `a transcript migrated out of a head projects dir resolves its cwd with no registry entry`() {
+    fun `a head transcript stays in the head's own tree, and materialize creates no vanilla projects dir`() {
         val home = tmp
-        val globalSessions = Files.createDirectories(home.resolve(".claude/sessions"))
-        val globalProjects = Files.createDirectories(home.resolve(".claude/projects"))
         val cwd = home.resolve("work/repo").toAbsolutePath()
         val encoded = cwd.toString().replace(Regex("[^A-Za-z0-9]"), "-")
-        val headProjects = home.resolve(".claude-a/projects")
-        Files.createDirectories(headProjects.resolve(encoded))
+        val head = home.resolve(".claude-a")
+        val headSessions = Files.createDirectories(head.resolve("sessions"))
+        val transcript = head.resolve("projects").resolve(encoded).resolve("mine-1.jsonl")
+        Files.createDirectories(transcript.parent)
         Files.writeString(
-            headProjects.resolve(encoded).resolve("migrated-1.jsonl"),
-            """{"type":"user","sessionId":"migrated-1","cwd":"$cwd","message":{"role":"user","content":"hi"}}
+            transcript,
+            """{"type":"user","sessionId":"mine-1","cwd":"$cwd","message":{"role":"user","content":"hi"}}
 """,
         )
         val policy = ClaudePolicy(share = setOf("projects"), isolate = emptySet())
 
         ClaudeConfigMaterializer(home).materialize(
-            MaterializeSpec(home.resolve(".claude-a"), policy, listOf("m1"), "m1", buildJsonObject { }, "statusline"),
+            MaterializeSpec(head, policy, listOf("m1"), "m1", buildJsonObject { }, "statusline"),
         )
 
-        assertTrue(Files.isSymbolicLink(headProjects), "the head's real projects dir must become the link")
-        assertTrue(
-            Files.isRegularFile(globalProjects.resolve(encoded).resolve("migrated-1.jsonl")),
-            "the transcript must now live under the global projects dir",
+        assertTrue(Files.isDirectory(head.resolve("projects"), NOFOLLOW_LINKS), "the head keeps a REAL projects tree")
+        assertTrue(Files.isRegularFile(transcript), "the head's own transcript is never moved")
+        assertFalse(
+            Files.exists(home.resolve(".claude/projects"), NOFOLLOW_LINKS),
+            "materialize must not create the vanilla projects tree this fix removes",
         )
-        assertEquals(cwd.normalize(), SessionProject(globalSessions, globalProjects).projectFor("migrated-1"))
+        assertEquals(cwd.normalize(), SessionProject(headSessions, head.resolve("projects")).projectFor("mine-1"))
     }
 }

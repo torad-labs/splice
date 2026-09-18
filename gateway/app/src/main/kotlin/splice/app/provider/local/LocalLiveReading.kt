@@ -55,5 +55,6 @@ internal class LocalLiveReading {
     }
 
     private fun parse(text: String): JsonObject? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): an SSE chunk that is not a JSON object cannot carry a tool call (the header's whole point), so null is the complete reading; the non-200 detail above is what reaches the operator.
         Cancellables.runCatchingCancellable { json.parseToJsonElement(text) as? JsonObject }.getOrNull()
 }

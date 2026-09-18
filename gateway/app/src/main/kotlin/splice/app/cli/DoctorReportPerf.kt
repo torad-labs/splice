@@ -106,6 +106,7 @@ internal class DoctorReportPerf(
     }
 
     private fun parsed(line: String): JsonObject? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same tolerant perf-tail reader as DoctorProbeWrite.perfRow: a malformed line is skipped, and read.error (set by the file source) is what carries a real read failure into the report.
         Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
 
     /** Numeric keys keep only JSON numbers; model and outcome keep only safe TOKENS. Anything else a

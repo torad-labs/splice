@@ -42,9 +42,12 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 public sealed class WatchdogFired {
-    /** [sawClientFrame] names the tier that judged the silence — false: the first-output tier
-     *  ([WatchdogBudget.firstByteTimeout]), true: the mid-output tier ([WatchdogBudget.streamIdle]) —
-     *  and [limitMs] is that tier's cap, so a terminal message can name the number that fired. */
+    /** [sawClientFrame] names the FAMILY of tier that judged the silence — false: the first-output
+     *  tier ([WatchdogBudget.firstByteTimeout]), true: a mid-output tier — and [limitMs] is that
+     *  tier's cap, so a terminal message can name the number that fired. V4-116 added a THIRD tier
+     *  inside the mid-output family ([WatchdogBudget.stallReanchor], read as a min against
+     *  [WatchdogBudget.streamIdle]); a holder that needs to tell the two apart compares [limitMs]
+     *  against streamIdle, which is what TurnWatchdog's own hold line does. */
     public data class Idle(val idleMs: Long, val sawClientFrame: Boolean, val limitMs: Long) : WatchdogFired()
 
     public data class TotalCap(val elapsedMs: Long) : WatchdogFired()
@@ -94,12 +97,15 @@ public class TurnWatchdog(
         firedRef.get()?.let { if (it is WatchdogFired.Idle) firedRef.compareAndSet(it, null) }
     }
 
-    /** Paced to the TIGHTER idle tier. Both caps are sampled by the same poller, and a first-output
+    /** Paced to the TIGHTER idle tier. All three idle tiers are sampled by the same poller, and a
      *  cap shorter than streamIdle/3 (a test rig, or an operator wanting a fast pre-output verdict)
      *  would otherwise be sampled too late to matter — the rule [launchTotalCap] already applies
-     *  against totalCap. Production (180s/300s) still lands on the 15s ceiling. */
+     *  against totalCap. Production (180s/300s, and the armed 20s stall tier) still lands on the 15s
+     *  ceiling; a stall tier below ~45s is what pulls the cadence down, which is exactly the tier
+     *  whose whole purpose is to fire sooner than the others. */
     public fun pollInterval(): Duration {
-        val tighter = minOf(budget.streamIdle, budget.firstByteTimeout).inWholeMilliseconds / IDLE_DIVISOR
+        val tighter = minOf(budget.streamIdle, budget.firstByteTimeout, budget.stallReanchor)
+            .inWholeMilliseconds / IDLE_DIVISOR
         return tighter.coerceIn(MIN_POLL_MS, MAX_POLL_MS).milliseconds
     }
 
@@ -110,7 +116,9 @@ public class TurnWatchdog(
      *
      * [clientFrame] is the ROUND's probe (SseRoundDriver baselines CONTENT_FRAMES_OUT per round):
      * false = the client has seen no content this round, so the silence is prefill/reasoning and
-     * the first-output cap applies; true = mid-output, streamIdle applies. See the file header for
+     * the first-output cap applies; true = mid-output, so the tighter of streamIdle and the head's
+     * armed stall-re-anchor tier applies (V4-116 — a breach of that tier is a round to RESUME, not
+     * a turn to end, and the translator reports it with its salvage exactly as a truncation). See the file header for
      * why this is a frame and not a byte. A fold round's BUFFERED final output (held back until the
      * terminal proves the round) and a non-stream turn (no client frames are ever written) read as
      * "no client frame" and so sit on the first-output cap — the lenient side, and literally true:
@@ -146,8 +154,11 @@ public class TurnWatchdog(
                 if (!ticker.awaitTick(pollInterval().inWholeMilliseconds)) return@launch
                 val idle = slot.idleForMs()
                 val seen = clientFrame()
+                // V4-116: mid-output the tier is the STALL-RE-ANCHOR one when the head armed it —
+                // min, so a head whose own streamIdle is tighter still gets the tighter of the two,
+                // and an unarmed head (INFINITE) reads exactly budget.streamIdle as before.
                 val idleLimit = if (seen) {
-                    budget.streamIdle.inWholeMilliseconds
+                    minOf(budget.streamIdle, budget.stallReanchor).inWholeMilliseconds
                 } else {
                     budget.firstByteTimeout.inWholeMilliseconds
                 }
@@ -172,7 +183,16 @@ public class TurnWatchdog(
     /** Record the hold once and say so once; every later poll that holds is the same fact. */
     private fun hold(idleMs: Long, limitMs: Long, pingAgoMs: Long, seen: Boolean) {
         if (!heldRef.compareAndSet(null, WatchdogHeld(idleMs, limitMs, pingAgoMs, seen))) return
-        val tier = if (seen) "mid-output" else "first-output"
+        // The tier is NAMED, not assumed, for the reason the file header gives about the pre-output
+        // cap: a mid-output hold on the armed stall tier is a different machine from one on
+        // streamIdle, and a line that called a 20 s tier "mid-output" would hide the very knob an
+        // operator lowered this week. A tighter limit than streamIdle is exactly "the stall tier is
+        // the one that fired".
+        val tier = when {
+            !seen -> "first-output"
+            limitMs < budget.streamIdle.inWholeMilliseconds -> "mid-output stall re-anchor"
+            else -> "mid-output"
+        }
         log(
             "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
                 "(last server ping ${pingAgoMs / MS_PER_S}s ago) — holding the round, the whole-turn cap " +

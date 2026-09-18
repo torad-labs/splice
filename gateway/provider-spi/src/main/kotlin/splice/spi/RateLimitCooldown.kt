@@ -31,11 +31,9 @@
 // is in :gateway, and :provider-spi depends only on :core — that edge would invert.
 package splice.spi
 
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
+import splice.core.wire.ErrorEnvelope
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
@@ -189,13 +187,11 @@ public class RateLimitCooldown public constructor(
         // so a failure splice synthesizes is shape-identical to one a real upstream sends, and our
         // sentence reaches the operator as a sentence. The detail key was the one shape neither
         // reader looked at, which is how our own words landed in his transcript as braces.
-        val body = buildJsonObject {
-            put("type", "error")
-            putJsonObject("error") {
-                put("type", "rate_limit_error")
-                put("message", detail)
-            }
-        }.toString()
+        // V4-102: the same envelope the gateway sends, built by the same builder in core. This is
+        // the site that made the builder live in core rather than in the gateway's wire package —
+        // provider-spi cannot import :gateway, so our own fail-fast body was free to drift from the
+        // shape the classifier reads. It no longer can.
+        val body = ErrorEnvelope.of("rate_limit_error", detail).toString()
         throw UpstreamFailed(body, RATE_LIMITED)
     }
 

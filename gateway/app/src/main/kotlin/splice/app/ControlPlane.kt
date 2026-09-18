@@ -16,7 +16,9 @@ import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
 import splice.control.TurnPathStalled
 import splice.control.mcp.McpHost
+import splice.control.mcp.McpHostConfig
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.ClaudeConfigMaterializer
@@ -30,6 +32,7 @@ import splice.core.version.ClientVersionTracker
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
     private val statePaths: StatePaths,
@@ -76,6 +79,12 @@ internal class ControlPlane(
         headCount: Int,
         turnPathStalled: TurnPathStalled,
     ): ControlServer? {
+        // Knob.DEBUG is the daemon-wide verbose-logging switch (env CLAUDEX_DEBUG / CODEX_PROXY_DEBUG):
+        // when it is on, the daemon marks its own log so the extra verbosity can be told apart. This
+        // is the one production read of the knob — the accessor had no consumer before V4-110.
+        if (config.getConfig().debug) {
+            log("[daemon] debug logging enabled\n")
+        }
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = McpSharing(
             enabled = mcpHosting.enabled,
@@ -83,7 +92,7 @@ internal class ControlPlane(
             endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
             bearer = McpAccessKey(mgmtKey::get),
         )
-        val mcpHost = McpHost(sharing, McpGlobalRead(home, log), log = log)
+        val mcpHost = McpHost(sharing, McpGlobalRead(home, log), config = mcpHostConfig(), log = log)
         val srv = ControlServer(
             controlPort,
             heads,
@@ -119,4 +128,19 @@ internal class ControlPlane(
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
     private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
         heads.entries.firstOrNull { it.value.launchSpec?.port == port }?.key
+
+    /** V4-110: the shared MCP host's four lifecycle values, read from the knob layer (daemon-global).
+     *  Absent knobs keep their declared defaults — the map is always seeded by the merge, so each
+     *  read is a normalized Long. The McpHostConfig defaults are the same numbers, kept in one place
+     *  (the Knob enum) rather than restated here. */
+    private fun mcpHostConfig(): McpHostConfig {
+        val m = config.getConfig().asMap()
+        fun ms(knob: Knob): Long = (m[knob.key] as? Long) ?: (knob.default as Long)
+        return McpHostConfig(
+            idleTimeout = ms(Knob.MCP_IDLE_TIMEOUT_MS).milliseconds,
+            maxServers = ms(Knob.MCP_MAX_SERVERS).toInt(),
+            requestTimeout = ms(Knob.MCP_REQUEST_TIMEOUT_MS).milliseconds,
+            initializeTimeout = ms(Knob.MCP_INITIALIZE_TIMEOUT_MS).milliseconds,
+        )
+    }
 }

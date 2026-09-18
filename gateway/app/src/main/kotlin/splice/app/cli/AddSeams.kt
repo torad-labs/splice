@@ -18,6 +18,7 @@ internal class ConsolePrompter : AddPrompter {
     override fun invoke(question: String, default: String): String {
         if (System.console() == null) return default
         print("$question ${if (default.isEmpty()) "" else "[$default] "}")
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a stdin read that fails is indistinguishable from an empty line, and both mean 'take the default' — the next line states exactly that.
         val line = Cancellables.runCatchingCancellable { readlnOrNull()?.trim() }.getOrNull()
         return line?.ifEmpty { default } ?: default
     }

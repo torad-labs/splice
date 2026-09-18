@@ -33,7 +33,6 @@ import splice.provider.muse.MuseOAuth
 import splice.provider.muse.MuseOAuthEndpoints
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.coroutines.cancellation.CancellationException
 
 internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
 
@@ -100,6 +99,7 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
 
     private fun museAuthJson(responseBody: String): String {
         val token = oauth.parseMuseAccessToken(responseBody) ?: return "{}"
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): optional extra fields only — the access token itself was already read by parseMuseAccessToken above, and the null path writes the token alone.
         val obj = Cancellables.runCatchingCancellable {
             json.parseToJsonElement(responseBody) as? JsonObject
         }.getOrNull()
@@ -131,15 +131,13 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
     }
 
     private suspend fun mintAttempt(access: String): MuseMintAttempt? {
-        val outcome = runCatching { mint(access, MuseMintMode.ONBOARD) }
+        // runCatchingBestEffort reports EVERY non-cancellation, non-Error throwable and leaves the
+        // already-persisted credential standing (RETRY DEFAULT IS TOTAL in miniature): the mint is
+        // best-effort after persist, so an IllegalStateException from provider code must not abort
+        // the login the way the V4-112 narrowing to runCatchingCancellable did.
+        val outcome = Cancellables.runCatchingBestEffort { mint(access, MuseMintMode.ONBOARD) }
         val failure = outcome.exceptionOrNull() ?: return outcome.getOrThrow()
-        when (failure) {
-            is CancellationException -> throw failure
-            is Error -> throw failure
-            is java.io.IOException ->
-                println("splice: muse key mint failed: ${SafeFailureText.render(failure)}")
-            else -> println("splice: muse key mint failed: ${SafeFailureText.render(failure)}")
-        }
+        println("splice: muse key mint failed: ${SafeFailureText.render(failure)}")
         return null
     }
 
@@ -170,6 +168,7 @@ internal class LoginMuse(private val mint: MuseKeyMintCall = MuseRefresh()) {
         return accountFiles.poolDir(account.kind, authPath).resolve("$label.json")
     }
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): an absent or unparsable account file is the normal pre-login state; every caller treats the null as 'no stored account' and says so.
     private fun readObject(path: Path): JsonObject? = Cancellables.runCatchingCancellable {
         json.parseToJsonElement(Files.readString(path)) as? JsonObject
     }.getOrNull()

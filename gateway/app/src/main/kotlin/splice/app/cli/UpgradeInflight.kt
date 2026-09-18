@@ -4,11 +4,12 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.net.ConnectException
@@ -77,10 +78,10 @@ internal class JdkUpgradeInflight(
     private fun counted(body: String): InflightRead {
         val heads = json.parseToJsonElement(body).jsonObject.getValue("heads").jsonArray.map { it.jsonObject }
         val counts = heads.map { head ->
-            head["gate"]?.jsonObject?.get("inflight")?.jsonPrimitive?.content?.toIntOrNull()
+            JsonScalars.str(head["gate"] as? JsonObject, "inflight")?.toIntOrNull()
         }
         val missing = heads.filterIndexed { i, _ -> counts[i] == null }
-            .map { it["key"]?.jsonPrimitive?.content ?: "?" }
+            .map { JsonScalars.str(it, "key") ?: "?" }
         return if (missing.isEmpty()) {
             InflightRead.Count(counts.sumOf { it ?: 0 })
         } else {

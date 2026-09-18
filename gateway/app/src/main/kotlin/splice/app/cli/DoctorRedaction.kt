@@ -11,6 +11,7 @@
 // e-mail addresses and UUID-shaped ids are masked, the home directory reads as ~.
 package splice.app.cli
 
+import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.net.URI
 import java.nio.file.Path
@@ -23,6 +24,10 @@ private val ALLOWED_PATH_PREFIXES = listOf(
     "~/.config/splice", "~/.local/share/splice", "~/.local/bin", "~/.cache/splice",
     "~/.claude", "~/.lmstudio", "~/.ollama", "/usr", "/etc", "/api", "/health", "/v1", "/launch", "/statusline",
 )
+
+/** What [DoctorRedaction.host] reports for a URL that does not parse — the outcome the parse
+ *  failure is classified into, since the URL itself is never echoed. */
+private const val UNPARSABLE_HOST = "<unparsable>"
 
 internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = emptyList()) {
     private val events = DoctorLogEvents()
@@ -74,7 +79,11 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
      *  through the same shape pass as every other string: a key- or UUID-shaped label (a per-tenant
      *  endpoint) is masked like the token it is (review 2026-09-14). */
     fun host(url: String): String =
-        runCatching { URI(url).host }.getOrNull()?.takeIf { it.isNotBlank() }?.let(::text) ?: "<unparsable>"
+        Cancellables.runCatchingCancellable { URI.create(url).host }
+            .fold(
+                onSuccess = { host -> host?.takeIf { it.isNotBlank() }?.let(::text) ?: UNPARSABLE_HOST },
+                onFailure = { UNPARSABLE_HOST },
+            )
 
     /** Daemon EVENTS only, each reduced to its structure; every other line is counted, not shown. */
     fun logLines(lines: List<String>, names: SafeNames): LogSelection = events.select(lines, names)

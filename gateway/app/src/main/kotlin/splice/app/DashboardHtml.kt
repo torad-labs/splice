@@ -25,8 +25,10 @@ internal class DashboardHtml {
                 ?.use { it.readText() }
         },
     ): DashboardPage = DashboardPage {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a two-source optional probe: the dist file is absent in a packaged install and the classpath copy is absent in a dev run, so each null is the normal case and the chain ends in a page that says the dashboard build is missing.
         Cancellables.runCatchingCancellable { Files.readString(distPath) }
             .getOrNull()
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): second half of the same two-source probe; absent in a dev run, and the chain below ends in a page that SAYS the dashboard build is missing.
             ?: Cancellables.runCatchingCancellable { classpathHtml() }.getOrNull()
             ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
     }

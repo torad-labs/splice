@@ -67,6 +67,7 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
     }
 
     private fun fileKeys(): List<Any?> = generations.map { generation ->
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): an absent generation has no fileKey; null is the normal reading and rotation is judged by comparing the SAME two reads before and after, so a null on both passes correctly reports 'no rotation'.
         Cancellables.runCatchingCancellable {
             Files.getAttribute(generation, "fileKey")
         }.getOrNull()
@@ -149,6 +150,7 @@ public class PerfRowsFileSource(private val file: Path) : PerfRowsSource {
         )
 
         private fun parse(line: String): JsonObject? =
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): one malformed row in a live-appended JSONL is normal; whole-file read failures are already routed into Scan.errors -> readError by readAll() above.
             Cancellables.runCatchingCancellable { json.parseToJsonElement(line) as? JsonObject }.getOrNull()
 
         private fun timestamp(obj: JsonObject): Long? =

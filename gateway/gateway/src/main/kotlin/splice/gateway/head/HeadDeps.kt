@@ -39,61 +39,65 @@ public data class HeadDeps(
     /** Per-install bearer used by local Claude clients. Never use a source-known sentinel here. */
     val inferenceToken: String,
     val gate: InflightGate,
-    val shadow: ShadowClassifier,
-    val compactStats: CompactStats,
-    val usageStore: UsageStore,
-    val perfStats: PerfStats,
-    /** Hourly quota rollup (the burn page's input). Nullable so a head assembled without it (tests,
-     *  embedders) simply records no economics rather than needing a stub store. */
-    val economicsStore: EconomicsStore? = null,
-    /** The head's quota windows: fed by upstream rounds and the app-side poller, stamped onto
-     *  every client response as the unified rate-limit headers Claude Code draws its bars from.
-     *  Null = a head that neither observes nor emits them (tests, and nothing else). */
-    val quota: QuotaTracker? = null,
-    /** OAuth-only pool policy is head-local; account auth/quota/cooldowns may be shared by kind. */
-    val accountPool: AccountPool? = null,
-    val accountQuotas: Map<String, QuotaTracker> = emptyMap(),
-    /** The window each Claude Code session actually runs with, learned from its status-line posts
-     *  (the control plane records; the usage payload reads). One per head, shared with ManagedHead. */
-    val clientWindows: ClientWindows = ClientWindows(),
+    /** WHAT THE HEAD STORES (V4-105 item 1): everything it writes observations into. */
+    val stores: HeadStores,
+    /** WHICH ACCOUNT A TURN SPENDS: the quota trackers, and the pool that decides eligibility. */
+    val quotaBundle: HeadQuota,
+    /** THE SUBSTITUTABLE SEAMS: exactly what a deterministic test replaces, which is why they are
+     *  one bundle — a seam is one port for the same reason. */
+    val seams: HeadSeams,
+    /** READ-ONCE VALUES: nothing here is derived from a turn. */
+    val policy: HeadPolicy,
     val compactionTail: CompactionTail = CompactionTail(),
-    /** V4-36: this head's standing system prompt, resolved by HeadServerFactory from its own
-     *  [splice.core.topology.HeadConfig] at head construction. The default resolves nothing, so a
-     *  head that configures no prompt keeps today's request bytes exactly. */
-    val systemPrompt: HeadSystemPrompt = HeadSystemPrompt(),
-    /** Daemon-wide Claude Code version observations; production injects one instance into every head. */
-    val clientVersions: ClientVersionTracker = ClientVersionTracker(),
     val log: LogSink,
-    val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
-    /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.
-     *  [waiter] paces HeadServer's bounded stop-drain poll; [ticker] paces TurnDriver's client
-     *  keepalive pinger. Both are named ports rather than a bare `delay`, so a head test can drive
-     *  a drain or a ping cadence deterministically instead of sleeping through it. */
-    val waiter: Waiter = ProcessWaiter(),
-    val ticker: Ticker = ProcessTicker(),
-    val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
-    val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
-    val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
-    // Operator-locked off: provider-native reasoning may display, but splice never mirrors it.
-    val mirrorReasoning: Boolean = false,
-    /** splice's status line on a turn that has gone quiet (TurnProgressLine). Distinct from
-     *  [mirrorReasoning], which is locked off because it authors a "[reasoning summary]" TEXT block
-     *  into the transcript: this writes no summary and claims nothing about the model's reasoning,
-     *  only about the wait itself, and it is one TOML line to turn off. */
-    val progressLine: Boolean = true,
-    /** TRUE only for a head whose auth kind is `client` (campaign claude-head): splice holds no
-     *  credential for it, so the caller's own auth headers are forwarded upstream and the
-     *  mgmt-key front door is bypassed. FALSE for every other head, which keeps enforcing it. */
-    val forwardClientAuth: Boolean = false,
 ) {
     /** The single resolver for which quota tracker a turn reads (V4-99): the SELECTED account's
      *  tracker, else the primary's. A body property, not a constructor param, so it is not part of
      *  the data class's equals/copy — it is a derived collaborator, not a value. */
-    internal val turnQuota: TurnQuota = TurnQuota(accountPool, accountQuotas, quota)
+    internal val turnQuota: TurnQuota =
+        TurnQuota(quotaBundle.accountPool, quotaBundle.accountQuotas, quotaBundle.quota)
 
     init {
         require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
-        require(requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }
-        require(!mirrorReasoning) { "mirrorReasoning is operator-locked off" }
+        require(policy.requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }
+        require(!policy.mirrorReasoning) { "mirrorReasoning is operator-locked off" }
     }
+
+    /** Where the head writes what it observes. Grouped by ROLE — a bundle is a boundary, not a bag. */
+    public data class HeadStores(
+        val usageStore: UsageStore,
+        val perfStats: PerfStats,
+        val economicsStore: EconomicsStore?,
+        val compactStats: CompactStats,
+        val shadow: ShadowClassifier,
+        val clientWindows: ClientWindows,
+    )
+
+    /** Which account a turn spends, and the trackers that decide eligibility. */
+    public data class HeadQuota(
+        val quota: QuotaTracker?,
+        val accountPool: AccountPool?,
+        val accountQuotas: Map<String, QuotaTracker>,
+    )
+
+    /** The substitutable runtime seams. A test drives these instead of sleeping or reading a clock,
+     *  which is why they are one bundle: they are the things a deterministic test REPLACES. */
+    public data class HeadSeams(
+        val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+        val waiter: Waiter = ProcessWaiter(),
+        val ticker: Ticker = ProcessTicker(),
+        val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
+        val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    )
+
+    /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather
+     *  than state: an operator sets it and every turn reads the same answer. */
+    public data class HeadPolicy(
+        val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
+        val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
+        val mirrorReasoning: Boolean = false,
+        val progressLine: Boolean = true,
+        val forwardClientAuth: Boolean = false,
+        val systemPrompt: HeadSystemPrompt = HeadSystemPrompt(),
+    )
 }

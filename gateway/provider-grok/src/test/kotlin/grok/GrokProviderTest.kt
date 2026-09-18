@@ -4,6 +4,7 @@
 // quirks pinned (session-id cache key, effort clamp, detailed summary for full thinking) and OAuth.
 package grok
 
+import splice.core.model.ClientWindows
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -94,6 +95,7 @@ class GrokProviderTest {
         Files.writeString(authFile, """{"tokens":{"access_token":"$access","refresh_token":"$refresh"}}""")
         return GrokAuthProvider(
             authPath = authFile,
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.Granted(GrokRefreshedTokens("refreshed-access", "refreshed-refresh")) },
         )
     }
@@ -104,16 +106,7 @@ class GrokProviderTest {
         head = HeadServer(
             provider = provider(oauthAuth(tmp)),
             listenPort = port,
-            deps = HeadDeps(
-                upstream = UpstreamClient(5_000, 30_000, 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("c.jsonl")),
-                usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
-                perfStats = PerfStats(tmp.resolve("p.jsonl")),
-                log = {},
-            ),
+            deps = testDeps(tmp),
         )
         head.start()
         awaitListening(port)
@@ -205,6 +198,7 @@ class GrokProviderTest {
         assertTrue(desc.fields.values.none { it.contains("access") })
         val missingFileAuth = GrokAuthProvider(
             authPath = dir.resolve("missing.json"),
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
         assertNull(missingFileAuth.credentials())
@@ -227,6 +221,7 @@ class GrokProviderTest {
         val drLog = mutableListOf<String>()
         val deniedAuth = GrokAuthProvider(
             authPath = lockedAuth,
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
             log = splice.core.util.LogSink { drLog += it },
         )
@@ -251,3 +246,24 @@ class GrokProviderTest {
         assertTrue(drLog.none { it.contains("NOT a logged-out state") }, "absence is not a read failure: $drLog")
     }
 }
+
+/** A LOCAL mirror of the :gateway fixture (campaign/v4105/HeadDepsFixture.kt), because that is in
+ *  another module test source set and this module cannot see it. Small on purpose: this module has
+ *  exactly one head shape, so there is nothing here to share with a second rig. */
+private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
+    upstream = UpstreamClient(5_000, 30_000, 2),
+    inferenceToken = "test-inference-token",
+    gate = InflightGate({ 0 }),
+    log = {},
+    stores = HeadDeps.HeadStores(
+        usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
+        perfStats = PerfStats(tmp.resolve("p.jsonl")),
+        economicsStore = null,
+        compactStats = CompactStats(tmp.resolve("c.jsonl")),
+        shadow = ShadowClassifier(log = {}),
+        clientWindows = ClientWindows(),
+    ),
+    quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap()),
+    seams = HeadDeps.HeadSeams(),
+    policy = HeadDeps.HeadPolicy(),
+)

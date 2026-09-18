@@ -9,6 +9,8 @@
 // perf-vs-rollup equality, in whichever order JUnit happened to run them.
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -42,8 +44,6 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.TurnDrive
 import splice.gateway.head.TurnTelemetry
@@ -52,7 +52,6 @@ import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.round.RunnerSignals
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.OutputClamp
-import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
@@ -109,17 +108,11 @@ private class EconomicsRig(tmp: Path) {
             configSummary = "detailed",
         ),
         listenPort = port,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1),
-            inferenceToken = "test-inference-token",
-            gate = InflightGate({ 0 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("perf.jsonl")),
-            economicsStore = economics,
             log = {},
-        ),
+        ).copy(stores = headStores(tmp, economics = economics)),
     )
 
     suspend fun start() {

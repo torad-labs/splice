@@ -1,3 +1,4 @@
+import campaign.v4105.headDeps
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -20,16 +21,12 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.version.ClientVersionTracker
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.AdmissionResponses
 import splice.gateway.head.AnthropicBodyParse
 import splice.gateway.head.ClientAuth
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.RequestBodyReader
 import splice.gateway.head.TurnPreparation
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -53,7 +50,7 @@ class ClientVersionObservationTest {
         val preparation = TurnPreparation(
             provider,
             deps,
-            RequestBodyReader(deps),
+            RequestBodyReader(deps.policy.requestReadTimeoutMs),
             AnthropicBodyParse(),
             ClientAuth(deps, AdmissionResponses()),
         )
@@ -99,16 +96,12 @@ class ClientVersionObservationTest {
         configSummary = "detailed",
     )
 
-    private fun dependencies(tmp: Path, versions: ClientVersionTracker) = HeadDeps(
+    private fun dependencies(tmp: Path, versions: ClientVersionTracker) = headDeps(
+        tmp = tmp,
         upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
-        inferenceToken = "test-inference-token",
         gate = InflightGate({ 1 }),
-        shadow = ShadowClassifier(log = {}),
-        compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-        usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-        perfStats = PerfStats(tmp.resolve("perf.jsonl")),
-        clientVersions = versions,
         log = {},
+        seams = HeadDeps.HeadSeams(clientVersions = versions),
     )
 }
 

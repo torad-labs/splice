@@ -8,6 +8,8 @@
 // section the continuation round re-titles reaches the client exactly once (review of #58).
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -38,12 +40,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.FoldConfig
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -109,14 +106,9 @@ class HeadServerFoldTest {
         head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = {},
             ),
         )
@@ -242,16 +234,12 @@ class HeadServerFoldTest {
             configSummary = "detailed",
         ),
         listenPort = capPort,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 20_000, maxRetries = 1),
-            inferenceToken = "test-inference-token",
             gate = gate,
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("cap-compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("cap-usage.json"), tmp.resolve("cap-ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("cap-perf.jsonl")),
             log = log,
-        ),
+        ).copy(stores = headStores(tmp, suffix = "-cap")),
     )
 
     /** DR-7's acceptance rig: a SHORT streamIdle (1s) with generous firstByte and totalCap, so the
@@ -276,16 +264,11 @@ class HeadServerFoldTest {
             foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         ),
         listenPort = stallPort,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 60_000, maxRetries = 2),
-            inferenceToken = "test-inference-token",
-            gate = InflightGate({ 0 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("stall-compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("stall-usage.json"), tmp.resolve("stall-ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("stall-perf.jsonl")),
             log = {},
-        ),
+        ).copy(stores = headStores(tmp, suffix = "-stall")),
     )
 
     // DR-7, THE acceptance wall. A round that streams reasoning and then stalls mid-part used to

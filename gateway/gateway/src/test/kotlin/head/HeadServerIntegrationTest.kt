@@ -5,6 +5,8 @@
 // that arms the idle/prefill/refresh scenarios the reader+machine suite deferred.
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -35,13 +37,9 @@ import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
-import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
@@ -105,16 +103,15 @@ class HeadServerIntegrationTest {
         head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = { synchronized(logs) { logs.add(it) } }),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = { synchronized(logs) { logs.add(it) } },
-                maxRequestBytes = 1_024,
+                policy = HeadDeps.HeadPolicy(maxRequestBytes = 1_024),
+            ).copy(
+                // The shadow classifier's own log rides the SAME sink the assertions read, so it
+                // cannot come from the fixture's silent default.
+                stores = headStores(tmp).copy(shadow = ShadowClassifier(log = { synchronized(logs) { logs.add(it) } })),
             ),
         )
         head.start()

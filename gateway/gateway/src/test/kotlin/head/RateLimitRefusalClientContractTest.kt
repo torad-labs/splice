@@ -10,6 +10,7 @@
 // proves nothing at all.
 package head
 
+import campaign.v4105.headDeps
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -37,13 +38,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
-import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -86,14 +82,10 @@ private class RefusalRig(tmp: Path) {
             configSummary = "detailed",
         ),
         listenPort = port,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = upstream,
-            inferenceToken = "test-inference-token",
             gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("perf.jsonl")),
             log = {},
         ),
     )

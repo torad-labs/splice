@@ -1,3 +1,6 @@
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
+import campaign.v4105.quotaFor
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -25,19 +28,15 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
-import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexProvider
 import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.AccountResetText
-import splice.spi.InflightGate
 import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.PoolAccount
 import splice.spi.ProcessElapsedNow
@@ -354,27 +353,19 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
     private val head = HeadServer(
         provider = provider(),
         listenPort = port,
-        deps = HeadDeps(
+        // V4-99: the primary tracker is LOAD-BEARING and it is primaryQuota, never null. Without it
+        // HeadDeps.turnQuota gets primary = null, so `label ?: primary` and `primary ?: label` are
+        // the same expression and the two precedence tests below could not fail for the reason their
+        // own KDoc claims. Measured: with it absent, inverting TurnQuota.forSession survived the
+        // whole :gateway suite. The primary must be a DIFFERENT tracker from the selected account's
+        // or the swap stays invisible.
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000L, totalTimeoutMs = 30_000L, maxRetries = 2),
-            inferenceToken = "test-inference-token",
-            gate = InflightGate({ 0 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-            perfStats = perfStats,
             log = logs::add,
-            maxRequestBytes = 2_048,
-            accountPool = pool,
-            accountQuotas = mapOf("primary" to primaryQuota, "backup" to backupQuota),
-            // V4-99: the primary tracker, and it is LOAD-BEARING. Without it HeadDeps.turnQuota
-            // gets primary = null, so `label ?: primary` and `primary ?: label` are the same
-            // expression and the two precedence tests below could not fail for the reason their
-            // own KDoc claims ("Mutation: restoring deps.quota returns the primary's reset and this
-            // fails"). Measured: with this line absent, inverting TurnQuota.forSession survived the
-            // whole :gateway suite. The primary must be a DIFFERENT tracker from the selected
-            // account's or the swap stays invisible, which is why it is primaryQuota and not null.
-            quota = primaryQuota,
-        ),
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = 2_048),
+            quota = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
+        ).copy(stores = headStores(tmp).copy(perfStats = perfStats)),
     )
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }

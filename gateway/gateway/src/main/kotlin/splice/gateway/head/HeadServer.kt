@@ -48,15 +48,15 @@ public class HeadServer(
     private val window = AdmissionWindow()
     private val responses = AdmissionResponses()
     private val clientAuth = ClientAuth(deps, responses)
-    private val bodyReader = RequestBodyReader(deps)
+    private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()
     private val admissionGate = AdmissionGate(provider, deps, window, responses)
-    private val diagnostics = HeadDiagnostics(provider, listenPort, deps, driver)
+    private val diagnostics = HeadDiagnostics(provider, listenPort, deps.gate, driver)
     private val admission = HeadAdmission(
         deps,
         clientAuth,
         admissionGate,
-        AdmissionTelemetry(deps.gate, deps.clock),
+        AdmissionTelemetry(deps.gate, deps.seams.clock),
         TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth, compactionReplay),
         responses,
         driver,
@@ -70,7 +70,7 @@ public class HeadServer(
         bodyParse,
         responses,
     )
-    private val engine = HeadEngine(provider, listenPort, deps, diagnostics, clientAuth, admission, countTokens)
+    private val engine = HeadEngine(provider, listenPort, deps.log, diagnostics, clientAuth, admission, countTokens)
 
     private val lifecycle = Mutex()
 
@@ -97,7 +97,7 @@ public class HeadServer(
         driver.resetHealth()
         // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
         // turns bypass the client-owned legacy cooldown, so reset every account instead.
-        deps.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
+        deps.quotaBundle.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
     }
@@ -110,7 +110,7 @@ public class HeadServer(
         val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
         var inflight = gate.snapshot().inflight
         while (inflight > 0 && System.nanoTime() < deadlineNs) {
-            deps.waiter.wait(STOP_DRAIN_POLL_MS)
+            deps.seams.waiter.wait(STOP_DRAIN_POLL_MS)
             inflight = gate.snapshot().inflight
         }
         if (inflight > 0) {
@@ -123,7 +123,7 @@ public class HeadServer(
         driver.stopDetached()
         engine.stop()
         provider.onHeadStop()
-        deps.usageStore.flushNow()
-        deps.economicsStore?.flushNow()
+        deps.stores.usageStore.flushNow()
+        deps.stores.economicsStore?.flushNow()
     }
 }

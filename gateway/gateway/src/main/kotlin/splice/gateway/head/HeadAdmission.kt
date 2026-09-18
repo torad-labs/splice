@@ -35,7 +35,7 @@ internal class HeadAdmission(
     suspend fun handleMessages(call: ApplicationCall) {
         if (!clientAuth.authorize(call) || !admission.acceptingOrRespond(call)) return
         val perf = telemetry.begin()
-        val t0 = deps.clock()
+        val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
         telemetry.markAdmitted(perf)
         // A detached compaction takes the slot with it (TurnStreamer.driveDetachable): the drive
@@ -242,7 +242,7 @@ internal class HeadAdmission(
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
         if (refuseIfRateLimited(call, prepared, admitted)) return
-        val account = when (val selection = deps.accountPool?.select(prepared.built.meta.sessionId)) {
+        val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {

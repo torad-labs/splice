@@ -141,7 +141,7 @@
   /* ---------- SCALE (theme-agnostic; both sets carry the same rungs) ---------- */
   --space-1:2px; --space-2:4px; --space-3:8px; --space-4:12px;
   --space-5:16px; --space-6:24px; --space-7:32px; --space-8:48px;
-  --text-1:11px; --text-2:12px; --text-3:13px; --text-4:15px; --text-5:18px; --text-6:22px;
+  --text-1:12px; --text-2:14px; --text-3:16px; --text-4:18px; --text-5:20px; --text-6:23px;
 
   --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
   --ease-out:cubic-bezier(.22,1,.36,1);
@@ -211,7 +211,7 @@
   /* ---------- SCALE (same rungs as the room) ---------- */
   --space-1:2px; --space-2:4px; --space-3:8px; --space-4:12px;
   --space-5:16px; --space-6:24px; --space-7:32px; --space-8:48px;
-  --text-1:11px; --text-2:12px; --text-3:13px; --text-4:15px; --text-5:18px; --text-6:22px;
+  --text-1:12px; --text-2:14px; --text-3:16px; --text-4:18px; --text-5:20px; --text-6:23px;
 
   --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
   --ease-out:cubic-bezier(.22,1,.36,1);

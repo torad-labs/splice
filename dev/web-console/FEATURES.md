@@ -489,7 +489,7 @@ Small, mostly read-only, all under the existing bearer guard.
 | `POST /api/teams/{id}/archive` | archive, keeping everything readable | team state |
 | `GET /api/projects/{id}/files` | the project's instruction and memory files, per head, read-only | per-head config dirs |
 | `GET /api/events` | server-sent stream of head, turn, session and edge events, so gestures fire when things happen and not on the next poll; polling stays as the fallback and prints its age | new |
-| `GET /api/sessions/{id}/repo` (or a `repo` field on `/api/sessions`) | git root of `cwd`, cached, bounded to the trusted roots, worktrees folded into their shared repo | new resolver beside `StatuslineRenderer.safeGitCwd` |
+| `repo` and `team` FIELDS on every row of `GET /api/sessions` (decided 2026-09-18; the per-session detail route may repeat them) | git root of `cwd`, cached, bounded to the trusted roots, worktrees folded into their shared repo; `team` is the bound team id or null; the Sessions page groups the whole registry by repo and by team in one read | new resolver beside `StatuslineRenderer.safeGitCwd` |
 | `GET/PUT /api/teams`, `PUT /api/teams/{id}/sessions` | operator-defined teams and session assignment, in daemon state | new state file |
 | `GET /api/teams/{id}/economics` | turns, tokens, cost per team and per role | `PerfPayloads` join on `session` |
 | `GET/PUT /api/heads/{head}/capture` | opt-in body capture toggle and its store | new |

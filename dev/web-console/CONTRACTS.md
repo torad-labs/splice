@@ -33,7 +33,7 @@ Colors (name, role):
 | `--room-deep` | rail ground, one step darker than the room |
 | `--hairline`, `--hairline-strong` | the COLOR of hairline rails and rules (`--hair` stays the existing 1px width token, used by about twenty old rules; a rail is `border-top: var(--hair) solid var(--hairline)`) |
 | `--ink`, `--ink-mute`, `--ink-strong` | text on the room |
-| `--strip` | strip paper (dark: the comp's strips, measured `#DDD8C6`..`#DFD9C8`; light: the comp's `#F6F6F3`) |
+| `--strip` | strip paper. Dark: the comp's strips, measured `#DDD8C6`..`#DFD9C8`. Light: NOT a colour, two constraints — cream cast `R - B` within a step of `+24`, and `L <= 242` so the paper can carry its own lit edge. (`#F6F6F3` stood here and was authored: only 232 of the comp's 1,572,864 pixels are within 6 of it, 0.015%. The comp's real paper is `#DED6C4`. The defect was not lightness but the loss of the cream — R-B is +26 in the comp, +24 in the dark token, and was +3 in the light one, so the light theme's strip had silently become white card.) |
 | `--strip-ink`, `--strip-ink-mute` | text on a strip |
 | `--strip-field`, `--strip-field-line` | boxed field fill and its box line |
 | `--edge-green`, `--edge-amber`, `--edge-red`, `--edge-grey` | holder edge states |
@@ -52,6 +52,16 @@ B12 then read the build against this prose, called the room "near-black, not gra
 withdrawn on remeasurement: the build sits 0.98 of a luminance point from the comp, and the
 CONTRACT was the thing that disagreed. When a token and this table diverge, sample the comp and
 correct whichever one the comp contradicts.
+
+AND FOR THE LIGHT THEME THERE IS NO COMP TO SAMPLE, so a light value is written as a RELATIONSHIP to a
+measured dark one and never as a colour of its own. All three comps of record are dark; the only light-ground
+artifacts in the tree are under `decision/`, which comp-spec excludes because they are the REJECTED incumbent —
+`decision/canon.png` is the blue-accent, pill-button, icon-nav look this world replaced. It is an anti-reference.
+Headroom is the reason this is a rule and not a preference: a dark plane has the whole range above it and a light
+plane has almost none (paper has 216.7 L below it in dark and 9.2 above it in light), so a material carried across
+unchanged clips. Magnitude comes from the comp, sign comes from headroom, and the value is written as an alpha or a
+`color-mix` against its own ground — never a hex, which fixes the sign, and never a `filter`, which fixes the
+direction. See campaign law 26.
 
 Old tokens (`--paper-0`, `--ink-900`, `--surface`, `--font-mono`, ...) stay defined until the
 finish row deletes the last consumer. New code never uses them.

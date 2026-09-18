@@ -48,6 +48,13 @@
   min-width: 0;
 }
 
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. Measured before this: the widest strip left 515 px of bare bay to its right. */
+.myx-mcp-bays .myx-strip { width: 100%; }
+.myx-mcp-bays .myx-sfield { flex: 1 1 auto; }
+
 .myx-mcp-bays > * { overflow-x: auto; }
 
 .myx-mcp-detail {

@@ -31,7 +31,7 @@ Colors (name, role):
 |---|---|
 | `--room` | page ground (dark: graphite `#1B1D1C` class; light: paper) |
 | `--room-deep` | rail ground, one step darker than the room |
-| `--hair`, `--hair-strong` | hairline rails and rules |
+| `--hairline`, `--hairline-strong` | the COLOR of hairline rails and rules (`--hair` stays the existing 1px width token, used by about twenty old rules; a rail is `border-top: var(--hair) solid var(--hairline)`) |
 | `--ink`, `--ink-mute`, `--ink-strong` | text on the room |
 | `--strip` | strip paper (dark theme: pale `#ECEAE2` class; light: white paper) |
 | `--strip-ink`, `--strip-ink-mute` | text on a strip |

@@ -162,27 +162,68 @@ function checkNoTypeTransform(files) {
   return record('no-type-transform', true, laundered.length === 0, detail);
 }
 
-/** One absence glyph, one meaning. Thirteen phrasings for "nothing here" is a rack nobody can
- *  scan, because the eye must read every cell to learn it says nothing. */
+/** One absence glyph, one meaning, and a denominator that is the sum of what it enumerates.
+ *
+ *  WHAT THIS COUNTS, and the counting is the point (M1-74). It counts DISPLAY WORDS - the words a
+ *  reader sees - and reports the three kinds of quoted declaration that are NOT display words on
+ *  their own line, because a warning that folds them together asks every reader to re-derive the
+ *  classification from scratch:
+ *    a TYPE MEMBER       a word in a union the console prints as a label beside a figure
+ *    a WIRE VALUE        a value the DAEMON sends, compared against and never printed
+ *    a CSS KEYWORD       `none` on a style assignment, which is not language at all
+ *  A site is one of those when the line, or one of the three above it, carries the marker
+ *  `not-an-absence: <class>` or the older prose form `NOT AN ABSENCE PHRASE`. The classification
+ *  lives in the SOURCE, next to the site, where the person who has to classify it is already
+ *  reading - not in a list inside this file that would drift from the tree it describes.
+ *
+ *  THE TOTAL IS DERIVED, NEVER ASSERTED. The scan counts matches as it walks and the report sums
+ *  the per-word map afterwards; the two must agree, and a disagreement is a named failure rather
+ *  than a number nobody can reproduce. (This check printed 57 while its own counts summed to 48,
+ *  and that number was used to cut a row. The fix is that the printed total IS the sum.) */
 function checkAbsenceVocabulary(srcDir) {
   const PHRASES = /'(n\/r|none|unavailable|not reported(?: by provider)?|not built|not declared|not started|not running|no rates(?: declared)?|no fix offered|no turn in flight|ineligible|no window reported|not available|no data|unknown)'/g;
+  const MARKER = /(?:not-an-absence:\s*([a-z][a-z-]*)|NOT AN ABSENCE PHRASE)/i;
   const seen = new Map();
+  const noise = new Map();
+  let scanned = 0;
   const walk = (d) => {
     let ents; try { ents = fs.readdirSync(path.join(ROOTREF.root, d), { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const rel = path.join(d, e.name);
       if (e.isDirectory()) walk(rel);
       else if (/\.tsx?$/.test(e.name)) {
-        const t = readIf(rel) || '';
-        for (const m of t.matchAll(PHRASES)) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+        const lines = (readIf(rel) || '').split('\n');
+        lines.forEach((line, i) => {
+          for (const m of line.matchAll(PHRASES)) {
+            scanned += 1;
+            // Six lines of headroom: a note above a site is usually one or two lines, but a
+            // doc comment with a blank line and a closing brace between them is three or four.
+            const above = lines.slice(Math.max(0, i - 6), i + 1).join('\n');
+            const mark = above.match(MARKER);
+            if (mark === null) seen.set(m[1], (seen.get(m[1]) || 0) + 1);
+            else {
+              const kind = (mark[1] || 'annotated').trim();
+              noise.set(kind, (noise.get(kind) || 0) + 1);
+            }
+          }
+        });
       }
     }
   };
   walk(srcDir);
-  const distinct = [...seen.keys()];
-  const detail = `${distinct.length} distinct absence phrasings: `
-    + distinct.sort((a, b) => seen.get(b) - seen.get(a)).map((k) => `${k}(${seen.get(k)})`).join(' ');
-  return record('absence-vocabulary', false, distinct.length <= 2, detail);
+  const words = [...seen.entries()].sort((a, b) => b[1] - a[1]);
+  const enumerated = words.reduce((sum, [, n]) => sum + n, 0);
+  const noiseRows = [...noise.entries()].sort((a, b) => b[1] - a[1]);
+  const noiseTotal = noiseRows.reduce((sum, [, n]) => sum + n, 0);
+  const detail = () => `${words.length} display word(s): `
+    + words.map(([k, n]) => `${k}(${n})`).join(' ')
+    + ` · ${noiseTotal} quoted declaration(s) that are not display words: `
+    + (noiseRows.length === 0 ? 'none' : noiseRows.map(([k, n]) => `${k}(${n})`).join(' '));
+  if (scanned !== enumerated + noiseTotal) {
+    return record('absence-vocabulary', false, false,
+      `the scan counted ${scanned} site(s) and the report enumerates ${enumerated} display + ${noiseTotal} annotated = ${enumerated + noiseTotal}: the total is not the sum of its parts, so neither number can be trusted`);
+  }
+  return record('absence-vocabulary', false, words.length <= 2, detail());
 }
 
 // ---------------------------------------------------------------- capture checks (PNG only)

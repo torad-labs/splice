@@ -12,8 +12,11 @@ import { fmtDurationS } from '@shared/lib';
 import type { Edge } from '@shared/ui';
 import type { AccountRow, AccountWindow } from './types';
 
-/** What a window with no figure is called. The world's rule: never 0 (FEATURES 2.2, 4.5). */
-export const NOT_REPORTED = 'not reported by provider';
+/** What a window with no figure is called. The world's rule: never 0 (FEATURES 2.2, 4.5), and the
+ *  word is `unknown` - "we asked and were NOT TOLD" - which is the same fact this site used to spell
+ *  out in three words (M1-74). A second phrasing for one fact is how a console reaches eleven ways
+ *  of saying nothing is here. */
+export const NOT_REPORTED = 'unknown';
 
 /** The selector's real order (AccountPool.kt:101-112), as one printed sentence. */
 export const SELECTOR_ORDER_TEXT = 'primary then sticky then lowest 7-day used';

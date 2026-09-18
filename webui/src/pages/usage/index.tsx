@@ -132,6 +132,9 @@ function HeadCharts({ head, windowIndex, now, rates }: {
         <p className="myx-usage-figures">
           {/* The cache hit rate is a DIAGNOSTIC and the page says so: a 90%-cached prompt bills in
               full, so a high number here is not safety and must never be read as one. */}
+          {/* not-an-absence: type-member - `unavailable` here is a BASIS, printed beside the figure
+              it qualifies to say what kind of figure it is (shared/ui/types.ts). The census counts
+              the quoted declaration; a reader counts a word. */}
           <Figure value={read === null ? S.absent : `${Math.round(read * 100)}%`} unit="cache read" basis={read === null ? 'unavailable' : 'measured'} />
           <Figure value={per === null ? S.absent : fmtTokens(Math.round(per))} unit={S.perTurn} basis={per === null ? 'unavailable' : 'measured'} />
           <Figure value={amp === null ? S.absent : amp.toFixed(1)} unit={S.amplification} basis={amp === null ? 'unavailable' : 'measured'} />

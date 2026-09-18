@@ -47,8 +47,29 @@ function gitLs(...pathspec: string[]): string[] {
   return r.stdout.split("\n").map((s) => s.trim()).filter(Boolean).sort();
 }
 
+/** Tracked .py files THAT ACTUALLY EXIST.
+ *
+ *  The existsSync filter is not belt-and-braces; without it this census reports a
+ *  green that is structurally the two-lists-agreeing failure. Found by splice-builder2
+ *  on 2026-09-18, which refused to call its own conversion clean while it could not
+ *  explain the mechanism: it had deleted inf_02_every_law_walled.py, the burn-down
+ *  still carried the line, and this wall read a matching 87 / 87.
+ *
+ *  `git ls-files` enumerates what the INDEX tracks, and a file deleted in the worktree
+ *  but not yet staged is still tracked — `git status` calls it ` D`. So the deleted file
+ *  stayed in `measured`, matched its burn-down line, and the stale arm had nothing to
+ *  report. The wall was comparing the index against a list while the question it claims
+ *  to answer is about the FILESYSTEM.
+ *
+ *  Filtering to what exists makes the deletion visible the moment it happens rather than
+ *  when it is staged: the file leaves `measured`, its burn-down line becomes STALE, and
+ *  the wall says "remove the line" by name. That is the instruction a conversion needs
+ *  mid-flight, which is exactly when the old shape was silent.
+ *
+ *  The other three censuses were never exposed to this: invokers and the two caller
+ *  censuses all readFileSync and a missing file simply drops out. */
 function tracked(): string[] {
-  return gitLs("*.py");
+  return gitLs("*.py").filter((f) => existsSync(f));
 }
 
 /** THE SECOND CENSUS, and the wall was a lie without it.
@@ -245,7 +266,21 @@ function staleVerifies(): string[] {
       // burn-down only shrinks, so no row is ever permitted to bring a new .py into
       // existence, and a live verify naming one that is gone is unambiguously stale.
       for (const target of new Set(verify.match(/[A-Za-z0-9_./-]+\.py\b/g) ?? [])) {
-        if (!existsSync(target)) out.push(`${ledger} ${id} [${status}] -> ${target}`);
+        if (!existsSync(target)) out.push(`${ledger} ${id} [${status}] -> ${target} (file is gone)`);
+      }
+      // A verify names a RUNTIME as well as a path, and a conversion that updates only the path
+      // leaves a caller that looks migrated and cannot execute. Reported by splice-builder2 from
+      // its OWN slip inside the granted caller path: its first edit-verify wrote
+      // `python3 ...inf_02_every_law_walled.ts` — correct file, wrong interpreter. The missing-file
+      // arm above waves that through, because the file it names genuinely exists.
+      //
+      // Scoped to verify= fields rather than ledger text for a measured reason: across every
+      // tracked caller surface the raw-text form finds five mismatches and only one is real —
+      // the others are NOTES quoting a command, including builder2's own note recording this very
+      // mistake. A census that charges the write-up of a defect as the defect is not a census.
+      for (const [, runtime, target] of verify.matchAll(/(python3?|bun)\s+([A-Za-z0-9_./-]+\.(?:py|ts))/g)) {
+        const wrong = runtime.startsWith("python") ? target.endsWith(".ts") : target.endsWith(".py");
+        if (wrong) out.push(`${ledger} ${id} [${status}] -> ${runtime} ${target} (wrong runtime for that extension)`);
       }
     }
   }

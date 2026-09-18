@@ -54,9 +54,19 @@
   font-variation-settings: 'wdth' 62;
   /* The comp's grid starts at its own left edge, so the inset lives in the
      strip's edge column and the fields take none. Its labels sit at y13 and its
-     rule at y24, which is where the label's line box ends at this size. The
-     comp sets its strips smaller than the ladder's floor; the floor wins, so
-     the longest values run out of their columns rather than shrink below it. */
+     rule at y24, which is where the label's line box ends at this size.
+     THE TRADE IS STILL HERE AND THE REASON HAS CHANGED (M1-71). This said the
+     comp sets its strips smaller than the ladder's floor and the floor wins.
+     Measuring the comp's own plate says the opposite: its value ink band is 11
+     to 12 rows (lead-strip rows 38..48, lead-strip-2 rows 33..44) where
+     --text-2 renders a 9.66px cap, so the comp's strip type sits a step ABOVE
+     this rung rather than below it. What actually decides it is the plate's own
+     geometry: the columns are the comp's fixed percentages, so a value that
+     does not fit runs out of its column rather than the page reflowing.
+     Measured at 1536 on the hero: 10 of 99 value cells clip
+     (`~/.../grailseeker-b…`, `gs-backend-builder`, `building GS-41 don…`,
+     `claude-deepseek`) and the LABELS no longer do -- 4 of 79 before M1-64,
+     0 of 79 after. */
   /* The comp's label row is 4px deep, not 12: its rule sits 19px below the
      plate's top (lead-strip-2 measures it at row 19 of a plate that starts at
      0), and the label's line box ends where that rule is. */

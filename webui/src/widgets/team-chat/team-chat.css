@@ -1,0 +1,58 @@
+/* The team chat: a column of paper slips, one per hand-off, each a row of ruled cells the way the
+   comp's team-chat strips are drawn (team-board-b, right column). Not strips: see index.tsx. */
+.myx-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.myx-chat-title {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  font-weight: 400;
+  color: var(--ink);
+}
+.myx-chat-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.myx-chat-row {
+  display: flex;
+  align-items: stretch;
+  background: var(--strip);
+  color: var(--strip-ink);
+}
+.myx-chat-row > .myx-edge .myx-edge-label { display: none; }
+.myx-chat-row > .myx-edge .myx-edge-mark { width: var(--space-2); inset-block: 0; }
+.myx-chat-cells {
+  display: grid;
+  grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  column-gap: var(--space-3);
+}
+.myx-chat-cell { display: contents; }
+.myx-chat-cell dt {
+  grid-row: 1;
+  padding-block-end: var(--space-1);
+  border-bottom: var(--hair) dashed var(--strip-ink-mute);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
+.myx-chat-cell dd {
+  grid-row: 2;
+  margin: 0;
+  padding-block-start: var(--space-1);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.myx-chat-fig { font-family: var(--font-figure); font-variant-numeric: tabular-nums; }

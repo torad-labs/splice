@@ -122,3 +122,113 @@ export const heroBoard: TeamPayload = {
 
 /** The hand-off the board draws between the bays: the newest message edge. */
 export const heroHandoff: TeamMessage = MESSAGES[2];
+
+// ---- the other two views (comps team-board-b and team-board-c) ---------------------------------
+//
+// Same team, same fixture file, its own payload: the hero fixture IS comp-a and must keep printing
+// comp-a's words, so the by-role and timeline views carry the words THEIR comps print instead of
+// editing the hero's. Every string below is read off team-board-b.png or team-board-c.png.
+//
+// TWO PLACES THE COMPS DISAGREE WITH THEMSELVES, resolved by deriving rather than by copying, and
+// named here so the next reader does not take it for a slip:
+//   1. comp-b draws a reviewer bay with no session while its header still reads `3 slots, 3 bound`.
+//      A reviewer slot IS a slot, so this fixture declares four and the header derives
+//      `4 slots, 3 bound` from the data it is given.
+//   2. comp-c's cost table says the builder role took 8 turns while its own bar chart gives
+//      gs-backend-builder 8 and gs-backend-builder2 5. The two cannot both be read off one set of
+//      turns, so the TOKEN sums are the comp's exactly and the turn counts are the bars'.
+import type { TeamTurn, TeamEconomicsSession, TeamViewData } from '@widgets/team-board';
+
+const VIEW_TEAM: TeamRow = {
+  ...TEAM,
+  slots: [
+    ...TEAM.slots.slice(0, 2),
+    { role: 'builder', head: 'claude-deepseek', model: 'deepseek-flash', account: 'acct-a', lead: false, session: 'gs-backend-builder2' },
+    // comp-b: the reviewer bay is empty and names the head an operator would launch into it.
+    { role: 'reviewer', head: 'claudex', model: null, account: null, lead: false, session: null },
+  ],
+};
+
+const VIEW_MEMBERS: TeamMemberRow[] = [
+  MEMBERS[0],
+  { ...MEMBERS[1], state: 'GS-41 done' },
+  {
+    ...MEMBERS[1],
+    name: 'gs-backend-builder2',
+    state: 'reading GS-42',
+    sessionId: 's-9d04c3e7',
+    created: '13:59:40',
+    uptime: '2m 25s',
+    lastTurn: '14:00',
+    turns: 5,
+    tokensIn: 72883,
+    tokensOut: 28931,
+    costEst: 0.141,
+    scratchpadKb: 2.4,
+    diff: '+61 -4',
+  },
+];
+
+const VIEW_ACTIVITY: TeamActivity[] = [
+  { time: '13:30', member: 'gs-backend-claude', activity: 'editing PromoterLedger.kt', detail: 'src/ledger/PromoterLedger.kt:142' },
+  { time: '13:30', member: 'gs-backend-builder', activity: 'searching for fly_raw', detail: 'rg -n "fly_raw"' },
+  { time: '13:30', member: 'gs-backend-builder2', activity: 'reading MANIFEST.toml', detail: 'MANIFEST.toml' },
+  { time: '13:34', member: 'gs-backend-builder2', activity: 'reading MANIFEST.toml', detail: 'MANIFEST.toml' },
+  { time: '13:39', member: 'gs-backend-claude', activity: 'running checks/gate.sh', detail: 'checks/gate.sh --all' },
+  { time: '13:39', member: 'gs-backend-builder', activity: 'editing PromoterLedger.kt', detail: 'src/ledger/PromoterLedger.kt:142' },
+  { time: '13:40', member: 'gs-backend-builder2', activity: 'reading MANIFEST.toml', detail: 'MANIFEST.toml' },
+  { time: '13:44', member: 'gs-backend-builder2', activity: 'searching for fly_raw', detail: 'rg -n "fly_raw"' },
+  { time: '13:50', member: 'gs-backend-claude', activity: 'reading MANIFEST.toml', detail: 'MANIFEST.toml' },
+  { time: '13:50', member: 'gs-backend-builder', activity: 'running checks/gate.sh', detail: 'checks/gate.sh --all' },
+  { time: '13:50', member: 'gs-backend-builder2', activity: 'reading MANIFEST.toml', detail: 'MANIFEST.toml' },
+  { time: '13:55', member: 'gs-backend-claude', activity: 'messaging a peer session', detail: 'to gs-backend-builder2' },
+  { time: '13:55', member: 'gs-backend-builder', activity: 'running checks/gate.sh', detail: 'checks/gate.sh --all' },
+  { time: '14:00', member: 'gs-backend-claude', activity: 'editing PromoterLedger.kt', detail: 'src/ledger/PromoterLedger.kt:142' },
+  { time: '14:00', member: 'gs-backend-builder', activity: 'editing PromoterLedger.kt', detail: 'src/ledger/PromoterLedger.kt:142' },
+  { time: '14:00', member: 'gs-backend-builder2', activity: 'reading MANIFEST.toml', detail: 'MANIFEST.toml' },
+];
+
+const VIEW_TURNS: TeamTurn[] = [
+  { id: 't-1821', member: 'gs-backend-claude', time: '13:33', duration: '14m 12s', input: 42781, output: 18243, live: false },
+  { id: 't-1822', member: 'gs-backend-builder', time: '13:34', duration: '11m 07s', input: 31209, output: 12884, live: false },
+  { id: 't-1823', member: 'gs-backend-claude', time: '13:43', duration: '16m 30s', input: 48923, output: 20112, live: false },
+  { id: 't-1824', member: 'gs-backend-builder', time: '13:44', duration: '19m 55s', input: 61332, output: 24991, live: false },
+  { id: 't-1825', member: 'gs-backend-builder2', time: '13:53', duration: '14m 32s', input: 37775, output: 15421, live: false },
+  { id: 't-1826', member: 'gs-backend-claude', time: '14:00', duration: '2m 11s', input: 6412, output: 2301, live: true },
+  { id: 't-1827', member: 'gs-backend-builder', time: '14:00', duration: '1m 37s', input: 4812, output: 1874, live: true },
+  { id: 't-1828', member: 'gs-backend-builder2', time: '13:59', duration: '3m 05s', input: 7923, output: 2945, live: true },
+];
+
+/** The day's turns summed per session, as GET /api/teams/{id}/economics will serve them. The ids
+ *  are the TURN LOG's, longer than the board's printed session id, which is what the panel's
+ *  8-character prefix join is for. */
+const VIEW_ECONOMICS: TeamEconomicsSession[] = [
+  { session: 's-1a7c9e2d41b0', input: 132116, output: 56656, turns: 6, oldestTurnId: 't-1801', oldestTurnAt: '09:14' },
+  { session: 's-5f3b8a11c7de', input: 121400, output: 49300, turns: 8, oldestTurnId: 't-1804', oldestTurnAt: '09:21' },
+  { session: 's-9d04c3e7aa52', input: 72883, output: 28931, turns: 5, oldestTurnId: 't-1817', oldestTurnAt: '13:27' },
+];
+
+/** Turns in flight, sampled minute by minute over the hour comp-b's chart draws (13:02 to 14:02). */
+const LAST_HOUR = [
+  0, 5, 5, 8, 10, 18, 20, 20, 31, 31, 31, 45, 47, 47, 40, 37, 37, 37, 37, 37,
+  37, 37, 37, 37, 37, 28, 17, 12, 12, 12, 15, 15, 15, 15, 15, 15, 15, 15, 17, 22,
+  23, 23, 23, 30, 30, 30, 36, 39, 42, 43, 43, 43, 43, 45, 48, 50, 53, 53, 53, 53,
+  50,
+].map((turns, index) => ({ at: `${13 + Math.floor((2 + index) / 60)}:${String((2 + index) % 60).padStart(2, '0')}`, turns }));
+
+/** The board the by-role and timeline views draw. */
+export const viewsBoard: TeamPayload = {
+  team: VIEW_TEAM,
+  members: VIEW_MEMBERS,
+  messages: MESSAGES,
+  activity: VIEW_ACTIVITY,
+  coldCacheHint: false,
+};
+
+/** What those views read beyond the board: turns, the day's economics, and the hour's samples. */
+export const viewsData: TeamViewData = {
+  turns: VIEW_TURNS,
+  economics: VIEW_ECONOMICS,
+  lastHour: LAST_HOUR,
+  now: '14:02',
+};

@@ -8,7 +8,10 @@ import type { Basis } from './types';
 
 export function StripField({ w, label, value, basis, mono }: {
   w: number;
-  label: string;
+  /** Omit inside a bay whose head prints the column names once (m1 design review B9): a rack of
+   *  homogeneous rows prints its columns on the rack, not on every slip. The cell is then one
+   *  line, which is also what a compact rack (the activity feed) needs. */
+  label?: string;
   value: string | number;
   basis?: Basis;
   mono?: boolean;
@@ -19,7 +22,7 @@ export function StripField({ w, label, value, basis, mono }: {
   const figure = mono !== false;
   return (
     <div className="myx-sfield" style={{ width: `${w}ch` } as CSSProperties}>
-      <span className="myx-sfield-label">{label}</span>
+      {label !== undefined ? <span className="myx-sfield-label">{label}</span> : null}
       <span className={cx('myx-sfield-value', figure && 'myx-sfield-figure')}>
         <span className="myx-sfield-text">{value}</span>
         {basis && basis !== 'measured' ? <span className="myx-sfield-basis">{basis}</span> : null}

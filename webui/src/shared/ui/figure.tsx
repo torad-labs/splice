@@ -12,7 +12,12 @@ export function Figure({ value, unit, basis }: {
     <span className="myx-fig">
       <span className="myx-fig-value">{value}</span>
       {unit ? <span className="myx-fig-unit">{unit}</span> : null}
-      <span className="myx-fig-basis">{basis}</span>
+      {/* A measured basis is the default and says nothing: printing it stamped the word "measured"
+          beside every trustworthy number in the console and put it BETWEEN a value and its noun
+          ("6 measured heads report none", m1 design review B5). StripField has suppressed it since
+          M2-10's finding; the two primitives in one set agreed about the rule everywhere except
+          here. A basis that is not the default is the thing worth printing. */}
+      {basis !== 'measured' ? <span className="myx-fig-basis">{basis}</span> : null}
     </span>
   );
 }

@@ -8,7 +8,7 @@
  *  `npm run --silent gate:concentration` and reports the leg green on exit 0, so the entire leg is
  *  defanged by a ONE-LINE edit:
  *
- *      "gate:concentration": "python3 checks/concentration.py --top 5"
+ *      "gate:concentration": "bun checks/concentration.ts --top 5"
  *
  *  That exits 0 unconditionally, and `npm run gate` keeps printing a green "concentration" leg over
  *  an oracle that is no longer grading anything. The gate's own output cannot distinguish the two
@@ -18,7 +18,7 @@
  *
  *    forward — checks/gate.sh actually RUNS the gate:concentration script, through `run` so its real
  *              exit code is captured (a mention in a comment is not a routing)
- *    inverse — that script invokes checks/concentration.py with --ratchet AND a numeric --max-ratio
+ *    inverse — that script invokes checks/concentration.ts with --ratchet AND a numeric --max-ratio
  *
  *  Neither half is sufficient alone: a routed script that does not ratchet is the defang above, and
  *  a correct script that nothing runs is the 2026-07-16 dormant-pack scar.
@@ -30,7 +30,7 @@
  *  executes. Both halves were bypassed, and both were REPRODUCED against the old guard before that
  *  rewrite:
  *
- *      "gate:concentration": "true # python3 checks/concentration.py --ratchet --max-ratio 1.8"
+ *      "gate:concentration": "true # bun checks/concentration.ts --ratchet --max-ratio 1.8"
  *
  *        -> `bash checks/config-guard.sh` printed `concentration-leg-routed: PASS` and exited 0,
  *           while `npm run --silent gate:concentration` exited 0 having produced NO OUTPUT AT ALL:
@@ -46,7 +46,7 @@
  *  unquoted `#` to end of line exactly as the shell does, while a `#` inside quotes stays data —
  *  and then assert on the resulting argv. The question changed from "does this text contain the
  *  right words" to "does the command that actually runs invoke the oracle". The inverse assertion
- *  pins the complete argv: a real interpreter, the oracle as argv[1], exactly one --ratchet, exactly
+ *  pins the complete argv: bun as the runtime, the oracle as argv[1], exactly one --ratchet, exactly
  *  one numeric --max-ratio, and no trailing/control tokens that could mask the exit. The forward
  *  assertion is that a `run` line's COMMAND tokenizes to the npm invocation, not that the line
  *  happens to begin with a prefix.
@@ -63,8 +63,9 @@
  *  the gate, is what the repo buys; beyond that the answer is code review, not another script.
  *
  *  V4-145: converted from concentration-leg-routed.py. shlex.split(comments=True) is pyshim's
- *  transcription of CPython's read_token; the oracle it validates is still a .py file, so PYTHON
- *  below still names a python interpreter — that pin moves with the oracle, not with this guard.
+ *  transcription of CPython's read_token. V4-158 moved the oracle to checks/concentration.ts, and
+ *  RUNTIME and ORACLE below moved with it in the same commit: the pin follows the oracle, not this
+ *  guard. The 2664-case corpus was carried across by a counted swap (see its parity.sh).
  *
  *  Run: `bun checks/config/concentration-leg-routed.ts`, and as part of `bash checks/config-guard.sh`.
  */
@@ -75,13 +76,14 @@ import { loads, isPyObj, objGet, type PyValue } from "../e2e/pyjson.ts";
 
 const ROOT = resolve(dirname(import.meta.path), "..", "..");
 const SCRIPT = "gate:concentration";
-const ORACLE = "checks/concentration.py";
+const ORACLE = "checks/concentration.ts";
 
-// argv[0] of the leg must actually run a .py file. Asserting the interpreter POSITIVELY is the
+// argv[0] of the leg must actually run the oracle. Asserting the runtime POSITIVELY is the
 // generalisation of "argv[0] is not `true`": blacklisting one no-op leaves `:`, and leaves
-// `echo python3 checks/concentration.py --ratchet --max-ratio 1.8`, which satisfies every
-// name-and-flag check in this file while executing nothing.
-const PYTHON = /^python(3(\.\d+)?)?$/;
+// `echo bun checks/concentration.ts --ratchet --max-ratio 1.8`, which satisfies every
+// name-and-flag check in this file while executing nothing. A path to bun counts; its basename
+// must be exactly `bun`.
+const RUNTIME = "bun";
 
 // The command half of the leg line in checks/gate.sh — `run <label> npm run [flags] gate:concentration`.
 // Pinned as tokens, so a leg whose command is `true` cannot pass by carrying the script name in a
@@ -140,7 +142,7 @@ export function maxRatioOf(argv: string[]): number | null {
   return null;
 }
 
-/** Why argv is not exactly `python ORACLE --ratchet --max-ratio N`, or null. */
+/** Why argv is not exactly `bun ORACLE --ratchet --max-ratio N`, or null. */
 export function exactOracleArgvProblem(argv: string[]): string | null {
   if (argv.length < 2 || argv[1] !== ORACLE) {
     return `the oracle must be argv[1], got ${pyReprList(argv.slice(1, 2))}`;
@@ -211,9 +213,9 @@ export function inverseProblems(): string[] {
     return found;
   }
 
-  if (!PYTHON.test(argv[0].split("/").pop() as string)) {
+  if (argv[0].split("/").pop() !== RUNTIME) {
     found.push(
-      `'${SCRIPT}' does not run a python interpreter — argv[0] is ${pyRepr(argv[0])} (it is defined `
+      `'${SCRIPT}' does not run bun — argv[0] is ${pyRepr(argv[0])} (it is defined `
       + `as: ${pyRepr(body)}). Whatever follows, the oracle is not what executes; this is the `
       + "`true # <the real command>` bypass, where every required word survives in a comment "
       + "the shell discards.",

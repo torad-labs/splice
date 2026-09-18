@@ -130,6 +130,7 @@
     "checks/one-conventional-type-list-selftest.sh",
     "checks/oss/verify-OSS-C.sh",
     "checks/oss/verify-OSS-D.sh",
+    "checks/public-surface.ts",
     "checks/release/accept.sh",
     "checks/release/launcher-test.sh",
     "checks/role-registry-selftest.sh",

@@ -10,11 +10,13 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
 import splice.core.util.WallClock
 import splice.spi.AccountResetText
-import splice.spi.AllAccountsExhausted
 import splice.spi.InflightGate
+import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
+import splice.spi.Selection
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class HeadAdmission(
@@ -47,18 +49,36 @@ internal class HeadAdmission(
             val prepared = admission.materializeOrRespond(call) { preparation.prepareTurn(call, perf) } ?: return
             serve(call, prepared, admitted)
         } finally {
-            withContext(NonCancellable) { if (!admitted.handedOff.get()) admitted.slot.release() }
+            withContext(NonCancellable) { if (!admitted.wasHandedOff()) admitted.slot.release() }
         }
     }
 
-    /** What one admitted call holds: its gate slot, its start, its perf row, and the flag a
-     *  detached drive flips when it takes the slot with it. */
-    private data class Admitted(
+    /** What one admitted call holds: its gate slot, its start, its perf row — and the hand-off flag
+     *  it OWNS.
+     *
+     *  A PLAIN class, deliberately, not a `data class` (kt-no-atomic-in-data-class). The rule names
+     *  a real harm and that harm is value semantics: `equals`/`hashCode` would compare the handle by
+     *  reference and `copy()` would either share the flag with a second Admitted or silently drop
+     *  it — two admits that compare equal while holding ONE slot. Neither could happen here (nothing
+     *  copies or compares an Admitted), and the rule's own note names the owner's shape: whoever
+     *  calls `set` gives it a private atomic and a named method, and the bundle gets a port onto
+     *  that method. So `handedOff` is private, `markHandedOff()`/`wasHandedOff()` are the two names
+     *  it is allowed to be reached by, and the `data` contract — never used, and only able to
+     *  mislead — is gone. This is a per-call lifecycle owner, which is what it always was. */
+    private class Admitted(
         val slot: InflightGate.Slot,
         val t0: Long,
         val perf: TurnPerf,
-        val handedOff: AtomicBoolean = AtomicBoolean(false),
-    )
+    ) {
+        private val handedOff = AtomicBoolean(false)
+
+        /** The drive took the slot with it: the admission's finally must now leave it alone. */
+        fun markHandedOff() {
+            handedOff.set(true)
+        }
+
+        fun wasHandedOff(): Boolean = handedOff.get()
+    }
 
     private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: Admitted) {
         when (prepared) {
@@ -126,20 +146,21 @@ internal class HeadAdmission(
         // anthropic-ratelimit-unified-reset, which is the member Claude Code reads off a 429 to
         // decide when to come back. Without this the same response would assert `allowed` while
         // refusing the turn — splice contradicting itself in two headers of the same reply.
-        // V4-84 (4), the SIBLING of the refusal above and the same defect: this arm runs BEFORE
-        // account selection, so the turn has no fresh selection to read — but a session that is
-        // sticky to account B is still routed to B on its next turn, which is exactly when this
-        // armed-cooldown refusal fires. Shipping primary's utilization here would send the same
-        // wrong bars the row is about, one gate earlier. Same resolution, same fallback.
-        val selectedQuota = deps.accountPool?.view(prepared.built.meta.sessionId)?.selectedLabel
-            ?.let(deps.accountQuotas::get)
-        (selectedQuota ?: deps.quota)?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
-            call.response.header(name, value)
-        }
+        // V4-84 (4): the SELECTED account's tracker, not the primary's, even though this arm runs
+        // BEFORE selection — a session sticky to account B is still routed to B on its next turn.
+        // TurnQuota.forSession is the one resolver for exactly this precedence (V4-99).
+        deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
+            ?.forEach { (name, value) -> call.response.header(name, value) }
         // V4-55: recorded BEFORE responding, mirroring the pooled sibling below. A refusal that
         // leaves no perf row and no journal line is a turn that, from splice's own telemetry, never
         // happened — which is how three reports of this exact failure went unfalsifiable in a day.
-        driver.recordRateLimited(prepared.built.meta, admitted.perf, admitted.t0, windowResetEpochSeconds, armedMs)
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            OutcomeTag.RATE_LIMITED.wire,
+            "provider_reset=${AccountResetText.format(windowResetEpochSeconds)} gateway_hold=${armedMs}ms",
+        )
         responses.respondRateLimited(call, rateLimitedMessage(armedMs, windowResetEpochSeconds), retryEpochSeconds)
         return true
     }
@@ -160,7 +181,7 @@ internal class HeadAdmission(
 
     /** V4-61'S LAW IN ONE PLACE, because it was written once and forgotten on the sibling branch
      *  (V4-77): the client's deadline is a HOLD FROM NOW — when this gateway next lets a request
-     *  through — never a provider instant, and never past [MAX_CLIENT_HOLD_MS]. Both refusals in
+     *  through — never a provider instant, and never past [MAX_RATE_LIMIT_COOLDOWN_MS]. Both refusals in
      *  this file compute it here so neither can drift from the other again. The armed-cooldown
      *  caller is already inside the clamp (RateLimitCooldown arms at most its own ceiling), so the
      *  coerce is a wall for it and the actual bound for [refuseExhausted].
@@ -171,7 +192,7 @@ internal class HeadAdmission(
      *  message and in the perf row — and the client that comes back at the bound meets a re-probe
      *  that either serves it or re-refuses with a fresh bounded deadline. */
     private fun clientRetryEpochSeconds(now: Long, holdMs: Long): Long =
-        (now + holdMs.coerceIn(0L, MAX_CLIENT_HOLD_MS)) / MILLIS_PER_SECOND
+        (now + holdMs.coerceIn(0L, MAX_RATE_LIMIT_COOLDOWN_MS)) / MILLIS_PER_SECOND
 
     /** V4-77: the POOLED twin of [refuseIfRateLimited] — every account is blocked, so no turn can
      *  start, and the client is told so with the SAME bounded deadline a cooldown refusal gives.
@@ -195,13 +216,14 @@ internal class HeadAdmission(
         call: ApplicationCall,
         prepared: Preparation.Ready,
         admitted: Admitted,
-        exhausted: AllAccountsExhausted,
+        exhausted: Selection.Exhausted,
     ) {
-        driver.recordAccountExhausted(
+        driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            exhausted.earliestResetEpochSeconds,
+            OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire,
+            "earliest_reset=${AccountResetText.format(exhausted.earliestResetEpochSeconds)}",
         )
         val now = wallClock()
         // normalizedInstant is the same four-digit-year clamp AdmissionResponses formats through,
@@ -210,29 +232,23 @@ internal class HeadAdmission(
         val retryEpochSeconds = exhausted.earliestResetEpochSeconds?.let {
             clientRetryEpochSeconds(now, AccountResetText.normalizedInstant(it).toEpochMilli() - now)
         }
-        // V4-84 (4): the SELECTED account's tracker, not the primary's. deps.quota is the primary
-        // label's QuotaTracker (ManagedHeadFactory passes quota = primaryQuota, one tracker per
-        // label), so on a pooled head whose session is sticky to another account this 429 used to
-        // ship the OTHER account's utilization and reset members — the client's bars jumped 37% to
-        // 10% in the AccountTurnSelectionTest fixture. AccountPool.select throws AllAccountsExhausted
-        // BEFORE touching sessions[sessionId], so the session's own routing still stands and
-        // view(sessionId).selectedLabel still names the account this turn was headed for. Resolved
-        // exactly as LocalResponses.kt:118-120 resolves it for the same reason.
-        val selectedQuota = deps.accountPool?.view(prepared.built.meta.sessionId)?.selectedLabel
-            ?.let(deps.accountQuotas::get)
-        (selectedQuota ?: deps.quota)?.clientHeadersRejected(retryEpochSeconds)?.forEach { (name, value) ->
-            call.response.header(name, value)
-        }
-        responses.respondRateLimited(call, exhausted.message.orEmpty(), retryEpochSeconds)
+        // V4-84 (4): the SELECTED account's tracker, not the primary's — on a pooled head whose
+        // session is sticky to another account this 429 used to ship the OTHER account's bars.
+        // TurnQuota.forSession is the one resolver for exactly this precedence (V4-99).
+        deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
+            ?.forEach { (name, value) -> call.response.header(name, value) }
+        responses.respondRateLimited(call, exhausted.message, retryEpochSeconds)
     }
 
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
         if (refuseIfRateLimited(call, prepared, admitted)) return
-        val account = try {
-            deps.accountPool?.select(prepared.built.meta.sessionId)
-        } catch (e: AllAccountsExhausted) {
-            refuseExhausted(call, prepared, admitted, e)
-            return
+        val account = when (val selection = deps.accountPool?.select(prepared.built.meta.sessionId)) {
+            null -> null
+            is Selection.Chosen -> selection.account
+            is Selection.Exhausted -> {
+                refuseExhausted(call, prepared, admitted, selection)
+                return
+            }
         }
         try {
             val inputs = TurnInputs(
@@ -240,24 +256,17 @@ internal class HeadAdmission(
                 admitted.slot,
                 admitted.t0,
                 admitted.perf,
-                slotHandedOff = admitted.handedOff,
+                markHandedOff = { admitted.markHandedOff() },
                 account = account,
-                quota = account?.account?.label?.let(deps.accountQuotas::get) ?: deps.quota,
+                quota = deps.turnQuota.forSession(prepared.built.meta.sessionId, account),
             )
             // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
             // (Claude Code's internal non-stream calls, served by collecting the same machinery).
             if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
         } finally {
-            if (!admitted.handedOff.get()) account?.releaseCredentialProbe()
+            if (!admitted.wasHandedOff()) account?.releaseCredentialProbe()
         }
     }
 }
 
 private const val MILLIS_PER_SECOND = 1000L
-
-// V4-61's clamp on the CLIENT-FACING deadline, mirroring RateLimitCooldown's
-// MAX_RATE_LIMIT_COOLDOWN_MS, which is private to :provider-spi. Declared here rather than widened
-// there for the reason AdmissionResponses declares its own 429: a cross-module const import for one
-// number, against a file another row holds. The two must stay equal — the cooldown ceiling is when
-// this gateway next lets a request through, and this is what the client is told about that.
-private const val MAX_CLIENT_HOLD_MS = 120_000L

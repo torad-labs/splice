@@ -19,17 +19,32 @@ import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
+import splice.spi.AccountSelection
 import splice.spi.AccountView
-import splice.spi.AllAccountsExhausted
 import splice.spi.ElapsedNow
 import splice.spi.PoolAccount
 import splice.spi.RateLimitCooldown
 import splice.spi.RateLimitTurn
 import splice.spi.RetryDecision
 import splice.spi.RetryNotice
+import splice.spi.Selection
 import java.util.concurrent.atomic.AtomicReference
 
 class AccountPoolTest {
+    /** [AccountPool.select] returns a sealed [Selection]; the chosen-case tests read the account. */
+    private fun AccountPool.chosen(sessionId: String?): AccountSelection =
+        when (val selection = select(sessionId)) {
+            is Selection.Chosen -> selection.account
+            is Selection.Exhausted -> throw AssertionError("expected a chosen account, got exhausted")
+        }
+
+    /** The exhaustion refusal is a value now, not a thrown exception. */
+    private fun AccountPool.exhausted(sessionId: String?): Selection.Exhausted =
+        when (val selection = select(sessionId)) {
+            is Selection.Exhausted -> selection
+            is Selection.Chosen -> throw AssertionError("expected exhaustion, got a chosen account")
+        }
+
     @Test
     fun `quota exhaustion switches only the affected session to the lowest weekly account`() {
         val fixture = Fixture()
@@ -38,11 +53,11 @@ class AccountPoolTest {
         val quieter = fixture.account("plus-a", weekly = 10.0)
         val pool = fixture.pool(primary, busier, quieter)
 
-        assertSame(primary, pool.select("session-a").account)
-        assertSame(primary, pool.select("session-b").account)
+        assertSame(primary, pool.chosen("session-a").account)
+        assertSame(primary, pool.chosen("session-b").account)
         fixture.setQuota(primary, fixture.quota(five = 100.0, reset = 2_000L))
 
-        val switched = pool.select("session-a")
+        val switched = pool.chosen("session-a")
         assertSame(quieter, switched.account)
         assertEquals("5-hour quota exhausted", switched.switch?.reason)
         assertTrue(switched.cacheCold)
@@ -56,9 +71,9 @@ class AccountPoolTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        val inFlight = pool.select("session")
+        val inFlight = pool.chosen("session")
         primary.cooldown.markUnavailable(60_000L)
-        val next = pool.select("session")
+        val next = pool.chosen("session")
 
         assertSame(primary, inFlight.account)
         assertSame(backup, next.account)
@@ -71,10 +86,10 @@ class AccountPoolTest {
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        assertSame(primary, pool.select("session").account)
+        assertSame(primary, pool.chosen("session").account)
 
         primary.cooldown.arm(30_000L)
-        val next = pool.select("session")
+        val next = pool.chosen("session")
 
         assertSame(primary, next.account)
         assertEquals(null, next.switch)
@@ -86,7 +101,7 @@ class AccountPoolTest {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary, fixture.account("plus-a"))
-        assertSame(primary, pool.select("session").account)
+        assertSame(primary, pool.chosen("session").account)
 
         val plan = primary.cooldown.rateLimitedPlan(
             pushbackMs = 1_000L,
@@ -95,7 +110,7 @@ class AccountPoolTest {
             onRetry = RetryNotice {},
             nextRefreshed = false,
         )
-        val next = pool.select("session")
+        val next = pool.chosen("session")
 
         // V4-48: a short pushback now takes the BACKOFF branch — it is waited out, not surrendered —
         // and a waited-out 429 arms NOTHING, so no follower is failed fast for that interval.
@@ -116,12 +131,12 @@ class AccountPoolTest {
         val pool = fixture.pool(primary, backup)
         primary.cooldown.markUnavailable(Long.MAX_VALUE)
 
-        assertSame(backup, pool.select("session").account)
-        val blocked = assertThrows<AllAccountsExhausted> { fixture.pool(primary).select("blocked") }
+        assertSame(backup, pool.chosen("session").account)
+        val blocked = fixture.pool(primary).exhausted("blocked")
         assertEquals(605_800L, blocked.earliestResetEpochSeconds)
-        assertTrue(blocked.message.orEmpty().contains("1970-01-08T00:16:40Z"))
+        assertTrue(blocked.message.contains("1970-01-08T00:16:40Z"))
         fixture.advanceElapsed(120_000L)
-        assertSame(primary, pool.select("session").account)
+        assertSame(primary, pool.chosen("session").account)
     }
 
     @Test
@@ -132,7 +147,7 @@ class AccountPoolTest {
             val primary = fixture.account("primary", primary = true)
             primary.cooldown.markUnavailable(Long.MAX_VALUE)
 
-            val failure = assertThrows<AllAccountsExhausted> { fixture.pool(primary).select("session") }
+            val failure = fixture.pool(primary).exhausted("session")
 
             assertEquals(at / 1_000L + 604_800L, failure.earliestResetEpochSeconds)
         }
@@ -145,7 +160,7 @@ class AccountPoolTest {
         val pool = fixture.pool(primary)
         primary.cooldown.markUnavailable(86_400_000L)
 
-        val failure = assertThrows<AllAccountsExhausted> { pool.select("session") }
+        val failure = pool.exhausted("session")
 
         assertEquals(87_400L, failure.earliestResetEpochSeconds)
         assertEquals(120_000L, primary.cooldown.unavailableForMs())
@@ -158,7 +173,7 @@ class AccountPoolTest {
         val backup = fixture.account("work")
         val pool = fixture.pool(primary, backup)
 
-        val selected = pool.select("session")
+        val selected = pool.chosen("session")
 
         assertSame(backup, selected.account)
         assertEquals("primary", selected.switch?.from)
@@ -184,9 +199,9 @@ class AccountPoolTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        assertSame(backup, pool.select("session").account)
+        assertSame(backup, pool.chosen("session").account)
         fixture.now.set(2_000_000L)
-        val returned = pool.select("session")
+        val returned = pool.chosen("session")
 
         assertSame(primary, returned.account)
         assertEquals("primary account reset", returned.switch?.reason)
@@ -200,11 +215,11 @@ class AccountPoolTest {
         val backup = fixture.account("plus-a", weekly = 100.0, reset = 2_000L)
         val pool = fixture.pool(primary, backup)
 
-        val failure = assertThrows<AllAccountsExhausted> { pool.select("session") }
+        val failure = pool.exhausted("session")
 
         assertEquals(2_000L, failure.earliestResetEpochSeconds)
-        assertTrue(failure.message.orEmpty().contains("1970-01-01T00:33:20Z"))
-        assertFalse(failure.message.orEmpty().contains("reset is 2000"))
+        assertTrue(failure.message.contains("1970-01-01T00:33:20Z"))
+        assertFalse(failure.message.contains("reset is 2000"))
     }
 
     @Test
@@ -214,7 +229,7 @@ class AccountPoolTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        assertSame(primary, pool.select("session").account)
+        assertSame(primary, pool.chosen("session").account)
     }
 
     @Test
@@ -224,7 +239,7 @@ class AccountPoolTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        val selected = pool.select("session")
+        val selected = pool.chosen("session")
 
         assertSame(backup, selected.account)
         assertEquals("primary", selected.switch?.from)
@@ -240,11 +255,11 @@ class AccountPoolTest {
         val second = fixture.account("plus-b", weekly = 20.0)
         val pool = fixture.pool(primary, first, second)
 
-        val initial = pool.select(null)
-        val repeated = pool.select(null)
+        val initial = pool.chosen(null)
+        val repeated = pool.chosen(null)
         fixture.setQuota(first, fixture.quota(weekly = 30.0))
         fixture.setQuota(second, fixture.quota(weekly = 5.0))
-        val moved = pool.select(null)
+        val moved = pool.chosen(null)
 
         assertSame(first, initial.account)
         assertTrue(initial.cacheCold)
@@ -271,7 +286,7 @@ class AccountPoolTest {
             ),
         )
         val pool = fixture.pool(primary)
-        pool.select("session")
+        pool.chosen("session")
 
         val view = pool.view("session").accounts.single()
 
@@ -291,7 +306,7 @@ class AccountPoolTest {
         val pool = fixture.pool(primary, backup)
 
         val selections = List(100) {
-            async(Dispatchers.Default) { pool.select("session").account }
+            async(Dispatchers.Default) { pool.chosen("session").account }
         }.awaitAll()
 
         assertTrue(selections.all { it === backup })
@@ -304,17 +319,17 @@ class AccountPoolTest {
         val primary = fixture.account("primary", primary = true, five = 100.0)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        val issued = pool.select("session-1")
-        pool.select("session-0")
-        for (i in 2 until 4_096) pool.select("session-$i")
-        assertFalse(pool.select("session-1").cacheCold)
+        val issued = pool.chosen("session-1")
+        pool.chosen("session-0")
+        for (i in 2 until 4_096) pool.chosen("session-$i")
+        assertFalse(pool.chosen("session-1").cacheCold)
 
-        pool.select("overflow")
+        pool.chosen("overflow")
 
         assertEquals(null, pool.view("session-0").selectedLabel)
         assertEquals("plus-a", pool.view("session-1").selectedLabel)
         assertSame(backup, issued.account)
-        assertTrue(pool.select("session-0").cacheCold, "an evicted session starts relative to primary again")
+        assertTrue(pool.chosen("session-0").cacheCold, "an evicted session starts relative to primary again")
         assertEquals(null, pool.view("session-2").selectedLabel)
     }
 
@@ -324,7 +339,7 @@ class AccountPoolTest {
         val pool = fixture.pool(fixture.account("primary", primary = true))
         val ids = List(4_160) { "session-$it" }
 
-        ids.map { id -> async(Dispatchers.Default) { pool.select(id) } }.awaitAll()
+        ids.map { id -> async(Dispatchers.Default) { pool.chosen(id) } }.awaitAll()
 
         assertEquals(4_096, ids.count { pool.view(it).selectedLabel != null })
         pool.reset()
@@ -337,7 +352,7 @@ class AccountPoolTest {
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        pool.select("session")
+        pool.chosen("session")
         primary.cooldown.markUnavailable(60_000L)
         primary.cooldown.arm(60_000L)
 
@@ -387,7 +402,7 @@ class AccountPoolTest {
         val sessions = AccountPool::class.java.getDeclaredField("sessions").apply { isAccessible = true }.get(pool)
         monitorHolder.set(sessions)
 
-        pool.select("session")
+        pool.chosen("session")
 
         assertFalse(readUnderMonitor, "credential evidence must be read off the sticky-session monitor")
     }

@@ -18,13 +18,23 @@ import splice.spi.AccountCredentialIdentitySource
 import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
 import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.spi.AccountCredentialIdentitySource.CredentialPresence
+import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
+import splice.spi.AccountSelection
 import splice.spi.ElapsedNow
 import splice.spi.PoolAccount
 import splice.spi.RateLimitCooldown
+import splice.spi.Selection
 import java.util.concurrent.atomic.AtomicInteger
 
 class AccountCredentialEligibilityTest {
+    /** [AccountPool.select] returns a sealed [Selection]; the chosen-case tests read the account. */
+    private fun AccountPool.chosen(sessionId: String?): AccountSelection =
+        when (val selection = select(sessionId)) {
+            is Selection.Chosen -> selection.account
+            is Selection.Exhausted -> throw AssertionError("expected a chosen account, got exhausted")
+        }
+
     @Test
     fun `one reconciliation requests one combined credential observation`() {
         val observations = AtomicInteger()
@@ -63,9 +73,9 @@ class AccountCredentialEligibilityTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        val inFlight = pool.select("session")
+        val inFlight = pool.chosen("session")
         inFlight.markCredentialUnavailable()
-        val next = pool.select("session")
+        val next = pool.chosen("session")
         val primaryView = pool.view("session").accounts.single { it.primary }
 
         assertSame(primary, inFlight.account)
@@ -82,18 +92,18 @@ class AccountCredentialEligibilityTest {
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        pool.select("failed").markCredentialUnavailable()
+        pool.chosen("failed").markCredentialUnavailable()
         fixture.advanceWall(300_000L)
 
         val selections = List(64) { index ->
-            async(Dispatchers.Default) { pool.select("probe-$index") }
+            async(Dispatchers.Default) { pool.chosen("probe-$index") }
         }.awaitAll()
         val probes = selections.filter { it.account === primary }
 
         assertEquals(1, probes.size, "one expired auth hold admits exactly one recovery probe")
         assertTrue(selections.filterNot { it in probes }.all { it.account === backup })
         probes.single().releaseCredentialProbe()
-        val replacement = pool.select("replacement-probe")
+        val replacement = pool.chosen("replacement-probe")
         assertSame(primary, replacement.account, "cancellation/failure release makes the probe reusable")
         replacement.releaseCredentialProbe()
     }
@@ -103,8 +113,8 @@ class AccountCredentialEligibilityTest {
         val fixture = AccountPoolTest.Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary, fixture.account("plus-a"))
-        val staleFollower = pool.select("stale-follower")
-        pool.select("first-failure").markCredentialUnavailable()
+        val staleFollower = pool.chosen("stale-follower")
+        pool.chosen("first-failure").markCredentialUnavailable()
         staleFollower.markCredentialUnavailable()
 
         val expectedDelays = listOf(300_000L, 600_000L, 1_200_000L, 2_400_000L, 3_600_000L, 3_600_000L)
@@ -113,7 +123,7 @@ class AccountCredentialEligibilityTest {
             assertEquals(expected, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
             if (index != expectedDelays.lastIndex) {
                 fixture.now.set(checkNotNull(view.authExcludedUntilEpochMillis))
-                pool.select("failed-probe-$index").markCredentialUnavailable()
+                pool.chosen("failed-probe-$index").markCredentialUnavailable()
             }
         }
     }
@@ -124,7 +134,7 @@ class AccountCredentialEligibilityTest {
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary)
         val ramp = listOf(300_000L, 600_000L, 1_200_000L, 2_400_000L)
-        var selection = pool.select("initial")
+        var selection = pool.chosen("initial")
 
         repeat(70) { index ->
             selection.markCredentialUnavailable()
@@ -133,7 +143,7 @@ class AccountCredentialEligibilityTest {
             assertEquals(expected, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
             if (index < 69) {
                 fixture.now.set(checkNotNull(view.authExcludedUntilEpochMillis))
-                selection = pool.select("probe-$index")
+                selection = pool.chosen("probe-$index")
             }
         }
     }
@@ -143,16 +153,16 @@ class AccountCredentialEligibilityTest {
         val fixture = AccountPoolTest.Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary, fixture.account("plus-a"))
-        val stale = pool.select("stale")
+        val stale = pool.chosen("stale")
 
         fixture.rotateCredential(primary)
         stale.markCredentialUnavailable()
 
-        assertSame(primary, pool.select("after-race").account)
-        val held = pool.select("held")
+        assertSame(primary, pool.chosen("after-race").account)
+        val held = pool.chosen("held")
         held.markCredentialUnavailable()
         fixture.rotateCredential(primary)
-        assertSame(primary, pool.select("after-relogin").account)
+        assertSame(primary, pool.chosen("after-relogin").account)
         assertEquals(null, pool.view(null).accounts.single { it.primary }.authExclusionReason)
     }
 
@@ -161,7 +171,7 @@ class AccountCredentialEligibilityTest {
         val fixture = AccountPoolTest.Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary, fixture.account("plus-a"))
-        pool.select("failed").markCredentialUnavailable()
+        pool.chosen("failed").markCredentialUnavailable()
         val original = fixture.hideCredentialIdentity(primary)
 
         pool.view(null)
@@ -171,7 +181,7 @@ class AccountCredentialEligibilityTest {
         assertEquals("terminal_401", view.authExclusionReason)
         assertEquals(1_300_000L, view.authExcludedUntilEpochMillis)
         fixture.now.set(checkNotNull(view.authExcludedUntilEpochMillis))
-        pool.select("failed-probe").markCredentialUnavailable()
+        pool.chosen("failed-probe").markCredentialUnavailable()
         view = pool.view(null).accounts.single { it.primary }
         assertEquals(600_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
     }
@@ -182,16 +192,16 @@ class AccountCredentialEligibilityTest {
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        pool.select("failed").markCredentialUnavailable()
+        pool.chosen("failed").markCredentialUnavailable()
         fixture.hideCredentialIdentity(primary)
 
         val held = pool.view(null).accounts.single { it.primary }
         assertEquals("terminal_401", held.authExclusionReason)
-        assertSame(backup, pool.select("while-unknown").account)
+        assertSame(backup, pool.chosen("while-unknown").account)
 
         fixture.rotateCredential(primary)
 
-        assertSame(primary, pool.select("after-replacement").account)
+        assertSame(primary, pool.chosen("after-replacement").account)
         assertEquals(null, pool.view(null).accounts.single { it.primary }.authExclusionReason)
     }
 
@@ -201,11 +211,11 @@ class AccountCredentialEligibilityTest {
         val primary = fixture.account("primary", primary = true, credentialIdentityKnown = false)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        pool.select("failed").markCredentialUnavailable()
+        pool.chosen("failed").markCredentialUnavailable()
         fixture.advanceWall(300_000L)
 
-        val probe = pool.select("probe")
-        val follower = pool.select("follower")
+        val probe = pool.chosen("probe")
+        val follower = pool.chosen("follower")
 
         assertSame(primary, probe.account)
         assertSame(backup, follower.account)
@@ -219,16 +229,16 @@ class AccountCredentialEligibilityTest {
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        val stale = pool.select("stale")
+        val stale = pool.chosen("stale")
         fixture.rotateCredential(primary)
-        pool.select("new-revision").markCredentialUnavailable()
+        pool.chosen("new-revision").markCredentialUnavailable()
 
         stale.markTurnSucceeded()
 
         val view = pool.view(null).accounts.single { it.primary }
         assertEquals("terminal_401", view.authExclusionReason)
         assertEquals(1_300_000L, view.authExcludedUntilEpochMillis)
-        assertSame(backup, pool.select("after-stale-success").account)
+        assertSame(backup, pool.chosen("after-stale-success").account)
     }
 
     @Test
@@ -237,16 +247,16 @@ class AccountCredentialEligibilityTest {
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
-        val stale = pool.select("stale")
+        val stale = pool.chosen("stale")
         fixture.rotateCredential(primary)
-        pool.select("new-revision").markCredentialUnavailable()
+        pool.chosen("new-revision").markCredentialUnavailable()
 
         stale.markCredentialRefreshSucceeded()
 
         val view = pool.view(null).accounts.single { it.primary }
         assertEquals("terminal_401", view.authExclusionReason)
         assertEquals(1_300_000L, view.authExcludedUntilEpochMillis)
-        assertSame(backup, pool.select("after-stale-refresh").account)
+        assertSame(backup, pool.chosen("after-stale-refresh").account)
     }
 
     @Test
@@ -256,7 +266,7 @@ class AccountCredentialEligibilityTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        assertSame(backup, pool.select("missing").account)
+        assertSame(backup, pool.chosen("missing").account)
         val missingView = pool.view(null).accounts.single { it.primary }
         assertFalse(missingView.credentialPresent)
         assertEquals("credential_missing", missingView.authExclusionReason)
@@ -264,7 +274,7 @@ class AccountCredentialEligibilityTest {
 
         fixture.rotateCredential(primary)
 
-        assertSame(primary, pool.select("recreated").account)
+        assertSame(primary, pool.chosen("recreated").account)
         assertTrue(pool.view(null).accounts.single { it.primary }.credentialPresent)
     }
 
@@ -273,19 +283,19 @@ class AccountCredentialEligibilityTest {
         val fixture = AccountPoolTest.Fixture()
         val primary = fixture.account("primary", primary = true)
         val pool = fixture.pool(primary, fixture.account("plus-a"))
-        pool.select("first").markCredentialUnavailable()
+        pool.chosen("first").markCredentialUnavailable()
         fixture.advanceWall(300_000L)
-        pool.select("second").markCredentialUnavailable()
+        pool.chosen("second").markCredentialUnavailable()
         fixture.advanceWall(600_000L)
 
-        val successfulTurn = pool.select("turn-success")
+        val successfulTurn = pool.chosen("turn-success")
         successfulTurn.markTurnSucceeded()
         successfulTurn.markCredentialUnavailable()
         var view = pool.view(null).accounts.single { it.primary }
         assertEquals(300_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
         fixture.advanceWall(300_000L)
 
-        val successfulRefresh = pool.select("refresh-success")
+        val successfulRefresh = pool.chosen("refresh-success")
         fixture.rotateCredential(primary)
         successfulRefresh.markCredentialRefreshSucceeded()
         successfulRefresh.markCredentialUnavailable()

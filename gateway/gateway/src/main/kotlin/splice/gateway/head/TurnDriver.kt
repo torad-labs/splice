@@ -16,16 +16,12 @@
 // splice.gateway.round; ClientChannel.kt, TurnWiring.kt in splice.gateway.wire.
 package splice.gateway.head
 
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import kotlinx.coroutines.CancellationException
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.spi.Provider
 import splice.spi.RetryNotice
-import splice.spi.UpstreamAuthMissing
-import splice.spi.UpstreamFailed
 
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
 internal class TurnDriver(
@@ -59,7 +55,7 @@ internal class TurnDriver(
             provider,
             deps.upstream,
             deps.usageStore,
-            deps.quota,
+            deps.turnQuota,
             SseRoundConsume(provider, zeroEvent, telemetry, TearAwareEvents(provider, deps.log)),
             RetryNotice { log("[${provider.key}] $it\n") },
         ),
@@ -85,21 +81,27 @@ internal class TurnDriver(
         deps,
         TurnRoundRun(provider, log, sseRoundDriver, turnFinish),
     )
-    private val streamer = TurnStreamer(provider, deps, driveFactory, this, compactionReplay)
+
+    /** V4-99 item 5: the seal contract the two drive entries actually need, held here so they
+     *  no longer take the whole driver to reach one function. */
+    // `internal`, not `private`: a test that builds a TurnStreamer to exercise the detached
+    // stop order needs the contract the entry now takes, and it cannot reach the four
+    // collaborators this is assembled from (V4-99 item 5).
+    internal val sealedDrive = SealedDrive(failures, oneDrive, ending, cancellationSeal)
+    private val streamer = TurnStreamer(provider, deps, driveFactory, sealedDrive, compactionReplay)
     private val localResponses = LocalResponses(provider, deps, compactionReplay)
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.
-    private val collectTurn = CollectTurn(provider, driveFactory, this, deps.quota, deps.clientWindows)
+    private val collectTurn = CollectTurn(provider, driveFactory, sealedDrive, deps.turnQuota, deps.clientWindows)
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
     internal fun healthCounters(): HeadHealthCounts = health.snapshot()
 
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn. */
-    suspend fun stream(call: ApplicationCall, inputs: TurnInputs) {
+    suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean =
         streamer.stream(call, inputs)
-    }
 
     /** Claude Code's activity side query, answered by the proxy (ActivityLabel): no upstream turn. */
     suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local) = localResponses.answer(call, local)
@@ -124,60 +126,17 @@ internal class TurnDriver(
      *
      *  `internal`, not `private` (named widening, HD-24): [CollectTurn] calls this too, so the L3
      *  seal contract stays the one copy stream and collect both share, across the file split. */
-    internal suspend fun driveSealingCancellation(
-        drive: TurnDrive,
-        pingClient: Boolean = true,
-        seal: Boolean = true,
-    ) {
-        try {
-            failures.catchingTurnFailure { oneDrive.driveOneTurn(drive, pingClient) }
-                .onFailure { e ->
-                    recordCredentialFailure(drive, e)
-                    ending.emitFailure(drive, e)
-                }
-        } catch (e: CancellationException) {
-            cancellationSeal.sealAndStamp(drive, seal, e)
-            throw e
-        } finally {
-            if (drive.emitter.endedCleanly) drive.account?.markTurnSucceeded()
-            drive.account?.releaseCredentialProbe()
-        }
-    }
-
-    private fun recordCredentialFailure(drive: TurnDrive, failure: Throwable) {
-        when {
-            failure is UpstreamAuthMissing -> drive.account?.markCredentialMissing()
-            failure is UpstreamFailed && failure.status == HttpStatusCode.Unauthorized.value ->
-                drive.account?.markCredentialUnavailable()
-        }
-    }
-
     /** Non-stream sibling of [stream]: Claude Code sends stream:false on some internal calls (the
      *  Node predecessor served them by collecting the terminal object). See [CollectTurn]. */
-    suspend fun collect(call: ApplicationCall, inputs: TurnInputs) = collectTurn.collect(call, inputs)
+    suspend fun collect(call: ApplicationCall, inputs: TurnInputs): Boolean =
+        collectTurn.collect(call, inputs)
 
-    /** Emits the refusal telemetry that precedes drive construction when no account is selectable. */
-    /** V4-55: same local-health treatment as [recordAccountExhausted] — a rate-limit refusal is a
-     *  local admission outcome, not an upstream failure, so it must not colour upstream health. */
-    fun recordRateLimited(
-        meta: TurnMeta,
-        perf: TurnPerf,
-        t0: Long,
-        resetEpochSeconds: Long?,
-        armedMs: Long,
-    ) {
+    /** V4-99 item 4: ONE entry for every locally-refused turn (no account selectable, or the
+     *  admission rate limit). Local admission, not an upstream failure, so it must not colour
+     *  upstream health — and it must be VISIBLE: see TurnTelemetry.recordLocalRefusal. */
+    fun recordLocalRefusal(meta: TurnMeta, perf: TurnPerf, t0: Long, tag: String, detail: String) {
         health.local()
-        telemetry.recordRateLimited(meta, perf, t0, resetEpochSeconds, armedMs)
-    }
-
-    fun recordAccountExhausted(
-        meta: TurnMeta,
-        perf: TurnPerf,
-        t0: Long,
-        earliestResetEpochSeconds: Long?,
-    ) {
-        health.local()
-        telemetry.recordAccountExhausted(meta, perf, t0, earliestResetEpochSeconds)
+        telemetry.recordLocalRefusal(meta, perf, t0, tag, detail)
     }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the

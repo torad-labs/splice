@@ -10,6 +10,29 @@ private const val MAX_TRACKED_SESSIONS = 4_096
 private const val SESSION_MAP_CAPACITY = 16
 private const val SESSION_MAP_LOAD = 0.75f
 
+/** The answer [AccountPool.select] returns: an account was chosen for the turn, or every account is
+ *  exhausted and the turn is refused before admission. The exhaustion is a VALUE on the return type,
+ *  never a thrown exception (kt-no-exception-as-outcome): the compiler then checks the caller's
+ *  `when`, so a new selection answer cannot slip past an unexhaustive caller the way a thrown
+ *  refusal slipped past every `catch (e: AllAccountsExhausted)` in the tree.
+ *
+ *  IT LIVES HERE, with its producer, rather than in AccountSelection.kt where V4-99 first declared
+ *  it. That file had reached 11 declared types and a concentration ratio of 3.11 — band HIGH, a god
+ *  file by the campaign's own census — and the split the ratchet points at is by CONCEPT, not by
+ *  line count. The answer to `select` belongs beside `select`; the file named for the account
+ *  selection then keeps the selection ITSELF. Same package, so this is a relocation: no call site
+ *  changes, no import changes, no behaviour changes. */
+public sealed class Selection {
+    /** An account was chosen; [account] is the immutable per-turn choice. */
+    public class Chosen(public val account: AccountSelection) : Selection()
+
+    /** No account could start the turn; [earliestResetEpochSeconds] is the soonest any account
+     *  resets, null when no account reported a reset. */
+    public class Exhausted(public val earliestResetEpochSeconds: Long?) : Selection() {
+        public val message: String get() = AccountResetText.exhausted(earliestResetEpochSeconds)
+    }
+}
+
 /** A head-local OAuth account pool. A returned [AccountSelection] is immutable for the whole turn. */
 public class AccountPool(
     accounts: List<PoolAccount>,
@@ -32,8 +55,10 @@ public class AccountPool(
         require(accounts.count(PoolAccount::primary) == 1) { "account pool must have exactly one primary" }
     }
 
-    /** Chooses once at the turn boundary. Null sessions re-evaluate policy without becoming sticky. */
-    public fun select(sessionId: String?): AccountSelection {
+    /** Chooses once at the turn boundary. Null sessions re-evaluate policy without becoming sticky.
+     *  Returns [Selection.Chosen] with the turn's immutable choice, or [Selection.Exhausted] when no
+     *  account can start a turn — an ordinary, expected refusal, so it is a value, not a throw. */
+    public fun select(sessionId: String?): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         val at = now()
         // Credential evidence is read (and hashed) OUTSIDE the sticky-session monitor: the lock only
@@ -44,15 +69,17 @@ public class AccountPool(
         if (sessionId == null) return selectStateless(at)
         return synchronized(sessions) {
             val chosen = selected(sessions[sessionId], at, sticky = true)
-            sessions[sessionId] = chosen.second
-            if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
+            chosen.second?.let { session ->
+                sessions[sessionId] = session
+                if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
+            }
             chosen.first
         }
     }
 
-    private fun selectStateless(at: Long): AccountSelection = synchronized(statelessLock) {
+    private fun selectStateless(at: Long): Selection = synchronized(statelessLock) {
         val chosen = selected(statelessPrevious, at, sticky = false)
-        statelessPrevious = chosen.second
+        chosen.second?.let { statelessPrevious = it }
         chosen.first
     }
 
@@ -60,8 +87,9 @@ public class AccountPool(
         previous: SessionAccount?,
         at: Long,
         sticky: Boolean,
-    ): Pair<AccountSelection, SessionAccount> {
+    ): Pair<Selection, SessionAccount?> {
         val chosen = choose(if (sticky) previous?.label else null, at)
+            ?: return Selection.Exhausted(earliestReset(at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
         val prior = previous ?: primary?.let { SessionAccount(it.label, null) }
@@ -69,7 +97,7 @@ public class AccountPool(
             AccountSwitch(it.label, chosen.account.label, switchReason(it.label, chosen.account, at), at)
         }
         moved?.let(headLastSwitch::set)
-        val selection = AccountSelection(chosen.account, moved, chosen.lease)
+        val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease))
         val session = SessionAccount(chosen.account.label, moved ?: previous?.lastSwitch)
         return selection to session
     }
@@ -97,7 +125,7 @@ public class AccountPool(
         }
     }
 
-    private fun choose(previousLabel: String?, at: Long): ChosenAccount {
+    private fun choose(previousLabel: String?, at: Long): ChosenAccount? {
         val previous = previousLabel?.let(byLabel::get)
         val primary = checkNotNull(primary)
         val prefersPrimary = previous == null || previous !== primary
@@ -106,11 +134,7 @@ public class AccountPool(
         val previousChoice = previous?.let { acquireIfAvailable(it, at) }
         if (previousChoice != null) return previousChoice
         val candidates = accounts.sortedWith(compareBy<PoolAccount>(::sevenDayUsed).thenBy { it.label })
-        for (candidate in candidates) {
-            val choice = acquireIfAvailable(candidate, at)
-            if (choice != null) return choice
-        }
-        throw AllAccountsExhausted(earliestReset(at))
+        return candidates.firstNotNullOfOrNull { acquireIfAvailable(it, at) }
     }
 
     private fun acquireIfAvailable(account: PoolAccount, at: Long): ChosenAccount? {

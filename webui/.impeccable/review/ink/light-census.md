@@ -40,7 +40,11 @@ change with the frame, so the closest pair in the room is the closest pair in ei
 either way the margin over the floor is under a twentieth of a ratio point, and that is the fact.
 It is not a defect and nothing is fixed here. It is the number a future colour change has to beat.)
 
-## The 70-of-186 gap: what this census cannot see, and what now fills part of it
+## The 69-of-181 gap: what this census cannot see, and what now fills part of it
+
+**The tree this was read from: HEAD e344f94a, dirty — 1 css file(s) differ, 2 other file(s) differ.**
+The sweep's own stamp, which is the denominator below: HEAD e344f94a, dirty — 1 css file(s) differ, 2 other file(s) differ.
+
 
 The census is over pairs that RENDER. A rule that never renders contributes no pair, so it is
 invisible here by construction - which is not the same as being safe, and the row says so. The
@@ -48,21 +52,21 @@ denominator is M1-52's, re-derived here by re-running `sweep-d7.mjs` rather than
 
 | kind | rules |
 |---|---:|
-| UNRESOLVED | 70 |
-| RENDERED | 68 |
-| SAME-RULE | 30 |
+| UNRESOLVED | 69 |
+| RENDERED | 66 |
+| SAME-RULE | 28 |
 | NOT-AN-INK-ROLE | 18 |
 
 **THE DENOMINATOR IS NOT THE ONE THE ROW NAMES, and it is not stable within this session either.**
 The row - and M1-52, and M1-80's own notes - all say *73 of 187*. Enumerated from the source
-tonight, this tree carries **186** `color: var(--token)` rules across the same 38 stylesheets, of
-which **70** are unresolved. So the true sentence is 70-of-186, and the drift runs in
+tonight, this tree carries **181** `color: var(--token)` rules across the same 38 stylesheets, of
+which **69** are unresolved. So the true sentence is 69-of-181, and the drift runs in
 BOTH directions: this row watched the same sweep return 189 rules / 73 unresolved and then
-186 / 70 minutes later, because a live seat is editing CSS while the census runs.
+181 / 69 minutes later, because a live seat is editing CSS while the census runs.
 That is law 24 in the small - a denominator quoted from a list rather than re-derived from the
 source, staying plausible while the source moves under it.
 
-70 rules are UNRESOLVED - they have never rendered in any capture, so no light
+69 rules are UNRESOLVED - they have never rendered in any capture, so no light
 census can reach them. M1-80 dispositioned the gap it found, 73 rules, rather than leaving
 any of them absent:
 
@@ -72,13 +76,15 @@ any of them absent:
 | DEFERRED | 33 | reached by nothing yet - no light measurement exists |
 | DEAD | 1 | nothing builds it - no light measurement is possible |
 
-**AND THE TWO NUMBERS NO LONGER AGREE: 73 dispositioned, 70 unresolved today.** That is
+**AND THE TWO NUMBERS NO LONGER AGREE: 73 dispositioned, 69 unresolved today.** That is
 not an error in either record, and it is the sharpest form of the point above. M1-80 closed
 against a denominator of 73; the tree has moved since. This row watched the SAME sweep
-return 189 rules / 73 unresolved and then 186 / 70 minutes apart in one session, while a live
-seat edited CSS - so 3 of the rules M1-80 dispositioned are simply gone from the
+return 189 rules / 73 unresolved and then 181 / 69 minutes apart in one session, while a live
+seat edited CSS - so 4 of the rules M1-80 dispositioned are simply gone from the
 source, or have changed kind. A disposition record is a photograph of a moving denominator, and
-the only honest way to quote one is beside its date.
+the only honest way to quote one is beside its date. **The reconciliation is written down once,
+with the tree it was read from, in `reconcile-m1-80.md`** - it names the 4 rules that
+moved, what happened to each, and which of them are landed rather than merely uncommitted.
 
 **The 9 exercised-in-light rules: none below the floor.** The worst is
 `.myx-reveal-btn:hover` at 8.91:1 (`#0A0C0B` on `#ABB0AC` via

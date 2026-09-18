@@ -22,7 +22,7 @@
 //   node .dev/web-console/exit-gate.mjs [--only <name,...>] [--json]
 //   node .dev/web-console/exit-gate.mjs --selftest
 
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,14 +61,24 @@ const FRAMES = ['1536x1024', '3840x2160'];
 /** The rendered-rule pass's cells: [frame, theme]. See the `look` leg for why this is a diagonal. */
 const LOOKS = [['1536x1024', 'dark'], ['3840x2160', 'dark'], ['3840x2160', 'light']];
 
-/** Run a command; never throw. Returns {code, out} with stdout and stderr merged. */
+/**
+ * Run a command; never throw. Returns {code, out} with stdout and stderr merged.
+ *
+ * spawnSync AND NOT execFileSync, and the difference was a hole rather than a style choice (M1-49).
+ * execFileSync RETURNS STDOUT ONLY on success — stderr reached this function exclusively through the
+ * catch, from `e.stderr`. So every leg that PASSED was judged on half its output: its `proof` regex
+ * could not match anything the tool wrote to stderr, and a `note` hook could not report it. Measured
+ * on the wire-check leg the moment it was wired: the leg passed and its note printed the three
+ * disposition counts and NOTHING of Level 3a or 3b, which wire-check writes to stderr and which
+ * M1-45's ruling promises will be printed loudly on every run. The gate was quietly keeping the half
+ * of the output that the tools use for findings, and only when the tool had already failed.
+ */
 function sh(cmd, args, cwd) {
-  try {
-    const out = execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
-    return { code: 0, out };
-  } catch (e) {
-    return { code: e.status ?? 1, out: `${e.stdout ?? ''}${e.stderr ?? ''}${e.message ?? ''}` };
-  }
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', maxBuffer: 64 << 20 });
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}${r.error?.message ?? ''}`;
+  // a spawn that never started (ENOENT) has a null status, and a null read as 0 is a missing tool
+  // reported as a clean run — the exact two-outcome collapse the probe exists to prevent
+  return { code: r.error !== undefined ? (r.status ?? 127) : (r.status ?? 1), out };
 }
 
 function serverUp(port) {
@@ -177,6 +187,35 @@ const LEGS = [
     proof: /scan: \d+ path\(s\), [1-9]\d* file\(s\) read/,
   },
   {
+    // M1-49, and the finding that cut the row: this file was in NO gate. Its own exit rule cites
+    // "the milestone re-run" as what catches a Level 3b census entry the day its route lands, and
+    // that re-run did not exist — a justification for not gating that depended on a gate.
+    name: 'wire-check',
+    why: 'what the console declares against what the daemon emits; the milestone re-run its own exit rule names',
+    probe: () => sh('node', ['.dev/web-console/wire-check.mjs', '--selftest'], ROOT),
+    probeProof: /selftest \d+\/\d+ PASS/,
+    run: () => sh('node', ['.dev/web-console/wire-check.mjs'], ROOT),
+    // THE PROOF IS THE HEADER, NOT A FINDING. M1-37's own verify leg greped for the route-failure
+    // line — it asserted the presence of a DEFECT, so it went false the moment M1-41 fixed the eight
+    // routes, and the leg has been exit 1 ever since against a check that was working perfectly. A
+    // leg has to survive its own success, so this matches the line the check prints on every run
+    // whatever it finds, with both counts non-zero so a run that read nothing is DID NOT RUN.
+    proof: /wire-check: [1-9]\d* entity types file\(s\), [1-9]\d* declared field\(s\)/,
+    // the census does not gate (M1-45) — so the leg SAYS it, every run, passing or not
+    note: (out) => out.split('\n').filter((l) => /LEVEL 3[ab] —|PRINTED, NOT GATED|^  (MATCHES|MISMATCHED|UNDISPOSITIONED)/.test(l)).map((l) => l.trim()).join('\n'),
+  },
+  {
+    // M1-49. The gate's own denominator: every .mjs under .dev/web-console carries a disposition, and
+    // each disposition is verified against the tree. Without this leg the table is a document, and a
+    // document is what let wire-check.mjs sit outside the gate for a night.
+    name: 'gate-coverage',
+    why: 'every checker in .dev/web-console is a leg, a library, a tool, or a named pending row — and nothing else',
+    probe: () => sh('node', ['.dev/web-console/gate-coverage.mjs', '--selftest'], ROOT),
+    probeProof: /selftest \d+\/\d+ PASS/,
+    run: () => sh('node', ['.dev/web-console/gate-coverage.mjs'], ROOT),
+    proof: /gate-coverage: [1-9]\d* checker\(s\) under dev\/web-console, [1-9]\d* leg\(s\)/,
+  },
+  {
     name: 'comp-check',
     why: "the comp's constants measured on live pages; needs the dev server",
     needsServer: true,
@@ -238,6 +277,24 @@ const LEGS = [
     failIf: /LOOK: BLOCKED|look-gate\s+FAIL/,
     failHint: 'the look gate found blocking findings on this page; fix them or put them on the punch list',
   },
+  {
+    // LAST ON PURPOSE, AND THE POSITION IS THE POINT (M1-49). This leg asks whether every row that
+    // reads `done` has its receipted bytes reachable from HEAD. That question only has one meaning
+    // at the MILESTONE BOUNDARY, after the orchestrator has committed the milestone's rows: a red
+    // here says a row claims a landing it does not have. Run mid-milestone it says something else
+    // entirely — that the orchestrator has not committed yet, which is not a defect but the normal
+    // state of a campaign in flight. Placing it after every other leg keeps the gate's own ordering
+    // honest about that: everything above judges the TREE, this one judges the HISTORY, and history
+    // is the last thing to be true.
+    name: 'landed',
+    why: 'every done row\'s receipted bytes reachable from HEAD — the row that claims a landing it does not have',
+    probe: () => sh('node', ['.dev/web-console/landed.mjs', '--selftest'], ROOT),
+    probeProof: /selftest \d+\/\d+ PASS/,
+    run: () => sh('node', ['.dev/web-console/landed.mjs'], ROOT),
+    // rows read and objects walked both non-zero: a run against an empty ledger or an unborn
+    // repository would otherwise report a clean history it never looked at
+    proof: /landed: [1-9]\d* row\(s\) read from .+, \d+ receipted file\(s\) checked against [1-9]\d* object\(s\)/,
+  },
 ];
 
 function runLeg(leg) {
@@ -293,6 +350,21 @@ function selftest() {
     if (!ok) bad++;
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${c.label} — wanted ${c.want}, got ${got}`);
   }
+  // THE LEGS ARRAY ITSELF, which nothing here had ever looked at. Every case above drives runLeg
+  // with a HAND-WRITTEN leg, so a malformed entry in the real LEGS — one missing `run`, say —
+  // survived a 7/7 green selftest and then threw `leg.run is not a function` on the first real
+  // invocation. Measured 2026-09-18 while wiring M1-49's three legs: that is exactly what happened,
+  // to the leg being added, and the row's own verify chain could not see it because --selftest never
+  // touches this array. A selftest that only exercises synthetic inputs proves the runner and says
+  // nothing about what it will be asked to run.
+  for (const leg of LEGS) {
+    const missing = ['name', 'why', 'probe', 'run'].filter((k) => leg[k] === undefined);
+    const shaped = missing.length === 0 && typeof leg.probe === 'function' && typeof leg.run === 'function';
+    if (!shaped) bad++;
+    console.log(`  ${shaped ? 'PASS' : 'FAIL'}  leg ${leg.name ?? '(unnamed)'} is fully formed` +
+      (shaped ? '' : ` — missing or not callable: ${missing.join(', ') || 'probe/run not functions'}`));
+  }
+
   // The vacuous pass, proven rather than asserted: this gate DID exit 0 on "0/0 passed"
   // until 2026-09-18, found by reading a peer campaign's audit of its own thirteen
   // checkers. A gate with nothing to run is the one case it cannot report as green.
@@ -302,7 +374,7 @@ function selftest() {
     if (!ok) bad++;
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  an empty leg set is not a pass — wanted a non-zero exit, got ${r.code}`);
   }
-  const total = cases.length + 1;
+  const total = cases.length + 1 + LEGS.length;
   console.log(bad === 0 ? `\nselftest ${total}/${total} PASS` : `\nselftest ${total - bad}/${total}, ${bad} wrong`);
   process.exit(bad === 0 ? 0 : 1);
 }

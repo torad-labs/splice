@@ -178,26 +178,33 @@ run "knob keys documented" bun checks/config/knob-keys-documented.ts check .
 run "knob keys selftest" bash checks/knob-keys-documented-selftest.sh
 run "env vars documented" bun checks/config/env-vars-documented.ts check .
 run "env vars selftest" bash checks/env-vars-documented-selftest.sh
-run "const single source" python3 checks/const-single-source.py --ratchet
+run "const single source" bun checks/const-single-source.ts --ratchet
 run "const single source selftest" bash checks/const-single-source-selftest.sh
 run "silent constants" bun checks/silent-constants.ts --ratchet
 run "silent constants selftest" bash checks/silent-constants-selftest.sh
-run "role registry" python3 checks/role-registry.py check .
+run "role registry" bun checks/role-registry.ts check .
 run "role registry selftest" bash checks/role-registry-selftest.sh
-run "model catalogs single source" python3 checks/model-catalogs-single-source.py check .
+run "model catalogs single source" bun checks/model-catalogs-single-source.ts check .
 run "model catalogs selftest" bash checks/model-catalogs-single-source-selftest.sh
-run "autocloseable closed" python3 checks/autocloseable-closed.py check
+run "autocloseable closed" bun checks/autocloseable-closed.ts check
 run "autocloseable closed selftest" bash checks/autocloseable-closed-selftest.sh
 # Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted
 # every time it was only prose, because nothing failed when a session added another .py. It is a
 # wall now; checks/config/python-burndown.json is the dated debt and may only shrink.
 run "no python" bun checks/no-python.ts
 run "no python selftest" bun checks/no-python-selftest.ts
+# SAME CHECKER, TWICE. The leg above is the commit-time half and it fails LATE: on 2026-09-18 a
+# webui commit added a fresh python3 subprocess and the branch stayed green for hours, until a
+# builder converting an unrelated checker happened to run the wall. The PreToolUse guard
+# (.claude/settings.json, Write|Edit|MultiEdit) refuses that write when it is made, importing this
+# wall's own predicate rather than reimplementing it. This leg proves the guard still refuses —
+# a write guard that silently stopped refusing would announce itself only as Python reappearing.
+run "no python write guard" bun checks/no-python-write-guard-selftest.ts
 run "public surface" bun checks/public-surface.ts --ratchet
 run "public surface selftest" bash checks/public-surface-selftest.sh
-run "constructor width" python3 checks/constructor-width.py --ratchet
+run "constructor width" bun checks/constructor-width.ts --ratchet
 run "constructor width selftest" bash checks/constructor-width-selftest.sh
-run "schema keys consumed" python3 checks/schema-keys-consumed.py
+run "schema keys consumed" bun checks/schema-keys-consumed.ts
 run "schema keys consumed selftest" bash checks/schema-keys-consumed-selftest.sh
 # V4-68: a @Test method JUnit never DISCOVERED is a green suite with a hole in it — no failure,
 # no skip, no warning, and the XML just looks one short. Found 2026-09-16: HeadServerCapacityTest
@@ -216,13 +223,13 @@ run "schema keys consumed selftest" bash checks/schema-keys-consumed-selftest.sh
 # scoped :gateway:test run by another seat during this row's own development deleted 62 of the 63
 # XML files mid-run). Moved above the gradle leg this wall would compare fresh source against
 # absent or stale results and red the whole tree for the wrong reason.
-run "tests are discovered" python3 checks/config/tests-are-discovered.py check .
-run "tests are discovered selftest" python3 checks/config/tests-are-discovered.py --selftest
+run "tests are discovered" bun checks/config/tests-are-discovered.ts check .
+run "tests are discovered selftest" bun checks/config/tests-are-discovered.ts --selftest
 # CW-9: stty and raw-mode entry exist only inside TerminalMode.raw. A widget that
 # invokes stty on its own can leave the tty raw after SIGINT. Selftest is in-process
 # (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.
-run "terminal-restore bracketed" python3 checks/config/terminal-restore-bracketed.py check .
-run "terminal-restore selftest" python3 checks/config/terminal-restore-bracketed.py --selftest
+run "terminal-restore bracketed" bun checks/config/terminal-restore-bracketed.ts check .
+run "terminal-restore selftest" bun checks/config/terminal-restore-bracketed.ts --selftest
 # V4-30: the conventional-type vocabulary lives once, in the checks/pr-title.sh the next leg runs.
 # CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted to include `release` and
 # `codex`, types the org gate rejects — the exact divergence pr-title.sh's own header describes as

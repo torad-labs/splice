@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/autocloseable-closed-selftest.sh — mutation-proves checks/autocloseable-closed.py.
+# checks/autocloseable-closed-selftest.sh — mutation-proves checks/autocloseable-closed.ts.
 #
 # V4-95. The checker guards the tree; this canary guards the CHECKER. Same defence-in-depth idiom as
 # checks/rule-routing-selftest.sh and checks/concentration-selftest.sh, and written for the same
@@ -24,15 +24,15 @@ fail=0
 err() { echo "  ✗ autocloseable-closed-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-CHECKER="$tmp/checks/autocloseable-closed.py"
+CHECKER="$tmp/checks/autocloseable-closed.ts"
 APP="$tmp/gateway/app/src/main/kotlin/splice/app"
 SPI="$tmp/gateway/provider-spi/src/main/kotlin/splice/spi"
 
 mkdir -p "$tmp/checks" "$APP" "$SPI"
-cp "$ROOT/checks/autocloseable-closed.py" "$CHECKER"
+cp "$ROOT/checks/autocloseable-closed.ts" "$CHECKER"
 
 rc=0
-run() { python3 "$CHECKER" >"$tmp/out" 2>&1; rc=$?; }
+run() { bun "$CHECKER" >"$tmp/out" 2>&1; rc=$?; }
 
 must_red() { # must_red <label> <substring>
   if [ "$rc" -eq 0 ]; then
@@ -53,7 +53,7 @@ must_green() { # must_green <label>
 }
 
 # ── 0. the checker's own --selftest must pass ─────────────────────────────────────────────────
-if python3 "$CHECKER" --selftest >"$tmp/out" 2>&1; then
+if bun "$CHECKER" --selftest >"$tmp/out" 2>&1; then
   note "✓ 0. the checker's --selftest passes"
 else
   err "0. the checker's --selftest FAILS: $(tail -5 "$tmp/out" | tr '\n' ' ')"
@@ -63,7 +63,7 @@ fi
 # The real tree is RED by design at V4-95 (the sibling fix row burns it down), so the control here
 # is not "green" but "the verdict the ledger records". If this ever changes, the ledger's red
 # inventory is stale and that is a finding in itself.
-( cd "$ROOT" && python3 checks/autocloseable-closed.py >"$tmp/real" 2>&1 )
+( cd "$ROOT" && bun checks/autocloseable-closed.ts >"$tmp/real" 2>&1 )
 real_rc=$?
 if [ "$real_rc" -eq 0 ]; then
   note "! 1. the REAL tree is now GREEN — the V4-95 red inventory (JvmCodeModeRuntime) has been fixed."
@@ -166,11 +166,11 @@ mv "$tmp/Contract.kt.bak" "$SPI/Contract.kt"
 # ── 6. --selftest MUST BE ABLE TO FAIL ────────────────────────────────────────────────────────
 # Mutate audit() to report nothing. Every one of --selftest's red fixtures then has no finding to
 # assert on, so a canary that still passes here is a canary that asserts nothing.
-sed 's/^def audit(root: pathlib.Path) -> list\[str\]:$/def audit(root: pathlib.Path) -> list[str]:\n    return []  # selftest mutation/' \
-  "$CHECKER" > "$tmp/checks/mutant.py"
-if ! grep -q 'selftest mutation' "$tmp/checks/mutant.py"; then
+sed 's|^function audit(root: string): string\[\] {$|function audit(root: string): string[] {\n  return []; // selftest mutation|' \
+  "$CHECKER" > "$tmp/checks/mutant.ts"
+if ! grep -q 'selftest mutation' "$tmp/checks/mutant.ts"; then
   err "6. the mutation did not apply — audit()'s signature moved, so this fixture proves nothing"
-elif python3 "$tmp/checks/mutant.py" --selftest >"$tmp/out" 2>&1; then
+elif bun "$tmp/checks/mutant.ts" --selftest >"$tmp/out" 2>&1; then
   err "6. a checker whose audit() reports NOTHING still passed --selftest. The canary asserts nothing."
 else
   note "✓ 6. --selftest fails on a checker that cannot find anything (exit $?)"
@@ -191,17 +191,17 @@ internal class Arm {
     fun build() = Wiring(runtime = JvmCodeModeRuntime())
 }
 KOT
-sed 's/^ALLOWLIST: dict\[str, str\] = {}$/ALLOWLIST: dict[str, str] = {"JvmCodeModeRuntime": "trust me"}/' \
-  "$CHECKER" > "$tmp/checks/undated.py"
-if ! grep -q 'trust me' "$tmp/checks/undated.py"; then
+sed 's|^let ALLOWLIST: Record<string, string> = {};$|let ALLOWLIST: Record<string, string> = { JvmCodeModeRuntime: "trust me" };|' \
+  "$CHECKER" > "$tmp/checks/undated.ts"
+if ! grep -q 'trust me' "$tmp/checks/undated.ts"; then
   err "7. the mutation did not apply — the ALLOWLIST declaration moved"
 else
-  python3 "$tmp/checks/undated.py" >"$tmp/out" 2>&1; rc=$?
+  bun "$tmp/checks/undated.ts" >"$tmp/out" 2>&1; rc=$?
   must_red "7. an UNDATED allowlist entry" "not 'YYYY-MM-DD"
 fi
-sed 's/^ALLOWLIST: dict\[str, str\] = {}$/ALLOWLIST: dict[str, str] = {"JvmCodeModeRuntime": "2026-09-17: canary fixture."}/' \
-  "$CHECKER" > "$tmp/checks/dated.py"
-python3 "$tmp/checks/dated.py" >"$tmp/out" 2>&1; rc=$?
+sed 's|^let ALLOWLIST: Record<string, string> = {};$|let ALLOWLIST: Record<string, string> = { JvmCodeModeRuntime: "2026-09-17: canary fixture." };|' \
+  "$CHECKER" > "$tmp/checks/dated.ts"
+bun "$tmp/checks/dated.ts" >"$tmp/out" 2>&1; rc=$?
 must_green "7b. a DATED allowlist entry is a disposition"
 
 if [ "$fail" -eq 0 ]; then

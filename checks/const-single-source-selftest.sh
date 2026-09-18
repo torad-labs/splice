@@ -2,8 +2,8 @@
 # checks/const-single-source-selftest.sh — red-green proof for the constant single-source wall,
 # AGAINST THE REAL TREE, by PREDICTED DELTA on each plane separately.
 #
-# WHY THIS EXISTS on top of `const-single-source.py --selftest`. The python selftest proves the
-# detector logic against hand-written fixtures, and it deliberately NEUTRALISES the shipped
+# WHY THIS EXISTS on top of `const-single-source.ts --selftest`. The checker's own selftest proves
+# the detector logic against hand-written fixtures, and it deliberately NEUTRALISES the shipped
 # NAMED_SCARS list so a temp tree that does not contain the real tree's duplicates is not reported
 # stale eight times over. That leaves two claims only the real source can settle, and they are the
 # two that rot silently:
@@ -30,8 +30,10 @@
 #   6  a synthetic must-stay-equal comment         -> strict +1, EQUAL-BY-COMMENT
 #   7  a synthetic Knob-default shadow             -> strict +1, KNOB-SHADOW
 #   8  the gateway modules removed                 -> untrustworthy, exit 2, not green
-#   9  the documented gate line verbatim           -> non-zero on the tree it is wired against
-#  10  bare `check` lists the held plane           -> the 136 groups printed, baseline ignored
+#   9  the documented gate line verbatim           -> passes clean, fails on a planted violation
+#  10  `--inventory` lists the held plane          -> the held groups printed, baseline ignored
+#  11  a BARE run on a tree with a planted dup     -> NON-ZERO, where --inventory on the same tree
+#                                                     is zero: bare is the gate, not the inventory
 #
 # EVERYTHING RUNS OUT OF TREE: a mktemp -d holding a COPY of the checker and a COPY of the
 # baseline, plus one SYMLINK per gateway module. Nothing is written into gateway/ and the working
@@ -45,14 +47,14 @@ trap 'rm -rf "$tmp"' EXIT
 fail=0
 err() { echo "  ✗ const-single-source-selftest: $1"; fail=1; }
 
-CHECKER="$tmp/checks/const-single-source.py"
+CHECKER="$tmp/checks/const-single-source.ts"
 BASELINE="$tmp/checks/config/const-single-source-baseline.json"
 SYNTH="$tmp/gateway/zz-selftest/src/main/kotlin/splice/selftest"
 
 build_harness() {
   rm -rf "$tmp/gateway" "$tmp/checks"
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
-  cp "$ROOT/checks/const-single-source.py" "$CHECKER"
+  cp "$ROOT/checks/const-single-source.ts" "$CHECKER"
   cp "$ROOT/checks/config/const-single-source-baseline.json" "$BASELINE"
   for main in "$ROOT"/gateway/*/src/main; do
     [ -d "$main" ] || continue
@@ -63,7 +65,7 @@ build_harness() {
   [ -e "$tmp/gateway/core" ] || { echo "  ✗ const-single-source-selftest: no gateway modules under $ROOT"; exit 1; }
 }
 
-run_gate() { python3 "$CHECKER" --ratchet --root "$tmp" 2>&1; }
+run_gate() { bun "$CHECKER" --ratchet --root "$tmp" 2>&1; }
 strict_count() { printf '%s\n' "$1" | sed -n 's/.*STRICT findings .* measured *\([0-9]*\) .*/\1/p'; }
 moved_count() { printf '%s\n' "$1" | grep -cE '^  ✗ (GROWTH|STALE)'; }
 
@@ -96,7 +98,7 @@ fi
 if [ "$MOVED_BASE" -ne 0 ]; then
   echo "  ✗ const-single-source-selftest: CONTROL has $MOVED_BASE GROWTH/STALE line(s) — the"
   echo "    baseline does not match the tree, so every ratchet fixture below is UNPROVEN."
-  echo "    Re-record with 'python3 checks/const-single-source.py --record >"
+  echo "    Re-record with 'bun checks/const-single-source.ts --record >"
   echo "    checks/config/const-single-source-baseline.json'."
   printf '%s\n' "$control_out" | grep -E '^  ✗ (GROWTH|STALE)' | sed 's/^/      /'
   exit 1
@@ -158,16 +160,20 @@ expect_delta "3. a baselined group spread to a new file" 0 1 "GROWTH (COPY)" "SP
 
 # ── 4. a baseline entry describing a group the tree does not have ─────────────────────────────
 build_harness
-python3 - "$BASELINE" <<'PY'
-import json, sys
-doc = json.load(open(sys.argv[1]))
-doc["groups"]["COPY ZZ_SELFTEST_VANISHED"] = [
-    "gateway/core/src/main/kotlin/splice/core/Gone.kt",
-    "gateway/app/src/main/kotlin/splice/app/AlsoGone.kt",
-]
-doc["total"] += 1
-json.dump(doc, open(sys.argv[1], "w"), indent=2)
-PY
+# The harness edits the baseline with bun rather than an inline heredoc for the retired interpreter,
+# so this file stops being an invoker at all. `bun -e '<script>' ARG` puts ARG at process.argv[1]
+# (argv[0] is bun), which is the whole of the port: the mutation logic is unchanged.
+bun -e '
+const fs = require("fs");
+const p = process.argv[1];
+const doc = JSON.parse(fs.readFileSync(p, "utf8"));
+doc.groups["COPY ZZ_SELFTEST_VANISHED"] = [
+  "gateway/core/src/main/kotlin/splice/core/Gone.kt",
+  "gateway/app/src/main/kotlin/splice/app/AlsoGone.kt",
+];
+doc.total += 1;
+fs.writeFileSync(p, JSON.stringify(doc, null, 2));
+' "$BASELINE"
 expect_delta "4. a baseline entry for a group the tree no longer has" 0 1 \
   "STALE" "ZZ_SELFTEST_VANISHED" "no longer declares it in 2+ files"
 
@@ -187,23 +193,26 @@ printf 'package splice.synthetic\n\nprivate const val SCAR_DUP = 5\n' \
   >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt"
 printf 'package splice.synthetic\n\nprivate const val SCAR_DUP = 5\n' \
   >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt"
-python3 - "$BASELINE" "$CHECKER" <<'PY'
-import json, sys
-baseline, checker = sys.argv[1], sys.argv[2]
-doc = json.load(open(baseline))
-doc["groups"]["COPY SCAR_DUP"] = [
-    "gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt",
-    "gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt",
-]
-doc["total"] += 1
-json.dump(doc, open(baseline, "w"), indent=2)
-# The scar goes into the HARNESS's copy of the checker, which build_harness cp's (a real file, not
-# a symlink) — so this never touches the shipped NAMED_SCARS list.
-text = open(checker).read()
-old = "NAMED_SCARS: dict[str, str] = {}"
-assert text.count(old) == 1, "the harness copy does not carry the empty shipped list"
-open(checker, "w").write(text.replace(old, 'NAMED_SCARS = {"SCAR_DUP": "fixture scar: one value, two files"}'))
-PY
+bun -e '
+const fs = require("fs");
+const [baseline, checker] = process.argv.slice(1);
+const doc = JSON.parse(fs.readFileSync(baseline, "utf8"));
+doc.groups["COPY SCAR_DUP"] = [
+  "gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt",
+  "gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt",
+];
+doc.total += 1;
+fs.writeFileSync(baseline, JSON.stringify(doc, null, 2));
+// The scar goes into the HARNESS copy of the checker, which build_harness cp-s (a real file, not
+// a symlink) — so this never touches the shipped NAMED_SCARS list. The anchor is the ported
+// declaration; if it ever stops matching, throw rather than silently skip the mutation.
+const text = fs.readFileSync(checker, "utf8");
+const old = "let NAMED_SCARS: Record<string, string> = {};";
+if (text.split(old).length - 1 !== 1) throw new Error("the harness copy does not carry the empty shipped list");
+// The replacement KEEPS the `let`: the anchor is the whole declaration, so assigning without it
+// would leave a bare assignment to an undeclared name and the harness copy would not even load.
+fs.writeFileSync(checker, text.replace(old, "let NAMED_SCARS: Record<string, string> = { SCAR_DUP: \"fixture scar: one value, two files\" };"));
+' "$BASELINE" "$CHECKER"
 expect_delta "5. a NAMED_SCARS name recorded in the baseline" 1 1 \
   "STALE" "SCAR_DUP" "cannot be both baselined and strict"
 # ...and the strict finding for it is STILL there, unlaundered.
@@ -251,7 +260,7 @@ fi
 
 # ── 9. the documented gate line is the line that gates ────────────────────────────────────────
 # The ledger note tells the orchestrator to wire exactly:
-#   run "const single source"  python3 checks/const-single-source.py --ratchet
+#   run "const single source"  bun checks/const-single-source.ts --ratchet
 # Proven verbatim here (with --root, the harness's only difference from the repo root).
 #
 # V4-122 CHANGED WHAT THIS ARM PINS. It used to run the documented line against a harness copy of
@@ -261,7 +270,7 @@ fi
 # a tree that is GREEN to begin with and then a VIOLATION planted in it, so the arm proves the thing
 # it names: the documented line fails on a tree that offends, and passes on one that does not.
 build_harness
-if ! python3 "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
+if ! bun "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
   err "9. the documented gate line is non-zero on a CLEAN harness tree — the arm below cannot distinguish a violation from a broken gate"
 else
   # PLANT INTO A REAL MODULE DIR, NEVER THROUGH build_harness's SYMLINK. That function links
@@ -275,7 +284,7 @@ else
     >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt"
   printf 'package splice.synthetic\n\nprivate const val SYNTHETIC_DUP = 7\n' \
     >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt"
-  if python3 "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
+  if bun "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
     err "9. the documented gate line exited 0 on a tree carrying a PLANTED duplication"
   else
     echo "  ✓ 9. the documented gate line passes clean and fails on a planted violation"
@@ -283,18 +292,42 @@ else
 fi
 build_harness
 
-# ── 10. bare `check` is the inventory: it prints the held plane and ignores the baseline ───────
+# ── 10. `--inventory` prints the held plane and ignores the baseline ──────────────────────────
 build_harness
-inventory="$(python3 "$CHECKER" --root "$tmp" 2>&1)"
+inventory="$(bun "$CHECKER" --inventory --root "$tmp" 2>&1)"
 held="$(printf '%s\n' "$inventory" | sed -n 's/^RATCHETED — \([0-9]*\) duplicated name(s).*/\1/p')"
 if [ -z "$held" ] || [ "$held" -lt 100 ]; then
-  err "10. bare \`check\` did not list the held plane (got '${held:-nothing}')"
+  err "10. \`--inventory\` did not list the held plane (got '${held:-nothing}')"
 else
-  echo "  ✓ 10. bare \`check\` lists all $held held duplicate(s) without gating them"
+  echo "  ✓ 10. \`--inventory\` lists all $held held duplicate(s) without gating them"
 fi
 
-# ── the python fixture selftest, run from here so one command proves both planes ──────────────
-if ! python3 "$CHECKER" --selftest >/dev/null 2>&1; then
+# ── 11. a BARE run is the GATE, not the inventory — the defect this port fixed ────────────────
+# The .py's bare form ran the inventory, which exits 0 on a tree whose ratchet plane has grown, so
+# a mis-invocation read as a pass. The port makes bare fall through to --ratchet. Proven by
+# PREDICTED DIVERGENCE: on one tree carrying a planted, unbaselined duplication, bare must be
+# NON-ZERO while --inventory on the SAME tree is ZERO. Asserting only "bare is non-zero" would pass
+# on a checker that had simply been broken; asserting only "inventory is zero" would pass on the
+# old behaviour. The pair is the proof.
+build_harness
+mkdir -p "$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic"
+printf 'package splice.synthetic\n\nprivate const val BARE_GATE_DUP = 7\n' \
+  >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt"
+printf 'package splice.synthetic\n\nprivate const val BARE_GATE_DUP = 7\n' \
+  >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt"
+bare_code=0; bun "$CHECKER" --root "$tmp" >/dev/null 2>&1 || bare_code=$?
+inv_code=0; bun "$CHECKER" --inventory --root "$tmp" >/dev/null 2>&1 || inv_code=$?
+if [ "$bare_code" -eq 0 ]; then
+  err "11. a BARE run exited 0 on a tree with a planted unbaselined duplication — bare is not gating"
+elif [ "$inv_code" -ne 0 ]; then
+  err "11. --inventory exited $inv_code on the same tree — the inventory must not gate"
+else
+  echo "  ✓ 11. a BARE run gates (exit $bare_code) where --inventory does not (exit 0)"
+fi
+build_harness
+
+# ── the checker's own fixture selftest, run from here so one command proves both planes ───────
+if ! bun "$CHECKER" --selftest >/dev/null 2>&1; then
   err "the checker's own --selftest failed"
 else
   echo "  ✓ the checker's --selftest (fixture plane) passes"

@@ -2,7 +2,7 @@
 # checks/constructor-width-selftest.sh — red-green proof for the V4-93 constructor-width ratchet,
 # taken against the REAL tree rather than against fixtures alone.
 #
-# WHY BOTH HALVES EXIST. `constructor-width.py --selftest` proves the LOGIC on temp fixtures (the
+# WHY BOTH HALVES EXIST. `constructor-width.ts --selftest` proves the LOGIC on temp fixtures (the
 # limits themselves, a 13-parameter defaulted data class, a widened entry, a padded entry) and it
 # grades its own class census against ast-grep's `primary_constructor` nodes. What it cannot prove
 # is that the checker is still pointed at THIS tree: a checker whose glob stops matching measures
@@ -16,8 +16,8 @@
 # asserted here — the one place that re-reads it on every gate run.
 #
 # EVERYTHING RUNS OUT OF TREE. mktemp -d holding a COPY of the checker and of the baseline, plus one
-# SYMLINK per gateway module — the checker measures the real source (ROOT comes from its own
-# __file__, so a copy under $tmp/checks measures $tmp) while every mutation lands on a throwaway.
+# SYMLINK per gateway module — the checker measures the real source (its ROOT comes from its own
+# module URL, so a copy under $tmp/checks measures $tmp) while every mutation lands on a throwaway.
 #
 # THE CONTROL COMES FIRST: each arm claims "this mutation turns green into red", which is worth
 # nothing unless the unmutated harness is green.
@@ -31,7 +31,7 @@ fail=0
 err() { echo "  x constructor-width-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-CHECK="$tmp/checks/constructor-width.py"
+CHECK="$tmp/checks/constructor-width.ts"
 BASELINE="$tmp/checks/config/constructor-width-baseline.json"
 SYNTH="$tmp/gateway/zz-selftest-width/src/main/kotlin/splice/selftest"
 
@@ -45,7 +45,7 @@ done
 [ -e "$tmp/gateway/core" ] || { echo "  x constructor-width-selftest: no gateway modules found under $ROOT"; exit 1; }
 
 reset_all() {
-  cp "$ROOT/checks/constructor-width.py" "$CHECK"
+  cp "$ROOT/checks/constructor-width.ts" "$CHECK"
   cp "$ROOT/checks/config/constructor-width-baseline.json" "$BASELINE"
   rm -rf "$tmp/gateway/zz-selftest-width"
 }
@@ -56,7 +56,7 @@ reset_all
 tree_state="$(cd "$ROOT/gateway" && ls -1A)"
 
 rc=0
-check() { python3 "$CHECK" "$@" >"$tmp/out" 2>&1; rc=$?; }
+check() { bun "$CHECK" "$@" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then
@@ -73,13 +73,13 @@ DETEKT="$ROOT/gateway/detekt.yml"
 if ! grep -q "LongParameterList:" "$DETEKT"; then
   err "PREMISE: gateway/detekt.yml no longer configures LongParameterList — re-read this wall's header before trusting either instrument"
 elif ! grep -q "ignoreDataClasses: true" "$DETEKT" || ! grep -q "ignoreDefaultParameters: true" "$DETEKT"; then
-  note "PREMISE CHANGED: detekt's ignoreDataClasses/ignoreDefaultParameters are no longer both true — detekt may now bill some of these widths itself; re-read checks/constructor-width.py's header"
+  note "PREMISE CHANGED: detekt's ignoreDataClasses/ignoreDefaultParameters are no longer both true — detekt may now bill some of these widths itself; re-read checks/constructor-width.ts's header"
 else
   note "ok PREMISE: detekt ignores data classes AND defaulted parameters, so nothing but this wall bills the width"
 fi
 
 # -- control ---------------------------------------------------------------------------------
-python3 "$ROOT/checks/constructor-width.py" --selftest >"$tmp/out" 2>&1 || {
+bun "$ROOT/checks/constructor-width.ts" --selftest >"$tmp/out" 2>&1 || {
   err "CONTROL: the fixture selftest (incl. the ast-grep denominator) must be green: $(tail -6 "$tmp/out" | tr '\n' ' ')"
 }
 check --ratchet
@@ -101,13 +101,14 @@ fi
 # A data class whose every parameter is defaulted: ignoreDataClasses AND ignoreDefaultParameters
 # both apply, so detekt reports nothing and this is the only instrument that can.
 mkdir -p "$SYNTH"
-python3 - "$SYNTH/SelftestWide.kt" <<'PY'
-import pathlib, sys
-params = ",\n".join(f"    val p{i}: Int = 0" for i in range(13))
-pathlib.Path(sys.argv[1]).write_text(
-    "package splice.selftest\n\npublic data class SelftestWideCtor(\n" + params + ",\n)\n"
-)
-PY
+# Every fixture mutation below is bun rather than an inline heredoc for the retired interpreter,
+# so this file stops being an invoker at all. `bun -e '<script>' ARG` puts ARG at process.argv[1]
+# (argv[0] is bun); the mutation logic is otherwise unchanged.
+bun -e '
+const fs = require("fs");
+const params = Array.from({ length: 13 }, (_, i) => `    val p${i}: Int = 0`).join(",\n");
+fs.writeFileSync(process.argv[1], "package splice.selftest\n\npublic data class SelftestWideCtor(\n" + params + ",\n)\n");
+' "$SYNTH/SelftestWide.kt"
 check --ratchet
 must_fail "1. GROWTH — a 13-parameter defaulted data class nothing records" "GROWTH"
 grep -q "SelftestWideCtor" "$tmp/out" ||
@@ -116,14 +117,12 @@ reset_all
 
 # -- 2. GROWTH by SUBSYSTEM, with the parameter count well inside ----------------------------
 mkdir -p "$SYNTH"
-python3 - "$SYNTH/SelftestSubs.kt" <<'PY'
-import pathlib, sys
-imports = "\n".join(f"import splice.selftestsub{i}.Type{i}" for i in range(7))
-params = ",\n".join(f"    val p{i}: Type{i}" for i in range(7))
-pathlib.Path(sys.argv[1]).write_text(
-    "package splice.selftest\n\n" + imports + "\n\npublic class SelftestSubsCtor(\n" + params + ",\n)\n"
-)
-PY
+bun -e '
+const fs = require("fs");
+const imports = Array.from({ length: 7 }, (_, i) => `import splice.selftestsub${i}.Type${i}`).join("\n");
+const params = Array.from({ length: 7 }, (_, i) => `    val p${i}: Type${i}`).join(",\n");
+fs.writeFileSync(process.argv[1], "package splice.selftest\n\n" + imports + "\n\npublic class SelftestSubsCtor(\n" + params + ",\n)\n");
+' "$SYNTH/SelftestSubs.kt"
 check --ratchet
 must_fail "2. GROWTH — 7 splice subsystems in a 7-parameter constructor" "subsystems (max 6)"
 grep -q "SelftestSubsCtor" "$tmp/out" || err "2. the subsystem arm does not NAME the planted class"
@@ -133,51 +132,51 @@ reset_all
 # The arm without which a baseline entry is a licence: HeadDeps could go 25 -> 40 under a green
 # gate. The mutation is applied to the CHECKER's view by shrinking the recorded number, which is
 # the same arithmetic as the class gaining parameters and does not touch the working tree.
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-key = next(k for k, v in data["offenders"].items() if v["params"] > 13)
-data["offenders"][key]["params"] -= 1
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const data = JSON.parse(fs.readFileSync(path, "utf8"));
+const key = Object.keys(data.offenders).find((k) => data.offenders[k].params > 13);
+data.offenders[key].params -= 1;
+fs.writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
+' "$BASELINE"
 check --ratchet
 must_fail "3. WIDENED — a recorded offender measuring wider than its entry" "WIDENED"
 reset_all
 
 # -- 4. PADDED: an entry recorded above the measurement --------------------------------------
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-key = next(iter(data["offenders"]))
-data["offenders"][key]["params"] += 7
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const data = JSON.parse(fs.readFileSync(path, "utf8"));
+const key = Object.keys(data.offenders)[0];
+data.offenders[key].params += 7;
+fs.writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
+' "$BASELINE"
 check --ratchet
 must_fail "4. PADDED — an entry recorded above the measured width" "PADDED"
 reset_all
 
 # -- 5. STALE: an entry naming a constructor that is not wide --------------------------------
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-data["offenders"]["gateway/core/src/main/kotlin/splice/core/Nope.kt WasWideOnce"] = {"params": 30, "subsystems": 0}
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const data = JSON.parse(fs.readFileSync(path, "utf8"));
+data.offenders["gateway/core/src/main/kotlin/splice/core/Nope.kt WasWideOnce"] = { params: 30, subsystems: 0 };
+fs.writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
+' "$BASELINE"
 check --ratchet
 must_fail "5. STALE — an entry naming a constructor the tree does not have" "STALE"
 reset_all
 
 # -- 6. an undated baseline, and a missing one, are hard errors ------------------------------
-python3 - "$BASELINE" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-data["recorded"] = ""
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const data = JSON.parse(fs.readFileSync(path, "utf8"));
+data.recorded = "";
+fs.writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
+' "$BASELINE"
 check --ratchet
 must_fail "6. an undated baseline is a hard error" "recorded"
 reset_all
@@ -188,13 +187,14 @@ must_fail "6b. a missing baseline refuses rather than passing" "missing"
 reset_all
 
 # -- 7. the BORING case: a lost denominator must refuse, not report a clean tree -------------
-python3 - "$CHECK" <<'PY'
-import pathlib, re, sys
-path = pathlib.Path(sys.argv[1])
-text, n = re.subn(r'^SRC_GLOB = .*$', 'SRC_GLOB = "gateway/*/src/nowhere"', path.read_text(), count=1, flags=re.M)
-assert n == 1, "SRC_GLOB assignment not found — the lost-denominator fixture cannot be built"
-path.write_text(text)
-PY
+bun -e '
+const fs = require("fs");
+const path = process.argv[1];
+const text = fs.readFileSync(path, "utf8");
+const patched = text.replace(/^const SRC_GLOB = .*$/m, "const SRC_GLOB = \"gateway/*/src/nowhere\";");
+if (patched === text) throw new Error("SRC_GLOB assignment not found — the lost-denominator fixture cannot be built");
+fs.writeFileSync(path, patched);
+' "$CHECK"
 check --ratchet
 must_fail "7. a source glob that matches nothing must REFUSE, not pass vacuously" "vacuously"
 reset_all
@@ -204,14 +204,11 @@ reset_all
 # MAX_CONFIG_KEYS; the class satisfies all three clauses (@Serializable, every parameter a
 # defaulted val, no subsystem), so it is graded against the CONFIG budget and must still fail it.
 mkdir -p "$SYNTH"
-python3 - "$SYNTH/SelftestConfigOver.kt" <<'PY'
-import pathlib, sys
-params = ",\n".join(f"    val k{i}: Int = 0" for i in range(33))
-pathlib.Path(sys.argv[1]).write_text(
-    "package splice.selftest\n\nimport kotlinx.serialization.Serializable\n\n"
-    "@Serializable\npublic data class SelftestConfigOver(\n" + params + ",\n)\n"
-)
-PY
+bun -e '
+const fs = require("fs");
+const params = Array.from({ length: 33 }, (_, i) => `    val k${i}: Int = 0`).join(",\n");
+fs.writeFileSync(process.argv[1], "package splice.selftest\n\nimport kotlinx.serialization.Serializable\n\n@Serializable\npublic data class SelftestConfigOver(\n" + params + ",\n)\n");
+' "$SYNTH/SelftestConfigOver.kt"
 check --ratchet
 must_fail "8A. a config record one key past MAX_CONFIG_KEYS is red" "config keys"
 grep -q "SelftestConfigOver" "$tmp/out" ||
@@ -225,17 +222,39 @@ reset_all
 # 22 is chosen so the two budgets cannot be confused: it is over MAX_PARAMS (12) and well under
 # MAX_CONFIG_KEYS (32), so a green here would mean the un-annotated class had been let through.
 mkdir -p "$SYNTH"
-python3 - "$SYNTH/SelftestNoAnnotation.kt" <<'PY'
-import pathlib, sys
-params = ",\n".join(f"    val k{i}: Int = 0" for i in range(22))
-pathlib.Path(sys.argv[1]).write_text(
-    "package splice.selftest\n\npublic data class SelftestNoAnnotation(\n" + params + ",\n)\n"
-)
-PY
+bun -e '
+const fs = require("fs");
+const params = Array.from({ length: 22 }, (_, i) => `    val k${i}: Int = 0`).join(",\n");
+fs.writeFileSync(process.argv[1], "package splice.selftest\n\npublic data class SelftestNoAnnotation(\n" + params + ",\n)\n");
+' "$SYNTH/SelftestNoAnnotation.kt"
 check --ratchet
 must_fail "8B. the same defaulted vals WITHOUT @Serializable stay red at the ordinary width" "parameters (max 12)"
 grep -q "SelftestNoAnnotation" "$tmp/out" ||
   err "8B. the failure does not NAME the planted class — the arm went red for something else"
+reset_all
+
+# -- 9. a BARE run is the GATE, not the report — the defect this port fixed --------------------
+# The .py's bare form ran the REPORT, which exits 0 on a tree whose ratchet plane has grown, so a
+# mis-invocation read as a pass. The port makes bare fall through to --ratchet. Proven by PREDICTED
+# DIVERGENCE: on one tree carrying a planted, unrecorded wide constructor, bare must be NON-ZERO
+# while --report on the SAME tree is ZERO. Asserting only "bare is non-zero" would pass on a
+# checker that had simply been broken; asserting only "report is zero" would pass on the old
+# behaviour. The pair is the proof.
+mkdir -p "$SYNTH"
+bun -e '
+const fs = require("fs");
+const params = Array.from({ length: 13 }, (_, i) => `    val q${i}: Int = 0`).join(",\n");
+fs.writeFileSync(process.argv[1], "package splice.selftest\n\npublic data class SelftestBareGate(\n" + params + ",\n)\n");
+' "$SYNTH/SelftestBareGate.kt"
+bare_rc=0; bun "$CHECK" >"$tmp/out" 2>&1 || bare_rc=$?
+report_rc=0; bun "$CHECK" --report >"$tmp/out2" 2>&1 || report_rc=$?
+if [ "$bare_rc" -eq 0 ]; then
+  err "9. a BARE run exited 0 on a tree with a planted unrecorded wide constructor — bare is not gating"
+elif [ "$report_rc" -ne 0 ]; then
+  err "9. --report exited $report_rc on the same tree — the report must not gate"
+else
+  note "ok 9. a BARE run gates (exit $bare_rc) where --report does not (exit 0)"
+fi
 reset_all
 
 if [ "$tree_state" != "$(cd "$ROOT/gateway" && ls -1A)" ]; then
@@ -243,6 +262,6 @@ if [ "$tree_state" != "$(cd "$ROOT/gateway" && ls -1A)" ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-  note "constructor-width selftest: premise asserted, control green over the real tree, 10 mutation arms red for their stated reasons, gateway/ untouched"
+  note "constructor-width selftest: premise asserted, control green over the real tree, 11 mutation arms red for their stated reasons, gateway/ untouched"
 fi
 exit "$fail"

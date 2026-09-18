@@ -5,9 +5,49 @@
    (1.2%) and height (3.4%) are held as percentages OF THE BAND, which is where
    they are read from. */
 
+/* THE BAND IS FOUR DIVIDERS AND TWO END CAPS (M1-36, E-7). The comp does not hold its
+   top chrome together with spacing; it holds it with structure. Six vertical rules turn
+   one 1536px span into five named cells, and that is what stops the gaps between the
+   readouts from reading as voids - the same move the bay makes, where a container that
+   reads as a container keeps its interior from reading as emptiness.
+
+   Measured on team-board-a.png, all six at y5..58 of the 59px band (8.5% down, running to
+   the band's own bottom hairline) and one to three pixels wide:
+
+     cap-left   x  6   0.39%      d3   x 620   40.36%
+     d1         x139   9.05%      d4   x1106   72.01%
+     d2         x452  29.43%      cap-right x1529  99.54%
+
+   Those six x land on the five cells this sheet already positions: the cap opens the
+   wordmark (0.5%), d1 closes it (0.5+8.5=9.0), d2 closes the clocks (10+19=29.0), d3
+   closes health (30+10=40.0), d4 opens the tail (72.0), and the right cap closes it
+   (72+27=99.0). So the dividers are drawn at the comp's own numbers rather than at the
+   cells', and the two agree to within half a point everywhere except the right cap.
+
+   THEY ARE A BACKGROUND, NOT SIX NODES: the rules are one ornament of the band the way
+   the rail plate's two dots are one ornament of the plate, they carry no state and no
+   word, and a cell's own border cannot draw them - the cells are 58.6% of the band tall
+   and these run 91.5%.
+
+   The ink is --hairline-strong and not --hairline: over --room that token resolves to
+   (61,62,61) against the comp's own measured (61,64,58), (67,65,61), (62,61,59),
+   (82,80,76), (52,52,50) and (65,64,61) - a median of 63.5. --hairline at .10 resolves
+   to (34,36,35), a third of the presence the comp draws, which is why the band has read
+   as an undivided span. */
 .myx-rule {
   position: relative;
-  background: var(--room);
+  background-color: var(--room);
+  background-image:
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong));
+  background-repeat: no-repeat;
+  background-size: var(--hair) 91.5%;
+  background-position:
+    0.39% 100%, 9.05% 100%, 29.43% 100%, 40.36% 100%, 72.01% 100%, 99.54% 100%;
   border-bottom: var(--hair) solid var(--hairline);
 }
 

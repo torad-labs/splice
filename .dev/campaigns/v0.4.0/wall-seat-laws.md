@@ -38,8 +38,17 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    - rule-test: .rules/rule-tests/kt-catch-swallows-cancellation-test.yml (ast-grep test format;
      `npm run --silent gate:rules` runs scan + test); routing: sgconfig.yml, checks/rule-routing-selftest.sh;
      rule docs wall: checks/config/ast-grep-rule-docs.py (a new rule may need a doc entry — run it).
-   - python wall with --selftest: checks/config/quirks-keys-documented.py; bash red-green selftest:
-     checks/concentration-selftest.sh; ratchet: checks/concentration.py.
+   - bun wall with an IN-FILE --selftest: checks/config/shared-quirks-no-vendor-defaults.ts;
+     bun wall with a SEPARATE red-green selftest: checks/no-python.ts + checks/no-python-selftest.ts
+     (19 arms, each asserting its own SETUP before it grades — copy that shape, an arm that grades a
+     mutation it did not make is the failure the whole wall family exists to catch);
+     bash red-green selftest: checks/concentration-selftest.sh.
+     WRITE WALLS IN TYPESCRIPT UNDER BUN. This line used to name a .py wall as the template, which
+     made the campaign's own law file a live instruction to write Python — found 2026-09-18 by
+     splice-builder while censusing callers for its conversion, and it is the worst of the eighteen
+     sites it turned up: every other one teaches the next session by accident, this one taught it on
+     purpose. Any .py still named elsewhere in this repo is burn-down debt (checks/no-python.ts),
+     never an example to follow.
    - Konsist arch tests: gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt.
    - Use ast-grep (`npx ast-grep` / sg) for Kotlin structure, not regex, wherever the node kind is
      expressible; `ast-grep run --debug-query` / dump the tree to learn node kinds. Validate a rule

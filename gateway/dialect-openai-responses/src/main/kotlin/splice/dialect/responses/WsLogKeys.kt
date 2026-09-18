@@ -2,8 +2,6 @@
 // key, in every log line this transport writes.
 package splice.dialect.responses
 
-import splice.core.util.ERR_SNIPPET
-
 /** The operator-facing key form. The connection key deliberately concatenates the CHAIN key
  *  (the client's session id + conversation identity — raw client-derived text) with the header
  *  digest, and six log sites here interpolated it verbatim into daemon.log while the runner's

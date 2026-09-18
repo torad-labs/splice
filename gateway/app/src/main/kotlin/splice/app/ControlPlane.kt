@@ -51,9 +51,12 @@ internal class ControlPlane(
     private val dashboardHtml: DashboardPage,
     private val log: LogSink,
     private val shutdownDaemon: ShutdownDaemon,
-    // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
-    private val topologyDigest: String = "",
-    private val topologyPath: Path? = null,
+    /** JW-04 + V4-127: the booted config's identity (sha-256 of the parsed bytes, the resolved
+     *  path) and what it declared, as one value. These were three separate parameters until
+     *  2026-09-18, when the second of two unrelated rows took this constructor to 13 against the
+     *  width ratchet's max of 12 — see BootedTopology.kt for why these three and not some other
+     *  three. Still never the Topology object itself: only Daemon holds that. */
+    private val topology: BootedTopology = BootedTopology(),
     refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
     /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
     private val mcpHosting: McpHostingSettings = McpHostingSettings(),
@@ -122,9 +125,9 @@ internal class ControlPlane(
             shutdownDaemon,
             failedHeads,
             headCount,
-            topologyDigest = topologyDigest,
-            configPath = topologyPath?.toString().orEmpty(),
-            topologyStale = TopologyLoader.staleProbe(topologyPath, topologyDigest),
+            topologyDigest = topology.digest,
+            configPath = topology.path?.toString().orEmpty(),
+            topologyStale = TopologyLoader.staleProbe(topology.path, topology.digest),
             turnPathStalled = turnPathStalled,
             mcpHost = mcpHost,
             sessions = SessionRegistry(
@@ -144,7 +147,7 @@ internal class ControlPlane(
         // is the worst of them: an unwired port there reads as a measured payload saying nothing is
         // newer, which tells an operator they are up to date when nobody has ever looked. The
         // deletion pins in DaemonWiringTest are what make that a red instead of a quiet lie.
-        srv.declaredHeads = declaredHeads
+        srv.declaredHeads = topology.declaredHeads
         srv.doctor = DoctorReport(DoctorCommand()::reportJson)
         srv.upgrade = UpgradeStatus(ConsoleUpgradeStatus()::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one

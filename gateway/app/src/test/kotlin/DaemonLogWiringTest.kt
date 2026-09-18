@@ -125,4 +125,38 @@ class DaemonLogWiringTest {
         assertEquals("2026-09-02 13:47:00", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 0)))
         assertEquals("2026-09-02 13:47:12", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 12)))
     }
+
+    // SH-14 (V4-123): the wall sh_14_daemon_log_rotate_selfheals.py guards that a FAILED rotate
+    // reconciles `written` from disk so the logger self-heals instead of wedging forever. This
+    // test pins the behaviour at runtime: an external logrotate removes daemon.log, the next
+    // line's rotate Files.move throws NoSuchFileException, onFailure reconciles written to 0 (the
+    // file is absent), and the line after that lands in a fresh file. On the pre-fix shape —
+    // onFailure reset only `writer` and left `written` >= the cap — every later line re-entered
+    // the throwing rotate branch and daemon.log went silent for the daemon's lifetime.
+    @Test
+    fun `a failed rotate on a removed file reconciles written so the next line still lands`(
+        @TempDir logs: Path,
+    ) {
+        val log = process.persistentLogger(logs, maxBytes = 64L)
+        log("first line long enough that written now sits at or past the cap")
+        drainToDisk()
+        val file = logs.resolve("daemon.log")
+        assertTrue(Files.exists(file), "the first line must have created daemon.log")
+        Files.delete(file) // external logrotate removed the file
+
+        log("second line whose rotate now fails because the source is gone")
+        drainToDisk()
+        log("third line must land")
+        drainToDisk()
+
+        assertTrue(
+            Files.exists(logs.resolve("daemon.log")),
+            "a reconciled written must let the next line reopen and recreate daemon.log",
+        )
+        val content = Files.readString(logs.resolve("daemon.log"))
+        assertTrue(
+            content.contains("third line must land"),
+            "the logger self-healed and wrote the third line, got: $content",
+        )
+    }
 }

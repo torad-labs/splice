@@ -51,7 +51,7 @@ law_present = true
 
 [[law]]
 tag = "FENCE-EXCLUSIVITY"
-wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts"
 note = "gate check C7 (phase clash + in_flight clash)"
 law_present = true
 
@@ -63,7 +63,7 @@ law_present = true
 
 [[law]]
 tag = "HONEST-STATUS"
-wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts"
 note = "gate check C5 (false-green)"
 law_present = true
 
@@ -87,13 +87,13 @@ law_present = true
 
 [[law]]
 tag = "WALLS-BEFORE-GREEN"
-wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts"
 note = "gate checks C1-C4"
 law_present = true
 
 [[law]]
 tag = "POLARITY"
-wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+wall = ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts"
 note = "gate checks C5 + C6 (positive control)"
 law_present = true
 

@@ -440,7 +440,7 @@ wall = ""
 [[item]]
 id = "INF-02"
 phase = "W-INFRA"
-wall = "dev/campaigns/proxy-hardening/walls/inf_02_every_law_walled.py"
+wall = "dev/campaigns/proxy-hardening/walls/inf_02_every_law_walled.ts"
 
 [[item]]
 id = "INF-03"

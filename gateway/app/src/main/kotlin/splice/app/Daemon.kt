@@ -78,16 +78,22 @@ public class Daemon(
 
     private val controlPlane = ControlPlane(
         statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
-        topologyDigest, topologyPath, refreshCall,
+        // The booted config's identity and what it declared, as one value — three parameters until
+        // the width ratchet caught this constructor at 13. declaredHeads is still built HERE and not
+        // in ControlPlane, because this is the only place that holds the Topology: ControlPlane
+        // carries the digest and the path, never the object, and a second read of the file the heads
+        // were built from can diverge from it.
+        BootedTopology(
+            digest = topologyDigest,
+            path = topologyPath,
+            declaredHeads = DeclaredHeads {
+                topology.heads.mapValues { (_, head) -> DeclaredHead(head.provider, head.models) }
+            },
+        ),
+        refreshCall,
         mcpHosting = McpHostingSettings().with(topology.daemon),
         clientVersions = clientVersions,
         compactionInstructions = compactionInstructions,
-        // V4-127: built HERE and not in ControlPlane, because this is the only place that holds the
-        // Topology — ControlPlane carries the digest and the path, never the object, and a second
-        // read of the file the heads were built from can diverge from it.
-        declaredHeads = DeclaredHeads {
-            topology.heads.mapValues { (_, head) -> DeclaredHead(head.provider, head.models) }
-        },
     )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;

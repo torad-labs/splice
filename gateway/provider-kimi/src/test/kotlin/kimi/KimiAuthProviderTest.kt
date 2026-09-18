@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshCall
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiRefreshedTokens
 import java.nio.file.Files
@@ -106,7 +107,8 @@ class KimiAuthProviderTest {
     fun `describe is masked kimi-oauth with device login`() = runTest {
         val dir = Files.createTempDirectory("kimi-desc")
         val file = authFile(dir, expiresAtS = Long.MAX_VALUE / 2)
-        val desc = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = { RefreshAttempt.Denied("test-denied") }).describe()
+        val denied = RefreshCall<KimiRefreshedTokens> { RefreshAttempt.Denied("test-denied") }
+        val desc = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = denied).describe()
         assertTrue(desc.present)
         assertEquals("kimi-oauth", desc.kind)
         assertEquals("device", desc.fields["login"])
@@ -482,7 +484,8 @@ class KimiAuthProviderTest {
     fun `describe surfaces refresh_latched after a confirmed invalid_grant`() = runTest {
         val dir = Files.createTempDirectory("kimi-latch-desc")
         val file = authFile(dir, refresh = "dead-refresh", expiresAtS = 0L)
-        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = { RefreshAttempt.InvalidGrant("dead") })
+        val dead = RefreshCall<KimiRefreshedTokens> { RefreshAttempt.InvalidGrant("dead") }
+        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = dead)
         assertNull(auth.describe().fields["refresh_latched"])
         assertNull(auth.refresh())
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])

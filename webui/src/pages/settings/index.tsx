@@ -23,7 +23,7 @@ import {
   useConfig,
   useRestartPending,
 } from '@entities/config';
-import type { ConfigValue } from '@shared/api';
+import type { ConfigPayload, ConfigValue } from '@shared/api';
 // `fetchClaudeHead` is not imported: the poll below runs it on its own first tick.
 import { startClaudeHeadPolling, unwrapClaudeHead, useClaudeHead, wrapClaudeHead } from '@entities/claude-head';
 import {
@@ -40,11 +40,21 @@ import { KnobRack } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import { DEFAULT_VIEWS, EMPTIES, knobsForView } from './model';
 import { ClaudeModeSection, TopologySection } from './sections';
-import { fixtureConfig, fixtureName, fixtureTopology } from './fixtures/settings';
 import { S } from './strings';
 import './settings.css';
 
 export { dispositions };
+
+/** The name this page accepts in the hash query, declared HERE rather than in the fixture module:
+ *  importing that module for one constant is enough to make the whole fixture a build dependency
+ *  (CONTRACTS.md section 4). */
+const FIXTURE = 'settings';
+
+/** The sample the fixture module hands over once it has loaded. */
+interface SettingsFixture {
+  config: ConfigPayload;
+  topology: Record<string, unknown>;
+}
 
 const PAGE_ID = 'settings';
 const POLL_MS = 30000;
@@ -70,13 +80,27 @@ export function SettingsPage() {
     void fetchConfig(head === 'global' ? undefined : head);
   }, [head]);
 
-  const fixture = fixtureName(search, import.meta.env.DEV);
-  const configPayload = fixture === null ? config.data : fixtureConfig;
+  const [fixture, setFixture] = useState<SettingsFixture | null>(null);
+
+  // The fixture loads through a DYNAMIC import inside the DEV branch: a static import — even of one
+  // constant — is a dependency edge the bundler honours, so the fixture module and its strings
+  // would ship inside the single-file console. The page renders the store's payload while the
+  // module loads and swaps in the sample when it arrives.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (new URLSearchParams(search).get('fixture') !== FIXTURE) return;
+    void import('./fixtures/settings').then((module) => setFixture({
+      config: module.fixtureConfig,
+      topology: module.fixtureTopology,
+    }));
+  }, [search]);
+
+  const configPayload = fixture === null ? config.data : fixture.config;
 
   const topologyState = topology.data;
   const loaded =
     fixture !== null
-      ? fixtureTopology
+      ? fixture.topology
       : topologyState !== null && topologyState !== undefined && !('pending' in topologyState)
         ? topologyState.topology
         : null;
@@ -162,7 +186,7 @@ export function SettingsPage() {
         ) : (
           <>
             <TopologySection
-              state={fixture === null ? topologyState ?? { pending: 'V4-128' } : { path: '~/.config/splice/splice.toml', topology: fixtureTopology, stale: false }}
+              state={fixture === null ? topologyState ?? { pending: 'V4-128' } : { path: '~/.config/splice/splice.toml', topology: fixture.topology, stale: false }}
               loaded={loaded}
               draft={draft}
               onDraft={setDraft}

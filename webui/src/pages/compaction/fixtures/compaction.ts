@@ -6,18 +6,10 @@
 // the capture shows the red edges a real bad day produces and not only the happy path.
 import type { CompactPayload } from '@shared/api';
 
-export const FIXTURE_NAME = 'compaction';
-
 /** The events are anchored to the load clock, not to a fixed instant: the feed prints `timeAgo`, so
  *  a sample pinned to a past date would show a page of `645h ago` and teach the reviewer the wrong
  *  density. The sample is a still of a working day, and a working day is recent. */
 const ANCHOR = Date.now();
-
-export function fixtureName(search: string, dev: boolean): string | null {
-  if (!dev) return null;
-  const asked = new URLSearchParams(search).get('fixture');
-  return asked === FIXTURE_NAME ? asked : null;
-}
 
 const MINUTE = 60_000;
 

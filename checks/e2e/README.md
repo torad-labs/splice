@@ -29,7 +29,7 @@ The harness cold-starts the daemon if it is down (same recipe as the CLI).
 
 ## Tiers
 
-**Tier 1 — wire probe** (`stream_probe.py`): opens a real streaming turn straight at the head port
+**Tier 1 — wire probe** (`stream_probe.ts`): opens a real streaming turn straight at the head port
 and validates the Anthropic SSE contract *as a client experiences it* — event ordering,
 `content_block` start/delta/stop pairing by index, exactly one `message_start`, `message_stop`
 last with nothing after, no `error` frame — plus that deltas arrive **incrementally** (a proxy that
@@ -98,7 +98,7 @@ HOME, run with `--network none`. Inside, `checks/e2e/docker/inside.sh` brings up
 upstreams (the migration oracle's vendored ChatGPT-backend mock for `openai-responses`, a
 minimal `openai-chat` mock), writes a two-head topology, installs from artifacts through the
 real `install.sh` (checksum → `init` → `install --all` → `doctor`), cold-starts the daemon, drives
-`stream_probe.py` and `count_tokens` through every head, runs the **real** Claude Code wrapper
+`stream_probe.ts` and `count_tokens` through every head, runs the **real** Claude Code wrapper
 (`claudex -p …`, `claude-mockchat -p …`) against the head, then `restart` / `logs` / `status` /
 `uninstall`. No vendor, no quota, no network: every byte the daemon or the wrapper moves goes to
 the in-container mocks or the step fails.

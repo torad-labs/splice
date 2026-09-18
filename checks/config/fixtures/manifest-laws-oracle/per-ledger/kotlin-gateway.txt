@@ -1,0 +1,11 @@
+# LAW: concept #945 — this manifest IS the memory; access ONLY via .dev/campaigns/manifest.py
+# LAW [2026-07-16]: SLOT AUTHORING (operator law, brain #963): every work unit is DECLARED as a
+# LAW [2026-07-16]: PORT, DON'T INVENT (kandi handoff law): read the proven neighbor first. The Node
+# LAW [2026-07-16]: WALLS BEFORE BUILDINGS (brain #960): every guard (module-law plugin, ast-grep
+# LAW [2026-07-16]: L2/L3/L4 CARRY OVER AS TYPES (splice AGENTS.md): ONE mirrorInto (L2); SseEmitter
+# LAW [2026-07-16]: PARITY BEFORE CUTOVER (operator decision: big-bang): server/ Node code is deleted
+# LAW [2026-07-16]: VERIFIED-COMMITS-IMMEDIATELY (kandi V3 wipe): the commit of verified work is the
+# LAW [2026-07-16]: ENUMERATED DESTRUCTION (kandi V3 wipe): any brief that deletes/moves ENUMERATES
+# LAW [2026-07-16]: FIX-THE-GATE vs FIX-THE-CODE: wrongly-blocking gate -> fix the gate with a
+# LAW [2026-07-16]: SAME-CHECKER-TWICE (splice .rules doctrine): every wall runs at write time (hook)
+# LAW [2026-07-16]: HONEST STATUS (brain #959): set-status done requires the item's OWN verify command

@@ -3354,3 +3354,4 @@ status = "in_flight"
 verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/doctor && npx vitest run tests/mcp-doctor.test.ts"
 # [2026-09-18] CLAIM: owner=design-builder4 at=2026-09-18T15:48:57Z
 # [2026-09-18] ATTEST-START: tree=e43f47c1558c7501d2ed5d54f957c85a19c184cc at=2026-09-18T15:48:57Z
+# [2026-09-18] DISPATCH: to=design-builder3 (packet emitted)

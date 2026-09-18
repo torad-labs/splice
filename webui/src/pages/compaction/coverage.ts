@@ -4,11 +4,12 @@
 // disposition says what the CONSOLE does with the route: it reads the outcome totals and the event
 // tail and never writes either.
 //
-// FEATURES.md 4.10 also lists "Effective instructions | route", and there is NO route for it in
-// section 6 — no v0.4.0 row serves it, so nothing here can name a pending row for it. The page
-// therefore does not claim it; the gap is recorded on the M2-06 ledger note.
+// FEATURES.md 4.10 also lists "Effective instructions | route": section 6 serves it with
+// GET /api/compaction/instructions (V4-136, decided 2026-09-18), pending until that daemon row
+// lands; the page names the row and claims 4.10 once the route answers.
 import type { Disposition } from '@shared/coverage';
 
 export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/compact', disposition: 'read-only' },
+  { kind: 'route', name: '/api/compaction/instructions', disposition: 'pending', where: 'V4-136' },
 ];

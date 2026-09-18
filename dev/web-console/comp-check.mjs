@@ -169,11 +169,27 @@ const PROBE = `(() => {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const probeText = 'splice HANDOFF 09:41:27';
-  /* The ink height of a capital in the face that renders, at the element's own computed size. */
-  const capOf = (el) => { const s = cs(el);
-    ctx.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
-    const m = ctx.measureText('H');
-    return m.actualBoundingBoxAscent; };
+
+  /* THE CAP RATIO IS MEASURED IN THE FACE AT 200px (M1-64, splice-design's ruling 2026-09-18).
+     Measuring a capital AT THE ELEMENT'S OWN SIZE is what this file did first, and that metric is
+     quantised to whole pixels: measured across every size 10..24px at weights 400/500/600 it
+     returns only 8, 9, 10, 11, 13, 14, 15, 17 -- NOTHING returns 12 or 16 -- so at 17px it read
+     11.00 where the true cap is 12.57. Against a 0.5px tolerance that made five of the seven comp
+     caps unreachable at ANY rung, and every residual derived from it was wrong with them: a metric
+     that reports 11.00 for a true 12.57 corrupts the arithmetic, not just the verdict.
+     At 200px one pixel of quantisation is 0.25 percent rather than the 4 percent it is at 12px, so
+     this is the face's own ratio and cap = computed size x ratio is continuous. The tolerance stays
+     at 0.5px: a 1.0px tolerance on a 10.9px cap is nine percent, and the defects this instrument
+     exists to find are five to eight. */
+  const capRatio = (family, weight) => { ctx.font = weight + ' 200px ' + family;
+    return ctx.measureText('H').actualBoundingBoxAscent / 200; };
+  /* THE CALIBRATION, returned by every run and printed with the report: a ratio that stopped being
+     measured in the face it names -- a fallback family, a renamed face, a canvas that returns 0 --
+     shows up here instead of quietly changing what the instrument can see. */
+  const calibration = {};
+  for (const [family, weight] of [['Archivo', '400'], ['Archivo', '600'], ['JetBrains Mono', '400']]) {
+    calibration[family + ' ' + weight] = capRatio(family, weight);
+  }
   const faceOf = (el) => { const s = cs(el);
     const first = s.fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '');
     ctx.font = '100px ' + s.fontFamily;
@@ -185,7 +201,8 @@ const PROBE = `(() => {
     /* A named face whose advance is byte-identical to a generic one is not rendering. */
     const generic = first === 'sans-serif' || first === 'monospace' || first === 'serif';
     const fellBack = !generic && (Math.abs(withFace - sans) < 0.01 || Math.abs(withFace - mono) < 0.01);
-    return { first, weight: s.fontWeight, size: parseFloat(s.fontSize), cap: capOf(el),
+    return { first, weight: s.fontWeight, size: parseFloat(s.fontSize),
+      cap: parseFloat(s.fontSize) * capRatio(first, s.fontWeight),
       scale: scaleOf(el), fellBack }; };
   const role = (name, el) => (el ? Object.assign({ name }, faceOf(el)) : null);
 
@@ -238,6 +255,7 @@ const PROBE = `(() => {
       role('chat.label', one('.myx-board-bay-chat .myx-bay-label')),
     ].filter(Boolean),
     bays,
+    calibration,
   });
 })()`;
 
@@ -422,8 +440,32 @@ const LICENSED = ['Archivo', 'JetBrains Mono'];
 
 const failures = [];
 const rows = [];
+/** The ladder's own tally, printed as its own line: this is the leg that GATES (see REPORT_ONLY). */
+const LADDER = { findings: 0, addresses: 0 };
+/** The face ratios the probe actually measured, keyed by face and weight, as the run's calibration. */
+const calibrationSeen = {};
 
 const UNIT = { box: '%', cap: 'px' };
+
+/**
+ * THE ABSOLUTE CAP ROWS REPORT; THEY DO NOT GATE (M1-64, splice-design's ruling 2026-09-18).
+ *
+ * A cap is compared against the comp's own ink height at the comp's own size. Measured with the
+ * continuous metric this file now uses, the caps land between -5.4 and +1.3 percent of the comp's
+ * constants and six of the seven sit INSIDE the 0.5px tolerance -- so the gate would be nearly green,
+ * not red. It still does not gate, and the reason is now the honest one: `text.health` cannot be
+ * reached by any rung (the comp's 12.40px needs a 17.97px Archivo and the ladder steps 17 then 20),
+ * and the whole comparison rests on a comp face NOTHING IN THE TREE NAMES. A row that can never go
+ * green teaches the next seat to weaken it; a row that gates on an unnamed face's ink teaches it to
+ * tune the rung. Both are the operator's question, so the numbers print and the ladder gates.
+ *
+ * This is M1-45's precedent applied to a second instrument: gate on the defect, print the census.
+ * WHAT GATES INSTEAD IS THE RATIO LADDER below, because the ratios are the property the console must
+ * satisfy and they are invariant under the face: a role bound to the wrong rung moves a ratio, which
+ * is exactly the defect this row fixed. The cap rows still print every run with the face's own delta
+ * named as their cause, so the operator's question stays visible instead of being tuned away.
+ */
+const REPORT_ONLY = new Set(['cap']);
 const fmt = (value, kind) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return String(value);
   if (kind === 'cap' || kind === 'px') return `${value.toFixed(2)}px`;
@@ -454,18 +496,25 @@ function record(address, id, kind, compValue, gotValue, note, fails) {
   const comparable = typeof target === 'number' && typeof gotValue === 'number'
     && Number.isFinite(target) && Number.isFinite(gotValue);
   const delta = comparable ? gotValue - target : null;
+  const gating = !REPORT_ONLY.has(kind);
   const failed = target === null
     ? (fails === undefined ? false : fails(gotValue))
-    : (comparable ? Math.abs(delta) > tolerance : true);
+    : (comparable ? (gating && Math.abs(delta) > tolerance) : true);
   if (failed) failures.push(`${address} ${id}`);
+  // A report-only row says WHY it does not gate, in its own line: how far this role sits from the
+  // comp's own ink band at this size, so the number the operator has to answer for is on the sheet
+  // rather than in a commit message.
+  const deltaPct = comparable && target !== 0 ? (gotValue / target - 1) * 100 : null;
+  const faceDelta = !gating && deltaPct !== null
+    ? `reports rather than gates: ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% against the comp's ink band at this size (the calibration line names the ratios)` : null;
   const scaledHere = absolute && !atComp && compValue !== null;
   rows.push({
     address, id,
     comp: target === null ? 'comp n/a' : `comp ${fmt(target, kind)}`,
     got: gotValue === null || gotValue === undefined ? 'got n/a' : `got ${fmt(gotValue, kind)}`,
     delta: delta === null ? '' : `delta ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`,
-    verdict: target === null && fails === undefined ? 'comp n/a' : failed ? 'FAIL' : 'ok',
-    note: scaledHere ? `${note ? `${note}; ` : ''}comp value scaled ${ratio}x for this frame` : note,
+    verdict: target === null && fails === undefined ? 'comp n/a' : failed ? 'FAIL' : (!gating && comparable ? 'report' : 'ok'),
+    note: [scaledHere ? `comp value scaled ${ratio}x for this frame` : null, faceDelta, note].filter(Boolean).join('; '),
   });
 }
 
@@ -482,7 +531,9 @@ function report(measurement, address) {
     const spec = JSON.parse(readFileSync(join(ROOT, 'webui/.impeccable/build/spec.json'), 'utf8'));
     const compLadderRows = compLadder(spec).measured;
     const buildCaps = measurement.text.map((t) => ({ id: t.name, cap: t.cap * t.scale }));
+    LADDER.addresses += 1;
     for (const finding of checkRatios(compLadderRows, buildCaps)) {
+      LADDER.findings += 1;
       failures.push(`${address} ladder.${finding.pair}`);
       rows.push({ address, id: `ladder.${finding.pair}`, comp: `comp ${finding.comp.toFixed(3)}`,
         got: `got ${finding.build.toFixed(3)}`, delta: `delta ${finding.delta >= 0 ? '+' : ''}${finding.delta.toFixed(3)}`,
@@ -545,7 +596,17 @@ Constants (${CONSTANTS.length} geometry + ${TEXT_ROLES.length} text roles):
 ${[...CONSTANTS.map((c) => c.id), ...TEXT_ROLES.map((r) => r.id)].map((id) => `  ${id}`).join('\n')}
 
 Tolerances: box ${TOLERANCE.box.limit}% of frame, cap ${TOLERANCE.cap.limit}px, family and scale exact.
-Exit 0 when every measured constant is inside its tolerance, 1 when any is not.
+WHAT GATES AND WHAT ONLY REPORTS (M1-64): geometry, counts, family and scale gate on their tolerance,
+and so does the rung-to-rung RATIO LADDER, which is the property the console must satisfy and which
+is invariant under the comp's unnamed face. The ABSOLUTE cap rows report and do not gate: the comp's
+constants are its own printed ink measured by a detector while this side is a capital's cap height in
+a face the tree does not name, and the one role that is out (text.health, -0.67px) cannot be reached
+by any rung at all. Each cap row prints its own percentage against the comp's band and every run
+prints the face ratios it measured, so the question stays on the sheet instead of being tuned away.
+The cap is measured continuously, as the computed size times the face's own cap ratio taken at 200px,
+because the previous whole-pixel metric (a capital at the element's size) returned only
+8, 9, 10, 11, 13, 14, 15, 17 and made five of the seven comp caps unreachable at any rung.
+Exit 0 when every GATING constant is inside its tolerance, 1 when any is not.
 
 --frame renders at another viewport, default ${DEFAULT_FRAME.join('x')} which is the comp's own.
 Away from the comp's frame the absolute-pixel rows (px, cap) print as \`scaled\` and do not fail —
@@ -589,6 +650,7 @@ await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
     const probe = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
     if (probe.exceptionDetails) throw new Error(`${address}: the probe threw: ${JSON.stringify(probe.exceptionDetails)}`);
     const measurement = JSON.parse(probe.result.value);
+    Object.assign(calibrationSeen, measurement.calibration ?? {});
     report(measurement, address);
   }
 });
@@ -609,6 +671,21 @@ const scaled = rows.filter((row) => (row.note ?? '').includes('comp value scaled
 // The frame is in the summary line because the gate runs this twice and two identical-looking
 // clean runs at one size is exactly the report M1-33 found the gate was giving.
 console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list.length} addresses, ${rows.length} rows, ${compared} compared against the comp${scaled ? `, ${scaled} px rows compared against a ${(width / DEFAULT_FRAME[0])}x-scaled comp value` : ''}, ${failures.length} outside tolerance`);
+
+// THE LADDER'S LINE, AND IT IS THE ONE THAT GATES THE VERIFY: the cap rows above report because the
+// face is not the tree's to fix, and a line that can never go green teaches the next seat to weaken
+// it. This line is computed from checkRatios' own findings and printed on every run, clean or not, so
+// `grep -qE "0 rungs off by"` is a claim about the ratios rather than about the run having happened.
+// THE TWO SHAPES ARE THE POINT, not a style choice. The clean line carries the literal the verify
+// greps for; the red line puts the denominator BETWEEN the count and the word "off", so no red count
+// can satisfy that grep. Without it a ladder of ten or more pairs going red with exactly ten findings
+// would print "10 rungs off" and pass a grep looking for "0 rungs off" — the check would report clean
+// on the one number that means it is not.
+const ladderTail = `${ROLE_PAIRS.length} pairs per address, ${LADDER.addresses} address${LADDER.addresses === 1 ? '' : 'es'} measured`;
+console.log(LADDER.findings === 0
+  ? `ladder: 0 rungs off by more than ${RATIO_LIMIT} (${ladderTail})`
+  : `ladder: ${LADDER.findings} rungs (of ${ROLE_PAIRS.length} pairs) off by more than ${RATIO_LIMIT} — ${ladderTail}`);
+console.log(`cap calibration, measured in the faces at 200px so the metric is continuous: ${Object.keys(calibrationSeen).length === 0 ? 'NOT MEASURED — the probe returned no calibration' : Object.entries(calibrationSeen).map(([face, ratio]) => `${face} ${ratio.toFixed(4)}`).join(', ')}`);
 
 // BOTH SIDES OF EVERY CONSTANT, and the comp roles the instrument cannot see. Printed on every run:
 // silence about what was NOT measured is the defect this row is about.

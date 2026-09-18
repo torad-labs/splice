@@ -24,7 +24,9 @@
 }
 
 .myx-acct-kind {
+  /* FIGURE: an account kind is a printed value. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-1);
   color: var(--ink-mute);
 }
@@ -44,14 +46,17 @@
 }
 
 .myx-acct-code {
+  /* FIGURE: a login code is digits in a column. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-5);
   font-variant-numeric: tabular-nums;
   color: var(--ink-strong);
 }
 
 .myx-acct-link {
-  font-family: var(--font-figure);
+  /* CODE: a link is a URL, which is a path -- read and copied, not measured. */
+  font-family: var(--font-code);
   font-size: var(--text-2);
   color: var(--ink);
 }

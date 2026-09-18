@@ -16,9 +16,10 @@ export function StripField({ w, label, value, basis, mono }: {
   basis?: Basis;
   mono?: boolean;
 }) {
-  // The figure face is the default (the title's "--font-figure with tabular
-  // figures"); mono={false} is the escape hatch for a field whose value is
-  // prose rather than a figure.
+  // The figure face is the default: since M1-17 that is the label face with
+  // tabular figures, because the comp's own figures advance 0.389em and no
+  // monospace is that narrow. mono={false} is the escape hatch for a field whose
+  // value is prose rather than a figure.
   const figure = mono !== false;
   return (
     <div className="myx-sfield" style={{ width: `${w}ch` } as CSSProperties}>

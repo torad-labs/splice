@@ -1,0 +1,84 @@
+/* The fixed rule, bound to the measured top-rule region and the five cells
+   inside it (.impeccable/build/scaffold/layout.css): the rule is the full-width
+   band across the top of the frame, and the wordmark, clocks, health, nearest
+   window and no-window cells sit at their measured x and width. The measured y
+   (1.2%) and height (3.4%) are held as percentages OF THE BAND, which is where
+   they are read from. */
+
+.myx-rule {
+  position: relative;
+  background: var(--room);
+  border-bottom: var(--hair) solid var(--hairline);
+}
+
+.myx-rule-cell {
+  position: absolute;
+  top: 20.7%;
+  height: 58.6%;
+  margin: var(--space-0);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.myx-rule-wordmark {
+  left: 0.5%;
+  width: 8.5%;
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink-strong);
+}
+
+.myx-rule-clocks {
+  left: 10%;
+  width: 19%;
+  font-family: var(--font-figure);
+  font-size: var(--text-5);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.myx-rule-clock-word {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-rule-health { left: 30%; width: 10%; }
+
+.myx-rule-window {
+  left: 41%;
+  width: 30%;
+  font-family: var(--font-figure);
+  font-size: var(--text-5);
+  color: var(--ink);
+  overflow: hidden;
+}
+.myx-rule-window .myx-rule-word,
+.myx-rule-none .myx-rule-word {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+.myx-rule-reset {
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+/* An absence is printed, not implied: no window is not zero. */
+.myx-rule-absent {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+
+.myx-rule-none {
+  left: 72%;
+  width: 27%;
+  font-family: var(--font-figure);
+  font-size: var(--text-5);
+  color: var(--ink);
+  overflow: hidden;
+}

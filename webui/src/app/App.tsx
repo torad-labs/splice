@@ -1,97 +1,89 @@
-// Shell: hash tab router + theme cycle. Bootstrap only — every surface is a
-// page composition; every number on screen comes from the control API.
-import { useEffect, useState } from 'react';
-import { FleetPage } from '@pages/fleet';
-import { BurnPage } from '@pages/burn';
-import { AuthPage } from '@pages/auth';
-import { ConfigPage } from '@pages/config';
-import { LogsPage } from '@pages/logs';
-import { CompactionPage } from '@pages/compaction';
+// The console shell: a fixed rule on top, a rail of bays on the left, the
+// page's bay in the middle. The rule never scrolls and the rail is always
+// visible; everything else is the page's own composition.
+//
+// Routing is hash-based because the artifact is one file served at / and
+// /dashboard by the control server (CONTRACTS.md section 3). Addresses are
+// canonical (`#/fleet`); the tab router's bare addresses are rewritten once at
+// boot in index.tsx, and a bare path typed mid-session still lands on its
+// address through the redirect routes below.
+import { Suspense } from 'react';
+import { Navigate, Outlet, RouterProvider, createHashRouter, useLocation } from 'react-router';
+import { useTheme } from '@features/theme';
+import { Palette } from '@features/palette';
+import { selectView, usePageViews } from '@features/views';
 import { UnlockMgmt } from '@features/unlock-mgmt';
-import { fetchControlStatus, useControlStatus } from '@entities/control-status';
+import { Rail } from '@widgets/rail';
+import { Rule } from '@widgets/rule';
+import { Empty } from '@shared/ui';
+import { ADDRESSES, LEGACY_PATHS, PAGE_ROW, addressOf, type Address } from './rows';
+import { pageFor } from './pages';
+import './app.css';
 
-const TABS = [
-  { id: 'fleet', label: 'fleet', page: FleetPage },
-  { id: 'burn', label: 'burn', page: BurnPage },
-  { id: 'auth', label: 'auth', page: AuthPage },
-  { id: 'config', label: 'config', page: ConfigPage },
-  { id: 'logs', label: 'logs', page: LogsPage },
-  { id: 'compaction', label: 'compaction', page: CompactionPage },
-] as const;
-
-type TabId = (typeof TABS)[number]['id'];
-
-function currentTab(): TabId {
-  const hash = window.location.hash.replace('#', '');
-  return (TABS.some((t) => t.id === hash) ? hash : 'fleet') as TabId;
+/** The page an address shows: its own module, or the honest empty naming its row. */
+function PageView({ address }: { address: Address }) {
+  const Page = pageFor(address);
+  if (Page === null) return <Empty text="page not built" source={`row ${PAGE_ROW[address]}`} />;
+  // The page module is fetched lazily, so the bay holds its own space for the
+  // frame before it arrives rather than claiming anything about it.
+  return (
+    <Suspense fallback={<div className="myx-console-pending" aria-busy="true" />}>
+      <Page />
+    </Suspense>
+  );
 }
 
-const THEMES = ['auto', 'paper', 'observatory'] as const;
-
-function applyTheme(theme: string) {
-  if (theme === 'auto') delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = theme;
-}
-
-export function App() {
-  const [tab, setTab] = useState<TabId>(currentTab);
-  const [theme, setTheme] = useState(() => localStorage.getItem('myx-theme') ?? 'auto');
-  const status = useControlStatus((s) => s.data);
-
-  useEffect(() => {
-    void fetchControlStatus();
-  }, []);
-
-  useEffect(() => {
-    const onHash = () => setTab(currentTab());
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, []);
-
-  useEffect(() => {
-    applyTheme(theme);
-    localStorage.setItem('myx-theme', theme);
-  }, [theme]);
-
-  const cycleTheme = () => {
-    const next = THEMES[(THEMES.indexOf(theme as (typeof THEMES)[number]) + 1) % THEMES.length];
-    setTheme(next);
-  };
-
-  const ActivePage = TABS.find((t) => t.id === tab)?.page ?? FleetPage;
+/** The shell every address renders inside. */
+function Console() {
+  const { pathname } = useLocation();
+  const address = addressOf(pathname);
+  const { theme, set } = useTheme();
+  // The palette lists the current page's saved views, and the views feature
+  // cannot import the palette (or the reverse). The app layer is where the two
+  // meet: it hands the list down and takes the selection back.
+  const views = usePageViews(address);
 
   return (
-    <div className="myx-shell">
-      <header className="myx-header">
-        <h1 className="myx-wordmark">
-          splice
-          <span className="myx-wordmark-sub">
-            {status ? `control v${status.version} · ${status.heads.length} heads` : 'connecting'}
-          </span>
-        </h1>
-        <nav className="myx-tabs" aria-label="pages">
-          {TABS.map((t) => (
-            <a
-              key={t.id}
-              href={`#${t.id}`}
-              className="myx-tab"
-              aria-current={tab === t.id ? 'page' : undefined}
-            >
-              {t.label}
-            </a>
-          ))}
-        </nav>
-        <button type="button" className="myx-theme-btn" onClick={cycleTheme} aria-label={`theme: ${theme}`}>
-          theme: {theme}
-        </button>
-      </header>
-      <main className="myx-main">
-        <ActivePage />
-      </main>
-      <footer className="myx-footer">
-        loopback-only; bearer-guarded /api; key at ~/.claude-codex/state/mgmt-key
-      </footer>
+    <div className="myx-console">
+      <Rule />
+      <div className="myx-console-body">
+        <Rail active={address} addresses={ADDRESSES} />
+        <main className="myx-console-page">
+          <Outlet />
+        </main>
+      </div>
+      <Palette
+        addresses={ADDRESSES}
+        views={views}
+        onSelectView={(id) => selectView(address, id)}
+        theme={theme}
+        onTheme={set}
+      />
       <UnlockMgmt />
     </div>
   );
+}
+
+const HOME = `/${ADDRESSES[0]}`;
+
+export const router = createHashRouter([
+  {
+    path: '/',
+    element: <Console />,
+    children: [
+      { index: true, element: <Navigate to={HOME} replace /> },
+      ...ADDRESSES.map((address) => ({ path: address, element: <PageView address={address} /> })),
+      // A bare old path typed while the console is open. On load these are
+      // rewritten before the router exists (rows.canonicalHash).
+      ...LEGACY_PATHS.map(([slug, address]) => ({
+        path: slug,
+        element: <Navigate to={`/${address}`} replace />,
+      })),
+      { path: '*', element: <Navigate to={HOME} replace /> },
+    ],
+  },
+]);
+
+export function App() {
+  return <RouterProvider router={router} />;
 }

@@ -7,3 +7,6 @@ export function CompactionPage() {
   useEffect(() => startCompactPolling(5000), []);
   return <CompactFeed />;
 }
+
+// The shell discovers pages by directory and renders the default export.
+export default CompactionPage;

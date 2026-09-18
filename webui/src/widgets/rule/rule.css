@@ -89,23 +89,25 @@
   overflow: hidden;
 }
 
-/* THE FOUR SIGNAL CELLS, and why they flow instead of sitting at a measured x.
-   The measured five cells (wordmark 0.5-9, clocks 10-29, health 30-40, window 41-71, none 72-99)
-   fill the band at the type sizes the token sheet now carries. Two signals the comp never had are
-   printed here (M2-09's pending restart, M3-00's live connection) and the row places both BESIDE
-   HEALTH. A fixed slot per cell was tried first and measured: reserving 8% for the pending cell,
-   which is empty in every ordinary state, made the connection clip by 4 px, the window by 17 and
-   the no-window count by 32. The band has no spare width to reserve.
-   So the readouts FLOW in one row from the measured 41% to the measured right edge: each cell is
-   as wide as what it prints, `space-between` keeps the count pinned right where the comp has it,
-   and nothing can clip whatever the connection word or the window happens to be.
-   The identity cells (wordmark, clocks, health) stay exactly at their measured x and width.
-   The defect this replaced: an absolutely positioned cell with no `left` lands at the start of the
-   line, so the connection cell rendered at (0,0) over the wordmark. */
-.myx-rule-signals {
+/* THE TAIL OF THE NO-WINDOW SLOT, where the band's measurements leave room and nothing else does.
+   The comp measures five cells: wordmark 0.5-9, clocks 10-29, health 30-40, window 41-71, none
+   72-99. Two signals the comp never had are printed here (M2-09's pending restart, M3-00's live
+   connection), and the band has no spare width to reserve for them: at the type sizes the sheet
+   carries today the connection signal measures 157.8 px, the health cell's whole slot is 154 px,
+   and the window cell's content already runs 344.3 px of its 460.8 px slot. The one place the
+   comp's own numbers leave free is the tail of the no-window slot, whose content measures 127.8 px
+   of 414.7 px — so the count and the two signals share that slot, `space-between` keeps the count
+   at the measured 72% where the comp puts it, and the signal sits 8.4 points clear of it.
+   WHAT THIS REPLACED, and it was a real defect rather than a preference: the window and none cells
+   were FLOWED in one row from 41% to the right edge, which kept every signal visible but moved two
+   MEASURED cells by +18.77 and +18.68 points of the frame on all thirteen addresses (M1-28's punch
+   list, the second and third worst constants in the milestone). Measured before this change:
+   window x 59.77%, none x 90.68%, against the comp's 41.00 and 72.00. After: delta 0.00 on both,
+   and rule.h, wordmark.x, clocks.x and health.x unchanged at delta 0.00 as well. */
+.myx-rule-tail {
   position: absolute;
-  left: 41%;
-  width: 58%;
+  left: 72%;
+  width: 27%;
   top: 20.7%;
   height: 58.6%;
   margin: 0;
@@ -117,14 +119,12 @@
 }
 
 /* Laid out by the row above, not by a measured x: the cells keep their printed shape and give up
-   only the absolute positioning. */
-.myx-rule-signals > .myx-rule-cell {
+   only the absolute positioning. `width:auto` matters — the cells carry a percentage width for
+   their measured slots, and inside this row that basis resolves against the row and would clip. */
+.myx-rule-tail > .myx-rule-cell {
   position: static;
   top: auto;
   height: auto;
-  /* width:auto matters: the measured cells above carry a percentage width, and a flex basis of
-     `auto` resolves against it, so the window cell kept its measured 30% of a NARROWER container
-     and clipped. The flowing cells are sized by their content and by nothing else. */
   width: auto;
   flex: 0 0 auto;
 }

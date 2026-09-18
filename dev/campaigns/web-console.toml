@@ -1238,6 +1238,8 @@ status = "in_flight"
 verify = "test -s dev/web-console/reviews/m1-verify-audit.md && grep -q DISPOSITION dev/web-console/reviews/m1-verify-audit.md && test $(wc -l < dev/web-console/reviews/m1-verify-audit.md) -gt 80"
 # [2026-09-18] CLAIM: owner=code-reviewer at=2026-09-18T09:55:51Z
 # [2026-09-18] ATTEST-START: tree=549c02c26f72aaab6a2c5413430b9e2b893d26ea at=2026-09-18T09:55:51Z
+# [2026-09-18] [2026-09-18] DENOMINATOR: enumerated from the ledger file, not from rows of interest. 68 rows (41 done / 22 todo / 5 in_flight / 0 verified), all 68 carry a verify string, 458 legs total, 320 of them inside a done row. Ledger snapshot sha256 1811ea08f52b9079..., 783688 bytes. Probes ran in a git clone -s copy at tip f5e6bac0 with node_modules symlinked from the worktree; nothing in the live tree was touched.
+# [2026-09-18] [2026-09-18] DISPOSITION TALLY, all 458 legs, none left blank: CAN FAIL 237 | CONTEXT (cd) 91 | CAN FAIL NARROWLY 41 | CAN FAIL WITH A LAW-SIZED HOLE (tsc under typecheck-is-tree-wide) 38 | WEAK 17 | UNKNOWN-NOT RUN HERE 12 | CANNOT FAIL 8 | NOT RE-RUNNABLE 7 | LOADS ONLY (--help) 4 | CANNOT FAIL WHEN THE TOOL DID NOT RUN 3. Inside done rows: 32 vacuous-or-weak legs across 15 rows. No done row has zero can-fail legs.
 
 [[items]]
 id = "M1-28"

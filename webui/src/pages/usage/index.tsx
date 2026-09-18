@@ -30,46 +30,8 @@ export { dispositions };
 
 const PAGE_ID = 'usage';
 
-/** The head rack's columns, in the order `HeadStrip` prints its cells (CONTRACTS.md section 2,
- *  m1 design review B9). */
-const HEAD_COLUMNS: readonly { key: string; label: string; w: number }[] = [
-  { key: 'heads', label: S.heads, w: 18 },
-  { key: 'spent', label: S.spent, w: 11 },
-  { key: 'ceiling', label: S.ceiling, w: 11 },
-  { key: 'exhaustion', label: S.exhaustion, w: 14 },
-  { key: 'turns', label: S.turns, w: 9 },
-  { key: 'inTokens', label: S.inTokens, w: 13 },
-  { key: 'outTokens', label: S.outTokens, w: 13 },
-  { key: 'limited', label: S.limited, w: 13 },
-];
 
-/** The model rack's columns: the two strips of a head's bay print the same six cells in the same
- *  order, so the names go on the bay head once. */
-const MODEL_COLUMNS: readonly { key: string; label: string; w: number }[] = [
-  { key: 'slot', label: S.slot, w: 8 },
-  { key: 'models', label: S.models, w: 24 },
-  { key: 'contextWindow', label: S.contextWindow, w: 12 },
-  { key: 'sourceLabel', label: S.sourceLabel, w: 20 },
-  { key: 'inputRate', label: S.inputRate, w: 10 },
-  { key: 'outputRate', label: S.outputRate, w: 10 },
-];
 
-function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
-  return (
-    <>
-      {columns.map((column) => (
-        <span className="myx-us-col" key={column.key} style={{ width: `${column.w}ch` }}>
-          <span className="myx-us-col-name">{column.label}</span>
-        </span>
-      ))}
-    </>
-  );
-}
-
-/** The model rack's head, from the same declaration its two strips read. */
-function ModelColumnHeads() {
-  return <ColumnHeads columns={MODEL_COLUMNS} />;
-}
 const POLL_MS = 30000;
 
 /** The name this page accepts in the hash query, declared HERE and not in the fixture module: a
@@ -125,16 +87,14 @@ function HeadStrip({ head, now, selected, onOpen }: {
       onOpen={onOpen}
       ariaLabel={`${S.openHead} ${head.label}`}
     >
-      {/* No label on a cell: the bay head prints the column names once for the whole rack
-          (CONTRACTS.md section 2, m1 design review B9). */}
-      <StripField w={18} value={head.label} mono={false} />
-      <StripField w={11} value={fmtTokens(projection.spent)} />
-      <StripField w={11} value={head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)} />
-      <StripField w={14} value={hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent)} />
-      <StripField w={9} value={fmtInt(totals.turns)} />
-      <StripField w={13} value={fmtTokens(totals.inTokens)} />
-      <StripField w={13} value={fmtTokens(totals.outTokens)} />
-      <StripField w={13} value={fmtInt(totals.rateLimited)} />
+      <StripField w={18} label={S.heads} value={head.label} mono={false} />
+      <StripField w={11} label={S.spent} value={fmtTokens(projection.spent)} />
+      <StripField w={11} label={S.ceiling} value={head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)} />
+      <StripField w={14} label={S.exhaustion} value={hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent)} />
+      <StripField w={9} label={S.turns} value={fmtInt(totals.turns)} />
+      <StripField w={13} label={S.inTokens} value={fmtTokens(totals.inTokens)} />
+      <StripField w={13} label={S.outTokens} value={fmtTokens(totals.outTokens)} />
+      <StripField w={13} label={S.limited} value={fmtInt(totals.rateLimited)} />
     </Strip>
   );
 }
@@ -192,7 +152,6 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
           key={head.key}
           label={head.key}
           count={head.models.length}
-          fields={<ModelColumnHeads />}
           empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
         >
           {slotTiers(head).map((tier) => (
@@ -203,22 +162,22 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               struck={tier.model === null}
               ariaLabel={`${S.slot} ${tier.slot}`}
             >
-              <StripField w={8} value={tier.slot} mono={false} />
-              <StripField w={24} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
-              <StripField w={12} value={tier.model === null ? S.absent : fmtTokens(tier.model.context_window)} />
-              <StripField w={20} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
-              <StripField w={10} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
-              <StripField w={10} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
+              <StripField w={8} label={S.slot} value={tier.slot} mono={false} />
+              <StripField w={24} label={S.models} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
+              <StripField w={12} label={S.contextWindow} value={tier.model === null ? S.absent : fmtTokens(tier.model.context_window)} />
+              <StripField w={20} label={S.sourceLabel} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
+              <StripField w={10} label={S.inputRate} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
+              <StripField w={10} label={S.outputRate} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
             </Strip>
           ))}
           {head.models.filter((model) => model.slot === null).map((model) => (
             <Strip key={model.id} edge="grey" edgeLabel={S.noSlot} ariaLabel={`${S.models} ${model.id}`}>
-              <StripField w={8} value={S.noSlot} mono={false} />
-              <StripField w={24} value={model.id} mono={false} />
-              <StripField w={12} value={fmtTokens(model.context_window)} />
-              <StripField w={20} value={model.context_window_source} mono={false} />
-              <StripField w={10} value={model.rates === null ? S.absent : String(model.rates.input)} />
-              <StripField w={10} value={model.rates === null ? S.absent : String(model.rates.output)} />
+              <StripField w={8} label={S.slot} value={S.noSlot} mono={false} />
+              <StripField w={24} label={S.models} value={model.id} mono={false} />
+              <StripField w={12} label={S.contextWindow} value={fmtTokens(model.context_window)} />
+              <StripField w={20} label={S.sourceLabel} value={model.context_window_source} mono={false} />
+              <StripField w={10} label={S.inputRate} value={model.rates === null ? S.absent : String(model.rates.input)} />
+              <StripField w={10} label={S.outputRate} value={model.rates === null ? S.absent : String(model.rates.output)} />
             </Strip>
           ))}
         </Bay>
@@ -283,7 +242,6 @@ export function UsageBoard({ payload, catalog, now, sample }: {
           <Bay
             label={S.heads}
             count={heads.length}
-            fields={<ColumnHeads columns={HEAD_COLUMNS} />}
             empty={{ text: EMPTIES.noHeads.text, source: EMPTIES.noHeads.source }}
           >
             {heads.map((head) => (

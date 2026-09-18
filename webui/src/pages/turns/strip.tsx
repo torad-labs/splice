@@ -26,9 +26,9 @@ export interface Field {
 // an absent cell printed `- unavailable` and are left as they were: a column narrower than its own
 // empty state hides the word that makes the empty honest, and the widest of those empties is now
 // three characters shorter, so every column still fits.
-// ONE declaration per column, because the rack prints its names once on the bay head and the
-// strips below carry values only (CONTRACTS.md section 2, m1 design review B9). The head and the
-// rows read the same numbers, so a name cannot drift off the column it names.
+// ONE declaration per column - label and width together - so a row cannot print a name that
+// disagrees with its own width. The comp's strip carries its field names IN the strip (its two
+// strips in one bay carry different sets), so the rows print them and no bay head does.
 const COLUMNS: Record<string, { label: string; w: number }> = {
   time: { label: S.time, w: 12 },
   head: { label: S.head, w: 20 },
@@ -51,11 +51,6 @@ const COLUMNS: Record<string, { label: string; w: number }> = {
   inflight: { label: S.inflightCount, w: 11 },
   dropped: { label: S.dropped, w: 22 },
 };
-
-/** The columns a view asks for, in its own order, for the bay head. */
-export function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
-  return order.flatMap((key) => (COLUMNS[key] === undefined ? [] : [{ key, ...COLUMNS[key] }]));
-}
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
  *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
@@ -170,7 +165,7 @@ export function TurnStrip({ row, selected, order, onOpen }: {
       {/* No label on a cell: the bay head prints the column names once for the whole rack
           (CONTRACTS.md section 2, m1 design review B9). */}
       {fieldsOf(row, order).map((field) => (
-        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
+        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );
@@ -186,7 +181,7 @@ export function InflightStrip({ turn, order }: { turn: InflightTurn; order: read
       ariaLabel={`${S.inflight} ${turn.label}`}
     >
       {inflightFieldsOf(turn, order).map((field) => (
-        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
+        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );

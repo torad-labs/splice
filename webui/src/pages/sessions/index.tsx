@@ -42,25 +42,10 @@ import { Fault } from '@shared/controls';
 import { timeAgo } from '@shared/lib';
 import { S } from './strings';
 import { groupByOf, groupHref, selectionOf } from './select';
-import { columnsOf, projectKeyOf, SessionStrip } from './strip';
+import { projectKeyOf, SessionStrip } from './strip';
 import './sessions.css';
 
 const PAGE_ID = 'sessions';
-
-/** The rack's column names, printed once on the bay head instead of on every strip (CONTRACTS
- *  section 2, m1 design review B9). The boxes carry the cell's own inline padding so a name sits
- *  over the value it names; the bay's head row supplies the face and the colour. */
-function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
-  return (
-    <>
-      {columns.map((column) => (
-        <span className="myx-sx-col" key={column.key} style={{ width: `${column.w}ch` }}>
-          <span className="myx-sx-col-name">{column.label}</span>
-        </span>
-      ))}
-    </>
-  );
-}
 
 /** The four views this page ships. `by head` is the default and stands first. */
 const DEFAULT_VIEWS: View[] = [
@@ -118,7 +103,6 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
   // match null against null and open the first id-less row on load (found in
   // the 2026-09-18 capture).
   const keyOf = (row: SessionRow): string => row.session_id ?? `pid:${row.pid ?? 0}`;
-  const columns = columnsOf(active.fields);
 
   const rows = payload?.sessions ?? [];
   const open = rows.find((row) => keyOf(row) === openId) ?? null;
@@ -187,7 +171,6 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
                 key={group.key}
                 label={`${groupWord}: ${group.key}`}
                 count={group.count}
-                fields={<ColumnHeads columns={columns} />}
                 actions={<a className="myx-sx-open" href={groupHref(by)}>{openLabel}</a>}
               >
                 {group.rows.map(strip)}
@@ -206,13 +189,12 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
                     key={bucket.start}
                     label={`${pad(new Date(bucket.start).getHours())}:00`}
                     count={bucket.sessions.length}
-                    fields={<ColumnHeads columns={columns} />}
-                  >
+                      >
                     {bucket.sessions.map(strip)}
                   </Bay>
                 ))}
               {undated.length === 0 ? null : (
-                <Bay label={S.undated} count={undated.length} fields={<ColumnHeads columns={columns} />}>
+                <Bay label={S.undated} count={undated.length}>
                   {undated.map(strip)}
                 </Bay>
               )}

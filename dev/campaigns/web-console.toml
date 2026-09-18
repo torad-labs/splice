@@ -57,6 +57,7 @@
 # LAW [2026-09-18]: LAW [2026-09-18]: THE ORCHESTRATORS EYE IS 0 FOR 4 AGAINST THIS CODEBASES MEASUREMENTS. PRINTED, vertical cost, racks abreast and a font gap all died to a measurement already in the tree. Diagnose by instrument or by a seats measurement; never from a capture.
 # LAW [2026-09-18]: LAW [2026-09-18]: WHEN A PHRASE IS RETIRED, THE COLUMN SIZED FOR IT IS NOT. Two fleet columns held 28ch and 19ch for sentences no code path can produce. Diagnostic: declared width over content held -- healthy is 1.0 to 1.5, a retired sentence reads 2.4 to 3.3.
 # LAW [2026-09-18]: LAW [2026-09-18]: A STRIP IS width max-content, SO DECLARED ch IS RENDERED WIDTH AND SURPLUS IS NOT DEAD WIDTH -- it is how the rack fills its bay. Fitting every column to content passed tsc, 40 tests and zero-clipped, and left 453px of bare ground per row. Move the shares, keep the budget.
+# LAW [2026-09-18]: LAW [2026-09-18]: RUN THE CONTROL -- three times tonight it found a defect ADJACENT to the one being fixed. A fix that removes a check passes the same tests as a fix that repairs it, so prove the protection survives: backdate the artifact, censor the leg, force the race.
 [campaign]
 name = "web-console"
 created = "2026-09-17"
@@ -3606,3 +3607,14 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/logs src/widgets/
 # [2026-09-18] CLAIM: owner=design-reviewer at=2026-09-18T16:39:15Z
 # [2026-09-18] ATTEST-START: tree=f37cac67c521f89ea2b4023f692a186342455cc9 at=2026-09-18T16:39:15Z
 # [2026-09-18] ATTEST-START: tree=bfeec08840976cf1c48726bbe571975f3045e235 at=2026-09-18T16:39:16Z
+
+[[items]]
+id = "M2-31"
+phase = "m2"
+title = "SESSIONS AND PROJECTS, THE LAST TWO UNCOMPOSED RACK PAGES, AND THEY ARE ONE ROW BECAUSE widgets/file-view IS GENUINELY SHARED BY BOTH -- checked before cutting rather than after, which is the M2-08 lesson: both pages are real (775 and 488 lines, no stubs, every directory present). Bring the diagnostic that found two dead columns on fleet in one pass: declared width over content held, per column, measured rack-wide in a cloned unconstrained box. Healthy reads 1.0 to 1.5; fleets window read 3.31 and its last turn 2.42, both sized for sentences the absence vocabulary retired without anyone moving the width, and its in flight read 0.96 -- narrower than its own content, hidden because the rack had slack elsewhere. THE BUDGET STAYS AND THE SHARES MOVE: a strip is width max-content, so declared ch IS rendered width and flex-grow has no slack; fitting every column to content passed tsc, forty tests and a zero-clipped check while leaving 453px of bare ground per row, and only opening the capture caught it. OPEN THE CAPTURE before calling it done -- on this defect the gates are known insufficient. M1-111 already measured projects saying almost nothing about four repositories while using half the frame to say it, so that page has a second symptom the ratio may or may not explain; report which. No columns, no PRINTED, and do not rename an absence to save pixels."
+files = ["webui/src/pages/sessions", "webui/src/pages/projects", "webui/src/widgets/conversation", "webui/src/widgets/file-view", "webui/tests/sessions.test.ts", "webui/tests/projects.test.ts"]
+status = "in_flight"
+verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/sessions src/pages/projects src/widgets/conversation src/widgets/file-view && npx vitest run tests/sessions.test.ts tests/projects.test.ts tests/detail-rest.test.ts && npx vite build"
+# [2026-09-18] PLANNED m2 SCOPE (every page): neither page has had a composition pass. M2-29 supplied the method; it did not create this row. Both pages verified real and unstubbed BEFORE cutting, and file-view confirmed shared by both, which is why they are one row rather than two colliding ones.
+# [2026-09-18] CLAIM: owner=code-reviewer at=2026-09-18T16:45:22Z
+# [2026-09-18] ATTEST-START: tree=3872f08231baf17bf45940ef0ed43b3d4286d620 at=2026-09-18T16:45:22Z

@@ -47,8 +47,13 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
           count={outcomes.length}
           empty={{ text: S.none, source: 'GET /api/compact' }}
         >
+          {/* THE TOTAL IS A SPAN, NOT A WIDE FIRST FIELD (M1-73). It is one value stated across
+              the whole row, so it declares the two tracks this bay's outcome rows use -- w=26+w=12
+              -- and says span=2 so anything comparing first-field edges excludes it by
+              declaration instead of by not looking. Measured before: this row's single w=12 field
+              rendered 902.5px against the outcome rows' 617.5px, a 384px span across the bay. */}
           <Strip edge="grey" edgeLabel={S.total} ariaLabel={S.total}>
-            <StripField w={12} label={S.total} value={fmtInt(payload.stats.total)} />
+            <StripField w={38} span={2} label={S.total} value={fmtInt(payload.stats.total)} />
           </Strip>
           {outcomes.map(([outcome, count]) => (
             <Strip

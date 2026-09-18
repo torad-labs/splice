@@ -557,3 +557,61 @@ The coverage gate from v0.4.0 §9, made concrete:
 4. Whether account add and remove ship in the first cut or the console shows the CLI command
    until the login route lands.
 5. The replacement visual world: chosen in new-work, after this document and `init`.
+
+### 6.1 The team read is SPLIT, and the member row is cut to the comps (ruled 2026-09-18, V4-131)
+
+**No `GET /api/teams/{id}`.** `webui/src/entities/team/api/index.ts` fetches it and expects one
+composite `TeamPayload {team, members, messages, activity, coldCacheHint}`. That route is named
+in neither the section 6 table nor `webui/src/shared/coverage/baseline.ts`, both of which name
+the split reads. Two independent records say split; one piece of console code says composite, and
+it targets a route that has never existed, so it has never run. **The console is the defect.**
+`fetchTeam` is deleted and the board composes from the split reads.
+
+Three reasons beyond the record: `chat?day=` and `activity?day=` are **day-scoped** and a
+composite cannot carry a day without fixing it; `archive` and `slots/{slot}/instructions` are
+mutations with their own semantics; and the live wiring refetches per entity on an event
+(`widgets/rule/wire.ts`), so a composite makes every event refetch the whole board. The board's
+first viewport needs `team` plus `sessions`; chat and activity are panels and fetch their own day.
+
+**Every value carries its unit in its name and is never pre-formatted.** A payload shipping
+`"3h 12m"` or `"+412 -37"` moves formatting into the daemon and makes the number unusable for
+anything but that one label. This is not a preference here — it **breaks a shipped feature**:
+every list page is one data source under saved views, a view owns `sort: { field, dir }`
+(`features/views/store.ts`), and `"3h 12m"` sorts before `"45m"` lexically. The holder edge's
+colour is likewise chosen from a value, not from a string. So: `last_turn_at_epoch_millis`,
+`uptime_ms`, `diff_added` / `diff_removed`, never their printed forms. The console owns
+formatting; the `Figure` primitive exists for it.
+
+**The member row is cut to what the approved comps ask for.** Method: the field names were
+checked against the prompts of all three approved comps (`team-board-a/-b/-c`), the same source
+that settled the `--scope` provenance question.
+
+| in a comp | field |
+|---|---|
+| a, b, c | `checks`, `window`, `packet` |
+| a | `last turn` |
+| b | `detail` |
+| c | `tokens`, `cost` |
+
+| in NO comp — **delete** | `workspace`, `branch`, `base`, `diff`, `scratchpad_kb`, `context_left_pct`, `uptime`, `created` |
+|---|---|
+
+Those eight have no design backing *and* no daemon source; they are a designer's filled-in row.
+A field with no source is a column the console renders blank forever and someone later files as a
+bug.
+
+`packet` and `detail` are **kept, not dropped** — `packet` appears in all three comps and `detail`
+in `team-board-b`. They need definitions, not deletion: `packet` is the dispatch unit a message
+was sent under (from the V4-130 wire observation if it carries one), `detail` is the activity
+sample's second line. If V4-130's observation cannot produce `packet`, say so and the column
+takes the honest empty — it does not get invented.
+
+`checks` is the one real conflict: it is in all three comps and the daemon has no source. It
+**keeps its column** and ships the honest empty with `source` naming the row that will fill it,
+exactly as section 8 already requires for a pending route. Removing it would change the board's
+geometry against the comp of record; faking it would be worse.
+
+**`PUT /api/teams` body shape** is unstated and stays that way until a row needs it. When one
+does, it is one team per call with the id in the path (`PUT /api/teams/{id}`), the daemon mints
+ids, and whole-list replacement is not offered — a list PUT makes every concurrent editor the
+last writer.

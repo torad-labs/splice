@@ -9,7 +9,7 @@ prints the management key.
 | `snapshot.mjs '<url>' [out.html]` | freezes one address into ONE self-contained HTML file: the rendered DOM, every stylesheet's text, fonts inlined as data URIs, every `<script>` removed. |
 | `look-gate.mjs` | the mechanical half of a design review: ladder steps, type and spacing distribution, scale-transform laundering, absence vocabulary, the field grid of a rack, tonal drift against the comp. `--selftest` mutation-proves each check. |
 | `capture.mjs '<url>' <out.png>` | one screenshot of one address. |
-| `gate.mjs`, `fixture-leak.mjs`, `comp-check.mjs`, `idle-watch.py` | the campaign's other checks, each with its own header. |
+| `gate.mjs`, `fixture-leak.mjs`, `comp-check.mjs`, `idle-watch.ts` | the campaign's other checks, each with its own header. |
 | `lib/cdp.mjs` | the Chrome-over-CDP plumbing they share, and the one place the management key is read. |
 
 ## Why the console needs a snapshot to be measured

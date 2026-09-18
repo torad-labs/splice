@@ -75,6 +75,79 @@ function cell(value: number | undefined, format: (n: number) => string): { value
 /** The summary rack's own columns (it summarizes a window, so its fields are not the landed
  *  rack's), declared once for the bay head and the rows below it (CONTRACTS.md section 2, m1
  *  design review B9). */
+/**
+ * WHERE THE TIME WENT, AND WHAT IT COST (M2-20) -- TWO SMALL MEMBERS, EACH WEARING ITS OWN HEADER.
+ *
+ * WHY THESE TWO AND NOT THE OTHER SIXTY. M2-20's trap is printing the headroom: turns holds 117
+ * served fields and prints 55, and consuming that inventory would be the padded page M1-111 refused
+ * from the other direction. M1-109 measured what actually earns PRINTED -- the grey header strip a
+ * table wears, and the plate a bay label sits on -- and the comp earns 6.17 by composing MANY SMALL
+ * MEMBERS where our pages compose few large ones. So the test for a member is not "is this field
+ * served" but "does it answer a question a person has", and this page's person is scanning for cost,
+ * latency and outcome.
+ *
+ * WHAT EARNED ITS PLACE. The page's own header says the daemon "records where the time went and
+ * never why", and the summary rack prints P50 and P95 totals -- it says how LONG a turn took and
+ * never WHERE. The five pipeline stages (recv, parse, build, gate, headers, plus stream end and
+ * finish) are served on every row, are the daemon's own instrumentation, and answer the question the
+ * page's comment names. SECOND MEMBER: the summary prints ONE cache scalar, while the four token
+ * classes (in, cached, cache write, out) are served and unprinted -- and cached versus written is
+ * the ten-to-one price difference the operator actually pays. Both are per-head rows, which is the
+ * grain the rest of this page reads.
+ *
+ * WHAT WAS REJECTED, WITH REASONS, because a census that only lists what it took is an inventory:
+ *   - THE TRANSPORT FIELDS (req_bytes, upstream_req_bytes, sse_bytes_in, bytes_out, events_in,
+ *     frames_out, content_frames_out, frames_skipped): they answer a protocol engineer's question
+ *     and not this page's. A reader scanning for cost, latency and outcome cannot act on a frame
+ *     count.
+ *   - THE RETRY BREAKDOWN (attempts, post_send_retries, reanchors, backoff_ms, auth_ms, refresh_ms,
+ *     write_ms, usage_ms, stall_ms): mostly zero on healthy traffic, so a table of them spends a
+ *     header to say nothing, and the summary already prints retries and refreshes as scalars. If a
+ *     retry ever earns a place it earns it as a column on a table that is already there.
+ *   - THE PER-TURN IDENTITY FIELDS (session, account, cache_cold, inflight, async_io_drops,
+ *     tools_eager, tools_deferred): they belong to the strip that is already rendering that turn,
+ *     not to a second table about it.
+ *   - first_byte, first_frame, first_delta, total, ts, model, outcome, compact: ALREADY PRINTED,
+ *     by the summary rack and the landed strips.
+ */
+const STAGES: readonly { key: keyof TurnRow; label: string }[] = [
+  { key: 'recv', label: 'recv' },
+  { key: 'parse', label: 'parse' },
+  { key: 'build', label: 'build' },
+  { key: 'gate', label: 'gate' },
+  { key: 'headers', label: 'headers' },
+  { key: 'stream_end', label: 'stream end' },
+  { key: 'finish', label: 'finish' },
+];
+
+/** Each stage's total across the loaded rows and its share of the summed stage time. Absent stages
+ *  are skipped rather than counted as zero: the daemon writes only the stages a turn reached. */
+function stageRowsOf(rows: readonly TurnRow[]): { label: string; ms: number; share: number }[] {
+  const totals = STAGES.map((stage) => ({ label: stage.label, ms: 0 }));
+  let sum = 0;
+  for (const row of rows) {
+    STAGES.forEach((stage, at) => {
+      const value = row[stage.key];
+      if (typeof value === 'number') { totals[at].ms += value; sum += value; }
+    });
+  }
+  return totals.map((total) => ({ ...total, share: sum === 0 ? 0 : total.ms / sum }));
+}
+
+/** The four token classes per head, with the cache hit share: what the operator pays for. */
+function tokenRowsOf(rows: readonly TurnRow[]): { head: string; in: number; cached: number; write: number; out: number; hit: number }[] {
+  const byHead = new Map<string, { head: string; in: number; cached: number; write: number; out: number; hit: number }>();
+  for (const row of rows) {
+    const at = byHead.get(row.head) ?? { head: row.head, in: 0, cached: 0, write: 0, out: 0, hit: 0 };
+    at.in += row.in_tokens ?? 0;
+    at.cached += row.cached_tokens ?? 0;
+    at.write += row.cache_write_tokens ?? 0;
+    at.out += row.out_tokens ?? 0;
+    byHead.set(row.head, at);
+  }
+  return [...byHead.values()].map((at) => ({ ...at, hit: at.in === 0 ? 0 : at.cached / at.in }));
+}
+
 export const SUMMARY_COLUMNS: readonly { key: string; label: string; w: number }[] = [
   { key: 'head', label: S.head, w: 20 },
   { key: 'window', label: S.time, w: 15 },
@@ -170,6 +243,8 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
 
   const pending = landed !== null && 'pending' in landed;
   const rows = landed !== null && !pending ? landed.landed : [];
+  const stageRows = stageRowsOf(rows);
+  const tokenRows = tokenRowsOf(rows);
   const selection: Selection = selectionOf(rows, active, Date.now());
   const items = pending ? [] : itemsOf(selection);
   const open = items.find((item) => item.kind === 'row' && item.key === openKey);
@@ -235,6 +310,39 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
             {summary?.heads.map((head) => <SummaryStrip key={head.key} head={head} />)}
           </Bay>
 
+          {/* THE TWO COMPOSED MEMBERS (M2-20). Each is a small table wearing its own header, which
+              is the unit M1-109 measured the comp earning its printed area with. They sit between
+              the summary and the landed rack because they are aggregates over the same rows: the
+              summary says how long turns took, these say where the time went and what it cost. */}
+          <Bay
+            label={S.stages}
+            {...(pending ? {} : { count: stageRows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
+          >
+            {stageRows.map((stage) => (
+              <Strip key={stage.label} edge="grey" edgeLabel={S.stage} ariaLabel={`${S.stage} ${stage.label}`}>
+                <StripField w={14} label={S.stage} value={stage.label} mono={false} />
+                <StripField w={12} label={S.total} value={stage.ms === 0 ? S.absent : `${Math.round(stage.ms)} ms`} {...basisProp(stage.ms === 0 ? undefined : 'measured')} />
+                <StripField w={8} label={S.share} value={stage.ms === 0 ? S.absent : `${(stage.share * 100).toFixed(1)} %`} {...basisProp(stage.ms === 0 ? undefined : 'measured')} />
+              </Strip>
+            ))}
+          </Bay>
+
+          <Bay
+            label={S.tokens}
+            {...(pending ? {} : { count: tokenRows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
+          >
+            {tokenRows.map((row) => (
+              <Strip key={row.head} edge="grey" edgeLabel={S.tokIn} ariaLabel={`${S.tokens} ${row.head}`}>
+                <StripField w={20} label={S.head} value={row.head} mono={false} />
+                <StripField w={11} label={S.tokIn} value={row.in.toLocaleString('en-US')} />
+                <StripField w={11} label={S.tokCached} value={row.cached.toLocaleString('en-US')} />
+                <StripField w={13} label={S.tokWrite} value={row.write.toLocaleString('en-US')} />
+                <StripField w={11} label={S.tokOut} value={row.out.toLocaleString('en-US')} />
+                <StripField w={8} label={S.hit} value={row.in === 0 ? S.absent : `${(row.hit * 100).toFixed(0)} %`} {...basisProp(row.in === 0 ? undefined : 'measured')} />
+              </Strip>
+            ))}
+          </Bay>
+
           <Bay
             label={S.landed}
             {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
@@ -273,7 +381,15 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
           </Bay>
         </div>
 
-        <aside className="myx-tn-detail" aria-label={S.detail}>
+        {/* M1-123'S DECISION, APPLIED VERBATIM (M2-20): the aside stays mounted and keeps its
+            aria-label, and carries aria-hidden while collapsed, gated by the SAME expression that
+            gates its content -- so the exposure and the content cannot desync, because they are one
+            expression rather than two facts kept in step. The shape was decided by the seat holding
+            fleet, sessions and projects, with the three rejected alternatives measured off the real
+            accessibility tree; this seat is applying it rather than choosing a variant. The column
+            stays mounted at rest for the reason collapse beat unmount: the collapsing track needs
+            something to transition from. */}
+        <aside className="myx-tn-detail" aria-label={S.detail} aria-hidden={open?.kind !== 'row' ? true : undefined}>
           {open?.kind !== 'row' ? null : (
             <>
               <div className="myx-tn-detail-head">

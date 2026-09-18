@@ -23,9 +23,15 @@ function keyedRows(children: ReactNode): { key: string; node: ReactNode }[] {
   });
 }
 
-export function Bay({ label, count, empty, actions, className, style, children }: {
+export function Bay({ label, count, fields, empty, actions, className, style, children }: {
   label: string;
   count?: number;
+  /** The rack's column names, printed once for the whole bay instead of on every strip (m1 design
+   *  review B9). Each child is a box as wide as the cell it names and in the same order - pass the
+   *  same `w` values the rows use - and it starts where the cells start, past the edge column. The
+   *  rows then pass their `StripField`s no label. Rendered only when given, so a bay that prints
+   *  its labels per strip is unchanged. */
+  fields?: ReactNode;
   empty?: { text: string; source: string };
   actions?: ReactNode;
   className?: string;
@@ -51,6 +57,7 @@ export function Bay({ label, count, empty, actions, className, style, children }
         {typeof count === 'number' ? <span className="myx-bay-count">{count}</span> : null}
         {actions ? <span className="myx-bay-actions">{actions}</span> : null}
       </header>
+      {fields ? <div className="myx-bay-fields">{fields}</div> : null}
       <div className="myx-bay-rows" ref={gestures.rowsRef}>
         {hasRows || gestures.departing.length > 0 ? (
           ordered.map(({ key, node, leaving }) =>

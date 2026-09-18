@@ -14,7 +14,6 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.control.ControlServer
 import splice.control.DashboardPage
-import splice.control.DeclaredHeads
 import splice.control.DoctorReport
 import splice.control.FailedHeads
 import splice.control.LaunchService
@@ -64,11 +63,6 @@ internal class ControlPlane(
     /** V4-136: the daemon's ONE compaction resolver, handed on to the control server so
      *  /api/compaction/instructions reports the resolver the daemon actually compacts with. */
     private val compactionInstructions: CompactionInstructions = CompactionInstructions(),
-    /** V4-127: what the topology declared about every head — the provider key and the declared model
-     *  list — for the whole daemon at once. A CONSTRUCTOR parameter here and a post-construction
-     *  assignment on [ControlServer] below, because only [Daemon] holds the Topology: this class has
-     *  the digest and the path, never the object. */
-    private val declaredHeads: DeclaredHeads = DeclaredHeads { emptyMap() },
 ) {
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()

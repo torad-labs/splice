@@ -18,6 +18,14 @@
 // what it does when the port is set and when it is not; this file covers only that production wires
 // it. The builder's route tests set the ports directly on their own ControlServer, so they do NOT
 // exercise these lines — that gap is exactly what this file closes.
+//
+// TWO PINS WERE RESPELLED ON 2026-09-18 and the respelling is not a weakening. ControlPlane crossed
+// the constructor-width ratchet at 13 parameters, so its topology digest, path and declaredHeads
+// became one BootedTopology: the assignment is now `srv.declaredHeads = topology.declaredHeads` and
+// the empty-roster default lives in BootedTopology.kt, so that pin reads that file instead. Both
+// still fail on the harm they were written for — delete the assignment, or make the default null,
+// and they go red. This pin caught the refactor leaving a now-dead `declaredHeads` parameter behind
+// on ControlPlane, which is the second time a source pin has reported something no type check could.
 package campaign.v4127
 
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -32,7 +40,7 @@ class ConsoleWiringPinTest {
     fun `the control plane wires every console read port to the control server`() {
         val source = controlPlaneSource()
         listOf(
-            "srv.declaredHeads = declaredHeads" to
+            "srv.declaredHeads = topology.declaredHeads" to
                 "the models page would group by a provider nobody reported and show no declared tiers",
             "srv.doctor = DoctorReport(" to
                 "/api/doctor would answer its unwired 5xx while the daemon is healthy and reportable",
@@ -89,13 +97,15 @@ class ConsoleWiringPinTest {
     @Test
     fun `the roster keeps unwired and declared-nothing apart`() {
         assertTrue(
-            controlPlaneSource().contains("DeclaredHeads { emptyMap() }"),
-            "the ControlPlane default must be an EMPTY ROSTER, never a null port: a daemon that " +
+            bootedTopologySource().contains("DeclaredHeads { emptyMap() }"),
+            "the BootedTopology default must be an EMPTY ROSTER, never a null port: a daemon that " +
                 "genuinely knows about no heads is a different answer from one nobody wired",
         )
     }
 
     private fun controlPlaneSource(): String = source("gateway/app/src/main/kotlin/splice/app/ControlPlane.kt")
+
+    private fun bootedTopologySource(): String = source("gateway/app/src/main/kotlin/splice/app/BootedTopology.kt")
 
     private fun daemonSource(): String = source("gateway/app/src/main/kotlin/splice/app/Daemon.kt")
 

@@ -23,7 +23,7 @@
 // Usage: node webui/.impeccable/review/coverage/map.mjs [--frame 3840x2160] [--out FILE]
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
@@ -59,19 +59,52 @@ export const PAGES = [
 // at the end: a 26-capture artifact that must succeed atomically is one nobody re-runs, and this one
 // was killed at the ten-minute budget having left nothing at all. `--pages a,b,c` runs a slice.
 const SIDECAR = resolve(ROOT, flag('sidecar', 'webui/.impeccable/review/coverage/map-rows.json'));
+// THE CAPTURES FOLLOW THE OUTPUT (M1-71). coverage.mjs names its captures by page alone, so a second
+// frame's run wrote over the first frame's set: measuring the same pages at the comp's frame would
+// have replaced design-builder4's 3840 evidence with 1536 files under the same names. The default is
+// unchanged for the 3840 map, whose output already lives in the capture directory; a run pointed at a
+// subdirectory now puts its captures beside its table, so both frames stay on the record.
+const CAPTURES = resolve(ROOT, flag('captures', relative(ROOT, dirname(OUT))));
 const wanted = flag('pages', '') === '' ? null : new Set(flag('pages', '').split(','));
+/** The address list's own order, so a table is readable beside another frame's whatever chunking ran. */
+const PAGE_ORDER = new Map(PAGES.map(([name], index) => [name, index]));
 
-const COMP = { paper: 29.5, printed: 6.5, ruled: 5.8 };
+/**
+ * THE COMP'S OWN ROW IS THE THRESHOLD, MEASURED IN THE SAME RUN (M1-71, second half).
+ *
+ * This was a typed literal -- {paper: 29.5, printed: 6.5, ruled: 5.8} -- while coverage.mjs measured
+ * the same comp at paper 30.8 off its own image, so every verdict below graded against a number that
+ * was not the measurement. That is the M1-56 class one level down (one object read as two), and the
+ * worse half of it: a typed value looks authoritative while the measured one is printed in the same
+ * table one column over, and a comp that drifted would leave the literal agreeing with itself.
+ * coverage.mjs with no url and --json prints the comp row alone and never starts a browser, so the
+ * measurement costs one process and cannot be stale.
+ */
+const COMP = (() => {
+  const out = execFileSync('node', [COVERAGE, '--json'], { encoding: 'utf8', cwd: ROOT });
+  const comp = JSON.parse(out).find((r) => r.source.startsWith('comp'));
+  if (comp === undefined) throw new Error('coverage printed no comp row: the map has nothing to grade against');
+  return { paper: comp.paper, printed: comp.printed, ruled: comp.ruled, frame: comp.frame };
+})();
+
+/**
+ * HOW FAR FROM THE COMP STILL READS AS WITHIN REACH: a TOLERANCE AROUND the comp's measured row, not
+ * the comp itself. Named for that because the two are different claims and the column answers the
+ * narrower one -- a page inside these is within reach of the comp, which is not the same as agreeing
+ * with it.
+ */
+const OVER = 1.15;
+const UNDER = 0.6;
 
 /** The classification: which layer is short, which is over, said in words rather than a score. */
 export function verdict(row) {
   if (row.missing === true) return 'MISSING ROW (no fixture, cannot be captured with content)';
   if (row.error !== undefined) return `UNCAPTURED (${row.error})`;
   const notes = [];
-  const over = (v, target) => v > target * 1.15;
-  const under = (v, target) => v < target * 0.6;
+  const over = (v, target) => v > target * OVER;
+  const under = (v, target) => v < target * UNDER;
   if (over(row.paper, COMP.paper)) notes.push(`paper OVER (+${(row.paper - COMP.paper).toFixed(1)})`);
-  else if (under(row.paper, COMP.paper)) notes.push(`paper short (${row.paper.toFixed(1)} of ${COMP.paper})`);
+  else if (under(row.paper, COMP.paper)) notes.push(`paper short (${row.paper.toFixed(1)} of ${COMP.paper.toFixed(1)})`);
   if (under(row.printed, COMP.printed)) notes.push('printed short');
   if (under(row.ruled, COMP.ruled)) notes.push('rules short');
   if (notes.length === 0) notes.push('layers within reach of the comp');
@@ -100,7 +133,7 @@ for (const [name, hash, source] of PAGES) {
   for (const theme of ['dark', 'light']) {
     let parsed = [];
     try {
-      const out = execFileSync('node', [COVERAGE, '--json', '--theme', theme, '--frame', FRAME, BASE + hash], {
+      const out = execFileSync('node', [COVERAGE, '--json', '--theme', theme, '--frame', FRAME, '--out', CAPTURES, BASE + hash], {
         encoding: 'utf8', maxBuffer: 1 << 28, cwd: ROOT,
       });
       parsed = JSON.parse(out).filter((r) => !r.source.startsWith('comp'));
@@ -129,17 +162,32 @@ const frame = rows.find((r) => r.frame !== undefined)?.frame ?? FRAME;
 const lines = [
   `the map — thirteen pages by four layers, both themes, at ${frame} (M1-67)`,
   '',
+  // WHICH COLUMN TO GRADE FROM, said in the file rather than in a ledger note (M1-71). The comp is
+  // drawn at 1536x1024 and nowhere else, so a verdict taken at any other frame compares the build to
+  // something that does not exist there. This row is printed in BOTH frames rather than corrected in
+  // place, so the next seat can see what the frame did to the numbers instead of inheriting a silent
+  // correction.
+  'THE COMP IS DRAWN AT 1536x1024 AND NOWHERE ELSE. A ruled figure is a SHARE whose numerator is',
+  'rule ink in pixels and whose denominator is frame height, so the same page reads lower at a taller',
+  'frame: fleet 4.3 at 1536 against 2.0 at 3840, accounts 5.4 against 2.5. Grade a page against the',
+  'comp at the comp frame; read the taller frame for what it is, which is a statement about how the',
+  'layout carries its own scale rather than about rule ink.',
+  '',
   'THE COMP IS A ROW IN THE DARK COLUMN AND HAS NO LIGHT COUNTERPART: team-board-a.png is a dark',
   'frame with no light twin, so a light coverage figure has NO COMP TARGET and is not graded against',
   'it. The dark column is the one with a target.',
   '',
-  `  COMP team-board-a (dark, comp frame)   paper ${COMP.paper}   printed ${COMP.printed}   ruled ${COMP.ruled}`,
+  `  COMP team-board-a (dark, ${COMP.frame}, MEASURED off its own image)   paper ${COMP.paper.toFixed(1)}   printed ${COMP.printed.toFixed(1)}   ruled ${COMP.ruled.toFixed(1)}`,
   '',
 ];
 for (const theme of ['dark', 'light']) {
   lines.push(`  ${theme.toUpperCase()}`);
   lines.push('  page        source                    frame        paper  printed   ruled  rules  verdict');
-  for (const row of rows.filter((r) => r.missing === true || r.theme === theme)) {
+  // IN THE PAGES TABLE'S OWN ORDER (M1-71). A page re-run in a later chunk is replaced by splice and
+  // push, so an interrupted run's rows arrive in whatever order the chunks happened to finish and the
+  // table could not be read beside another frame's. The order is the address list's, not the run's.
+  const inOrder = [...rows].sort((a, b) => (PAGE_ORDER.get(a.name) ?? 99) - (PAGE_ORDER.get(b.name) ?? 99));
+  for (const row of inOrder.filter((r) => r.missing === true || r.theme === theme)) {
     if (row.missing === true && theme === 'light') continue;
     const f = (v) => (v === undefined ? '    -' : String(v.toFixed(1)).padStart(6));
     lines.push(`  ${row.name.padEnd(11)} ${String(row.source).slice(0, 24).padEnd(25)}`

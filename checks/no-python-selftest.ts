@@ -192,6 +192,27 @@ arm("a VERIFIED row's verify is history, not an instruction", "green", (r) => {
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
 }, (r) => !existsSync(join(r, "checks", "long-since-converted.py")));
 
+// A .py deleted in the worktree but NOT yet staged is still `git ls-files` tracked. Before
+// the existsSync filter this read as a matching denominator and the wall was green on a file
+// that did not exist — found by splice-builder2, which refused to trust a green whose
+// mechanism it could not explain.
+arm("a tracked .py DELETED but not yet staged", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+  rmSync(join(r, "a.py"));
+}, (r) => !existsSync(join(r, "a.py")) && tracked(r).includes("a.py"));
+
+// A verify names a RUNTIME as well as a path. Updating only the path leaves a caller that
+// looks migrated and cannot execute — builder2's own slip inside the granted caller path.
+arm("a TODO row naming the WRONG runtime for the extension", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "checks", "w.ts"), "//\n");
+  ledger(r, "T-4", "todo", "python3 checks/w.ts");
+  writeFileSync(join(r, LIST), list(["a.py"], [".dev/campaigns/c.toml"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "checks", "w.ts")));
+
 arm("an unparseable burn-down list", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");
   writeFileSync(join(r, LIST), "not json");

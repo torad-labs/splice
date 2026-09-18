@@ -33,6 +33,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..', '..', '..');
 const COMP = 'webui/.impeccable/mocks/team-board-a.png';
 
+/**
+ * The comp's own frame, READ FROM THE COMP rather than typed: the ruled/printed cut below is tuned on
+ * this raster, so it is the thing the cut has to be scaled against. Decoding once and keeping it is
+ * the difference between a lookup and a decode per call.
+ */
+let compFrameSize = null;
+function compFrame() {
+  if (compFrameSize === null) {
+    const png = decodePng(readFileSync(resolve(ROOT, COMP)));
+    compFrameSize = [png.width, png.height];
+  }
+  return compFrameSize;
+}
+
 const ARGS = process.argv.slice(2);
 const flag = (name, dflt) => { const i = ARGS.indexOf(`--${name}`); return i === -1 ? dflt : ARGS[i + 1]; };
 
@@ -165,6 +179,23 @@ function planes(png, box) {
  *  scanlines a rule crosses - which is the number a bay-height row is actually graded on.
  *  Measured on projects after M1-38: 633 rule rows before, 683 after. */
 function layers(png, box) {
+  // THE CUT IS SCALED TO THE FRAME (M1-71). The 3px boundary was tuned on the comp's 1536 raster, and
+  // a 3px feature there is a 7.5px feature at 3840: the SAME object read as RULED on one frame and
+  // PRINTED on the other, which silently regraded every page in the map. Measured before the fix, in
+  // three fixed columns at both frames: the TOTAL mid-tone runs are identical (54, 48, 43 -- the same
+  // content) while the split moves, 46 of 54 runs at or under 3px at 1536 against 33 of 54 at 3840.
+  // The scale is the frame's width over the comp's, which is also the scale the root font tracks
+  // (--text-5 at 1.25rem renders 20px at 1536 and 50px at 3840), so a stroke lands in the same bucket
+  // at both frames. The comp's own row is unaffected: at 1536 the scale is 1 and the cut is 3px.
+  //
+  // WHAT THIS DOES NOT FIX, and the row says so rather than leaving it implied: the share still has
+  // a pixel numerator and a frame-height denominator, and hairlines do not scale (--hair is 1px at
+  // every viewport) while text does, so a page's ruled share still drifts between frames. That is
+  // why the same ruling grades every page AT THE COMP'S FRAME and keeps both columns on the record:
+  // normalising the buckets makes the two numbers mean one thing, and only measuring at 1536 makes
+  // them comparable.
+  const scale = png.width / compFrame()[0];
+  const CUT = 3 * scale;
   let paper = 0; let printed = 0; let ruled = 0; let n = 0; let ruleRows = 0;
   for (let x = box.x0; x < box.x1; x += 2) {
     let run = 0;
@@ -173,7 +204,7 @@ function layers(png, box) {
       const lum = y >= box.y1 ? 0 : (png.pixels[i] + png.pixels[i + 1] + png.pixels[i + 2]) / 3;
       const mid = lum >= 30 && lum <= 150;
       if (mid) { run += 1; continue; }
-      if (run > 0) { if (run <= 3) ruled += run * 2; else printed += run * 2; run = 0; }
+      if (run > 0) { if (run <= CUT) ruled += run * 2; else printed += run * 2; run = 0; }
     }
     n += Math.ceil((box.y1 - box.y0) / 1) * 2;
   }
@@ -269,7 +300,38 @@ if (process.argv.includes('--selftest')) {
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  a pure ${name} paper frame reads all paper  (paper ${share.paper.toFixed(1)}%)`);
     ok ? mutations++ : 0;
   }
-  if (mutations !== 4) { console.log('\nselftest: the mutation proof failed'); process.exit(1); }
+  // MUTATION PROOF (M1-71): THE RULED/PRINTED CUT IS SCALED TO THE FRAME, so one object lands in one
+  // bucket at both frames. A 2px rule at 1536 and its 2.5x twin -- 5px at 3840 -- must BOTH read
+  // RULED; under the old unscaled 3px cut the 5px run read PRINTED, which is how the same rule was
+  // counted as ink on the comp's frame and as substance on every page measured at 3840. A 4px member
+  // and its 10px twin must BOTH read PRINTED, or the fix would just be a wider rule bucket. The two
+  // shares also come out equal, which is the property being bought: when everything scales, the
+  // measurement does not move.
+  {
+    const PAPER = [222, 217, 198]; const INK = [95, 93, 86];
+    const frame = (w, h, band) => {
+      const pixels = Buffer.alloc(w * h * 3);
+      for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+        const i = (y * w + x) * 3;
+        const c = y >= band.y && y < band.y + band.len ? INK : PAPER;
+        pixels[i] = c[0]; pixels[i + 1] = c[1]; pixels[i + 2] = c[2];
+      }
+      return { width: w, height: h, channels: 3, pixels };
+    };
+    const whole = (f) => ({ x0: 0, x1: f.width, y0: 0, y1: f.height });
+    const bucket = (label, small, big, want) => {
+      const a = layers(small, whole(small)); const b = layers(big, whole(big));
+      const ok = (a[want] > 0 && a[want === 'ruled' ? 'printed' : 'ruled'] === 0)
+        && (b[want] > 0 && b[want === 'ruled' ? 'printed' : 'ruled'] === 0);
+      if (ok) mutations += 1;
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}  (1536 ruled ${a.ruled.toFixed(2)} printed ${a.printed.toFixed(2)} | 3840 ruled ${b.ruled.toFixed(2)} printed ${b.printed.toFixed(2)})`);
+    };
+    bucket('a 2px rule and its 2.5x twin are both RULED',
+      frame(1536, 1024, { y: 100, len: 2 }), frame(3840, 2560, { y: 250, len: 5 }), 'ruled');
+    bucket('a 4px member and its 2.5x twin are both PRINTED',
+      frame(1536, 1024, { y: 100, len: 4 }), frame(3840, 2560, { y: 250, len: 10 }), 'printed');
+  }
+  if (mutations !== 6) { console.log('\nselftest: the mutation proof failed'); process.exit(1); }
 
   const probe = 'http://localhost:5173/#/fleet';
   const seen = {};
@@ -286,7 +348,7 @@ if (process.argv.includes('--selftest')) {
   const differ = seen.dark !== seen.light;
   console.log(`  ${differ ? 'PASS' : 'FAIL'}  the two themes render differently  (dark ${seen.dark} vs light ${seen.light})`);
   // Five checks: four mutations of the paper cut (both themes, both directions) and this one.
-  console.log(`\nselftest: ${differ ? '5 passed, 0 failed' : '4 passed, 1 failed'}`);
+  console.log(`\nselftest: ${differ ? '7 passed, 0 failed' : '6 passed, 1 failed'}`);
   process.exit(differ ? 0 : 1);
 }
 

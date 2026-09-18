@@ -68,10 +68,20 @@
 .myx-board .myx-sfield-label {
   display: block;
   font-weight: 600;
-  font-size: var(--text-2);
-  /* 1.05 puts the rule under the label row at y19 of the plate, where the comp's
-     sits (its divider measures row 19-20 of a plate starting at row 0) */
-  line-height: 1.05;
+  /* THE SIZE BELONGS TO THE PRIMITIVE, AND THIS RULE WAS TAKING IT (M1-64). This carried
+     `font-size: var(--text-2)`. At (0,2,0) it beat ui.css's binding at (0,1,0), so binding the
+     primitive moved nothing on the board and the label still rendered at 14px -- cap 10 where the
+     comp's own plate measures 6 to 8. Read off the comp's pixels, region by region: lead-strip's
+     label ink spans plate rows 13..18 (6) against its value's rows 38..48 (11); lead-strip-2's
+     spans rows 7..14 (8) against rows 33..44 (12). The board's two live truncations, `context l…`
+     and `scratchp…`, are this rule's size with no room to fit it. */
+  /* THE LINE BOX IS PINNED AS A LENGTH, NOT AS A RATIO OF THE SIZE. It was `1.05`, which put the
+     rule at 4 + 14.7 = 18.7 -- right, but only by accident of the label being 14px: at 1.05 the
+     shrunken label would print its rule at plate row 13, six rows above where the comp prints it.
+     lead-strip-2 measures the rule at plate rows 19-20 (a full-width band with paper on neither
+     side), and the plate's own top padding is --space-2, so the line box is that offset less the
+     padding. Pinned this way, the size and the geometry move independently. */
+  line-height: calc(var(--space-5) - var(--hair));
   /* the comp's rule under the label row measures #5e5d50, which is the mute
      ink, not the light field line the primitive defaults to */
   border-bottom: var(--hair) solid var(--strip-ink-mute);
@@ -228,8 +238,18 @@
 .myx-board-bay .myx-bay-label {
   font-weight: 600;
   font-family: var(--font-label);
-  font-size: var(--text-1);
   color: var(--strip-ink);
+}
+
+/* THE CHAT BAY'S LABEL IS THE 14 ROLE, AND ONLY IT (M1-64). The board's shared rule used to carry
+   `font-size: var(--text-1)` for every bay in the board, which is how the chat label and the head
+   labels ended up on ONE rung while the contract sets them a step apart (chat 14, bay 16) -- the
+   ladder pair bay.label/chat.label read 1.000 against the comp's 1.112 because of it. Scoping the
+   size to the chat bay lets the head bays inherit ui.css's 16. Measured after: head bays 16px
+   (cap 11.82 against the comp's 10.9) and the chat bay 14px (cap 10.35 against 9.8), so the pair
+   reads 1.142 against the comp's 1.112. */
+.myx-board-bay-chat .myx-bay-label {
+  font-size: var(--text-2);
 }
 
 /* the rack: the strips are placed by their own regions, so the rows container

@@ -119,11 +119,14 @@ class HeadServerCollectDisconnectTest {
         return socket
     }
 
+    // A deadline poll, the rule's sanctioned shape: gate and mock state change server-side after the
+    // client's hang-up, and neither offers a signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 50L
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            delay(50)
+            delay(pollMs)
         }
         return cond()
     }

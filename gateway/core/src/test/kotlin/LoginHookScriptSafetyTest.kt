@@ -24,6 +24,7 @@ import splice.core.launch.LoginHookSpec
 import splice.core.launch.TokenCaptureSpec
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardWatchEventKinds
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
 import java.util.jar.Attributes
@@ -60,6 +61,29 @@ private fun write(dir: Path, name: String, body: String): Path =
  *  JVMs and bash bystanders that carry the words but are not ours. */
 private object LoginProcesses {
     private val javaBin: String = Path.of(System.getProperty("java.home"), "bin", "java").toString()
+
+    /** V4-139: every spawner below returns only once its process is VISIBLE AS THE HOOK WILL SEE IT
+     *  — the argv the hook's scan reads, after any `exec` has replaced it. This replaces a fixed
+     *  500 ms sleep at each call site, which was a bet that a JVM or a bash exec lands inside half a
+     *  second: true on an idle box, not on a loaded one. A bounded poll of the real condition, so it
+     *  waits as long as it must and says which process never appeared instead of racing on. (The
+     *  pause is a sleep because this file is plain JUnit with no coroutine to suspend; the file
+     *  carries its allowlist entry for the absence proofs regardless.) */
+    private fun visible(process: Process, what: String, ready: (ProcessHandle.Info) -> Boolean): Process {
+        val deadline = System.currentTimeMillis() + SPAWN_VISIBLE_MS
+        while (!ready(process.toHandle().info())) {
+            check(process.isAlive) { "$what exited before it was ever visible" }
+            check(System.currentTimeMillis() < deadline) {
+                "$what never became visible: ${process.toHandle().info().commandLine().orElse("<gone>")}"
+            }
+            Thread.sleep(SPAWN_POLL_MS)
+        }
+        return process
+    }
+
+    /** A JVM is exec'd by the time ProcessBuilder.start returns, so its own argv is already the one
+     *  the scan reads; this only proves it rather than assuming it. */
+    private fun carriesLogin(info: ProcessHandle.Info): Boolean = info.commandLine().orElse("").contains("login")
 
     /** A REAL JVM parked the way `splice.jar login` parks on its loopback listener: a tiny jar
      *  compiled here whose main sleeps; with `stubborn` as its last argument it registers a slow
@@ -111,7 +135,7 @@ private object LoginProcesses {
         if (ignoreTerm) argv += "stubborn"
         val builder = ProcessBuilder(argv)
         if (hookStarted) builder.environment()["SPLICE_LOGIN_ORIGIN"] = "hook"
-        return builder.start()
+        return visible(builder.start(), "the pending sign-in", ::carriesLogin)
     }
 
     /** An UNRELATED JVM (the same real java executable) whose main is something else and whose
@@ -127,7 +151,7 @@ private object LoginProcesses {
             listOf("-jar", other.toString(), "--inspect")
         }
         val tail = listOf("-jar", spliceJar.toString(), "login", recorder.toString())
-        return ProcessBuilder(listOf(javaBin) + launch + tail).start()
+        return visible(ProcessBuilder(listOf(javaBin) + launch + tail).start(), "the unrelated JVM", ::carriesLogin)
     }
 
     /** A process whose command line carries the login words but whose executable is bash: the
@@ -140,9 +164,21 @@ private object LoginProcesses {
             val prefix = if (argv0Java) "exec -a java " else "exec "
             prefix + "bash -c '$loop' x java -jar /x/splice.jar login '$recorder'"
         }
-        return ProcessBuilder("bash", "-c", cmd).start()
+        // Both shapes start as `bash -c <cmd>` and REPLACE that argv by exec: the one-word shape
+        // becomes the sleep binary, the others become a bash with the login words as separate argv
+        // elements. Before the exec the words are merely inside the -c string, which is why the
+        // readiness test is the post-exec SHAPE and not the presence of "login".
+        val spawned = ProcessBuilder("bash", "-c", cmd).start()
+        return if (oneWord) {
+            visible(spawned, "the one-word bystander") { it.command().orElse("").endsWith("sleep") }
+        } else {
+            visible(spawned, "the bystander") { it.arguments().orElse(emptyArray()).size > 2 }
+        }
     }
 }
+
+private const val SPAWN_VISIBLE_MS = 10_000L
+private const val SPAWN_POLL_MS = 10L
 
 class LoginHookScriptSafetyTest {
 
@@ -194,10 +230,25 @@ class LoginHookScriptSafetyTest {
         return script
     }
 
+    /** The recorder writes args.tmp and RENAMES it over args.txt, so the file's appearance is one
+     *  filesystem event: awaited on a WatchService (inotify on Linux) rather than polled (V4-139).
+     *  Registered before the existence check, so a file that lands in between is seen by one or the
+     *  other. An empty list is still "never appeared", which is what the callers assert on. */
     private fun recordedArgs(dir: Path): List<String> {
         val file = dir.resolve("args.txt")
-        repeat(50) { if (Files.exists(file)) return Files.readAllLines(file) else Thread.sleep(100) }
-        return emptyList()
+        dir.fileSystem.newWatchService().use { watch ->
+            dir.register(watch, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_MODIFY)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (!Files.exists(file)) {
+                val left = deadline - System.nanoTime()
+                if (left <= 0) return emptyList()
+                watch.poll(left, TimeUnit.NANOSECONDS)?.let { key ->
+                    key.pollEvents()
+                    key.reset()
+                }
+            }
+        }
+        return Files.readAllLines(file)
     }
 
     private fun decision(ran: Ran): String {
@@ -354,7 +405,6 @@ class LoginHookScriptSafetyTest {
             LoginProcesses.otherJvm(tmp, recorder, jar, classMode = true),
         )
         try {
-            Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
             val reason = decision(ran)
@@ -379,7 +429,6 @@ class LoginHookScriptSafetyTest {
         val jar = LoginProcesses.parkJar(tmp)
         val pending = LoginProcesses.pendingLogin(missing, jar, ignoreTerm = false)
         try {
-            Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
             val reason = decision(ran)
@@ -407,7 +456,6 @@ class LoginHookScriptSafetyTest {
         val jar = LoginProcesses.parkJar(tmp)
         val terminal = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, hookStarted = false)
         try {
-            Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login --label work"}""", dir = tmp, env = env)
             val reason = decision(ran)
@@ -431,7 +479,6 @@ class LoginHookScriptSafetyTest {
         val terminal =
             LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, hookStarted = false, word = "codex")
         try {
-            Thread.sleep(500)
             val reason = decision(run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env))
             assertTrue(reason.startsWith("A Codex (ChatGPT) sign-in started outside this session"), reason)
             Thread.sleep(300)
@@ -444,7 +491,6 @@ class LoginHookScriptSafetyTest {
         // The same spelling started by a hook: cancelled, and a fresh sign-in starts.
         val pending = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, word = "codex")
         try {
-            Thread.sleep(500)
             val reason = decision(run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env))
             val cancelled = "A previous Codex (ChatGPT) sign-in was still waiting and was cancelled."
             assertTrue(reason.startsWith(cancelled), reason)
@@ -467,7 +513,6 @@ class LoginHookScriptSafetyTest {
             LoginProcesses.otherJvm(tmp, recorder, jar, classMode = true),
         )
         try {
-            Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
             assertTrue(decision(ran).startsWith("Opening your browser"), "no restart was announced: ${ran.out}")
@@ -486,7 +531,6 @@ class LoginHookScriptSafetyTest {
         val jar = LoginProcesses.parkJar(tmp)
         val pending = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = true)
         try {
-            Thread.sleep(500)
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env)
             val reason = decision(ran)

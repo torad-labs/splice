@@ -1,3 +1,4 @@
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -9,8 +10,8 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
@@ -38,10 +39,8 @@ class McpHostLifecycleTest : McpHostFixture() {
             boot(dir, maxServers = 1)
             val a = init()
             val ready = dir.resolve("operation-started")
-            val operation = async { call(a, 8, "hold", ready.toString()) }
-            withTimeout(MCP_HOST_STREAM_WAIT_MS) {
-                while (!Files.exists(ready)) kotlinx.coroutines.delay(10)
-            }
+            val operation = async(Dispatchers.IO) { call(a, 8, "hold", ready.toString()) }
+            awaitFile(ready)
             clock.now += 60.minutes.inWholeMilliseconds
             host.sweep()
             assertTrue(hosted("fake"), "active streamless call was swept")
@@ -85,9 +84,7 @@ class McpHostLifecycleTest : McpHostFixture() {
         boot(dir)
         val session = init()
         assertTrue(text(call(session, 1, "stderr")).contains("echo="))
-        withTimeout(MCP_HOST_STREAM_WAIT_MS) {
-            while (!log.contains("child stderr emitted")) kotlinx.coroutines.delay(10)
-        }
+        awaitLogged("child stderr emitted")
         assertFalse(log.contains("synthetic-private-stderr"), "stderr content escaped into operator logs")
         assertEquals(1, log.lines().count { it.contains("child stderr emitted") })
     }
@@ -102,10 +99,9 @@ class McpHostLifecycleTest : McpHostFixture() {
         host.stop()
         val elapsed = (System.nanoTime() - start) / 1_000_000L
         assertTrue(elapsed < 3_000L, "shutdown spent ${elapsed}ms on sequential child grace periods")
-        withTimeout(MCP_HOST_STREAM_WAIT_MS) {
-            while (pids.any { ProcessHandle.of(it).map { p -> p.isAlive }.orElse(false) }) {
-                kotlinx.coroutines.delay(10)
-            }
+        // Each child's exit is awaited on its own completion future, not polled.
+        pids.forEach { pid ->
+            ProcessHandle.of(pid).ifPresent { it.onExit().get(MCP_HOST_STREAM_WAIT_MS, TimeUnit.MILLISECONDS) }
         }
     }
 
@@ -164,7 +160,9 @@ class McpHostLifecycleTest : McpHostFixture() {
         call(stubborn, 1, "echo", "x", name = "fake2")
         clock.now += 60.minutes.inWholeMilliseconds
         val sweeper = Thread { host.sweep() }.apply { start() }
-        Thread.sleep(200)
+        // HostedServer.close logs this line and then enters the TERM grace: the sweeper is now inside
+        // the teardown this test times status against (an event, not a 200 ms guess).
+        awaitLogged("fake2: closing pid")
         val started = System.nanoTime()
         host.statusJson()
         val waitedMs = (System.nanoTime() - started) / 1_000_000

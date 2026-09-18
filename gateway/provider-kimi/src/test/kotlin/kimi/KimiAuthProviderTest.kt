@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -29,6 +31,7 @@ import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -203,11 +206,9 @@ class KimiAuthProviderTest {
             )
             // request path: current token, no waiting on the exchange
             assertEquals("current", (auth.credentials() as Credentials.ApiKey).key)
-            // background: poll real time for the rotation to land on disk
-            val deadline = System.nanoTime() + 5_000_000_000L
-            while (!Files.readString(file).contains("rotated-access") && System.nanoTime() < deadline) {
-                Thread.sleep(10)
-            }
+            // background: the rotation is a child of the prefetch scope, so joining that scope's
+            // children IS the rotation landing — an event, not a poll of real time.
+            prefetch.coroutineContext.job.children.toList().joinAll()
             assertEquals(1, calls.get())
             val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
             assertEquals("rotated-access", onDisk["access_token"]?.jsonPrimitive?.content)
@@ -472,8 +473,10 @@ class KimiAuthProviderTest {
         })
         assertNull(auth.refresh())
         assertEquals(1, calls.get())
-        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        val before = Files.getLastModifiedTime(file).toMillis()
         authFile(dir, access = "kimi-access", refresh = "fresh-refresh", expiresAtS = 0L) // re-login rewrites the file
+        // the mtime is STEPPED rather than waited for, so a coarse-grained filesystem still advances it
+        Files.setLastModifiedTime(file, FileTime.fromMillis(before + 1_000))
         granted = true
         assertEquals("rotated-access", (auth.refresh() as Credentials.ApiKey).key)
         assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it

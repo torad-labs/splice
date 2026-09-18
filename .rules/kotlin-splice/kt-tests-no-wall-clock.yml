@@ -59,8 +59,63 @@
 # those 33 files with no stale entry and none missing, and the per-file counts in the ALLOWLIST
 # above sum to 104 — so today's green is the exemptions working, not a matcher that cannot fire.
 #
-# ALLOWLIST — today's census, by file, dated, with the reason each file gives. Delete a line when
-# its file is converted; do not add one without a reason.
+# BURNED DOWN 2026-09-18 (V4-139), 30 files to 6, 92 sites to 26. What the burn-down learned, and
+# it is a sharper rule than "replace the sleep":
+#   - A wait that guessed at an event WHICH HAD ALREADY HAPPENED is DELETED, not converted. Twelve
+#     700 ms Netty warm-ups and six private readiness polls went this way: Ktor's default startup
+#     mode is SEQUENTIAL, so EmbeddedServer.start runs the modules (routing) and only then
+#     NettyApplicationEngine.start, which binds with bind(...).sync() before it returns. A server
+#     that has returned from start is routed AND bound, so every poll for its port was waiting for
+#     the past. Read from the 3.5.2 bytecode, not measured: N green runs cannot prove a race absent.
+#   - A wait for something that WILL happen becomes that thing's own event: a WatchService creation
+#     event, ProcessHandle.onExit, a latch the callback counts down, a log line the sink completes a
+#     deferred on, a barrier every concurrent stop must reach, the ticks the test itself sends.
+#   - A wait that PROVES A NEGATIVE cannot become an event, because nothing signals that a thing did
+#     not happen. A bounded window is the only honest instrument, and it stays — the four files
+#     below whose entries say so are that, not unfinished work.
+#   - Respelling is not converting. Thread.sleep(50) inside a blocking deadline poll rewritten as
+#     delay(POLL_MS) under runBlocking waits exactly as long; it only changes what the scanner sees.
+#     Refused, twice, and both sites are listed below with that reason instead.
+#   - KNOWN HOLE, named rather than fixed (lint policy is frozen mid-campaign): this rule matches
+#     `Thread.sleep(…)` as a CALL, so a method REFERENCE walks past it. MockChatGptUpstream's
+#     `pacer: (Long) -> Unit = Thread::sleep` is exactly that shape and is invisible here. Filed as
+#     a followup on V4-139; widening the matcher is a wall change and belongs to its own row.
+#
+# ALLOWLIST — by file, dated, with the reason each file gives. Delete a line when its file is
+# converted; do not add one without a reason.
+#
+#   2026-09-18 · A PROOF OF ABSENCE, WHICH HAS NO EVENT. The assertion is that something did NOT
+#   happen — no detached login was spawned, no pending sign-in was signalled, a disarmed watchdog
+#   never fired. Nothing signals a non-event, so the instrument is a bounded window and the number
+#   in it is the size of the window, not a guess about machine speed. LoginHookScriptSafetyTest's
+#   ninth site is the pause inside LoginProcesses.visible, the bounded poll that REPLACED seven
+#   fixed 500 ms readiness sleeps: it waits for the spawned process's argv to become what the hook's
+#   scan reads, and this file is plain JUnit with no coroutine to suspend.
+#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                   (9)
+#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (1)
+#
+#   2026-09-18 · A READINESS POLL WITH NO EVENT TO AWAIT, IN BLOCKING CODE. Nothing signals that a
+#   port has started listening, so awaitListening polls a connect attempt against a deadline — the
+#   law's own third compliant form. Its 38 callers across 26 files are blocking @BeforeAll setups,
+#   so the suspend spelling would need a runBlocking that is a new ROOT coroutine: it inherits no
+#   cancellation and waits exactly as long. UPSTREAM FIX, not a respelling: most of those 38 calls
+#   follow a start() that has already bound (see the SEQUENTIAL note above) and can simply go.
+#     gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt                     (1)
+#
+#   2026-09-18 · A DELIBERATELY PACED TEST DOUBLE. The tearing upstream must deliver its first
+#   frames in a SEPARATE TCP read before it cuts the stream mid-chunk; TCP offers no "the peer has
+#   read it" signal, so the pause is the fixture, not a bet. Its perf-row read and its
+#   proof-of-absence (no continuation round was POSTed) are the other two shapes above.
+#     gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt          (9)
+#
+#   2026-09-18 · MEASUREMENT EXPERIMENTS, NOT CI TESTS. The spikes module disables its tests unless
+#   -PrunSpikes is passed (spikes/build.gradle.kts), and its header says spikes are experiments with
+#   receipts. Wall-clock behaviour IS their subject: a 50 ms drip server, fd counts after a
+#   keep-alive settle, SSE arrival timings.
+#     gateway/spikes/src/test/kotlin/PoolCancelSpike.kt                           (5)
+#     gateway/spikes/src/test/kotlin/SseFlushSpike.kt                             (1)
+#
+# SUPERSEDED — the 2026-09-17 census, kept for its reasons, burned down by V4-139:
 #
 #   2026-09-17 · ENGINE WARM-UP AND PORT REUSE. `Thread.sleep(700) // Netty warmup` between tests
 #   that bind and rebind the same port. Waiting on the OS to release a listening socket; the honest
@@ -136,41 +191,16 @@ files:
   - gateway/*/src/testFixtures/**/*.kt
 # The dated census — see the ALLOWLIST section of this header for the reason behind every line.
 ignores:
-  # engine warm-up and port reuse
-  - gateway/gateway/src/test/kotlin/head/HeadServerCapacityTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerReviewTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerLoadTest.kt
-  - gateway/gateway/src/test/kotlin/head/RateLimitRefusalClientContractTest.kt
-  - gateway/gateway/src/test/kotlin/head/RetryAlwaysArmedTest.kt
-  - gateway/spikes/src/test/kotlin/SseFlushSpike.kt
-  # waiting on a real subprocess or the filesystem
+  # a proof of absence, which has no event
   - gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt
-  - gateway/control/src/test/kotlin/McpHostLifecycleTest.kt
-  - gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt
-  - gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt
-  - gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt
-  - gateway/core/src/test/kotlin/AsyncFileIoTest.kt
-  - gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt
-  - gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt
-  # a deliberately slow test double
-  - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt
-  # timeout and watchdog ladders measured against real elapsed time
-  - gateway/provider-spi/src/test/kotlin/WatchdogTest.kt
-  - gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt
   - gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerHeartbeatTest.kt
+  # a readiness poll with no event to await, in blocking code
+  - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt
+  # a deliberately paced test double
+  - gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt
+  # measurement experiments, not CI tests (disabled without -PrunSpikes)
   - gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
-  # waiting for a concurrent peer to reach a point
-  - gateway/gateway/src/test/kotlin/head/HeadServerCollectDisconnectTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerCompactionReplayTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerFoldTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerIntegrationTest.kt
-  - gateway/control/src/test/kotlin/ControlServerTest.kt
-  - gateway/control/src/test/kotlin/ControlServerGateTest.kt
-  - gateway/control/src/test/kotlin/ClientVersionSurfaceTest.kt
-  - gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt
-  - gateway/control/src/test/kotlin/McpRoutesTest.kt
-  - gateway/control/src/test/kotlin/McpHostTest.kt
+  - gateway/spikes/src/test/kotlin/SseFlushSpike.kt
 rule:
   any:
     # Thread.sleep blocks a real thread whatever encloses it — no runTest exemption, by design.

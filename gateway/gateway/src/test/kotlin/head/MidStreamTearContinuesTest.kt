@@ -297,7 +297,7 @@ class MidStreamTearContinuesTest {
         honestPort = startHead(prefill = false)
         stallPrefillPort = startHead(prefill = true, stallMs = STALL_TIER_MS)
         stallHonestPort = startHead(prefill = false, stallMs = STALL_TIER_MS)
-        Thread.sleep(700) // Netty warmup (HeadServerCapacityTest convention)
+        // no warm-up: each head binds before start returns (Ktor Netty bind(...).sync(); V4-139)
     }
 
     @AfterAll

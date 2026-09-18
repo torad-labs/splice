@@ -38,7 +38,6 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.net.ServerSocket
-import java.net.Socket
 import java.nio.file.Files
 
 private class GateFakeHead(
@@ -85,7 +84,6 @@ class ControlServerGateTest {
         val server = ControlServer(port, emptyMap(), ConfigService(paths), mgmt, { "" }, {})
         server.start()
         try {
-            awaitListening(port)
             val ok = client.get("http://127.0.0.1:$port/api/status") {
                 header("Authorization", "bearer ${mgmt.get()}")
             }
@@ -118,7 +116,6 @@ class ControlServerGateTest {
         )
         server.start()
         try {
-            awaitListening(port)
             val heads = json.parseToJsonElement(
                 client.get("http://127.0.0.1:$port/api/heads") {
                     header("Authorization", "Bearer ${mgmt.get()}")
@@ -159,12 +156,6 @@ class ControlServerGateTest {
     )
 }
 
+// No readiness poll: ControlServer.start returns routed and bound (Ktor's default SEQUENTIAL startup
+// runs the modules before NettyApplicationEngine's bind(...).sync(); V4-139).
 private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
-
-private fun awaitListening(port: Int) {
-    val deadline = System.currentTimeMillis() + 10_000
-    while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
-        check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
-        Thread.sleep(50)
-    }
-}

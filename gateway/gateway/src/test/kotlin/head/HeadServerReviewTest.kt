@@ -48,11 +48,14 @@ import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
+import splice.spi.ProcessWaiter
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
+import splice.spi.Waiter
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 private class ReviewFakeAuth : RefreshableAuthProvider {
@@ -90,6 +93,7 @@ class HeadServerReviewTest {
         gate: InflightGate,
         matGate: RequestMaterializationGate,
         ratelimitFile: Path,
+        waiter: Waiter = ProcessWaiter(),
     ): HeadServer {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
@@ -115,7 +119,7 @@ class HeadServerReviewTest {
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
                 gate = gate,
                 log = {},
-                seams = HeadDeps.HeadSeams(requestMaterializationGate = matGate),
+                seams = HeadDeps.HeadSeams(waiter = waiter, requestMaterializationGate = matGate),
             ).copy(
                 // This rig keys its store files by port and points the RATE-LIMIT store at a file the
                 // assertions read directly, so the default stores would not be the ones under test.
@@ -143,7 +147,6 @@ class HeadServerReviewTest {
             tmp.resolve("rl-hs.json"),
         )
         head.start()
-        Thread.sleep(700)
         mock.resetStartHold()
         val opened = CompletableDeferred<Long>()
         try {
@@ -198,11 +201,14 @@ class HeadServerReviewTest {
         return sb.toString()
     }
 
+    // A deadline poll, the rule's sanctioned shape: gate state changes server-side, with no signal
+    // to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 50L
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            delay(50)
+            delay(pollMs)
         }
         return cond()
     }
@@ -227,9 +233,18 @@ class HeadServerReviewTest {
     fun `a waiter promoted during the stop drain is bounced with 529 head-is-stopping`() = runBlocking {
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
         val port = freshPort()
-        val head = buildHead(port, gate, RequestMaterializationGate(), tmp.resolve("rl-e.json"))
+        // The stop drain's FIRST wait is the event "accepting is already false": HeadServer.stopLocked
+        // closes the window before its drain loop ever waits. Armed only for the restart, because the
+        // same seam paces every backoff on the turn path; the wait itself stays real.
+        val drainArmed = AtomicBoolean(false)
+        val draining = CompletableDeferred<Unit>()
+        val processWaiter = ProcessWaiter()
+        val drainWaiter = Waiter { ms ->
+            if (drainArmed.get()) draining.complete(Unit)
+            processWaiter.wait(ms)
+        }
+        val head = buildHead(port, gate, RequestMaterializationGate(), tmp.resolve("rl-e.json"), drainWaiter)
         head.start()
-        Thread.sleep(700)
         try {
             // req1 holds the one inflight slot until we release the mock latch.
             val req1 = async(Dispatchers.IO) { turn(port, "hold").bodyAsText() }
@@ -238,10 +253,11 @@ class HeadServerReviewTest {
             val req2 = async(Dispatchers.IO) { turn(port, "basic") }
             assertTrue(waitFor(5_000) { gate.snapshot().queued == 1 }, "req2 should fill the queue")
 
-            // Restart flips accepting=false and drains; give it a beat to set the flag, THEN release
-            // req1 so req2 is promoted DURING the drain — it must be bounced, not run.
+            // Restart flips accepting=false and drains; once the drain is WAITING (the flag is set),
+            // release req1 so req2 is promoted DURING the drain — it must be bounced, not run.
+            drainArmed.set(true)
             val restart = async(Dispatchers.IO) { head.restart() }
-            delay(400)
+            withTimeout(10_000) { draining.await() }
             mock.holdRelease.countDown()
 
             val resp = req2.await()
@@ -263,7 +279,6 @@ class HeadServerReviewTest {
         val port = freshPort()
         val head = buildHead(port, InflightGate(maxInflight = { 4 }), matGate, tmp.resolve("rl-g.json"))
         head.start()
-        Thread.sleep(700)
         try {
             // Hold the sole materialization permit so count_tokens' fast-fail lease is contended.
             val acquired = CompletableDeferred<Unit>()
@@ -297,7 +312,6 @@ class HeadServerReviewTest {
         val port = freshPort()
         val head = buildHead(port, InflightGate(maxInflight = { 4 }), RequestMaterializationGate(), ratelimitFile)
         head.start()
-        Thread.sleep(700)
         try {
             // A successful turn whose response carries x-ratelimit-* headers.
             assertEquals(200, turn(port, "ratelimit").status.value)
@@ -325,7 +339,6 @@ class HeadServerReviewTest {
                 tmp.resolve("rl-h.json"),
             )
             head.start()
-            Thread.sleep(700)
             try {
                 val before = mock.upstreamBodies.count { it.first == "tear" }
                 val resp = turn(port, "tear")

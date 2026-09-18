@@ -1,7 +1,7 @@
 // Pure derivations over the session registry: the three groupings the Sessions page ships as saved
 // views (FEATURES.md 4.4) and the timeline bucketer. No rendering, no store, no clock.
 import { UNKNOWN_HEAD } from './types';
-import type { SessionRow } from './types';
+import type { SessionEdge, SessionRow } from './types';
 
 /** What a session with no value for the grouping field is filed under, so no row is dropped from a
  *  count (FEATURES.md 4.13's rule for turns, applied here). */
@@ -117,4 +117,43 @@ export function availabilityCounts(rows: readonly SessionRow[]): AvailabilityCou
   const counts: AvailabilityCounts = { live: 0, stale: 0, gone: 0 };
   for (const row of rows) counts[row.availability]++;
   return counts;
+}
+
+/**
+ * The addresses a session exchanged messages with, most recent first, deduplicated.
+ *
+ * Direction is deliberately NOT filtered: the peer on the other end is the same peer whether this
+ * session sent the message or received it, and a hand-off reads as one relationship, not two.
+ */
+export function peerAddresses(edges: readonly SessionEdge[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const edge of [...edges].sort((a, b) => b.at - a.at)) {
+    const peer = edge.direction === 'out' ? edge.to : edge.from;
+    if (peer === '' || seen.has(peer)) continue;
+    seen.add(peer);
+    ordered.push(peer);
+  }
+  return ordered;
+}
+
+/**
+ * The readable name behind an address, or null when no registered session owns it.
+ *
+ * SessionRow.address is `uds:<socket path>` for the session that minted that socket, which is the
+ * same string the edge carries, so the join is exact and needs no parsing. A peer that is not a
+ * registered session (a stale edge to a session that has since gone) resolves to null, and the
+ * caller prints the address rather than inventing a name.
+ */
+export function nameForAddress(rows: readonly SessionRow[], address: string): string | null {
+  const owner = rows.find((row) => row.address === address);
+  if (owner === undefined) return null;
+  return owner.name !== null && owner.name !== '' ? owner.name : address;
+}
+
+/** A session's own label: its name, else the first 8 of its session id, else its pid. */
+export function sessionLabel(row: SessionRow): string {
+  if (row.name !== null && row.name !== '') return row.name;
+  if (row.session_id !== null && row.session_id !== '') return row.session_id.slice(0, 8);
+  return row.pid === null ? 'unknown' : `pid ${row.pid}`;
 }

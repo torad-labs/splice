@@ -7,6 +7,7 @@
 // composes from other entities, which is why no project-detail route is asked
 // for beyond the files.
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
 import { startProjectsPolling, useProjects } from '@entities/project';
@@ -135,20 +136,43 @@ interface Fixture {
   files: Record<string, ProjectFilesPayload>;
 }
 
-function fixtureName(): string | null {
-  if (!import.meta.env.DEV || typeof window === 'undefined') return null;
+/** One fixture, as ONE value: the name it was asked for and the bytes that arrived. The capture
+ *  marker is set from this and from nothing else, so a name with no module can never leave a
+ *  marker behind - a marker that survives a failed import says the opposite of the truth (law 23:
+ *  an instrument must be able to distinguish PASSED, FAILED and DID NOT RUN). Exported because a
+ *  test pins exactly that, with a name that resolves to no file at all. */
+export async function loadFixture(name: string): Promise<{ name: string; payload: Fixture } | null> {
+  if (!import.meta.env.DEV) return null;
+  const module = await import(/* @vite-ignore */ `./fixtures/${name}.ts`)
+    .then((loaded: { fixture?: Fixture }) => loaded)
+    .catch(() => null);
+  const payload = module === null ? null : module.fixture ?? null;
+  return payload === null ? null : { name, payload };
+}
+
+/** The fixture this address asks for, taking the ROUTER's own search string so the page re-renders
+ *  when the address changes. Read from `window.location` instead, a page that consumes no other
+ *  router value keeps the name it rendered with, and with it a stale capture marker: measured in a
+ *  browser on 2026-09-18, projects held `list` after the query was dropped while ten other pages
+ *  cleared, and the difference was only that they read `useLocation`. A static render cannot see an
+ *  effect or a navigation, so the suite was green while it happened. */
+function fixtureName(search: string): string | null {
+  if (!import.meta.env.DEV) return null;
+  const fromRouter = new URLSearchParams(search).get('fixture');
+  if (fromRouter !== null && fromRouter.trim() !== '') return fromRouter;
+  if (typeof window === 'undefined') return null;
   const fromSearch = new URLSearchParams(window.location.search).get('fixture');
-  if (fromSearch !== null) return fromSearch;
-  const at = window.location.hash.indexOf('?');
-  return at === -1 ? null : new URLSearchParams(window.location.hash.slice(at)).get('fixture');
+  return fromSearch === null || fromSearch.trim() === '' ? null : fromSearch;
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function ProjectsBoard({ payload, files = {}, sample = false, error = null }: {
+export function ProjectsBoard({ payload, files = {}, sample, error = null }: {
   payload: ProjectsSlice | null;
   /** Sample file payloads, keyed by project id: the capture fixture seam. */
   files?: Record<string, ProjectFilesPayload>;
-  sample?: boolean;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
+   *  marker and the sample chrome are the same value, so they cannot disagree. */
+  sample?: string | undefined;
   error?: string | null;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
@@ -166,10 +190,17 @@ export function ProjectsBoard({ payload, files = {}, sample = false, error = nul
       <header className="myx-px-head">
         <h2 className="myx-px-title">{S.title}</h2>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
+        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
-      <div className={open === null ? 'myx-px-board' : 'myx-px-board myx-px-board-open'}>
+      {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
+          carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
+          inferring it. The guard is IN the expression, so a production build drops the branch and
+          the attribute's very name - fixture-leak.mjs asserts it is absent from dist. */}
+      <div
+        className={open === null ? 'myx-px-board' : 'myx-px-board myx-px-board-open'}
+        {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
+      >
         <div className="myx-px-bays">
           {pending ? (
             <Empty text="project list not routed yet" source="row V4-131" />
@@ -236,19 +267,29 @@ export function ProjectsBoard({ payload, files = {}, sample = false, error = nul
 
 export default function ProjectsPage() {
   const store = useProjects((s) => s);
-  const [fixture, setFixture] = useState<Fixture | null>(null);
-  const name = fixtureName();
+  const { search } = useLocation();
+  const [sample, setSample] = useState<{ name: string; payload: Fixture } | null>(null);
+  const name = fixtureName(search);
+  const fixture = sample === null ? null : sample.payload;
 
   useEffect(() => startProjectsPolling(15000), []);
 
   useEffect(() => {
-    if (name === null) return undefined;
+    if (name === null) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return undefined;
+    }
     let live = true;
-    void import(/* @vite-ignore */ `./fixtures/${name}.ts`)
-      .then((module: { fixture?: Fixture }) => {
-        if (live) setFixture(module.fixture ?? null);
-      })
-      .catch(() => undefined);
+    // The whole value, name and bytes together: a second state for the name would be the stale
+    // marker this row exists to prevent.
+    void loadFixture(name).then((loaded) => {
+      if (live) setSample(loaded);
+    });
     return () => {
       live = false;
     };
@@ -258,7 +299,7 @@ export default function ProjectsPage() {
     <ProjectsBoard
       payload={fixture === null ? store.data : { projects: fixture.projects }}
       files={fixture?.files ?? {}}
-      sample={fixture !== null}
+      sample={sample?.name}
       error={store.error}
     />
   );

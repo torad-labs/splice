@@ -173,10 +173,12 @@ export interface TurnsBoardProps {
   capture: CaptureSlice | null;
   locked?: boolean;
   error?: string | null;
-  sample?: boolean;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
+   *  marker and the sample chrome are the same value, so they cannot disagree. */
+  sample?: string | undefined;
 }
 
-export function TurnsBoard({ inflight, landed, summary, capture, locked = false, error = null, sample = false }: TurnsBoardProps) {
+export function TurnsBoard({ inflight, landed, summary, capture, locked = false, error = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -218,10 +220,17 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
             <Figure value={idleBuckets} unit={S.idle} basis="measured" />
           </>
         ) : null}
-        {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
+        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
-      <div className={open === undefined ? 'myx-tn-board' : 'myx-tn-board myx-tn-board-open'}>
+      {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
+          carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
+          inferring it. The guard is IN the expression, so a production build drops the branch and
+          the attribute's very name - fixture-leak.mjs asserts it is absent from dist. */}
+      <div
+        className={open === undefined ? 'myx-tn-board' : 'myx-tn-board myx-tn-board-open'}
+        {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
+      >
         <div className="myx-tn-bays">
           <Bay
             label={S.inflight}
@@ -312,6 +321,20 @@ interface Fixture {
   summary: PerfSummaryPayload;
 }
 
+/** One fixture, as ONE value: the name it was asked for and the bytes that arrived. The capture
+ *  marker is set from this and from nothing else, so a name with no module can never leave a
+ *  marker behind - a marker that survives a failed import says the opposite of the truth (law 23:
+ *  an instrument must be able to distinguish PASSED, FAILED and DID NOT RUN). Exported because a
+ *  test pins exactly that, with a name that resolves to no file at all. */
+export async function loadFixture(name: string): Promise<{ name: string; payload: Fixture } | null> {
+  if (!import.meta.env.DEV) return null;
+  const module = await import(/* @vite-ignore */ `./fixtures/${name}.ts`)
+    .then((loaded: { fixture?: Fixture }) => loaded)
+    .catch(() => null);
+  const payload = module === null ? null : module.fixture ?? null;
+  return payload === null ? null : { name, payload };
+}
+
 function fixtureName(): string | null {
   if (!import.meta.env.DEV || typeof window === 'undefined') return null;
   const fromSearch = new URLSearchParams(window.location.search).get('fixture');
@@ -326,8 +349,9 @@ export default function TurnsPage() {
   const turns = usePerfTurns((s) => s);
   const summary = usePerfSummary((s) => s);
   const capture = useCapture((s) => s);
-  const [fixture, setFixture] = useState<Fixture | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: Fixture } | null>(null);
   const name = fixtureName();
+  const fixture = sample === null ? null : sample.payload;
 
   useEffect(() => {
     const stops = [startHeadsPolling(2000), startPerfTurnsPolling(undefined, 5000), startPerfSummaryPolling('24h', 15000)];
@@ -335,13 +359,21 @@ export default function TurnsPage() {
   }, []);
 
   useEffect(() => {
-    if (name === null) return undefined;
+    if (name === null) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return undefined;
+    }
     let live = true;
-    void import(/* @vite-ignore */ `./fixtures/${name}.ts`)
-      .then((module: { fixture?: Fixture }) => {
-        if (live) setFixture(module.fixture ?? null);
-      })
-      .catch(() => undefined);
+    // The whole value, name and bytes together: a second state for the name would be the stale
+    // marker this row exists to prevent.
+    void loadFixture(name).then((loaded) => {
+      if (live) setSample(loaded);
+    });
     return () => {
       live = false;
     };
@@ -355,7 +387,7 @@ export default function TurnsPage() {
       capture={capture.data}
       locked={locked}
       error={turns.error}
-      sample={fixture !== null}
+      sample={sample?.name}
     />
   );
 }

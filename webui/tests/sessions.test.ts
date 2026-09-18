@@ -212,7 +212,9 @@ describe('sessions board', () => {
   });
 
   test('the headless note is behind a reveal, and a sample board says so', () => {
-    const out = render(h(SessionsBoard, { payload: payload([]), sample: true }));
+    // The sample prop IS the fixture's own file name (M1-20): the chrome and the capture marker
+    // are the same value, so a board cannot claim a sample it was not handed.
+    const out = render(h(SessionsBoard, { payload: payload([]), sample: 'board' }));
     expect(out).toContain('myx-reveal-btn');
     expect(out).not.toContain('headless `claude -p` runs never register');
     expect(out).toContain('sample data');

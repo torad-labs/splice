@@ -26,6 +26,18 @@ import './teams.css';
 
 const PAGE_ID = 'teams';
 
+/** The name this page accepts in the hash query: the fixture's own FILE name. */
+const FIXTURE = 'hero';
+
+/** Whether the address asks for THIS page's fixture, by that fixture's own FILE name. Exported
+ *  because the capture marker's whole value rests on it (law 23): a name this page does not carry
+ *  is not a fixture, so the page must end with no marker rather than a stale one, and a test pins
+ *  that here rather than inferring it from a rendered label. */
+export function wantsFixture(search: string): boolean {
+  return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
+}
+
+
 /** The three views of one team. Only the first is built in this row. */
 const VIEWS: View[] = [
   { id: 'by-head', name: 'board by head', layout: 'board', filter: {}, sort: null, group: 'head', fields: [] },
@@ -68,7 +80,8 @@ export function teamsBodyFor({ fixture, view, teams, team, error = null }: Teams
 export function TeamsPage() {
   const { search } = useLocation();
   const { active } = useViews(PAGE_ID, VIEWS);
-  const [fixture, setFixture] = useState<TeamPayload | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: TeamPayload } | null>(null);
+  const fixture = sample === null ? null : sample.payload;
 
   // A fixture loads only in dev and only when the address asks for it by name
   // (CONTRACTS.md section 4). It is reached by a dynamic import inside the
@@ -77,8 +90,26 @@ export function TeamsPage() {
   // reachable whether or not the branch is (measured: the words survived the
   // production build until this became an import the dead branch could drop).
   useEffect(() => {
-    if (!(import.meta.env.DEV && new URLSearchParams(search).get('fixture') === 'hero')) return;
-    void import('./fixtures/hero').then((module) => setFixture(module.heroBoard));
+    if (!wantsFixture(search)) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return;
+    }
+    // The specifier is BUILT AT RUNTIME, not written as a literal: a statically analyzable
+    // `import('./fixtures/x')` stays a dependency edge through the single-file build even when the
+    // branch around it is dead, so the module's bytes are inlined into dist/index.html (measured
+    // 2026-09-18: this page shipped its own literals that way; the pages that compose the specifier
+    // at runtime shipped none). CONTRACTS.md section 4 asks for the dynamic import; this is the half
+    // of it the bundler can actually drop.
+    void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`)
+      .then((module: { heroBoard?: TeamPayload }) => {
+        setSample(module.heroBoard === undefined ? null : { name: FIXTURE, payload: module.heroBoard });
+      })
+      .catch(() => undefined);
   }, [search]);
 
   const teams = useTeams((state) => state);
@@ -102,7 +133,10 @@ export function TeamsPage() {
   });
 
   return (
-    <div className="myx-teams">
+    <div
+      className="myx-teams"
+      {...(import.meta.env.DEV && sample !== null ? { 'data-sample': sample.name } : {})}
+    >
       {body}
       <ViewTabs pageId={PAGE_ID} defaults={VIEWS} />
     </div>

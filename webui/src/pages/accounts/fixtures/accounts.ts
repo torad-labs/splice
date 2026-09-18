@@ -94,11 +94,16 @@ const DEMO_ACCOUNTS: readonly AccountRow[] = [
  */
 export function fixtureAccounts(name: string | null): readonly AccountRow[] | null {
   if (!import.meta.env.DEV || name === null) return null;
-  return name === 'demo' ? DEMO_ACCOUNTS : null;
+  // The fixture's own FILE name, the same rule every other page follows (CONTRACTS.md section 4):
+  // `demo` was this file's name for one page and no other, and a name that exists on one page and
+  // not another is what made a capture render live data while looking like a working capture.
+  return name === 'accounts' ? DEMO_ACCOUNTS : null;
 }
 
 /** The fixture's fixed clock, on the same rule as the rows above. */
 export function fixtureNow(name: string | null): number | null {
-  if (!import.meta.env.DEV || name === null) return null;
+  // Gated on the same name the rows are: a fixture clock for a name this page does not carry would
+  // be fixture behaviour the capture marker does not claim (law 23).
+  if (!import.meta.env.DEV || name !== 'accounts') return null;
   return FIXTURE_NOW_MS;
 }

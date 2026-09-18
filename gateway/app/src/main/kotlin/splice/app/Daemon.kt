@@ -12,7 +12,6 @@
 // constructor, fields, start(), and stop(); everything else delegates to those collaborators.
 package splice.app
 
-import java.nio.file.Path
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.head.HEAD_STOP_BUDGET_MS
@@ -38,6 +37,7 @@ import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.gateway.head.CompactionTail
+import java.nio.file.Path
 
 public class Daemon(
     private val topology: Topology,

@@ -250,11 +250,18 @@ export function AccountsPage() {
                   collapsed to `openedHead ?? ''`, which would paper over that invariant with a
                   fallback that can never be taken. */}
               {opened !== null ? (
-                <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} />
+                <>
+                  <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} />
+                  {/* ONE AccountLogin, NOT TWO (M2-28, found while reading M2-24). This sat
+                      outside the branch, and HeadActions renders its OWN AccountLogin
+                      (account-login/index.tsx:305), so opening a HEAD drew the `add account`
+                      reveal twice in one column. It belongs to the account branch, which has no
+                      login of its own; the head branch already carries one. */}
+                  {anyHead === null ? null : <AccountLogin head={anyHead} />}
+                </>
               ) : openedHead !== null ? (
                 <HeadActions head={openedHead} />
               ) : null}
-              {anyHead === null ? null : <AccountLogin head={anyHead} />}
             </>
           )}
         </aside>

@@ -260,5 +260,42 @@ arm("an unparseable burn-down list", "red", (r) => {
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
 }, (r) => tracked(r).includes("a.py"));
 
+// THE SIXTH SURFACE: the list itself. Found by walking the three moves a session makes to get a
+// green gate — write a .py (red), git add it (red), ADD IT TO THE BURN-DOWN (green until now).
+// Two censuses print "do NOT add the file to the burn-down" in their own failure text, and nothing
+// enforced it. These arms need TWO commits, because the baseline is the list as FIRST recorded.
+arm("the burn-down GREW after its first commit", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "birth");
+  writeFileSync(join(r, "b.py"), "y\n");
+  writeFileSync(join(r, LIST), list(["a.py", "b.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "sneak it in");
+}, (r) => !git(r, "show", `HEAD~1:${LIST}`).out.includes("b.py") && git(r, "show", `HEAD:${LIST}`).out.includes("b.py"));
+
+arm("the burn-down SHRANK", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "b.py"), "y\n");
+  writeFileSync(join(r, LIST), list(["a.py", "b.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "birth");
+  rmSync(join(r, "b.py"));
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "converted b");
+  // Shrinking is the entire point of the list, so the ratchet must never charge it.
+}, (r) => git(r, "show", `HEAD~1:${LIST}`).out.includes("b.py") && !git(r, "show", `HEAD:${LIST}`).out.includes("b.py"));
+
+// The bug the first cut of this census actually had: it took the FILE's first commit as the
+// baseline for BOTH keys and charged all 77 invokers as growth, because `invokers` was added days
+// after `files`. A ratchet whose baseline predates the thing it measures reports the measurement
+// as the violation, so each key is graded from the first commit in which THAT key has content.
+arm("a burn-down key that did not exist at the first commit", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "s.sh"), "#!/bin/sh\npython3 a.py\n");
+  writeFileSync(join(r, LIST), JSON.stringify({ recorded: "2026-09-18", law: "selftest", files: ["a.py"] }));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "birth, files only");
+  writeFileSync(join(r, LIST), list(["a.py"], ["s.sh"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "the second census arrives");
+}, (r) => !git(r, "show", `HEAD~1:${LIST}`).out.includes("invokers") && git(r, "show", `HEAD:${LIST}`).out.includes("s.sh"));
+
 console.log(failures ? `\nFAIL: no-python selftest — ${failures} arm(s)` : "\nOK: no-python selftest — every arm graded a setup it verified");
 process.exit(failures ? 1 : 0);

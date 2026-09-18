@@ -16,6 +16,11 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
 import io.ktor.client.plugins.HttpTimeout
 import splice.core.util.LogSink
+import java.io.IOException
+import java.net.ConnectException
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
@@ -67,6 +72,51 @@ public class UpstreamTransport {
         waiter.wait(maxOf(jittered, minDelayMs))
     }
 
+    /**
+     * V4-125 fallback: an OUT-OF-BAND reachability probe for [Watchdog], used when a round has sat
+     * past its idle tier and the socket itself cannot say whether anyone is still there.
+     *
+     * It opens a NEW connection to the provider's own host and port and closes it. A **refused**
+     * connection is returned as `false` — a definite "not here", which is the only answer that ends a
+     * round. Everything else (a name that will not resolve, a timeout in the probe itself) is left to
+     * THROW and is read upstream as inconclusive, because the alternative is a probe that turns a
+     * local network hiccup into a dead turn. [Watchdog.probeAgrees] is where that asymmetry lives.
+     *
+     * HONEST ABOUT ITS LIMIT, because it is easy to over-read: this proves the PATH, not THIS CALL.
+     * A refusal is real evidence that no amount of waiting will produce a token, but a success says
+     * nothing about the specific connection the round is parked on — a half-open one still reads
+     * healthy here. It is a weaker instrument than TCP keepalive, which is why keepalive is the
+     * preferred route and this is the fallback (V4-141 carries the engine work).
+     */
+    public fun reachabilityProbe(url: String, timeoutMs: Long = PROBE_TIMEOUT_MS): ProviderProbe = ProviderProbe {
+        val target = probeTarget(url) ?: return@ProviderProbe true
+        try {
+            Socket().use { socket -> socket.connect(target, timeoutMs.toInt()) }
+            true
+        } catch (_: ConnectException) {
+            // The ONE answer that is evidence of death: the host answered, and said no.
+            false
+        } catch (_: IOException) {
+            // Everything else — a name that will not resolve, a connect that times out, a route that
+            // is briefly gone — is the probe failing to get an answer rather than a refusal. It reads
+            // as reachable, so a local network hiccup cannot kill a healthy turn.
+            true
+        }
+    }
+
+    /** The address a probe dials, or null when the URL names nothing dialable — which is a failure to
+     *  ask rather than an answer, so the caller reads it as reachable. */
+    private fun probeTarget(url: String): InetSocketAddress? {
+        val parsed = try {
+            URI(url)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val host = parsed.host ?: return null
+        val port = if (parsed.port > 0) parsed.port else DEFAULT_HTTPS_PORT
+        return InetSocketAddress(host, port)
+    }
+
     /** DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
      *  blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
      *  generic 200/400/800ms curve undershoots. No minDelayMs — transport errors never carry
@@ -97,6 +147,16 @@ public class UpstreamTransport {
 // from firstByteTimeoutMs (5min default), which governs headers-wait/body phase via
 // socketTimeoutMillis, not TCP connect.
 private const val CONNECT_TIMEOUT_MS = 10_000L
+
+// V4-125: how long the out-of-band probe waits before giving up. Short on purpose — it runs while a
+// round is parked past its idle tier, so a long probe would delay the very decision it exists to
+// inform; and a timeout is treated as inconclusive rather than as death, so being impatient here
+// costs nothing but a poll.
+private const val PROBE_TIMEOUT_MS = 3_000L
+
+// The port a provider URL without an explicit one means. Tencent/Anthropic-style upstreams are all
+// https, and the probe is a TCP connect, so the scheme only decides this number.
+private const val DEFAULT_HTTPS_PORT = 443
 
 // V4-100: these five numbers are the single source, which is the point rather than a widening.
 // UpstreamClient next door re-typed them as its own private consts, because it budgets a curve

@@ -159,6 +159,7 @@
     ":provider-spi splice.spi.MAX_SPURIOUS_WAKEUPS",
     ":provider-spi splice.spi.MalformedLine",
     ":provider-spi splice.spi.PollRuntime",
+    ":provider-spi splice.spi.ProviderProbe",
     ":provider-spi splice.spi.RawTextObserver",
     ":provider-spi splice.spi.StreamStart",
     ":provider-spi splice.spi.UnfinishedOutcome",

@@ -218,11 +218,16 @@ public enum class Knob(
         900_000L,
         restartRequired = true,
     ),
+
+    // The headers-phase timeout, and — through WatchdogBudget — the watchdog's FIRST-OUTPUT tier, so
+    // one number judges a stream before and after its first frame. 90_000 with STREAM_IDLE_MS below
+    // and for the same reason; read that entry, including the 129-compaction scar it keeps.
+    // Named rather than positional because §magic-number blesses this spelling (see STALL_REANCHOR_MS).
     FIRST_BYTE_TIMEOUT_MS(
         "firstByteTimeoutMs",
         KnobKind.NUMBER,
         listOf("CLAUDEX_FIRST_BYTE_TIMEOUT_MS"),
-        300_000L,
+        default = 90_000L,
         restartRequired = true,
     ),
 
@@ -230,14 +235,26 @@ public enum class Knob(
     // (@63fe5a6, model-provider-info/src/lib.rs:26) sets DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
     // and applies it ONLY to the receive side, as timeout(idle_timeout, ws_stream.next()). We ran
     // 180_000 against the same backend and paid for it: on 2026-09-01 the idle tier alone ended 129
-    // compactions, each one a whole transcript re-read that had already begun streaming. 300_000
-    // matches the reference and equals our own firstByteTimeoutMs, so a stream is now judged by one
-    // number before and after its first frame. Lower it per head when a head wants a tighter stall.
+    // compactions, each one a whole transcript re-read that had already begun streaming. That scar is
+    // why 300_000 was pinned here, and it is KEPT in this comment on purpose — a reader who finds the
+    // number changed with the accident deleted has been handed the reasoning that caused it.
+    //
+    // 2026-09-18 (V4-125) — 90_000, and this is NOT a return to the 129. It is a different mechanism
+    // wearing a smaller number, and the difference is the whole point of that row: a tier breach
+    // stopped being a VERDICT. Silence past the tier now asks the round's path pulse whether the peer
+    // is alive; a path that answers is HELD — polled on, never reaped short of the whole-turn cap —
+    // and a path that cannot answer is discovered by its own read error, which the re-anchor
+    // machinery already owns. The 129 died because 180_000 was the last word anyone said about them.
+    // 90_000 is a question, asked sooner, of a watchdog that no longer ends turns: it buys how long
+    // the operator waits before the proxy starts healing rather than how long a silent backend is
+    // tolerated, and five minutes of the former is experienced as a hang. Lower it per head for a
+    // tighter stall; a head that genuinely needs the long wait names 300_000 in its own config with
+    // a reason, which is the honest place for it now.
     STREAM_IDLE_MS(
         "streamIdleMs",
         KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
-        300_000L,
+        default = 90_000L,
         restartRequired = true,
     ),
 

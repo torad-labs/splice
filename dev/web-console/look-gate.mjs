@@ -459,6 +459,31 @@ const ADDRESSES_FILE = 'webui/src/app/rows.ts';
 const CAPTURE_THEME = 'dark';
 const CAPTURE_FRAME = [1536, 1024];
 
+/** ELEVEN OF THIRTEEN PAGES SHIP A DESIGN FIXTURE AND THE GATE NEVER ASKED FOR ONE (M1-83). Its
+ *  addresses were bare route names, so `#/teams` rendered NO TEAMS ROUTE / V4-131 PENDING over an
+ *  empty rack - the very page the comp is drawn of, judged as a blank. The map lives HERE rather
+ *  than in the shell's ADDRESSES table because the gate owns which fixture each address needs, the
+ *  same way it owns the frame size, and because that table is not this row's to edit.
+ *  THE NAMES ARE NOT THE PAGE NAMES: logs ships `tail`, projects `list`, sessions and turns `board`.
+ *  A map derived from the address would have loaded nothing on four pages and looked like it worked.
+ *  fleet and mcp ship none and are captured bare, which is honest - and the refusal below is what
+ *  stops a bare capture from passing as a content plane. */
+const FIXTURES = {
+  accounts: 'accounts', compaction: 'compaction', doctor: 'doctor', logs: 'tail',
+  models: 'models', projects: 'list', sessions: 'board', settings: 'settings',
+  teams: 'hero', turns: 'board', usage: 'usage',
+};
+
+/** The address as the browser must receive it. The fixture rides in BOTH the search and the hash
+ *  because the pages are split on which they read (`useLocation().search` against the raw
+ *  `window.location.search`), and the shell canonicalises one of them. Whichever it drops, the
+ *  other survives; a page that reads neither is caught by the refusal below rather than passing. */
+function captureUrl(address) {
+  const fixture = FIXTURES[address];
+  if (fixture === undefined) return `http://localhost:5173/#/${address}`;
+  return `http://localhost:5173/?fixture=${fixture}#/${address}?fixture=${fixture}`;
+}
+
 function addresses() {
   const src = readIf(ADDRESSES_FILE);
   if (src === null) return null;
@@ -475,18 +500,57 @@ async function captureSet(dir) {
   fs.mkdirSync(path.join(ROOTREF.root, dir), { recursive: true });
   const [w, h] = CAPTURE_FRAME;
   const started = Date.now();
+  const blanks = [];
   let wrote = 0;
   try {
     await withChrome({ 'myx-mgmt-key': mgmtKey(), 'splice.theme': CAPTURE_THEME }, async (send) => {
       for (const address of list) {
         const file = path.join(ROOTREF.root, dir, `${address}-${CAPTURE_THEME}-${w}x${h}.png`);
-        await show(send, `http://localhost:5173/#/${address}`, w, h);
+        // THE FIXTURE RIDES IN THE URL (M1-83), through the one helper that decides how an address
+        // is addressed: eleven of thirteen pages ship a design fixture and a bare `#/teams` renders
+        // NO TEAMS ROUTE over an empty rack - the very page the comp is drawn of, judged as a blank
+        // and photographed as one. `captureUrl` was written beside `FIXTURES` and never called, so
+        // the map only fed the refusal message: the gate could say a fixture HAD NOT loaded and
+        // could not ask for one. The refusal below is what proves this call did its job.
+        await show(send, captureUrl(address), w, h);
         // PROVE THE ROOM TOOK before trusting the filename: law 32 -- look.mjs named and printed
         // a theme its sessions never seeded, and seeding a state is not rendering it. The page's
         // own background is read back from the render, and a capture that did not come back in
         // the room it claims is not written at all.
         const room = await send('Runtime.evaluate', { returnByValue: true, expression: 'getComputedStyle(document.documentElement).colorScheme' });
         if (room.result.value !== CAPTURE_THEME) return;
+        // A BLANK CAPTURE PASSES EVERY GEOMETRIC CHECK SILENTLY (M1-83): a field grid holds
+        // perfectly across zero strips, so twelve empty rack frames scored as a clean grid all
+        // night. So the gate asks the page what it actually put on the glass, and refuses to write
+        // a frame that cannot answer. `data-sample` is the marker the page carries when its fixture
+        // loaded (M1-20); a page that ships no fixture declares that instead of being assumed
+        // empty, which is the difference between a named absence and an unnoticed one.
+        const content = await send('Runtime.evaluate', {
+          returnByValue: true,
+          expression: `(() => {
+            const carrier = document.querySelector('[data-sample]');
+            const planes = document.querySelectorAll('.myx-bay, .myx-strip, .myx-scope, .myx-fbox').length;
+            return JSON.stringify({
+              sample: carrier === null ? null : carrier.getAttribute('data-sample'),
+              planes,
+              body: document.body.innerText.trim().length,
+            });
+          })()`,
+        });
+        const seen = JSON.parse(content.result.value);
+        const wanted = FIXTURES[address];
+        // THE MARKER IS THE PROOF, AND A PLANE COUNT IS NOT. The first version of this refusal asked
+        // `planes === 0`, and it could not have caught the page the row is about: the blank hero
+        // renders NO TEAMS ROUTE / V4-131 PENDING over an EMPTY RACK, so it has .myx-bay planes and
+        // a body full of words, and it would have passed. `data-sample` is the marker a page carries
+        // when its fixture loaded (M1-20), so a page that ships a fixture and does not carry it is
+        // refused BY NAME whatever it drew; the two fixtureless pages are judged on content alone,
+        // and that difference is stated here rather than implied by a threshold.
+        const blank = wanted === undefined ? seen.planes === 0 : seen.sample !== wanted;
+        if (blank) {
+          blanks.push(`${address}${wanted === undefined ? '' : ` (fixture=${wanted} did not load: sample=${seen.sample})`}`);
+          continue;
+        }
         await shoot(send, file);
         wrote++;
       }
@@ -495,8 +559,18 @@ async function captureSet(dir) {
     return { ok: false, detail: `capture failed after ${wrote} file(s): ${e.message}` };
   }
   const ms = Date.now() - started;
+  if (blanks.length > 0) {
+    // NAMED, not counted: which address, and whether its fixture failed to load.
+    return { ok: false, detail: `${blanks.length} capture(s) refused with no content plane: ${blanks.join(', ')}` };
+  }
   if (wrote !== list.length) return { ok: false, detail: `captured ${wrote} of ${list.length} (the room did not take)` };
-  return { ok: true, count: wrote, ms, detail: `${wrote} captures in ${(ms / 1000).toFixed(1)}s (${(ms / wrote / 1000).toFixed(1)}s each)` };
+  // WHAT EACH CAPTURE ASKED FOR, printed rather than implied: the strengthened verify greps for
+  // `fixture=hero` precisely because the old one passed on thirteen blank pages, so the set must
+  // say which fixtures it loaded rather than that it loaded thirteen files.
+  const loaded = list.map((a) => (FIXTURES[a] === undefined ? `${a} (no fixture)` : `${a}=${FIXTURES[a]}`));
+  return { ok: true, count: wrote, ms,
+    detail: `${wrote} captures in ${(ms / 1000).toFixed(1)}s (${(ms / wrote / 1000).toFixed(1)}s each)`
+      + ` · fixtures: ${loaded.join(' ')}` };
 }
 
 /** THE FRESHNESS RULE, and it outlives this row. A check that reads an artifact it did NOT

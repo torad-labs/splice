@@ -50,6 +50,13 @@
   min-width: 0;
 }
 
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. Measured before this: the widest strip left 1011 px of bare bay to its right. */
+.myx-accounts-bays .myx-strip { width: 100%; }
+.myx-accounts-bays .myx-sfield { flex: 1 1 auto; }
+
 /* The rack scrolls rather than reflowing: the field grid is fixed-width in ch and a strip that
    wrapped would stop reading as a row of the same rack. */
 .myx-accounts-bays > * { overflow-x: auto; }

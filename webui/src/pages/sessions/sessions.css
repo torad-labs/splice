@@ -6,6 +6,13 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+
+/* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44). The board stretches instead of
+   starting at the top, the rack area takes the height that is left, and the bay takes the rack
+   area's height - so the ruled floor runs to the bottom of the frame the way the comp's does
+   (bay-claude is y138..947 of a 1024 frame, and its slot rules continue below the last strip).
+   min-height and not height: a page taller than its room still grows and the room scrolls. */
+  min-height: 100%;
 }
 .myx-sx-head {
   display: flex;
@@ -41,7 +48,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;
   gap: var(--space-4);
-  align-items: start;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
   transition: grid-template-columns var(--dur-2) var(--ease-out);
 }
 .myx-sx-board-open {
@@ -53,7 +62,23 @@
   flex-direction: column;
   gap: var(--space-5);
   min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
 }
+
+/* The bays share the rack area's height rather than stacking at their content height: this page
+   holds three groups, and the comp's rack is one column that reaches the floor. */
+.myx-sx-bays > .myx-bay {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. That is the whole difference between bare paper and a full row. */
+.myx-sx-bays .myx-strip { width: 100%; }
+.myx-sx-bays .myx-sfield { flex: 1 1 auto; }
 
 .myx-sx-detail {
   display: flex;

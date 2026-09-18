@@ -5,6 +5,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  min-height: 100%;
 }
 
 .myx-fleet-head {
@@ -25,8 +26,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
   gap: var(--space-4);
-  align-items: start;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
 }
+
+/* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44): the body stretches instead of
+   starting at the top and the rack area takes what is left. Measured before this: the deepest bay
+   stopped at 2043 of a 2160 frame. */
+.myx-fleet-bays { flex: 1 1 auto; min-height: 0; }
+.myx-fleet-bays > .myx-bay { flex: 1 1 auto; min-height: 0; }
 
 /* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
    width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value

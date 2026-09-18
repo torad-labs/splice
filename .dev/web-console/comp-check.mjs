@@ -48,6 +48,10 @@ const TOLERANCE = {
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
+// The address-to-fixture mapping lives in ONE place and is checked against the pages. This file
+// carried the THIRD copy of it, still naming 'demo' for six addresses, which made every rack row in
+// its table a measurement of live daemon data (M1-28).
+import { FIXTURES, urlFor as fixtureUrl } from './lib/fixtures.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const FRAMES = [[1536, 1024]];
@@ -86,19 +90,6 @@ function addresses() {
   if (block === null) throw new Error('rows.ts: the ADDRESSES table was not found');
   return [...block[1].matchAll(/'([a-z0-9-]+)'/g)].map((match) => match[1]);
 }
-
-/**
- * The dev fixture each address ships, or null for one that measures live. This mirrors the table in
- * gate.mjs, and the mirror is the price of the comp having been measured on a POPULATED page: a bay
- * and a strip only exist when the page has data, and an address measured empty would report every
- * rack constant as absent instead of as a delta. The two tables are inputs, not denominators: a
- * fixture name that drifts shows up as an address that renders nothing, which prints as absent.
- */
-const FIXTURES = {
-  fleet: null, turns: 'demo', sessions: 'demo', teams: 'hero', projects: 'demo', accounts: 'demo',
-  usage: 'usage', settings: 'settings', models: 'models', logs: 'demo', compaction: 'compaction',
-  mcp: null, doctor: 'demo',
-};
 
 /** The live probe. It returns geometry and type, never a verdict: every comparison happens on this
  *  side, so the thresholds live in one place and the page cannot grade itself. */
@@ -385,11 +376,7 @@ if (wantsList) {
 
 const list = only === undefined ? addresses() : [only];
 const [width, height] = FRAMES[0];
-const urlFor = (address) => {
-  const fixture = FIXTURES[address];
-  return `http://localhost:5173/#/${address}${fixture === null || fixture === undefined ? '' : `?fixture=${fixture}`}`;
-};
-
+const urlFor = (address) => fixtureUrl(address);
 await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
   for (const address of list) {
     // Through about:blank every time: every console URL is a hash route, so navigating from one to

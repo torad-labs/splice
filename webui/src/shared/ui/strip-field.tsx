@@ -6,8 +6,18 @@ import type { CSSProperties } from 'react';
 import { cx } from '../lib';
 import type { Basis } from './types';
 
-export function StripField({ w, span, label, value, basis, mono }: {
+export function StripField({ w, span, fixed, label, value, basis, mono }: {
   w: number;
+  /** THIS CELL DOES NOT TAKE A SHARE OF THE SLACK, so the rack it is in is a FIXED table rather
+   *  than a fluid one (M1-107). It exists because flex-grow is set INLINE here, and an inline
+   *  declaration beats any stylesheet rule -- so a page-level class CANNOT express "this rack is
+   *  fixed" while this file owns the property. That is M1-93's finding read forwards: M1-93 proved
+   *  an always-overridden stylesheet rule is dead, and the same fact means the declaration has to
+   *  arrive as a value the primitive writes rather than a rule it loses to.
+   *  The strip's own class (`myx-strip-fixed`, read in accounts.css) stays as the DECLARATION the
+   *  DOM carries -- the M1-92 idiom, where a screenshot cannot carry intent so the markup says
+   *  it -- and this prop is that sentence made true. */
+  fixed?: boolean;
   /** THE TRACKS THIS FIELD SPANS, DECLARED. A total is one value stated across the whole row; a
    *  reason is one sentence across four cells. Both are spans, and a span is not a first field
    *  that happens to be wide -- so it says so, and anything comparing FIRST-FIELD EDGES across a
@@ -50,7 +60,7 @@ export function StripField({ w, span, label, value, basis, mono }: {
     // `flex: 1 1 auto` lines can be retired as cleanup rather than as part of this fix.
     <div
       className="myx-sfield"
-      style={{ width: `${w}ch`, flexGrow: w } as CSSProperties}
+      style={{ width: `${w}ch`, flexGrow: fixed === true ? 0 : w } as CSSProperties}
       {...(span === undefined ? {} : { 'data-span': String(span) })}
     >
       {label !== undefined ? <span className="myx-sfield-label">{label}</span> : null}

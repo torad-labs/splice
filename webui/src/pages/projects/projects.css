@@ -34,10 +34,18 @@
   color: var(--ink-strong);
 }
 
+/* A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-119, mirroring M1-116's mechanism rather than
+   choosing a fourth repair - three pages carrying three repairs of one defect is worse than the
+   defect). The track collapses to literal 0 at rest, but `gap` was still var(--space-4), and gap is
+   paid BETWEEN a 1fr track and a 0 track like any other pair, so the rack was 12px narrower than
+   the board on every rest render. Measured at 1536 dark before this: board 1366, bays 1354,
+   columnGap 12.0004px, tracks "1353.77px 0px". The gutter is the OPEN column's, so it moves with
+   the column and the transition carries both. */
 .myx-px-board {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 0;
-  gap: var(--space-4);
+  column-gap: 0;
+  row-gap: var(--space-4);
   /* `align-items: start` was the stop in the chain: it sized both columns to their content, so
      the row was as tall as the shortest thing in it and the bays below had nothing to grow into.
      Stretch is the grid's own default and it is what passes the room's height down; `flex: 1 1
@@ -46,10 +54,16 @@
   align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
-  transition: grid-template-columns var(--dur-2) var(--ease-out);
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
 }
 .myx-px-board-open {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-px-board { transition: none; }
 }
 
 .myx-px-bays {

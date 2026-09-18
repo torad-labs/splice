@@ -12,6 +12,15 @@
 # The label is written to the holder file so a waiting seat can see WHO holds the slot and since when.
 set -euo pipefail
 LABEL="${1:?label (row id or seat)}"; shift
+# An EMPTY task list is DID NOT RUN, never PASSED (2026-09-18). `./gradlew` with no task argument
+# runs the default task and prints BUILD SUCCESSFUL, so a verify line that lost its tasks to a typo
+# came back green having compiled nothing, and the receipt recorded it as a pass. A gate that cannot
+# tell "asked to do nothing" from "did everything" is a two-outcome gate; exit 2 is the third.
+if [ "$#" -eq 0 ]; then
+  echo "gradle-slot: $LABEL asked for NO gradle tasks — refusing to report a pass for a run that does nothing." >&2
+  echo "gradle-slot: name the tasks, e.g. bash checks/gradle-slot.sh $LABEL :app:test :app:detekt" >&2
+  exit 2
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCK="${GRADLE_SLOT_LOCK:-$ROOT/gateway/.gradle-slot.lock}"
 HOLDER="$LOCK.holder"

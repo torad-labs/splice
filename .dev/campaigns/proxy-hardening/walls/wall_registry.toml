@@ -34,7 +34,7 @@ wall = ".dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.p
 [[item]]
 id = "NF-02"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.py"
+wall = ".dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.ts"
 
 [[item]]
 id = "NF-03"
@@ -100,7 +100,7 @@ wall = ".dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.py"
 [[item]]
 id = "JW-02"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.py"
+wall = ".dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.ts"
 
 [[item]]
 id = "JW-03"
@@ -115,7 +115,7 @@ wall = ".dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py
 [[item]]
 id = "JW-05"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.py"
+wall = ".dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.ts"
 
 [[item]]
 id = "JW-06"

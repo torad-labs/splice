@@ -5,6 +5,7 @@
 //   GET /api/perf/turns   -> PerfTurnsPayload    (PENDING V4-127, typed from FEATURES.md 6 + 2.4)
 // The numeric field names are the PerfKeys catalogue (core/perf/PerfKeys.kt), so a mark renamed
 // there renames here.
+import type { PendingRoute } from '@shared/api';
 
 /** {count, p50, p95, max} of one field over a row set — the ONE shape both perf routes print
  *  (PerfSummary.stats). Percentiles are nearest-rank on the sorted values, per the daemon. */
@@ -180,17 +181,28 @@ export interface PerfTurnsPayload {
   turns: TurnRow[];
 }
 
-/**
- * A route the daemon has not built yet. The store resolves to THIS instead of to rows: the honest
- * empty names the v0.4.0 work item that will serve it, and no mocked row ever reaches a page
- * (CONTRACTS.md 8).
+/** The pending shape and the rule that detects it now live in @shared/api (hoisted from M2-D1's
+ *  finding, so every entity resolves an unbuilt route the same way). Re-exported here for the
+ *  callers that already address this slice. */
+export type { PendingRoute };
+
+/** One head's opt-in body capture: the toggle and, when it is on, the bodies of one turn.
  *
- * Declared here rather than shared because a slice may not import a sibling slice and
- * `src/shared/**` is not this row's fence; the finish row can hoist it once every data row is in.
- */
-export interface PendingRoute {
-  pending: string;
+ *  PENDING V4-133 (`GET/PUT /api/heads/{head}/capture`, FEATURES.md 6 and 4.9). Capture is OFF by
+ *  default and the console says so rather than showing an empty drawer that could be mistaken for
+ *  a turn with no body. */
+export interface CaptureState {
+  head: string;
+  enabled: boolean;
+  /** The turn the bodies belong to (its `ts`), present only when a turn was asked for. */
+  at?: number;
+  /** The request body, redacted daemon-side, present only when capture is on and the turn was
+   *  recorded. Never a partial body: an absent field means the daemon has none. */
+  request?: string;
+  response?: string;
 }
+
+export type CaptureSlice = CaptureState | PendingRoute;
 
 /** One in-flight turn, read off a head's gate snapshot (GateLive on GET /api/heads, FEATURES 2.4).
  *  camelCase because it is NOT a wire row: the derivation builds it from the payload. */

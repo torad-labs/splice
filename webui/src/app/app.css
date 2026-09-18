@@ -1,21 +1,28 @@
-/* splice shell composition — page-owned, hand-authored, .myx-* namespace.
-   Instrument register: mono-led, information-dense, hairline dividers over
-   cards. Every spacing value from --space-0..12, every font size from
-   --text-0..10 (wall: webui-css-tokens-only). One accent page-wide
-   (vermilion, action/focus only); cyan/gold-dim stay DATA inks. */
+/* The console shell — hand-authored, .myx-* namespace.
+   One graphite room: a fixed rule, a rail of bays, the page's bay. Depth is
+   surface tier and hairline, never shadow. Every spacing value comes from
+   --space-1..8 and every size from --text-1..6 (wall: webui-css-tokens-only).
+
+   The rule and the rail are bound to the measured regions of the approved comp
+   (webui/.impeccable/build/scaffold/layout.css, regions top-rule, rail and
+   rail-labels in spec.json): the rule is the full-width top-rule band, the rail
+   is the rail band below it, and the five rule cells sit at their measured x
+   and width inside it. Those measurements are percent of the comp frame, and
+   the frame is the window, so the numbers bind here as vh/vw and the shell
+   scales the way the comp does at any capture size. */
 
 * { box-sizing: border-box; }
 
 body {
   margin: var(--space-0);
-  background: var(--surface);
-  color: var(--ink-body);
-  font-family: var(--font-mono);
+  background: var(--room);
+  color: var(--ink);
+  font-family: var(--font-label);
   font-size: var(--text-3);
   line-height: 1.55;
 }
 
-::selection { background: var(--selection); }
+::selection { background: color-mix(in srgb, var(--focus) 30%, transparent); }
 
 a { color: var(--accent); }
 a:focus-visible,
@@ -26,91 +33,43 @@ select:focus-visible {
   outline-offset: var(--focus-offset);
 }
 
-.myx-shell {
-  min-height: 100vh;
+/* ---------- the shell ---------- */
+
+.myx-console {
+  /* measured: top-rule h 5.8% of the frame, rail w 9% of it. The floors keep
+     the rule legible on a short window instead of letting it crush the cells. */
+  --rule-h: 5.8vh;
+  --rule-min: 56px;
+  --rail-w: 9vw;
+  --rail-min: 118px;
+  height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  max-width: var(--container);
-  margin-inline: auto;
-  padding: var(--space-3) var(--space-4);
-  gap: var(--space-5);
+  grid-template-rows: minmax(var(--rule-min), var(--rule-h)) 1fr;
+  overflow: hidden;
+  background: var(--room);
 }
 
-/* header: compact instrument masthead — no hero, status opens the page */
-.myx-header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-5);
-  flex-wrap: wrap;
-  border-bottom: var(--hair) solid var(--line-strong);
-  padding-bottom: var(--space-3);
-}
-.myx-wordmark {
-  margin: var(--space-0);
-  font-family: var(--font-mono);
-  font-size: var(--text-5);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--ink-strong);
-}
-.myx-wordmark-sub {
-  margin-left: var(--space-2);
-  font-size: var(--text-1);
-  font-weight: 400;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
+.myx-console-body {
+  display: grid;
+  grid-template-columns: minmax(var(--rail-min), var(--rail-w)) 1fr;
+  min-height: 0;
 }
 
-.myx-tabs { display: flex; gap: var(--space-1); flex-wrap: wrap; }
-.myx-tab {
-  font-family: var(--font-mono);
-  font-size: var(--text-2);
-  text-decoration: none;
-  color: var(--ink-mute);
-  padding: var(--space-1) var(--space-2);
-  border: var(--hair) solid transparent;
-  border-radius: var(--radius-1);
-  transition: color var(--dur-1) var(--ease-snap), border-color var(--dur-1) var(--ease-snap);
-}
-.myx-tab:hover { color: var(--ink-strong); border-color: var(--line); }
-.myx-tab[aria-current='page'] {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.myx-tab:active { transform: translateY(var(--hair)); }
-
-.myx-theme-btn {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-1);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-mute);
-  background: none;
-  border: var(--hair) solid var(--line);
-  border-radius: var(--radius-1);
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-}
-.myx-theme-btn:hover { color: var(--ink-strong); border-color: var(--line-strong); }
-
-.myx-main { display: block; }
-.myx-stack { display: grid; gap: var(--space-5); }
-
-.myx-footer {
-  font-family: var(--font-mono);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-  border-top: var(--hair) solid var(--line);
-  padding-top: var(--space-2);
+.myx-console-page {
+  min-width: 0;
+  overflow: auto;
+  padding: var(--space-5);
 }
 
-/* data tables: dense, hairline rows, tabular numerals */
+/* The bay holds its space for the frame before a lazily loaded page arrives.
+   It claims nothing: no skeleton shaped like content the page has not sent. */
+.myx-console-pending { min-height: 100%; }
+
+/* ---------- data tables: dense, hairline rows, tabular numerals ---------- */
 .myx-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-2);
 }
 .myx-table th {
@@ -142,7 +101,7 @@ select:focus-visible {
 
 .myx-footnote {
   margin: var(--space-2) var(--space-0) var(--space-0);
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-1);
   color: var(--ink-mute);
 }
@@ -167,13 +126,13 @@ select:focus-visible {
 .myx-plate-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
 .myx-plate-head-right { display: flex; align-items: center; gap: var(--space-2); }
 .myx-plate-label {
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-4);
   font-weight: 600;
   color: var(--ink-strong);
 }
 .myx-plate-sub {
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-1);
   color: var(--ink-mute);
   text-transform: uppercase;
@@ -190,13 +149,13 @@ select:focus-visible {
   gap: var(--space-3);
   flex-wrap: wrap;
   margin: var(--space-0);
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-1);
   color: var(--ink-mute);
 }
 .myx-plate-usage-none {
   margin: var(--space-0);
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-1);
   color: var(--ink-mute);
   font-style: italic;
@@ -204,7 +163,7 @@ select:focus-visible {
 .myx-plate-actions { display: flex; gap: var(--space-2); }
 .myx-plate-note {
   margin: var(--space-0);
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-1);
   color: var(--data-info);
 }
@@ -218,7 +177,7 @@ select:focus-visible {
   padding: var(--space-2) var(--space-3);
   border: var(--hair) solid var(--line-strong);
   border-radius: var(--radius-1);
-  font-family: var(--font-mono);
+  font-family: var(--font-figure);
   font-size: var(--text-2);
 }
 
@@ -240,12 +199,12 @@ select:focus-visible {
   gap: var(--space-3);
 }
 .myx-editcfg-actions { display: flex; align-items: center; gap: var(--space-3); }
-.myx-editcfg-result { font-family: var(--font-mono); font-size: var(--text-2); color: var(--data-pos); }
+.myx-editcfg-result { font-family: var(--font-figure); font-size: var(--text-2); color: var(--data-pos); }
 
 .myx-inline-action { display: inline-flex; align-items: center; gap: var(--space-2); }
-.myx-inline-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--ink-mute); }
+.myx-inline-note { font-family: var(--font-figure); font-size: var(--text-1); color: var(--ink-mute); }
 
-/* modal (config confirm + key gate) */
+/* modal (config confirm + key gate) — old-world surface, replaced in M3-04 */
 .myx-modal-scrim {
   position: fixed;
   inset: var(--space-0);
@@ -278,13 +237,7 @@ select:focus-visible {
 .myx-unlock-form { display: grid; gap: var(--space-3); }
 
 @media (max-width: 720px) {
-  .myx-shell { padding: var(--space-2) var(--space-3); }
-  .myx-header { gap: var(--space-3); }
-  .myx-theme-btn { margin-left: var(--space-0); }
+  .myx-console { --rail-w: 14vw; --rail-min: 96px; }
+  .myx-console-page { padding: var(--space-3); }
   .myx-table { display: block; overflow-x: auto; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .myx-tab { transition: none; }
-  .myx-tab:active { transform: none; }
 }

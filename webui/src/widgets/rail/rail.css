@@ -1,0 +1,48 @@
+/* The rail, bound to the measured rail and rail-labels regions
+   (.impeccable/build/scaffold/layout.css): the rail is the band below the rule
+   at 9% of the frame width, and the label column sits at 1.2% of the frame
+   with a 7% width — inside the rail that is 13.33% / 77.78%.
+   The label column is spread over the measured 82.8% of the rail's height
+   rather than packed at the top, so the bays keep the comp's rhythm at any
+   window size. */
+
+.myx-rail {
+  position: relative;
+  overflow: hidden;
+  background: var(--room-deep);
+  border-right: var(--hair) solid var(--hairline);
+}
+
+.myx-rail-tabs {
+  position: absolute;
+  left: 13.33%;
+  width: 77.78%;
+  top: 0.74%;
+  height: 82.8%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.myx-rail-tab {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  text-decoration: none;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+/* The holder edge prints its label in the room's ink by default; on a printed
+   plate the label belongs to the plate. */
+.myx-rail-tab .myx-edge-label {
+  color: var(--strip-ink);
+  letter-spacing: 0.01em;
+}
+.myx-rail-tab .myx-edge-mark { align-self: stretch; }
+.myx-rail-tab:hover { border-color: var(--strip-ink); }
+.myx-rail-tab-active { border-color: var(--strip-ink); }
+.myx-rail-tab:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

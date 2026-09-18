@@ -6,3 +6,6 @@ export function LogsPage() {
   useEffect(() => startLogsPolling(5000), []);
   return <LogTail />;
 }
+
+// The shell discovers pages by directory and renders the default export.
+export default LogsPage;

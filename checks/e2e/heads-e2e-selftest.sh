@@ -8,7 +8,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HARNESS="$ROOT/checks/e2e/heads-e2e.sh"
-LOOPBACK="$ROOT/checks/e2e/loopback_control.py"
+LOOPBACK="$ROOT/checks/e2e/loopback_control.ts"
 
 tmp="$(mktemp -d)"
 trap 'kill "$LOOP_PID" 2>/dev/null || true; rm -rf "$tmp"' EXIT
@@ -28,7 +28,7 @@ printf '%s' "$MGMT" > "$STATE/mgmt-key"
 REPO_RECEIPT="$ROOT/checks/e2e/receipts/claude-splice.json"
 receipt_sha_before="$(sha256sum "$REPO_RECEIPT" 2>/dev/null || echo absent)"
 
-python3 "$LOOPBACK" --record "$tmp/rec.jsonl" --ready-file "$tmp/ready" --head-key claude-splice \
+bun "$LOOPBACK" --record "$tmp/rec.jsonl" --ready-file "$tmp/ready" --head-key claude-splice \
   --duplicate-stop-file "$tmp/duplicate-stop" --unknown-kind-head unknown-kind \
   --count-tokens-drop-file "$tmp/ct-drop" \
   >"$tmp/loop.out" 2>"$tmp/loop.err" &
@@ -437,7 +437,7 @@ else
 fi
 
 # ── wall 1: the plumbing that makes a project MCP server load non-interactively. ──
-if msg="$(python3 - "$HARNESS" "$ROOT/checks/e2e/mcp_overlong_tool_server.py" <<'PY' 2>&1
+if msg="$(python3 - "$HARNESS" "$ROOT/checks/e2e/mcp_overlong_tool_server.ts" <<'PY' 2>&1
 import pathlib, re, sys
 text = pathlib.Path(sys.argv[1]).read_text()
 server_script = pathlib.Path(sys.argv[2])
@@ -503,7 +503,7 @@ else
 fi
 
 if msg="$(python3 - "$MCP_SCRATCH" "$OVERLONG_MCP_SERVER" "$OVERLONG_MCP_TOOL" \
-    "$OVERLONG_TOOL_NAME" "$ROOT/checks/e2e/mcp_overlong_tool_server.py" <<'PY' 2>&1
+    "$OVERLONG_TOOL_NAME" "$ROOT/checks/e2e/mcp_overlong_tool_server.ts" <<'PY' 2>&1
 import json, os, pathlib, subprocess, sys
 
 scratch = pathlib.Path(sys.argv[1])

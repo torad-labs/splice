@@ -10,7 +10,7 @@
 # operator's own file; the harness has no business second-guessing it.
 #
 #   tier 1  wire probe   — real streaming turn straight at the head port; validates the Anthropic
-#                          SSE contract + latency budgets client-side (stream_probe.py), plus a
+#                          SSE contract + latency budgets client-side (stream_probe.ts), plus a
 #                          count_tokens sanity call. Cheap, provider-billed, seconds per head.
 #   tier 2  tmux drive   — launches the head's REAL Claude Code wrapper (claudex / claude-grok /
 #                          claude-kimi …) inside an isolated tmux server, answers first-run
@@ -49,7 +49,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STATE_DIR="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
 CONTROL_PORT="${SPLICE_CONTROL_PORT:-3096}"
 CONTROL="http://127.0.0.1:${CONTROL_PORT}"
-PROBE="$ROOT/checks/e2e/stream_probe.py"
+PROBE="$ROOT/checks/e2e/stream_probe.ts"
 TMUX_SOCK="splice-e2e"
 
 TIER="all"; ONLY_HEAD=""; LIST=0
@@ -239,7 +239,7 @@ tier1() {
   fi
   note "[$key] tier1 wire probe on :$port model=$model"
   note "    model choice: $why"
-  if summary="$(SPLICE_PROBE_BEARER="$bearer" python3 "$PROBE" --head "$key" --port "$port" --model "$model" \
+  if summary="$(SPLICE_PROBE_BEARER="$bearer" bun "$PROBE" --head "$key" --port "$port" --model "$model" \
       --ttfb-ms "${E2E_TTFB_MS:-20000}" --first-delta-ms "${E2E_FIRST_DELTA_MS:-45000}" \
       --total-ms "${E2E_TOTAL_MS:-120000}" --gap-ms "${E2E_GAP_MS:-30000}")"; then
     note "    $summary"
@@ -431,7 +431,7 @@ PY
 # THE NAME IS COMPOSED, NOT DECLARED. Claude Code spells an MCP tool mcp__<server key>__<tool>,
 # so the 68 characters come from the .mcp.json KEY plus the name the server advertises in its
 # tools/list — never from a string anybody writes out in full. Both halves live here; the server
-# owns only its short half (checks/e2e/mcp_overlong_tool_server.py).
+# owns only its short half (checks/e2e/mcp_overlong_tool_server.ts).
 #
 # REDO 2026-09-17 — the first version of this arm was inert. It planted
 # `python3 -c "raise SystemExit(0)"`, which exits before the first byte of the stdio handshake,
@@ -442,7 +442,7 @@ PY
 OVERLONG_TOOL_NAME="mcp__plugin_desktop-commander_desktop-commander__read_process_output"
 OVERLONG_MCP_SERVER="plugin_desktop-commander_desktop-commander"
 OVERLONG_MCP_TOOL="read_process_output"
-OVERLONG_MCP_SERVER_SCRIPT="$ROOT/checks/e2e/mcp_overlong_tool_server.py"
+OVERLONG_MCP_SERVER_SCRIPT="$ROOT/checks/e2e/mcp_overlong_tool_server.ts"
 OVERLONG_MCP_LOG_NAME="mcp-handshake.jsonl"
 
 # Plants the server AND enables it. A project-scoped .mcp.json is INERT on its own: Claude Code
@@ -472,7 +472,7 @@ server = os.environ["SERVER"]
 (scratch / ".mcp.json").write_text(json.dumps({
     "mcpServers": {
         server: {
-            "command": "python3",
+            "command": "bun",
             "args": [os.environ["SCRIPT"]],
             # Absolute: the server is spawned with the scratch as cwd today, but the receipt the
             # gate reads must not depend on that staying true.

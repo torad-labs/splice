@@ -214,55 +214,86 @@ export async function forceStates(send, base, states) {
 // ------------------------------------------------------------------ the openers
 //
 // An overlay no capture ever opened is not a rule that CANNOT render; it is a rule nothing CLICKED.
-// Each opener is a named gesture performed on the page before measuring, and every one of them
-// REPORTS whether it actually opened anything. That report is the point: an opener that silently
-// did nothing turns "this rule is dark" into "this rule is fine" with no way to tell them apart,
-// which is the same false-absence this whole row exists to remove.
+// Each opener is a named gesture performed on the page before measuring, and each one names what
+// its success would PROVE -- a selector that exists only once the gesture worked.
 //
-// Every gesture below was read off the live pages (the affordances each address actually renders),
-// not guessed from the source.
+// THE GESTURE AND ITS PROOF ARE SEPARATE, AND THE PROOF IS ALLOWED TO WAIT. The first cut read the
+// DOM synchronously on the line after .click(), before React had re-rendered, so four openers
+// reported NEVER OPENED while their rules were being measured two hundred milliseconds later with
+// those openers' names attached. The flag printed the same words whether the gesture had missed or
+// my wait had been too short, which is law 34 exactly, and it is why `proves` is polled rather
+// than sampled. A gesture that genuinely reaches nothing still reports NEVER OPENED, and that
+// still fails the run -- an opener nobody can trust must not be read as evidence of absence.
 export const OPENERS = [
-  { name: 'base', script: 'true' },
+  { name: 'base', gesture: 'true', proves: null },
 
   // Every address but teams, logs and compaction carries the views bar; its edit key opens the
   // editor that owns .myx-views-field-label and the three .myx-views-action rules.
-  { name: 'views-edit', script: `(() => {
-      const b = document.querySelector('.myx-views-edit');
-      if (!b) return false;
-      b.click();
-      return document.querySelector('.myx-views-field, .myx-views-action') !== null;
-    })()` },
+  { name: 'views-edit', gesture: `(() => { const b = document.querySelector('.myx-views-edit'); if (!b) return false; b.click(); return true; })()`,
+    proves: '.myx-views-field, .myx-views-action, .myx-views-field-label' },
 
   // A rack row opens its detail panel: the four *-detail-name rules and the waterfall live there.
-  { name: 'detail', script: `(() => {
-      const row = document.querySelector('.myx-strip');
-      if (!row) return false;
-      row.click();
-      return true;
-    })()` },
+  //
+  // EVERY ROW IS TRIED, NOT THE FIRST. shared/ui/strip.tsx puts onClick on the .myx-strip div
+  // itself, so a synthetic click is the right gesture -- but the first strip on most addresses is a
+  // header or summary row whose `open` does nothing, and clicking only that one reported the detail
+  // panel unreachable on 20 of 26 page-themes. It is reachable; the gesture was landing on the
+  // wrong row.
+  { name: 'detail', gesture: `(async () => {
+      const proof = '.myx-fleet-detail-name, .myx-tn-detail-name, .myx-sx-detail-name, .myx-px-detail-name, .myx-wf-legend-name';
+      const rows = Array.from(document.querySelectorAll('.myx-strip')).slice(0, 12);
+      if (!rows.length) return false;
+      for (const row of rows) {
+        row.click();
+        for (let i = 0; i < 6; i++) {
+          if (document.querySelector(proof) !== null) return true;
+          await new Promise((r) => setTimeout(r, 80));
+        }
+      }
+      return false;
+    })()`,
+    proves: '.myx-fleet-detail-name, .myx-tn-detail-name, .myx-sx-detail-name, .myx-px-detail-name, .myx-wf-legend-name' },
 
-  // The palette is mounted in App.tsx for every address and opens on the world's own shortcut.
-  { name: 'palette', script: `(() => {
+  // The palette is mounted in App.tsx for every address and opens on the world's own shortcut,
+  // which it listens for on `document` (features/palette/index.tsx:40).
+  { name: 'palette', gesture: `(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); return true; })()`,
+    proves: '.myx-palette-input, .myx-palette-item, .myx-palette-empty' },
+
+  // The palette with a query NOTHING matches: the only way .myx-palette-empty can paint. Typing
+  // through the value setter plus an input event is how a React-controlled field takes a value;
+  // assigning .value alone updates the DOM and never tells React, so the list never re-filters.
+  { name: 'palette-empty', gesture: `(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
-      return document.querySelector('.myx-palette, .myx-palette-input') !== null;
-    })()` },
+      for (let i = 0; i < 20 && !document.querySelector('.myx-palette-input'); i++) await new Promise((r) => setTimeout(r, 100));
+      const box = document.querySelector('.myx-palette-input');
+      if (!box) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(box, 'zzzzz-no-such-command-zzzzz');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`,
+    proves: '.myx-palette-empty' },
 
   // compaction's reveal key opens .myx-reveal-body.
-  { name: 'reveal', script: `(() => {
-      const b = document.querySelector('.myx-reveal-btn');
-      if (!b) return false;
-      b.click();
-      return document.querySelector('.myx-reveal-body') !== null;
-    })()` },
+  { name: 'reveal', gesture: `(() => { const b = document.querySelector('.myx-reveal-btn'); if (!b) return false; b.click(); return true; })()`,
+    proves: '.myx-reveal-body' },
 
   // accounts: the head strip opens the login flow that owns the account-login sheet.
-  { name: 'account', script: `(() => {
-      const s = document.querySelector('.myx-head-auth-strip, .myx-acct-open, .myx-strip');
-      if (!s) return false;
-      s.click();
-      return document.querySelector('.myx-acct-name, .myx-acct-code, .myx-acct-btn') !== null;
-    })()` },
+  { name: 'account', gesture: `(() => { const s = document.querySelector('.myx-head-auth-strip, .myx-acct-open, .myx-strip'); if (!s) return false; s.click(); return true; })()`,
+    proves: '.myx-acct-name, .myx-acct-code, .myx-acct-btn, .myx-acct-note' },
 ];
+
+/** Poll for what an opener PROVES, so a slow re-render is never read as a gesture that missed. */
+export function provePoll(selector, budgetMs) {
+  return `(async () => {
+    const deadline = Date.now() + ${budgetMs};
+    for (;;) {
+      if (document.querySelector(${JSON.stringify(selector)}) !== null) return true;
+      if (Date.now() > deadline) return false;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  })()`;
+}
 
 export function buildTargets(rules) {
   return rules.map((rule) => {
@@ -315,11 +346,24 @@ const openerRan = new Map();    // opener -> how many page-themes it was attempt
 const openerOpened = new Map(); // opener -> how many of those it actually opened something on
 let pageFails = 0;
 
+// THE MANAGEMENT KEY IS A FIXTURE AXIS, NOT A CONSTANT. features/unlock-mgmt renders its modal
+// only when the console has NO management key -- and every instrument in this campaign seeds a
+// valid one before boot, so the three .myx-modal rules could never have rendered in any capture
+// ever taken. That is not a dead rule and not a missing fixture; it is a fixture that was always
+// seeded past. The unkeyed pass exists to reach exactly that surface.
+const SEEDS = [
+  { name: 'keyed', storage: () => ({ 'myx-mgmt-key': mgmtKey() }) },
+  { name: 'unkeyed', storage: () => ({}) },
+];
+
+for (const seed of SEEDS) {
 for (const theme of ['dark', 'light']) {
   for (const addr of addresses()) {
+    // the unkeyed pass is about one surface, and it is the same on every address: one is enough
+    if (seed.name === 'unkeyed' && addr !== 'fleet') continue;
     const url = urlFor(addr);
     try {
-      const res = await withChrome({ 'myx-mgmt-key': mgmtKey(), 'splice.theme': theme }, async (send) => {
+      const res = await withChrome({ ...seed.storage(), 'splice.theme': theme }, async (send) => {
         await send('Page.enable', {});
         await send('DOM.enable', {});
         await send('CSS.enable', {});
@@ -333,9 +377,15 @@ for (const theme of ['dark', 'light']) {
           await new Promise((r) => setTimeout(r, 2300));
           let opened = true;
           if (opener.name !== 'base') {
-            const o = await send('Runtime.evaluate', { expression: opener.script, returnByValue: true, awaitPromise: true });
-            opened = o.result.value === true;
-            await new Promise((r) => setTimeout(r, 500));
+            const g = await send('Runtime.evaluate', { expression: opener.gesture, returnByValue: true, awaitPromise: true });
+            // The gesture must find something to act on AND its proof must appear. Both, or the
+            // opener did not open: a click on a button that is not there and a click that opened
+            // nothing are different failures, and neither is evidence that a rule is dark.
+            const acted = g.result.value === true;
+            const proved = acted && opener.proves !== null
+              ? (await send('Runtime.evaluate', { expression: provePoll(opener.proves, 3000), returnByValue: true, awaitPromise: true })).result.value === true
+              : acted;
+            opened = acted && proved;
           }
           let forcedNodes = 0;
           for (const t of targets) {
@@ -359,21 +409,22 @@ for (const theme of ['dark', 'light']) {
         for (const row of pass.out) {
           if (row.ratio === undefined) continue;
           if (!reached.has(row.key)) reached.set(row.key, new Set());
-          reached.get(row.key).add(`${theme}/${addr}/${pass.opener}`);
+          reached.get(row.key).add(`${seed.name}/${theme}/${addr}/${pass.opener}`);
           const prev = best.get(row.key);
           // KEEP THE WORST. A rule that reads badly on one plane is not excused by reading well on
           // another: that is the entire D7 class, and taking the best would hide every instance.
-          if (prev === undefined || row.ratio < prev.ratio) best.set(row.key, { ...row, theme, addr, opener: pass.opener });
+          if (prev === undefined || row.ratio < prev.ratio) best.set(row.key, { ...row, seed: seed.name, theme, addr, opener: pass.opener });
         }
       }
-      hits = new Set([...reached.keys()].filter((k) => [...reached.get(k)].some((w) => w.startsWith(`${theme}/${addr}/`)))).size;
+      hits = new Set([...reached.keys()].filter((k) => [...reached.get(k)].some((w) => w.startsWith(`${seed.name}/${theme}/${addr}/`)))).size;
       const openedHere = res.filter((pa) => pa.opened && pa.opener !== 'base').map((pa) => pa.opener);
-      console.log(`ok ${theme.padEnd(5)} ${addr.padEnd(11)} ${String(hits).padStart(2)} of the 73 rendered   opened: ${openedHere.join(' ') || '(none)'}`);
+      console.log(`ok ${seed.name.padEnd(7)} ${theme.padEnd(5)} ${addr.padEnd(11)} ${String(hits).padStart(2)} of the 73 rendered   opened: ${openedHere.join(' ') || '(none)'}`);
     } catch (e) {
-      console.log(`FAIL ${theme} ${addr}: ${e.message.split('\n')[0]}`);
+      console.log(`FAIL ${seed.name} ${theme} ${addr}: ${e.message.split('\n')[0]}`);
       pageFails++;
     }
   }
+}
 }
 
 // AN OPENER THAT NEVER OPENED ANYTHING IS A BROKEN INSTRUMENT, NOT A DARK RULE. Without this the

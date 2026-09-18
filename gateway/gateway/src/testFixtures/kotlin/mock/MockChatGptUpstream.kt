@@ -36,7 +36,13 @@ const val SUMMARY_SECTION_B: String = "**Deploying the hardened fleet build**"
 // NF-01 quota429 scenario: the HTTP status a real ChatGPT quota rejection carries.
 const val RATE_LIMITED_STATUS: Int = 429
 
-class MockChatGptUpstream {
+class MockChatGptUpstream(
+    /** V4-111: the one wall-clock seam in this double. A METHOD REFERENCE to the real sleeper, not
+     *  a call to it, so the default behaviour is unchanged while the shape stays an injected port a
+     *  test can replace with virtual time — a direct call would make every paced scenario
+     *  un-drivable and put the file permanently on the kt-tests-no-wall-clock allowlist. */
+    private val pacer: (Long) -> Unit = Thread::sleep,
+) {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamAccountIds = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
@@ -184,7 +190,7 @@ class MockChatGptUpstream {
             // ADDED (named change, NF-03): sleep past a tiny totalCap BEFORE response headers —
             // the connect/headers window no stream-scoped poller ever covered. The turn must be
             // reaped by the whole-turn cap poller while this thread is still sleeping.
-            Thread.sleep(3_000)
+            pacer(3_000)
         }
         if (scenario == "quota429") {
             // ADDED (named change, NF-01): a hard 429 with a sub-ceiling Retry-After — arms the
@@ -277,7 +283,7 @@ class MockChatGptUpstream {
             """{"type":"response.output_item.done","output_index":0,""" +
                 """"item":{"type":"reasoning","id":"rs_stall","encrypted_content":"ENC-STALL"}}""",
         )
-        Thread.sleep(STALL_SLEEP_MS)
+        pacer(STALL_SLEEP_MS)
         sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"NEVER REACHES THE CLIENT"}""")
     }
 
@@ -374,7 +380,7 @@ class MockChatGptUpstream {
                 // land before the head had a stream to watch at all; and a bare SSE comment ends
                 // the round instantly as a dead-head body rather than stalling it.
                 sse(ex, """{"type":"response.created","response":{"id":"rs_idle"}}""")
-                Thread.sleep(STALL_SLEEP_MS)
+                pacer(STALL_SLEEP_MS)
             }
             "multipart" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
@@ -448,7 +454,7 @@ class MockChatGptUpstream {
             "idle" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial"}""")
-                Thread.sleep(5_000)
+                pacer(5_000)
             }
             // Models the codex reasoning phase: upstream commits 200 + headers, then emits NOTHING
             // content-bearing until released. The client must still see the turn open immediately
@@ -486,7 +492,7 @@ class MockChatGptUpstream {
                 // deliberately nothing written — a true stall, not a diagnosable auth-shaped body
             }
             "prefill" -> {
-                Thread.sleep(1_500) // silent past streamIdle — governed by firstByteTimeout
+                pacer(1_500) // silent past streamIdle — governed by firstByteTimeout
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(
                     ex,
@@ -502,7 +508,7 @@ class MockChatGptUpstream {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 while (true) {
                     sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"drip "}""")
-                    Thread.sleep(40)
+                    pacer(40)
                 }
             }
             "bigout" -> {
@@ -528,7 +534,7 @@ class MockChatGptUpstream {
                     .indexOfFirst { it == check.toList() } + 1
                 ex.responseBody.write(buf.copyOfRange(0, at)) // split INSIDE the 3-byte ✓
                 ex.responseBody.flush()
-                Thread.sleep(20)
+                pacer(20)
                 ex.responseBody.write(buf.copyOfRange(at, buf.size))
             }
             "compactish" -> {

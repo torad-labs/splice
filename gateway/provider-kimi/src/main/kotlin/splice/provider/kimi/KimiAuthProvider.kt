@@ -40,7 +40,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val LOG_TAG = "kimi-auth"
-private const val DEFAULT_CACHE_MS = 30_000L
 
 // proactive-refresh floor: never let a token get within 5 minutes of expiry.
 private const val MIN_PROACTIVE_S = 300L
@@ -50,7 +49,7 @@ private const val HARD_FLOOR_S = 60L
 
 public class KimiAuthProvider(
     private val authPath: Path,
-    private val authCacheMs: Long = DEFAULT_CACHE_MS,
+    private val authCacheMs: Long,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns the classified attempt. */
     private val refreshCall: RefreshCall<KimiRefreshedTokens>,

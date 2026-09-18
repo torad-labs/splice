@@ -2,6 +2,10 @@
 // The ground is the composited stack of ancestor background-colors, read from the live DOM,
 // not the token an ink was declared against - that substitution is what M1-35 and the E-1
 // routing both got wrong.
+// A STATIC import for the one call that happens before the driver's own dynamic `node:fs` import
+// further down (which shadows `fs`, so this one is imported by name rather than as a namespace).
+import { mkdirSync } from 'node:fs';
+
 const R = '/home/user/Documents/dev/projects/atlas/repo/.claude/worktrees/v0.4.0';
 const { mgmtKey, withChrome, show } = await import(`${R}/.dev/web-console/lib/cdp.mjs`);
 const { capturePage } = await import(`${R}/.dev/web-console/capture.mjs`);
@@ -132,19 +136,45 @@ const PROBE = `(() => {
   return JSON.stringify({rows, unparsed, ghostTexts, liveByText});
 })()`;
 
+// ------------------------------------------- THE FRAME IS AN ARGUMENT (M1-98)
+//
+// M1-47 fixed this probe at 1536x1024 and drew a conclusion in prose about the other frame:
+// blind-light.md said "the coverage ratios are scale-invariant, so they will read the same" at
+// 3840, and that sentence was written without being measured and is false by up to 15.43 points
+// (M1-47's own correction). Contrast ratios ARE very nearly scale-invariant. The SET OF PAIRS IS
+// NOT: a different frame lays out differently, so different elements render and different pairs
+// exist to be graded. The light census needs the second frame, and the honest way to get it is
+// this probe over that frame rather than a second copy of the probe - a duplicate drifts while
+// both copies keep printing good numbers, which is the lesson lib/fixtures.mjs carries in its own
+// header (three copies of one table, two silent drifts, M1-19/M1-28).
+//
+// No arguments reproduces the M1-47 run byte for byte: both themes, 1536x1024, ink-measurements.json.
+const argOf = (name, dflt) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i === -1 ? dflt : process.argv[i + 1];
+};
+const FRAME_W = Number(argOf('width', 1536));
+const FRAME_H = Number(argOf('height', 1024));
+const FRAME_TAG = argOf('tag', `${FRAME_W}x${FRAME_H}`);
+const THEMES = String(argOf('theme', 'light,dark')).split(',');
+const SETTLE = Number(argOf('settle', 6000));
+const OUT_FILE = argOf('out', `${OUT}/ink-measurements.json`);
+const SHOTS = argOf('shots', OUT);
+mkdirSync(SHOTS, { recursive: true });
+
 const all = [];
 const ghostFails = [];
 let pageFails = 0;
 let ghostChecked = 0;
-for (const theme of ['light','dark']) {
+for (const theme of THEMES) {
   for (const addr of addresses()) {
     const url = urlFor(addr);
     try {
       const rows = await withChrome({ 'myx-mgmt-key': mgmtKey(), 'splice.theme': theme }, async (send) => {
         if (theme === 'light') {
-          await capturePage(send, url, 1536, 1024, `${OUT}/${addr}-light-1536x1024.png`, 6000);
+          await capturePage(send, url, FRAME_W, FRAME_H, `${SHOTS}/${addr}-light-${FRAME_TAG}.png`, SETTLE);
         } else {
-          await show(send, url, 1536, 1024, 6000);
+          await show(send, url, FRAME_W, FRAME_H, SETTLE);
         }
         const res = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true });
         return JSON.parse(res.result.value);
@@ -159,8 +189,8 @@ for (const theme of ['light','dark']) {
   }
 }
 const fs = await import('node:fs');
-fs.writeFileSync(`${OUT}/ink-measurements.json`, JSON.stringify(all));
-console.log(`\nwrote ${all.length} measured (ink, ground) pairs`);
+fs.writeFileSync(OUT_FILE, JSON.stringify(all));
+console.log(`\nwrote ${all.length} measured (ink, ground) pairs to ${OUT_FILE} at ${FRAME_W}x${FRAME_H} (${THEMES.join('+')})`);
 if (pageFails > 0) { console.log(`REFUSE: ${pageFails} page(s) failed to render - a page that threw is not a page that passed`); process.exitCode = 1; }
 // A WALL WITH AN EMPTY DENOMINATOR IS NOT A PASS. The team board carries two ghost layers, so a
 // run that checked zero ghost nodes did not exercise the wall - it skipped it. The first cut of

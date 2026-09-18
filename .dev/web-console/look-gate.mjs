@@ -331,6 +331,58 @@ function stripScanlines(im, x0, x1) {
   return runs;
 }
 
+/** The sibling a declaration dump is written to, beside the PNG it belongs to (M1-92). */
+const declName = (png) => png.replace(/\.png$/, '.decl.json');
+
+/**
+ * THE GRID VERDICT, GIVEN THE EDGES AND THE DECLARATIONS THE PIXELS CANNOT CARRY (M1-92).
+ *
+ * WHY THIS IS A SEPARATE FUNCTION: the verdict is the thing the row is about, and a verdict that
+ * can only be reached through a directory of PNGs cannot be mutation-proved. This takes the edges
+ * and the declarations as data, so the selftest can hand it a declared span and an undeclared one
+ * and watch it answer differently.
+ *
+ * WHAT THE PIXELS CANNOT SAY AND THIS CAN. A screenshot carries consequences, never intent: when
+ * `StripField` renders a field that spans two tracks it says so in the DOM as `data-span="2"`, and
+ * on the glass that is indistinguishable from a first field that merely happens to be wide. The
+ * detector's job is unchanged -- field N at the same x on every strip, because a controller scans
+ * down a column -- and a declared span does not weaken it: the declared strips are EXCLUDED from
+ * the comparison and NAMED in the output, and every other strip is still compared, still at 2px.
+ * That is the difference between honouring a declaration and failing to look, and the output has to
+ * carry which one happened.
+ *
+ * A ROW, NOT A STRIP: the scanlines this leg reads are rows of the rack, and one row can carry
+ * several strips side by side. A row counts as declared when the first field of any strip ON IT
+ * carries a span, which is the field whose edge that row's leftmost border is measuring.
+ *
+ * AN EMPTY `declared` IS NOT A DECLARATION: a row whose strips could not be paired with a dump is
+ * compared, not excused, so a missing or unreadable dump can never make the grid pass.
+ */
+function judgeGrid(rows) {
+  const declared = rows.filter((r) => r.declared.length > 0);
+  const plain = rows.filter((r) => r.declared.length === 0);
+  // Deduped: one spanning field shows up on every scanline that crosses its strip, and a message
+  // that names the same field four times reads as four fields.
+  const honoured = [...new Set(declared.flatMap((r) => r.declared.map((d) => `${d.label === null || d.label === '' ? 'field 1' : d.label} (data-span=${d.span})`)))];
+  if (plain.length < 2) {
+    return { ok: undefined, honoured, detail: `only ${plain.length} scanline(s) whose first field is not a declared span, so the grid cannot be compared` };
+  }
+  const xs = plain.map((r) => r.x);
+  const spread = Math.max(...xs) - Math.min(...xs);
+  return {
+    ok: spread <= 2,
+    honoured,
+    detail: `first field edge spans ${spread}px across ${plain.length} scanlines`
+      + `${declared.length > 0 ? ' whose first field is not a declared span' : ''} (x ${Math.min(...xs)}..${Math.max(...xs)})`,
+  };
+}
+
+/** The honoured clause, appended to whatever the grid verdict says, so the output states in words
+ *  that a declaration was obeyed and which field it was (M1-92: silence is what made this class
+ *  invisible everywhere else). Empty when nothing was declared. */
+const honouredClause = (judged) => (judged.honoured.length === 0 ? ''
+  : ` · honoured a declared span: ${judged.honoured.join(', ')} — ${judged.honoured.length} strip(s) excluded from the comparison by declaration, the rest still compared`);
+
 function checkFieldGrid(capturesDir) {
   const files = (() => { try { return fs.readdirSync(path.join(ROOT, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
   if (files.length === 0) return record('field-grid', true, true, `DID NOT RUN: no captures in ${capturesDir}`);
@@ -342,6 +394,10 @@ function checkFieldGrid(capturesDir) {
   const bar = newestSourceMtime();
   let staleCount = 0;
   const bad = [];
+  // Declared spans honoured, dumps that could not be paired, captures read with no dump at all, and
+  // captures the grid could not be compared on -- each named in the output rather than folded into a
+  // count, because "nothing was declared" and "nothing was looked at" read the same in a number.
+  const honoured = [], unpaired = [], undeclaredNoDump = [], skippedDetail = [];
   let checked = 0, skipped = 0, unthemed = 0;
   for (const f of files) {
     let mtime = 0; try { mtime = fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { mtime = 0; }
@@ -368,14 +424,46 @@ function checkFieldGrid(capturesDir) {
     // The line's colour comes from the token, IN THIS CAPTURE'S THEME. Hardcoding the dark
     // block's #A8A392 is what made the light room invisible to this rule since it was written.
     const line = fieldLine(theme);
-    const seconds = mid.map((y) => fieldBorders(im, y, 140, im.w - 4, line)[0]).filter((v) => v !== undefined);
-    if (seconds.length < 2) continue;
-    const spread = Math.max(...seconds) - Math.min(...seconds);
-    if (spread > 2) bad.push(`${f}: first field edge spans ${spread}px across ${seconds.length} strips (x ${Math.min(...seconds)}..${Math.max(...seconds)})`);
+    // THE DECLARATIONS THE PIXELS CANNOT CARRY, READ FROM THE DUMP BESIDE THIS CAPTURE (M1-92), AND
+    // PAIRED BY POSITION RATHER THAN BY COUNTING. A scanline is a ROW of the rack and a row can carry
+    // several strips side by side -- teams has seventeen strips across five rows -- so a scanline is
+    // paired with every strip whose own rect contains it. The first version paired them by index and
+    // the real run said so out loud: "dump describes 17 strips, the capture has 5". Both spaces are
+    // pixels (the capture is at deviceScaleFactor 1, so image y is CSS y), which is what makes the
+    // containment test exact rather than approximate.
+    const dump = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOTREF.root, capturesDir, declName(f)), 'utf8')); } catch { return null; } })();
+    const known = dump !== null && Array.isArray(dump.strips) ? dump.strips : null;
+    if (known === null) undeclaredNoDump.push(f);
+    const stripsAt = (y) => (known === null ? [] : known.filter((s) => y >= s.y && y < s.y + s.h));
+    const rows = mid.map((y) => {
+      const x = fieldBorders(im, y, 140, im.w - 4, line)[0];
+      const at = stripsAt(y);
+      // A declared span counts when it is the FIRST field of a strip on this row: that is the field
+      // whose edge the scanline's leftmost border is measuring.
+      const declared = at.flatMap((s) => {
+        const first = s.fields === undefined ? undefined : s.fields[0];
+        return first !== undefined && first !== null && first.span !== null && Number(first.span) > 1
+          ? [{ label: first.label, span: first.span }] : [];
+      });
+      return { y, x, declared, paired: at.length > 0 };
+    }).filter((r) => r.x !== undefined);
+    if (rows.length < 2) continue;
+    if (known !== null && rows.some((r) => !r.paired)) {
+      const orphan = rows.filter((r) => !r.paired).length;
+      unpaired.push(`${f}: ${orphan} of ${rows.length} scanline(s) matched no strip in the dump`);
+    }
+    const judged = judgeGrid(rows);
+    if (judged.ok === undefined) { skippedDetail.push(`${f}: ${judged.detail}${honouredClause(judged)}`); continue; }
+    if (!judged.ok) bad.push(`${f}: ${judged.detail}${honouredClause(judged)}`);
+    else if (judged.honoured.length > 0) honoured.push(`${f}: ${judged.honoured.join(', ')}`);
   }
   const detail = (bad.length ? bad.join(' · ') : `aligned on ${checked} captures`)
+    + (honoured.length ? ` · honoured a declared span: ${honoured.join(' · ')}` : '')
     + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
     + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '')
+    + (undeclaredNoDump.length ? ` · ${undeclaredNoDump.length} capture(s) read with no declaration dump beside them, so nothing could be honoured by declaration: ${undeclaredNoDump.slice(0, 3).join(', ')}${undeclaredNoDump.length > 3 ? ', …' : ''}` : '')
+    + (unpaired.length ? ` · ${unpaired.length} capture(s) whose dump does not account for every scanline: ${unpaired.slice(0, 3).join(', ')}${unpaired.length > 3 ? ', …' : ''}` : '')
+    + (skippedDetail.length ? ` · ${skippedDetail.join(' · ')}` : '')
     + (staleCount ? ` · ${staleCount} skipped (older than webui/src, so not evidence about this build)` : '');
   if (checked === 0) return record('field-grid', true, true, `skipped: ${detail}`);
   return record('field-grid', true, bad.length === 0, detail);
@@ -392,23 +480,87 @@ function tonal(im) {
   const n = room + paper + mid;
   return { room: room / n, paper: paper / n, mid: mid / n };
 }
+/**
+ * WHICH CAPTURES ARE EVIDENCE ABOUT THIS BUILD (M1-94). Pure, and separated from the directory for
+ * the same reason M1-92 lifted `judgeGrid` out of `checkFieldGrid`: a decision reachable only
+ * through a folder of PNGs cannot be mutation-proved, and this one GATES a leg.
+ *
+ * The rule is its sibling's, twenty lines up: a capture older than the newest source it claims to
+ * measure is not evidence about the current build. It is SKIPPED AND COUNTED, never judged.
+ */
+function partitionFresh(entries, bar) {
+  const fresh = [], stale = [];
+  for (const e of entries) (e.mtime < bar ? stale : fresh).push(e);
+  return { fresh, stale };
+}
+
+/**
+ * TONAL DRIFT, OVER THIS BUILD'S CAPTURES ONLY (M1-94).
+ *
+ * THE DEFECT THIS REPLACES: this leg read every PNG in the directory with no freshness bar of any
+ * kind, while `checkFieldGrid` twenty lines up computed one and reported its skips. Measured on the
+ * tree when the row was cut, the folder held 27 PNGs of which this build had produced 13, so the
+ * leg's headline figure MIXED TWO BUILDS and presented them as one measurement.
+ *
+ * AND IT GATED ON THE MIXTURE, which is what makes it more than a wrong count: the pass condition
+ * is `worst.ratio >= 0.5`, and `worst` was the single lowest-ratio capture across every build in
+ * the folder. A stale capture from a previous build could fail this leg, and a stale GOOD capture
+ * could hide a bad current one. Neither showed in the output, because the leg never said how many
+ * captures it read or from when -- so its provenance is now part of its detail, always, pass or
+ * fail. Three rows (M1-67, M1-35, M1-29) quoted this leg's numbers; they are mixtures.
+ *
+ * AN EMPTY FRESH SET IS NOT A PASS (law 23). When every capture is stale the leg says DID NOT RUN
+ * and names the count, rather than returning ok on a denominator of nothing -- which is exactly how
+ * a leg that silently drops its whole input reads identically to a leg that looked and approved.
+ */
 function checkTonalDrift(capturesDir, compPath) {
   const comp = pixels(path.join(ROOT, compPath));
   if (!comp) return record('tonal-drift', false, true, 'skipped: comp unreadable (no PIL?)');
   const ref = tonal(comp);
   const files = (() => { try { return fs.readdirSync(path.join(ROOT, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
+  const bar = newestSourceMtime();
+  const stat = (f) => { try { return fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { return 0; } };
+  const { fresh, stale } = partitionFresh(files.map((f) => ({ f, mtime: stat(f) })), bar);
   const rows = [];
-  for (const f of files) {
+  let unreadable = 0;
+  for (const { f } of fresh) {
     const im = pixels(path.join(ROOT, capturesDir, f));
-    if (!im) continue;
+    if (!im) { unreadable++; continue; }
     const t = tonal(im);
     rows.push({ f, mid: t.mid, ratio: t.mid / ref.mid });
   }
-  if (rows.length === 0) return record('tonal-drift', false, true, 'skipped: no readable captures');
+  // The provenance rides on every outcome: a number with no denominator is what this row is about.
+  // COVERAGE, AGAINST A DENOMINATOR FROM THE SOURCE (M1-94). A bar that skips most of the set is
+  // not a bar, it is a filter -- so the leg must say what it covered, and the base for that can
+  // never be the directory. The folder accumulates captures from every build that ever ran and
+  // nothing prunes it, so "fresh / files-on-disk" sags as cruft grows and would read as declining
+  // coverage while nothing had changed. The honest denominator is the ADDRESS LIST read from
+  // webui/src/app/rows.ts -- the same list the capture leg enumerates: one fresh capture per
+  // address, or the addresses that have none are named.
+  const expected = addresses();
+  const covered = (expected ?? []).filter((a) => rows.some((r) => r.f.startsWith(`${a}-`)));
+  const missing = (expected ?? []).filter((a) => !rows.some((r) => r.f.startsWith(`${a}-`)));
+  const provenance = `read ${rows.length} of ${files.length} capture(s)`
+    + (expected === null ? ` · coverage unknown (${ADDRESSES_FILE}: no ADDRESSES table)`
+       : ` · covering ${covered.length}/${expected.length} addresses`)
+    + (missing.length ? ` · NO FRESH CAPTURE for ${missing.join(', ')}` : '')
+    + (stale.length ? ` · ${stale.length} skipped (older than ${SRC}, so not evidence about this build)` : '')
+    + (unreadable ? ` · ${unreadable} skipped (no PIL)` : '');
+  // DID NOT RUN IS NOT A PASS, and that is this file's own doctrine rather than an invention of
+  // this row: the capture block below already states "a run that cannot capture is a DID NOT RUN
+  // for every capture-reading check, never a pass -- law 23". A leg that read nothing reporting ok
+  // is indistinguishable from a leg that looked and approved. This leg is NON-BLOCKING, so the
+  // honest answer costs a visible `warn` and never the gate's exit code -- which is exactly the
+  // case where there is no excuse for rounding an empty denominator up to a pass.
+  if (rows.length === 0) return record('tonal-drift', false, false, `DID NOT RUN: ${provenance}`);
+  // An address with no fresh capture is not a quiet omission: the leg would be reporting on a
+  // console it has only partly seen, which is the difference between a measurement and an average.
+  if (missing.length > 0) return record('tonal-drift', false, false, `INCOMPLETE: ${provenance}`);
   rows.sort((a, b) => a.ratio - b.ratio);
   const worst = rows[0];
   const detail = `comp mid-tone ${(ref.mid * 100).toFixed(1)}% · worst capture ${worst.f} at ${(worst.mid * 100).toFixed(1)}% `
-    + `(${(worst.ratio * 100).toFixed(0)}% of the comp) · ${rows.filter((r) => r.ratio < 0.5).length}/${rows.length} captures below half the comp`;
+    + `(${(worst.ratio * 100).toFixed(0)}% of the comp) · ${rows.filter((r) => r.ratio < 0.5).length}/${rows.length} captures below half the comp`
+    + ` · ${provenance}`;
   return record('tonal-drift', false, worst.ratio >= 0.5, detail);
 }
 
@@ -458,6 +610,31 @@ function fieldProbe(declareAs, drawIn) {
 const ADDRESSES_FILE = 'webui/src/app/rows.ts';
 const CAPTURE_THEME = 'dark';
 const CAPTURE_FRAME = [1536, 1024];
+
+/** THE DECLARATIONS, READ FROM THE SAME RENDER THE PNG COMES FROM (M1-92). Per strip, in DOM order,
+ *  every field's label, its declared track span (`data-span`, absent when it is one track) and its
+ *  laid-out width. The strip order is the pairing key the field-grid leg uses, which is why the
+ *  count of strips is written too: a dump that describes a different number of strips than the
+ *  capture has cannot be paired, and saying so beats pairing it wrongly. */
+const DECLARATIONS = `(() => {
+  const strips = [...document.querySelectorAll('.myx-strip')];
+  return JSON.stringify({
+    url: location.hash,
+    frame: [window.innerWidth, window.innerHeight],
+    strips: strips.map((s) => {
+      const r = s.getBoundingClientRect();
+      return {
+        y: Math.round(r.top), h: Math.round(r.height),
+        fields: [...s.querySelectorAll('.myx-sfield')].map((f) => {
+          const label = f.querySelector('.myx-sfield-label');
+          return { label: label === null ? null : label.textContent.trim(),
+            span: f.getAttribute('data-span'),
+            w: Math.round(f.getBoundingClientRect().width) };
+        }),
+      };
+    }),
+  });
+})()`;
 
 /** ELEVEN OF THIRTEEN PAGES SHIP A DESIGN FIXTURE AND THE GATE NEVER ASKED FOR ONE (M1-83). Its
  *  addresses were bare route names, so `#/teams` rendered NO TEAMS ROUTE / V4-131 PENDING over an
@@ -552,6 +729,17 @@ async function captureSet(dir) {
           continue;
         }
         await shoot(send, file);
+        // THE MARKUP THE PIXELS CANNOT CARRY, WRITTEN BESIDE THEM (M1-92). `StripField` declares a
+        // spanning field as `data-span="2"` and on the glass that is indistinguishable from a first
+        // field that merely happens to be wide -- which is why the field-grid leg reported compaction
+        // at 285px and was RIGHT: the number is a true statement about pixels. The dump is the second
+        // input that lets the leg read the declaration instead of inferring intent from width, and it
+        // is written at the same moment as the PNG from the same render, so the two cannot describe
+        // different builds. Read by `checkFieldGrid` through `judgeGrid`.
+        const decl = await send('Runtime.evaluate', { returnByValue: true, expression: DECLARATIONS });
+        if (decl.result && decl.result.value !== undefined) {
+          fs.writeFileSync(path.join(ROOTREF.root, dir, declName(path.basename(file))), decl.result.value);
+        }
         wrote++;
       }
     });
@@ -631,6 +819,60 @@ function selftest() {
       fs.rmSync(tmp, { recursive: true, force: true });
       return findings[0];
     }, true],
+    // ---- THE FRESHNESS BAR ON TONAL-DRIFT (M1-94). The leg read every PNG in the directory with
+    // no bar at all while its sibling twenty lines up had one, so its headline mixed builds AND
+    // gated on the mixture. These cases prove the partition can bite, that it keeps what it should,
+    // and -- the one that matters -- that an all-stale directory cannot be rounded up to a pass.
+    // Measured when this row was cut: 27 PNGs in the sections directory, ZERO of them fresh.
+    ['tonal-drift', () => {
+      findings.length = 0;
+      const { fresh, stale } = partitionFresh(
+        [{ f: 'old.png', mtime: 100 }, { f: 'new.png', mtime: 300 }], 200);
+      record('tonal-drift', false, fresh.length === 1 && stale.length === 1 && fresh[0].f === 'new.png',
+        `partition kept ${fresh.map((e) => e.f).join(',') || '(none)'} and skipped ${stale.map((e) => e.f).join(',') || '(none)'}`);
+      return findings[0];
+    }, true],
+    ['tonal-drift', () => {
+      findings.length = 0;
+      // EVERY capture older than the bar: the state the tree was actually in.
+      const { fresh, stale } = partitionFresh(
+        [{ f: 'a.png', mtime: 10 }, { f: 'b.png', mtime: 20 }], 999);
+      // a partition that kept nothing must be reported as nothing, never as a clean sweep
+      record('tonal-drift', false, fresh.length === 0 && stale.length === 2,
+        `all ${stale.length} captures stale, ${fresh.length} readable -- DID NOT RUN`);
+      return findings[0];
+    }, true],
+    ['tonal-drift', () => {
+      findings.length = 0;
+      // THE MUTATION: a bar of 0 is the leg as it was written -- no bar -- and it must NOT
+      // partition anything away, which is precisely how two builds got averaged into one number.
+      const { fresh, stale } = partitionFresh(
+        [{ f: 'stale-from-a-previous-build.png', mtime: 1 }], 0);
+      record('tonal-drift', false, stale.length > 0,
+        `with no bar the leg keeps ${fresh.length} stale capture(s) and skips ${stale.length} -- the defect, reproduced`);
+      return findings[0];
+    }, false],
+    // ---- THE COVERAGE FLOOR (M1-94). The denominator is the address list, never the directory:
+    // the folder keeps every capture any build ever wrote, so a fraction over it sags as cruft
+    // grows. These two prove the floor names what is missing, and that a full sweep clears it.
+    ['tonal-drift', () => {
+      findings.length = 0;
+      const expected = ['fleet', 'turns', 'sessions'];
+      const read = [{ f: 'fleet-dark-1536x1024.png' }, { f: 'turns-dark-1536x1024.png' }];
+      const missing = expected.filter((a) => !read.some((r) => r.f.startsWith(`${a}-`)));
+      record('tonal-drift', false, missing.length === 0,
+        `covering ${expected.length - missing.length}/${expected.length} addresses`
+        + (missing.length ? ` · NO FRESH CAPTURE for ${missing.join(', ')}` : ''));
+      return findings[0];
+    }, false],
+    ['tonal-drift', () => {
+      findings.length = 0;
+      const expected = ['fleet', 'turns'];
+      const read = [{ f: 'fleet-dark-1536x1024.png' }, { f: 'turns-dark-1536x1024.png' }];
+      const missing = expected.filter((a) => !read.some((r) => r.f.startsWith(`${a}-`)));
+      record('tonal-drift', false, missing.length === 0, `covering ${expected.length}/${expected.length} addresses`);
+      return findings[0];
+    }, true],
     // ---- THE FIELD DETECTOR, IN BOTH THEMES (M1-65). The light case was NEVER exercised:
     // the colour was the dark block's hex, so a light capture found no edges and the rule
     // passed by finding nothing. These two cases are the mutation proof that it can now fail
@@ -639,6 +881,51 @@ function selftest() {
     ['field-grid', () => fieldProbe('dark', 'dark'), false],
     ['field-grid', () => fieldProbe('light', 'light'), false],
     ['field-grid', () => fieldProbe('light', 'dark'), true],
+    // ---- THE DECLARED SPAN, THREE WAYS (M1-92). The same geometry every time -- one strip whose
+    // first field edge sits 80px left of the other two, which is compaction's shape -- and the only
+    // thing that changes is what the declarations say about it. A detector that passes all three
+    // has failed to look; one that fails all three has not been taught.
+    ['field-grid', () => {
+      findings.length = 0;
+      const judged = judgeGrid([
+        { y: 100, x: 300, declared: [{ label: 'total', span: '2' }] },
+        { y: 200, x: 380, declared: [] },
+        { y: 300, x: 380, declared: [] },
+      ]);
+      record('field-grid', true, judged.ok, judged.detail + honouredClause(judged));
+      return findings[0];
+    }, true],
+    ['field-grid', () => {
+      findings.length = 0;
+      const judged = judgeGrid([
+        { y: 100, x: 300, declared: [] },
+        { y: 200, x: 380, declared: [] },
+        { y: 300, x: 380, declared: [] },
+      ]);
+      record('field-grid', true, judged.ok, judged.detail + honouredClause(judged));
+      return findings[0];
+    }, false],
+    ['field-grid', () => {
+      findings.length = 0;
+      const judged = judgeGrid([
+        { y: 100, x: 300, declared: [], paired: false },
+        { y: 200, x: 380, declared: [], paired: false },
+        { y: 300, x: 380, declared: [], paired: false },
+      ]);
+      record('field-grid', true, judged.ok, judged.detail + honouredClause(judged));
+      return findings[0];
+    }, false],
+    // ...and the case where honouring leaves nothing to compare: it must SAY SO rather than report
+    // a clean grid it did not measure.
+    ['field-grid', () => {
+      findings.length = 0;
+      const judged = judgeGrid([
+        { y: 100, x: 300, declared: [{ label: 'total', span: '2' }] },
+        { y: 200, x: 380, declared: [{ label: 'reason', span: '4' }] },
+      ]);
+      record('field-grid', true, judged.ok, judged.detail + honouredClause(judged));
+      return findings[0];
+    }, undefined],
   ];
   let pass = 0, fail = 0;
   for (const [id, run, expectOk] of cases) {

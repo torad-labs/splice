@@ -10,8 +10,7 @@
 // about to un-declare before it happens.
 import { useState } from 'react';
 import { ConfirmBtn, FieldBox } from '@shared/ui';
-import { TOPOLOGY_PROVENANCE } from '@entities/topology';
-import { EMPTY_DRAFT, headRows, providerKeys, validateNewHead, withHeadField, withNewHead, withoutHead } from './model';
+import { EMPTY_DRAFT, TOPOLOGY_PROVENANCE, headRows, providerKeys, validateNewHead, withHeadField, withNewHead, withoutHead } from './model';
 import type { HeadDraft, HeadFinding } from './model';
 import { S } from './strings';
 import './head-edit.css';
@@ -29,7 +28,7 @@ const FIELDS: ReadonlyArray<{ field: HeadField; label: string }> = [
 
 // The model is re-exported here because a slice's public API is its barrel and a deep import of
 // `@features/head-edit/model` is a lint error: the page needs the same readings the form makes.
-export { EMPTY_DRAFT, headRows, providerKeys, validateNewHead, withoutHead, withHeadField, withNewHead } from './model';
+export { EMPTY_DRAFT, TOPOLOGY_PROVENANCE, headRows, providerKeys, validateNewHead, withoutHead, withHeadField, withNewHead } from './model';
 export type { HeadDraft, HeadFinding, HeadRow } from './model';
 
 export function HeadEditRow({ topology, row, busy, onChange }: {

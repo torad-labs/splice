@@ -9,6 +9,17 @@
 // The head key IS the topology key (`[heads.<key>]`), and the daemon resolves a head by that key
 // or by its wrapper command (`Topology.resolveHeadKeys`), so the key is the one field that cannot
 // be edited in place — renaming it would silently orphan every session bound to the old name.
+import type { Provenance } from '@shared/ui';
+
+/**
+ * What every topology form field prints as its provenance.
+ *
+ * `splice.toml` is the name that says where the value actually comes from. It replaces the
+ * `defaults table` this used to borrow: that name belongs to the `[defaults]` layer of the runtime
+ * config, and a `[heads.<key>]` field read out of the topology file is not that. Defined here, in
+ * the feature that owns the topology forms, so the page and the feature cannot drift.
+ */
+export const TOPOLOGY_PROVENANCE: Provenance = 'splice.toml';
 
 export interface HeadRow {
   key: string;

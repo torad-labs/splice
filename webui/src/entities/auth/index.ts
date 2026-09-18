@@ -1,4 +1,25 @@
-import { authStore } from './model/store';
+import { authActionStore, authStore } from './model/store';
 
-export { fetchAuth, refreshAuth, startAuthPolling } from './api';
+export {
+  fetchAuth,
+  fetchLoginStatus,
+  refreshAuth,
+  relabelAccount,
+  removeAccount,
+  startAuthPolling,
+  startLogin,
+  switchAccount,
+} from './api';
+export { LOGIN_FLOWS, LOGIN_STATES, PENDING_AUTH_WRITES } from './model/types';
+export type {
+  AccountMutationPayload,
+  AuthActionOutcome,
+  AuthActionState,
+  LoginFlow,
+  LoginStartPayload,
+  LoginState,
+  LoginStatusPayload,
+  SwitchPayload,
+} from './model/types';
 export const useAuth = authStore.use;
+export const useAuthAction = authActionStore.use;

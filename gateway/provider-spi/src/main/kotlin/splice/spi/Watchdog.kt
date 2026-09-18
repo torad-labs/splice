@@ -29,10 +29,12 @@
 // verdict named the stall (gate run 33575037270).
 package splice.spi
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -53,16 +55,56 @@ public sealed class WatchdogFired {
     public data class TotalCap(val elapsedMs: Long) : WatchdogFired()
 }
 
-/** The idle poller found the round past its tier and did NOT reap it, because the round's socket
- *  was still being pinged by the server (2026-09-06). Recorded once per turn, at the first such
- *  poll, so the turn line can say that the silence was judged and held rather than never noticed:
- *  [idleMs] and [limitMs] are the numbers the poller compared, [pingAgoMs] the liveness that held
- *  it, [sawClientFrame] the tier. */
+/** What proved the round's path alive at the moment a poll held it, because the two transports
+ *  prove it with different evidence and a line that named only one of them would be false on the
+ *  other. [SERVER_PING] is the WebSocket backend's own heartbeat — the ChatGPT backend pings its
+ *  socket every ~20 s whether or not the model has spoken (InboxListener.onPing, probed live), so
+ *  for that transport "last ping" is a real, dated event. [OPEN_CONNECTION] is the SSE body: it has
+ *  no heartbeat of its own, so the only evidence available is that the upstream connection is still
+ *  open and has not errored — which the transport's TCP keepalive turns from an assumption into a
+ *  bounded claim, since a peer that stops answering probes has its socket error out within about a
+ *  minute. Naming WHICH evidence held a round is what keeps the turn line from reporting a ping on
+ *  a transport that has none (V4-125). */
+public enum class PathEvidence { SERVER_PING, OPEN_CONNECTION }
+
+/**
+ * V4-125 fallback: the OUT-OF-BAND liveness question, asked when the socket itself cannot answer one.
+ *
+ * Why it is needed at all, given [PathEvidence.OPEN_CONNECTION]: a half-open TCP connection reads
+ * exactly like an idle one, so "the body channel is still open" is a claim about what the kernel has
+ * told us, not about whether anyone is listening. The preferred answer is TCP keepalive, which makes
+ * the kernel find out and error the socket — but that needs a socket-level seam the JDK engine does
+ * not expose (JDK-8338681), and the engine that does expose one could not be resolved offline. So the
+ * question is asked out of band instead: is this provider reachable from here, right now?
+ *
+ * WHAT IT PROVES AND WHAT IT DOES NOT, because the difference decides how a false answer should be
+ * treated: a probe proves the PATH, never THIS call. A refusal is real evidence that the round cannot
+ * succeed — every connection to that provider is failing, so no amount of waiting will produce a
+ * token — while a success says nothing about the one connection the round is parked on. Treating the
+ * two asymmetrically is deliberate: a probe that cannot be run at all (an exception, a timeout in the
+ * probe itself) is INCONCLUSIVE and must not reap anything, or the probe becomes a new way for a
+ * healthy turn to die. Only a definite refusal ends a round.
+ */
+public fun interface ProviderProbe {
+    public suspend fun reachable(): Boolean
+}
+
+/** The idle poller found the round past its tier and did NOT reap it, because the round's path was
+ *  still provably alive (2026-09-06). Recorded once per turn, at the first such poll, so the turn
+ *  line can say that the silence was judged and held rather than never noticed: [idleMs] and
+ *  [limitMs] are the numbers the poller compared, [pingAgoMs] the age of the liveness that held it,
+ *  [sawClientFrame] the tier, and [evidence] the KIND of that liveness.
+ *
+ *  [pingAgoMs] keeps its name for the WebSocket path, where it dates a real server ping, and reads
+ *  as "the liveness reading the pulse returned" on both — [evidence] is what says which. */
 public data class WatchdogHeld(
     val idleMs: Long,
     val limitMs: Long,
     val pingAgoMs: Long,
     val sawClientFrame: Boolean,
+    /** Defaulted to [PathEvidence.SERVER_PING] so every pre-V4-125 construction site — the WS path,
+     *  the tests that pin the WS hold — keeps its exact meaning without being re-argued. */
+    val evidence: PathEvidence = PathEvidence.SERVER_PING,
 )
 
 public class TurnWatchdog(
@@ -75,6 +117,11 @@ public class TurnWatchdog(
     private val ticker: Ticker = ProcessTicker(),
     /** Where the one "held on a live path" line goes; the head tags it. No-op by default. */
     private val log: LogSink = LogSink {},
+    /** Where an out-of-band [ProviderProbe] runs (V4-125). A SEAM rather than `Dispatchers.IO` at the
+     *  call site: the tree injects its dispatchers, and a test that wants to prove the poller is not
+     *  blocked by a slow probe needs to replace it. Defaulted so every existing construction site —
+     *  production and the whole idle-tier test family — is untouched. */
+    private val probeDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
 ) {
     private val firedRef = AtomicReference<WatchdogFired?>(null)
     private val heldRef = AtomicReference<WatchdogHeld?>(null)
@@ -138,7 +185,17 @@ public class TurnWatchdog(
      * server ping 5-20 s old on every close line, and each re-POSTed cold from the client; the
      * model's own answers on that head take 300-750 s of silence before the first delta. Idle is a
      * stall detector, not a budget (operator, DR-7): a held round is still walled by
-     * [launchTotalCap]. The SSE path passes no pulse and judges exactly as before.
+     * [launchTotalCap].
+     *
+     * V4-125 — EVERY TRANSPORT PASSES A PULSE NOW, and this paragraph used to end by saying the SSE
+     * path passed none and judged exactly as before. That was the defect: with no pulse the default
+     * reading is [NEVER_PINGED_MS], so every SSE round past its tier was reaped by construction, and
+     * the idle tier was a verdict on a transport that had no way to answer it. An SSE body carries no
+     * heartbeat, so its evidence is [PathEvidence.OPEN_CONNECTION] — the connection is still open and
+     * has not errored — which the transport's TCP keepalive makes a bounded claim rather than an
+     * assumption: a peer that stops answering probes has its socket error out in about a minute, and
+     * that read error is what ends the round (as a tear the re-anchor machinery already owns), never
+     * this tier. The tier asks; the path answers; only a path that cannot answer is reaped.
      */
     public fun launchIn(
         scope: CoroutineScope,
@@ -146,6 +203,16 @@ public class TurnWatchdog(
         target: Job,
         clientFrame: ClientFrameEmitted,
         pathPulse: WsPathPulse = WsPathPulse { NEVER_PINGED_MS },
+        /** V4-125: WHICH evidence [pathPulse] is reporting, so a hold can be logged and recorded
+         *  without claiming a server ping on a transport that has none. Defaults to
+         *  [PathEvidence.SERVER_PING] because that is what the WebSocket path passes and what every
+         *  caller meant before this parameter existed. */
+        evidence: PathEvidence = PathEvidence.SERVER_PING,
+        /** V4-125 fallback: asked ONLY when the pulse says the path is alive, and only for a tier that
+         *  is a verdict rather than a heal. It must AGREE before the round is held, so a probe that
+         *  refuses ends the round and a probe that is absent leaves the old behaviour untouched —
+         *  which is what the WebSocket path, whose pings are real evidence, keeps. */
+        probe: ProviderProbe? = null,
     ): Job =
         scope.launch {
             while (isActive) {
@@ -168,9 +235,21 @@ public class TurnWatchdog(
                 // fold loop open the next — spending past the cap under a name that means "stop".
                 // One breach kind per poller, each cancelling the scope it actually owns.
                 if (idle >= idleLimit) {
+                    // V4-125: THE STALL TIER IS A HEAL, NOT A VERDICT, so the path pulse must NOT
+                    // gate it. A breach of [WatchdogBudget.stallReanchor] means "cancel this round
+                    // and resume it from the salvage" — a repair the client never sees — so it is
+                    // asked and answered without reference to whether the socket is alive. Letting
+                    // the pulse hold here would silently disable V4-116 on every transport that
+                    // reports a live path, which is precisely the regression this guard exists to
+                    // prevent (three MidStreamTearContinuesTest cases caught it on the SSE path).
+                    // [stallReanchor] is INFINITE when a head has not armed it, and then
+                    // min(streamIdle, INFINITE) is streamIdle, so this reads false and the tier that
+                    // fired is an ordinary idle one that the pulse does judge.
+                    val stallTier = seen &&
+                        budget.stallReanchor.inWholeMilliseconds <= budget.streamIdle.inWholeMilliseconds
                     val pingAgo = pathPulse.lastPingAgoMs()
-                    if (pingAgo <= PATH_PING_GRACE_MS) {
-                        hold(idle, idleLimit, pingAgo, seen)
+                    if (holdOnLivePath(stallTier, pingAgo, probe)) {
+                        hold(idle, idleLimit, pingAgo, seen, evidence)
                         continue
                     }
                     firedRef.compareAndSet(null, WatchdogFired.Idle(idle, seen, idleLimit))
@@ -180,9 +259,55 @@ public class TurnWatchdog(
             }
         }
 
+    /**
+     * V4-125: should this breach HOLD the round rather than reap it?
+     *
+     * Three questions in order, and each one is a reason to stop asking: the stall tier never holds
+     * (it is a heal, not a verdict); a path whose socket reading is already stale is not alive; and
+     * the out-of-band probe must agree before the wait is extended.
+     *
+     * THE PROBE IS ASKED ONLY WHERE ITS ANSWER CAN CHANGE THE OUTCOME. It costs a real connection,
+     * and on the stall tier it cannot matter, so asking there would buy nothing and spend a connect
+     * on every poll. That is not theoretical: the first cut asked it unconditionally and two
+     * MidStreamTearContinuesTest arms went red, because the blocked poller perturbed the timing
+     * those V4-116 arms measure.
+     */
+    private suspend fun holdOnLivePath(stallTier: Boolean, pingAgoMs: Long, probe: ProviderProbe?): Boolean {
+        if (stallTier) return false
+        if (pingAgoMs > PATH_PING_GRACE_MS) return false
+        return probeAgrees(probe)
+    }
+
+    /**
+     * V4-125: does the out-of-band probe agree that the path is alive?
+     *
+     * A probe that is ABSENT agrees, which is what keeps the WebSocket path — whose server pings are
+     * real, dated evidence — byte-for-byte as it was. A probe that is present is asked, and the ONE
+     * failure mode that must not reap a round is the probe failing to run: a DNS hiccup, a timeout in
+     * the probe itself, a provider that rate-limits the probe but not the stream. Those are
+     * INCONCLUSIVE, not evidence of death, so they read as agreement. Only a definite refusal — the
+     * probe ran and the provider said no — ends the round, because only then is it true that no
+     * amount of waiting produces a token.
+     */
+    private suspend fun probeAgrees(probe: ProviderProbe?): Boolean {
+        if (probe == null) return true
+        // No catch here ON PURPOSE, and the reason is a pair of walls pulling opposite ways: the
+        // cancellation rule wants a rethrow inside a broad catch, and detekt refuses both the broad
+        // catch and the instanceof that would satisfy it. The way out is to not need one — by
+        // contract [ProviderProbe] ANSWERS (true when reachable OR when it could not tell), and the
+        // production probe translates its own failures into that answer where the specific exception
+        // types are known. A probe that breaks its side of the contract takes the poller down loudly
+        // rather than being swallowed here, and an exception that is NOT a probe failure — the
+        // cancellation that stops this poller — propagates for free, which is the whole point.
+        //
+        // Off the poller's own dispatcher: a probe is a socket connect with a timeout, and one that
+        // BLOCKS the poller delays every other sample the watchdog owes the round.
+        return withContext(probeDispatcher) { probe.reachable() }
+    }
+
     /** Record the hold once and say so once; every later poll that holds is the same fact. */
-    private fun hold(idleMs: Long, limitMs: Long, pingAgoMs: Long, seen: Boolean) {
-        if (!heldRef.compareAndSet(null, WatchdogHeld(idleMs, limitMs, pingAgoMs, seen))) return
+    private fun hold(idleMs: Long, limitMs: Long, pingAgoMs: Long, seen: Boolean, evidence: PathEvidence) {
+        if (!heldRef.compareAndSet(null, WatchdogHeld(idleMs, limitMs, pingAgoMs, seen, evidence))) return
         // The tier is NAMED, not assumed, for the reason the file header gives about the pre-output
         // cap: a mid-output hold on the armed stall tier is a different machine from one on
         // streamIdle, and a line that called a 20 s tier "mid-output" would hide the very knob an
@@ -193,9 +318,18 @@ public class TurnWatchdog(
             limitMs < budget.streamIdle.inWholeMilliseconds -> "mid-output stall re-anchor"
             else -> MID_OUTPUT_TIER
         }
+        // The EVIDENCE is named, not assumed, for the same reason the tier above is: the two
+        // transports prove liveness differently, and the line that said "last server ping" for both
+        // reported a heartbeat the SSE path does not have (V4-125). The SSE arm deliberately prints
+        // NO age: the reading it holds on is "still open", which is not a dated event, and inventing
+        // a number for it would be the same false precision in a new place.
+        val proof = when (evidence) {
+            PathEvidence.SERVER_PING -> "last server ping ${pingAgoMs / MS_PER_S}s ago"
+            PathEvidence.OPEN_CONNECTION -> "upstream connection open, no read error"
+        }
         log(
             "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
-                "(last server ping ${pingAgoMs / MS_PER_S}s ago) — holding the round, the whole-turn cap " +
+                "($proof) — holding the round, the whole-turn cap " +
                 "(${budget.totalCap.inWholeSeconds}s) is its wall\n",
         )
     }

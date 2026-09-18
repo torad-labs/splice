@@ -1,7 +1,0 @@
-# LAW: concept #945 — this manifest IS the memory; access ONLY via .dev/campaigns/manifest.py
-# LAW [2026-07-31]: PROVENANCE — born from the live WS spike (scratchpad ws_probe.py, receipt
-# LAW [2026-07-31]: NEVER-BELOW-STATUS-QUO — the WS path is an OVERLAY. Any failure at any stage
-# LAW [2026-07-31]: BAIL-CLOSED DELTA — the incremental send fires ONLY when the suffix beyond the
-# LAW [2026-07-31]: DEFAULT OFF — ships behind [providers.*.quirks] websocket = true (nullable
-# LAW [2026-07-31]: NO NEW DEPENDENCIES — java.net.http.WebSocket (JDK 21) only, matching the
-# LAW [2026-07-31]: MIRROR THE PROVEN NEIGHBOR — WsUpstream mirrors UpstreamClient idioms

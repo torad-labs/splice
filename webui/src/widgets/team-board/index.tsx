@@ -227,8 +227,28 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
         </div>
       </Bay>
 
-      {/* the activity sample: a label every 30 seconds, and it says so */}
-      <Bay className="myx-board-bay myx-board-bay-activity" label={`${S.activityLabel}, sampled every 30 s`}>
+      {/* the activity sample: a label every 30 seconds, and it says so.
+          L-7: THE COLUMN NAMES PRINT ONCE, ON THE RACK, NOT ON EVERY SLIP. The light-room review
+          filed it and the 3840 pass made it the most repetitive object on the page -- six data
+          rows each carrying its own `time member activity detail` row, alternating down the bay,
+          which reads as a rendering loop rather than a table. The comp's activity bay is a table:
+          the region crop shows one header row under the plate and five data rows beneath it, and
+          StripField's own contract names this case ("omit inside a bay whose head prints the
+          column names once ... which is also what a compact rack (the activity feed) needs").
+          The lead, builder, chat and hand-off bays keep their per-strip labels: those rows carry
+          DIFFERENT label sets, so there the label is a property of the row (M1-34). */}
+      <Bay
+        className="myx-board-bay myx-board-bay-activity"
+        label={`${S.activityLabel}, sampled every 30 s`}
+        fields={(
+          <>
+            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[0]}ch` }}>{S.time}</span>
+            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[1]}ch` }}>{S.member}</span>
+            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[2]}ch` }}>{S.activity}</span>
+            <span className="myx-board-act-head" style={{ width: `${ACT_COLS[3]}ch` }}>{S.detail}</span>
+          </>
+        )}
+      >
         <div className="myx-board-acts">
           {board.activity.map((entry, index) => (
             <Strip
@@ -239,10 +259,10 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
               style={{ top: `${ACT_TOP + index * ACT_PITCH}%` }}
               ariaLabel={`${entry.member} ${entry.activity}`}
             >
-              <StripField w={ACT_COLS[0]} label={S.time} value={entry.time} />
-              <StripField w={ACT_COLS[1]} label={S.member} value={entry.member} mono={false} />
-              <StripField w={ACT_COLS[2]} label={S.activity} value={entry.activity} mono={false} />
-              <StripField w={ACT_COLS[3]} label={S.detail} value={entry.detail} mono={false} />
+              <StripField w={ACT_COLS[0]} value={entry.time} />
+              <StripField w={ACT_COLS[1]} value={entry.member} mono={false} />
+              <StripField w={ACT_COLS[2]} value={entry.activity} mono={false} />
+              <StripField w={ACT_COLS[3]} value={entry.detail} mono={false} />
             </Strip>
           ))}
         </div>

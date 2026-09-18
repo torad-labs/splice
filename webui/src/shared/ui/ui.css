@@ -274,8 +274,23 @@
     inset 0 0 var(--space-2) color-mix(in srgb, transparent 90%, black),
     /* the shade: comp L 112.9 = 0.52 x 216.7 */
     0 0 0 var(--hair) color-mix(in srgb, var(--strip) 52%, black),
-    /* the outline: comp L 3.6 = 0.27 x 13.4 (the room) -- the darkest tone in the frame */
-    0 0 0 calc(var(--hair) * 2) color-mix(in srgb, var(--room) 27%, black);
+    /* the outline: comp L 3.6 against a room of 13.4 -- the darkest tone in the frame, and it
+       sits on the BAY, so the bay is the ground it is measured against.
+       ONE FRACTION CANNOT HOLD IT, and that is arithmetic rather than taste. color-mix is linear
+       in its ground, so `ground x p` holds the RATIO and an alpha over the ground holds the same
+       ratio: the dark room is already near-black, where 25 percent and 90 percent are the same
+       three levels of ink, and the light room is not. Reading the rendered crossing in both
+       themes (the orchestrator's scan, anchored on the render): dark bay 17 -> outline 3, a delta
+       of -14; light bay 166 -> outline 60, a delta of -106. 7.5x more aggressive relative to what
+       surrounds it, which is the over-articulated rack M1-24's own ruling names. So the magnitude
+       is stated per theme, both of them as mixes against the same ground, and the two fractions
+       ARE the two measured magnitudes: 0.25 x 12.15 = 3.0 dark, 0.87 x 174.6 = 151.9 light, both
+       about -14 from the bay they are drawn on. Nothing here is a filter and nothing is a hex. */
+    0 0 0 calc(var(--hair) * 2)
+      light-dark(
+        color-mix(in srgb, var(--bay) 25%, black),
+        color-mix(in srgb, var(--bay) 87%, black)
+      );
   border-radius: 0;
 }
 /* ---- E-5 · THE HOLDER PIN (M1-24) ------------------------------------------
@@ -439,6 +454,22 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  /* ---- A BAY OCCUPIES THE SPACE IT IS GIVEN (M1-38) --------------------------
+     On the comp a bay is not a content-height box in a room: bay-claude is y 138..947, 79 percent
+     of the frame, and M1-12 measured its slot rules continuing BELOW the last strip at a 31-32px
+     pitch (668, 698, 729, 760, 790, 821, 852, 884, 916) -- a rack that fills the floor the strips
+     do not, because the floor IS the rack. The build sizes every bay to its content, so the bottom
+     of each page is a flat empty room; measured on projects at 3840, the bay's ground reaches row
+     1338 of 2160 and the last third of the page is floor.
+     The ribbing is already the bay's own background, so it fills whatever box it is given -- the
+     mechanism was never the missing half. THIS DECLARATION IS ONLY THE BAY'S SIDE OF IT, and it is
+     deliberately the smallest true statement: grow into the height the container offers, and let a
+     container that offers none (an auto-height flex column, which is what every page sheet builds
+     today) leave the bay exactly as it is. It cannot do more from here, because a box cannot know
+     a height its parent never had; the parent half is the page sheets' and app.css's, and it is
+     reported rather than reached for. */
+  flex: 1 1 auto;
+  min-height: 0;
   /* THE BAY IS ITS OWN PLANE (M1-35's census, bound here): `--bay` was measured in M1-13 and
      has had NO reader since -- this rule was the one that was supposed to read it and it named
      --room-deep instead, three steps off, so the bay rendered at 1.06:1 against the room and

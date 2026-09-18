@@ -253,8 +253,17 @@ function checkFieldGrid(capturesDir) {
     const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
     if (mid.length < 2) continue;
     checked++;
-    // second border = the first field's right edge; it must not move between strips
-    const seconds = mid.map((y) => fieldBorders(im, y, 140, im.w - 4)[1]).filter((v) => v !== undefined);
+    // the first field's right edge; it must not move between strips.
+    // THE INDEX IS [0] AND IT USED TO BE [1], which is not a tuning change. `fieldBorders` finds
+    // pixels in `--strip-field-line`'s colour, and that used to match the strip's own outer box
+    // line as well as the cell dividers -- so the list began with the strip's border and the first
+    // FIELD edge was the second entry. M1-24's E-1 replaced the strip's outer line by measurement
+    // (the material spec's own finding is that --strip-field-line, L 163, cannot carry the comp's
+    // #73716A, L 113 shade), so the strip's border is no longer in this colour family and the list
+    // begins at the field edge it was always looking for. The rule is unchanged; only the anchor
+    // it counted from moved, and reading [1] now measures the SECOND field's edge, which is a
+    // different claim than the one this rule makes.
+    const seconds = mid.map((y) => fieldBorders(im, y, 140, im.w - 4)[0]).filter((v) => v !== undefined);
     if (seconds.length < 2) continue;
     const spread = Math.max(...seconds) - Math.min(...seconds);
     if (spread > 2) bad.push(`${f}: first field edge spans ${spread}px across ${seconds.length} strips (x ${Math.min(...seconds)}..${Math.max(...seconds)})`);

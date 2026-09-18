@@ -72,7 +72,19 @@ export const ROLE_PAIRS = [
   ['rule.none', 'rule.window', 'no-window', 'nearest-window'],
   ['rule.window', 'bay.label', 'nearest-window', 'bay-deepseek-label'],
   ['bay.label', 'chat.label', 'bay-deepseek-label', 'chat-label'],
+  // text.health was observed by NO gating leg: no pair, and its cap row only reported. It carried no
+  // font-size at all before M1-64 and nothing failed - which is how a 16px health sat under an 18px
+  // contract unnoticed. The comp does have the pair (nearest-window 17 against health 18), so it is
+  // PAIRED rather than merely named; and everything still unpaired is named in the output below,
+  // because a role the ladder pairs with nothing is a role it cannot grade (law 23 at the ladder).
+  ['rule.window', 'rule.health', 'nearest-window', 'health'],
 ];
+
+/** The roles no pair mentions, printed by name: `pair it, or say you do not`. */
+export function unpairedRoles() {
+  const paired = new Set(ROLE_PAIRS.flatMap(([a, b]) => [a, b]));
+  return BUILD_ROLES.filter((r) => r.comp !== null && !paired.has(r.id)).map((r) => r.id);
+}
 
 // ----------------------------------------------------------------------- the build
 
@@ -138,11 +150,29 @@ const PROBE = (roles, spaces) => `(() => {
       const t = cs(n).transform;
       if (t && t !== 'none') { const m = new DOMMatrix(t); const det = Math.abs(m.a * m.d - m.b * m.c); if (det > 0) s *= Math.sqrt(det); } }
     return s; };
+  // THE CONTINUOUS CAP (M1-72). This used to be ctx.measureText('H').actualBoundingBoxAscent, which
+  // returns WHOLE PIXELS: measured across 10-24px at 400/500/600 it yields only 8,9,10,11,13,14,15,17,
+  // so every ratio the gating ladder computed was a quotient of rounded integers. rule.window/bay.label
+  // read 1.000 (11/11) against a true 1.0625 (17/16) - spending 0.073 of the 0.08 tolerance on
+  // rounding alone, where comp-check's continuous ladder reads -0.011 for the same pair. Same property,
+  // two instruments, and the one that GATES was the retired one.
+  //
+  // cap = computed font-size x the face's own cap ratio. Measured twice by independent instruments:
+  // the canvas metric at 200px, and rasterized ink rows of a capital counted off a screenshot (138
+  // rows for Archivo 400 and 600, 146 for Mono 400) - agreeing to the pixel. NOTE THE ORDERING IS THE
+  // REVERSE of the 0.7390/0.7000 this campaign carried until today: these faces measure MONO TALLER,
+  // not Archivo.
+  const CAP_RATIO = { 'Archivo': 0.6900, 'JetBrains Mono': 0.7300 };
   const faceOf = (el) => { const s = cs(el);
+    const size = parseFloat(s.fontSize);
+    const family = s.fontFamily.split(',')[0].trim().replace(/["']/g, '');
+    const ratio = CAP_RATIO[family];
     ctx.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
-    const cap = ctx.measureText('H').actualBoundingBoxAscent;
-    return { cap, size: parseFloat(s.fontSize), weight: s.fontWeight,
-      family: s.fontFamily.split(',')[0].trim().replace(/["']/g, ''), scale: scaleOf(el) }; };
+    // An unknown face falls back to the canvas metric and SAYS SO: a silent fallback here would put
+    // the rounded integer back into the gating path without anyone seeing it.
+    const cap = ratio === undefined ? ctx.measureText('H').actualBoundingBoxAscent : size * ratio;
+    return { cap, size, weight: s.fontWeight, family, scale: scaleOf(el),
+      measured: ratio === undefined ? 'canvas (face not in CAP_RATIO)' : 'continuous' }; };
   const rect = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; };
   const roles = ${JSON.stringify(roles)}.map((role) => {
     const el = document.querySelector(role.sel);
@@ -336,6 +366,29 @@ if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[
   console.log(`\nwritten to webui/.impeccable/review/type-ladder/ladder.txt`);
 
   const findings = checkRatios(comp.measured, (measurements['1536x1024'] ?? []).filter((r) => r.absent !== true).map((r) => ({ id: r.id, cap: r.cap * r.scale })));
+  // BOTH LADDERS: NOT YET PRODUCED (M1-72), and it says so rather than printing an empty table.
+  //
+  // The port, the health pair and the unpaired-roles naming are landed and selftested; this print -
+  // every pair's ratio from the continuous caps against the same caps rounded to whole pixels, so a
+  // reader can see what the port moved instead of taking it on faith - is the one piece that did not
+  // land. Two attempts looked up the comp's caps under `comp.caps`, and they live under
+  // `comp.measured`; the third read that field and the rows still did not match, so the roles in
+  // `measurements[frame]` are reaching the pair ids through a mapping the report applies and this
+  // block does not. The next touch is a diagnostic on that mapping, not a fourth guess.
+  //
+  // It is stubbed rather than silent because an instrument that says what it did not print is worth
+  // more than one that prints a header over nothing, and because the port - the part that GATES - is
+  // unaffected: `rungs off by more than ${RATIO_LIMIT}` below is computed from the continuous caps.
+  console.log(`\n  both ladders: NOT PRODUCED (M1-72) - the continuous caps gate below; this print`);
+  console.log('  would show each pair continuous against rounded, and its comp-cap lookup is unfinished.');
+  const framesSeen = Object.keys(measurements).filter((k) => !k.startsWith('__'));
+  console.log(`  (frames captured: ${framesSeen.join(', ')}; a cap from one frame is not comparable with`);
+  console.log('   a comp cap from another frame - the ruling that settles this is M1-71, adopted here.');
+  const unpaired = unpairedRoles();
+  if (unpaired.length > 0) {
+    console.log(`\n  graded against NOTHING (no pair names them): ${unpaired.join(', ')}`);
+  }
+
   console.log(`\nrungs off by more than ${RATIO_LIMIT}: ${findings.length}`);
   for (const finding of findings) console.log(`  ${finding.pair}: comp ${finding.comp.toFixed(3)}, build ${finding.build.toFixed(3)}, delta ${finding.delta.toFixed(3)}`);
 }

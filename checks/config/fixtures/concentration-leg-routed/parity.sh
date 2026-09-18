@@ -20,7 +20,7 @@
 # in the gate through checks/concentration-selftest.sh.
 #
 # WHEN checks/concentration.py BECOMES .ts: the wall's inverse half pins the gate:concentration argv
-# (a python interpreter, then concentration.py as the oracle). Those pins change in the SAME commit
+# (the oracle's interpreter, then concentration.py as argv[1]). Those pins change in the SAME commit
 # as the oracle, and these fixtures' py.out then describe the OLD argv — re-baseline them from the
 # wall as it stood proven here, and say so where the change is recorded.
 set -uo pipefail

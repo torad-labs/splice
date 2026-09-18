@@ -43,7 +43,10 @@ export function bindUnauthorized(fn: UnauthorizedListener): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Exported for entity api segments (entities/*/api), which own their routes and payload types
+// locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
+// `control` below keeps the routes that predate the console rebuild.
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (locked) throw new MgmtError(401, 'management key required');
   const res = await fetch(path, {
     ...init,

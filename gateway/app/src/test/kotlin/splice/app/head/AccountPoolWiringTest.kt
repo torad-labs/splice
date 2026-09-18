@@ -18,7 +18,10 @@ import splice.core.usage.QuotaWindow
 import splice.dialect.chat.ChatQuirks
 import splice.gateway.usage.QuotaTracker
 import splice.provider.openai.OpenAiChatProvider
+import splice.spi.AccountPool
+import splice.spi.PoolAccount
 import splice.spi.ProviderTuning
+import splice.spi.Selection
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -34,8 +37,8 @@ class AccountPoolWiringTest {
         val second = requireNotNull(pools.build(wired, secondTrackers))
 
         assertNotSame(first, second)
-        assertEquals("backup", first.select(SESSION).account.label)
-        assertEquals("primary", second.select(SESSION).account.label)
+        assertEquals("backup", chosen(first).label)
+        assertEquals("primary", chosen(second).label)
         assertEquals("backup", first.view(SESSION).selectedLabel)
         assertEquals("primary", second.view(SESSION).selectedLabel)
     }
@@ -46,7 +49,7 @@ class AccountPoolWiringTest {
         val pools = HeadAccountPools()
         val pool = requireNotNull(pools.build(wired, trackers(tmp, primaryUsed = 0.0)))
 
-        assertEquals("backup", pool.select(SESSION).account.label)
+        assertEquals("backup", chosen(pool).label)
         val primary = pool.view(SESSION).accounts.single { it.label == "primary" }
         assertEquals(false, primary.available)
         assertEquals(false, primary.credentialPresent)
@@ -100,6 +103,8 @@ class AccountPoolWiringTest {
             ),
         )
     }
+
+    private fun chosen(pool: AccountPool): PoolAccount = (pool.select(SESSION) as Selection.Chosen).account.account
 
     private fun quota(used: Double): QuotaSnapshot = QuotaSnapshot(
         fiveHour = QuotaWindow(used, System.currentTimeMillis() / 1_000L + 3_600L, 18_000L),

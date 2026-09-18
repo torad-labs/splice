@@ -83,7 +83,7 @@ internal class LocalResponses(
             }
         }
         replay.consumed(replayed.key)
-        val who = replayed.sessionId?.let { "session ${it.take(TAG_CHARS)}" } ?: "no session"
+        val who = replayed.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         deps.log(
             if (whole) {
                 "[${provider.key}] compaction answer replayed ($who, $frames frames; the retry cost no upstream turn)\n"
@@ -116,8 +116,9 @@ internal class LocalResponses(
     // head the SESSION's selected account, not the primary's, or the bars would flip on every locally
     // answered side query (review 2026-09-14).
     private fun quotaHeaders(call: ApplicationCall, sessionId: String?) {
-        val selected = deps.accountPool?.view(sessionId)?.selectedLabel?.let(deps.accountQuotas::get)
-        (selected ?: deps.quota)?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
+        deps.turnQuota.forSession(sessionId, null)
+            ?.clientHeaders()
+            ?.forEach { (name, value) -> call.response.header(name, value) }
     }
 
     private suspend fun emitText(terminal: TurnTerminal, text: String) {
@@ -128,5 +129,3 @@ internal class LocalResponses(
         terminal.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage())
     }
 }
-
-private const val TAG_CHARS = 8

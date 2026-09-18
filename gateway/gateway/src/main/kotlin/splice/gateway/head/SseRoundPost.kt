@@ -6,7 +6,6 @@ package splice.gateway.head
 import kotlinx.coroutines.flow.emptyFlow
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
-import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.spi.AuthRefreshObserver
 import splice.spi.PostContext
@@ -21,7 +20,7 @@ internal class SseRoundPost(
     private val provider: Provider,
     private val upstream: UpstreamClient,
     private val usageStore: UsageStore,
-    private val quota: QuotaTracker?,
+    private val turnQuota: TurnQuota,
     private val consume: SseRoundConsume,
     private val onRetry: RetryNotice,
 ) {
@@ -29,7 +28,7 @@ internal class SseRoundPost(
         val drive = inputs.drive
         val selection = drive.account
         val account = selection?.account
-        val activeQuota = drive.quota ?: quota
+        val activeQuota = turnQuota.forSession(drive.meta.sessionId, drive.account)
         val posted = upstream.post(
             PostContext(
                 url = provider.upstreamUrl,

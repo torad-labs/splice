@@ -23,6 +23,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import mock.MockChatGptUpstream
 import mock.TestResponsesProvider
 import mock.awaitListening
@@ -61,6 +62,10 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
+// why 50ms: the precondition polls (a slot held, a detach logged) flip at human speed; a 50ms
+// interval keeps a 20s deadline from busy-spinning while still catching a quick flip promptly.
+private const val POLL_INTERVAL_MS = 50L
+
 private class DetachedStopOrderAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-dso", "acct-dso")
     override suspend fun refresh(): Credentials = credentials()
@@ -73,7 +78,7 @@ private class CountingWaiter : Waiter {
     val polls = AtomicInteger(0)
     override suspend fun wait(ms: Long) {
         polls.incrementAndGet()
-        delay(1)
+        yield()
     }
 }
 
@@ -144,7 +149,7 @@ class HeadServerDetachedStopOrderTest {
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            delay(50)
+            delay(POLL_INTERVAL_MS)
         }
         return cond()
     }
@@ -229,7 +234,10 @@ class HeadServerDetachedStopOrderTest {
             provider = builtProvider,
             deps = builtDeps,
             driveFactory = TurnDriveFactory(builtProvider, builtDeps, HeadHealthCounters()),
-            driver = TurnDriver(builtProvider, builtDeps),
+            // V4-99 item 5: the entry takes the SEAL CONTRACT, not the whole driver — the rig
+            // reaches it through the driver it already builds rather than re-assembling the four
+            // collaborators the contract is composed from.
+            sealedDrive = TurnDriver(builtProvider, builtDeps).sealedDrive,
             replay = CompactionReplay(),
             detachedScope = scope,
         )

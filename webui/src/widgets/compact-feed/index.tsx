@@ -19,15 +19,27 @@ import { cx } from '@shared/lib';
 import { S } from './strings';
 import './compact-feed.css';
 
-/**
- * The daemon's outcome names, mapped to the holder edge they earn. The names are the compaction
- * layer's own (`gateway/compact`); anything unrecognised is amber rather than green, because an
- * unknown outcome is not a success.
- */
+/** What an outcome MEANT, as the three states this world's holder edge has: a summary was produced,
+ *  something needs a look, it failed. The names matched here are the compaction layer's own
+ *  (`gateway/compact`); anything unrecognised is `warn` rather than `ok`, because an outcome we do
+ *  not recognise is not a success. */
+export type CompactState = 'ok' | 'warn' | 'fail';
+
+export function stateOf(outcome: string): CompactState {
+  if (outcome.startsWith('model')) return 'ok';
+  if (outcome === 'empty_model' || outcome === 'stream_error' || outcome === 'upstream_error') return 'fail';
+  return 'warn';
+}
+
+/** THE COLOUR AND THE WORD COME FROM ONE READING OF THE OUTCOME, so they cannot disagree. Before
+ *  this the edge took its colour from `edgeFor` and its word from the outcome name itself, which
+ *  is how a red strip could be labelled with a green strip's prefix. */
+const EDGE: Record<CompactState, Edge> = { ok: 'green', warn: 'amber', fail: 'red' };
+
+/** The daemon's outcome names, mapped to the holder edge they earn. Kept as the widget's public
+ *  mapping — a page that wants the same colour asks the same function. */
 export function edgeFor(outcome: string): Edge {
-  if (outcome.startsWith('model')) return 'green';
-  if (outcome === 'empty_model' || outcome === 'stream_error' || outcome === 'upstream_error') return 'red';
-  return 'amber';
+  return EDGE[stateOf(outcome)];
 }
 
 function eventKey(row: CompactRow, index: number): string {
@@ -111,7 +123,7 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
             <Strip
               key={outcome}
               edge={edgeFor(outcome)}
-              edgeLabel={outcome}
+              edgeLabel={S.state[stateOf(outcome)]}
               ariaLabel={`${S.outcome} ${outcome}`}
             >
               {/* NO PER-CELL LABELS: the bay prints its column names once, above the rack (B9).
@@ -147,7 +159,7 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
               <Strip
                 key={key}
                 edge={edgeFor(outcome)}
-                edgeLabel={outcome}
+                edgeLabel={S.state[stateOf(outcome)]}
                 selected={open === key}
                 onOpen={() => setOpen(open === key ? null : key)}
                 ariaLabel={`${S.openEvent} ${outcome}`}
@@ -171,7 +183,7 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
           <>
             <Strip
               edge={edgeFor(opened.outcome ?? 'unknown')}
-              edgeLabel={opened.outcome ?? 'unknown'}
+              edgeLabel={S.state[stateOf(opened.outcome ?? 'unknown')]}
               ariaLabel={S.detail}
             >
               <StripField w={13} label={S.when} value={new Date(opened.ts).toISOString().slice(11, 19)} />

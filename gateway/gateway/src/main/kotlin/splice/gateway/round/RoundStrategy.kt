@@ -7,7 +7,8 @@
 package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.spi.FoldController
@@ -100,9 +101,10 @@ internal class RoundStrategy(
         if (outcome !is TurnOutcome.Success || outcome.customCalls.isEmpty()) return outcome
         val name = outcome.customCalls.first().name.ifEmpty { "<unnamed>" }
         return TurnOutcome.Failure(
-            ErrorType.INVALID_REQUEST,
             "upstream returned an unsupported custom tool call: $name",
             partial = TurnOutcome.PartialRound(usage = outcome.usage),
+            cause = FailureCause.DIALECT_UNSUPPORTED,
+            phase = FailurePhase.MID_OUTPUT,
         )
     }
 }

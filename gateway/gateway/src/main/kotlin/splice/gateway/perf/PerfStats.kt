@@ -35,6 +35,14 @@ public data class PerfRowMeta(
     val session: String? = null,
     val account: String? = null,
     val cacheCold: Boolean = false,
+    /** V4-117: WHY this turn failed, as the taxonomy's cause, so a perf row can be grouped by cause
+     *  rather than by the wire type the client happened to be told (the two differ by design — see
+     *  WireType). Null for a turn that did not fail. */
+    val cause: String? = null,
+    /** V4-117: how many upstream attempts the retry loop made, as RECORDED by the loop itself.
+     *  Written only when it is non-zero, so a row without retries looks exactly as it did before
+     *  this field existed — the alternative would put layers=0 on every success in the file. */
+    val layers: Int = 0,
 )
 
 private const val DEFAULT_TAIL = 200
@@ -76,6 +84,8 @@ public class PerfStats(
             put("outcome", meta.outcome)
             put("compact", meta.compact)
             meta.session?.let { put("session", it) }
+            meta.cause?.let { put("cause", it) }
+            if (meta.layers > 0) put("layers", meta.layers)
             meta.account?.let { account ->
                 put("account", account)
                 put("cache_cold", meta.cacheCold)

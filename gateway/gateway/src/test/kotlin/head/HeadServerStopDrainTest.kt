@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
 import mock.TestResponsesProvider
+import mock.awaitListening
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -53,6 +54,15 @@ import splice.spi.UpstreamClient
 import java.net.ServerSocket
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
+
+// why 6.5s: it must OUTLIVE the old 5s STOP_DRAIN_NS so reverting the ladder to 5s makes the
+// drain time out and this test fail (the ladder's mutation proof); under the fixed 45s ladder
+// the turn still finishes inside the drain.
+private const val DRAIN_HOLD_MS = 6_500L
+
+// why 100ms: the inflight precondition flips once the turn holds a slot; 100ms keeps the 5s
+// bound (50 tries) from busy-spinning while still observing a slot promptly.
+private const val INFLIGHT_POLL_MS = 100L
 
 private class DrainFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-drain", "acct-drain")
@@ -106,7 +116,7 @@ class HeadServerStopDrainTest {
         suspend fun start() {
             mock.resetHold()
             head.start()
-            Thread.sleep(700) // Netty warmup
+            awaitListening(port)
         }
 
         suspend fun close() {
@@ -130,7 +140,7 @@ class HeadServerStopDrainTest {
         suspend fun awaitInflight(): Boolean {
             repeat(50) {
                 if (gate.snapshot().inflight >= 1) return true
-                delay(100)
+                delay(INFLIGHT_POLL_MS)
             }
             return gate.snapshot().inflight >= 1
         }
@@ -152,7 +162,7 @@ class HeadServerStopDrainTest {
 
             // The turn finishes INSIDE the drain window, and the hold outlives the OLD 5s drain on
             // purpose: that is what makes this test the ladder's mutation proof.
-            delay(6_500)
+            delay(DRAIN_HOLD_MS)
             rig.mock.releaseHold()
 
             val body = turn.await() // a torn socket fails HERE, by throwing

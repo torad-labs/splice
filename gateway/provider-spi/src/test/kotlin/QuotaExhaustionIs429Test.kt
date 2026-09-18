@@ -81,7 +81,7 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = true, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status,"the rewrite is what every layer above reads")
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status, "the rewrite is what every layer above reads")
         assertTrue(client.rateLimitedForMs > 0L, "a quota wall must arm the follower horizon like a 429")
         assertEquals(0, refreshes.get(), "billing is not auth: no refresh may be spent on a quota wall")
         assertTrue(
@@ -100,7 +100,7 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status,"deepseek answers Insufficient Balance as 402")
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status, "deepseek answers Insufficient Balance as 402")
         assertTrue(client.rateLimitedForMs > 0L, "and it arms the horizon the same way")
         assertEquals(0, refreshes.get())
         assertTrue(

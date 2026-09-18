@@ -3,7 +3,8 @@ package splice.provider.codex
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -150,7 +151,12 @@ internal class CodexCodeModeTurn(
     }
 
     private fun failure(message: String): TurnOutcome.Failure =
-        TurnOutcome.Failure(ErrorType.INVALID_REQUEST, message, deterministic = true)
+        TurnOutcome.Failure(
+            message,
+            deterministic = true,
+            cause = FailureCause.CODE_MODE_PROTOCOL,
+            phase = FailurePhase.MID_OUTPUT,
+        )
 }
 
 private data class PlacedOwner(val record: CodeModeRecord, val bodyJson: String)

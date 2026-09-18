@@ -40,4 +40,10 @@ public class StreamTornBeforeClient(cause: Throwable) :
 public class UpstreamFailed(
     public val body: String,
     public val status: Int? = null,
+    /** V4-117: how many upstream ATTEMPTS the retry loop made before it gave up, stamped HERE
+     *  because this is the loop's own fact at the moment the last attempt failed — the perf row
+     *  records it as layers=<n>. It is a RECORD, not a prediction: the matrix could say a failure is
+     *  entitled to four layers and the loop might have spent one. Zero when no retry was tried (the
+     *  fail-fast and deadline paths), which is a real answer rather than a missing one. */
+    public val layers: Int = 0,
 ) : RuntimeException("upstream failed after retries (status=$status)")

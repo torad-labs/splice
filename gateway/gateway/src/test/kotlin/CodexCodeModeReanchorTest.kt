@@ -9,7 +9,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -63,8 +64,9 @@ class CodexCodeModeReanchorTest {
             when (posts++) {
                 0 -> outer("first")
                 1 -> TurnOutcome.Failure(
-                    ErrorType.API_ERROR,
                     "upstream interrupted",
+                    cause = FailureCause.UPSTREAM_REPORTED,
+                    phase = FailurePhase.MID_OUTPUT,
                     providerReported = true,
                     partial = TurnOutcome.PartialRound(bodyText = "visible", emittedText = true),
                 )

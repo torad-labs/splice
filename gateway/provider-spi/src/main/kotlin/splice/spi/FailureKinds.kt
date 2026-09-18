@@ -4,6 +4,7 @@
 package splice.spi
 
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
 
 /**
  * [UpstreamFailureClassifier]'s verdict on one upstream failure: the [ErrorType] the client is told,
@@ -15,6 +16,19 @@ public data class ClassifiedFailure(
     val type: ErrorType,
     val message: String,
     val transient: Boolean = false,
+    /** V4-117: the upstream status this verdict was read from, carried so a failure CAUSE can be
+     *  derived from the truth instead of re-projected out of [type]. classify() has always RECEIVED
+     *  the status and used it to decide; it simply never returned it, so a caller asking "was this a
+     *  4xx or a 5xx" had to guess backwards through a lossy ErrorType. Null means statusless — an
+     *  SSE-borne failure, or a caller that never had one — and that is a real answer, not a gap. */
+    val status: Int? = null,
+    /** V4-117: WHICH failure this verdict is, authored HERE because this is where the evidence is.
+     *  The classifier reads the status, the vendor's code and the body text, and every branch below
+     *  already knows which of those decided it — so it can name the cause directly instead of a
+     *  boundary consumer re-deriving one backwards out of [type], which is lossy in exactly the
+     *  direction that matters (a policy refusal and a malformed request are both INVALID_REQUEST).
+     *  Required, with no default: a new branch that forgets it does not compile. */
+    val cause: FailureCause,
 )
 
 /**

@@ -8,7 +8,8 @@ package splice.gateway.head
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.spi.ClientFrameEmitted
 import splice.spi.StreamTornBeforeClient
@@ -118,7 +119,6 @@ internal class SseRoundDriver(
         // still reaches names the same failure.
         val detail = (e as? StreamTornBeforeClient)?.cause?.message ?: e.message ?: NO_TEAR_DETAIL
         return TurnOutcome.Failure(
-            ErrorType.OVERLOADED,
             "upstream connection failed ($detail) — retry",
             // Locally synthesized: the upstream reported nothing, the socket did (G20 health split).
             providerReported = false,
@@ -129,6 +129,14 @@ internal class SseRoundDriver(
             // unrecovered tear stays greppable as conn-reset in the perf row, which is the only
             // string in the journal that names this failure class.
             connReset = true,
+            // V4-117: UPSTREAM_CONN_RESET. The comment two lines up already says it — the
+            // upstream reported nothing and the socket did — which is a failed connection, not a
+            // stall and not a truncation, and the layers that can repair it are the L1 retry ones.
+            cause = FailureCause.UPSTREAM_CONN_RESET,
+            // FIRST_BYTE, and this is one of the few sites that KNOWS rather than guesses: the
+            // guards above only reach here when no content frame was emitted and the stream was
+            // read, which is the pre-content window by construction rather than by assumption.
+            phase = FailurePhase.FIRST_BYTE,
         )
     }
 }

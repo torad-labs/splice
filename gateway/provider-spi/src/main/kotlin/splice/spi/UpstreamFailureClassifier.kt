@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
@@ -92,10 +93,14 @@ public object UpstreamFailureClassifier {
         } else {
             ExtractResult.Fields(raw, code.orEmpty())
         }
+        // V4-117: stamped at the ONE exit rather than at each of the ten construction sites below,
+        // because every verdict leaves through here and the status is this function's own argument.
+        // A per-site stamp would be ten places to forget it. The Gateway short-circuit is stamped
+        // too: the status is still the upstream's, and all that failed was the body's parsing.
         return when (extracted) {
             is ExtractResult.Gateway -> extracted.failure
             is ExtractResult.Fields -> classifyContent(extracted, status)
-        }
+        }.copy(status = status)
     }
 
     // body parse is best-effort by design: a malformed/HTML body keeps the raw text (and, when it
@@ -124,11 +129,24 @@ public object UpstreamFailureClassifier {
                     type,
                     "upstream $status (gateway)",
                     transient = status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR,
+                    cause = gatewayCause(status),
                 ),
             )
         }
         return ExtractResult.Fields(message, code)
     }
+
+    /** The cause for an HTML body that is not a vendor envelope at all: a 5xx is the upstream
+     *  failing BEHIND the middlebox, and anything else is an in-band report we cannot attribute
+     *  further. Its own function because inlining the choice pushed [extractHttpError] one branch
+     *  past detekt's cyclomatic ceiling — the decision belongs here anyway, since it is a rule about
+     *  status classes rather than a step of parsing. */
+    private fun gatewayCause(status: Int?): FailureCause =
+        if (status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+            FailureCause.UPSTREAM_STATUS_5XX
+        } else {
+            FailureCause.UPSTREAM_REPORTED
+        }
 
     // the ordered cascade IS the ported contract — overflow, then rate, then auth, then status floors.
     private fun classifyContent(fields: ExtractResult.Fields, status: Int?): ClassifiedFailure {
@@ -144,11 +162,23 @@ public object UpstreamFailureClassifier {
             // that could never complete). invalid_request_error is terminal to the client, and the
             // vendor's own remedy text ("try rephrasing") rides along untouched.
             fields.code.lowercase() in POLICY_REFUSAL_CODES ->
-                ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
+                ClassifiedFailure(
+                    ErrorType.INVALID_REQUEST,
+                    msg.take(MAX_MESSAGE),
+                    cause = FailureCause.CONTENT_FILTERED,
+                )
             status == HttpStatus.TOO_MANY_REQUESTS || rateRe.containsMatchIn(blob) ->
-                ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
+                ClassifiedFailure(
+                    ErrorType.RATE_LIMIT,
+                    msg.take(MAX_MESSAGE),
+                    cause = FailureCause.VENDOR_RATE_LIMITED,
+                )
             status == HttpStatus.UNAUTHORIZED || authRe.containsMatchIn(blob) ->
-                ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
+                ClassifiedFailure(
+                    ErrorType.AUTHENTICATION,
+                    msg.take(MAX_MESSAGE),
+                    cause = FailureCause.AUTH_MISSING,
+                )
             // Overload: a 502 from the gateway, or capacity by CODE SHAPE. The ChatGPT backend
             // reports "model at capacity" as HTTP 503 or an in-stream response.failed whose code is
             // server_is_overloaded / slow_down — codex-rs names exactly those two (PR #31058, which
@@ -159,7 +189,12 @@ public object UpstreamFailureClassifier {
             // client. Any code spelling overload IS the named transient server condition, and it
             // surfaces as OVERLOADED (529 / overloaded_error): the type Claude Code retries on.
             fields.isOverload(status) ->
-                ClassifiedFailure(ErrorType.OVERLOADED, msg.take(MAX_MESSAGE), transient = true)
+                ClassifiedFailure(
+                    ErrorType.OVERLOADED,
+                    msg.take(MAX_MESSAGE),
+                    transient = true,
+                    cause = FailureCause.UPSTREAM_STATUS_5XX,
+                )
             else -> statusFallback(status, msg, fields.code)
         }
     }
@@ -194,7 +229,11 @@ public object UpstreamFailureClassifier {
 
     public fun overflowFailure(msg: String): ClassifiedFailure {
         val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
-        return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
+        return ClassifiedFailure(
+            ErrorType.INVALID_REQUEST,
+            message.take(MAX_MESSAGE),
+            cause = FailureCause.REQUEST_TOO_LARGE,
+        )
     }
 
     // DR-71 redo (codex red-repro): the heuristics classify exactly the take(MAX_MESSAGE) view
@@ -218,13 +257,24 @@ public object UpstreamFailureClassifier {
 
     private fun statusFallback(status: Int?, msg: String, code: String): ClassifiedFailure = when {
         status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR ->
-            ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE), transient = true)
+            ClassifiedFailure(
+                ErrorType.API_ERROR,
+                msg.take(MAX_MESSAGE),
+                transient = true,
+                cause = FailureCause.UPSTREAM_STATUS_5XX,
+            )
         status != null && status >= HttpStatus.BAD_REQUEST ->
-            ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
+            ClassifiedFailure(
+                ErrorType.INVALID_REQUEST,
+                msg.take(MAX_MESSAGE),
+                cause = FailureCause.UPSTREAM_STATUS_4XX,
+            )
         else -> ClassifiedFailure(
             ErrorType.API_ERROR,
             msg.take(MAX_MESSAGE),
             transient = statuslessTransience(code, msg),
+            // No status at all — the in-band case, and the one the row's brief did not name.
+            cause = FailureCause.UPSTREAM_REPORTED,
         )
     }
 

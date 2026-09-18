@@ -2,7 +2,8 @@
    not in this sheet); what this owns is the frame around them: a dark scope
    inset's ground, the token scale for spacing and type, radius 0. */
 .myx-toml {
-  font-family: var(--font-figure);
+  /* CODE: the TOML text view. */
+  font-family: var(--font-code);
   font-size: var(--text-2);
   color: var(--strip-ink);
   background: var(--strip);
@@ -21,7 +22,8 @@
 }
 
 .myx-toml .cm-scroller {
-  font-family: var(--font-figure);
+  /* CODE: the TOML body itself. */
+  font-family: var(--font-code);
   font-size: var(--text-2);
 }
 

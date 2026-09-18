@@ -36,7 +36,8 @@
   color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   border-radius: 0;
-  font-family: var(--font-figure);
+  /* CODE: a log line. */
+  font-family: var(--font-code);
   font-size: var(--text-2);
 }
 

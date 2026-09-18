@@ -150,13 +150,16 @@
 
 /* the empty slots of the rack, below the strips (each one's top is set inline,
    from the same rack rhythm) */
+/* The rack's empty slots are the BAY's ribbing, which the comp draws at a 31-32px pitch and
+   ui.css now reproduces (see .myx-bay). This row drew its own hairline pairs on a 49px pitch,
+   which is a second texture on top of the first and the reason this build read as 50 hard rules
+   against the comp's continuous ribbing. The elements stay as the rack's rhythm; they draw
+   nothing. */
 .myx-board-slot {
   position: absolute;
   left: 1.5%;
   width: 97%;
   height: 5.5%;
-  border-top: var(--hair) solid var(--hairline);
-  border-bottom: var(--hair) solid var(--hairline);
 }
 
 /* --- the hand-off: region handoff-strip (frame x18.5 y47 w47 h16) --- */
@@ -271,7 +274,9 @@
   background: var(--plate-deep);
   border: var(--hair) solid var(--strip-field-line);
   color: var(--strip-ink);
+  /* FIGURE: the footer's team id and stamps are the comp's own. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-1);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

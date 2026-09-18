@@ -29,7 +29,8 @@
   background: var(--scope);
   color: var(--scope-ink);
   border: var(--hair) solid var(--scope-grid);
-  font-family: var(--font-figure);
+  /* CODE: a turn body is a transcript block. */
+  font-family: var(--font-code);
   font-size: var(--text-2);
   white-space: pre-wrap;
   word-break: break-word;

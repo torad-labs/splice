@@ -101,6 +101,23 @@ RESP = [
 ]
 PATHS: dict[str, pathlib.Path | list[pathlib.Path]] = {"passthrough": PASS, "chat": CHAT, "responses": RESP}
 
+# V4-154, THE SECOND HALF: THE OTHER END OF THE CHAIN. Until this existed the wall proved only that
+# each dialect READS the signal and hands it to a FailureCause — the verdict the CLIENT finally sees
+# is decided one table away, in WireType.kt, and nothing here asserted it. That is the semantically
+# dangerous end: moving a mapping changes what the client is told while every call site still reads
+# correctly, so a wall that stops at the arm cannot see the failure it exists to prevent.
+#
+# These two tokens are the mapping itself. They are deliberately a SECOND, INDEPENDENT pair from the
+# arm tokens in REQUIRED — the pair is what makes this a chain check rather than two greps, because
+# the failure that matters is one end moving while the other stays, and only holding both ends can
+# see that. V4-117 is the worked example: it moved the arm spelling AND kept these mappings, which is
+# why the behaviour survived a rename; a change that moved the MAPPING would have been silent here.
+WIRE = ROOT / "gateway/core/src/main/kotlin/splice/core/turn/WireType.kt"
+WIRE_REQUIRED = (
+    "FailureCause.MODEL_REFUSED to ErrorType.API_ERROR",
+    "FailureCause.UPSTREAM_STATUS_5XX to ErrorType.OVERLOADED",
+)
+
 # Per dialect: ([carrier tokens that must be READ], [call sites proving the honest conversion]).
 # Every conversion token was measured at 0 occurrences in HEAD 5840979 and 1 after the fix, so it
 # cannot be satisfied by code that was already there.
@@ -232,6 +249,19 @@ def detect(sources: dict[str, str | None]) -> list[str]:
             problems.append(
                 f"{name} {NO_VERDICT} ({', '.join(unwired)}) — a read with no verdict is not a gate",
             )
+    # The far end of the chain: the causes those arms name must still RESOLVE to the verdicts this
+    # item promises. Checked after the dialects so a missing file reports the dialects' own problem
+    # first rather than burying it, and refused vacuously like every other source here.
+    wire = sources.get("wire")
+    if wire is None:
+        problems.append("WireType.kt missing — refusing to pass vacuously on the mapping end")
+    else:
+        for mapping in WIRE_REQUIRED:
+            if mapping not in wire:
+                problems.append(
+                    f"the refusal/pause verdict mapping changed: {mapping!r} is gone from "
+                    "WireType.kt — the client is now told something other than what W4-A promises",
+                )
     return problems
 
 
@@ -267,7 +297,14 @@ def _read_source(source: pathlib.Path | list[pathlib.Path]) -> str | None:
 
 
 def _live() -> dict[str, str | None]:
-    return {name: _read_source(p) for name, p in PATHS.items()}
+    sources = {name: _read_source(p) for name, p in PATHS.items()}
+    # V4-154: the far end of the chain. `_read`, not `_read_source`, because it runs code_only — so a
+    # token surviving only inside a KDoc comment does not satisfy the mapping check. That matters
+    # here more than anywhere else in this file: WireType.kt's mapping table sits under a comment
+    # that names the very verdicts being checked, and without code_only the wall would pass on the
+    # prose after the mapping itself had been deleted.
+    sources["wire"] = _read(WIRE)
+    return sources
 
 
 # The pre-fix shape, kept as a cheap synthetic floor alongside the derived cases below: none of the

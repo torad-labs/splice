@@ -18,7 +18,7 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.usage.OutputClamp
 import splice.gateway.wire.TurnTerminal
 
-public class TurnPipeline(
+internal class TurnPipeline(
     compactStats: CompactStats,
     log: LogSink,
     clampOutput: OutputClamp,

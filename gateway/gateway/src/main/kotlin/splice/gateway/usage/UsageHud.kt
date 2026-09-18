@@ -22,7 +22,7 @@ private const val JS_DECIMAL_MIN_EXP = -6
 
 /** The HUD surface: the gateway usage payload and the per-turn cache line. Stateless; collaborators
  *  construct one (`private val hud = UsageHud()`). */
-public class UsageHud {
+internal class UsageHud {
     private val json = UsageJson()
 
     /** The gateway usage payload with Claude Code's non-standard context fields. */

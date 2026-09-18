@@ -139,7 +139,7 @@ public class GrokAuthProvider(
 
     /** SH-02(c): how many refreshes succeeded without satisfying the tier logic — nonzero here is
      *  the early warning that used to arrive as provider-side credential death. */
-    public val ineffectiveRefreshCount: Long get() = ineffectiveRefreshes.get()
+    internal val ineffectiveRefreshCount: Long get() = ineffectiveRefreshes.get()
 
     // Three tiers by remaining time-to-expiry, as a single if/else-if/else expression (not `when`,
     // not extra member functions — GrokAuthProvider is already at its detekt function-count budget):

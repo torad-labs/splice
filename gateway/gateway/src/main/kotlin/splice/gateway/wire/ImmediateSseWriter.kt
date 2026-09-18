@@ -13,7 +13,7 @@ package splice.gateway.wire
  * write and the flush are two named ports rather than one `emit` — [ImmediateSseWriter] is the only
  * thing entitled to pair them, and it always does.
  */
-public fun interface RawSseWrite {
+internal fun interface RawSseWrite {
     public operator fun invoke(frame: String)
 }
 
@@ -23,7 +23,7 @@ public fun interface RawSseWrite {
  * Idempotent and cheap by contract: [ImmediateSseWriter.flush] is called again from the head's
  * finally block on abandon and exception paths, after every frame has already flushed itself.
  */
-public fun interface RawSseFlush {
+internal fun interface RawSseFlush {
     public operator fun invoke()
 }
 
@@ -36,7 +36,7 @@ public fun interface RawSseFlush {
  * The third rung of this file's write-port ladder: FrameWrite -> ImmediateSseWriter.write ->
  * RawSseWrite + RawSseFlush.
  */
-public fun interface FrameWrite {
+internal fun interface FrameWrite {
     public suspend operator fun invoke(frame: String)
 }
 
@@ -45,7 +45,7 @@ public fun interface FrameWrite {
  * [flush] stays public for the head's finally-block (abandon / exception paths); it is a plain
  * push of the underlying writer and safe to call after every frame already flushed.
  */
-public class ImmediateSseWriter(
+internal class ImmediateSseWriter(
     private val writeRaw: RawSseWrite,
     private val flushRaw: RawSseFlush,
 ) {

@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 private const val TYPE = "type"
 private const val MESSAGE = "message"
 
-public class SseEmitter internal constructor(
+internal class SseEmitter(
     private val frames: SseFrameWriter,
     private val start: MessageStart,
     private val blocks: WireBlockWriter,
@@ -223,7 +223,7 @@ public class SseEmitter internal constructor(
      *  nested class (not a static namespace, not top-level) so both [SseEmitter] and
      *  [CollectingTerminal] each hold one, and it constructs freely (non-inner) even though
      *  SseEmitter's own constructor is internal. Held-not-copied, per its callers. */
-    public class TerminalEnvelope {
+    class TerminalEnvelope {
         /** Non-stream terminal message (translateResponse envelope) — built HERE because the
          *  stop_reason derivation and its literals are walled to this file (L3). The envelope
          *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
@@ -273,7 +273,7 @@ public class SseEmitter internal constructor(
  *  message still comes from FailurePresenter and telemetry still records the REAL type. */
 /** Has any content frame reached the client this turn — the one fact the pre-content rule turns on.
  *  Named for its role at the seam (wall kt-no-lambda-seam); the emitter asks it per error frame. */
-public fun interface ContentReached {
+internal fun interface ContentReached {
     public operator fun invoke(): Boolean
 }
 

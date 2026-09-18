@@ -11,7 +11,7 @@ package splice.gateway.wire
 import splice.core.index.WireBlockIndex
 import splice.spi.WireSink
 
-public class BufferingWireSink(private val real: WireSink) : WireSink {
+internal class BufferingWireSink(private val real: WireSink) : WireSink {
 
     // Deferred final-output ops, in order. Placeholder refs are NEGATIVE (real indices are >= 0), so
     // routing (buffered vs live) is a sign check and placeholders never collide with real indices.

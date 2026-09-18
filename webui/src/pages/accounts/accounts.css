@@ -23,11 +23,30 @@
   color: var(--ink-strong);
 }
 
+/* THE RACK TAKES THE WHOLE WIDTH UNTIL SOMETHING IS OPENED (M2-24, the console's last resting
+   detail column; the mechanism is M1-116's and M1-119's, copied rather than re-derived). Measured
+   at rest before this: a 384x92 column inside a 408x784 dead region -- 20.3% of the frame, third
+   worst in the console, against the comp's own 11.2%. The second track is 0 at rest, the -open
+   class carries both the wide track AND its gutter, and the transition covers both so the swell is
+   ONE movement rather than a width that grows while a gap snaps. A zero track that still costs a
+   gap is not zero, which is why column-gap moves with the track; row-gap stays unconditional
+   because below 1120px the open body is one column and the aside wraps to a second ROW. */
 .myx-accounts-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-4);
   align-items: start;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+.myx-accounts-body-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-accounts-body { transition: none; }
 }
 
 /* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
@@ -40,7 +59,9 @@
    at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
    place, for every page row; until it is hoisted there it is repeated here with this note. */
 @media (max-width: 1120px) {
-  .myx-accounts-body { grid-template-columns: minmax(0, 1fr); }
+  /* Only the OPEN class, mirroring the other five: at rest the second track is already 0, so a
+     1fr-plus-0 body is the full width here too. */
+  .myx-accounts-body-open { grid-template-columns: minmax(0, 1fr); }
 }
 
 .myx-accounts-bays {

@@ -59,6 +59,70 @@
   color: var(--ink);
 }
 
+/* ---- THE KNOB RACK IS A RACK, NOT A COLUMN (M2-21) --------------------------------
+   The page composed its 45 knobs as ONE full-width column, which at the comp's own plate height
+   is about 5400px of rack inside a 1024px frame — five screens, of which the reader sees seven
+   knobs. The comp composes four narrow bays side by side (head: claude, head: claude-deepseek,
+   team chat, activity), each a vertical rack of short tables; the two frames differ on the COLUMN
+   COUNT more than on anything else, and this is that difference applied to the members the page
+   already has. No content is added and no knob is invented: the same 45 plates, laid out in as
+   many columns as the bay affords, so the page shows about a third of its rack at once instead of
+   a seventh.
+
+   ROW FLOW, so the plates fill left to right and the last row is the only ragged one — column
+   flow would leave every column's floor at a different height and the rack's closing rule would
+   sit at four different y positions. The ordinals still ascend left to right and then down, which
+   is what a numbered grid reads as; they no longer read DOWN a single column because there is no
+   longer a single column.
+
+   NO ROW GAP, deliberately: `.myx-knob` carries its own padding and its own bottom rule, so a row
+   gap would space the rack twice and the closing rule would float away from the row it closes.
+   The COLUMN gap is the gutter the comp's bays keep between them.
+
+   minmax rather than a fixed repeat, so the column count follows the bay instead of a number this
+   sheet guessed, and the 1120px floor is the page's own body breakpoint (see projects.css and
+   sessions.css): below it the rack is one column again, which is also what a narrow frame wants.
+   420px and not 320: at the 1536 frame the bay affords 1350px, so 320 gives FOUR columns of 341px
+   and the value, the provenance and the verdict cannot share a line inside one — see the row rule
+   below, which is what the columns are for. */
+.myx-settings .myx-knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 0 var(--space-4);
+  align-content: start;
+}
+
+/* ---- AND THE MEMBER IS TWO LINES, NOT FOUR (M2-21) ---------------------------------
+   `.myx-fbox` stacks label, value, provenance and verdict in a column (ui.css:774). That is four
+   lines where the comp's own table cell is two — a small label line over its value — and it is
+   what forces the card height that forced the single column in the first place, so the two halves
+   are one change rather than two. The page's THREE QUESTIONS ARE NOT SHORTENED: provenance and
+   the hot/restart verdict stay printed on every row, which is what the page exists to answer
+   (widgets/knob-form/index.tsx:3-5), they simply sit BESIDE the value on its own line instead of
+   under it. `default` and `restart to apply` are short; the value is what needs the room, and it
+   gets the 1fr.
+
+   Scoped to `.myx-knobs` and not to `.myx-settings`: the topology forms and the head editor read
+   the same primitive and their rows are a different shape. Changing the knob rack is this row's
+   business; changing every fbox on the page on the way past is not. */
+.myx-knobs .myx-fbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'label label label'
+    'input prov  hot';
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.myx-knobs .myx-fbox-label { grid-area: label; }
+.myx-knobs .myx-fbox-input { grid-area: input; min-width: 0; }
+.myx-knobs .myx-fbox-prov { grid-area: prov; }
+.myx-knobs .myx-fbox-hot { grid-area: hot; }
+
+@media (max-width: 1120px) {
+  .myx-settings .myx-knobs { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* A bay's rows are field boxes, not strips, so the rack needs the padding the
    strip module would otherwise bring. */
 .myx-settings .myx-bay-rows .myx-fbox {

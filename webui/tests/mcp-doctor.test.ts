@@ -116,9 +116,12 @@ describe('every failing check carries its fix', () => {
     expect(out).toContain('myx-edge-red');
   });
 
-  test('a check with no remedy says so rather than printing a blank cell', () => {
+  test('a check with no remedy prints the absence glyph rather than a blank cell', () => {
+    // The sentence `no fix offered` moved to the opened check's own note, where a Doctor fix's
+    // paragraph belongs; the rack cell carries the absence glyph (m1 design review B8).
     const out = render(h(CheckStrip, { check: plain, selected: false, onOpen: () => undefined }));
-    expect(out).toContain('no fix offered');
+    expect(out).toContain('>n/r<');
+    expect(out).not.toContain('no fix offered');
   });
 
   test('warn and fail cock the strip; ok and info do not', () => {
@@ -245,7 +248,9 @@ describe('the mcp host', () => {
   test('the three states are told apart, and idle is not a failure', () => {
     const states = serverRows(payload).map((row) => [row.name, row.state]);
     expect(states).toEqual([['alpha', 'idle'], ['moot', 'ineligible'], ['zebra', 'hosted']]);
-    expect(stateLabel('idle')).toBe('not started');
+    // `unused` and not `not started`: the edge prints this word inside the contract's 6ch budget
+    // (CONTRACTS.md section 2, m1 design review B10).
+    expect(stateLabel('idle')).toBe('unused');
   });
 
   test('an ineligible server is grey, not red: a decision is not a fault', () => {

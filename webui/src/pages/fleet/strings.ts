@@ -20,4 +20,8 @@ export const S = {
   noOverrides: 'no overrides',
   note: 'note',
   version: 'version',
+  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8).
+   *  It replaces the bare `not built` this page used to print in a strip; the pending routes are
+   *  named where they belong, in its honest empties (EMPTIES.fields, EMPTIES.pool). */
+  absent: 'n/r',
 } as const;

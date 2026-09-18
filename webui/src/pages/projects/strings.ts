@@ -20,7 +20,12 @@ export const S = {
   cost: 'cost',
   last: 'last seen',
   day: 'today',
-  unknown: 'unknown',
-  /** What a cost cell says when the heads that ran here declare no rates. */
-  noRates: 'no rates',
+  /** The holder edge's state: something is running in this repo right now, or nothing is. The
+   *  edge used to print the noun `repo`, which is the first field's own label and no state at
+   *  all (m1 design review B10). */
+  running: 'busy',
+  quiet: 'quiet',
+  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
+   *  replacing `no rates` in the cost cell and `unknown` in the last-seen cell. */
+  absent: 'n/r',
 } as const;

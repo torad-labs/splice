@@ -12,9 +12,24 @@ import { Bay, Empty, Strip, StripField } from '@shared/ui';
 import { EMPTIES } from './model';
 import { S } from './strings';
 
+/** A rate the model does not declare prints the absence glyph, not the phrase `no rates` — the
+ *  strip's holder edge says `no rates` once, which is where a state belongs (m1 design review
+ *  B8 and B10). */
 function rateValue(model: CatalogModel, pick: (rates: NonNullable<CatalogModel['rates']>) => number): string {
-  return model.rates === null ? S.noRates : String(pick(model.rates));
+  return model.rates === null ? S.absent : String(pick(model.rates));
 }
+
+/** The catalog rack's columns: the bay head prints these once and the strips below carry values
+ *  only (CONTRACTS.md section 2, m1 design review B9). The struck row for a tier no model fills
+ *  carries the first two, which is what a missing model means. */
+export const MODEL_COLUMNS: readonly { key: string; label: string; w: number; prose?: boolean }[] = [
+  { key: 'model', label: S.model, w: 24, prose: true },
+  { key: 'slot', label: S.slot, w: 8, prose: true },
+  { key: 'contextWindow', label: S.contextWindow, w: 13 },
+  { key: 'windowSource', label: S.windowSource, w: 24, prose: true },
+  { key: 'rateInput', label: S.rateInput, w: 12 },
+  { key: 'rateOutput', label: S.rateOutput, w: 12 },
+];
 
 function ModelStrip({ model, slot, selected, onOpen }: {
   model: CatalogModel;
@@ -22,10 +37,14 @@ function ModelStrip({ model, slot, selected, onOpen }: {
   selected: boolean;
   onOpen: () => void;
 }) {
+  /** A model no tier selects. It is the strip's own state, so the holder edge prints it and the
+   *  `slot` field carries the same word as data (m1 design review B10: the edge label used to BE
+   *  the slot datum, so every strip printed its tier twice). */
+  const unslotted = slot === S.noSlot;
   return (
     <Strip
-      edge={model.rates === null ? 'grey' : 'green'}
-      edgeLabel={model.pinned ? S.pinnedYes : slot}
+      edge={unslotted ? 'grey' : 'green'}
+      edgeLabel={model.pinned ? S.pinnedYes : unslotted ? S.noSlot : S.slotted}
       selected={selected}
       onOpen={onOpen}
       ariaLabel={`${S.openModel} ${model.id}`}
@@ -33,14 +52,42 @@ function ModelStrip({ model, slot, selected, onOpen }: {
       {/* Six fields and no more: a strip whose fields outrun its bay squeezes the holder edge, and
           a wrapped edge label is the one defect that makes a rack stop reading as a rack. The cache
           read and write rates and the pinned flag live in the opened strip's detail. */}
-      <StripField w={24} label={S.model} value={model.id} mono={false} />
-      <StripField w={8} label={S.slot} value={slot} mono={false} />
-      <StripField w={13} label={S.contextWindow} value={fmtTokens(model.context_window)} />
-      <StripField w={24} label={S.windowSource} value={model.context_window_source} mono={false} />
-      <StripField w={12} label={S.rateInput} value={rateValue(model, (rates) => rates.input)} />
-      <StripField w={12} label={S.rateOutput} value={rateValue(model, (rates) => rates.output)} />
+      {MODEL_COLUMNS.map((column) => (
+        <StripField
+          key={column.key}
+          w={column.w}
+          value={modelCell(model, slot, column.key)}
+          {...(column.prose ? { mono: false } : {})}
+        />
+      ))}
     </Strip>
   );
+}
+
+/** The rack's column names, printed once for the whole bay (CONTRACTS.md section 2, m1 design
+ *  review B9). The boxes carry the cell's own inline padding so a name sits over the value it
+ *  names; the bay's head row supplies the face and the colour. */
+function ModelColumnHeads() {
+  return (
+    <>
+      {MODEL_COLUMNS.map((column) => (
+        <span className="myx-mdl-col" key={column.key} style={{ width: `${column.w}ch` }}>
+          <span className="myx-mdl-col-name">{column.label}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** One cell of the catalog rack, by column. The rack's names are on the bay head, so a cell is a
+ *  value and nothing else. */
+function modelCell(model: CatalogModel, slot: string, key: string): string {
+  if (key === 'model') return model.id;
+  if (key === 'slot') return slot;
+  if (key === 'contextWindow') return fmtTokens(model.context_window);
+  if (key === 'windowSource') return model.context_window_source;
+  if (key === 'rateInput') return rateValue(model, (rates) => rates.input);
+  return rateValue(model, (rates) => rates.output);
 }
 
 /** One head's rack: its four tiers, then every model that fills no tier. */
@@ -54,6 +101,7 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
     <Bay
       label={head.key}
       count={head.models.length}
+      fields={<ModelColumnHeads />}
       empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
     >
       {slotTiers(head).map((tier) => (
@@ -65,8 +113,8 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
             struck
             ariaLabel={`${S.slot} ${tier.slot}`}
           >
-            <StripField w={24} label={S.model} value={S.undeclared} mono={false} />
-            <StripField w={8} label={S.slot} value={tier.slot} mono={false} />
+            <StripField w={24} value={S.absent} mono={false} />
+            <StripField w={8} value={tier.slot} mono={false} />
           </Strip>
         ) : (
           <ModelStrip
@@ -82,7 +130,7 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
         <ModelStrip
           key={model.id}
           model={model}
-          slot="none"
+          slot={S.noSlot}
           selected={selected === model.id}
           onOpen={() => onSelect(model.id)}
         />
@@ -100,11 +148,11 @@ export function ModelDetail({ model, head }: { model: CatalogModel; head: HeadCa
       <Strip edge={model.rates === null ? 'grey' : 'green'} edgeLabel={model.rates === null ? S.noRates : S.rates} ariaLabel={S.rates}>
         <StripField w={13} label={S.rateInput} value={rateValue(model, (rates) => rates.input)} />
         <StripField w={13} label={S.rateRead} value={rateValue(model, (rates) => rates.cache_read)} />
-        <StripField w={13} label={S.rateWrite} value={model.rates?.cache_write === undefined ? S.noRates : String(model.rates.cache_write)} />
+        <StripField w={13} label={S.rateWrite} value={model.rates?.cache_write === undefined ? S.absent : String(model.rates.cache_write)} />
         <StripField w={13} label={S.rateOutput} value={rateValue(model, (rates) => rates.output)} />
       </Strip>
-      <Strip edge="grey" edgeLabel={head.key} ariaLabel={S.tiers}>
-        <StripField w={15} label={S.headWindow} value={head.context_window === null ? 'none' : fmtTokens(head.context_window)} />
+      <Strip edge="grey" edgeLabel={S.window} ariaLabel={S.tiers}>
+        <StripField w={15} label={S.headWindow} value={head.context_window === null ? S.absent : fmtTokens(head.context_window)} />
         <StripField w={15} label={S.defaultWindow} value={fmtTokens(head.default_context_window)} />
         <StripField w={15} label={S.extraWindows} value={head.extra_windows.length} />
         <StripField w={15} label={S.windowRules} value={head.window_rules.length} />

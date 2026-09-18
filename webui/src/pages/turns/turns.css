@@ -54,6 +54,27 @@
 .myx-tn-item { position: absolute; inset-inline: 0; top: 0; }
 
 /* The band between groups: the name of what follows, and its count. */
+/* One column name on a bay head, over the cell it names (CONTRACTS.md section 2, m1 design review
+   B9).
+
+   The box's `ch` must resolve in the CELL's own face and size, or a name sits left of the value it
+   names and drifts further with every column: the bay's head row sets the LABEL face at --text-1
+   so the edge column's 6ch budget resolves, and a 26ch box in that face is about a third narrower
+   than a 26ch cell in the figure face at --text-3. The width is therefore declared in the figure
+   face and only the printed name is put back in the label face. */
+.myx-tn-col {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  padding-inline: var(--space-3);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.myx-tn-col-name {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+}
+
 .myx-tn-band {
   display: flex;
   align-items: center;
@@ -100,3 +121,12 @@
 }
 .myx-tn-close:hover { border-color: var(--strip-ink); }
 .myx-tn-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* ONE breakpoint for every page body (m1 design review B13): the detail column drops beneath the
+   bay below 1120px, the width at which the rail, a bay and a detail column stop fitting side by
+   side. The bays scroll their racks (review B7), so a narrow bay scrolls instead of cutting the
+   tail off a strip, and the brief's own topology — one detail column, the opened strip swelling
+   into it on the right — holds at every width above this floor. The rule belongs in the shell, in
+   one place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  .myx-tn-board-open { grid-template-columns: minmax(0, 1fr); }
+}

@@ -2,6 +2,7 @@
 // section 4, enforced by the label wall). The law line is a sentence and lives in the component.
 export const S = {
   title: 'compaction',
-  law: 'the law',
+  /** The reveal's label for the page's one explanation. */
+  law: 'why no model',
   sample: 'sample data',
 } as const;

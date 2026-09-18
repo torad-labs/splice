@@ -6,7 +6,6 @@
 export const S = {
   title: 'doctor',
   checks: 'checks',
-  status: 'status',
   version: 'version',
   installed: 'installed',
   latest: 'latest',
@@ -24,7 +23,8 @@ export const S = {
   clear: 'clear',
   upgrade: 'upgrade',
   restart: 'restart',
-  none: 'none',
-  unknown: 'unknown',
   noFix: 'no fix offered',
+  /** What any cell with no value prints — the approved comp's own glyph (m1 design review B8),
+   *  replacing `unknown` in the upgrade strip's three cells. */
+  absent: 'n/r',
 } as const;

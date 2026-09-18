@@ -10,7 +10,8 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
 import type { CompactPayload } from '@shared/api';
 import { startCompactPolling, useCompact } from '@entities/compact-stats';
-import { ErrorNote, SkeletonRows } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
+import { Reveal } from '@shared/ui';
 import { CompactFeed } from '@widgets/compact-feed';
 import { dispositions } from './coverage';
 import { S } from './strings';
@@ -43,8 +44,12 @@ export function CompactionBoard({ payload, sample = false }: {
       <header className="myx-compaction-head">
         <h1 className="myx-compaction-title">{S.title}</h1>
       </header>
-      <p className="myx-compaction-law">{LAW_TEXT}</p>
-      {payload === null ? <SkeletonRows rows={4} cols={4} /> : <CompactFeed payload={payload} sample={sample} />}
+      {/* Behind a Reveal, not inline: the brief allows a paragraph on a page only as an honest
+          empty or a Doctor fix, and explanation is on demand (m1 design review B16). The copy is
+          also the page's whole reason to be here, so it is kept — one click away, and out of the
+          rack's way. */}
+      <Reveal label={S.law}>{<p className="myx-compaction-law">{LAW_TEXT}</p>}</Reveal>
+      {payload === null ? <Blank strips={4} /> : <CompactFeed payload={payload} sample={sample} />}
     </div>
   );
 }
@@ -68,7 +73,7 @@ export default function CompactionPage() {
 
   return (
     <>
-      {compact.error === null ? null : <ErrorNote message={compact.error} />}
+      {compact.error === null ? null : <Fault message={compact.error} />}
       <CompactionBoard payload={fixture === null ? compact.data : fixture} sample={fixture !== null} />
     </>
   );

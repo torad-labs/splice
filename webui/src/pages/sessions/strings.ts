@@ -27,9 +27,13 @@ export const S = {
   address: 'address',
   at: 'at',
   sent: 'sent',
-  received: 'received',
-  /** The one word a field prints when the daemon does not report the value is a
-   *  plain hyphen, which is not a label and lives in strip.tsx. */
+  /** `recv` and not `received`: the holder edge prints this word, and the contract budgets a
+   *  holder edge at 6 characters (CONTRACTS.md section 2). */
+  received: 'recv',
+  /** What any cell with no value prints. The approved comp's own glyph (m1 design review B8):
+   *  the hyphen it replaces was printed with the basis word `unavailable` beside it, which is
+   *  one fact in two sentences. `n/r` is not a label and lives in strip.tsx with the cells. */
+  absent: 'n/r',
   idle: 'idle',
   undated: 'not dated',
 } as const;

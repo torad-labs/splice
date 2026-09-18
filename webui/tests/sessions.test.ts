@@ -144,7 +144,7 @@ describe('view selection', () => {
 // ── the strip's own projection ───────────────────────────────────────────────
 
 describe('session strip', () => {
-  test('marks every value the client did not write as unavailable, never as a blank', () => {
+  test('marks every value the client did not write with the absence glyph, never as a blank', () => {
     const bare = session({
       cwd: null,
       started_at: null,
@@ -154,8 +154,9 @@ describe('session strip', () => {
       pid: 42,
     });
     const fields = fieldsOf(bare, null, ['name', 'project', 'started', 'seen', 'peer']);
-    expect(fields.map((f) => f.value)).toEqual(['pid 42', '-', '-', '-', '-']);
-    expect(fields.slice(1).every((f) => f.basis === 'unavailable')).toBe(true);
+    expect(fields.map((f) => f.value)).toEqual(['pid 42', 'n/r', 'n/r', 'n/r', 'n/r']);
+    // No basis word on an absent cell: the glyph is the whole statement (m1 design review B8).
+    expect(fields.slice(1).every((f) => f.basis === undefined)).toBe(true);
     // The name a session falls back to is never empty either.
     expect(fields[0].basis).toBe('measured');
   });
@@ -197,10 +198,10 @@ describe('sessions board', () => {
     expect(out).toContain('head: claudex');
   });
 
-  test('the peer is unknown, and says on what basis, while the edges route is pending', () => {
+  test('the peer is unknown, and prints the absence glyph, while the edges route is pending', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ session_id: 'a' })]) }));
-    expect(out).toContain('>-<');
-    expect(out).toContain('>unavailable<');
+    expect(out).toContain('>n/r<');
+    expect(out).not.toContain('unavailable');
   });
 
   test('an empty registry names the route it read, and never a fixture', () => {
@@ -250,8 +251,8 @@ describe('projects board', () => {
         },
       }),
     );
-    expect(out).toContain('no rates');
-    expect(out).toContain('>unavailable<');
+    expect(out).toContain('>n/r<');
+    expect(out).not.toContain('no rates');
     expect(out).toContain('/dev/atlas');
   });
 });

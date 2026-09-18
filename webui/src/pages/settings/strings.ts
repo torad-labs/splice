@@ -10,6 +10,8 @@ export const S = {
   separate: 'separate',
   wrap: 'wrap',
   unwrapLabel: 'unwrap',
+  confirmUnwrap: 'confirm unwrap',
+  confirmWrap: 'confirm wrap',
   rawToml: 'raw topology',
   showDiff: 'show diff',
   write: 'write topology',

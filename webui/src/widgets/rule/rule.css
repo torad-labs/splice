@@ -175,10 +175,17 @@
   flex: 0 0 auto;
 }
 
+/* NO INK ON THE CELL (M2R-01). This rule declared `color: var(--ink-mute)` for the whole cell. It
+   was written for the AGE beside the state word, but every piece of that age already declares its
+   own ink -- `.myx-rule-absent` above, and Figure's value, unit and basis in ui.css -- so the one
+   child that ever inherited it was the holder edge's STATE WORD, and only once that label began
+   taking its ground's ink: `reconnecting` dropped from 11.03:1 to 6.93:1 in the dark room. That
+   word is the colorblind fallback and the only thing telling a quiet daemon from a dead stream
+   (index.tsx), so it prints in the room's full ink. The pending cell shares the rule and the
+   reasoning: `restart pending` is an attention word, and its count is a Figure with its own ink. */
 .myx-rule-connection,
 .myx-rule-pending {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  color: var(--ink-mute);
 }

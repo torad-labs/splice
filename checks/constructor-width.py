@@ -115,6 +115,27 @@ BASELINE_REL = "checks/config/constructor-width-baseline.json"
 MAX_PARAMS = 12
 MAX_SUBSYSTEMS = 6
 
+# V4-122 item 8': THE CONFIG-RECORD BUDGET, a THIRD width for a shape neither of the two above
+# describes.
+#
+# WHY A CONFIG RECORD NEEDS ITS OWN BUDGET. This instrument exists to catch COLLABORATOR sprawl — a
+# constructor whose width means it wires too many things and has no call site a human can read. A
+# @Serializable record whose every parameter is a defaulted `val` and which names no subsystem is
+# not that: its parameters are TOML KEYS. QuirksConfig carries twenty-five of them and every one is
+# a vendor deformation the config surface has to name, already gated three other ways (the
+# quirks-keys-documented wall, the oracle pin, and the disposition block in
+# config/splice.example.toml). Measuring it against MAX_PARAMS made the row's own subject look like
+# debt and produced a fix — group the keys to get back under 12-adjacent arithmetic — that would
+# have cost a custom TOML serializer to buy one number. The code was never the debt; the instrument
+# was counting a config surface as a dependency list.
+#
+# WHAT THIS BUDGET IS FOR, and what it is not. Its job on a config record is to catch a DUMPING
+# GROUND — a record that has stopped being one vendor's quirks and become wherever new keys are
+# thrown — not to cap a vendor surface, which grows one key per deformation by nature. 32 leaves
+# QuirksConfig seven keys of room and still bites long before a dumping ground. A record that
+# exceeds it should be SPLIT by subject, not compressed into fewer, wider keys.
+MAX_CONFIG_KEYS = 32
+
 # A class declaration whose name is followed (before any newline) by the primary-constructor
 # paren. `^[ \t]*` admits nested classes; the modifier set admits every Kotlin spelling,
 # including `annotation` and `value`, so the census cannot become a dodge list (DR-51).
@@ -273,12 +294,21 @@ def split_params(body: str) -> list[str]:
 
 
 class Constructor:
-    def __init__(self, name: str, rel: str, line: int, params: int, subsystems: list[str]) -> None:
+    def __init__(
+        self,
+        name: str,
+        rel: str,
+        line: int,
+        params: int,
+        subsystems: list[str],
+        config_record: bool = False,
+    ) -> None:
         self.name = name
         self.rel = rel
         self.line = line
         self.params = params
         self.subsystems = subsystems
+        self.config_record = config_record
 
     @property
     def id(self) -> str:
@@ -288,6 +318,13 @@ class Constructor:
         return f"{self.rel} {self.name}"
 
     def over(self) -> list[str]:
+        # A CONFIG RECORD is measured against the config budget ALONE. It cannot reach the other two
+        # by construction — no subsystem is part of its definition — so grading it on params would
+        # be grading TOML keys against a collaborator limit, which is the defect this shape fixes.
+        if self.config_record:
+            if self.params > MAX_CONFIG_KEYS:
+                return [f"{self.params} config keys (max {MAX_CONFIG_KEYS})"]
+            return []
         reasons = []
         if self.params > MAX_PARAMS:
             reasons.append(f"{self.params} parameters (max {MAX_PARAMS})")
@@ -296,6 +333,43 @@ class Constructor:
                 f"{len(self.subsystems)} subsystems (max {MAX_SUBSYSTEMS}): {', '.join(self.subsystems)}"
             )
         return reasons
+
+
+# A parameter that is a `val` WITH a default — annotations allowed in front. `[^=]*` is the type,
+# so the `=` it must reach is the default's, never an `=` inside a type expression.
+DEFAULTED_VAL = re.compile(
+    r"^\s*(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\([^)\n]*\))?\s*)*"
+    r"val\s+[A-Za-z_][A-Za-z0-9_]*\s*:[^=]*="
+)
+
+
+def is_config_record(text: str, class_start: int, params: list[str], subsystems: list[str]) -> bool:
+    """A CONFIG RECORD — the shape [MAX_CONFIG_KEYS] governs. All three clauses are required, and
+    each is doing work rather than decorating a heuristic:
+
+    @Serializable — the class is a wire or config SURFACE, which is what the annotation says. A
+    plain class with the same shape is a value object and is graded at the ordinary widths; that is
+    the property the selftest's arm B pins, because without it the exemption would be reachable by
+    deleting one annotation.
+
+    EVERY parameter a defaulted `val` — a key the config may omit. One parameter without a default
+    means the class has a REQUIRED collaborator, so it is wiring something and the ordinary budgets
+    are the right ones. `var` is excluded for the same reason: mutable state is not a key.
+
+    NO SUBSYSTEM — a record that names a `splice.*` type is wiring that type, whatever else it looks
+    like.
+    """
+    if subsystems or not params:
+        return False
+    if not all(DEFAULTED_VAL.match(param) for param in params):
+        return False
+    for line in reversed(text[:class_start].rstrip("\n").split("\n")):
+        stripped = line.strip()
+        if not stripped.startswith("@"):
+            break
+        if stripped.startswith("@Serializable"):
+            return True
+    return False
 
 
 def measure_file(rel: str, text: str) -> tuple[list[Constructor], list[str]]:
@@ -315,7 +389,8 @@ def measure_file(rel: str, text: str) -> tuple[list[Constructor], list[str]]:
         if not params:
             continue
         subsystems = sorted({imports[name] for param in params for name in TYPE_NAME.findall(param) if name in imports})
-        found.append(Constructor(match.group(1), rel, line, len(params), subsystems))
+        config_record = is_config_record(text, match.start(), params, subsystems)
+        found.append(Constructor(match.group(1), rel, line, len(params), subsystems, config_record))
     return found, problems
 
 

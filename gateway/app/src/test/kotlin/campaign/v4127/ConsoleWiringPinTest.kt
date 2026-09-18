@@ -38,7 +38,7 @@ class ConsoleWiringPinTest {
                 "/api/doctor would answer its unwired 5xx while the daemon is healthy and reportable",
             "srv.upgrade = UpgradeStatus(" to
                 "/api/upgrade would report MEASURED with nothing newer, which tells an operator they " +
-                    "are up to date when nothing ever looked",
+                "are up to date when nothing ever looked",
         ).forEach { (line, harm) ->
             assertTrue(
                 source.contains(line),

@@ -221,52 +221,58 @@ export function FleetPage() {
           ) : null}
         </div>
 
-        {/* THE COLUMN ARRIVES WITH ITS CONTENT (M1-102). It is not rendered at rest at all, and
-            that is the whole of the change: the resting column cost 25.0% of the frame - 384 of
-            1536 - to carry a card covering 3.5% of itself, and it was paid for by the rack, whose
-            own 1200px grid had 969.8px to fit in, leaving `window` cut 126px past the bay edge and
-            `last turn` 308px past it, entirely invisible. Unrendered, the rack fits its own grid.
-            THE EMPTY GOES WITH IT, and that is deliberate rather than an oversight: an honest empty
-            says what a panel is missing and which source would supply it, and at rest there is no
-            panel to be missing anything - the console has not been asked for a head yet. A card
-            captioned "no head opened" is not reporting an absence, it is describing a panel that
-            does not exist. The strips are the affordance; the comp of record has no resting detail
-            column either. `EMPTIES.noOpened` is now unread here - model.ts is outside this row's
-            fence, so it is reported in the ledger rather than deleted. */}
-        {opened === null ? null : (
-          <aside className="myx-fleet-detail" aria-label={S.detail}>
-            <div className="myx-fleet-detail-head">
-              <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
-              <span className="myx-fleet-detail-name">{opened.label}</span>
-              <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
-            </div>
+        {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M1-116 rules collapse over the
+            unmount M1-102 shipped here; the measurement below is M1-102's and still stands). The
+            resting column cost 25.0% of the frame - 384 of 1536 - to carry a card covering 3.5% of
+            itself, and the rack paid for it: this rack's own field grid declares 1200px and the bay
+            had 969.8px, so `window` was cut 126px past the bay edge and `last turn` sat 308px past
+            it, entirely invisible. At rest the rack now measures 1365.8px and fits its own grid.
+            THE ASIDE STAYS MOUNTED AND EMPTY, which is the difference and the whole point: it gives
+            the track something to transition FROM, so CONTRACTS section 6's swell is one
+            declaration on grid-template-columns rather than a mount followed by a fade that pops if
+            the mount lands a frame late. This shape is turns', sessions' and projects'.
+            THE EMPTY STAYS GONE, deliberately rather than by oversight: an honest empty says what a
+            panel is missing and which source would supply it, and at rest there is no panel to be
+            missing anything - the console has not been asked for a head yet, so a card captioned
+            "no head opened" describes a panel that does not exist. The strips are the affordance;
+            the comp of record has no resting detail column either. `EMPTIES.noOpened` is unread
+            here - model.ts is outside this row's fence, so it is reported in the ledger. */}
+        <aside className="myx-fleet-detail" aria-label={S.detail}>
+          {opened === null ? null : (
+            <>
+              <div className="myx-fleet-detail-head">
+                <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
+                <span className="myx-fleet-detail-name">{opened.label}</span>
+                <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
+              </div>
 
-            <section className="myx-fleet-section">
-              <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
-              <Lifecycle head={opened} />
-              <Empty text={EMPTIES.daemonRestart.text} source={EMPTIES.daemonRestart.source} />
-            </section>
+              <section className="myx-fleet-section">
+                <h2 className="myx-fleet-section-title">{S.lifecycle}</h2>
+                <Lifecycle head={opened} />
+                <Empty text={EMPTIES.daemonRestart.text} source={EMPTIES.daemonRestart.source} />
+              </section>
 
-            <section className="myx-fleet-section">
-              <h2 className="myx-fleet-section-title">{S.knobs}</h2>
-              {overrides.length === 0 ? (
-                <p className="myx-fleet-note">{S.noOverrides}</p>
-              ) : (
-                overrides.map((knob) => (
-                  <div key={knob.key}>
-                    <KnobRow knob={knob} />
-                    <p className="myx-fleet-note">{dispositionText(knob.hot)}</p>
-                  </div>
-                ))
-              )}
-            </section>
+              <section className="myx-fleet-section">
+                <h2 className="myx-fleet-section-title">{S.knobs}</h2>
+                {overrides.length === 0 ? (
+                  <p className="myx-fleet-note">{S.noOverrides}</p>
+                ) : (
+                  overrides.map((knob) => (
+                    <div key={knob.key}>
+                      <KnobRow knob={knob} />
+                      <p className="myx-fleet-note">{dispositionText(knob.hot)}</p>
+                    </div>
+                  ))
+                )}
+              </section>
 
-            <section className="myx-fleet-section">
-              <h2 className="myx-fleet-section-title">{S.pool}</h2>
-              <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />
-            </section>
-          </aside>
-        )}
+              <section className="myx-fleet-section">
+                <h2 className="myx-fleet-section-title">{S.pool}</h2>
+                <Empty text={EMPTIES.pool.text} source={EMPTIES.pool.source} />
+              </section>
+            </>
+          )}
+        </aside>
       </div>
     </div>
   );

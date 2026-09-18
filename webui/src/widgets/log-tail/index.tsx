@@ -13,7 +13,7 @@ import { useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogFilter, LogLevel, LogsPayload } from '@entities/logs';
-import { Fault } from '@shared/controls';
+import { Fault, Flag } from '@shared/controls';
 import { Empty, Figure, Strip, StripField } from '@shared/ui';
 import type { Edge } from '@shared/ui';
 import { S } from './strings';
@@ -94,11 +94,16 @@ export function LogTail({ payload, filter, appended, reset, follow, error = null
             </label>
           </div>
         )}
+        {/* THE FOLLOW TOGGLE IS THE WORLD'S FLAG (M1-103). It was an `<input type="checkbox">` --
+            system-blue browser chrome inside the console, the defect Flag was written for and names
+            in its own header ("the log tail still rendered a system-blue checkbox"). The PLACEMENT
+            was not made because the widget predates the primitive, which is D7's prediction come
+            due. Flag renders a button with role="switch" and aria-checked, so it keeps the native
+            checkbox's contract -- Enter and Space toggle it, a reader hears a switch -- while the
+            state prints as the paper trap: a HolderEdge, green while it follows and grey while it
+            does not, with the word beside it. Neither signal is colour alone. */}
         {onFollow === undefined ? null : (
-          <label className="myx-lt-toggle">
-            <input type="checkbox" checked={follow} onChange={(event) => onFollow(event.target.checked)} />
-            <span>{follow ? S.follow : S.paused}</span>
-          </label>
+          <Flag on={follow} onLabel={S.follow} offLabel={S.paused} onChange={onFollow} />
         )}
         <Figure value={appended} unit={S.newLines} basis="measured" />
       </header>

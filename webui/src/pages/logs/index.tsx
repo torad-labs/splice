@@ -16,6 +16,7 @@ import type { CaptureSlice } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
 import { fetchCapture, useCapture } from '@entities/perf';
 import { Bay, Empty, Figure, HolderEdge } from '@shared/ui';
+import { Choice } from '@shared/controls';
 import { LogTail } from '@widgets/log-tail';
 import { RequestDrawer } from '@widgets/waterfall';
 import { S } from './strings';
@@ -66,43 +67,45 @@ export function LogsBoard({
     >
       <header className="myx-lg-head">
         <h2 className="myx-lg-title">{S.title}</h2>
-        <label className="myx-lg-field">
-          <span className="myx-lg-field-label">head</span>
-          <select value={head} onChange={(event) => onHead?.(event.target.value)}>
-            {heads.map((entry) => (
-              <option key={entry.key} value={entry.key}>{entry.label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="myx-lg-field">
-          <span className="myx-lg-field-label">{S.tail}</span>
-          <select value={tail} onChange={(event) => onTail?.(Number(event.target.value))}>
-            {TAIL_SIZES.map((size) => (
-              <option key={size} value={size}>{size}</option>
-            ))}
-          </select>
-        </label>
-        <label className="myx-lg-field">
-          <span className="myx-lg-field-label">{S.tag}</span>
-          <select value={filter.head ?? ''} onChange={(event) => onFilter?.({ ...filter, head: event.target.value === '' ? null : event.target.value })}>
-            <option value="">{S.all}</option>
-            {tags.map((tag) => (
-              <option key={tag} value={tag}>{tag}</option>
-            ))}
-          </select>
-        </label>
-        <label className="myx-lg-field">
-          <span className="myx-lg-field-label">{S.level}</span>
-          <select
-            value={filter.level ?? ''}
-            onChange={(event) => onFilter?.({ ...filter, level: event.target.value === '' ? null : (event.target.value as LogLevel) })}
-          >
-            <option value="">{S.all}</option>
-            {levels.map((level) => (
-              <option key={level} value={level}>{level}</option>
-            ))}
-          </select>
-        </label>
+        {/* THE FOUR CHOICES ARE THE WORLD'S CONTROL (M1-103). These were four native `<select>`s,
+            which Choice's own header names as the reason it exists: a select's POPUP is the OS's
+            window with the OS's font and scrollbar, and `appearance: none` cannot reach inside it.
+            Choice prints the options in flow instead -- a rack of one-field strips under the box,
+            with no absolute layer to be clipped or land off-screen -- so this is a STATED BETTER
+            shape rather than an equivalent one, and it is the replacement the primitive was written
+            for. BEHAVIOUR IS PRESERVED ONE FOR ONE: the same value goes to the same callback, the
+            tail is stringified for the box and parsed back through Number, and the two filters keep
+            their empty-string-means-all sentinel, mapping to null exactly where they did before.
+            Keyboard is the native select's: Enter, Space and the arrows open and move, Home and End
+            jump, Escape closes, and a printable character type-aheads. */}
+        <Choice
+          label="head"
+          value={head}
+          options={heads.map((entry) => ({ value: entry.key, label: entry.label }))}
+          onChange={(next) => onHead?.(next)}
+          w={18}
+        />
+        <Choice
+          label={S.tail}
+          value={String(tail)}
+          options={TAIL_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+          onChange={(next) => onTail?.(Number(next))}
+          w={8}
+        />
+        <Choice
+          label={S.tag}
+          value={filter.head ?? ''}
+          options={[{ value: '', label: S.all }, ...tags.map((tag) => ({ value: tag, label: tag }))]}
+          onChange={(next) => onFilter?.({ ...filter, head: next === '' ? null : next })}
+          w={16}
+        />
+        <Choice
+          label={S.level}
+          value={filter.level ?? ''}
+          options={[{ value: '', label: S.all }, ...levels.map((level) => ({ value: level, label: level }))]}
+          onChange={(next) => onFilter?.({ ...filter, level: next === '' ? null : (next as LogLevel) })}
+          w={10}
+        />
         {reset ? <Figure value={1} unit="rotated" basis="measured" /> : null}
         {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>

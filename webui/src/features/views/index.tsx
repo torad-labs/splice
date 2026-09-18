@@ -4,6 +4,7 @@
 // belongs to, the way every other edit in this console happens.
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import { cx } from '@shared/lib';
+import { Input } from '@shared/controls';
 import { onViewStoreCreated, peekViewStore, viewStoreFor } from './store';
 import type { View } from './store';
 import { S } from './strings';
@@ -138,15 +139,19 @@ export function ViewTabs({ pageId, defaults }: { pageId: string; defaults: reado
               if (draft.trim() !== '') rename(active.id, draft.trim());
             }}
           >
-            <label className="myx-views-field">
-              <span className="myx-views-field-label">{S.name}</span>
-              <input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
+            {/* THE RENAME FIELD IS THE WORLD'S INPUT (M1-103). This is the one site where Input is
+                an EQUIVALENT replacement rather than a better or a worse one, and it was checked
+                against the shape it replaces before it was made: both render a label wrapping a
+                label span and a boxed input, both put the input inside the form so Enter still
+                submits, and the box was the same paper, hairline, radius 0 and focus ring. TWO
+                MEASURED DIFFERENCES, both in the primitive's favour: the box paper moves from
+                --strip to --strip-field, which is the field paper the rest of the console uses for
+                an editable box, and the label ink moves from --ink-mute to --strip-ink-mute --
+                --ink-mute is the ROOM's ink printed on paper, the D7 defect this campaign found
+                five times, and it was still standing here. The face moves from --font-label to
+                --font-figure, which since M1-17 IS the label face with tabular figures, so a typed
+                name renders in the same letterforms. */}
+            <Input label={S.name} value={draft} onChange={(next) => setDraft(next)} />
             <button type="submit" className="myx-views-action">{S.rename}</button>
           </form>
           <div className="myx-views-actions">

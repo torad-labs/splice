@@ -153,17 +153,14 @@ ignores:
   - gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt
   - gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt
   # a deliberately slow test double
-  - gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt
   - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt
   # timeout and watchdog ladders measured against real elapsed time
   - gateway/provider-spi/src/test/kotlin/WatchdogTest.kt
   - gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt
-  - gateway/gateway/src/test/kotlin/head/HeadServerStopDrainTest.kt
   - gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt
   - gateway/gateway/src/test/kotlin/head/HeadServerHeartbeatTest.kt
   - gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
   # waiting for a concurrent peer to reach a point
-  - gateway/gateway/src/test/kotlin/FrameRecordingTest.kt
   - gateway/gateway/src/test/kotlin/head/HeadServerCollectDisconnectTest.kt
   - gateway/gateway/src/test/kotlin/head/HeadServerCompactionReplayTest.kt
   - gateway/gateway/src/test/kotlin/head/HeadServerFoldTest.kt

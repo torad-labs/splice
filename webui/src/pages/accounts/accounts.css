@@ -73,5 +73,11 @@
 .myx-accounts-order {
   font-family: var(--font-figure);
   font-size: var(--text-1);
-  color: var(--ink-mute);
+  /* D7 (M1-52): this annotation is printed on the rack's PLATE, so it takes a paper ink, not the
+     room's. --ink-mute measured 1.40:1 on --plate in dark. --strip-ink-mute is the right family
+     and is what the world has, but it measures 3.63:1 on --plate in dark against a 4.5 bar: THE
+     WORLD HAS NO MUTE THAT CLEARS AA ON THE PLATE IN DARK. That is a token gap, not a borrowing,
+     it is identical to .myx-bay-count's, and tokens.css is not this row's to edit - it is routed
+     to M1-53, which owns the plate. The borrowing is fixed here; the residual is named there. */
+  color: var(--strip-ink-mute);
 }

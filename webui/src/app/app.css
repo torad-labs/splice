@@ -20,6 +20,13 @@
    gate IS the shell's chrome (App.tsx renders it), so its rules stay here, on
    the world's paper and ink. */
 
+/* ---------- THE SCALE (M1-26) ----------
+   The root font size is --root-size, derived in tokens.css beside the ladders it drives, because
+   a scale cannot be defined in terms of itself (wall: webui-css-tokens-only, which exempts the
+   token sheet by name). The number, its provenance and the arithmetic that justifies linear-no-cap
+   are all in that file; this rule only applies it. */
+html { font-size: var(--root-size); }
+
 * { box-sizing: border-box; }
 
 body {

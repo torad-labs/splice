@@ -719,6 +719,38 @@ by the head, BUT available to be resumed by another head if necessary via -r"). 
 `~/.claude-claude-{deepseek,kimi}` and `~/.claude-claudex` `projects` symlinks, and the transcript
 census over `~/.claude/projects` (95 sessions with non-`claude-*` model ids).
 
+## 13. Per-project system prompt, and per head of that project
+
+**Release status:** user-required for 0.4.0, added 2026-09-18 (ledger row V4-124).
+
+**User outcome:** a repo can carry its own standing instructions, or replace the system prompt
+outright, and a head can carry different ones inside that repo. The operator writes them in
+`splice.toml` — a `[projects.<repo root>]` table with `system_prompt`, `system_prompt_file`
+and `system_prompt_mode`, and a `[projects.<repo root>.heads.<key>]` table with the same three
+keys — and every turn of a session started in that repo carries them. A prompt file may live in
+the repo itself (`system_prompt_file = ".splice/prompt.md"` resolves against the project root).
+
+**Baseline (2026-09-18):** the per-head layer exists since V4-36 (`[heads.<key>]`, append or
+replace at the provider's system seam, applied on every turn by `TurnPreparation`). Nothing is
+keyed by the repo: two projects on one head share one prompt.
+
+Proposed scope:
+- **Resolution.** The turn's session id maps to its working directory the way compaction
+  scaling already does (`SessionProject`: the live registry, else the transcript); the deepest
+  configured project root that contains the cwd wins; a session with no resolvable cwd gets the
+  head layer only and the perf row says so.
+- **Composition.** Layers apply in the order head, project, project-head. `append` layers stack
+  as separate text blocks beside the client's own system field, so cache breakpoints and the
+  prompt cache are untouched; a `replace` at any layer substitutes the client's field and every
+  earlier layer, and later appends still follow it. No `[projects]` table means today's bytes,
+  pinned.
+- **Doctor.** Every project layer is listed with its root, mode and source; every `replace` is a
+  WARN, as for heads; an unreadable file or a table with both text and file is a load error.
+
+Non-goals: a per-directory prompt below the repo root, or reading the prompt from the repo
+without the operator naming the repo in `splice.toml` (the config file stays the source of truth
+for what splice injects).
+
 ## Boundaries and deferred directions
 
 - Do not add providers merely to increase the provider count; establish the user need first.

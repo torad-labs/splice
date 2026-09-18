@@ -12,13 +12,30 @@ import type { View } from '@features/views';
 import { startProjectsPolling, useProjects } from '@entities/project';
 import type { ProjectFilesPayload, ProjectRow, ProjectsSlice } from '@entities/project';
 import { FileView } from '@widgets/file-view';
-import { Bay, Empty, ErrorNote, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Bay, Empty, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Fault } from '@shared/controls';
 import type { Basis } from '@shared/ui';
 import { timeAgo } from '@shared/lib';
 import { S } from './strings';
 import './projects.css';
 
 const PAGE_ID = 'projects';
+
+/** The rack's column names, printed once on the bay head instead of on every strip (CONTRACTS
+ *  section 2, m1 design review B9). The boxes carry the cell's own inline padding so a name sits
+ *  over the value it names; the bay's head row supplies the face and the colour. */
+function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span className="myx-px-col" key={column.key} style={{ width: `${column.w}ch` }}>
+          <span className="myx-px-col-name">{column.label}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
 
 const DEFAULT_VIEWS: View[] = [
   {
@@ -37,7 +54,9 @@ interface Field {
   label: string;
   w: number;
   value: string;
-  basis: Basis;
+  /** Absent for a cell with no value: the glyph is the whole statement (m1 design review B8),
+   *  and a basis word beside it said the same thing twice. */
+  basis?: Basis | undefined;
 }
 
 // The repo column carries an absolute root, and the cost column carries
@@ -45,7 +64,21 @@ interface Field {
 // because StripField clips rather than wraps (found in the 2026-09-18 capture).
 // A root deeper than 44 characters clips here and is printed whole in the
 // detail header when the strip is opened.
-const WIDTHS: Record<string, number> = { repo: 44, sessions: 8, teams: 7, turns: 8, cost: 23, last: 12 };
+// ONE declaration per column, because the rack prints its names once on the bay head and the
+// strips below carry values only (CONTRACTS.md section 2, m1 design review B9).
+const COLUMNS: Record<string, { label: string; w: number }> = {
+  repo: { label: S.repo, w: 44 },
+  sessions: { label: S.sessions, w: 8 },
+  teams: { label: S.teams, w: 7 },
+  turns: { label: S.turns, w: 8 },
+  cost: { label: S.cost, w: 23 },
+  last: { label: S.last, w: 12 },
+};
+
+/** The columns a view asks for, in its own order, for the bay head. */
+function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
+  return order.flatMap((key) => (COLUMNS[key] === undefined ? [] : [{ key, ...COLUMNS[key] }]));
+}
 
 /**
  * The root as the STRIP prints it: the home directory collapsed to `~`.
@@ -64,28 +97,34 @@ function costText(usd: number | null): string | null {
   return usd === null ? null : `$${usd.toFixed(2)}`;
 }
 
+/** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
+ *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
+ *  controls follow with `busy?: boolean | undefined`). */
+function basisProp(basis: Basis | undefined): { basis?: Basis } {
+  return basis === undefined ? {} : { basis };
+}
+
 function fieldsOf(row: ProjectRow, order: readonly string[]): Field[] {
   const cost = costText(row.cost_today_usd);
-  const values: Record<string, { label: string; value: string; basis: Basis }> = {
-    repo: { label: S.repo, value: rootText(row.root), basis: 'measured' },
-    sessions: { label: S.sessions, value: String(row.live_sessions), basis: 'measured' },
-    teams: { label: S.teams, value: String(row.teams), basis: 'measured' },
-    turns: { label: S.turns, value: String(row.turns_today), basis: 'measured' },
+  const values: Record<string, { value: string; basis?: Basis }> = {
+    repo: { value: rootText(row.root), basis: 'measured' },
+    sessions: { value: String(row.live_sessions), basis: 'measured' },
+    teams: { value: String(row.teams), basis: 'measured' },
+    turns: { value: String(row.turns_today), basis: 'measured' },
     // A dollar figure the daemon derived from declared rates is an estimate, and
     // it says so on the strip (FEATURES.md 4.6). No rates at all is not a cost
-    // of zero: it is the absence of a card.
-    cost: cost === null
-      ? { label: S.cost, value: S.noRates, basis: 'unavailable' }
-      : { label: S.cost, value: cost, basis: 'estimated' },
+    // of zero: it is the absence of a card, and it prints the absence glyph.
+    cost: cost === null ? { value: S.absent } : { value: cost, basis: 'estimated' },
     last: row.last_activity === null
-      ? { label: S.last, value: S.unknown, basis: 'unavailable' }
-      : { label: S.last, value: timeAgo(row.last_activity), basis: 'measured' },
+      ? { value: S.absent }
+      : { value: timeAgo(row.last_activity), basis: 'measured' },
   };
   const fields: Field[] = [];
   for (const key of order) {
     const found = values[key];
-    if (found === undefined) continue;
-    fields.push({ key, label: found.label, w: WIDTHS[key] ?? 12, value: String(found.value), basis: found.basis });
+    const column = COLUMNS[key];
+    if (found === undefined || column === undefined) continue;
+    fields.push({ ...column, key, value: String(found.value), ...basisProp(found.basis) });
   }
   return fields;
 }
@@ -120,7 +159,7 @@ export function ProjectsBoard({ payload, files = {}, sample = false, error = nul
   const open = rows.find((row) => row.id === openId) ?? null;
   const openFiles = open === null ? undefined : files[open.id];
 
-  if (error !== null && payload === null) return <ErrorNote message={error} />;
+  if (error !== null && payload === null) return <Fault message={error} />;
 
   return (
     <div className="myx-px">
@@ -140,19 +179,27 @@ export function ProjectsBoard({ payload, files = {}, sample = false, error = nul
             <Bay
               label={S.repos}
               count={rows.length}
+              fields={<ColumnHeads columns={columnsOf(active.fields)} />}
               actions={<a className="myx-px-open" href="#/sessions">{S.sessionsWord}</a>}
             >
               {rows.map((row) => (
+                // The holder edge carries the project's OWN state — something is running here, or
+                // nothing is — because that is what a holder edge is for. It used to carry the
+                // selection (green on the opened row) with the noun `repo` printed on it, so every
+                // unopened project wore a grey edge labelled with the first field's own label and
+                // read as struck (m1 design review B10). Selection is the strip's own `selected`.
                 <Strip
                   key={row.id}
-                  edge={open !== null && row.id === open.id ? 'green' : 'grey'}
-                  edgeLabel={S.repo}
+                  edge={row.live_sessions > 0 ? 'green' : 'grey'}
+                  edgeLabel={row.live_sessions > 0 ? S.running : S.quiet}
                   selected={open !== null && row.id === open.id}
                   onOpen={() => setOpenId(row.id)}
                   ariaLabel={`${S.title} ${row.root}`}
                 >
+                  {/* No label on a cell: the bay head prints the column names once for the whole
+                      rack (CONTRACTS.md section 2, m1 design review B9). */}
                   {fieldsOf(row, active.fields).map((field) => (
-                    <StripField key={field.key} w={field.w} label={field.label} value={field.value} basis={field.basis} />
+                    <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
                   ))}
                 </Strip>
               ))}

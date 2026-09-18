@@ -28,10 +28,16 @@
   align-items: start;
 }
 
-/* The bay clips its scroll, so the detail column drops beneath it before the rack can be cut: a
-   clipped field is the defect, not the scroll. Measured on the fleet page at 970px against a
-   1154px rack. */
-@media (max-width: 1600px) {
+/* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
+   width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
+   was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —
+   a nine-field strip needs about 1206px of value width, so beside a detail column the rack lost
+   its tail. The bays scroll now (m1 design review B7, `.myx-bay-rows { overflow-x: auto }`), which
+   is what removes that constraint: a narrow bay scrolls its rack instead of cutting it, so the
+   brief's own topology — one detail column, the opened strip swelling into it on the right — holds
+   at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
+   place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
   .myx-mcp-body { grid-template-columns: minmax(0, 1fr); }
 }
 

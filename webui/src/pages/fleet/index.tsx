@@ -18,7 +18,8 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { poll } from '@shared/lib';
 import type { HeadStatus } from '@shared/api';
-import { Bay, Empty, ErrorNote, FieldBox, HolderEdge, SkeletonRows } from '@shared/ui';
+import { Bay, Empty, FieldBox, HolderEdge } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { HeadStrip, HEAD_COLUMNS } from '@widgets/head-strip';
 import { EMPTIES, arrangeHeads, columnsOf, dialectOf } from './model';
 import { dispositions } from './coverage';
@@ -38,8 +39,6 @@ export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'by-provider', name: S.byProvider, layout: 'bay', filter: {}, sort: null, group: 'provider', fields: [] },
   { id: 'attention', name: S.attentionFirst, layout: 'bay', filter: {}, sort: { field: 'attention', dir: 'desc' }, group: null, fields: [] },
 ];
-
-const NOT_BUILT = 'not built';
 
 /** One knob row inside the detail column: the value, its provenance layer, and whether saving it
  *  needs a restart. The provenance comes from the daemon's own layer map, never a guess. */
@@ -108,7 +107,7 @@ function Lifecycle({ head }: { head: HeadStatus }) {
           <button type="button" className="myx-fleet-btn" onClick={() => setArmed(null)}>{'cancel'}</button>
         </>
       )}
-      {error === null ? null : <ErrorNote message={error} />}
+      {error === null ? null : <Fault message={error} />}
       {note === null ? null : <p className="myx-fleet-note" role="status">{note}</p>}
     </div>
   );
@@ -183,8 +182,8 @@ export function FleetPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {headsResource.error === null ? null : <ErrorNote message={headsResource.error} />}
-      {headsResource.data === null ? <SkeletonRows rows={4} cols={6} /> : null}
+      {headsResource.error === null ? null : <Fault message={headsResource.error} />}
+      {headsResource.data === null ? <Blank strips={4} /> : null}
 
       <div className="myx-fleet-body">
         <div className="myx-fleet-bays">
@@ -230,7 +229,7 @@ export function FleetPage() {
               <div className="myx-fleet-detail-head">
                 <HolderEdge state={headAttention(opened, signalsFor(opened)).edge} label={headAttention(opened, signalsFor(opened)).label} />
                 <span className="myx-fleet-detail-name">{opened.label}</span>
-                <span className="myx-fleet-detail-port">{opened.version ?? NOT_BUILT}</span>
+                <span className="myx-fleet-detail-port">{opened.version ?? S.absent}</span>
               </div>
 
               <section className="myx-fleet-section">

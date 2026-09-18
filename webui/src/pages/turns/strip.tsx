@@ -13,20 +13,56 @@ export interface Field {
   label: string;
   w: number;
   value: string;
-  basis: Basis;
+  /** Absent for a cell that carries no value: `n/r` is the whole statement, and a basis word
+   *  beside it was a second sentence saying the same thing (m1 design review B8). */
+  basis?: Basis | undefined;
 }
 
-/** Measured against the widest thing each column prints, which for a column that can be absent is
- *  the value plus its basis word, not the value alone (found by capture in M2-02). */
+/** Measured against the widest thing each column prints: the value itself (found by capture in
+ *  M2-02). */
 // Each width is the widest thing that column prints plus room for the cell's own padding, measured
-// off a capture: a value of N characters needs about N + 3 ch, and for a column that can be absent
-// the widest thing is "- unavailable", not the value. Too narrow and the ellipsis hides the basis
-// that makes an empty honest (found three times on this tree before it was measured).
-const WIDTHS: Record<string, number> = {
-  time: 12, head: 20, model: 18, outcome: 16, session: 20, compact: 9, phase: 12, age: 10, idle: 10,
-  account: 14, total: 15, firstByte: 14, tokensIn: 13, cached: 13, cacheWrite: 15, tokensOut: 13,
-  retries: 9, attempts: 10, inflight: 11, dropped: 22,
+// off a capture: a value of N characters needs about N + 3 ch. Too narrow and the ellipsis hides
+// the value (found three times on this tree before it was measured). The widths were measured when
+// an absent cell printed `- unavailable` and are left as they were: a column narrower than its own
+// empty state hides the word that makes the empty honest, and the widest of those empties is now
+// three characters shorter, so every column still fits.
+// ONE declaration per column, because the rack prints its names once on the bay head and the
+// strips below carry values only (CONTRACTS.md section 2, m1 design review B9). The head and the
+// rows read the same numbers, so a name cannot drift off the column it names.
+const COLUMNS: Record<string, { label: string; w: number }> = {
+  time: { label: S.time, w: 12 },
+  head: { label: S.head, w: 20 },
+  model: { label: S.model, w: 18 },
+  outcome: { label: S.outcome, w: 16 },
+  session: { label: S.session, w: 20 },
+  compact: { label: S.compact, w: 9 },
+  phase: { label: S.phase, w: 12 },
+  age: { label: S.age, w: 10 },
+  idle: { label: S.idle, w: 10 },
+  account: { label: S.account, w: 14 },
+  total: { label: S.total, w: 15 },
+  firstByte: { label: S.firstByte, w: 14 },
+  tokensIn: { label: S.tokensIn, w: 13 },
+  cached: { label: S.cached, w: 13 },
+  cacheWrite: { label: S.cacheWrite, w: 15 },
+  tokensOut: { label: S.tokensOut, w: 13 },
+  retries: { label: S.retries, w: 9 },
+  attempts: { label: S.attempts, w: 10 },
+  inflight: { label: S.inflightCount, w: 11 },
+  dropped: { label: S.dropped, w: 22 },
 };
+
+/** The columns a view asks for, in its own order, for the bay head. */
+export function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
+  return order.flatMap((key) => (COLUMNS[key] === undefined ? [] : [{ key, ...COLUMNS[key] }]));
+}
+
+/** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
+ *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
+ *  controls follow with `busy?: boolean | undefined`). */
+export function basisProp(basis: Basis | undefined): { basis?: Basis } {
+  return basis === undefined ? {} : { basis };
+}
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
@@ -37,10 +73,9 @@ export function atText(ts: number | undefined): string | null {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
-/** A number the row does not carry prints `-` with the basis that says why: never a zero the
- *  daemon did not report. */
-function measured(value: number | undefined, format: (n: number) => string): { value: string; basis: Basis } {
-  return value === undefined ? { value: S.absent, basis: 'unavailable' } : { value: format(value), basis: 'measured' };
+/** A number the row does not carry prints `n/r`, never a zero the daemon did not report. */
+function measured(value: number | undefined, format: (n: number) => string): { value: string; basis?: Basis } {
+  return value === undefined ? { value: S.absent } : { value: format(value), basis: 'measured' };
 }
 
 /**
@@ -53,32 +88,33 @@ function measured(value: number | undefined, format: (n: number) => string): { v
 export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
   const dropped = row.async_io_drops !== undefined && row.async_io_drops > 0;
   const at = atText(row.ts);
-  const values: Record<string, { label: string; value: string; basis: Basis }> = {
-    time: at === null ? { label: S.time, value: S.absent, basis: 'unavailable' } : { label: S.time, value: at, basis: 'measured' },
-    head: { label: S.head, value: row.head, basis: 'measured' },
-    model: { label: S.model, value: row.model, basis: 'measured' },
-    outcome: { label: S.outcome, value: row.outcome, basis: 'measured' },
-    session: row.session === undefined ? { label: S.session, value: S.absent, basis: 'unavailable' } : { label: S.session, value: row.session, basis: 'measured' },
-    compact: { label: S.compact, value: row.compact ? 'yes' : 'no', basis: 'measured' },
-    account: row.account === undefined ? { label: S.account, value: S.absent, basis: 'unavailable' } : { label: S.account, value: row.account, basis: 'measured' },
-    total: { label: S.total, ...measured(row.total, fmtMs) },
-    firstByte: { label: S.firstByte, ...measured(row.first_byte, fmtMs) },
-    tokensIn: { label: S.tokensIn, ...measured(row.in_tokens, fmtTokens) },
-    cached: { label: S.cached, ...measured(row.cached_tokens, fmtTokens) },
-    cacheWrite: { label: S.cacheWrite, ...measured(row.cache_write_tokens, fmtTokens) },
-    tokensOut: { label: S.tokensOut, ...measured(row.out_tokens, fmtTokens) },
-    retries: { label: S.retries, ...measured(row.retries, String) },
-    attempts: { label: S.attempts, ...measured(row.attempts, String) },
-    inflight: { label: S.inflightCount, ...measured(row.inflight, String) },
+  const values: Record<string, { value: string; basis?: Basis }> = {
+    time: at === null ? { value: S.absent } : { value: at, basis: 'measured' },
+    head: { value: row.head, basis: 'measured' },
+    model: { value: row.model, basis: 'measured' },
+    outcome: { value: row.outcome, basis: 'measured' },
+    session: row.session === undefined ? { value: S.absent } : { value: row.session, basis: 'measured' },
+    compact: { value: row.compact ? 'yes' : 'no', basis: 'measured' },
+    account: row.account === undefined ? { value: S.absent } : { value: row.account, basis: 'measured' },
+    total: measured(row.total, fmtMs),
+    firstByte: measured(row.first_byte, fmtMs),
+    tokensIn: measured(row.in_tokens, fmtTokens),
+    cached: measured(row.cached_tokens, fmtTokens),
+    cacheWrite: measured(row.cache_write_tokens, fmtTokens),
+    tokensOut: measured(row.out_tokens, fmtTokens),
+    retries: measured(row.retries, String),
+    attempts: measured(row.attempts, String),
+    inflight: measured(row.inflight, String),
     dropped: dropped
-      ? { label: S.dropped, value: 'telemetry dropped', basis: 'measured' }
-      : { label: S.dropped, value: S.absent, basis: 'measured' },
+      ? { value: 'telemetry dropped', basis: 'measured' }
+      : { value: S.absent, basis: 'measured' },
   };
   const fields: Field[] = [];
   for (const key of order) {
     const found = values[key];
-    if (found === undefined) continue;
-    fields.push({ key, label: found.label, w: WIDTHS[key] ?? 12, value: found.value, basis: found.basis });
+    const column = COLUMNS[key];
+    if (found === undefined || column === undefined) continue;
+    fields.push({ ...column, key, value: found.value, ...basisProp(found.basis) });
   }
   return fields;
 }
@@ -86,19 +122,20 @@ export function fieldsOf(row: TurnRow, order: readonly string[]): Field[] {
 /** An in-flight turn has no outcome yet: the gate knows its phase and how long it has been there,
  *  so those are the only numbers it can honestly print. */
 export function inflightFieldsOf(turn: InflightTurn, order: readonly string[]): Field[] {
-  const values: Record<string, { label: string; value: string; basis: Basis }> = {
-    session: { label: S.session, value: turn.label, basis: 'measured' },
-    head: { label: S.head, value: turn.head, basis: 'measured' },
-    phase: { label: S.phase, value: turn.phase, basis: 'measured' },
-    age: { label: S.age, value: fmtMs(turn.ageMs), basis: 'measured' },
-    idle: { label: S.idle, value: timeAgo(Date.now() - turn.idleMs), basis: 'measured' },
-    compact: { label: S.compact, value: turn.compact ? 'yes' : 'no', basis: 'measured' },
+  const values: Record<string, { value: string; basis?: Basis }> = {
+    session: { value: turn.label, basis: 'measured' },
+    head: { value: turn.head, basis: 'measured' },
+    phase: { value: turn.phase, basis: 'measured' },
+    age: { value: fmtMs(turn.ageMs), basis: 'measured' },
+    idle: { value: timeAgo(Date.now() - turn.idleMs), basis: 'measured' },
+    compact: { value: turn.compact ? 'yes' : 'no', basis: 'measured' },
   };
   const fields: Field[] = [];
   for (const key of order) {
     const found = values[key];
-    if (found === undefined) continue;
-    fields.push({ key, label: found.label, w: WIDTHS[key] ?? 12, value: found.value, basis: found.basis });
+    const column = COLUMNS[key];
+    if (found === undefined || column === undefined) continue;
+    fields.push({ ...column, key, value: found.value, ...basisProp(found.basis) });
   }
   return fields;
 }
@@ -121,13 +158,19 @@ export function TurnStrip({ row, selected, order, onOpen }: {
   return (
     <Strip
       edge={row.outcome === 'ok' ? 'green' : 'amber'}
-      edgeLabel={row.outcome}
+      /* The edge carries the verdict and the outcome column carries the daemon's own tag. They
+         were the same string 8px apart (m1 design review B10), and the tag is a datum that can
+         outrun the contract's 6ch edge budget, where `landed` and `failed` are states that cannot
+         (CONTRACTS.md section 2). */
+      edgeLabel={row.outcome === 'ok' ? 'landed' : 'failed'}
       selected={selected}
       onOpen={onOpen}
       ariaLabel={`${S.title} ${row.head} ${row.model}`}
     >
+      {/* No label on a cell: the bay head prints the column names once for the whole rack
+          (CONTRACTS.md section 2, m1 design review B9). */}
       {fieldsOf(row, order).map((field) => (
-        <StripField key={field.key} w={field.w} label={field.label} value={field.value} basis={field.basis} />
+        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );
@@ -138,12 +181,12 @@ export function InflightStrip({ turn, order }: { turn: InflightTurn; order: read
   return (
     <Strip
       edge={state}
-      edgeLabel={state === 'amber' ? 'stalled' : 'running'}
+      edgeLabel={state === 'amber' ? 'hung' : 'live'}
       cocked={state === 'amber'}
       ariaLabel={`${S.inflight} ${turn.label}`}
     >
       {inflightFieldsOf(turn, order).map((field) => (
-        <StripField key={field.key} w={field.w} label={field.label} value={field.value} basis={field.basis} />
+        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );

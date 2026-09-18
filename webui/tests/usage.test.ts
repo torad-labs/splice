@@ -185,10 +185,13 @@ describe('compaction page', () => {
     expect(markup).toContain('myx-strip');
   });
 
-  test('the page states the law that compaction runs on the session own model', () => {
+  test('the page states the law that compaction runs on the session own model, behind a reveal', () => {
+    // Behind a Reveal since m1 design review B16: the brief allows a paragraph on a page only as
+    // an honest empty or a Doctor fix, so the sentence is one click away and is not in the DOM
+    // until it is asked for (the primitive's own contract).
     const markup = render(h(CompactionBoard, { payload: fixtureCompact }));
-    expect(markup).toContain('own model and effort by law');
-    expect(markup).toContain('never offers a model');
+    expect(markup).toContain('why no model');
+    expect(markup).not.toContain('own model and effort by law');
   });
 });
 
@@ -203,7 +206,12 @@ describe('models page', () => {
     const markup = render(h(ModelsBoard, { catalog: fixtureCatalog }));
     for (const head of fixtureCatalog.heads) expect(markup).toContain(head.key);
     expect(markup).toContain('gpt-5.6-sol');
-    expect(markup).toContain('not declared');
+    // The struck tier's edge prints its state and its model cell prints the absence glyph: the
+    // holder edge carries a state inside the contract's 6ch budget and the rack prints its column
+    // names once on the bay head, so `not declared` is now `vacant` (CONTRACTS.md section 2, m1
+    // design review B9/B10) with `n/r` where a model would be.
+    expect(markup).toContain('vacant');
+    expect(markup).toContain('n/r');
     expect(markup.split('myx-strip-struck').length - 1).toBeGreaterThan(0);
   });
 

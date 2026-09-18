@@ -10,19 +10,12 @@
 import type { EconomicsBucket, EconomicsPayload } from '@shared/api';
 import type { ModelsPayload } from '@entities/model';
 
-export const FIXTURE_NAME = 'usage';
-
 /** A fixed clock: the fixture is a still, so a capture and a test see the same window. */
 export const FIXTURE_NOW = 1_787_400_000_000;
 
 const HOUR_MS = 3_600_000;
 const HOURS = 168;
 
-export function fixtureName(search: string, dev: boolean): string | null {
-  if (!dev) return null;
-  const asked = new URLSearchParams(search).get('fixture');
-  return asked === FIXTURE_NAME ? asked : null;
-}
 
 function bucketAt(hour: number, index: number, scale: number, ceilingShare: number): EconomicsBucket {
   const at = new Date(hour).getUTCHours();

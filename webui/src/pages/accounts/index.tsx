@@ -18,7 +18,8 @@ import { startAuthPolling, useAuth } from '@entities/auth';
 import { AccountActions, AccountLogin, HeadActions, HeadAuthStrip } from '@features/account-login';
 import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
-import { Bay, Empty, ErrorNote, HolderEdge, SkeletonRows } from '@shared/ui';
+import { Bay, Empty, HolderEdge } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { AccountStrip } from '@widgets/account-strip';
 import { EMPTIES, arrangeAccounts, columnsOf, fixtureName } from './model';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
@@ -171,11 +172,11 @@ export function AccountsPage() {
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
       </header>
 
-      {accountsResource.error === null ? null : <ErrorNote message={accountsResource.error} />}
+      {accountsResource.error === null ? null : <Fault message={accountsResource.error} />}
 
       {fixture === null ? null : <HolderEdge state="grey" label={S.sample} />}
 
-      {accountsResource.data === null && fixture === null ? <SkeletonRows rows={4} cols={6} /> : null}
+      {accountsResource.data === null && fixture === null ? <Blank strips={4} /> : null}
 
       <div className="myx-accounts-body">
         <div className="myx-accounts-bays">

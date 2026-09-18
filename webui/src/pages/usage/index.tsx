@@ -17,24 +17,80 @@ import type { EconomicsPayload, HeadEconomics } from '@shared/api';
 import { startModelsPolling, useModels, slotTiers } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
-import { fmtInt, fmtTokens, timeAgo } from '@shared/lib';
-import { Bay, Btn, Empty, ErrorNote, Figure, HolderEdge, SkeletonRows, Strip, StripField } from '@shared/ui';
+import { cx, fmtInt, fmtTokens, timeAgo } from '@shared/lib';
+import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
 import { TokenChart, CostChart, ByteChart, ToolChart, LimitedChart, WINDOWS } from '@widgets/scope-chart';
 import { dispositions } from './coverage';
 import { DEFAULT_VIEWS, EMPTIES, ratesFor, sortedHeads } from './model';
-import { fixtureEconomics, fixtureModels, fixtureName } from './fixtures/usage';
 import { S } from './strings';
 import './usage.css';
 
 export { dispositions };
 
 const PAGE_ID = 'usage';
+
+/** The head rack's columns, in the order `HeadStrip` prints its cells (CONTRACTS.md section 2,
+ *  m1 design review B9). */
+const HEAD_COLUMNS: readonly { key: string; label: string; w: number }[] = [
+  { key: 'heads', label: S.heads, w: 18 },
+  { key: 'spent', label: S.spent, w: 11 },
+  { key: 'ceiling', label: S.ceiling, w: 11 },
+  { key: 'exhaustion', label: S.exhaustion, w: 14 },
+  { key: 'turns', label: S.turns, w: 9 },
+  { key: 'inTokens', label: S.inTokens, w: 13 },
+  { key: 'outTokens', label: S.outTokens, w: 13 },
+  { key: 'limited', label: S.limited, w: 13 },
+];
+
+/** The model rack's columns: the two strips of a head's bay print the same six cells in the same
+ *  order, so the names go on the bay head once. */
+const MODEL_COLUMNS: readonly { key: string; label: string; w: number }[] = [
+  { key: 'slot', label: S.slot, w: 8 },
+  { key: 'models', label: S.models, w: 24 },
+  { key: 'contextWindow', label: S.contextWindow, w: 12 },
+  { key: 'sourceLabel', label: S.sourceLabel, w: 20 },
+  { key: 'inputRate', label: S.inputRate, w: 10 },
+  { key: 'outputRate', label: S.outputRate, w: 10 },
+];
+
+function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span className="myx-us-col" key={column.key} style={{ width: `${column.w}ch` }}>
+          <span className="myx-us-col-name">{column.label}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** The model rack's head, from the same declaration its two strips read. */
+function ModelColumnHeads() {
+  return <ColumnHeads columns={MODEL_COLUMNS} />;
+}
 const POLL_MS = 30000;
 
+/** The name this page accepts in the hash query, declared HERE and not in the fixture module: a
+ *  static import of that module — even for one constant — is a dependency edge the bundler
+ *  honours, so the bytes ship. This page was the leak dev/web-console/fixture-leak.mjs reported as
+ *  BLIND: every long string in its fixture also appears in application source, so the wall had no
+ *  evidence to search for, while the fixture demonstrably shipped (usage.ts FIXTURE_NOW =
+ *  1_787_400_000_000, in no other file, printed as 17874e8 in dist). */
+const FIXTURE = 'usage';
+
+/** The sample the fixture module hands over once it has loaded. */
+interface UsageFixture {
+  economics: EconomicsPayload;
+  models: ModelsPayload;
+}
+
 function hoursLeft(burnRate: number, ceiling: number | null, spent: number): string {
-  // `unknown`, not a sentence: the ceiling field beside it already prints `none`, and a long
-  // string here would be the one field on the rack that clips.
-  if (ceiling === null) return 'unknown';
+  // The absence glyph and not a word: a head with no ceiling has no exhaustion figure either, and
+  // the ceiling cell beside it already says so (m1 design review B8). `idle` is a real reading —
+  // a ceiling with no burn against it — and stays.
+  if (ceiling === null) return S.absent;
   if (burnRate <= 0) return 'idle';
   const hours = Math.max(0, ceiling - spent) / burnRate;
   return `${hours.toFixed(1)} h`;
@@ -50,7 +106,7 @@ function HeadStrip({ head, now, selected, onOpen }: {
   const totals = sum(within(head.buckets, 168, now));
   const projection = burn(head, now);
   const edge = projection.fraction === null ? 'grey' : projection.fraction >= 1 ? 'red' : projection.fraction >= 0.8 ? 'amber' : 'green';
-  const label = projection.fraction === null ? 'no ceiling' : `${Math.round(projection.fraction * 100)}%`;
+  const label = projection.fraction === null ? 'no cap' : `${Math.round(projection.fraction * 100)}%`;
 
   return (
     <Strip
@@ -60,14 +116,16 @@ function HeadStrip({ head, now, selected, onOpen }: {
       onOpen={onOpen}
       ariaLabel={`${S.openHead} ${head.label}`}
     >
-      <StripField w={18} label={S.heads} value={head.label} mono={false} />
-      <StripField w={11} label={S.spent} value={fmtTokens(projection.spent)} />
-      <StripField w={11} label={S.ceiling} value={head.ceiling_tokens === null ? 'none' : fmtTokens(head.ceiling_tokens)} />
-      <StripField w={14} label={S.exhaustion} value={hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent)} />
-      <StripField w={8} label={S.turns} value={fmtInt(totals.turns)} />
-      <StripField w={11} label={S.inTokens} value={fmtTokens(totals.inTokens)} />
-      <StripField w={11} label={S.outTokens} value={fmtTokens(totals.outTokens)} />
-      <StripField w={14} label={S.limited} value={fmtInt(totals.rateLimited)} />
+      {/* No label on a cell: the bay head prints the column names once for the whole rack
+          (CONTRACTS.md section 2, m1 design review B9). */}
+      <StripField w={18} value={head.label} mono={false} />
+      <StripField w={11} value={fmtTokens(projection.spent)} />
+      <StripField w={11} value={head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)} />
+      <StripField w={14} value={hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent)} />
+      <StripField w={9} value={fmtInt(totals.turns)} />
+      <StripField w={13} value={fmtTokens(totals.inTokens)} />
+      <StripField w={13} value={fmtTokens(totals.outTokens)} />
+      <StripField w={13} value={fmtInt(totals.rateLimited)} />
     </Strip>
   );
 }
@@ -105,10 +163,10 @@ function HeadCharts({ head, windowIndex, now, rates }: {
         <p className="myx-usage-figures">
           {/* The cache hit rate is a DIAGNOSTIC and the page says so: a 90%-cached prompt bills in
               full, so a high number here is not safety and must never be read as one. */}
-          <Figure value={read === null ? 'not reported' : `${Math.round(read * 100)}%`} unit="cache read" basis={read === null ? 'unavailable' : 'measured'} />
-          <Figure value={per === null ? 'no turns' : fmtTokens(Math.round(per))} unit={S.perTurn} basis={per === null ? 'unavailable' : 'measured'} />
-          <Figure value={amp === null ? 'no output' : amp.toFixed(1)} unit={S.amplification} basis={amp === null ? 'unavailable' : 'measured'} />
-          <Figure value={delta === null ? 'no turns' : fmtInt(Math.round(delta))} unit={S.wireDelta} basis={delta === null ? 'unavailable' : 'measured'} />
+          <Figure value={read === null ? S.absent : `${Math.round(read * 100)}%`} unit="cache read" basis={read === null ? 'unavailable' : 'measured'} />
+          <Figure value={per === null ? S.absent : fmtTokens(Math.round(per))} unit={S.perTurn} basis={per === null ? 'unavailable' : 'measured'} />
+          <Figure value={amp === null ? S.absent : amp.toFixed(1)} unit={S.amplification} basis={amp === null ? 'unavailable' : 'measured'} />
+          <Figure value={delta === null ? S.absent : fmtInt(Math.round(delta))} unit={S.wireDelta} basis={delta === null ? 'unavailable' : 'measured'} />
         </p>
       </section>
     </div>
@@ -125,32 +183,33 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
           key={head.key}
           label={head.key}
           count={head.models.length}
+          fields={<ModelColumnHeads />}
           empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
         >
           {slotTiers(head).map((tier) => (
             <Strip
               key={tier.slot}
               edge={tier.model === null ? 'grey' : 'green'}
-              edgeLabel={tier.model === null ? 'undeclared' : tier.slot}
+              edgeLabel={tier.model === null ? S.undeclared : S.slotted}
               struck={tier.model === null}
               ariaLabel={`${S.slot} ${tier.slot}`}
             >
-              <StripField w={8} label={S.slot} value={tier.slot} mono={false} />
-              <StripField w={24} label={S.models} value={tier.model === null ? 'not declared' : tier.model.id} mono={false} />
-              <StripField w={12} label={S.contextWindow} value={tier.model === null ? '' : fmtTokens(tier.model.context_window)} />
-              <StripField w={20} label={S.sourceLabel} value={tier.model === null ? '' : tier.model.context_window_source} mono={false} />
-              <StripField w={10} label={S.inputRate} value={tier.model?.rates === undefined || tier.model.rates === null ? 'no rates' : String(tier.model.rates.input)} />
-              <StripField w={10} label={S.outputRate} value={tier.model?.rates === undefined || tier.model.rates === null ? 'no rates' : String(tier.model.rates.output)} />
+              <StripField w={8} value={tier.slot} mono={false} />
+              <StripField w={24} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
+              <StripField w={12} value={tier.model === null ? S.absent : fmtTokens(tier.model.context_window)} />
+              <StripField w={20} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
+              <StripField w={10} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
+              <StripField w={10} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
             </Strip>
           ))}
           {head.models.filter((model) => model.slot === null).map((model) => (
-            <Strip key={model.id} edge="grey" edgeLabel="no slot" ariaLabel={`${S.models} ${model.id}`}>
-              <StripField w={8} label={S.slot} value="none" mono={false} />
-              <StripField w={24} label={S.models} value={model.id} mono={false} />
-              <StripField w={12} label={S.contextWindow} value={fmtTokens(model.context_window)} />
-              <StripField w={20} label={S.sourceLabel} value={model.context_window_source} mono={false} />
-              <StripField w={10} label={S.inputRate} value={model.rates === null ? 'no rates' : String(model.rates.input)} />
-              <StripField w={10} label={S.outputRate} value={model.rates === null ? 'no rates' : String(model.rates.output)} />
+            <Strip key={model.id} edge="grey" edgeLabel={S.noSlot} ariaLabel={`${S.models} ${model.id}`}>
+              <StripField w={8} value={S.noSlot} mono={false} />
+              <StripField w={24} value={model.id} mono={false} />
+              <StripField w={12} value={fmtTokens(model.context_window)} />
+              <StripField w={20} value={model.context_window_source} mono={false} />
+              <StripField w={10} value={model.rates === null ? S.absent : String(model.rates.input)} />
+              <StripField w={10} value={model.rates === null ? S.absent : String(model.rates.output)} />
             </Strip>
           ))}
         </Bay>
@@ -180,29 +239,39 @@ export function UsageBoard({ payload, catalog, now, sample = false }: {
         {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
       </header>
 
+      {/* A row of selectable things is the rail's idiom, not a Key: the state rides a HolderEdge
+          that prints its own word, green when this is the window on screen and grey when it is not.
+          An `armed` Key would say "about to fire", which is not what a selected tab means. */}
       <div className="myx-usage-windows" role="group" aria-label={S.window}>
         {WINDOWS.map((entry, index) => (
-          <Btn
+          <button
             key={entry.id}
-            kind={index === windowIndex ? 'primary' : 'control'}
+            type="button"
+            className={cx('myx-usage-window', index === windowIndex && 'myx-usage-window-active')}
+            aria-pressed={index === windowIndex}
             onClick={() => setWindowIndex(index)}
           >
-            {entry.label}
-          </Btn>
+            <HolderEdge state={index === windowIndex ? 'green' : 'grey'} label={entry.label} />
+          </button>
         ))}
       </div>
 
       {payload === null ? (
-        <SkeletonRows rows={4} cols={5} />
+        <Blank strips={4} />
       ) : views.active.id === 'by-model' ? (
         catalog === null ? (
-          <SkeletonRows rows={4} cols={4} />
+          <Blank strips={4} />
         ) : (
           <ModelBay catalog={catalog} empty={EMPTIES.catalogPending.text} />
         )
       ) : (
         <>
-          <Bay label={S.heads} count={heads.length} empty={{ text: EMPTIES.noHeads.text, source: EMPTIES.noHeads.source }}>
+          <Bay
+            label={S.heads}
+            count={heads.length}
+            fields={<ColumnHeads columns={HEAD_COLUMNS} />}
+            empty={{ text: EMPTIES.noHeads.text, source: EMPTIES.noHeads.source }}
+          >
             {heads.map((head) => (
               <HeadStrip
                 key={head.key}
@@ -239,14 +308,28 @@ export default function UsagePage() {
   useEffect(() => startEconomicsPolling(POLL_MS), []);
   useEffect(() => startModelsPolling(POLL_MS), []);
 
-  const fixture = fixtureName(search, import.meta.env.DEV);
-  const payload = fixture === null ? economics.data : fixtureEconomics;
-  const catalog = fixture === null ? models.data : fixtureModels;
+  const [fixture, setFixture] = useState<UsageFixture | null>(null);
+
+  // The fixture loads through a DYNAMIC import inside the DEV branch, so it is a build-time
+  // nothing: `import.meta.env.DEV` is statically false in a production build, the branch is
+  // dropped, and the fixture is not a dependency of anything that ships. The board renders the
+  // store's payload while the module loads and swaps in the sample when it arrives.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (new URLSearchParams(search).get('fixture') !== FIXTURE) return;
+    void import('./fixtures/usage').then((module) => setFixture({
+      economics: module.fixtureEconomics,
+      models: module.fixtureModels,
+    }));
+  }, [search]);
+
+  const payload = fixture === null ? economics.data : fixture.economics;
+  const catalog = fixture === null ? models.data : fixture.models;
 
   return (
     <>
-      {economics.error === null ? null : <ErrorNote message={economics.error} />}
-      {models.error === null ? null : <ErrorNote message={models.error} />}
+      {economics.error === null ? null : <Fault message={economics.error} />}
+      {models.error === null ? null : <Fault message={models.error} />}
       <UsageBoard
         payload={payload}
         catalog={catalog}

@@ -13,12 +13,16 @@ export function stateEdge(state: McpState): Edge {
   return 'grey';
 }
 
-/** The state's printed label. `idle` reads `not started`, because that is what it is: nothing has
- *  asked for this server yet, and "idle" would sound like it had run and stopped. */
+/** The state's printed label. Every word is inside the contract's 6ch edge budget (CONTRACTS.md
+ *  section 2): a holder edge that clips its own state is worse than a shorter state.
+ *
+ *  `unused` and not `idle`, because nothing has asked for this server yet and "idle" would sound
+ *  like it had run and stopped. `barred` and not `ineligible`, because the planner declining to
+ *  host something is a decision by rule, not a fault — and its reason is printed beside it. */
 export function stateLabel(state: McpState): string {
   if (state === 'hosted') return 'hosted';
-  if (state === 'idle') return 'not started';
-  return 'ineligible';
+  if (state === 'idle') return 'unused';
+  return 'barred';
 }
 
 /** A hosted server as the live half of its row, or null when it is not the hosted variant. */

@@ -14,23 +14,46 @@ export interface Field {
   label: string;
   w: number;
   value: string;
-  basis: Basis;
+  /** Absent for a cell that carries no value: `n/r` is the whole statement, and the basis word
+   *  that used to sit beside it said the same thing twice (m1 design review B8). */
+  basis?: Basis | undefined;
 }
 
 /**
- * What a data cell prints when the daemon does not report the value: a plain
- * hyphen, which is the world's own rule for an empty cell ("a plain hyphen or
- * an explicit empty-state string, never an em-dash placeholder"), with the
- * basis printed beside it saying WHY it is empty. A word here would be a second
- * sentence per cell: the basis already is the sentence.
+ * What a data cell prints when the daemon does not report the value: the approved comp's own
+ * glyph, which is the world's rule for an empty cell made shorter — one statement, not a hyphen
+ * plus a basis word saying the same thing.
  */
-const ABSENT = '-';
+const ABSENT = S.absent;
 
-// Measured against the widest thing each column can carry, which for every
-// field that can be absent is "- unavailable" (13 characters), not the value
-// alone: StripField clips rather than wraps, so a column narrower than its own
-// basis would hide the word that makes the empty honest.
-const WIDTHS: Record<string, number> = { name: 26, head: 20, project: 26, started: 16, seen: 16, peer: 18 };
+// Measured against the widest thing each column can carry. These were measured when an absent
+// cell printed "- unavailable" (13 characters), and every field that can be absent is now three
+// characters shorter, so no column is narrower than what it prints: StripField clips rather than
+// wraps, and the width that fits the old empty state fits the new one.
+//
+// ONE declaration per column, because the rack now prints its names once on the bay head and the
+// strips below carry values only (CONTRACTS.md section 2, m1 design review B9). The head and the
+// rows read the same numbers, so a name cannot drift off the column it names.
+const COLUMNS: Record<string, { label: string; w: number }> = {
+  name: { label: S.name, w: 26 },
+  head: { label: S.head, w: 20 },
+  project: { label: S.project, w: 26 },
+  started: { label: S.started, w: 16 },
+  seen: { label: S.seen, w: 16 },
+  peer: { label: S.peer, w: 18 },
+};
+
+/** The view's columns in its own order, for the bay head. */
+export function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
+  return order.flatMap((key) => (COLUMNS[key] === undefined ? [] : [{ key, ...COLUMNS[key] }]));
+}
+
+/** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
+ *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
+ *  controls follow with `busy?: boolean | undefined`). */
+function basisProp(basis: Basis | undefined): { basis?: Basis } {
+  return basis === undefined ? {} : { basis };
+}
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
@@ -62,33 +85,26 @@ export function projectText(row: SessionRow): string | null {
 
 /**
  * The strip's fields, in the view's own order. A value the daemon does not
- * report is `unknown` and says WHY through its basis, never a blank and never a
+ * report is `unknown` and prints the absence glyph, never a blank and never a
  * zero.
  */
 export function fieldsOf(row: SessionRow, peer: string | null, order: readonly string[]): Field[] {
   const started = startedText(row);
   const project = projectText(row);
-  const values: Record<string, { label: string; value: string; basis: Basis }> = {
-    name: { label: S.name, value: sessionLabel(row), basis: 'measured' },
-    head: { label: S.head, value: row.head === '' ? UNKNOWN_HEAD : row.head, basis: 'measured' },
-    project: project === null
-      ? { label: S.project, value: ABSENT, basis: 'unavailable' }
-      : { label: S.project, value: project, basis: 'measured' },
-    started: started === null
-      ? { label: S.started, value: ABSENT, basis: 'unavailable' }
-      : { label: S.started, value: started, basis: 'measured' },
-    seen: row.updated_at === null
-      ? { label: S.seen, value: ABSENT, basis: 'unavailable' }
-      : { label: S.seen, value: timeAgo(row.updated_at), basis: 'measured' },
-    peer: peer === null
-      ? { label: S.peer, value: ABSENT, basis: 'unavailable' }
-      : { label: S.peer, value: peer, basis: 'measured' },
+  const values: Record<string, { value: string; basis?: Basis }> = {
+    name: { value: sessionLabel(row), basis: 'measured' },
+    head: { value: row.head === '' ? UNKNOWN_HEAD : row.head, basis: 'measured' },
+    project: project === null ? { value: ABSENT } : { value: project, basis: 'measured' },
+    started: started === null ? { value: ABSENT } : { value: started, basis: 'measured' },
+    seen: row.updated_at === null ? { value: ABSENT } : { value: timeAgo(row.updated_at), basis: 'measured' },
+    peer: peer === null ? { value: ABSENT } : { value: peer, basis: 'measured' },
   };
   const fields: Field[] = [];
   for (const key of order) {
     const found = values[key];
-    if (found === undefined) continue;
-    fields.push({ key, label: found.label, w: WIDTHS[key] ?? 14, value: found.value, basis: found.basis });
+    const column = COLUMNS[key];
+    if (found === undefined || column === undefined) continue;
+    fields.push({ key, label: column.label, w: column.w, value: found.value, ...basisProp(found.basis) });
   }
   return fields;
 }
@@ -116,8 +132,10 @@ export function SessionStrip({ row, peer, selected, order, onOpen }: {
       onOpen={onOpen}
       ariaLabel={`${S.title} ${sessionLabel(row)}`}
     >
+      {/* No label on a cell: the bay head prints the column names once for the whole rack
+          (CONTRACTS.md section 2, m1 design review B9). */}
       {fieldsOf(row, peer, order).map((field) => (
-        <StripField key={field.key} w={field.w} label={field.label} value={field.value} basis={field.basis} />
+        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );

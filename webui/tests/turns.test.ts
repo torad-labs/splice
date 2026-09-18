@@ -180,15 +180,17 @@ describe('in-flight turns', () => {
 describe('turn strips', () => {
   test('a row that lost telemetry says so in words, never with smaller numbers', () => {
     expect(fieldsOf(turn({ async_io_drops: 3 }), ['dropped'])[0].value).toBe('telemetry dropped');
-    expect(fieldsOf(turn({ async_io_drops: 0 }), ['dropped'])[0].value).toBe('-');
-    expect(fieldsOf(turn(), ['dropped'])[0].value).toBe('-');
+    expect(fieldsOf(turn({ async_io_drops: 0 }), ['dropped'])[0].value).toBe('n/r');
+    expect(fieldsOf(turn(), ['dropped'])[0].value).toBe('n/r');
   });
 
-  test('a column the row does not carry is absent and says so', () => {
+  test('a column the row does not carry is absent and says so in one glyph', () => {
+    // The glyph is the whole statement, so an absent cell carries no basis word (m1 design review
+    // B8): `- unavailable` was one fact in two sentences and read as a typo.
     const fields = fieldsOf(without(turn(), 'total', 'in_tokens'), ['total', 'tokensIn', 'head']);
     expect(fields.map((f) => [f.value, f.basis])).toEqual([
-      ['-', 'unavailable'],
-      ['-', 'unavailable'],
+      ['n/r', undefined],
+      ['n/r', undefined],
       ['claudex', 'measured'],
     ]);
   });
@@ -257,8 +259,9 @@ describe('turns board', () => {
         ],
       },
     });
-    expect(out).toContain('no turns in window');
-    expect(out).toContain('>unavailable<'); // no percentile was computed for an empty window
+    expect(out).toContain('no turns in window'); // the whole sentence, in the strip's aria-label
+    expect(out).toContain('>n/r<'); // no percentile was computed for an empty window
+    expect(out).toContain('>empty<'); // and the edge says the window has no rows
   });
 
   test('nothing in flight is an honest empty, not an empty bay', () => {

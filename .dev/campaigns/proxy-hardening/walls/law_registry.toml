@@ -129,6 +129,6 @@ law_present = true
 # is the convention the retry-law walls already carry.
 [[law]]
 tag = "PRE-CONTENT-WIRE-TYPE"
-wall = ".dev/campaigns/proxy-hardening/walls/law_pre_content_wire_type.py"
+wall = ".dev/campaigns/proxy-hardening/walls/law_pre_content_wire_type.ts"
 note = "V4-78/V4-79/V4-81/V4-82: the pre-content rule is applied ONCE, at the emitter seam. The wall checks (a) wire/SseEmitter.kt declares object PreContentWireType with a fun of( and every fun emitError( applies it exactly once, as a WHOLE expression (not merely containing it, and not with the content flag pinned to the literal true, which returns the type unchanged), with the routed value the one written to the wire; (b) NO other main source under gateway/*/src/main/kotlin calls PreContentWireType.of( — the anti-hand-copy check that would have caught V4-79's four copies; (c) the governed set derived from the rule object's own body and ratcheted, so narrowing the rule reds; (d) every other in-band error-envelope construction (errorEnvelope(, or a .wireName handed to a JSON writer) is red by file:line, with ONE written exemption: CollectingTerminal (the collect path, where the real HTTP status carries the retry semantics), pinned to that file still declaring CollectingTerminal so the exemption cannot outlive its reason. Mutation-proven against the live tree 2026-09-17: 8 of 8 mutations red, baseline green."
 law_present = true

@@ -223,6 +223,34 @@ function dangling(): string[] {
       if (!existsSync(target)) out.add(`${caller} -> ${target}`);
     }
   }
+  // THE FIFTH SURFACE: a REGISTRY row whose wall= names a file that is gone. Reported by
+  // splice-builder2 on 2026-09-18 after it got the frame wrong in its own favour and the grep
+  // caught it: it recorded that law_pre_content_wire_type had no registry row in either registry,
+  // deleted the .py, and then found law_registry.toml:132 still naming the deleted file — because
+  // it re-ran the surviving-caller grep AFTER the deletion instead of trusting its pre-deletion
+  // read. Neither census saw it; this wall passed at 78/78 with a live reference dangling.
+  //
+  // THE FRAME IT CORRECTS, worth keeping because it is the reason the surface was missed: there
+  // are TWO registries, wall_registry.toml keyed id= for item walls and law_registry.toml keyed
+  // tag= for law enforcers, and a wall may appear in EITHER regardless of what its filename
+  // suggests. Generalising from one sample (no wall_registry row) to "no registry row at all" is
+  // the inference-from-one-sample error, and it is why this reads every tracked .toml rather than
+  // the two files anyone can name.
+  //
+  // Measured before landing: 108 wall= fields across the tree, 69 of them EMPTY — which is the
+  // registry's own documented spelling for "this row has no wall yet" and reads RED in the
+  // campaign gate rather than here — 39 resolving, and 0 missing. Zero noise, so no allowlist.
+  for (const registry of gitLs("*.toml")) {
+    let text: string;
+    try {
+      text = readFileSync(registry, "utf8");
+    } catch {
+      continue;
+    }
+    for (const [, target] of text.matchAll(/^\s*wall\s*=\s*"([^"]+)"/gm)) {
+      if (!existsSync(target)) out.add(`${registry} -> ${target} (registry wall= names a missing file)`);
+    }
+  }
   return [...out].sort();
 }
 

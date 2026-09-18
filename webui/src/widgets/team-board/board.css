@@ -83,7 +83,12 @@
      it. Removing it here is what lets the primitive's rung reach this page. */
   font-variation-settings: 'wdth' 62;
   /* The comp's grid starts at its own left edge, so the inset lives in the
-     strip's edge column and the fields take none. Its labels sit at y13 and its
+     strip's edge column and the fields take none.
+     TRUE OF THE FIRST CELL ONLY (M3-04): the edge column sits left of cell one, but the comp insets
+     every INTERIOR cell too -- about 8px from its rule at native resolution -- and the build printed
+     them flush, 0 to 1px, seven of seven. The head strips take their inline inset from the
+     `.myx-board-strip .myx-sfield` rule beside the type sizes below; this rule keeps the vertical.
+     Its labels sit at y13 and its
      rule at y24, which is where the label's line box ends at this size.
      THE TRADE IS STILL HERE AND THE REASON HAS CHANGED (M1-71). This said the
      comp sets its strips smaller than the ladder's floor and the floor wins.
@@ -340,10 +345,37 @@
    artifact - while the rest of the console stays in rem and stays adjustable. */
 .myx-board { container-type: size; }
 /* 16px, 14px and 12px at the comp frame, as a share of the board's own height. */
-.myx-board .myx-sfield-value,
-.myx-board .myx-bay-label,
-.myx-board .myx-board-strip .myx-sfield-value { font-size: 1.6587cqh; }
+.myx-board .myx-sfield-value { font-size: 1.6587cqh; }
+/* THE PLATE'S LETTERING IS 12.8px (M3-04). M1-64 raised the bay label from --text-1 to --text-3 on
+   "the contract's bay label is 16", and the bisect put -0.024 on activity-label and chat-label at
+   that commit: the crop shows the lettering overfilling the plate the comp leaves air in. With the
+   weight above, 80 percent of the 16px share is what the four plate regions scored best at. */
+.myx-board .myx-bay-label { font-size: 1.3270cqh; }
+/* THE STRIP'S VALUES ARE 12.8px, NOT 16, AND ITS CELLS INSET 4px (M3-04, the finish review's items 1
+   and 2). Measured on team-board-a.png at its native 1536x1024: the comp's interior cells inset their
+   text about 8px from the rule (lead-strip 8,8,9,8,8,3,9; lead-strip-2 7,5,6,9,7,6,5), and it prints
+   the same strings NARROWER than Archivo does at 16px on the axis floor -- gs-backend-claude 75px of
+   ink against our 93.9, 5h 74% 29 against 37.6, 14:01 24 against 29.6, median 0.84 of our width.
+   The comp's face is condensed past wdth 62, so its inset, its size and its no-truncation cannot
+   all be had in this face, and the choice was made on the frame rather than by argument. Injected
+   on the hero at 1536, each variant scored with comp-diff (strips = the six head-strip regions):
+     inset 0, 16px (before)    11 clipped, 109px overflow, strips 0.622, region median 0.630
+     inset 8, 16px             45 clipped, 621px overflow, strips 0.620, region median 0.620
+     inset 8, 12.8px           21 clipped, 181px overflow, strips 0.665, region median 0.670
+     inset 4, 12.8px (this)     9 clipped,  34px overflow, strips 0.678, region median 0.670
+   Every 8px variant clips 17 or more cells; 4px is the inset this face can carry while truncating
+   LESS than before, not more. The size is the one d040ad96 raised to --text-3 on the comp's cap
+   height, and its own note recorded the cost (10 of 99 cells clipping); the bisect put -0.084 on
+   builder-strip at that commit. */
+.myx-board .myx-board-strip .myx-sfield-value { font-size: 1.3270cqh; }
+.myx-board .myx-board-strip .myx-sfield { padding-inline: var(--space-2); }
 .myx-board .myx-sfield-label { font-size: 1.2439cqh; }
+/* NO ELLIPSIS ON A NAME THAT FITS TO A FRACTION (M3-04). A column name prints once per rack, so the
+   ones that did not fit got authored short forms (strings.ts); what was left over by less than a
+   pixel -- the lead bay's `context left` by 0.5px, the builder's `base` by 0.2 -- was being turned
+   into `ba…` by the ellipsis, which spends a whole glyph to save a fifth of a pixel. Measured with
+   the text's exact width, every board name now fits its box to within 1px, so clip hides no ink. */
+.myx-board .myx-sfield-label { text-overflow: clip; }
 .myx-board .myx-board-act .myx-sfield-value,
 .myx-board .myx-board-msg .myx-sfield-value { font-size: 1.4514cqh; }
 /* `.myx-board-foot` (M3-03): that class is on no element in the tree -- the footer is
@@ -373,7 +405,12 @@
 .myx-board-bay-0 .myx-bay-head { left: 25.71%; top: 1.266%; width: 42.857%; height: 3.165%; }
 .myx-board-bay-1 .myx-bay-head { left: 20.00%; top: 1.266%; width: 50.909%; height: 3.165%; }
 .myx-board-bay .myx-bay-label {
-  font-weight: 600;
+  /* 400, NOT 600 (M3-04, the finish review's item 6): the comp sets its plate lettering light --
+     the reviewer measured activity-label's stem at 0.093 of its ink height in the comp against 0.130
+     here -- and the hero gate's live reading had bay-deepseek-label 26% heavier. Measured on the hero
+     with the size step below: chat-label +0.018, bay-claude-label +0.016, bay-deepseek-label +0.054,
+     no cell newly clipped. The weight was here from M1-05, so it was never the -0.140 regression. */
+  font-weight: 400;
   font-family: var(--font-label);
   color: var(--strip-ink);
 }
@@ -579,43 +616,8 @@
 /* the activity rows are the tightest rack on the page: the value follows its
    label by two pixels, not eight, or the last line of a 38px plate is cut */
 .myx-board-act .myx-sfield-value { padding-block-start: var(--space-1); }
-/* L-7 -- THE COLUMN NAMES PRINT ONCE, ON THE RACK. The comp's activity bay is a table: the region
-   crop shows one header row under the plate and five data rows beneath it, each row a rule apart.
-   The build printed `time member activity detail` on every slip, so six data rows and six header
-   rows alternated down the bay -- small enough at 1536 to read as texture, and at 3840 the most
-   repetitive object on the page, which is what the light-room review filed as L-7.
-   The header row is the rack's, so it is placed against the bay and not against the rows; it takes
-   the same left inset the strips' cells start at (the edge column plus the strip's own hairline)
-   and the same ch widths, so the two grids line up on one measurement rather than two. */
-.myx-board-bay-activity .myx-bay-fields {
-  position: absolute;
-  left: 1.613%;
-  top: 8.3%;
-  width: 96.774%;
-  padding-inline-start: calc(var(--space-4) + var(--hair));
-  /* IT IS PAPER, NOT INK ON THE BAY. The comp's header row is a printed bar like every other row
-     in the table -- cream, with the rule under it -- so it takes the strip's own ground and ink;
-     written as ink on the bay it rendered invisible, which is how the first version of this rule
-     shipped for the length of one capture. */
-  background: var(--strip);
-  color: var(--strip-ink);
-  border-inline: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white);
-  border-block-start: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white);
-  border-block-end: var(--hair) solid var(--strip-ink-mute);
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  font-variation-settings: 'wdth' 62;
-  font-weight: 600;
-  padding-block: var(--space-1) var(--space-2);
-}
-/* the same width AND the same hairline the cell carries, so a ch column lands in the same place
-   in the header as it does in the row under it */
-.myx-board-act-head {
-  flex: 0 0 auto;
-  overflow: hidden;
-  white-space: nowrap;
-  border-inline-end: var(--hair) solid transparent;
-}
+/* L-7's column names print once, as the FIRST activity strip's label row (M3-04, index.tsx): the
+   band that stood here under the plate, outside every cell rule, was removed with its two rules. */
 .myx-board-acts > .myx-board-act {
   position: absolute;
   left: 0;
@@ -703,46 +705,77 @@
    the board stay put while the thumb moves along the bays. The page's padding is --space-3 here
    (app.css), so the frame cancels that and not the desktop's --space-5. */
 .myx-board-frame { display: contents; }
+/* ---------- THE PHONE (M3-04, the finish review's items 3 and 4): THE BOARD STACKS ----------
+   M3-03 made the board a poster 280 percent of the screen wide that panned under scroll-snap. The
+   finish review read the 390 capture as unusable, and it was: the chat and activity column was a
+   sliver at x 355-390, nothing said there was more to the right, and the two tilted hand-off strips
+   kept their desktop scale and ran off the frame. Below 720 the composition therefore stops being a
+   composition: every placed box returns to the flow and the bays stack in the comp's reading order
+   (the team header, the two heads, the hand-off, the chat, the activity), each at the screen's width.
+   The comp is not a spec for a phone; what it fixes -- the strip, the plate, the holder edge, the
+   words -- all survive, and what cannot survive a 390px column is dropped and named here:
+     - the empty rack slots under each head (nine blank rails a phone would scroll past for nothing);
+     - the hand-off's ghost, the lifted copy that draws its motion on a desktop, and the tilt of the
+       live strip, which at 390 put half of it off the frame;
+     - cqh type: the board is no longer a sized container, so its sizes go back to the ladder.
+   A strip's cells wrap at their declared ch widths instead of squeezing into ellipses, so every
+   value on the board reads in full; a cell wider than the screen is capped to it. Measured at 390:
+   the document is 390 wide and no element of the board crosses either edge. */
 @media (max-width: 720px) {
-  .myx-board-frame {
-    display: block;
-    height: calc(100% + var(--space-3) * 2);
-    margin: calc(-1 * var(--space-3));
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-snap-type: x mandatory;
-    overscroll-behavior-x: contain;
-  }
+  .myx-board-frame { display: block; height: auto; margin: 0; overflow: visible; }
   .myx-board-frame > .myx-board {
-    width: 280%;
-    height: 100%;
+    width: auto;
+    height: auto;
     min-height: 0;
     margin: 0;
+    overflow: visible;
+    container-type: normal;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
   }
+  .myx-board-frame .myx-board-header,
   .myx-board-frame .myx-board-bay,
-  .myx-board-frame .myx-role-bay { scroll-snap-align: center; }
-
-  /* THE FOOTER SITS ON THE BOARD, NOT ON THE SCREEN. On a desktop it is fixed to the frame because
-     the comp draws it across the rail's edge, and only the frame can place it there. On a phone the
-     rail is a strip at the bottom of the screen, and a fixed footer lands behind it. Here it takes
-     the comp's own place in the board's coordinates instead -- under the first bay, in the band
-     below the bays (they end at 92 percent) -- and scrolls with the poster it belongs to. */
+  .myx-board-frame .myx-bay-head,
+  .myx-board-frame .myx-board-strip,
+  .myx-board-frame .myx-board-handoff,
+  .myx-board-frame .myx-board-handoff-live,
+  .myx-board-frame .myx-board-msgs,
+  .myx-board-frame .myx-board-msg,
+  .myx-board-frame .myx-board-acts,
+  .myx-board-frame .myx-board-act,
   .myx-board-frame .myx-board-footer {
-    position: absolute;
-    left: 0.879%;
-    bottom: 1%;
-    width: 30.769%;
+    position: static;
+    inset: auto;
+    width: auto;
     height: auto;
-    flex-wrap: wrap;
-    row-gap: var(--space-1);
-    column-gap: var(--space-4);
-    padding-block: var(--space-2);
+    transform: none;
   }
-
-  /* The header plate is a share of the board's height (5.308 percent), and the board is 664 pixels
-     tall on a 390x844 phone against 965 on the comp: 35 pixels, while its label and value rows need
-     36.7 at --text-2 before any padding (the arithmetic is in the header's own rule above), so the
-     value row was cut in half. On a phone the plate takes its content's height instead; it still
-     ends above the bays, which start at 8.174 percent. */
-  .myx-board-frame .myx-board-header { height: auto; }
+  .myx-board-frame .myx-board-slot,
+  .myx-board-frame .myx-board-ghost { display: none; }
+  .myx-board-frame .myx-board-bay { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); }
+  /* the plate keeps its pins, so it needs the room for them the desktop's fixed box gave it */
+  .myx-board-frame .myx-bay-head { align-self: center; width: max-content; max-width: 100%; padding-inline: var(--space-5); }
+  .myx-board-frame .myx-bay-rows,
+  .myx-board-frame .myx-board-msgs,
+  .myx-board-frame .myx-board-acts { display: flex; flex-direction: column; gap: var(--space-2); }
+  .myx-board-frame .myx-strip { max-width: 100%; }
+  .myx-board-frame .myx-strip-fields { flex-wrap: wrap; min-width: 0; }
+  .myx-board-frame .myx-strip-fields > .myx-sfield { flex: 0 0 auto; max-width: 100%; }
+  /* A LABEL BELONGS TO THE VALUE UNDER IT (M3-04). The desktop cell has no floor (the plate's fixed
+     height is the floor) and its value carries 8px above it, so once cells wrap the value sat 12px
+     under its own label and 4px over the next one's: every label read as the caption of the value
+     ABOVE it, five of five in the team header. The 8px moves from the value's top to the cell's
+     floor, so the pair is bound tighter than the space between pairs. */
+  .myx-board-frame .myx-sfield { padding-block-end: var(--space-3); }
+  .myx-board-frame .myx-sfield-value,
+  .myx-board-frame .myx-board-act .myx-sfield-value { padding-block-start: var(--space-1); }
+  .myx-board-frame .myx-sfield-value,
+  .myx-board-frame .myx-board-strip .myx-sfield-value,
+  .myx-board-frame .myx-board-act .myx-sfield-value,
+  .myx-board-frame .myx-board-msg .myx-sfield-value,
+  .myx-board-frame .myx-bay-label { font-size: var(--text-2); }
+  .myx-board-frame .myx-sfield-label,
+  .myx-board-frame .myx-board-footer { font-size: var(--text-1); }
+  .myx-board-frame .myx-board-footer { flex-wrap: wrap; row-gap: var(--space-1); column-gap: var(--space-4); padding: var(--space-2) var(--space-5); }
 }

@@ -89,11 +89,15 @@
    D7 series ends on. The fact now lives where the replacement's ink is decided: HolderEdge's own
    rules in shared/ui/ui.css, which were measured against the same paper. */
 
-/* The rack. A fixed height so the virtualizer has a viewport, and it scrolls both ways: the line's
-   text field is wider than the room, and a log line is not something to wrap. */
+/* The rack. A fixed height so the virtualizer has a viewport. It scrolls DOWN only (M3-04): it
+   scrolled both ways because the text field was wider than the room and a log line was held not to
+   wrap, and the finish review read the result at 1536 as a column cut at the bay's edge
+   (`first_byt…`). The line now wraps inside its own cell (index.tsx), so there is nothing to the
+   right to scroll to. */
 .myx-lt-scroll {
   height: 66vh;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-top: var(--hair) solid var(--hairline-strong);
   border-bottom: var(--hair) solid var(--hairline-strong);
 }
@@ -109,3 +113,28 @@
   inset-inline: 0;
   top: 0;
 }
+
+/* THE LINES AND THEIR COLUMNS FILL THE RACK, AND THE TEXT CELL WRAPS (M3-04). A strip is
+   max-content in a rack (ui.css, M1-12), which leaves no slack for the text cell to grow into; here
+   the strip takes the rack's width, so the cell's flex-grow reaches it, and its value wraps where the
+   primitive clips. overflow-wrap: anywhere because a log line breaks inside a path or a key=value run
+   as readily as between words. */
+.myx-lt-row .myx-strip,
+.myx-lt-cols { width: 100%; }
+.myx-lt-row .myx-sfield:last-child .myx-sfield-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+/* A ROW CUT BY THE TOP OF THE TAIL KEEPS ITS FACTS (M3-04). Following the tail scrolls to the bottom,
+   so the top row is usually cut through, and its time, head and level -- printed on its FIRST line --
+   were above the fold while its text showed from the middle: a row that read as missing its data
+   (measured 27px above, all three hidden). They stay in view for as long as any of the row is; the
+   text cell scrolls with its words. */
+.myx-lt-row .myx-sfield:not(:last-child) .myx-sfield-value { position: sticky; top: 0; }
+/* The columns strip is the rack's head: it prints names and nothing else. Its empty value line and
+   its edge are hidden but keep their boxes, so every column lands on the x of the cells below it. */
+.myx-lt-cols .myx-sfield-value { display: none; }
+.myx-lt-cols .myx-edge { visibility: hidden; }
+/* a strip's holder pin (ui.css, E-5) shows only where no mark covers it, and this head hides its mark */
+.myx-lt-cols::before { content: none; }

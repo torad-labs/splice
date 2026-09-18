@@ -4,41 +4,7 @@
 
 
 
-.myx-pill {
-  font-family: var(--font-mono);
-  font-size: var(--text-1);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: var(--space-0) var(--space-2);
-  border-radius: var(--radius-1);
-  border: var(--hair) solid var(--line);
-}
-.myx-pill-pos   { color: var(--data-pos); border-color: color-mix(in srgb, var(--data-pos) 50%, transparent); }
-.myx-pill-neg   { color: var(--data-neg); border-color: color-mix(in srgb, var(--data-neg) 50%, transparent); }
-.myx-pill-info  { color: var(--data-info); border-color: color-mix(in srgb, var(--data-info) 50%, transparent); }
-.myx-pill-amber { color: var(--data-amber); border-color: color-mix(in srgb, var(--data-amber) 50%, transparent); }
-.myx-pill-mute  { color: var(--ink-mute); }
-
-.myx-metric { display: grid; gap: var(--space-1); }
-.myx-metric-value {
-  font-family: var(--font-mono);
-  font-size: var(--text-6);
-  font-weight: 500;
-  color: var(--ink-strong);
-  font-variant-numeric: tabular-nums;
-}
-.myx-metric-unit { font-size: var(--text-2); color: var(--ink-mute); margin-left: var(--space-1); }
-.myx-metric-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-1);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-mute);
-}
-.myx-ink-pos   { color: var(--data-pos); }
-.myx-ink-neg   { color: var(--data-neg); }
-.myx-ink-info  { color: var(--data-info); }
-.myx-ink-amber { color: var(--data-amber); }
+/* The pill, metric and ink-tone rules left with StatusPill and Metric (M3-04). */
 
 /* THE TWO CONTROLS ARE IN THE WORLD (M1-54). They were painted from the RETIRED pigment ramp -
    `--control-surface` is `light-dark(--paper-0, --obsidian-800)` and `--obsidian-800` is #241a12, a
@@ -120,53 +86,8 @@
 }
 
 
-.myx-error {
-  margin: var(--space-0);
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-2);
-  color: var(--data-neg);
-  border: var(--hair) solid color-mix(in srgb, var(--data-neg) 55%, transparent);
-  border-radius: var(--radius-1);
-}
-
-/* Static skeleton — shape signals loading; no animation (locked motion gate:
-   no infinite loops; skeletons read by layout, not by shimmer). */
-.myx-skeleton { display: grid; gap: var(--space-2); }
-.myx-skeleton-row { display: flex; gap: var(--space-2); }
-.myx-skeleton-cell {
-  flex: 1;
-  height: var(--space-4);
-  border-radius: var(--radius-1);
-  background: var(--surface-sunk);
-  border: var(--hair) solid var(--line-mute);
-}
-
-.myx-stale {
-  font-family: var(--font-mono);
-  font-size: var(--text-1);
-  color: var(--data-amber);
-}
-
-/* MeterBar: a hairline track, fill is the ONLY warn-tinted element (measurement
-   ink, never a colored panel background). */
-.myx-meter {
-  height: var(--space-2);
-  background: var(--surface-sunk);
-  border: var(--hair) solid var(--line-mute);
-  border-radius: var(--radius-0);
-  overflow: hidden;
-}
-/* No transition: animating width is a layout transition (detect.mjs
-   layout-transition), and in this world the two licensed motions are the
-   holder edge cock and the strip swell — neither belongs to a meter fill. */
-.myx-meter-fill {
-  height: 100%;
-}
-.myx-meter-fill-pos   { background: var(--data-pos); }
-.myx-meter-fill-amber { background: var(--data-amber); }
-.myx-meter-fill-neg   { background: var(--data-neg); }
-.myx-meter-fill-mute  { background: var(--ink-mute); }
+/* The error, skeleton, stale and meter rules left with ErrorNote, SkeletonRows, Stale and
+   MeterBar (M3-04); no other file wrote any of their classes. */
 
 /* ============================================================
    THE STRIP BAY (v0.4.0). Strips on a rack: opaque paper, black ink, a
@@ -669,6 +590,11 @@
      (`--strip` mixed toward its mute), which lands 190 against the comp's measured 178-188 --
      --plate is 183, dead centre of that band, and it is the value the token already holds. */
   background-color: var(--plate);
+  /* THE PLATE IS PAPER, SO IT DECLARES PAPER INK (M3-04, the cascade detector). Its label and count
+     declare their own, but a holder edge on it inherits since M2R-01, and the compaction bay's grey
+     `sample data` edge printed body's --ink #C9C3B4 on the plate's #C3B6A0 at 1.14:1 in the dark
+     room -- the log tail head's defect on the plate it was one fix away from. */
+  color: var(--strip-ink);
   background-image:
     radial-gradient(circle at 6px 6px, var(--strip-ink) 0 4.5px, transparent 4.5px),
     radial-gradient(circle at calc(100% - 6px) 6px, var(--strip-ink) 0 4.5px, transparent 4.5px),

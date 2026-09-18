@@ -96,6 +96,11 @@
    at 12.6 against the comp's 12.4. That +0.2 is the one residual in this row that is NOT the face's
    ~7 percent, and it is named here rather than hidden: health is the role whose rung does not exist. */
 .myx-rule-health { left: 30%; width: 10%; font-size: var(--text-4); }
+/* ...AND THE SIZE HAS TO REACH THE WORDS (M3-04). The only text health prints is its holder edge's
+   label, and `.myx-edge-label` sets its own --text-1 (ui.css), so the --text-4 above sized an empty
+   box: the hero gate read the cap at 9.3px against the comp's 12.4, 54 times. Inheriting here puts
+   the rule's size on the word; the live reading on the final frame no longer fires. */
+.myx-rule-health .myx-edge-label { font-size: inherit; }
 
 .myx-rule-window {
   left: 41%;

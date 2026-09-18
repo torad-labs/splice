@@ -248,8 +248,10 @@ function contrast(a: string, b: string): number {
 /** The label's ink and its ground, for a HolderEdge standing on `host` (a key, or the body). */
 function edgeOn(ui: string, theme: 'dark' | 'light', host: { css: string; selector: string }): number {
   const base = declared(ui, '.myx-edge-label', 'color');
-  const hostInk = declared(host.css, host.selector, 'color');
-  const hostGround = declared(host.css, host.selector, 'background');
+  // a host that declares no ink passes body's down (the bay plate did, M3-04), and a host whose
+  // fill is `background-color` (the plate keeps its pins in background-image) is read from that
+  const hostInk = declared(host.css, host.selector, 'color') ?? declared(sheet('src/app/app.css'), 'body', 'color');
+  const hostGround = declared(host.css, host.selector, 'background') ?? declared(host.css, host.selector, 'background-color');
   if (base === null || hostInk === null || hostGround === null) throw new Error('a rule the wall reads is gone');
   const ink = base === 'inherit' ? hostInk : base;
   const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
@@ -274,6 +276,50 @@ describe('the holder edge label', () => {
     const unfixed = ui.replace(/(^\.myx-edge-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--ink);');
     expect(unfixed).not.toBe(ui);
     expect(edgeOn(unfixed, 'dark', KEY)).toBeLessThan(1.3);
+  });
+
+  // THE BAY'S HEAD PLATE (M3-04). The cascade detector's scan found the third paper ground an edge
+  // stands on: the compaction bay's grey `sample data` edge on the plate, which declared no ink, so
+  // the label inherited body's --ink at 1.14:1 in the dark room.
+  const PLATE = { css: ui, selector: '.myx-bay-head' };
+  for (const theme of ['dark', 'light'] as const) {
+    test(`a HolderEdge on a bay's head plate reads in the ${theme} room`, () => {
+      expect(edgeOn(ui, theme, PLATE)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+  test('the wall can fail: a plate that declares no ink puts the edge at 1.14:1 in the dark room', () => {
+    const unfixed = ui.replace(/(^\.myx-bay-head\s*\{[^}]*?)\n\s*color:\s*var\(--strip-ink\);/m, '$1');
+    expect(unfixed).not.toBe(ui);
+    expect(edgeOn(unfixed, 'dark', { css: unfixed, selector: '.myx-bay-head' })).toBeLessThan(1.2);
+  });
+});
+
+// THE CHOICE'S LABEL READS ON THE ROOM IT STANDS ON (M3-04). The edge defect run the other way:
+// `.myx-choice-label` printed --strip-ink-mute, a PAPER ink, while the label is a sibling of the paper
+// box in the choice's column, so on the logs head (Choice's one consumer) it stood on the room at
+// 2.67:1 in the dark. It now inherits; resolved from the sheets, both themes, and the planted arm
+// feeds it the paper ink back and must see the 2.67.
+describe("the choice's label", () => {
+  const controls = sheet('src/shared/controls/controls.css');
+  const app = sheet('src/app/app.css');
+  const onRoom = (css: string, theme: 'dark' | 'light'): number => {
+    const own = declared(css, '.myx-choice-label', 'color');
+    const room = declared(app, 'body', 'color');
+    const ground = declared(app, 'body', 'background') ?? declared(app, 'body', 'background-color');
+    if (own === null || room === null || ground === null) throw new Error('a rule the wall reads is gone');
+    const ink = own === 'inherit' ? room : own;
+    const name = (value: string) => /var\(--([a-z-]+)\)/.exec(value)?.[1] ?? '';
+    return contrast(token(theme, name(ink)), token(theme, name(ground)));
+  };
+  for (const theme of ['dark', 'light'] as const) {
+    test(`reads on the ${theme} room`, () => {
+      expect(onRoom(controls, theme)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+  test('the wall can fail: the paper ink puts it at 2.67:1 in the dark room', () => {
+    const unfixed = controls.replace(/(^\.myx-choice-label\s*\{[^}]*?)color:\s*inherit;/m, '$1color: var(--strip-ink-mute);');
+    expect(unfixed).not.toBe(controls);
+    expect(onRoom(unfixed, 'dark')).toBeLessThan(2.8);
   });
 });
 
@@ -303,6 +349,28 @@ describe('the log tail head prints its count in paper ink', () => {
     const unfixed = lt.replace(/^\.myx-lt-head \.myx-fig-value[^\n]*\n/m, '');
     expect(unfixed).not.toBe(lt);
     expect(onHead(unfixed, 'dark', 'value')).toBeLessThan(1.2);
+  });
+});
+
+// HEALTH'S SIZE REACHES ITS WORD (M3-04). The health cell's only text is its holder edge's label, and
+// `.myx-edge-label` sets its own --text-1, so the cell's --text-4 sized an empty box and the hero gate
+// read the cap at 9.3px against the comp's 12.4. The word's size resolves from the sheets here.
+describe("the rule's health word takes the cell's size", () => {
+  const ui = sheet('src/shared/ui/ui.css');
+  const rule = sheet('src/widgets/rule/rule.css');
+  const wordSize = (css: string) => {
+    const own = declared(css, '.myx-rule-health .myx-edge-label', 'font-size') ?? declared(ui, '.myx-edge-label', 'font-size');
+    return own === 'inherit' ? declared(css, '.myx-rule-health', 'font-size') : own;
+  };
+
+  test('the word prints at the cell size, --text-4', () => {
+    expect(wordSize(rule)).toBe('var(--text-4)');
+  });
+
+  test('the wall can fail: without the rule the edge label keeps --text-1', () => {
+    const unfixed = rule.replace(/^\.myx-rule-health \.myx-edge-label[^\n]*\n/m, '');
+    expect(unfixed).not.toBe(rule);
+    expect(wordSize(unfixed)).toBe('var(--text-1)');
   });
 });
 

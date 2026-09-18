@@ -26,6 +26,11 @@
 // still fail on the harm they were written for — delete the assignment, or make the default null,
 // and they go red. This pin caught the refactor leaving a now-dead `declaredHeads` parameter behind
 // on ControlPlane, which is the second time a source pin has reported something no type check could.
+//
+// MOVED ON 2026-09-18 (V4-156, concentration), same assertions at the new site. The four assignments
+// now live in ConsoleWiring.kt, so the port pins read that file; ControlPlane keeps one call,
+// `ConsoleWiring.wire(srv, topology)`, and that call gets its own pin here, because deleting it
+// unwires all four ports at once and the build still passes.
 package campaign.v4127
 
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -38,7 +43,7 @@ class ConsoleWiringPinTest {
 
     @Test
     fun `the control plane wires every console read port to the control server`() {
-        val source = controlPlaneSource()
+        val source = consoleWiringSource()
         listOf(
             "srv.declaredHeads = topology.declaredHeads" to
                 "the models page would group by a provider nobody reported and show no declared tiers",
@@ -50,7 +55,7 @@ class ConsoleWiringPinTest {
         ).forEach { (line, harm) ->
             assertTrue(
                 source.contains(line),
-                "ControlPlane must assign `$line`, or $harm",
+                "ConsoleWiring must assign `$line`, or $harm",
             )
         }
     }
@@ -75,6 +80,17 @@ class ConsoleWiringPinTest {
         )
     }
 
+    /** The call that runs every assignment above. Without it ConsoleWiring is dead code and each
+     *  port pin still passes, so this is the pin that keeps the others meaningful. */
+    @Test
+    fun `the control plane runs the console wiring on the server it constructs`() {
+        assertTrue(
+            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology)"),
+            "ControlPlane must call `ConsoleWiring.wire(srv, topology)` after constructing the " +
+                "ControlServer, or every console port is unwired while the build stays green",
+        )
+    }
+
     /** V4-137's port joins the same block and gets the same pin, but for the opposite reason. The
      *  three read ports above are dangerous UNWIRED; this one is safe unwired — ControlServer's
      *  `supervised` is null until assigned and the route refuses on null, so a forgotten line
@@ -85,8 +101,8 @@ class ConsoleWiringPinTest {
     @Test
     fun `the control plane wires the draining restart's supervision probe`() {
         assertTrue(
-            controlPlaneSource().contains("srv.supervised = DrainingRestartAdapter()"),
-            "ControlPlane must assign `srv.supervised`, or POST /api/daemon/restart refuses forever " +
+            consoleWiringSource().contains("srv.supervised = DrainingRestartAdapter()"),
+            "ConsoleWiring must assign `srv.supervised`, or POST /api/daemon/restart refuses forever " +
                 "on a supervised host — and a refusal is indistinguishable from the guard working",
         )
     }
@@ -104,6 +120,8 @@ class ConsoleWiringPinTest {
     }
 
     private fun controlPlaneSource(): String = source("gateway/app/src/main/kotlin/splice/app/ControlPlane.kt")
+
+    private fun consoleWiringSource(): String = source("gateway/app/src/main/kotlin/splice/app/ConsoleWiring.kt")
 
     private fun bootedTopologySource(): String = source("gateway/app/src/main/kotlin/splice/app/BootedTopology.kt")
 

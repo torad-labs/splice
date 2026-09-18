@@ -15,8 +15,8 @@ import splice.app.cli.prompt.Spinner
 import splice.app.cli.prompt.TerminalMode
 import splice.app.cli.prompt.WizardCancelled
 import splice.app.cli.prompt.WizardFrame
+import splice.app.cli.setup.SetupSignIn
 import splice.core.topology.AuthKindRegistry
-import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -25,7 +25,7 @@ import java.nio.file.Path
 /** The `setup` verb. Production constructs with defaults so Command.Setup does not change. */
 internal class SetupCommand(
     private val installCommand: InstallCommand = InstallCommand(),
-    private val loginHead: HeadSignIn = HeadSignIn { key -> LoginCommand().login(key) },
+    loginHead: HeadSignIn = HeadSignIn { key -> LoginCommand().login(key) },
     private val frame: WizardFrame = WizardFrame(),
     private val detect: SetupProbe = SetupProbe {
         SetupDetection(
@@ -58,6 +58,8 @@ internal class SetupCommand(
     private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
     private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
 ) {
+    /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
+    private val signIn = SetupSignIn(loginHead)
 
     internal suspend fun setup(): Boolean = try {
         runWizard()
@@ -85,8 +87,8 @@ internal class SetupCommand(
         if (!installed) return false
         picker.addAll(heads)
         val topology = TopologyLoader.loadOrMaterialize(path)
-        val ok = signInPendingHeads(pendingOAuthHeads(topology))
-        printNextSteps(topology)
+        val ok = signIn.signInPendingHeads(topology)
+        signIn.printNextSteps(topology)
         frame.outro("Toolkit ready!")
         return ok
     }
@@ -153,53 +155,5 @@ internal class SetupCommand(
         if (!installCommand.install("--all")) return false
         installCommand.installSelf()
         return true
-    }
-
-    private fun pendingOAuthHeads(topology: Topology): List<PendingOAuthHead> =
-        topology.heads.entries.mapNotNull { (key, head) ->
-            val provider = topology.providers[head.provider] ?: return@mapNotNull null
-            if (AuthKindRegistry.isOAuth(provider.auth.kind) &&
-                !authPresent(provider.auth.file, provider.auth.kind)
-            ) {
-                PendingOAuthHead(key, head.claude.command ?: key)
-            } else {
-                null
-            }
-        }
-
-    private suspend fun signInPendingHeads(pending: List<PendingOAuthHead>): Boolean {
-        if (pending.isEmpty()) {
-            println("$GREEN✓$RESET wrapper installed. Set OPENROUTER_API_KEY before launching.")
-            return true
-        }
-        println(
-            "$DIM  Subscription heads reuse each vendor CLI's public OAuth client identity, signed in " +
-                "separately for splice (its own credential file, any account) — " +
-                "unofficial; use at your own risk.$RESET",
-        )
-        var ok = true
-        for ((key, command) in pending) {
-            if (AdminSupport.confirm("Sign in to $CYAN$command$RESET now?", default = true)) {
-                if (!loginHead(key)) ok = false
-            } else {
-                println("  ${DIM}skipped — sign in later with: $command login$RESET")
-            }
-        }
-        return ok
-    }
-
-    private fun authPresent(file: String?, kind: String): Boolean {
-        val path = file ?: AuthKindRegistry.defaultAuthFileFor(kind) ?: return false
-        return AdminSupport.authPresent(path)
-    }
-
-    private fun printNextSteps(topology: Topology) {
-        println()
-        println("${BOLD}You're set.$RESET")
-        val commands = topology.heads.map { (k, h) -> h.claude.command ?: k }
-        println("  Launch      ${commands.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" }}")
-        println("  Dashboard   ${CYAN}splice dashboard$RESET")
-        println("  Status      ${CYAN}splice status$RESET")
-        println("  Checkup     ${CYAN}splice doctor$RESET $DIM— anything wrong prints its fix$RESET")
     }
 }

@@ -207,7 +207,7 @@ internal class DaemonProcess {
     }
 
     // Bounded shutdown shared by BOTH drivers (the SIGTERM hook and the run-loop finally). daemon.stop()
-    // is idempotent (@Synchronized/`stopped`), so a double invocation across the two drivers is safe. The
+    // is idempotent (`stopLock` Mutex + `stopped`), so a double invocation across the two drivers is safe. The
     // watchdog is the guarantee SIGTERM lacked: gating JVM exit purely on stop() returning let one wedged
     // head / non-daemon Netty thread turn SIGTERM into a no-op (the operator then reached for SIGKILL,
     // and the racing restart it invited — BS-4). withTimeoutOrNull caps the cooperative stop; halt(0) is

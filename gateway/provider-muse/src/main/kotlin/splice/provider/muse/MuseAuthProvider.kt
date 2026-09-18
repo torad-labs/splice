@@ -26,7 +26,6 @@ import kotlin.coroutines.CoroutineContext
 
 private const val DEFAULT_RATE_HOLD_MS = 60_000L
 private const val MAX_MINT_HOLD_MS = 3_600_000L
-private const val DEFAULT_CACHE_MS = 30_000L
 
 /** Reads and re-mints one Muse account's persisted inference key. */
 public class MuseAuthProvider(
@@ -34,7 +33,7 @@ public class MuseAuthProvider(
     private val log: LogSink,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val mintCall: MuseKeyMintCall,
-    private val authCacheMs: Long = DEFAULT_CACHE_MS,
+    private val authCacheMs: Long,
     private val prefetchScope: CoroutineScope? = null,
     flightContext: CoroutineContext = ProcessDispatchers().background(),
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {

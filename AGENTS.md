@@ -4,7 +4,7 @@
 
 Structural walls enforce these at write time (`.rules/kotlin-splice/` for the
 gateway, `.rules/rules/` for the webui, orchestrated by
-`.claude/hooks/orchestrator.py`) and permanent tests enforce the behavioral
+`.claude/hooks/orchestrator.ts`) and permanent tests enforce the behavioral
 half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 

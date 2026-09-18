@@ -17,7 +17,7 @@
     "gate:campaign": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py",
     "gate:campaign:census": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --no-run",
     "gate:campaign:selftest": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --selftest",
-    "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py",
+    "test:hooks": "bun .claude/hooks/tests/test_orchestrator.ts && bun .claude/hooks/tests/test_one_committer.ts",
     "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",

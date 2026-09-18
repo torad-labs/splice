@@ -44,7 +44,8 @@ import { existsSync, readFileSync } from "node:fs";
 
 export const ALLOW = "checks/config/python-burndown.json";
 
-type Burndown = { recorded: string; law: string; files: string[]; invokers?: string[] };
+type PendingTool = { tool: string; row: string; reason: string; recorded: string; callers: string[] };
+type Burndown = { recorded: string; law: string; files: string[]; invokers?: string[]; pendingTools?: PendingTool[] };
 
 function gitLs(...pathspec: string[]): string[] {
   const r = spawnSync("git", ["ls-files", ...pathspec], { encoding: "utf8" });
@@ -142,17 +143,175 @@ export function namesPython(text: string): boolean {
   return /\bpython3?\b/.test(text.replaceAll("no-python", ""));
 }
 
-function invokers(): string[] {
+/** A caller line that runs a file with the WRONG RUNTIME for its extension: `python3 wall.ts`,
+ *  or `bun wall.py`. Always a defect, in any repo, campaign or no campaign — the interpreter
+ *  will not run the file and the leg dies at run time with a syntax error, not a missing file.
+ *
+ *  FOUND BY splice-builder2 ON 2026-09-18, FROM ITS OWN SLIP, and reported rather than quietly
+ *  fixed. Converting mock_chat.py it edited inside.sh, replaced the FILENAME and left the
+ *  INTERPRETER, shipping `python3 .../mock_chat.ts` — which is, word for word, the failure its
+ *  own row's title predicts. Nothing on this wall caught it, and the two arms that look closest
+ *  both had a reason:
+ *
+ *    · the dangling-invocation census grades call sites against EXISTENCE, and mock_chat.ts
+ *      exists. A correct path with a wrong runtime is exactly the case it cannot see.
+ *    · the runtime-vs-extension check does exist, but it is scoped to ledger verify= fields,
+ *      and its own comment records the measured reason: over raw text the form finds five hits
+ *      across caller surfaces and FOUR are notes quoting a command. That reasoning is right for
+ *      prose and wrong for a live shell caller, where a mismatched runtime is never a quotation.
+ *
+ *  So the scope here is the narrow one that reasoning licenses: NON-COMMENT lines only. That is
+ *  what takes it from four false positives to zero. Measured over the whole caller surface at
+ *  the time of writing: 0 live mismatched invocations, so this lands as a wall with nothing
+ *  grandfathered and no allowlist — and it lands NOW, ahead of the ~10 remaining caller edits
+ *  of exactly this shape in V4-145, rather than behind them.
+ *
+ *  LIMIT OF THE INSTRUMENT, stated because a green here is narrower than it looks: it reads
+ *  command lines, so `spawnSync("python3", ["x.ts"])` in a .ts file is invisible to it. That is
+ *  a different shape and needs a different reading, not a wider regex. */
+/*  THE OPTIONAL QUOTE IS NOT A DETAIL — it is the only form this census has ever had to catch.
+ *  The first cut of this regex required the path to follow the interpreter directly, and
+ *  builder2's actual slip is `python3 "$HERE/mock_chat.ts"`: quoted, because the path is
+ *  interpolated, because that is how a shell caller written by a careful person looks. That cut
+ *  read 0/0 [GATED] on a tree containing the very line it was built for, and it was caught by
+ *  a red-green arm carrying the literal slip rather than a paraphrase of it. A wall proven
+ *  against a tidied-up version of the defect is a wall proven against nothing. */
+const MISMATCH = /(?:^|[\s;&|("'`])(python3?|bun)\s+["']?((?:[A-Za-z0-9_.${}/-]*\/)?[A-Za-z0-9_.${}-]+\.(py|ts))\b/g;
+
+export function mismatchedRuntimes(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const bare = line.trimStart();
+    // A comment is prose. builder2's measurement is the whole reason this arm can exist at all.
+    if (bare.startsWith("#") || bare.startsWith("//") || bare.startsWith("*") || bare.startsWith("/*")) continue;
+    for (const [, runtime, target, ext] of line.matchAll(MISMATCH)) {
+      const runsPython = runtime.startsWith("python");
+      if (runsPython === (ext === "py")) continue;
+      out.push(`${runtime} ${target} (${ext === "ts" ? "a .ts run by python" : "a .py run by bun"})`);
+    }
+  }
+  return out;
+}
+
+/** THE SEVENTH CENSUS: every tracked caller read for a mismatched runtime. Same caller surface
+ *  as the dangling census — tracked .sh, .mjs and package.json — because that is the surface
+ *  whose invocations are literal command lines, already measured and already justified there. */
+function runtimeMismatch(): string[] {
+  const out: string[] = [];
+  for (const caller of gitLs("*.sh", "*.mjs", "package.json")) {
+    if (SELF.has(caller)) continue;
+    let text: string;
+    try {
+      text = readFileSync(caller, "utf8");
+    } catch {
+      continue;
+    }
+    for (const hit of mismatchedRuntimes(text)) out.push(`${caller}: ${hit}`);
+  }
+  return out.sort();
+}
+
+/** THE THIRD DISPOSITION: a file that names python ONLY because it calls a tool that is still
+ *  Python and is owned by an open conversion row.
+ *
+ *  FORCED BY A REAL COLLISION, 2026-09-18. splice-builder converted the 21 hook scripts to .ts
+ *  and the wall went red on four of them — 10_laws.ts, 12_inflight_reanchor.ts,
+ *  08_manifest_single_channel.ts, 05_campaign_inflight_note.ts — each naming
+ *  `python3 dev/campaigns/manifest.py`, because manifest.py IS still Python and V4-143 owns it.
+ *  Their .py predecessors named the same string and were invisible only because the invoker
+ *  census skips .py files; becoming .ts made them new invokers. So converting a caller to the
+ *  right language REDDENED the wall, which is the wall punishing the work it exists to cause.
+ *
+ *  WHY NOT THE OBVIOUS FIX. Adding four burn-down lines is not available and not merely
+ *  discouraged: the sixth census grades the list against its FIRST COMMIT in git, so four new
+ *  lines fail by name. That is the design working. Rewording the prose is worse — teaching
+ *  `bun dev/campaigns/manifest.ts` advertises a command that does not exist, which is the exact
+ *  class of lie this wall was built to catch. builder refused to do either unilaterally and was
+ *  right on both counts.
+ *
+ *  WHAT MAKES THIS A DISPOSITION AND NOT A HOLE (global rules §24: covered / excluded with a
+ *  written reason / pending, and anything else fails BY NAME). An entry excuses a caller only
+ *  while ALL THREE hold, each checked against the tree rather than against the entry:
+ *
+ *    1. the named tool is still on the burn-down's `files` list — a list that may only shrink,
+ *       so this can never excuse a NEW .py, only one already carried as debt;
+ *    2. the tool still EXISTS — when V4-143 lands and manifest.py is gone, every exclusion it
+ *       granted evaporates in the same instant, with no edit to this file;
+ *    3. stripping that tool's own invocations from the caller leaves NO python behind — a file
+ *       that also shells python for its own reasons keeps its charge in full.
+ *
+ *  And the entry is graded in both directions like every other census here: an entry whose tool
+ *  is gone, or was never debt, is STALE and reds the wall by name until it is deleted. The
+ *  exclusion cannot outlive its reason, which is the property the burn-down list itself has and
+ *  the property every "temporary allowlist" in this repo's history has lacked. */
+export function pendingStrip(text: string, tool: string): string {
+  return text
+    .split("\n")
+    .filter((line) => {
+      if (line.includes(tool)) return false;           // this line is about the pending tool
+      if (!namesPython(line)) return true;             // nothing to excuse
+      // An interpreter token with no .py path of its own is the spawn-through-a-variable form
+      // (`spawnSync("python3", [manifest, "laws"])`). Naming ANY OTHER .py keeps the charge.
+      return /[A-Za-z0-9_./$-]+\.py\b/.test(line);
+    })
+    .join("\n");
+}
+
+/** Entries that no longer describe the tree. Graded from the SOURCE — the tool's existence and
+ *  the burn-down's own files list — never from the entry's say-so. */
+function stalePending(list: Burndown): string[] {
+  const debt = new Set(list.files);
+  const out: string[] = [];
+  for (const p of list.pendingTools ?? []) {
+    if (!existsSync(p.tool)) {
+      out.push(`${p.tool} (${p.row}): the tool is GONE, so every exclusion this entry granted has expired — delete the entry`);
+      continue;
+    }
+    if (!debt.has(p.tool)) {
+      out.push(`${p.tool} (${p.row}): not on the burn-down's files list, so this entry excuses calls to something the wall never tracked as debt`);
+      continue;
+    }
+    // The caller list is graded too, in the same direction the burn-down is: an exclusion that
+    // stopped being needed is an exclusion nobody will notice going unused.
+    for (const f of p.callers) {
+      if (!existsSync(f)) {
+        out.push(`${p.tool} (${p.row}): names caller ${f}, which does not exist — an exclusion for a file that is gone`);
+      } else if (!namesPython(readFileSync(f, "utf8"))) {
+        out.push(`${p.tool} (${p.row}): names caller ${f}, which no longer mentions python at all — drop it from callers`);
+      }
+    }
+  }
+  return out.sort();
+}
+
+function invokers(list: Burndown): string[] {
+  const live = (list.pendingTools ?? []).filter((p) => existsSync(p.tool) && list.files.includes(p.tool));
   return gitLs()
     .filter((f) => !f.endsWith(".py") && !SELF.has(f))
     .filter((f) => {
       try {
-        return namesPython(readFileSync(f, "utf8"));
+        const text = readFileSync(f, "utf8");
+        if (!namesPython(text)) return false;
+        for (const p of live) {
+          if (!p.callers.includes(f)) continue;       // an entry excuses only the files it NAMES
+          if (!namesPython(pendingStrip(text, p.tool))) return false;
+        }
+        return true;
       } catch {
         return false; // a binary or unreadable blob invokes nothing
       }
     })
     .sort();
+}
+
+/** Every file an entry currently excuses, so the exclusion is never silent. A disposition nobody
+ *  sees becomes a permanent allowlist by inattention; this prints on every run. */
+function excused(list: Burndown): string[] {
+  const out: string[] = [];
+  for (const p of (list.pendingTools ?? []).filter((q) => existsSync(q.tool) && list.files.includes(q.tool))) {
+    for (const f of p.callers) if (existsSync(f)) out.push(`${f} -> ${p.tool} (${p.row})`);
+  }
+  return out.sort();
 }
 
 /** THE THIRD CENSUS, and the two above are structurally blind to it.
@@ -465,12 +624,15 @@ function main(): number {
   const list = burndown();
   const problems: string[] = [];
 
-  const runners = invokers();
+  const runners = invokers(list);
+  const expired = stalePending(list);
+  const excusedNow = excused(list);
   const allowedInvokers = list.invokers ?? [];
   const scratch = untracked();
   const broken = dangling();
   const willRun = staleVerifies();
   const grown = burndownGrowth();
+  const mismatched = runtimeMismatch();
 
   console.log(`NO-PYTHON WALL — burn-down recorded ${list.recorded || "(none)"}`);
   console.log(`  tracked .py files                  measured ${String(measured.length).padStart(4)}   allowed ${String(list.files.length).padStart(4)}   [GATED]`);
@@ -479,6 +641,32 @@ function main(): number {
   console.log(`  call sites naming a missing file   measured ${String(broken.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
   console.log(`  live ledger verify= gone missing   measured ${String(willRun.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
   console.log(`  burn-down lines ADDED since birth  measured ${String(grown.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+  console.log(`  callers running the WRONG runtime  measured ${String(mismatched.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+  console.log(`  EXPIRED pending-tool exclusions    measured ${String(expired.length).padStart(4)}   allowed ${String(0).padStart(4)}   [GATED]`);
+  if (excusedNow.length) {
+    // Printed every run, never silent: an exclusion nobody reads is an allowlist.
+    console.log(`  excused while their tool is Python  ${excusedNow.length}`);
+    for (const e of excusedNow) console.log(`      ${e}`);
+  }
+
+  if (expired.length) {
+    problems.push(
+      `PENDING-TOOL EXCLUSION OUTLIVED ITS REASON: ${expired.length} entry(ies) in ${ALLOW} excuse callers of a ` +
+        `tool that is no longer Python debt. An exclusion is only honest while the thing it points at is still ` +
+        `there — the moment the owning row lands, every caller it excused must be charged again, and the entry ` +
+        `has to go in the same commit that converted the tool:\n    ` + expired.join("\n    "),
+    );
+  }
+
+  if (mismatched.length) {
+    problems.push(
+      `WRONG RUNTIME: ${mismatched.length} live call site(s) run a file with the interpreter for the other ` +
+        `language. This is what a half-finished conversion looks like — the filename was updated and the ` +
+        `interpreter was not — and it survives every other census on this wall, because the path resolves and ` +
+        `the file exists. It fails at run time with a syntax error, which reads like a broken script rather ` +
+        `than a broken call. Fix the interpreter, not the filename:\n    ` + mismatched.join("\n    "),
+    );
+  }
 
   if (grown.length) {
     problems.push(

@@ -661,6 +661,8 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/teams src/widgets
 # [2026-09-18] RETIRE-LIFTED: M2-08 was NEVER retired. It is the last PLANNED row of m2 -- teams is the one page in this console still unbuilt -- and it is explicitly kept in the 2026-09-18 prune. The marker was my own prose: I wrote the word from the retired M2-27 into this live rows note head while folding that measurement in, and the guard matched it. The retirement it names belongs to M2-27, not to this row. Nothing about M2-08s scope, fence or status changed.
 # [2026-09-18] CLAIM: owner=probe-splice-design at=2026-09-18T17:26:37Z
 # [2026-09-18] ATTEST-START: tree=53c43ab81aac7d6c6804398ec51190c8e59a5e75 at=2026-09-18T17:26:37Z
+# [2026-09-18] CLAIM: owner=design-builder at=2026-09-18T17:28:24Z handover-from=probe-splice-design
+# [2026-09-18] BAY GEOMETRY MEASURED off team-board-b.png, confirming the ledger hypothesis to within about 15px. Uprights: x138-148 and 455-466 (lead), 474-485 and 814-825 (builder), 833-845 and 1036-1046 (reviewer). Right column starts x1053. All six posts run y123 to y983. Bays are 329/352/214px outer and 305/328/190px interior.
 
 [[items]]
 id = "M3-01"

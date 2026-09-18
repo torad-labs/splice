@@ -1,0 +1,8 @@
+coverage, dark against light, the same pages and the same box (M1-57)
+the comp is a static PNG and has no theme, so its row is identical in both columns
+
+  page                              dark paper  light paper   dark cov  light cov   delta
+  COMP team-board-a                (one theme only)
+  /teams?fixture=hero                   31.1         45.2       39.3       92.6    53.3
+  /settings                             46.2         46.4       47.6       98.2    50.6
+  /projects                            100.0         99.9      100.0       99.9    -0.1

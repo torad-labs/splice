@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import { mgmtKey, shoot, show, withChrome } from '../../../../.dev/web-console/lib/cdp.mjs';
 import { decodePng } from '../../../../.dev/web-console/lib/png.mjs';
+import { ROOM, themeValues } from '../../../../.dev/web-console/theme.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..', '..', '..');
@@ -36,7 +37,42 @@ const ARGS = process.argv.slice(2);
 const flag = (name, dflt) => { const i = ARGS.indexOf(`--${name}`); return i === -1 ? dflt : ARGS[i + 1]; };
 
 /** Pale, mid, floor: the same three classes the m1 review's tonal census uses. */
-function classify(png) {
+/** WHERE THE PAPER CUT COMES FROM (M1-63). It used to be a literal: lum > 150. In the dark room
+ *  that cut sits in the gap between the floor (L12) and the paper (L212) and every dark number this
+ *  file produced is sound. In the LIGHT room the floor is #E0E2DF at L224 - above the cut - so the
+ *  floor counted as paper and the light column read 98 to 99.9 percent, which is the classifier
+ *  reporting its own threshold rather than measuring a room. A literal can only ever be right for
+ *  one room.
+ *
+ *  So the cut is DERIVED FROM THE FRAME'S OWN TWO PLANES, which is what planes() already did one
+ *  function over: the ground is the modal luminance, the paper plane is the frame's own bright
+ *  percentile, and the cut sits between them. A frame that is pure room has no second plane, so
+ *  nothing in it is paper - which is exactly what the mutation proof asserts, in both themes.
+ */
+export function cutFor(png, themeGround = 0) {
+  const lums = [];
+  for (let i = 0; i < png.pixels.length; i += png.channels * 4) {
+    lums.push((png.pixels[i] + png.pixels[i + 1] + png.pixels[i + 2]) / 3);
+  }
+  lums.sort((a, b) => a - b);
+  const at = (q) => lums[Math.min(lums.length - 1, Math.floor(lums.length * q))];
+  const ground = at(0.5);
+  // 99.5, not 95: a page whose paper is under about five percent of the frame never reaches the
+  // 95th percentile, so the paper plane was read as the room itself, the one-plane branch fired,
+  // and cutFor returned ground+1 - which made every pixel above the room colour read as paper and
+  // made projects and models read 100.0 percent paper in BOTH themes. The mutation proof pins both
+  // ends either way: a pure room still reads 0 and a pure paper frame still reads 100.
+  const paper = at(0.995);
+  if (paper - ground >= 10) return (ground + paper) / 2;
+  // ONE PLANE: which one it is cannot be read off the frame, so it is read off the THEME - the room
+  // this theme declares (ROOM in theme.mjs, imported rather than copied). A frame sitting at its
+  // theme's ground is a room and holds no paper; a frame far above it is paper and holds nothing
+  // else. Without this, a paper-only frame read 0% paper and a room-only frame read 100%, which is
+  // the same class of error as the literal cut, one direction over.
+  return ground > themeGround + 10 ? themeGround + (ground - themeGround) / 2 : ground + 1;
+}
+
+function classify(png, cut) {
   const bands = (from, to, step) => {
     const out = [];
     for (let i = from; i < to; i += step) out.push([i, Math.min(i + step, to)]);
@@ -48,7 +84,7 @@ function classify(png) {
       for (let x = x0; x < x1; x += 2) {
         const i = (y * png.width + x) * png.channels;
         const lum = (png.pixels[i] + png.pixels[i + 1] + png.pixels[i + 2]) / 3;
-        if (lum > 150) paper++; else if (lum >= 30) mid++;
+        if (lum > cut) paper++; else if (lum > cut * 0.4) mid++;
         n++;
       }
     }
@@ -154,8 +190,8 @@ function layers(png, box) {
   return { printed: (printed / n) * 100, ruled: (ruled / n) * 100, ruleRows };
 }
 
-function profile(png, box) {
-  const c = classify(png);
+function profile(png, box, themeGround) {
+  const c = classify(png, cutFor(png, themeGround));
   const l = layers(png, box);
   const tenths = (axis) => {
     const out = [];
@@ -183,9 +219,9 @@ function profile(png, box) {
   };
 }
 
-function rowFor(label, source, png) {
+function rowFor(label, source, png, themeGround = 0) {
   const box = contentBox(png);
-  return { label, source, frame: `${png.width}x${png.height}`, planes: planes(png, box), ...profile(png, box) };
+  return { label, source, frame: `${png.width}x${png.height}`, planes: planes(png, box), ...profile(png, box, themeGround) };
 }
 
 function line(r) {
@@ -203,6 +239,57 @@ function line(r) {
 // and the fix that makes it structural rather than patched is to declare which flags take a value,
 // so their value can never be mistaken for an address.
 const VALUED = new Set(['--frame', '--out', '--theme']);
+/** THE MUTATION PROOF (M1-57): the two themes must produce DIFFERENT frames. This is the exact
+ *  check that would have caught the post-boot seed - it rendered both themes dark and printed two
+ *  identical rows, and nothing in the instrument noticed because it had no way to ask "did the
+ *  theme land". A tool that cannot tell its two inputs apart must fail loudly. */
+if (process.argv.includes('--selftest')) {
+  // MUTATION PROOF (M1-63): a synthetic frame of PURE ROOM COLOUR, one per theme, must read 0%
+  // paper. It is the direction that already fails today - the light case read ~100% under the
+  // literal cut - and it is the check a re-run cannot make, because a plausible light number proves
+  // nothing when "plausible" was 98 to 99.9 percent.
+  const groundOf = (name) => (ROOM[name][0] + ROOM[name][1] + ROOM[name][2]) / 3;
+  const solid = (r, g, b) => ({ width: 40, height: 40, channels: 3, pixels: Buffer.from(Array.from({ length: 40 * 40 }, () => [r, g, b]).flat()) });
+  let mutations = 0;
+  for (const [name, rgb] of Object.entries({ dark: [11, 14, 14], light: [224, 226, 223] })) {
+    const frame = solid(...rgb);
+    const cut = cutFor(frame, groundOf(name));
+    const c = classify(frame, cut);
+    const share = c.share(0, 40, 0, 40);
+    const ok = share.paper === 0;
+    console.log(`  ${ok ? 'PASS' : 'FAIL'}  pure ${name} room reads no paper  (cut ${cut.toFixed(1)}, paper ${share.paper.toFixed(1)}%)`);
+    ok ? mutations++ : 0;
+  }
+  // ...and a frame that IS paper must still read as paper, or the cut is simply too high.
+  for (const [name, rgb] of Object.entries({ dark: [222, 217, 198], light: [251, 245, 233] })) {
+    const frame = solid(...rgb);
+    const c = classify(frame, cutFor(frame, groundOf(name)));
+    const share = c.share(0, 40, 0, 40);
+    const ok = share.paper === 100;
+    console.log(`  ${ok ? 'PASS' : 'FAIL'}  a pure ${name} paper frame reads all paper  (paper ${share.paper.toFixed(1)}%)`);
+    ok ? mutations++ : 0;
+  }
+  if (mutations !== 4) { console.log('\nselftest: the mutation proof failed'); process.exit(1); }
+
+  const probe = 'http://localhost:5173/#/fleet';
+  const seen = {};
+  for (const theme of ['dark', 'light']) {
+    seen[theme] = await withChrome(themeValues(theme), async (send) => {
+      await show(send, probe, 1536, 1024, 5000);
+      const room = (await send('Runtime.evaluate', {
+        expression: "getComputedStyle(document.documentElement).getPropertyValue('--room').trim()",
+        returnByValue: true,
+      })).result.value;
+      return room;
+    });
+  }
+  const differ = seen.dark !== seen.light;
+  console.log(`  ${differ ? 'PASS' : 'FAIL'}  the two themes render differently  (dark ${seen.dark} vs light ${seen.light})`);
+  // Five checks: four mutations of the paper cut (both themes, both directions) and this one.
+  console.log(`\nselftest: ${differ ? '5 passed, 0 failed' : '4 passed, 1 failed'}`);
+  process.exit(differ ? 0 : 1);
+}
+
 const urls = ARGS.filter((a, i) => !a.startsWith('--') && !(i > 0 && VALUED.has(ARGS[i - 1])));
 const frame = flag('frame', '3840x2160');
 const outDir = resolve(ROOT, flag('out', 'webui/.impeccable/review/coverage'));
@@ -215,10 +302,17 @@ if (existsSync(resolve(ROOT, COMP))) {
 
 if (urls.length > 0) {
   const [w, h] = frame.split('x').map(Number);
+  // ONE SESSION PER THEME, seeded through the SHARED helper (M1-55). What this replaced: the theme
+  // was set with Runtime.evaluate AFTER show(), and the theme feature reads `splice.theme` at
+  // module scope on boot - so the seed landed one render too late and BOTH THEMES CAME BACK DARK
+  // while the tool printed two confident, identical rows. A post-boot seed does not fail; it
+  // silently renders the default, which is why this was the last private copy of the recipe and
+  // why the light column of every number this instrument produced is the one to distrust until the
+  // delta below is re-run. themeValues() throws on an unknown theme and seeds through
+  // Page.addScriptToEvaluateOnNewDocument, so it lands before the document runs.
   const themes = flag('theme', 'dark') === 'both' ? ['dark', 'light'] : [flag('theme', 'dark')];
-  await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
-    for (const theme of themes) {
-      await send('Runtime.evaluate', { expression: `try { localStorage.setItem('splice.theme', ${JSON.stringify(theme)}); } catch (e) {}` });
+  for (const theme of themes) {
+  await withChrome(themeValues(theme), async (send) => {
     for (const [at, url] of urls.entries()) {
       const slug = url.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
       const png = resolve(outDir, `${slug}.png`);
@@ -232,8 +326,32 @@ if (urls.length > 0) {
       const fixture = url.includes('fixture=') ? `fixture=${url.split('fixture=')[1].split(/[#&]/)[0]}` : 'live daemon';
       rows.push(rowFor(url.slice(url.indexOf('#') + 1) || url, `${theme}/${fixture}`, decodePng(bytes)));
     }
-    }
   });
+  }
+}
+
+if (process.argv.includes('--delta')) {
+  const pairs = new Map();
+  for (const r of rows) {
+    const key = r.label;
+    const theme = r.source.startsWith('light') ? 'light' : 'dark';
+    if (!pairs.has(key)) pairs.set(key, {});
+    pairs.get(key)[theme] = r;
+  }
+  const lines = ['coverage, dark against light, the same pages and the same box (M1-57)',
+    'the comp is a static PNG and has no theme, so its row is identical in both columns', ''];
+  lines.push('  page                              dark paper  light paper   dark cov  light cov   delta');
+  for (const [page, both] of pairs) {
+    const d = both.dark; const l = both.light;
+    if (d === undefined || l === undefined) { lines.push(`  ${page.padEnd(32)} (one theme only)`); continue; }
+    lines.push(`  ${page.slice(0, 32).padEnd(32)}${String(d.paper.toFixed(1)).padStart(10)}${String(l.paper.toFixed(1)).padStart(13)}`
+      + `${String(d.coverage.toFixed(1)).padStart(11)}${String(l.coverage.toFixed(1)).padStart(11)}`
+      + `${String((l.coverage - d.coverage).toFixed(1)).padStart(8)}`);
+  }
+  const text = lines.join('\n') + '\n';
+  writeFileSync(resolve(outDir, 'theme-delta.txt'), text);
+  console.log(text);
+  process.exit(0);
 }
 
 if (process.argv.includes('--json')) {

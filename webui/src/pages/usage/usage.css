@@ -100,8 +100,8 @@
   color: var(--ink-mute);
 }
 
-/* Two insets per row on a wide screen, one below; the charts hold their own
-   height so a row of them stays aligned whatever the series holds. */
+/* The insets tile to the frame -- three per row at 1536, two at a laptop width, one narrow; the
+   charts hold their own height so a row of them stays aligned whatever the series holds. */
 .myx-usage-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
@@ -109,8 +109,14 @@
   min-width: 0;
 }
 
+/* THE READ IS THE SIXTH TILE, NOT A BANNER UNDER FIVE (M2-32). It spanned the whole grid, and
+   five charts in three columns leave the third cell of the second row empty -- measured at 1536:
+   a 429x206px hole in the middle of the page, the dead-right-column shape M1-109 measured at
+   11.3% of this frame, with the read's own 92px band stacked below it. Taking the free cell
+   instead costs the figures two wrapped lines and gives the page back 108px (grid 607px -> 499px)
+   -- and it is where the section belongs anyway: these eight figures are the numbers the five
+   insets are drawn from, so they read as a sixth panel rather than as a footnote to the row. */
 .myx-usage-read {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -134,4 +140,17 @@
   flex-direction: column;
   gap: var(--space-5);
   margin-block-start: var(--space-5);
+}
+
+/* THE RACK'S COLUMN NAMES, ONCE (m1 design review B9, M2-32). Both this page's racks -- the heads
+   bay and each model bay -- are rows of one shape, which is the precondition B9 states, and each
+   was printing its column names on every strip. The names sit over cells that are `flex: 0 0 auto`
+   with an inline flex-grow of their own ch, so a name takes the same basis and the same growth
+   (they arrive inline from ColumnNames) or it drifts off its column. What belongs here is only
+   what is true of every name: it does not shrink, and it clips rather than wrapping, because a
+   wrapped name would make the head taller than the rows it labels. */
+.myx-usage-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
 }

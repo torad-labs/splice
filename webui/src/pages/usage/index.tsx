@@ -17,6 +17,15 @@ import type { EconomicsPayload, HeadEconomics } from '@shared/api';
 import { startModelsPolling, useModels, slotTiers } from '@entities/model';
 import type { ModelsPayload, PendingRoute } from '@entities/model';
 import { useViews, ViewTabs } from '@features/views';
+// THE MOUNT M2-06 NEVER WROTE (M1-96). M2-07 shipped these two panels and its own title says the
+// mounting is "a one-line orchestrator note on M2-06 if it lands first"; M2-06 landed and the note
+// was never written, so two finished features sat invisible while a census counted their sheets as
+// eight of seventy-three unexercised rules. Imported through each feature's PUBLIC component --
+// never by reaching into its internals, because the FSD boundary walls are enforced by
+// eslint-plugin-boundaries and a cross-slice import is refused. Alerts imports nothing from
+// budgets and neither imports the page.
+import { AlertsPanel } from '@features/alerts';
+import { BudgetsPanel } from '@features/budgets';
 import { cx, fmtInt, fmtTokens, timeAgo } from '@shared/lib';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
@@ -57,6 +66,32 @@ interface UsageFixture {
   models: ModelsPayload;
 }
 
+/** The column widths, in ch, named once so a bay's name row and the cells under it cannot drift
+ *  apart. They were inline on the strips before M2-32; a fields row repeating the numbers by hand
+ *  is two lists checking each other rather than a check. */
+const HEAD_COLS = [18, 11, 11, 14, 9, 13, 13, 13] as const;
+const MODEL_COLS = [8, 24, 12, 20, 10, 10] as const;
+
+/** A rack's column names, once, at the same ch widths as the cells they name — the `fields` row
+ *  Bay has shipped since m1 and doctor already uses (m1 design review B9).
+ *
+ *  THE GROWTH IS THE HALF THAT IS EASY TO MISS: `strip-field.tsx` sets flexGrow to the field's OWN
+ *  ch, so the cells share their rack's slack in proportion to their declared widths (M1-73) and a
+ *  name fixed at `w ch` drifts off the column under it. Measured on this page: the heads rack
+ *  renders its 18ch first column as 218.6px, a 1.87x fill, so a fixed name row would sit almost a
+ *  hundred pixels left of the cell it names by the last column. The name takes the same growth. */
+function ColumnNames({ columns }: { columns: readonly { w: number; label: string }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span key={column.label} className="myx-usage-col" style={{ width: `${column.w}ch`, flexGrow: column.w }}>
+          {column.label}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function hoursLeft(burnRate: number, ceiling: number | null, spent: number): string {
   // The absence glyph and not a word: a head with no ceiling has no exhaustion figure either, and
   // the ceiling cell beside it already says so (m1 design review B8). `idle` is a real reading —
@@ -87,14 +122,18 @@ function HeadStrip({ head, now, selected, onOpen }: {
       onOpen={onOpen}
       ariaLabel={`${S.openHead} ${head.label}`}
     >
-      <StripField w={18} label={S.heads} value={head.label} mono={false} />
-      <StripField w={11} label={S.spent} value={fmtTokens(projection.spent)} />
-      <StripField w={11} label={S.ceiling} value={head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)} />
-      <StripField w={14} label={S.exhaustion} value={hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent)} />
-      <StripField w={9} label={S.turns} value={fmtInt(totals.turns)} />
-      <StripField w={13} label={S.inTokens} value={fmtTokens(totals.inTokens)} />
-      <StripField w={13} label={S.outTokens} value={fmtTokens(totals.outTokens)} />
-      <StripField w={13} label={S.limited} value={fmtInt(totals.rateLimited)} />
+      {/* NO PER-CELL LABELS: the bay prints its eight column names once, above the rack (B9).
+          Measured here before the change: every head strip stood 63.8px tall and 42px of that was
+          the values -- 21.8px of every row, a third of it, spent reprinting the eight words the
+          rack states once. */}
+      <StripField w={HEAD_COLS[0]} value={head.label} mono={false} />
+      <StripField w={HEAD_COLS[1]} value={fmtTokens(projection.spent)} />
+      <StripField w={HEAD_COLS[2]} value={head.ceiling_tokens === null ? S.absent : fmtTokens(head.ceiling_tokens)} />
+      <StripField w={HEAD_COLS[3]} value={hoursLeft(projection.ratePerHour, head.ceiling_tokens, projection.spent)} />
+      <StripField w={HEAD_COLS[4]} value={fmtInt(totals.turns)} />
+      <StripField w={HEAD_COLS[5]} value={fmtTokens(totals.inTokens)} />
+      <StripField w={HEAD_COLS[6]} value={fmtTokens(totals.outTokens)} />
+      <StripField w={HEAD_COLS[7]} value={fmtInt(totals.rateLimited)} />
     </Strip>
   );
 }
@@ -156,6 +195,15 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
           label={head.key}
           count={head.models.length}
           empty={{ text: EMPTIES.noModels.text, source: EMPTIES.noModels.source }}
+          fields={(
+            <ColumnNames
+              columns={[
+                { w: MODEL_COLS[0], label: S.slot }, { w: MODEL_COLS[1], label: S.models },
+                { w: MODEL_COLS[2], label: S.contextWindow }, { w: MODEL_COLS[3], label: S.sourceLabel },
+                { w: MODEL_COLS[4], label: S.inputRate }, { w: MODEL_COLS[5], label: S.outputRate },
+              ]}
+            />
+          )}
         >
           {slotTiers(head).map((tier) => (
             <Strip
@@ -165,22 +213,23 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               struck={tier.model === null}
               ariaLabel={`${S.slot} ${tier.slot}`}
             >
-              <StripField w={8} label={S.slot} value={tier.slot} mono={false} />
-              <StripField w={24} label={S.models} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
-              <StripField w={12} label={S.contextWindow} value={tier.model === null ? S.absent : fmtTokens(tier.model.context_window)} />
-              <StripField w={20} label={S.sourceLabel} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
-              <StripField w={10} label={S.inputRate} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
-              <StripField w={10} label={S.outputRate} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
+              {/* NO PER-CELL LABELS: the bay prints its six column names once (B9). */}
+              <StripField w={MODEL_COLS[0]} value={tier.slot} mono={false} />
+              <StripField w={MODEL_COLS[1]} value={tier.model === null ? S.absent : tier.model.id} mono={false} />
+              <StripField w={MODEL_COLS[2]} value={tier.model === null ? S.absent : fmtTokens(tier.model.context_window)} />
+              <StripField w={MODEL_COLS[3]} value={tier.model === null ? S.absent : tier.model.context_window_source} mono={false} />
+              <StripField w={MODEL_COLS[4]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.input)} />
+              <StripField w={MODEL_COLS[5]} value={tier.model?.rates === undefined || tier.model.rates === null ? S.absent : String(tier.model.rates.output)} />
             </Strip>
           ))}
           {head.models.filter((model) => model.slot === null).map((model) => (
             <Strip key={model.id} edge="grey" edgeLabel={S.noSlot} ariaLabel={`${S.models} ${model.id}`}>
-              <StripField w={8} label={S.slot} value={S.noSlot} mono={false} />
-              <StripField w={24} label={S.models} value={model.id} mono={false} />
-              <StripField w={12} label={S.contextWindow} value={fmtTokens(model.context_window)} />
-              <StripField w={20} label={S.sourceLabel} value={model.context_window_source} mono={false} />
-              <StripField w={10} label={S.inputRate} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.input)} />
-              <StripField w={10} label={S.outputRate} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.output)} />
+              <StripField w={MODEL_COLS[0]} value={S.noSlot} mono={false} />
+              <StripField w={MODEL_COLS[1]} value={model.id} mono={false} />
+              <StripField w={MODEL_COLS[2]} value={fmtTokens(model.context_window)} />
+              <StripField w={MODEL_COLS[3]} value={model.context_window_source} mono={false} />
+              <StripField w={MODEL_COLS[4]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.input)} />
+              <StripField w={MODEL_COLS[5]} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.output)} />
             </Strip>
           ))}
         </Bay>
@@ -246,6 +295,16 @@ export function UsageBoard({ payload, catalog, now, sample }: {
             label={S.heads}
             count={heads.length}
             empty={{ text: EMPTIES.noHeads.text, source: EMPTIES.noHeads.source }}
+            fields={(
+              <ColumnNames
+                columns={[
+                  { w: HEAD_COLS[0], label: S.heads }, { w: HEAD_COLS[1], label: S.spent },
+                  { w: HEAD_COLS[2], label: S.ceiling }, { w: HEAD_COLS[3], label: S.exhaustion },
+                  { w: HEAD_COLS[4], label: S.turns }, { w: HEAD_COLS[5], label: S.inTokens },
+                  { w: HEAD_COLS[6], label: S.outTokens }, { w: HEAD_COLS[7], label: S.limited },
+                ]}
+              />
+            )}
           >
             {heads.map((head) => (
               <HeadStrip
@@ -269,6 +328,20 @@ export function UsageBoard({ payload, catalog, now, sample }: {
               <HeadCharts head={active} windowIndex={windowIndex} now={now} rates={ratesFor(catalog, active.key)} />
             </div>
           )}
+
+          {/* THE MOUNT M2-06 NEVER WROTE (M1-96). Rendered OUTSIDE the active-head branch on
+              purpose: budgets and alerts are per-head and fleet-wide respectively, and a panel
+              that only draws when a head happens to be selected is a panel that is invisible in
+              the state most people arrive in. Both are the feature's PUBLIC component -- the FSD
+              boundary walls are enforced by eslint-plugin-boundaries and reaching into a slice's
+              internals is refused, which is the correct wall and not an obstacle to route around.
+              Mounted, not proven: M1-96 asks for a capture showing both DRAW, because a component
+              mounted into a slot that never displays is the same nothing with an import in front
+              of it. */}
+          <div className="myx-usage-panels">
+            <BudgetsPanel heads={heads.map((head) => head.key)} />
+            <AlertsPanel />
+          </div>
         </>
       )}
     </div>

@@ -258,3 +258,122 @@ describe('economics windows', () => {
     expect(sum(within(first(fixtureEconomics.heads).buckets, 168, FIXTURE_NOW)).inTokens).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// M2-32: A RACK OF LIKE ROWS PRINTS ITS COLUMN NAMES ONCE.
+//
+// m1 design review B9 says a bay whose rows share one shape prints the names on the RACK and not
+// on every slip, and `Bay` has shipped the `fields` row for it since m1 -- yet usage's heads bay,
+// usage's model bays and both of compaction's bays printed a label on every cell. Nothing in this
+// file could have caught it: 38 tests were green while three racks repeated their column names on
+// every row, which is what a wall is for.
+//
+// MEASURED at 1536 dark before the change: every strip on both pages stood 63.8px and 42px of it
+// was the values, so 21.8px of every row -- a third of it -- went on reprinting the names. Sixteen
+// rows across the two pages; the bays came down 332->285, 715->581 and 620->507px.
+//
+// THE ASSERTION IS THE ONE THAT CAN DRIFT. Removing the labels is visible in a capture; the names
+// silently sliding off their columns is not. `strip-field.tsx` sets flexGrow to each cell's OWN ch
+// (M1-73), so a name row fixed at `w ch` walks away from the column under it -- further the more
+// slack the rack has, and compaction's outcomes rack renders 26ch as 847px. So this compares the
+// RENDERED ch of the name against the RENDERED ch of every cell beneath it, column by column, and
+// a bay that prints names at all must print no labels in its rows.
+interface Rack { label: string; names: { w: number; text: string }[]; rows: number[][]; labels: number }
+
+/** Every bay in a rendered board, as the three things B9 is about: the names row, the cell widths
+ *  under it, and how many per-cell labels survive. A span cell states one value across several
+ *  tracks and is excluded BY DECLARATION (M1-73), never by happening not to look. */
+export function racks(markup: string): Rack[] {
+  return markup.split('<section class="myx-bay"').slice(1).map((part) => {
+    const head = /<span class="myx-bay-label">([^<]*)</.exec(part);
+    const fields = /<div class="myx-bay-fields">([\s\S]*?)<\/div><div class="myx-bay-rows">/.exec(part);
+    const rowsAt = part.indexOf('<div class="myx-bay-rows">');
+    // BOUNDED AT THE BAY'S OWN CLOSE, and the first cut was not: usage's heads bay is the last
+    // section in the board, so a region running to the end of the markup swept in the nine 14ch
+    // StripFields of the scope-chart legends below it and reported a rack of seventeen columns.
+    // A measurement that reads past its object is this campaign's most frequent defect and the
+    // reason M2-30 counted a logs line against the wrong box.
+    const end = part.indexOf('</section>');
+    const region = rowsAt < 0 ? '' : part.slice(rowsAt, end < 0 ? undefined : end);
+    const rows = region.split('<div class="myx-strip"').slice(1)
+      .filter((strip) => !strip.includes('data-span'))
+      .map((strip) => [...strip.matchAll(/class="myx-sfield" style="width:(\d+)ch/g)].map((m) => Number(m[1])));
+    return {
+      label: head === null ? '?' : head[1],
+      names: fields === null ? [] : [...fields[1].matchAll(/width:(\d+)ch[^>]*>([^<]*)</g)]
+        .map((m) => ({ w: Number(m[1]), text: m[2] })),
+      rows,
+      labels: (region.match(/myx-sfield-label/g) ?? []).length,
+    };
+  });
+}
+
+describe('a rack of like rows prints its column names once', () => {
+  // THE GAP, DECLARED RATHER THAN LEFT SILENT (§24: every item gets a disposition). Usage's third
+  // rack -- the model bays of the `by model` view -- is NOT covered here, because reaching it means
+  // `useViews` reading a stored view out of localStorage and a node render only ever sees the
+  // default. It was measured in the browser instead, at 1536 dark with the tab clicked: two bays,
+  // six names each printed once, zero per-cell labels, strips 42px where they stood 63.8px. The
+  // instrument is .impeccable/review/compose/compose.mjs and the capture is beside it.
+  const boards: [string, string][] = [
+    ['compaction', render(h(CompactFeed, { payload: fixtureCompact }))],
+    ['usage by head', render(h(UsageBoard, {
+      payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW,
+    }))],
+  ];
+
+  test('both boards render bays at all, so a green here is not an empty denominator', () => {
+    // Law 34's shape: if the boards rendered nothing, every assertion below would pass vacuously
+    // and the suite would report that no rack repeats its labels. The denominator is named first.
+    const all = boards.flatMap(([, markup]) => racks(markup));
+    expect(all.map((rack) => rack.label)).toEqual(['compact outcomes', 'compact events', 'heads']);
+    expect(all.every((rack) => rack.rows.length > 0)).toBe(true);
+  });
+
+  test('every bay prints a names row', () => {
+    for (const [page, markup] of boards) {
+      for (const rack of racks(markup)) {
+        expect(`${page}/${rack.label}: ${rack.names.length} names`).toBe(`${page}/${rack.label}: ${first(rack.rows).length} names`);
+      }
+    }
+  });
+
+  test('and therefore prints no label on any cell', () => {
+    for (const [page, markup] of boards) {
+      for (const rack of racks(markup)) {
+        expect(`${page}/${rack.label}: ${rack.labels} per-cell labels`).toBe(`${page}/${rack.label}: 0 per-cell labels`);
+      }
+    }
+  });
+
+  test('a name is declared at the ch of the column it names, in every row', () => {
+    for (const [page, markup] of boards) {
+      for (const rack of racks(markup)) {
+        const declared = rack.names.map((name) => name.w);
+        for (const row of rack.rows) {
+          expect(`${page}/${rack.label} ${row.join()}`).toBe(`${page}/${rack.label} ${declared.join()}`);
+        }
+      }
+    }
+  });
+
+  test('the outcomes total states itself once: on its edge, not in a label beside it', () => {
+    const markup = render(h(CompactFeed, { payload: fixtureCompact }));
+    const strip = markup.slice(markup.indexOf('aria-label="total"'), markup.indexOf('aria-label="outcome'));
+    expect(strip).toContain('<span class="myx-edge-label">total</span>');
+    expect(strip).not.toContain('myx-sfield-label');
+  });
+
+  test('the wall can fail: a bay that prints names AND labels is reported by name', () => {
+    // The planted violation is the state this file was green in an hour ago -- a names row over
+    // rows that still carry their own labels -- because a wall nobody has seen go red on the very
+    // defect it was written for is not yet a wall.
+    const planted = '<section class="myx-bay"><header class="myx-bay-head"><span class="myx-bay-label">planted</span>'
+      + '</header><div class="myx-bay-fields"><span style="width:9ch;flex-grow:9">turns</span></div>'
+      + '<div class="myx-bay-rows"><div class="myx-strip"><div class="myx-sfield" style="width:9ch">'
+      + '<span class="myx-sfield-label">turns</span></div></div></div></section>';
+    const rack = first(racks(planted));
+    expect(rack.label).toBe('planted');
+    expect(rack.labels).toBe(1);
+  });
+});

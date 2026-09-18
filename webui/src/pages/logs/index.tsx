@@ -42,7 +42,9 @@ export interface LogsBoardProps {
   capture?: CaptureSlice | null;
   locked?: boolean;
   error?: string | null;
-  sample?: boolean;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
+   *  marker and the sample chrome are the same value, so they cannot disagree. */
+  sample?: string | undefined;
   onFilter?: (filter: LogFilter) => void;
   onFollow?: (follow: boolean) => void;
   onHead?: (head: string) => void;
@@ -51,14 +53,17 @@ export interface LogsBoardProps {
 
 export function LogsBoard({
   payload, filter, follow, appended, reset, tags, levels, head, tail, heads, capture,
-  locked = false, error = null, sample = false, onFilter, onFollow, onHead, onTail,
+  locked = false, error = null, sample, onFilter, onFollow, onHead, onTail,
 }: LogsBoardProps) {
   if (locked) return <Empty text="console locked" source="management key" />;
   // A capture fixture IS the data: a live read that failed behind it must not blank the page.
   if (error !== null && payload === null) return <Empty text="log tail unreadable" source={error} />;
 
   return (
-    <div className="myx-lg">
+    <div
+      className="myx-lg"
+      {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
+    >
       <header className="myx-lg-head">
         <h2 className="myx-lg-title">{S.title}</h2>
         <label className="myx-lg-field">
@@ -99,7 +104,7 @@ export function LogsBoard({
           </select>
         </label>
         {reset ? <Figure value={1} unit="rotated" basis="measured" /> : null}
-        {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
+        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
       <Bay
@@ -129,6 +134,20 @@ interface Fixture {
   payload: LogsPayload;
 }
 
+/** One fixture, as ONE value: the name it was asked for and the bytes that arrived. The capture
+ *  marker is set from this and from nothing else, so a name with no module can never leave a
+ *  marker behind - a marker that survives a failed import says the opposite of the truth (law 23:
+ *  an instrument must be able to distinguish PASSED, FAILED and DID NOT RUN). Exported because a
+ *  test pins exactly that, with a name that resolves to no file at all. */
+export async function loadFixture(name: string): Promise<{ name: string; payload: Fixture } | null> {
+  if (!import.meta.env.DEV) return null;
+  const module = await import(/* @vite-ignore */ `./fixtures/${name}.ts`)
+    .then((loaded: { fixture?: Fixture }) => loaded)
+    .catch(() => null);
+  const payload = module === null ? null : module.fixture ?? null;
+  return payload === null ? null : { name, payload };
+}
+
 function fixtureName(): string | null {
   if (!import.meta.env.DEV || typeof window === 'undefined') return null;
   const fromSearch = new URLSearchParams(window.location.search).get('fixture');
@@ -150,8 +169,9 @@ export default function LogsPage() {
     appended: 0,
     reset: false,
   });
-  const [fixture, setFixture] = useState<Fixture | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: Fixture } | null>(null);
   const name = fixtureName();
+  const fixture = sample === null ? null : sample.payload;
 
   useEffect(() => startLogsPolling(5000), []);
 
@@ -169,13 +189,21 @@ export default function LogsPage() {
   }, [head]);
 
   useEffect(() => {
-    if (name === null) return undefined;
+    if (name === null) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return undefined;
+    }
     let live = true;
-    void import(/* @vite-ignore */ `./fixtures/${name}.ts`)
-      .then((module: { fixture?: Fixture }) => {
-        if (live) setFixture(module.fixture ?? null);
-      })
-      .catch(() => undefined);
+    // The whole value, name and bytes together: a second state for the name would be the stale
+    // marker this row exists to prevent.
+    void loadFixture(name).then((loaded) => {
+      if (live) setSample(loaded);
+    });
     return () => {
       live = false;
     };
@@ -217,7 +245,7 @@ export default function LogsPage() {
       capture={capture.data}
       locked={false}
       error={store.error}
-      sample={fixture !== null}
+      sample={sample?.name}
       onFilter={setFilter}
       onFollow={setFollow}
       onHead={setHead}

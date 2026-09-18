@@ -166,7 +166,10 @@ export function AccountsPage() {
   const anyHead = opened?.heads[0] ?? pooledHeads[0]?.head ?? claudeHeads[0]?.head ?? null;
 
   return (
-    <div className="myx-accounts">
+    <div
+      className="myx-accounts"
+      {...(import.meta.env.DEV && rows !== null && fixture !== null ? { 'data-sample': fixture } : {})}
+    >
       <header className="myx-accounts-head">
         <h1 className="myx-accounts-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
@@ -174,7 +177,7 @@ export function AccountsPage() {
 
       {accountsResource.error === null ? null : <Fault message={accountsResource.error} />}
 
-      {fixture === null ? null : <HolderEdge state="grey" label={S.sample} />}
+      {rows === null ? null : <HolderEdge state="grey" label={S.sample} />}
 
       {accountsResource.data === null && fixture === null ? <Blank strips={4} /> : null}
 

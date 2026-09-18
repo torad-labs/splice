@@ -41,5 +41,7 @@ const DEMO_REPORT: DoctorPayload = {
  *  a production build drops the whole payload rather than shipping rows nothing can reach. */
 export function fixtureDoctor(name: string | null): DoctorPayload | null {
   if (!import.meta.env.DEV || name === null) return null;
-  return name === 'demo' ? DEMO_REPORT : null;
+  // The fixture's own FILE name (CONTRACTS.md section 4): one vocabulary for every page, so a
+  // driver's table is the directory listing and nothing else.
+  return name === 'doctor' ? DEMO_REPORT : null;
 }

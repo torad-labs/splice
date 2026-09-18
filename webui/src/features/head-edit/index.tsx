@@ -9,7 +9,8 @@
 // disabling a head means removing it from the document, and the operator should see what they are
 // about to un-declare before it happens.
 import { useState } from 'react';
-import { ConfirmBtn, FieldBox } from '@shared/ui';
+import { FieldBox } from '@shared/ui';
+import { Confirm } from '@shared/controls';
 import { EMPTY_DRAFT, TOPOLOGY_PROVENANCE, headRows, providerKeys, validateNewHead, withHeadField, withNewHead, withoutHead } from './model';
 import type { HeadDraft, HeadFinding } from './model';
 import { S } from './strings';
@@ -55,7 +56,12 @@ export function HeadEditRow({ topology, row, busy, onChange }: {
           />
         ))}
       </div>
-      <ConfirmBtn busy={busy} onConfirm={() => onChange(withoutHead(topology, row.key))}>{S.disable}</ConfirmBtn>
+      <Confirm
+        label={S.disable}
+        confirmLabel={S.confirmDisable}
+        onConfirm={() => onChange(withoutHead(topology, row.key))}
+        busy={busy}
+      />
     </div>
   );
 }

@@ -5,6 +5,8 @@ export const S = {
   heads: 'heads',
   declared: 'declared',
   disable: 'disable',
+  /** The armed second half of the disable gesture. */
+  confirmDisable: 'confirm disable',
   addHead: 'add head',
   provider: 'provider',
   port: 'port',

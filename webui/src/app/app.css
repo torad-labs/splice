@@ -1,7 +1,8 @@
 /* The console shell — hand-authored, .myx-* namespace.
    One graphite room: a fixed rule, a rail of bays, the page's bay. Depth is
    surface tier and hairline, never shadow. Every spacing value comes from
-   --space-1..8 and every size from --text-1..6 (wall: webui-css-tokens-only).
+   --space-1..8 and every size from --text-1..6 (wall: webui-css-tokens-only),
+   and every colour from CONTRACTS.md section 1.
 
    The rule and the rail are bound to the measured regions of the approved comp
    (webui/.impeccable/build/scaffold/layout.css, regions top-rule, rail and
@@ -9,12 +10,20 @@
    is the rail band below it, and the five rule cells sit at their measured x
    and width inside it. Those measurements are percent of the comp frame, and
    the frame is the window, so the numbers bind here as vh/vw and the shell
-   scales the way the comp does at any capture size. */
+   scales the way the comp does at any capture size.
+
+   THIS FILE HOLDS THE SHELL'S OWN RULES AND NOTHING ELSE (row M1-08). The
+   plate-era blocks it used to carry - data tables, metric and pill rows, the
+   head plates, the fleet banner, the old log pane and the config editor -
+   existed only for surfaces the shell does not render; their components keep
+   their own class names and their own sheets, and M3-04 deletes them. The key
+   gate IS the shell's chrome (App.tsx renders it), so its rules stay here, on
+   the world's paper and ink. */
 
 * { box-sizing: border-box; }
 
 body {
-  margin: var(--space-0);
+  margin: 0;
   background: var(--room);
   color: var(--ink);
   font-family: var(--font-label);
@@ -24,13 +33,22 @@ body {
 
 ::selection { background: color-mix(in srgb, var(--focus) 30%, transparent); }
 
-a { color: var(--accent); }
+/* A link is the room's ink with a hairline under it: the world has no second accent, and the
+   coloured thing on any page is the holder edge. */
+a {
+  color: var(--ink);
+  text-decoration-color: var(--hairline-strong);
+}
+
+/* One focus ring, everywhere, at the width the contract names: --focus is a colour, and the ring
+   is 2px with a 1px offset. The width used to come from two old tokens that only existed for it. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: var(--focus-offset);
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 /* ---------- the shell ---------- */
@@ -65,160 +83,29 @@ select:focus-visible {
    It claims nothing: no skeleton shaped like content the page has not sent. */
 .myx-console-pending { min-height: 100%; }
 
-/* ---------- data tables: dense, hairline rows, tabular numerals ---------- */
-.myx-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-figure);
-  font-size: var(--text-2);
-}
-.myx-table th {
-  text-align: left;
-  font-weight: 500;
-  font-size: var(--text-1);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-mute);
-  border-bottom: var(--hair) solid var(--line-strong);
-  padding: var(--space-1) var(--space-2);
-}
-.myx-table td {
-  border-bottom: var(--hair) solid var(--line-mute);
-  padding: var(--space-1) var(--space-2);
-  vertical-align: top;
-}
-.myx-table tbody tr:hover { background: var(--grid); }
-.myx-num { font-variant-numeric: tabular-nums; text-align: right; }
-.myx-ink-mute { color: var(--ink-mute); }
-.myx-ink-strong { color: var(--ink-strong); }
+/* ---------- the key gate ----------
+   The shell's own chrome: a scrim over the room and one printed plate. It is a plate because the
+   world has no dialog - but a gate is not a confirmation, and the console has nothing to show
+   until the key is pasted, so this is the one surface that covers the room instead of sitting in
+   it. A holder edge would have nothing to say here, so there is none: the wordmark leads. */
 
-.myx-metric-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: var(--space-4);
-}
-.myx-pill-row { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
-
-.myx-footnote {
-  margin: var(--space-2) var(--space-0) var(--space-0);
-  font-family: var(--font-figure);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
-
-/* fleet: the bench of head plates. --plate-leaf reads as a struck leaf
-   lifting off the desk (crisp near-edge highlight, soft far-edge sink, one
-   tight drop shadow) — a physical instrument, not a generic floating card. */
-.myx-fleet-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: var(--space-4);
-}
-.myx-plate {
-  background: var(--surface-raised);
-  border: var(--hair) solid var(--line);
-  border-radius: var(--radius-1);
-  padding: var(--space-3);
-  display: grid;
-  gap: var(--space-3);
-  box-shadow: var(--plate-leaf);
-}
-.myx-plate-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
-.myx-plate-head-right { display: flex; align-items: center; gap: var(--space-2); }
-.myx-plate-label {
-  font-family: var(--font-figure);
-  font-size: var(--text-4);
-  font-weight: 600;
-  color: var(--ink-strong);
-}
-.myx-plate-sub {
-  font-family: var(--font-figure);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.myx-plate-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
-  gap: var(--space-3);
-}
-.myx-plate-usage { display: grid; gap: var(--space-1); }
-.myx-plate-usage-row {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  margin: var(--space-0);
-  font-family: var(--font-figure);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
-.myx-plate-usage-none {
-  margin: var(--space-0);
-  font-family: var(--font-figure);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-  font-style: italic;
-}
-.myx-plate-actions { display: flex; gap: var(--space-2); }
-.myx-plate-note {
-  margin: var(--space-0);
-  font-family: var(--font-figure);
-  font-size: var(--text-1);
-  color: var(--data-info);
-}
-
-/* fleet-banner: absent at rest, a single hairline strip in the warn ink when
-   any head crosses into warn/critical. */
-.myx-fleet-banner {
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  padding: var(--space-2) var(--space-3);
-  border: var(--hair) solid var(--line-strong);
-  border-radius: var(--radius-1);
-  font-family: var(--font-figure);
-  font-size: var(--text-2);
-}
-
-.myx-log {
-  margin: var(--space-0);
-  font-size: var(--text-1);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-/* config editor */
-.myx-editcfg { display: grid; gap: var(--space-4); }
-.myx-editcfg-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: var(--space-3);
-}
-.myx-editcfg-actions { display: flex; align-items: center; gap: var(--space-3); }
-.myx-editcfg-result { font-family: var(--font-figure); font-size: var(--text-2); color: var(--data-pos); }
-
-.myx-inline-action { display: inline-flex; align-items: center; gap: var(--space-2); }
-.myx-inline-note { font-family: var(--font-figure); font-size: var(--text-1); color: var(--ink-mute); }
-
-/* modal (config confirm + key gate) — old-world surface, replaced in M3-04 */
 .myx-modal-scrim {
   position: fixed;
-  inset: var(--space-0);
-  z-index: var(--z-modal);
-  background: color-mix(in srgb, var(--surface-sunk) 62%, transparent);
+  inset: 0;
+  /* No z-index: this is the last thing App.tsx renders, so it paints over the rail, the rule and
+     the palette by document order (the world carries no stack ladder, section 1). */
+  background: color-mix(in srgb, var(--room-deep) 72%, transparent);
   display: grid;
   place-items: center;
   padding: var(--space-4);
 }
+
 .myx-modal {
-  background: var(--surface-raised);
-  border: var(--hair) solid var(--line-strong);
-  border-radius: var(--radius-1);
-  padding: var(--space-4);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-5);
   max-width: 44rem;
   width: 100%;
   display: grid;
@@ -226,18 +113,75 @@ select:focus-visible {
   max-height: 85vh;
   overflow-y: auto;
 }
+
 .myx-modal-title {
-  margin: var(--space-0);
-  font-family: var(--font-mono);
+  margin: 0;
+  font-family: var(--font-label);
   font-size: var(--text-4);
   font-weight: 600;
-  color: var(--ink-strong);
+  color: var(--strip-ink);
 }
+
 .myx-modal-actions { display: flex; justify-content: end; gap: var(--space-2); }
 .myx-unlock-form { display: grid; gap: var(--space-3); }
+
+/* THE GATE'S OWN CONTROLS, styled from the shell because the gate IS shell chrome and its feature
+   file (features/unlock-mgmt) is outside this row's fence. It used to render the old `Btn` and
+   `Well` primitives: a vermilion bar and a dark mono slab on a printed plate, which is the plate
+   system showing through the one surface the operator sees before anything else.
+   Both overrides are scoped to .myx-modal, so they touch the gate and nothing else. */
+.myx-modal .myx-btn {
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.myx-modal .myx-btn:hover { border-color: var(--strip-ink); }
+.myx-modal .myx-btn[disabled] { color: var(--strip-ink-mute); cursor: not-allowed; }
+
+/* The command to paste: a strip's field box, because that is what a printed value looks like
+   here, and it clips rather than wraps so the plate never grows a second line. */
+.myx-modal .myx-well {
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The pasted key is the world's Input control, laid out by the old `Field` this file cannot edit:
+   same label above, same box, same figure face. The label keeps the world's sentence case - the
+   old rule shouted it in a mono face, which is a cue this world does not have. */
+.myx-modal .myx-field { display: grid; gap: var(--space-1); }
+.myx-modal .myx-field-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--strip-ink-mute);
+}
+.myx-modal .myx-field input {
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 
 @media (max-width: 720px) {
   .myx-console { --rail-w: 14vw; --rail-min: 96px; }
   .myx-console-page { padding: var(--space-3); }
-  .myx-table { display: block; overflow-x: auto; }
 }

@@ -11,7 +11,7 @@
 }
 
 .myx-bud-title {
-  margin: var(--space-0);
+  margin: 0;
   font-family: var(--font-label);
   font-size: var(--text-2);
   color: var(--ink);
@@ -43,7 +43,7 @@
 .myx-bud-btn-block { border-color: var(--edge-red); color: var(--edge-red); }
 
 .myx-bud-note {
-  margin: var(--space-0);
+  margin: 0;
   font-family: var(--font-label);
   font-size: var(--text-1);
   color: var(--ink-mute);

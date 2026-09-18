@@ -30,7 +30,7 @@
 }
 
 .myx-acct-note {
-  margin: var(--space-0);
+  margin: 0;
   font-family: var(--font-label);
   font-size: var(--text-1);
   color: var(--ink-mute);

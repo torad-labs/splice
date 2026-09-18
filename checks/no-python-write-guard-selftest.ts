@@ -69,5 +69,25 @@ arm("MultiEdit smuggling it in a later edit", "block", {
 }, () => true);
 arm("empty stdin is not a verdict", "allow", "", () => true);
 
+// THE WRITE-TIME HALF OF THE SEVENTH CENSUS, on the file it actually happened to. inside.sh is a
+// LISTED INVOKER, so the naming-python arm above deliberately lets it through — and that
+// exemption is exactly what let the slip land. These arms pin that being allowed to name python
+// never means being allowed to name it in front of a .ts.
+arm("the wrong runtime into a LISTED invoker", "block", edit(listedInvoker, 'python3 "$HERE/mock_chat.ts" &'), () => listedInvoker.endsWith(".sh"));
+arm("the same line with the interpreter fixed", "allow", edit(listedInvoker, 'bun "$HERE/mock_chat.ts" &'), () => listedInvoker.endsWith(".sh"));
+arm("bun running a .py in a caller", "block", edit(listedInvoker, "bun checks/config/x.py\n"), () => listedInvoker.endsWith(".sh"));
+arm("a comment quoting the wrong runtime", "allow", edit(listedInvoker, '# was python3 "$HERE/mock_chat.ts"\n'), () => listedInvoker.endsWith(".sh"));
+
+// THE PENDING-TOOL DISPOSITION, both halves, in the guard. The negative half is already above
+// ("a .ts that SHELLS into python3" must still block) and it EARNED its place: the first cut of
+// this wiring passed the whole pendingTools array where the function now takes one tool string,
+// so `line.includes(tool)` never matched and every interpreter-only line was stripped for EVERY
+// file. The guard stopped refusing `spawnSync("python3", [])` anywhere in the repo. It passed in
+// the worktree — where it had been proven before the signature changed — and failed only when run
+// against the staged tree, which is the one being committed.
+const namedCaller = (burndown().pendingTools ?? [])[0]?.callers?.[0] ?? "";
+arm("a NAMED caller of a pending tool", "allow", edit(namedCaller, 'spawnSync("python3", [manifest, "laws"]);\n'), () => namedCaller.endsWith(".ts"));
+arm("a file the entry does NOT name", "block", edit("checks/newthing.ts", 'spawnSync("python3", [manifest, "laws"]);\n'), () => namedCaller.endsWith(".ts"));
+
 console.log(failures ? `\nFAIL: no-python write-guard selftest — ${failures} arm(s)` : "\nOK: no-python write-guard selftest — every arm graded a setup it verified");
 process.exit(failures ? 1 : 0);

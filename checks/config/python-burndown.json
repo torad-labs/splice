@@ -2,27 +2,6 @@
   "recorded": "2026-09-18",
   "law": "Operator rule, stated 2026-09-18: this repo has no Python — tooling is bun/TypeScript. Every line here is DEBT that predates the wall, not permission. The gate fails when a tracked .py file is NOT listed here (new Python) and when a listed one is gone or already converted (stale). The list may only SHRINK: adding a line to make the gate pass is the violation the wall exists to catch. Burn it down per the migration rows in .dev/campaigns/v0.4.0.toml. SECOND CENSUS (added 2026-09-18 after the first read a triumphant 90 while 29 .sh files invoked python3 167 times): `invokers` lists every tracked non-.py file that RUNS or NAMES python. Counting files called .py is not counting Python. Same rules — it may only shrink.",
   "files": [
-    ".claude/hooks/gradle-stop-guard.py",
-    ".claude/hooks/lib/__init__.py",
-    ".claude/hooks/lib/astgrep_gate.py",
-    ".claude/hooks/lib/tool_input.py",
-    ".claude/hooks/modules/pretooluse/08_manifest_single_channel.py",
-    ".claude/hooks/modules/pretooluse/09_one_committer.py",
-    ".claude/hooks/modules/pretooluse/_kotlin_rules.py",
-    ".claude/hooks/modules/sessionstart/10_laws.py",
-    ".claude/hooks/modules/sessionstart/12_inflight_reanchor.py",
-    ".claude/hooks/modules/stop/05_campaign_inflight_note.py",
-    ".claude/hooks/orchestrator.py",
-    ".claude/hooks/orchestrator/__init__.py",
-    ".claude/hooks/orchestrator/posttooluse.py",
-    ".claude/hooks/orchestrator/pretooluse.py",
-    ".claude/hooks/orchestrator/result.py",
-    ".claude/hooks/orchestrator/runner.py",
-    ".claude/hooks/orchestrator/sessionstart.py",
-    ".claude/hooks/orchestrator/stop.py",
-    ".claude/hooks/orchestrator/userpromptsubmit.py",
-    ".claude/hooks/tests/test_one_committer.py",
-    ".claude/hooks/tests/test_orchestrator.py",
     "checks/concentration.py",
     "checks/config/ast-grep-rule-docs.py",
     "checks/config/concentration-leg-routed.py",
@@ -44,7 +23,6 @@
     ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
   ],
   "invokers": [
-    ".claude/settings.json",
     ".github/scripts/live-probe/test-update-issue-step.sh",
     ".github/scripts/triage/find-duplicates.sh",
     ".github/scripts/triage/test-find-duplicates.sh",
@@ -111,5 +89,19 @@
     "package.json",
     "webui/.impeccable/review/light-room.md",
     "webui/.impeccable/review/material-spec.md"
+  ],
+  "pendingTools": [
+    {
+      "tool": ".dev/campaigns/manifest.py",
+      "row": "V4-143",
+      "reason": "The campaign-ledger CLI is still Python and V4-143 owns converting it. These callers did not ADD Python: their .py predecessors named the same command and were invisible only because the invoker census skips .py files, so converting them to .ts made them new invokers. The exclusion dies automatically when V4-143 lands and this tool is gone.",
+      "recorded": "2026-09-18",
+      "callers": [
+        ".claude/hooks/modules/sessionstart/10_laws.ts",
+        ".claude/hooks/modules/sessionstart/12_inflight_reanchor.ts",
+        ".claude/hooks/modules/pretooluse/08_manifest_single_channel.ts",
+        ".claude/hooks/modules/stop/05_campaign_inflight_note.ts"
+      ]
+    }
   ]
 }

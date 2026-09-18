@@ -454,6 +454,33 @@
      class this row is about -- the size now lives here alone and the board's rule carries only what
      is genuinely the board's (weight, the pinned line box, the rule's ink). */
   font-size: var(--text-1);
+  /* THE WEIGHT IS THE ROLE'S, NOT THE BOARD'S (M1-90), AND THIS DISAGREES WITH A SENTENCE IN THE
+     COMMENT ABOVE -- deliberately, with the reasoning left where the next seat meets both.
+
+     WHAT M1-64 SAID: "the size now lives here alone and the board's rule carries only what is
+     genuinely the board's (weight, the pinned line box, the rule's ink)". That sentence's SUBJECT is
+     the size; the parenthetical describes what happened to be left in board.css afterwards. Two of
+     the three it lists are geometric facts about the board's plate that M1-64 measured and that are
+     still there: the pinned line box, which puts the comp's rule at plate row 19-20, and the rule's
+     ink, which is the comp's mute hairlines. THE WEIGHT IS NOT THE SAME KIND OF THING. Nothing about
+     the board's plate requires a bold label, it was never measured by any row, and this row measured
+     it and reads the opposite.
+
+     THE READING, on the comp of record with the method calibrated the way M1-89's was: the comp
+     records a weight class for two of its own text regions and both are REGULAR (bay-deepseek-label
+     stemW 0.1241, chat-label stemW 0.1270), and those measure 31.1 and 26.7 percent ink density.
+     The strip values, which carry no record, measure 20.7 and 25.4. The strip LABEL band measures
+     18.2 -- THE LIGHTEST TEXT ON THE COMP'S OWN STRIPS. Ink density is the size-robust signal here
+     and the stem is not: at a 12px label the modal stem quantises to 1px exactly as the 16px value's
+     does, so the stem cannot rank the two, while a small size renders with proportionally THICKER
+     hinted stems and therefore reads denser than its weight warrants -- so a light reading at 12px
+     is stronger evidence of lightness than the same reading at 16px.
+
+     THE COST, measured across pages because labels render everywhere: 784 labels over ten pages,
+     0px of overflow at 400 and 0px at 600, and label box widths, field widths and strip heights
+     identical at both weights (the columns are the comp's fixed percentages, so a weight cannot move
+     them). THE COST HAS NO VOTE HERE, which is why the comp reading decides it: 400. */
+  font-weight: 400;
   line-height: 1.4;
   color: var(--strip-ink-mute);
   white-space: nowrap;

@@ -81,7 +81,16 @@
 }
 .myx-board .myx-sfield-label {
   display: block;
-  font-weight: 600;
+  /* THE WEIGHT WENT BACK TO THE PRIMITIVE (M1-90), and the declaration was REMOVED rather than
+     restated here: two rules binding one role is the defect this campaign has fixed three times
+     tonight, and a redundant agreement is the same shape as a silent override -- it is the line the
+     next seat edits when they want the two to disagree again. M1-64 removed the SIZE from this rule
+     and described the remainder as "what is genuinely the board's (weight, the pinned line box, the
+     rule's ink)"; the line box and the rule ink are geometric facts about the comp's plate and stay,
+     while the weight is a type choice no row had measured. The comp's own labels measure the LIGHTEST
+     text on its strips -- 18.2 percent ink density against 26.7 and 31.1 for the two regions the comp
+     records as regular -- and the cost of either weight is zero across 784 labels on ten pages.
+     ui.css carries both readings and this disagreement in full. */
   /* THE SIZE BELONGS TO THE PRIMITIVE, AND THIS RULE WAS TAKING IT (M1-64). This carried
      `font-size: var(--text-2)`. At (0,2,0) it beat ui.css's binding at (0,1,0), so binding the
      primitive moved nothing on the board and the label still rendered at 14px -- cap 10 where the

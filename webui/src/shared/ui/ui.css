@@ -271,6 +271,13 @@
   background: var(--strip-field);
   border-inline-end: var(--hair) solid var(--strip-field-line);
   min-width: 0;
+  /* The width is a ch COUNT declared on this box, so `ch` must resolve against the value's own
+     face and size, not the page's (found by M2-01 when --text-3 grew and every field clipped);
+     and a ch count must never shrink: as a flex item the default flex-shrink squeezed nine
+     columns at once below their declared widths instead of letting the bay scroll. */
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  flex: 0 0 auto;
 }
 .myx-sfield-label {
   font-family: var(--font-label);
@@ -287,6 +294,8 @@
   text-overflow: ellipsis;
 }
 .myx-sfield-figure { font-family: var(--font-figure); }
+/* A prose value keeps the label face; the box's figure face exists for the ch unit. */
+.myx-sfield-value:not(.myx-sfield-figure) { font-family: var(--font-label); }
 .myx-sfield-basis {
   margin-inline-start: var(--space-1);
   color: var(--strip-ink-mute);

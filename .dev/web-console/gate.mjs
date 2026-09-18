@@ -21,13 +21,20 @@ import { FIXTURES, urlFor } from './lib/fixtures.mjs';
 // 25 KB PNG of Chrome's error page, this gate scored it as room-colour 0.000, and every downstream
 // number inherited it.
 import { capturePage } from './capture.mjs';
+import { THEMES, themeSeedSource } from './theme.mjs';
 import { colorFraction, decodePng, hexToRgb } from './lib/png.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const TERMINAL = process.stdout.isTTY === true;
 
 /** The two rooms and the two frames every address is captured in. */
-const THEMES = ['dark', 'light'];
+// THEMES and the seed both come from theme.mjs (M1-60). This file held its own copy of the list
+// AND its own copy of the seeding idiom — the fourth private implementation of a capability M1-55
+// put in the shared toolbox precisely to stop a fourth. It is not the same shape as the other three
+// callers and that is why it was missed: gate.mjs drives ONE Chrome across every address in both
+// themes, so it cannot hand the theme to withChrome (those values are seeded once, at session
+// start) and instead re-registers the seed script on each theme change. themeSeedSource() is that
+// shape, so the key name lives in one file and this one keeps its own registration discipline.
 const FRAMES = [[1536, 1024], [1280, 800]];
 
 /** A capture this fraction room-coloured or more is BLANK: the page did not draw. */
@@ -176,9 +183,7 @@ await withChrome({ 'myx-mgmt-key': key }, async (send) => {
       if (themeScript !== null) {
         await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: themeScript });
       }
-      const added = await send('Page.addScriptToEvaluateOnNewDocument', {
-        source: `try { localStorage.setItem('splice.theme', ${JSON.stringify(theme)}); } catch (e) {}`,
-      });
+      const added = await send('Page.addScriptToEvaluateOnNewDocument', { source: themeSeedSource(theme) });
       themeScript = added.identifier;
       const url = urlFor(capture.address);
       // ALWAYS through about:blank. Every console URL is a hash route, so a navigate from one to

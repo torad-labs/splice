@@ -40,9 +40,10 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
-import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
+import { show, withChrome } from './lib/cdp.mjs';
 import { decodePng } from './lib/png.mjs';
 import { LOOK_DIR, nameFor, snapshot } from './snapshot.mjs';
+import { themeLanded, themeValues } from './theme.mjs';
 
 const ARGS = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -101,6 +102,13 @@ const MEASURE = `(() => {
   const series = (map) => [...map.entries()].sort((x, y) => x[0] - y[0]);
   return { type: series(area), gap: series(gaps) };
 })()`;
+
+/** What the page RESOLVED, not what it was asked for: the room colour and the theme attribute.
+ *  Same shape theme.mjs's own probe returns, because themeLanded() reads it. */
+const ROOM_PROBE = `(() => JSON.stringify({
+  attr: document.documentElement.getAttribute('data-theme'),
+  room: getComputedStyle(document.documentElement).getPropertyValue('--room').trim(),
+}))()`;
 
 /** Share of a series' total that sits at or below a threshold. */
 function below(series, threshold) {
@@ -399,7 +407,11 @@ const LADDER_FLATTEN = '*, *::before, *::after { font-size: 12px !important; }';
 
 async function ladderReport(url, width, height, theme, mutate) {
   let report = null;
-  await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
+  // `theme` WAS A PARAMETER THIS FUNCTION NEVER USED (M1-60). It was accepted, threaded through
+  // from --theme, and dropped on the floor: the session seeded the key and not the room, so every
+  // ladder report was measured in the default room whatever the caller asked for, and printed the
+  // requested theme in its headline. A number labelled with a room it was not measured in.
+  await withChrome(themeValues(theme), async (send) => {
     await show(send, url, width, height, 4000);
     if (mutate !== null) {
       await send('Runtime.evaluate', { expression: `(() => { const s = document.createElement('style'); s.textContent = ${JSON.stringify(mutate)}; document.head.append(s); })()` });
@@ -568,33 +580,58 @@ const gate = spawnSync('node', [GATE, '--captures', 'webui/.impeccable/review/se
 if (gate.status !== 0) blocks.push(['look-gate', (gate.stdout ?? '').trim().split('\n').filter((l) => /FAIL/.test(l)).join(' · ') || 'blocking check failed']);
 
 // 3b/4 — ONE browser session does both: the layout rules on the live page, and the two
-// area-weighted censuses. Same Chrome the snapshot used, same seeded key, no second engine.
+// area-weighted censuses. Same Chrome the snapshot used, same seeded values, no second engine.
+//
+// "SAME SEEDED KEY" WAS TRUE AND WAS THE BUG (M1-60). This session seeded the management key and
+// NOT the theme, while the snapshot twenty lines up seeded both — so on `--theme light` the
+// snapshot was light and the layout findings and BOTH area-weighted censuses were measured in the
+// dark room, under a headline that says light. The gate runs exactly that cell: LOOKS carries
+// ['3840x2160', 'light'], so every light-room layout finding and every light coverage number this
+// leg has ever produced was read off the dark room. themeValues() seeds both, which is the whole
+// reason it returns the key alongside the theme rather than the theme alone.
 let measured = null;
 let layout = [];
 let layoutError = null;
+let room = null;
 try {
-  const both = await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
+  const both = await withChrome(themeValues(theme), async (send) => {
     await show(send, URL_ARG, width, height);
+    // AND IT PROVES THE ROOM IT MEASURED, rather than printing the one it asked for (M1-60). Seeding
+    // the theme is not the same claim as rendering it: this session seeded no theme at all until
+    // today and still printed `light` in its headline, and nothing anywhere could have told the
+    // difference. themeLanded compares the RESOLVED --room against the room the theme declares —
+    // the attribute says what was requested, the room says what resolved — so a pass that renders
+    // the wrong room now blocks instead of reporting numbers under the wrong label. This is the LOOK
+    // law applied to the instrument itself: a claim about how something looks needs a measured DOM.
+    const probe = JSON.parse((await send('Runtime.evaluate', { expression: ROOM_PROBE, returnByValue: true })).result.value);
+    const landed = themeLanded(theme, probe);
     let rules = null;
     let failure = null;
     try { rules = await layoutFindings(send); } catch (error) { failure = error.message; }
     const result = await send('Runtime.evaluate', { expression: MEASURE, returnByValue: true });
-    return { rules, failure, measured: result?.result?.value ?? null };
+    return { rules, failure, measured: result?.result?.value ?? null, landed };
   });
   layout = both.rules ?? [];
   layoutError = both.failure;
   measured = both.measured;
+  room = both.landed;
+  if (!room.ok) {
+    blocks.push(['theme', `the measured page is not the room this report names: ${room.why}`]);
+  }
 } catch (error) {
   blocks.push(['measure', error.message]);
 }
 
 const ref = compReference();
 if (has('json')) {
-  console.log(JSON.stringify({ url: URL_ARG, snapshot: out, bytes, dom: domFindings, layout, measured, comp: ref, blocks }, null, 2));
+  console.log(JSON.stringify({ url: URL_ARG, snapshot: out, bytes, dom: domFindings, layout, measured, room, comp: ref, blocks }, null, 2));
 } else {
   // frame and theme in the headline: this is run more than once per gate now, and two reports that
   // do not say which room and which size they read are two reports nobody can tell apart.
-  console.log(`look — ${URL_ARG}  ${width}x${height} ${theme}\n`);
+  // THE MEASURED ROOM, not the requested one. Two reports that do not say which room they read are
+  // two reports nobody can tell apart — and one that names a room it did not render is worse.
+  const roomSaid = room === null ? 'room UNMEASURED' : (room.ok ? `room ${room.seen.join(',')} ✓` : `ROOM MISMATCH — ${room.why}`);
+  console.log(`look — ${URL_ARG}  ${width}x${height} ${theme}  (${roomSaid})\n`);
   console.log(`  snapshot   ${out} (${bytes} bytes)`);
   console.log(`  dom        ${domError === null ? `${domFindings.length} findings (static-HTML engine: markup + resolved cascade)` : `DID NOT RUN - ${domError}`}`);
   for (const finding of domFindings.slice(0, 8)) {

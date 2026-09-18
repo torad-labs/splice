@@ -22,7 +22,9 @@
 // Usage: node .dev/web-console/snapshot.mjs '<url>' [<out.html>] [<width> <height>]
 import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
+import { pathToFileURL } from 'node:url';
+import { show, withChrome } from './lib/cdp.mjs';
+import { themeValues } from './theme.mjs';
 
 /** Where the artifacts live. Gitignored (webui/.impeccable/.gitignore), because a snapshot is
  *  regenerable bytes and the page it froze may hold live daemon data. */
@@ -89,10 +91,13 @@ const COLLECT = `(async () => {
  * unobserved by every automatic instrument we have.
  */
 export async function snapshot(url, out, width = 1536, height = 1024, theme = 'dark') {
-  return withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
-    await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `try { localStorage.setItem('splice.theme', ${JSON.stringify(theme)}); } catch (e) {}`,
-    });
+  // THROUGH themeValues() AND NOT A SECOND addScriptToEvaluateOnNewDocument (M1-60). This function
+  // is the reason that row exists: theme.mjs was written in M1-55 so no fourth seat would rebuild
+  // theme seeding privately, and this file — edited in M1-55's own receipt — rebuilt it here anyway,
+  // six lines below a header comment citing the same rule. Routing through the helper also buys the
+  // validation this never had: themeValues throws on an unknown theme, where the inline seed wrote
+  // whatever string it was handed into localStorage and rendered the default room without a word.
+  return withChrome(themeValues(theme), async (send) => {
     await show(send, url, width, height);
     const result = await send('Runtime.evaluate', {
       expression: COLLECT,
@@ -130,9 +135,25 @@ function selftest() {
   process.exit(fail === 0 ? 0 : 1);
 }
 
-if (process.argv.includes('--selftest')) selftest();
+// SAME GUARD, SAME DEFECT, MEASURED (M1-60). The suffix form read `import.meta.url.endsWith(
+// argv[1].replace(/^.*?(?=\/dev\/|$)/, ''))`, and when the IMPORTING program's path holds no
+// `/dev/` segment the lookahead falls through to `$`, the replace eats the whole string, and
+// `endsWith('')` is true for every string — so isMain is true on import and the CLI body runs. It
+// passed only because this checkout sits under ~/Documents/dev/projects and every path here
+// contains `/dev/` by accident. look.mjs imports snapshot() from this file, so the hazard was one
+// unlucky checkout path away from the gate's look leg. pathToFileURL because import.meta.url is
+// percent-encoded and the plain string form goes FALSE on a path with a space — the same bug with
+// the quiet face, where the CLI silently does nothing.
+const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/^.*?(?=\/dev\/|$)/, ''));
+// AND THE SELFTEST CALL WAS ITSELF UNGUARDED, one line ABOVE the guard added to fix this class:
+// `if (process.argv.includes('--selftest')) selftest();` ran on IMPORT whenever the importing
+// program's argv happened to carry --selftest, and selftest() ends in process.exit. look.mjs
+// imports snapshot() from this file, so the day look.mjs grows a --selftest of its own, snapshot's
+// would have run instead and exited 0 before look's ever started — a green tick for a suite that
+// never ran. Guarded now, like everything else below it.
+if (isMain && process.argv.includes('--selftest')) selftest();
+
 if (isMain) {
   const [, , url, given, w = '1536', h = '1024', theme = 'dark'] = process.argv;
   if (url === undefined || url === '--help') {

@@ -25,6 +25,10 @@ tasks.withType<Test>().configureEach {
         rootProject.layout.projectDirectory.asFileTree.matching {
             include("*/build.gradle.kts")
             include("settings.gradle.kts")
+            // V4-91 (2026-09-17): the Konsist map now READS the module law's own map out of
+            // build-logic, so an edit there must re-run the laws too, or a stale allowance could
+            // come back UP-TO-DATE-green.
+            include("build-logic/src/main/kotlin/**/*.kts")
         },
     ).withPropertyName("scannedModuleBuildFiles")
 }

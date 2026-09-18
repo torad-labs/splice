@@ -213,6 +213,41 @@ gate. That criterion forbids the work this oracle exists to drive, and the proof
     the campaign's remaining debt and it stays visible. It is REPORTED, NOT GATED, for the reason
     measured above: it moves on splits that touch nothing, so gating it penalises decomposition.
 
+THE PACKAGE SCALE (V4-93, 2026-09-17). Every number above is per FILE, and the tree has learned
+to pass it. The decomposition campaign moved concentration DOWN a level: a god object taken apart
+into a composer plus eleven collaborators lowers every file's C and leaves fifty-one files in one
+package, which is the same responsibility clump one directory up and is invisible to a file-scale
+oracle by construction. Measured 2026-09-17 on this tree, with the file census green (band HIGH
+0): splice.app.cli holds 84 of 631 production files and 5050.0 of the tree's C, splice.dialect
+.responses 80, splice.gateway.head 51 of the 99 files in :gateway. `head/` is the audit's own
+finding (A row 5) and it is not even the worst one.
+
+So the census gains a PACKAGE row — files per package and summed C per package, printed on every
+run — and the ratchet gains ONE gated number: the WORST package's file count, held exactly the way
+RATCHET_MAX_HIGH is held. A rise is a regression (a package absorbed another file); a FALL is a
+stale baseline (the remedy is printed, and a baseline above the measurement is unearned room, the
+6.14-UpstreamClient defect this file already records twice).
+
+WHY THE WORST PACKAGE'S FILE COUNT and not something cleverer:
+  · IT IS PARTITION-STABLE in the direction that matters. Splitting a FILE inside a package raises
+    that package's count, which is honest — the clump did get one file bigger — and it does not
+    move any OTHER package's count, so unlike the file-scale ratio this number is not a statistic
+    of a distribution every landing perturbs. There is no equivalent of the "47 untouched files
+    moved" measurement here.
+  · IT CANNOT BE SATISFIED BY WEAKENING. It reads no threshold and no band; the only way to move
+    it is to move files out of the worst package, or to edit a dated line in this file.
+  · SUMMED C IS REPORTED, NOT GATED, for the file census's own reason: it moves whenever any file
+    in the package is edited, so gating it would red a commit that made a package smaller in every
+    sense that matters. The count is the standing floor; the C column is what tells a package of 84
+    thin files from a package of 84 thick ones.
+  · KNOWN LIMIT, stated here rather than discovered later: it is a MAX, so a commit that moves one
+    file out of the worst package and two into the second-worst can net to a pass. The per-package
+    census printed beside it is what makes that visible; the ratchet is the floor, not the report.
+  · THE FILE SCALE IS UNTOUCHED. measure(), scan() and the HIGH-band arm are byte-for-byte the
+    semantics they were before this section: the package plane is an ADDITIONAL row and an
+    ADDITIONAL gated number, and --json's shape is deliberately unchanged so nothing that reads it
+    has to learn a new schema.
+
 USAGE
     python3 checks/concentration.py                      # full table, exit 0
     python3 checks/concentration.py --top 15             # worst 15 only
@@ -311,6 +346,79 @@ EXCEPTION_JUSTIFICATION = re.compile(r"^\d{4}-\d{2}-\d{2}: \S")
 RATCHET_RECORDED = "2026-08-19"
 RATCHET_MAX_HIGH = 0  # files in band HIGH  (re-measured 2026-08-19 after SseReader same-package split: 1 -> 0; HIGH band empty)
 
+# THE PACKAGE-SCALE BASELINE (V4-93) — the worst package's FILE COUNT, measured, never estimated.
+# Read THE PACKAGE SCALE in the module docstring first. Same discipline as RATCHET_MAX_HIGH: UP
+# records that a clump grew, DOWN is the remedy the gate itself prints. The package is named in the
+# comment so the diff reads without running anything, but the NAME is not gated — a different
+# package becoming the worst at the same count is not a regression, and gating the name would red a
+# commit that moved the clump without growing it.
+PACKAGE_RATCHET_RECORDED = "2026-09-17"
+PACKAGE_MAX_FILES = 84  # splice.app.cli, 84 of 631 production files (next: splice.dialect.responses 80, splice.gateway.head 51)
+
+
+def package_census(rows: list[dict]) -> list[dict]:
+    """One row per PACKAGE: files, summed C, median C. The package plane of the same census.
+
+    Derived from the same `rows` the file plane measures, so the two can never disagree about what
+    a file is or what its C is — and `median_C` is the identical statistic scan() already votes
+    with, printed so a reader can see the denominator a neighbour contributes."""
+    by_package: dict[str, list[dict]] = {}
+    for row in rows:
+        by_package.setdefault(row["package"], []).append(row)
+    census = [
+        {
+            "package": package,
+            "files": len(files),
+            "C": round(sum(f["C"] for f in files), 1),
+            "median_C": round(statistics.median([f["C"] for f in files]), 1),
+        }
+        for package, files in by_package.items()
+    ]
+    return sorted(census, key=lambda p: (-p["files"], -p["C"]))
+
+
+def report_packages(census: list[dict], top: int = 8) -> None:
+    """The package row of the census, printed on every run — a plane nobody prints is a plane
+    nobody grades, which is the whole reason this file's own leg once executed `true`."""
+    files = sum(p["files"] for p in census)
+    print(f"\nPACKAGE SCALE — {len(census)} package(s), {files} file(s); gated number is the worst FILE COUNT")
+    print(f"  {'package':44} {'files':>5} {'sum C':>8} {'median C':>9}")
+    for package in census[:top]:
+        print(f"  {package['package']:44} {package['files']:5d} {package['C']:8.1f} {package['median_C']:9.1f}")
+    if len(census) > top:
+        print(f"  ... {len(census) - top} more; full list `python3 checks/concentration.py --packages`")
+
+
+def package_problems(census: list[dict]) -> list[str]:
+    """The ONE gated package number: the worst package's file count, against PACKAGE_MAX_FILES.
+
+    Two-directional for the same reason the HIGH band is (see THE PACKAGE SCALE): a rise is a
+    regression, and a baseline held ABOVE the measurement is unearned room for the next one to hide
+    in. An empty census is a broken walk, not a clean tree, so it refuses rather than passing."""
+    if not census:
+        return [
+            "PACKAGE SCALE: the census is EMPTY — no production package was measured. A plane with no "
+            "denominator cannot pass; check SRC_GLOB against the tree."
+        ]
+    worst = census[0]
+    if worst["files"] > PACKAGE_MAX_FILES:
+        return [
+            f"PACKAGE REGRESSION: the worst package holds {worst['files']} files, baseline "
+            f"{PACKAGE_MAX_FILES} ({worst['package']}, sum C {worst['C']}). A package absorbed a file "
+            f"that nothing recorded — the file plane cannot see this, which is why the package plane "
+            f"exists. Move the file out, or raise PACKAGE_MAX_FILES in checks/concentration.py as a "
+            f"dated edit recording that the clump grew."
+        ]
+    if worst["files"] < PACKAGE_MAX_FILES:
+        return [
+            f"PACKAGE SLACK: the worst package holds {worst['files']} files ({worst['package']}) and "
+            f"the baseline still claims {PACKAGE_MAX_FILES}. Set PACKAGE_MAX_FILES = {worst['files']} "
+            f"and re-date PACKAGE_RATCHET_RECORDED in checks/concentration.py. A baseline held above "
+            f"the measured count is unearned room for the next regression to hide in — the same defect "
+            f"as a ceiling recorded above its file's measured ratio."
+        ]
+    return []
+
 
 def ceilings() -> dict[str, float]:
     return {path: ceiling for path, ceiling, _ in CEILING_EXCEPTIONS}
@@ -408,9 +516,18 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
     over = [r for r in graded if r["ratio"] > max_ratio]
     high = [r for r in graded if r["band"] == "HIGH"]
 
+    census = package_census(rows)
+    worst_files = census[0]["files"] if census else 0
+
     print(f"CONCENTRATION RATCHET — baseline recorded {RATCHET_RECORDED}, gate ratio {max_ratio}")
     print(f"  {'band HIGH':<22} baseline {RATCHET_MAX_HIGH:>3}   measured {len(high):>3}   [GATED]")
     print(f"  {f'files over {max_ratio}':<22} {'':>12} measured {len(over):>3}   [reported, not gated]")
+    # V4-93: the package plane's one gated number, printed beside the file plane's so a reader can
+    # check both against the baselines the run claims to enforce.
+    print(
+        f"  {'worst package files':<22} baseline {PACKAGE_MAX_FILES:>3}   measured {worst_files:>3}   "
+        f"[GATED, recorded {PACKAGE_RATCHET_RECORDED}]"
+    )
     by_file = {row["file"]: row for row in rows}
     for path, ceiling, _ in CEILING_EXCEPTIONS:
         row = by_file[path]
@@ -483,6 +600,10 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
                 f"CEILING BREACHED: {path} ratio {row['ratio']} is above its recorded ceiling {ceiling} "
                 f"(C={row['C']}). A ceiling freezes a known state; it does not stop watching."
             )
+    # V4-93: the package plane. An ADDITIONAL gated number — nothing above it was changed — so a
+    # commit that passes the file census and clumps a package is red on the commit that does it.
+    report_packages(census)
+    problems.extend(package_problems(census))
 
     if problems:
         print(f"\nFAIL: concentration ratchet — {len(problems)} problem(s):", file=sys.stderr)
@@ -491,7 +612,9 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
         return 1
     print(
         f"\nOK: concentration ratchet holds — band HIGH is exactly the {RATCHET_RECORDED} baseline "
-        f"({RATCHET_MAX_HIGH}), and all {len(CEILING_EXCEPTIONS)} exception(s) are within their own ceiling"
+        f"({RATCHET_MAX_HIGH}), the worst package holds exactly the {PACKAGE_RATCHET_RECORDED} baseline "
+        f"({PACKAGE_MAX_FILES} files), and all {len(CEILING_EXCEPTIONS)} exception(s) are within their "
+        f"own ceiling"
     )
     return 0
 
@@ -807,6 +930,11 @@ def main() -> int:
     ap.add_argument("--file", help="report one file and list its neighbours")
     ap.add_argument("--since", help="report what moved since a git ref, and whether it was own or neighbourhood")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--packages",
+        action="store_true",
+        help="print the PACKAGE-scale census in full rather than its worst 8 (V4-93)",
+    )
     args = ap.parse_args()
 
     if args.ratchet and args.since:
@@ -892,6 +1020,10 @@ def main() -> int:
                 return 1
         return 0
 
+    if args.packages and not (args.json or args.top or args.ratchet or args.file or args.since):
+        report_packages(package_census(rows), top=len(rows))
+        return 0
+
     if args.ratchet:
         if args.max_ratio is None:
             print(
@@ -921,6 +1053,8 @@ def main() -> int:
         high = [r for r in rows if r["band"] == "HIGH"]
         med = [r for r in rows if r["band"] == "moderate"]
         print(f"\n{len(rows)} files | HIGH {len(high)} | moderate {len(med)} | low {len(rows) - len(high) - len(med)}")
+        # V4-93: the package row of the census, on every run of the table.
+        report_packages(package_census(rows), top=len(rows) if args.packages else 8)
         report_exceptions(rows)
 
     if args.max_ratio is not None:

@@ -181,6 +181,12 @@ run "model catalogs single source" python3 checks/model-catalogs-single-source.p
 run "model catalogs selftest" bash checks/model-catalogs-single-source-selftest.sh
 run "autocloseable closed" python3 checks/autocloseable-closed.py check
 run "autocloseable closed selftest" bash checks/autocloseable-closed-selftest.sh
+run "public surface" python3 checks/public-surface.py --ratchet
+run "public surface selftest" bash checks/public-surface-selftest.sh
+run "constructor width" python3 checks/constructor-width.py --ratchet
+run "constructor width selftest" bash checks/constructor-width-selftest.sh
+run "schema keys consumed" python3 checks/schema-keys-consumed.py
+run "schema keys consumed selftest" bash checks/schema-keys-consumed-selftest.sh
 # V4-68: a @Test method JUnit never DISCOVERED is a green suite with a hole in it — no failure,
 # no skip, no warning, and the XML just looks one short. Found 2026-09-16: HeadServerCapacityTest
 # declared four @Test methods and its XML reported three, because the fourth's body ended in

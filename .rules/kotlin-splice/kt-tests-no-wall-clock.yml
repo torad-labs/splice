@@ -81,7 +81,7 @@
 #     gateway/control/src/test/kotlin/McpHostLifecycleTest.kt                     (4)
 #     gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt                     (3)
 #     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
-#     gateway/provider-grok/src/test/kotlin/grok/GrokAuthProviderTest.kt          (1)
+#     gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt   (1)
 #     gateway/core/src/test/kotlin/AsyncFileIoTest.kt                             (1)
 #     gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt                    (2)
 #     gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt                  (1)
@@ -148,7 +148,7 @@ ignores:
   - gateway/control/src/test/kotlin/McpHostLifecycleTest.kt
   - gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt
   - gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt
-  - gateway/provider-grok/src/test/kotlin/grok/GrokAuthProviderTest.kt
+  - gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt
   - gateway/core/src/test/kotlin/AsyncFileIoTest.kt
   - gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt
   - gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt

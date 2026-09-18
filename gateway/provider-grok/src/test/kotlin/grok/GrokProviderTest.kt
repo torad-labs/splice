@@ -4,7 +4,6 @@
 // quirks pinned (session-id cache key, effort clamp, detailed summary for full thinking) and OAuth.
 package grok
 
-import splice.core.model.ClientWindows
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -30,6 +29,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
+import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse

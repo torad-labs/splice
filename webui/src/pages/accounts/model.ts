@@ -21,7 +21,6 @@ export const EMPTIES = {
   /** GET /api/accounts is still a row: the per-head auth cards above this are the real answer. */
   pooledPending: { text: 'pooled accounts not built', source: `row ${PENDING_ACCOUNTS}` },
   noAccounts: { text: 'no accounts pooled', source: 'GET /api/accounts' },
-  noOpened: { text: 'no account opened', source: 'click a strip' },
 } as const;
 
 /** The head-group key for an account no head is riding. Its own group rather than dropped: an

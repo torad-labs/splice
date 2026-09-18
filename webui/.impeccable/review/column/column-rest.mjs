@@ -32,6 +32,7 @@ const PAGES = [
   ['fleet', '.myx-fleet-body', '.myx-fleet-bays', '.myx-fleet-detail'],
   ['models', '.myx-models-body', '.myx-models-bays', '.myx-models-detail'],
   ['sessions', '.myx-sx-board', '.myx-sx-bays', '.myx-sx-detail'],
+  ['accounts', '.myx-accounts-body', '.myx-accounts-bays', '.myx-accounts-detail'],
 ];
 
 // No backticks inside this literal: one in a comment terminated a sibling instrument's template
@@ -54,8 +55,11 @@ const READ = (body, bays, aside) => `(() => {
       col = Math.max(col, Math.round((r.right - ab.right) * 10) / 10);
       if (getComputedStyle(a).overflowX === 'visible') frame = Math.max(frame, Math.round((r.right - fw) * 10) / 10);
     }
-    // `scrolls` is the whole question for a clipped column: overflow-x auto with
+    // scrolls is the whole question for a clipped column: overflow-x auto with
     // scrollWidth === clientWidth is overflow: hidden wearing a better name.
+    // (No backticks in this comment. It lives INSIDE the READ template literal, and one here
+    //  terminates the string -- which is what this file's own header warns about, and what I
+    //  did anyway. The assertion below is that warning made mechanical.)
     past = { col, frame, overflowX: getComputedStyle(a).overflowX,
              scrolls: a.scrollWidth > a.clientWidth };
   }
@@ -68,6 +72,15 @@ const READ = (body, bays, aside) => `(() => {
     frame: window.innerWidth,
   });
 })()`;
+
+// THE WARNING ABOVE, MADE MECHANICAL. A backtick inside READ's template literal terminates the
+// string, and the failure reads like a logic bug rather than a quoting one -- it cost a debugging
+// round on M1-80 and another here, in a comment I added to this very file three lines under its
+// own warning not to. A warning a reader can skip is not a guard.
+{
+  const body = READ('.x', '.y', '.z');
+  if (body.includes('\u0060')) throw new Error('READ contains a backtick: it will terminate its own literal');
+}
 
 const CLICK = `(() => {
   const s = document.querySelector('.myx-strip');

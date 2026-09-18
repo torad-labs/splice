@@ -164,6 +164,12 @@ export function AccountsPage() {
     ? openKey.slice('head:'.length)
     : null;
   const anyHead = opened?.heads[0] ?? pooledHeads[0]?.head ?? claudeHeads[0]?.head ?? null;
+  // ONE EXPRESSION, NAMED, because this page's rest state is two conditions rather than one
+  // (M2-24, applying M1-123's decision). Five pages spell it `opened === null` twice -- once on
+  // aria-hidden and once on the content gate -- and the point of that decision is that the
+  // exposure and the content CANNOT DESYNC because they are the same expression. With a compound
+  // condition, writing it twice is how they drift, so it is named once and read twice.
+  const closed = opened === null && openedHead === null;
 
   return (
     <div
@@ -181,7 +187,7 @@ export function AccountsPage() {
 
       {accountsResource.data === null && fixture === null ? <Blank strips={4} /> : null}
 
-      <div className="myx-accounts-body">
+      <div className={closed ? 'myx-accounts-body' : 'myx-accounts-body myx-accounts-body-open'}>
         <div className="myx-accounts-bays">
           {pending ? (
             <>
@@ -223,15 +229,34 @@ export function AccountsPage() {
           <ClaudeBay rows={claudeHeads} openKey={openKey} onOpen={toggle} />
         </div>
 
-        <aside className="myx-accounts-detail" aria-label={S.detail}>
-          {opened !== null ? (
-            <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} />
-          ) : openedHead !== null ? (
-            <HeadActions head={openedHead} />
-          ) : (
-            <Empty text={EMPTIES.noOpened.text} source={EMPTIES.noOpened.source} />
+        {/* THE COLUMN IS A ZERO TRACK AT REST AND SWELLS OPEN (M2-24, the last page in the console
+            still resting one; the idiom is M1-116's and the landmark is M1-123's, both copied from
+            what fleet, sessions and projects SHIPPED rather than from a description of them).
+            Measured at rest before this: a 384x92 column in a 408x784 dead region, 20.3% of the
+            frame and the third worst in the console -- 63px of that content was the `no account
+            opened` placeholder, which goes with the column because an empty naming a panel that
+            does not exist yet is a caption, not a report.
+            THE 21px THAT WAS NOT A PLACEHOLDER IS AccountLogin, the `add account` reveal, and it
+            is NOT lost: HeadActions renders its own AccountLogin (account-login/index.tsx:305), so
+            opening any head still reaches it. What changes is that it is one click away instead of
+            always on screen, which is a real consequence and is reported on the row rather than
+            decided here. */}
+        <aside className="myx-accounts-detail" aria-label={S.detail} aria-hidden={closed}>
+          {closed ? null : (
+            <>
+              {/* The same three-way branch as before, minus the Empty arm that went with the
+                  resting column. The final `null` is unreachable by construction -- `closed` is
+                  false here, so one of the two is non-null -- and it is written out rather than
+                  collapsed to `openedHead ?? ''`, which would paper over that invariant with a
+                  fallback that can never be taken. */}
+              {opened !== null ? (
+                <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} />
+              ) : openedHead !== null ? (
+                <HeadActions head={openedHead} />
+              ) : null}
+              {anyHead === null ? null : <AccountLogin head={anyHead} />}
+            </>
           )}
-          {anyHead === null ? null : <AccountLogin head={anyHead} />}
         </aside>
       </div>
     </div>

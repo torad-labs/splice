@@ -28,15 +28,28 @@ import { resolve } from "node:path";
  *  renders THIS -- `['a', 'b']` -- not JSON, so a port that used JSON.stringify produced a
  *  DIFFERENT failure message than the original on every red path while agreeing on every green
  *  one. Caught by driving the mutants as a CLI rather than feeding detect() a fixed corpus. */
+/** Python escapes a character when str.isprintable() is False: categories Cc Cf Cs Co Cn Zl Zp,
+ *  and Zs except the plain space. Only \n \r \t get short spellings; the rest render \xNN below
+ *  0x100, \uNNNN below 0x10000, \UNNNNNNNN above. */
+const NON_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 function pyReprStr(s: string): string {
   const useDouble = s.includes("'") && !s.includes('"');
   const q = useDouble ? '"' : "'";
-  let body = s
-    .replaceAll("\\", "\\\\")
-    .replaceAll("\n", "\\n")
-    .replaceAll("\r", "\\r")
-    .replaceAll("\t", "\\t");
-  body = body.replaceAll(q, "\\" + q);
+  let body = "";
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) as number;
+    if (ch === "\\") body += "\\\\";
+    else if (ch === "\n") body += "\\n";
+    else if (ch === "\r") body += "\\r";
+    else if (ch === "\t") body += "\\t";
+    else if (ch === q) body += "\\" + q;
+    else if (NON_PRINTABLE.test(ch) && ch !== " ") {
+      body +=
+        cp < 0x100 ? "\\x" + cp.toString(16).padStart(2, "0")
+        : cp < 0x10000 ? "\\u" + cp.toString(16).padStart(4, "0")
+        : "\\U" + cp.toString(16).padStart(8, "0");
+    } else body += ch;
+  }
   return q + body + q;
 }
 function pyRepr(items: string[]): string {

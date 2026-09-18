@@ -27,7 +27,14 @@
    leftover ch is distributed across them, so the column grid is still the declared one and only the
    slack moves. That is the whole difference between bare paper and a full row. */
 .myx-usage .myx-strip { width: 100%; }
-.myx-usage .myx-sfield { flex: 1 1 auto; }
+/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
+   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
+   every row shape has the same cell count -- it does not, so the primitive now sets
+   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
+   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
+   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
+   changes it, and watches nothing happen. Verified dead on this page by DOM probe
+   before removal -- see the M1-93 note for the counts. */
 
 .myx-usage-head {
   display: flex;
@@ -114,4 +121,17 @@
   flex-wrap: wrap;
   gap: var(--space-5);
   margin: 0;
+}
+
+/* THE MOUNTED PANELS (M1-96). Two finished features that M2-07 exported and no page ever
+   rendered: they sat invisible while a census counted their sheets as eight of seventy-three
+   unexercised rules. The slot is a plain stack, not a grid, because the two panels have
+   different natural widths -- budgets is a column of field boxes per head, alerts is one
+   webhook and a test send -- and forcing them into one column count would be a layout
+   decision about content that never had one. */
+.myx-usage-panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin-block-start: var(--space-5);
 }

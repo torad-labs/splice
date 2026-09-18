@@ -10,4 +10,4 @@
 # because a second copy of the proof is a second thing to drift.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-exec python3 checks/config/knob-keys-documented.py --selftest
+exec bun checks/config/knob-keys-documented.ts --selftest

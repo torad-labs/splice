@@ -126,4 +126,4 @@ sweep joining on the node's own class calls it "never rendered" while it renders
 
     node webui/.impeccable/review/ink/probe-ink.mjs            # 26 pages, ink+ground+ancestry, ghost wall
     node webui/.impeccable/review/ink/probe-ink.mjs --selftest # the wall's five cases
-    node webui/.impeccable/review/ink/sweep-d7.mjs out.json  # the 187-rule denominator
+    bun webui/.impeccable/review/ink/sweep-d7.mjs out.json  # the 187-rule denominator

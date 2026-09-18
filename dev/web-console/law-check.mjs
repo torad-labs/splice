@@ -20,6 +20,21 @@
 //     ! grep ...                             a bare negation: the pass is the empty output
 //     test -z "$(grep ...)"                  emptiness as the pass, spelled out
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file.
+//   SHAPE ONE, does every FAIL reach the exit code? NOW YES, AND IT DID NOT. Two holes, both fixed
+//     here. The findings list has always driven `process.exit(result.findings.length === 0 ...)`,
+//     so the law-25/27 lines were honest. But the whole CLI hung off `import.meta.url ===
+//     file://${argv[1]}`, which is FALSE whenever the checkout path holds a character a URL escapes
+//     — measured, a single space — so the program printed nothing and exited 0. And a row that fell
+//     through the disposition chain would have been counted nowhere; the chain now sums and the
+//     identity is asserted against the row count.
+//   SHAPE TWO, if everything threw, what would it print? IT PRINTED CLEAN, AND NOW IT REFUSES.
+//     Three emptinesses, three answers. An unreadable LEDGER was already handled (`DID NOT RUN`,
+//     exit 2, with a subprocess case proving it). An unreadable ROW was already handled (`unreadable`
+//     by name, never dropped). An unreadable FENCE TREE was NOT: holdsCss returned false for it, so
+//     cssFences returned [], so `css.length > 0 && !buildLeg` was false and every law-25 finding
+//     vanished into `0 violation(s)`. That is now `undecidable`, a finding, and red.
+//
 // THE DENOMINATOR IS THE LEDGER FILE, NOT THE ROWS THAT LOOK INTERESTING. Every row gets a
 // disposition and a row in none of them fails BY NAME; a run that parses zero rows is an ERROR, not
 // a clean report, because a law check that reads an empty ledger and reports clean is the joke
@@ -37,10 +52,10 @@
 //   node dev/web-console/law-check.mjs --selftest mutation-proof both laws both ways
 //   node dev/web-console/law-check.mjs --json
 import { execFileSync } from 'node:child_process';
-import { readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 /** The campaign's ledger, or one named on the command line (the selftest points it at a fixture). */
@@ -82,26 +97,49 @@ export function readLedger() {
 
 // --------------------------------------------------------------------- law 25
 
-/** Does a path on disk hold a .css file? The `could touch CSS` question, answered by the tree. */
+/**
+ * Does a path on disk hold a .css file? THREE answers and not two: `yes`, `no`, `unknown`.
+ *
+ * M1-76, SHAPE TWO. This returned a BOOLEAN and every `catch` arm returned `false`, so a tree this
+ * process cannot read answered "holds no CSS" in the same word a readable empty one does. `check()`
+ * then computes `css.length > 0 && !buildLeg`, which is FALSE when css is empty — so on an
+ * unreadable tree EVERY law-25 finding disappears and the run prints `law 25: 0 violation(s)` and
+ * exits 0. That is the exact denominator law 34 is about: the summary was over a set that had
+ * emptied itself for a reason that has nothing to do with the property being checked.
+ *
+ * ENOENT stays a real `no`. A fence may legitimately name a path its own row is about to create,
+ * and "nothing is there" is an ANSWER — the tree said so. Anything else (EACCES, ELOOP, EIO,
+ * ENOTDIR) is `unknown`, and an unknown fence is a finding, because a check must be able to say it
+ * did not run (law 23). A .css found before the unreadable part decides the question: `yes` wins.
+ */
 function holdsCss(prefix) {
   const root = prefix.endsWith('/**') ? prefix.slice(0, -3) : prefix;
+  let unknown = false;
+  const note = (error) => { if (error.code !== 'ENOENT') unknown = true; };
   const walk = (dir, depth) => {
     if (depth > 6) return false;
     let entries;
-    try { entries = readdirSync(dir); } catch { return false; }
+    try { entries = readdirSync(dir); } catch (error) { note(error); return false; }
     for (const entry of entries) {
       const path = join(dir, entry);
       if (entry.endsWith('.css')) return true;
-      try { if (statSync(path).isDirectory() && walk(path, depth + 1)) return true; } catch { /* unreadable */ }
+      try { if (statSync(path).isDirectory() && walk(path, depth + 1)) return true; } catch (error) { note(error); }
     }
     return false;
   };
-  try { return statSync(root).isDirectory() ? walk(root, 0) : root.endsWith('.css'); } catch { return false; }
+  let found = false;
+  try { found = statSync(root).isDirectory() ? walk(root, 0) : root.endsWith('.css'); } catch (error) { note(error); }
+  return found ? 'yes' : unknown ? 'unknown' : 'no';
 }
 
 /** The fence entries that can touch CSS: an exact .css file, or a directory/glob holding one. */
 export function cssFences(files) {
-  return files.filter((entry) => entry.endsWith('.css') || holdsCss(entry));
+  return files.filter((entry) => entry.endsWith('.css') || holdsCss(entry) === 'yes');
+}
+
+/** The fence entries whose CSS question the tree REFUSED to answer. Not `no`, and not silence. */
+export function undecidableFences(files) {
+  return files.filter((entry) => !entry.endsWith('.css') && holdsCss(entry) === 'unknown');
 }
 
 // --------------------------------------------------------------------- law 27
@@ -130,9 +168,9 @@ export function absenceShapes(verify) {
  * Both laws over a set of rows. Every row gets a disposition: `ok`, or the violations it carries.
  * A leg can carry both laws at once and is reported for both.
  */
-export function check(rows, { cssFencesOf = cssFences } = {}) {
+export function check(rows, { cssFencesOf = cssFences, undecidableOf = undecidableFences } = {}) {
   const findings = [];
-  const dispositions = { ok: 0, 'law-25': 0, 'law-27': 0, both: 0, unreadable: 0 };
+  const dispositions = { ok: 0, 'law-25': 0, 'law-27': 0, both: 0, unreadable: 0, undecidable: 0 };
   for (const row of rows) {
     if (row.unreadable === true) {
       findings.push({ id: row.id, law: 0, detail: 'the ledger listed this row and get refused it (the ledger was being written while this leg read it) — it is unreadable, not absent' });
@@ -140,14 +178,23 @@ export function check(rows, { cssFencesOf = cssFences } = {}) {
       continue;
     }
     const css = cssFencesOf(row.files);
+    const undecided = undecidableOf(row.files);
     const buildLeg = row.verify !== null && /npx\s+vite\s+build/.test(row.verify);
     const missingBuild = css.length > 0 && !buildLeg;
     const shapes = absenceShapes(row.verify);
     const absent = shapes.length > 0 && shapes[0] !== 'no verify line';
-    if (missingBuild && absent) dispositions.both += 1;
+    // ONE disposition per row and they sum to the denominator (report() asserts the identity).
+    // `undecidable` takes the seat because law 25's answer for this row is not `no`, it is absent:
+    // a fence the tree refused to read cannot be graded green, and reporting it as ok is the
+    // failure holdsCss' three-state return exists to end.
+    if (undecided.length > 0) dispositions.undecidable += 1;
+    else if (missingBuild && absent) dispositions.both += 1;
     else if (missingBuild) dispositions['law-25'] += 1;
     else if (absent) dispositions['law-27'] += 1;
     else dispositions.ok += 1;
+    if (undecided.length > 0) {
+      findings.push({ id: row.id, law: 25, detail: `DID NOT RUN: ${undecided.join(', ')} could not be read (not ENOENT), so whether this fence can touch CSS is unknown and law 25 was not judged` });
+    }
     if (missingBuild) {
       findings.push({ id: row.id, law: 25, detail: `fence can touch CSS (${css.slice(0, 3).join(', ')}${css.length > 3 ? ', …' : ''}) and the verify carries no \`npx vite build\`` });
     }
@@ -166,7 +213,16 @@ function report(rows) {
     process.exit(2);
   }
   const d = result.dispositions;
-  console.log(`  dispositions: ${d.ok} ok, ${d['law-25']} law-25 only, ${d['law-27']} law-27 only, ${d.both} both, ${d.unreadable} unreadable`);
+  const settled = Object.values(d).reduce((a, b) => a + b, 0);
+  console.log(`  dispositions: ${d.ok} ok, ${d['law-25']} law-25 only, ${d['law-27']} law-27 only, ${d.both} both, ${d.unreadable} unreadable, ${d.undecidable} undecidable — ${settled} of ${result.rows} settled`);
+  // THE IDENTITY, ASSERTED AND NOT ASSUMED (M1-76). Every row carries exactly one disposition and
+  // absence is not one (§24). A row that fell through the chain would otherwise vanish from both
+  // the count and the findings, which is the same silence this file's header refuses in the
+  // empty-ledger case — one row wide instead of the whole ledger.
+  if (settled !== result.rows) {
+    console.error(`FAIL dispositions: ${settled} settled against ${result.rows} rows read — ${Math.abs(result.rows - settled)} row(s) carry no disposition`);
+    process.exit(2);
+  }
   // BOTH READINGS OF LAW 25, printed, because they differ by 4x and the difference is a ruling the
   // orchestrator owns: the strict reading is "any fence that could hold CSS" (the row's words), and
   // the narrow one is "a fence that names a .css file itself". Measured on the ledger as it stands.
@@ -214,6 +270,9 @@ function selftest() {
         verify: "npx tsc --noEmit && if grep -q x y; then exit 1; fi" }] },
   ];
   let bad = 0;
+  // The cases below the array count themselves, so the total is what RAN and never a literal that
+  // drifts away from it — the same defect one scale up (M1-49's gate-coverage summary said 20 of 21).
+  let extra = 0;
   for (const c of cases) {
     const result = check(c.rows, { cssFencesOf: cssFences });
     const got = [...new Set(result.findings.map((f) => `law-${f.law}`))].sort();
@@ -221,6 +280,49 @@ function selftest() {
     if (!ok) bad += 1;
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${c.label} — wanted [${c.want.join(', ')}], got [${got.join(', ')}]`);
   }
+  // ---- THE UNREADABLE TREE (M1-76), on the REAL filesystem and not on a stub. A stubbed
+  // `undecidableOf` would prove only that check() reacts to a list someone handed it, which is the
+  // half that was never in doubt; the half that was broken is holdsCss' answer, and the only thing
+  // that can produce that answer is a directory the process cannot read. chmod 000, and the three
+  // answers are asked of the EXPORTED surface the check actually calls.
+  {
+    const box = join(tmpdir(), `law-check-unreadable-${process.pid}`);
+    const locked = join(box, 'locked');
+    const mixed = join(box, 'mixed');
+    try {
+      mkdirSync(join(locked, 'inner'), { recursive: true });
+      writeFileSync(join(locked, 'inner', 'hidden.css'), 'a{}');
+      mkdirSync(join(mixed, 'shut'), { recursive: true });
+      writeFileSync(join(mixed, 'seen.css'), 'a{}');
+      chmodSync(locked, 0o000);
+      chmodSync(join(mixed, 'shut'), 0o000);
+      const one = (label, ok, detail) => { if (!ok) bad += 1; extra += 1; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label} — ${detail}`); };
+      const unreadable = [`${locked}/**`];
+      one('an UNREADABLE fence is `unknown`, not `no`',
+        undecidableFences(unreadable).length === 1 && cssFences(unreadable).length === 0,
+        `undecidable [${undecidableFences(unreadable).join(', ')}], cssFences [${cssFences(unreadable).join(', ')}]`);
+      const gone = [`${box}/never-created/**`];
+      one('an ENOENT fence is a real `no`: nothing is there, and the tree said so',
+        undecidableFences(gone).length === 0 && cssFences(gone).length === 0,
+        `undecidable [${undecidableFences(gone).join(', ')}], cssFences [${cssFences(gone).join(', ')}]`);
+      const partial = [`${mixed}/**`];
+      one('a .css found BEFORE the unreadable part decides it: `yes` wins over `unknown`',
+        cssFences(partial).length === 1 && undecidableFences(partial).length === 0,
+        `cssFences [${cssFences(partial).join(', ')}], undecidable [${undecidableFences(partial).join(', ')}]`);
+      // AND THE WHOLE POINT: the row this fence belongs to must not come back `ok`. Before this row
+      // it did — cssFences returned [], `css.length > 0` was false, and the law-25 arm never ran.
+      const result = check([{ id: 'X-1', status: 'done', files: unreadable, verify: 'npx tsc --noEmit' }]);
+      one('the row it fences is DID NOT RUN, not ok',
+        result.dispositions.undecidable === 1 && result.dispositions.ok === 0
+          && result.findings.length === 1 && result.findings[0].detail.startsWith('DID NOT RUN'),
+        `dispositions ${JSON.stringify(result.dispositions)}, findings ${result.findings.length}`);
+    } finally {
+      chmodSync(locked, 0o755);
+      chmodSync(join(mixed, 'shut'), 0o755);
+      rmSync(box, { recursive: true, force: true });
+    }
+  }
+
   // The empty-ledger case, run as a real subprocess against a fixture ledger with no rows, so the
   // exit code is the evidence rather than an assertion about it.
   {
@@ -232,18 +334,31 @@ function selftest() {
     rmSync(fixture, { force: true });
     const ok = status === 2;
     if (!ok) bad += 1;
+    extra += 1;
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  an empty ledger is DID NOT RUN, not a clean report — wanted exit 2, got ${status}`);
   }
-  const total = cases.length + 1;
+  const total = cases.length + extra;
   console.log(bad === 0 ? `\nselftest ${total}/${total} PASS` : `\nselftest ${total - bad}/${total}, ${bad} wrong`);
   process.exit(bad === 0 ? 0 : 1);
 }
 
 // ------------------------------------------------------------------------ CLI
 
-/** The CLI runs only when this file is the program: an unguarded body made `import` run a real
- *  ledger check, which the selftest's own empty-ledger case caught by getting exit 1 instead of 2. */
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * The CLI runs only when this file is the program: an unguarded body made `import` run a real
+ * ledger check, which the selftest's own empty-ledger case caught by getting exit 1 instead of 2.
+ *
+ * pathToFileURL AND NOT `file://${argv[1]}` (M1-76, SHAPE ONE, measured rather than recalled).
+ * import.meta.url is percent-encoded and argv[1] is not, so on any checkout path holding a space
+ * — or any character a URL escapes — the string form is FALSE when this file IS the program, the
+ * whole CLI body is skipped, and node exits 0 having checked nothing. Measured 2026-09-18 by
+ * copying dev/ under a directory named `has space`: this same file printed 95 rows and four
+ * dispositions from the worktree and printed NOTHING, exit 0, from the copy. A law check that
+ * silently does not run is the purest form of a check that gates nothing, and its verify line
+ * cannot tell that from a clean ledger. theme.mjs and snapshot.mjs carry the same guard for the
+ * same reason (M1-60); this file and type-ladder.mjs and capture.mjs were the three left behind.
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   if (args.includes('--selftest')) selftest();
   const result = report(readLedger());

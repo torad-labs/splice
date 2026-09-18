@@ -8,9 +8,17 @@
  * 2026-09-18 it held 96 Python files and 35,166 Python lines against ZERO .ts
  * outside webui/. A session that reads "match the surrounding style" and then
  * looks at the surrounding style learns Python. The clearest evidence of the
- * drift is .dev/web-console/idle-watch.py, whose own docstring records that it
+ * drift WAS .dev/web-console/idle-watch.py, whose own docstring recorded that it
  * was "vendored from grailseeker-bot .dev/campaigns/idle-watch.ts ... ported to
  * python" — a TypeScript original, deliberately converted the wrong way.
+ *
+ * THAT FILE IS FIXED, AND THIS PARAGRAPH STAYS IN THE PAST TENSE ON PURPOSE. M1-88 ported it
+ * back to .dev/web-console/idle-watch.ts under bun on 2026-09-18, and its burndown line is burned
+ * off with it — a file that no longer exists cannot hold an allowlist entry, which is the
+ * burn-down burning down rather than the list being weakened. The scar is kept because the wall
+ * is the reason it got fixed: the instance sat in the same directory as the rule that names it,
+ * and it took a row to remove it. A wall that erases its own exhibits the moment they are
+ * repaired cannot show the next session what the drift looks like.
  *
  * So the rule is a WALL now, in the idiom the rest of checks/ already uses:
  *
@@ -281,6 +289,24 @@ function staleVerifies(): string[] {
       for (const [, runtime, target] of verify.matchAll(/(python3?|bun)\s+([A-Za-z0-9_./-]+\.(?:py|ts))/g)) {
         const wrong = runtime.startsWith("python") ? target.endsWith(".ts") : target.endsWith(".py");
         if (wrong) out.push(`${ledger} ${id} [${status}] -> ${runtime} ${target} (wrong runtime for that extension)`);
+      }
+      // THE FOURTH CALLER SURFACE, reported by splice-builder2 on 2026-09-18 from a hole it found
+      // in this very census and did not exploit. A wall that collapses two items is registered
+      // TWICE, and the items owning it name it in `files =` as well as in the registry — so a
+      // conversion has up to four caller surfaces (registry rows, verify=, files=, the burn-down)
+      // and this arm was grading only two of them. It read 0 while two files= entries were already
+      // stale.
+      //
+      // LIVE ROWS AND LITERAL PATHS ONLY, both boundaries measured rather than chosen. Across every
+      // tracked ledger: 23 stale .py entries sit in files= lists, and ALL 23 are on done/verified
+      // rows, where files= is the record of what the row touched — CX-07, which raised this, is
+      // `verified`. On rows that will still run: zero. And 456 of the entries are GLOBS, which
+      // cannot be existence-checked at all (a glob matching nothing is a legitimate fence for work
+      // not yet done), so they are skipped rather than guessed at.
+      const files = block.match(/^files\s*=\s*\[([\s\S]*?)\]/m);
+      for (const [, entry] of (files?.[1] ?? "").matchAll(/"([^"]+)"/g)) {
+        if (entry.includes("*") || !entry.endsWith(".py") || existsSync(entry)) continue;
+        out.push(`${ledger} ${id} [${status}] -> ${entry} (files= fence names a file that is gone)`);
       }
     }
   }

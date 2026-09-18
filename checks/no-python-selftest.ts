@@ -6,7 +6,7 @@
  *  refused and the mutation never happened. An arm that grades a mutation it
  *  did not make is the failure this whole wall family exists to catch. */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -212,6 +212,27 @@ arm("a TODO row naming the WRONG runtime for the extension", "red", (r) => {
   writeFileSync(join(r, LIST), list(["a.py"], [".dev/campaigns/c.toml"]));
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
 }, (r) => existsSync(join(r, "checks", "w.ts")));
+
+// The fourth caller surface: a live row whose files= fence names a .py that is gone. Reported by
+// splice-builder2 from a hole in the census itself — a wall registered against two items is named
+// in BOTH their files= lists, and updating one leaves the other stale.
+arm("a TODO row whose files= names a missing .py", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  mkdirSync(join(r, "dev", "campaigns"), { recursive: true });
+  writeFileSync(join(r, "dev", "campaigns", "c.toml"), `[[items]]\nid = "T-5"\nstatus = "todo"\nfiles = ["checks/vanished.py"]\n`);
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !existsSync(join(r, "checks", "vanished.py")));
+
+arm("a TODO row whose files= is a GLOB", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  mkdirSync(join(r, "dev", "campaigns"), { recursive: true });
+  writeFileSync(join(r, "dev", "campaigns", "c.toml"), `[[items]]\nid = "T-6"\nstatus = "todo"\nfiles = ["checks/*.py"]\n`);
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+  // The setup that must take is the GLOB being in the ledger — `checks/` itself always exists here,
+  // because the fixture creates it, so asserting on that graded nothing.
+}, (r) => readFileSync(join(r, "dev", "campaigns", "c.toml"), "utf8").includes('files = ["checks/*.py"]'));
 
 arm("an unparseable burn-down list", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");

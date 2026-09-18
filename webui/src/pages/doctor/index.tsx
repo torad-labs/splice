@@ -185,7 +185,10 @@ export function DoctorPage() {
   const headsKeys = (heads ?? []).map((head) => head.key);
 
   return (
-    <div className="myx-doc">
+    <div
+      className="myx-doc"
+      {...(import.meta.env.DEV && report !== null && fixture !== null ? { 'data-sample': fixture } : {})}
+    >
       <header className="myx-doc-head">
         <h1 className="myx-doc-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />

@@ -17,16 +17,28 @@ import { Bay, Empty, HolderEdge } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
 import { HeadCatalogBay, ModelDetail } from './components';
 import { DEFAULT_VIEWS, EMPTIES, byProvider, findModel } from './model';
-import { fixtureCatalog, fixtureName } from './fixtures/models';
 import { S } from './strings';
 import './models.css';
 
 const PAGE_ID = 'models';
 const POLL_MS = 30000;
 
-export function ModelsBoard({ catalog, sample = false }: {
+/** The name this page's fixture answers to: the fixture's own FILE name (CONTRACTS.md section 4).
+ *  One vocabulary for every page, so a driver's table is the fixtures directory listing. */
+const FIXTURE = 'models';
+
+/** The fixture name this page accepts, or null. The name must RESOLVE and not merely be present: a
+ *  page that renders fixture bytes for a name it does not carry would set the capture marker to a
+ *  fixture that does not exist, which is the stale marker by another route (law 23). Exported
+ *  because a test pins exactly that. */
+export function fixtureModels(name: string | null): string | null {
+  return import.meta.env.DEV && name === FIXTURE ? name : null;
+}
+
+export function ModelsBoard({ catalog, sample }: {
   catalog: ModelsPayload | PendingRoute | null;
-  sample?: boolean;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise. */
+  sample?: string | undefined;
 }) {
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [open, setOpen] = useState<string | null>(null);
@@ -36,11 +48,14 @@ export function ModelsBoard({ catalog, sample = false }: {
   const opened = catalog === null ? null : findModel(catalog, open);
 
   return (
-    <div className="myx-models">
+    <div
+      className="myx-models"
+      {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
+    >
       <header className="myx-models-head">
         <h1 className="myx-models-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
+        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
       {catalog === null ? <Blank strips={5} /> : null}
@@ -82,14 +97,39 @@ export function ModelsBoard({ catalog, sample = false }: {
 export default function ModelsPage() {
   const { search } = useLocation();
   const models = useModels((state) => state);
+  const [sample, setSample] = useState<{ name: string; payload: ModelsPayload } | null>(null);
   useEffect(() => startModelsPolling(POLL_MS), []);
 
-  const fixture = fixtureName(search, import.meta.env.DEV);
+  // The name must RESOLVE, not merely be present (law 23): a page that rendered fixture bytes for a
+  // name it does not carry would set the capture marker to a fixture that does not exist.
+  const name = fixtureModels(new URLSearchParams(search).get('fixture'));
+
+  useEffect(() => {
+    if (name === null) {
+      // A name that is asked for and then dropped must take the marker with it: an early return
+      // that leaves the previous state in place is the stale marker this row exists to prevent
+      // (measured in a browser: five pages kept one across a hash change).
+      setSample(null);
+      return undefined;
+    }
+    // The specifier is BUILT AT RUNTIME, not written as a literal, and the module is reached by a
+    // DYNAMIC import: a static `import { fixtureCatalog } from './fixtures/models'` is a real
+    // dependency edge whatever the DEV branch says, so the fixture's bytes are inlined into
+    // dist/index.html and ship to the operator (measured 2026-09-18 - the wall named this fixture's
+    // literals, and this is the import CONTRACTS.md section 4 warns about).
+    void import(/* @vite-ignore */ `./fixtures/${name}.ts`)
+      .then((module: { fixtureCatalog?: ModelsPayload }) => {
+        setSample(module.fixtureCatalog === undefined ? null : { name, payload: module.fixtureCatalog });
+      })
+      .catch(() => undefined);
+  }, [name]);
+
+  const catalog = sample === null ? models.data : sample.payload;
 
   return (
     <>
       {models.error === null ? null : <Fault message={models.error} />}
-      <ModelsBoard catalog={fixture === null ? models.data : fixtureCatalog} sample={fixture !== null} />
+      <ModelsBoard catalog={catalog} sample={sample?.name} />
     </>
   );
 }

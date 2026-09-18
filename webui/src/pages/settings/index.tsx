@@ -52,6 +52,15 @@ export { dispositions };
  *  (CONTRACTS.md section 4). */
 const FIXTURE = 'settings';
 
+/** Whether the address asks for THIS page's fixture, by that fixture's own FILE name. Exported
+ *  because the capture marker's whole value rests on it (law 23): a name this page does not carry
+ *  is not a fixture, so the page must end with no marker rather than a stale one, and a test pins
+ *  that here rather than inferring it from a rendered label. */
+export function wantsFixture(search: string): boolean {
+  return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
+}
+
+
 /** The sample the fixture module hands over once it has loaded. */
 interface SettingsFixture {
   config: ConfigPayload;
@@ -82,19 +91,39 @@ export function SettingsPage() {
     void fetchConfig(head === 'global' ? undefined : head);
   }, [head]);
 
-  const [fixture, setFixture] = useState<SettingsFixture | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: SettingsFixture } | null>(null);
+  const fixture = sample === null ? null : sample.payload;
 
   // The fixture loads through a DYNAMIC import inside the DEV branch: a static import — even of one
   // constant — is a dependency edge the bundler honours, so the fixture module and its strings
   // would ship inside the single-file console. The page renders the store's payload while the
   // module loads and swaps in the sample when it arrives.
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    if (new URLSearchParams(search).get('fixture') !== FIXTURE) return;
-    void import('./fixtures/settings').then((module) => setFixture({
-      config: module.fixtureConfig,
-      topology: module.fixtureTopology,
-    }));
+    if (!wantsFixture(search)) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return;
+    }
+    // The specifier is BUILT AT RUNTIME, not written as a literal: a statically analyzable
+    // `import('./fixtures/x')` stays a dependency edge through the single-file build even when the
+    // branch around it is dead, so the module's bytes are inlined into dist/index.html (measured
+    // 2026-09-18: this page shipped its own literals that way; the pages that compose the specifier
+    // at runtime shipped none). CONTRACTS.md section 4 asks for the dynamic import; this is the half
+    // of it the bundler can actually drop.
+    void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`).then((module: {
+      fixtureConfig?: ConfigPayload;
+      fixtureTopology?: Record<string, unknown>;
+    }) => {
+      if (module.fixtureConfig === undefined || module.fixtureTopology === undefined) {
+        setSample(null);
+        return;
+      }
+      setSample({ name: FIXTURE, payload: { config: module.fixtureConfig, topology: module.fixtureTopology } });
+    }).catch(() => undefined);
   }, [search]);
 
   const configPayload = fixture === null ? config.data : fixture.config;
@@ -142,11 +171,14 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="myx-settings">
+    <div
+      className="myx-settings"
+      {...(import.meta.env.DEV && sample !== null ? { 'data-sample': sample.name } : {})}
+    >
       <header className="myx-settings-head">
         <h1 className="myx-settings-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {fixture === null ? null : <HolderEdge state="grey" label={S.sample} />}
+        {sample === null ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
       {config.error === null ? null : <Fault message={config.error} />}

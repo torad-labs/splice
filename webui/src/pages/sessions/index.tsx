@@ -100,13 +100,15 @@ function EdgeRows({ edges, rows }: { edges: SessionEdgesSlice | null; rows: read
 }
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, edges = null, locked = false, error = null, sample = false }: {
+export function SessionsBoard({ payload, edges = null, locked = false, error = null, sample }: {
   payload: SessionsPayload | null;
   edges?: SessionEdgesSlice | null;
   locked?: boolean;
   error?: string | null;
   /** True when a capture fixture is feeding this board, which the header prints. */
-  sample?: boolean;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
+   *  marker and the sample chrome are the same value, so they cannot disagree. */
+  sample?: string | undefined;
 }) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -165,10 +167,17 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
         <Reveal label={S.headless}>
           <p className="myx-sx-note">{payload?.note ?? S.registry}</p>
         </Reveal>
-        {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
+        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
-      <div className={open === null ? 'myx-sx-board' : 'myx-sx-board myx-sx-board-open'}>
+      {/* The capture marker (law 23): set on the same DEV branch as the fixture import and
+          carrying that fixture's own file name, so a driver asserts "the fixture loaded" instead of
+          inferring it. The guard is IN the expression, so a production build drops the branch and
+          the attribute's very name - fixture-leak.mjs asserts it is absent from dist. */}
+      <div
+        className={open === null ? 'myx-sx-board' : 'myx-sx-board myx-sx-board-open'}
+        {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
+      >
         <div className="myx-sx-bays">
           {rows.length === 0 ? (
             <Empty text="no sessions registered" source="/api/sessions" />
@@ -249,6 +258,20 @@ export function SessionsBoard({ payload, edges = null, locked = false, error = n
 }
 
 /** The DEV-only sample board a capture reads (CONTRACTS.md section 4, the fixture rule). */
+/** One fixture, as ONE value: the name it was asked for and the bytes that arrived. The capture
+ *  marker is set from this and from nothing else, so a name with no module can never leave a
+ *  marker behind - a marker that survives a failed import says the opposite of the truth (law 23:
+ *  an instrument must be able to distinguish PASSED, FAILED and DID NOT RUN). Exported because a
+ *  test pins exactly that, with a name that resolves to no file at all. */
+export async function loadFixture(name: string): Promise<{ name: string; payload: SessionsPayload } | null> {
+  if (!import.meta.env.DEV) return null;
+  const module = await import(/* @vite-ignore */ `./fixtures/${name}.ts`)
+    .then((loaded: { fixture?: SessionsPayload }) => loaded)
+    .catch(() => null);
+  const payload = module === null ? null : module.fixture ?? null;
+  return payload === null ? null : { name, payload };
+}
+
 function fixtureName(): string | null {
   if (!import.meta.env.DEV || typeof window === 'undefined') return null;
   const fromSearch = new URLSearchParams(window.location.search).get('fixture');
@@ -261,21 +284,31 @@ export default function SessionsPage() {
   const locked = useSession((s) => s.locked);
   const registry = useSessionRegistry((s) => s);
   const edges = useSessionEdges((s) => s);
-  const [fixture, setFixture] = useState<SessionsPayload | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: SessionsPayload } | null>(null);
   const name = fixtureName();
+  const fixture = sample === null ? null : sample.payload;
 
   useEffect(() => startSessionsPolling(5000), []);
 
   // The fixture is imported by name at runtime, never bundled: the shipped dist
   // carries no sample bytes, and the branch is dead outside DEV.
   useEffect(() => {
-    if (name === null) return undefined;
+    if (name === null) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return undefined;
+    }
     let live = true;
-    void import(/* @vite-ignore */ `./fixtures/${name}.ts`)
-      .then((module: { fixture?: SessionsPayload }) => {
-        if (live) setFixture(module.fixture ?? null);
-      })
-      .catch(() => undefined); // a missing fixture is not a page error: the live read stands
+    // The whole value, name and bytes together: a second state for the name would be the stale
+    // marker this row exists to prevent. A missing fixture is not a page error: the live read
+    // stands, and the page carries no marker.
+    void loadFixture(name).then((loaded) => {
+      if (live) setSample(loaded);
+    });
     return () => {
       live = false;
     };
@@ -287,7 +320,7 @@ export default function SessionsPage() {
       edges={edges.data}
       locked={locked}
       error={registry.error}
-      sample={fixture !== null}
+      sample={sample?.name}
     />
   );
 }

@@ -80,6 +80,15 @@ const POLL_MS = 30000;
  *  1_787_400_000_000, in no other file, printed as 17874e8 in dist). */
 const FIXTURE = 'usage';
 
+/** Whether the address asks for THIS page's fixture, by that fixture's own FILE name. Exported
+ *  because the capture marker's whole value rests on it (law 23): a name this page does not carry
+ *  is not a fixture, so the page must end with no marker rather than a stale one, and a test pins
+ *  that here rather than inferring it from a rendered label. */
+export function wantsFixture(search: string): boolean {
+  return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;
+}
+
+
 /** The sample the fixture module hands over once it has loaded. */
 interface UsageFixture {
   economics: EconomicsPayload;
@@ -218,11 +227,13 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
   );
 }
 
-export function UsageBoard({ payload, catalog, now, sample = false }: {
+export function UsageBoard({ payload, catalog, now, sample }: {
   payload: EconomicsPayload | null;
   catalog: ModelsPayload | PendingRoute | null;
   now: number;
-  sample?: boolean;
+  /** The fixture's own file name when a fixture fed this board, undefined otherwise: the capture
+   *  marker and the sample chrome are the same value, so they cannot disagree. */
+  sample?: string | undefined;
 }) {
   const views = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [windowIndex, setWindowIndex] = useState(1);
@@ -232,11 +243,14 @@ export function UsageBoard({ payload, catalog, now, sample = false }: {
   const active = heads.find((head) => head.key === open) ?? heads[0] ?? null;
 
   return (
-    <div className="myx-usage">
+    <div
+      className="myx-usage"
+      {...(import.meta.env.DEV && sample !== undefined ? { 'data-sample': sample } : {})}
+    >
       <header className="myx-usage-head">
         <h1 className="myx-usage-title">{S.title}</h1>
         <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
-        {sample ? <HolderEdge state="grey" label={S.sample} /> : null}
+        {sample === undefined ? null : <HolderEdge state="grey" label={S.sample} />}
       </header>
 
       {/* A row of selectable things is the rail's idiom, not a Key: the state rides a HolderEdge
@@ -308,19 +322,39 @@ export default function UsagePage() {
   useEffect(() => startEconomicsPolling(POLL_MS), []);
   useEffect(() => startModelsPolling(POLL_MS), []);
 
-  const [fixture, setFixture] = useState<UsageFixture | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: UsageFixture } | null>(null);
+  const fixture = sample === null ? null : sample.payload;
 
   // The fixture loads through a DYNAMIC import inside the DEV branch, so it is a build-time
   // nothing: `import.meta.env.DEV` is statically false in a production build, the branch is
   // dropped, and the fixture is not a dependency of anything that ships. The board renders the
   // store's payload while the module loads and swaps in the sample when it arrives.
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    if (new URLSearchParams(search).get('fixture') !== FIXTURE) return;
-    void import('./fixtures/usage').then((module) => setFixture({
-      economics: module.fixtureEconomics,
-      models: module.fixtureModels,
-    }));
+    if (!wantsFixture(search)) {
+    // The address no longer asks for this page's fixture, so the marker must GO: a name that is
+    // asked for and then dropped is exactly the stale marker this row exists to prevent (measured
+    // in a browser on 2026-09-18 - five pages kept one across a hash change, because the early
+    // return left the previous state in place; a static render cannot see an effect, so the suite
+    // was green while it happened).
+      setSample(null);
+      return;
+    }
+    // The specifier is BUILT AT RUNTIME, not written as a literal: a statically analyzable
+    // `import('./fixtures/x')` stays a dependency edge through the single-file build even when the
+    // branch around it is dead, so the module's bytes are inlined into dist/index.html (measured
+    // 2026-09-18: this page shipped its own literals that way; the pages that compose the specifier
+    // at runtime shipped none). CONTRACTS.md section 4 asks for the dynamic import; this is the half
+    // of it the bundler can actually drop.
+    void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`).then((module: {
+      fixtureEconomics?: EconomicsPayload;
+      fixtureModels?: ModelsPayload;
+    }) => {
+      if (module.fixtureEconomics === undefined || module.fixtureModels === undefined) {
+        setSample(null);
+        return;
+      }
+      setSample({ name: FIXTURE, payload: { economics: module.fixtureEconomics, models: module.fixtureModels } });
+    }).catch(() => undefined);
   }, [search]);
 
   const payload = fixture === null ? economics.data : fixture.economics;
@@ -334,7 +368,7 @@ export default function UsagePage() {
         payload={payload}
         catalog={catalog}
         now={fixture === null ? Date.now() : payload === null ? 0 : payload.generated_at}
-        sample={fixture !== null}
+        sample={sample?.name}
       />
     </>
   );

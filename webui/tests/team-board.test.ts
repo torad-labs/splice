@@ -151,23 +151,36 @@ describe('against a daemon that has no teams route', () => {
 describe('the fixture stays out of a production bundle', () => {
   const source = read('webui/src/pages/teams/index.tsx');
 
-  test('the fixture is never reached by a static import', () => {
-    // A static import makes the fixture reachable whether or not the guard's
-    // branch runs, so the bundler keeps its bytes. Measured: the comp's words
-    // were in dist/index.html until this import became a dynamic one.
-    expect(source).not.toMatch(/^import .*from '\.\/fixtures\/hero'/m);
-    expect(source).toContain("import('./fixtures/hero')");
+  test('the fixture is never reached by a static import, and its specifier is not a literal', () => {
+    // A static import makes the fixture reachable whether or not the guard's branch runs, so the
+    // bundler keeps its bytes. Measured: the comp's words were in dist/index.html until this import
+    // became a dynamic one. And the specifier must be COMPOSED AT RUNTIME (M1-20): a statically
+    // analyzable `import('./fixtures/hero')` stays a dependency edge through the single-file build
+    // even when the branch around it is dead, which shipped this fixture's bytes again - the wall
+    // named 15 of them.
+    expect(source).not.toMatch(/^import .*from '\.\/fixtures\//m);
+    expect(source).toContain('import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`)');
   });
 
-  test('the only use of the fixture sits behind the dev guard', () => {
+  test('every use of the fixture sits behind the dev guard', () => {
     const guard = source.indexOf('import.meta.env.DEV');
     expect(guard, 'the dev guard is gone from the page').toBeGreaterThan(-1);
     const uses = [...source.matchAll(/heroBoard/g)].map((match) => match.index ?? -1);
-    expect(uses.length, 'the fixture must be referenced once, at its load').toBe(1);
-    expect(uses[0]).toBeGreaterThan(guard);
+    expect(uses.length, 'the fixture must be referenced at its load').toBeGreaterThan(0);
+    for (const at of uses) expect(at).toBeGreaterThan(guard);
   });
 
   test('the guard is a static condition the bundler can eliminate', () => {
-    expect(source).toContain('if (!(import.meta.env.DEV &&');
+    // The guard moved into `wantsFixture` (M1-20) so that the load and the capture marker are one
+    // decision, and it is still a STATIC conjunction: `import.meta.env.DEV` is replaced by false in
+    // a production build, so the branch — and the fixture with it — is dropped. A guard read from a
+    // variable would keep the branch reachable and the bytes with it, which is the measured leak
+    // this whole group exists for.
+    expect(source).toContain("return import.meta.env.DEV && new URLSearchParams(search).get('fixture') === FIXTURE;");
+    // The branch is braced because it CLEARS the fixture state before returning: an early return
+    // that left the previous value in place kept a stale capture marker across a hash change
+    // (measured in a browser, M1-20).
+    expect(source).toContain('if (!wantsFixture(search)) {');
+    expect(source).toContain('setSample(null);');
   });
 });

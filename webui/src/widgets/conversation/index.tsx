@@ -53,9 +53,17 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
         <div className="myx-cv-turn" key={message.index}>
           <Strip edge="grey" edgeLabel={message.role} ariaLabel={`${message.role} turn ${message.index}`}>
             <StripField w={7} label={S.turn} value={message.index} />
-            {message.ts === undefined ? null : <StripField w={7} label={S.at} value={atClock(message.ts)} />}
-            {message.tool === undefined ? null : <StripField w={14} label={S.tool} value={message.tool} />}
-            {message.result === true ? <StripField w={9} label={S.tool} value={S.result} /> : null}
+            {/* THE TRACK RENDERS EMPTY (M1-107). These three rendered the FIELD only when the
+                data had something for it, so a turn with no timestamp, no tool or no result was a
+                row with three fewer cells -- and the property a field grid buys is that field N
+                lands at the same x on every strip, which a column that appears and disappears per
+                row destroys. Four sites wrote this defect in two different forms (the third here
+                is the INVERTED ternary); twenty-two elsewhere render the field and fall back the
+                VALUE, which is what a ledger does with an optional value. The cell is a track: it
+                is drawn whether or not this row has anything to put in it. */}
+            <StripField w={7} label={S.at} value={message.ts === undefined ? '' : atClock(message.ts)} />
+            <StripField w={14} label={S.tool} value={message.tool ?? ''} />
+            <StripField w={9} label={S.tool} value={message.result === true ? S.result : ''} />
             <StripField w={10} label={S.size} value={message.text.length} />
           </Strip>
           <Reveal label={S.body}>

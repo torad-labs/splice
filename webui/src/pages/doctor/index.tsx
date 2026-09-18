@@ -52,26 +52,6 @@ function CopyFix({ command }: { command: string }) {
   );
 }
 
-/** The rack's columns: the check's id and the fix the daemon offers for it (CONTRACTS.md
- *  section 2, m1 design review B9). The bay head prints them once. */
-const CHECK_COLUMNS: readonly { key: string; label: string; w: number }[] = [
-  { key: 'checks', label: S.checks, w: WIDE },
-  { key: 'fix', label: S.fix, w: WIDE },
-];
-
-/** The rack's column names, printed once on the bay head instead of on every strip. */
-function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
-  return (
-    <>
-      {columns.map((column) => (
-        <span className="myx-doc-col" key={column.key} style={{ width: `${column.w}ch` }}>
-          <span className="myx-doc-col-name">{column.label}</span>
-        </span>
-      ))}
-    </>
-  );
-}
-
 export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; selected: boolean; onOpen: () => void }) {
   const fix = checkFix(check);
   return (
@@ -83,12 +63,12 @@ export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; se
       onOpen={onOpen}
       ariaLabel={check.id}
     >
-      <StripField w={WIDE} value={check.id} mono={false} />
+      <StripField w={WIDE} label={S.checks} value={check.id} mono={false} />
       {/* No status field: the holder edge above prints the identical word on every strip (m1
           design review B10). A check with nothing to fix prints the absence glyph in the fix
           cell; the sentence `no fix offered` is what the opened check's note says, which is where
           a Doctor fix's paragraph belongs. */}
-      <StripField w={WIDE} value={fix ?? S.absent} mono={false} />
+      <StripField w={WIDE} label={S.fix} value={fix ?? S.absent} mono={false} />
     </Strip>
   );
 }
@@ -211,12 +191,7 @@ export function DoctorPage() {
             <Empty text={EMPTIES.noChecks.text} source={EMPTIES.noChecks.source} />
           ) : (
             groups.map((group) => (
-              <Bay
-                key={group.key}
-                label={group.key}
-                count={group.checks.length}
-                fields={<ColumnHeads columns={CHECK_COLUMNS} />}
-              >
+              <Bay key={group.key} label={group.key} count={group.checks.length}>
                 {group.checks.map((check) => (
                   <CheckStrip
                     key={check.id}

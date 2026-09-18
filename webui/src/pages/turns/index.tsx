@@ -40,7 +40,7 @@ import { RequestDrawer, Waterfall } from '@widgets/waterfall';
 import { Bay, Empty, Figure, HolderEdge, Strip, StripField } from '@shared/ui';
 import { Fault } from '@shared/controls';
 import type { Basis } from '@shared/ui';
-import { basisProp, columnsOf } from './strip';
+import { basisProp } from './strip';
 import { S } from './strings';
 import { itemsOf, selectionOf } from './select';
 import type { Selection } from './select';
@@ -64,21 +64,6 @@ const DEFAULT_VIEWS: View[] = [
 ];
 
 const ROW_H = 40;
-
-/** The rack's column names, printed once on the bay head instead of on every strip (CONTRACTS
- *  section 2, m1 design review B9). The boxes carry the cell's own inline padding so a name sits
- *  over the value it names; the bay's head row supplies the face and the colour. */
-function ColumnHeads({ columns }: { columns: readonly { key: string; label: string; w: number }[] }) {
-  return (
-    <>
-      {columns.map((column) => (
-        <span className="myx-tn-col" key={column.key} style={{ width: `${column.w}ch` }}>
-          <span className="myx-tn-col-name">{column.label}</span>
-        </span>
-      ))}
-    </>
-  );
-}
 
 /** A cell the rollup does not carry prints the absence glyph, never a zero the daemon did not
  *  report. It carries no basis: `n/r` is the whole statement, and the word `unavailable` beside it
@@ -150,7 +135,7 @@ function SummaryStrip({ head }: { head: PerfSummaryHead }) {
       ariaLabel={`${S.summary} ${head.label}${head.empty ? ` ${NO_ROWS}` : ''}`}
     >
       {summaryFields(head).map((field) => (
-        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
+        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );
@@ -235,7 +220,6 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
           <Bay
             label={S.inflight}
             count={inflight.length}
-            fields={<ColumnHeads columns={columnsOf(INFLIGHT_FIELDS)} />}
             empty={{ text: 'nothing in flight', source: '/api/heads' }}
           >
             {inflight.map((turn) => (
@@ -245,7 +229,6 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
 
           <Bay
             label={S.summary}
-            fields={<ColumnHeads columns={SUMMARY_COLUMNS} />}
             {...(summary === null ? {} : { count: summary.heads.length })}
             empty={{ text: 'no summary read yet', source: '/api/perf/summary' }}
           >
@@ -254,7 +237,6 @@ export function TurnsBoard({ inflight, landed, summary, capture, locked = false,
 
           <Bay
             label={S.landed}
-            fields={<ColumnHeads columns={columnsOf(active.fields)} />}
             {...(pending ? {} : { count: rows.length, empty: { text: NO_ROWS, source: '/api/perf/turns' } })}
           >
             {pending ? (

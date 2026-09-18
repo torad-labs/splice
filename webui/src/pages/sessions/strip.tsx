@@ -31,9 +31,9 @@ const ABSENT = S.absent;
 // characters shorter, so no column is narrower than what it prints: StripField clips rather than
 // wraps, and the width that fits the old empty state fits the new one.
 //
-// ONE declaration per column, because the rack now prints its names once on the bay head and the
-// strips below carry values only (CONTRACTS.md section 2, m1 design review B9). The head and the
-// rows read the same numbers, so a name cannot drift off the column it names.
+// ONE declaration per column - label and width together - so a row cannot print a name that
+// disagrees with its own width. The comp's strip carries its field names IN the strip (its two
+// strips in one bay carry different sets), so the rows print them and no bay head does.
 const COLUMNS: Record<string, { label: string; w: number }> = {
   name: { label: S.name, w: 26 },
   head: { label: S.head, w: 20 },
@@ -42,11 +42,6 @@ const COLUMNS: Record<string, { label: string; w: number }> = {
   seen: { label: S.seen, w: 16 },
   peer: { label: S.peer, w: 18 },
 };
-
-/** The view's columns in its own order, for the bay head. */
-export function columnsOf(order: readonly string[]): { key: string; label: string; w: number }[] {
-  return order.flatMap((key) => (COLUMNS[key] === undefined ? [] : [{ key, ...COLUMNS[key] }]));
-}
 
 /** An absent cell must not pass an explicit `basis: undefined` — shared/ui runs
  *  `exactOptionalPropertyTypes`, where `{ basis: undefined }` is not `{}` (the same rule the
@@ -132,10 +127,8 @@ export function SessionStrip({ row, peer, selected, order, onOpen }: {
       onOpen={onOpen}
       ariaLabel={`${S.title} ${sessionLabel(row)}`}
     >
-      {/* No label on a cell: the bay head prints the column names once for the whole rack
-          (CONTRACTS.md section 2, m1 design review B9). */}
       {fieldsOf(row, peer, order).map((field) => (
-        <StripField key={field.key} w={field.w} value={field.value} {...basisProp(field.basis)} />
+        <StripField key={field.key} w={field.w} label={field.label} value={field.value} {...basisProp(field.basis)} />
       ))}
     </Strip>
   );

@@ -57,8 +57,14 @@
   /* the comp's plates are 29px on this column */
   height: 3.66%;
   margin-inline-start: var(--space-2);
-  /* the comp's label starts 13px into the plate */
-  padding-inline-start: var(--space-4);
+  /* THE WORD IS CENTRED IN THE PLATE (M1-36, N-4). It used to be pushed 12px off the
+     plate's left edge, which read as a left-aligned label in a box that is not a list.
+     Measured on the comp: the word's centre sits at x62.0 of an 80px plate whose centre
+     is x61.5 - half a pixel, which is centred. The inline padding is the clearance the
+     two holder marks below need: they occupy 4..8 and 72..76, the word box is 8..72, and
+     the longest label ("compaction") measures 61px inside it. */
+  justify-content: center;
+  padding-inline: var(--space-3);
   background: var(--plate);
   border: var(--hair) solid var(--room);
   border-radius: 0;
@@ -84,24 +90,67 @@
    colours: the address that is STANDING is not marked here but by the green bar
    outside the plate's right edge, so the plate keeps one fill and the address
    is still readable with the colour gone (aria-current carries it). */
+/* THE MARK HAS TO LEAVE THE FLEX LINE TO BE PLACED AT ALL (M1-36, N-12). `.myx-edge-mark`
+   in shared/ui/ui.css carries only `width` and `background`, so it is a STATIC child of
+   `.myx-edge` (`align-items: stretch`): giving it an explicit height cancels the stretch
+   and parks it at the top of the label's line box, and the `inset-inline-start`, `top` and
+   `margin-block-start` this rule used to carry never applied to anything. That is what the
+   render showed - one mark straddling the plate's top edge. Absolute against the tab (the
+   tab is the positioned ancestor; `.myx-edge` is static) puts it where it was always
+   written to go, and takes it out of the line so `justify-content: center` above centres
+   the WORD rather than the mark-and-word pair.
+   The comp prints TWO of them, one at each end: 4x5 at a 3px inset from the plate's edge,
+   centres at y13.0 against the label's y12.5. The inset token is --space-1 and not
+   --space-2 because an absolutely positioned mark measures from the PADDING edge: 2px
+   inside a 1px hairline is the comp's 3px exactly. --space-2 put the dots a pixel further
+   in, and a pixel is the whole budget here - it left "compaction" (61.0px, the longest
+   address) clearing the dot by 0.19px, which reads as touching. At --space-1 the same
+   word clears by 2.0px against the comp's own 2.5px. Height is 4px rather than the comp's
+   5: the scale has no 5, and at this size a 4px square under a full radius is the comp's
+   round dot. */
 .myx-rail-tab .myx-edge-mark {
-  inset-inline-start: var(--space-2);
+  position: absolute;
+  inset-inline-start: var(--space-1);
   inset-block: auto;
   top: 50%;
   width: var(--space-2);
-  /* the comp's mark runs the label's x-height, six pixels at this size */
-  height: calc(var(--space-2) + var(--space-1));
-  margin-block-start: calc(-1 * (var(--space-2) + var(--space-1)) / 2);
+  height: var(--space-2);
+  margin-block-start: calc(-1 * var(--space-2) / 2);
+  border-radius: 50%;
+  background: var(--strip-ink);
+}
+/* The second mark. It is a pseudo-element rather than a second node because the plate's
+   two dots are one printed ornament, not a second holder edge: HolderEdge means "a state
+   with a word on it", and this end of the plate carries no state and no word. */
+.myx-rail-tab::before {
+  content: '';
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  top: 50%;
+  width: var(--space-2);
+  height: var(--space-2);
+  margin-block-start: calc(-1 * var(--space-2) / 2);
+  border-radius: 50%;
   background: var(--strip-ink);
 }
 .myx-rail-tab:hover { background: var(--plate-hover); }
+/* THE STANDING MARK IS THE COMP'S OWN, AND IT IS MEANT TO FLOAT (M1-36, N-9). N-9 read the
+   marker as debris floating 40px clear of its tab; that 40px is the 3840 frame, and the comp
+   floats it too - measured on team-board-a.png the mark sits x117..123 against a plate ending
+   at x101, which is 15px of room, and the build renders 15px at 1536 and 15.6px at comp scale
+   at 3840. The gap is not the defect and the entry is withdrawn.
+   What the same measurement DID find is the width: the comp's mark is 7px on an 80px plate,
+   which is 8.75%, and this rule carried 6.5% - it drew 5px at 1536 and 13px at 3840 where the
+   comp asks for 7px and 17.5px. The comment above it said 7px while the declaration said
+   something else. */
 .myx-rail-tab[aria-current='page']::after {
   content: '';
   position: absolute;
-  /* the comp's mark is 7px wide, 16px clear of the plate it answers for */
+  /* 15px clear of the plate at 1536, which is where the comp puts it */
   left: 119.6%;
   inset-block: calc(-1 * var(--space-1));
-  width: 6.5%;
+  /* the comp's mark is 7px on its 80px plate */
+  width: 8.75%;
   background: var(--edge-green);
 }
 .myx-rail-tab:focus-visible {

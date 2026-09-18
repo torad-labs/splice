@@ -174,17 +174,302 @@
   border-radius: var(--radius-0);
   overflow: hidden;
 }
+/* No transition: animating width is a layout transition (detect.mjs
+   layout-transition), and in this world the two licensed motions are the
+   holder edge cock and the strip swell — neither belongs to a meter fill. */
 .myx-meter-fill {
   height: 100%;
-  transition: width var(--dur-2) var(--ease-snap);
 }
 .myx-meter-fill-pos   { background: var(--data-pos); }
 .myx-meter-fill-amber { background: var(--data-amber); }
 .myx-meter-fill-neg   { background: var(--data-neg); }
 .myx-meter-fill-mute  { background: var(--ink-mute); }
 
+/* ============================================================
+   THE STRIP BAY (v0.4.0). Strips on a rack: opaque paper, black ink, a
+   colored holder edge carrying attention, radius 0 everywhere. Color tokens
+   come from the contract sheet (row M1-01); they resolve at runtime, so this
+   file names them before they exist rather than inventing local fallbacks.
+   ============================================================ */
+
+/* --- HolderEdge: the only place attention is a color, always with a label --- */
+.myx-edge {
+  display: inline-flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.myx-edge-mark {
+  width: var(--space-2);
+  background: var(--edge-grey);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.myx-edge-green .myx-edge-mark { background: var(--edge-green); }
+.myx-edge-amber .myx-edge-mark { background: var(--edge-amber); }
+.myx-edge-red   .myx-edge-mark { background: var(--edge-red); }
+.myx-edge-grey  .myx-edge-mark { background: var(--edge-grey); }
+.myx-edge-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink);
+}
+
+/* --- Strip: the one row module. The edge column holds a holder edge whose
+   mark is inset until the strip is selected, when it runs the full height. --- */
+.myx-strip {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+}
+.myx-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-strip-fields {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+.myx-strip > .myx-edge {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding-inline-start: var(--space-3);
+}
+.myx-strip > .myx-edge .myx-edge-mark {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: var(--space-1);
+  width: var(--space-2);
+  transition: background-color var(--dur-1) var(--ease-out), inset-block var(--dur-2) var(--ease-out);
+}
+.myx-strip > .myx-edge .myx-edge-label { color: var(--strip-ink); }
+.myx-strip-selected > .myx-edge .myx-edge-mark { inset-block: 0; }
+.myx-strip-struck { color: var(--strip-ink-mute); }
+.myx-strip-struck > .myx-edge .myx-edge-label { color: var(--strip-ink-mute); }
+.myx-strip[aria-disabled='true'] { cursor: not-allowed; }
+/* The strike: one hairline across the strip at mid height. It rides over the
+   field grid (it is a verdict on the whole row) and takes no pointer events so
+   the strip underneath still reads as one target. */
+.myx-strip-strike {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 50%;
+  border-top: var(--hair) solid var(--strip-ink);
+  pointer-events: none;
+}
+
+/* --- StripField: a fixed boxed cell. ch width keeps the field grid aligned
+   column to column; the value clips with an ellipsis and never wraps. --- */
+.myx-sfield {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  border-inline-end: var(--hair) solid var(--strip-field-line);
+  min-width: 0;
+}
+.myx-sfield-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+  white-space: nowrap;
+}
+.myx-sfield-value {
+  font-size: var(--text-3);
+  color: var(--strip-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.myx-sfield-figure { font-family: var(--font-figure); }
+.myx-sfield-basis {
+  margin-inline-start: var(--space-1);
+  color: var(--strip-ink-mute);
+}
+
+/* --- Bay: a rack of strips. Rails top and bottom, never a card. --- */
+.myx-bay {
+  display: flex;
+  flex-direction: column;
+  background: var(--room-deep);
+  border-top: var(--hair) solid var(--hair-strong);
+  border-bottom: var(--hair) solid var(--hair-strong);
+  border-radius: 0;
+}
+.myx-bay-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+.myx-bay-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink);
+}
+.myx-bay-count {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute);
+}
+.myx-bay-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+.myx-bay-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* --- ScopeInset: a recessed chart frame with its own ground and grid. --- */
+.myx-scope {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-0);
+  background: var(--scope);
+  border: var(--hair) solid var(--scope-grid);
+  border-radius: 0;
+}
+.myx-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+.myx-scope-title {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--scope-ink);
+}
+.myx-scope-basis {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  color: var(--scope-ink);
+}
+.myx-scope-body {
+  padding: var(--space-3);
+  background-image:
+    repeating-linear-gradient(to right, var(--scope-grid) 0 var(--hair), transparent var(--hair) var(--space-6)),
+    repeating-linear-gradient(to bottom, var(--scope-grid) 0 var(--hair), transparent var(--hair) var(--space-6));
+}
+
+/* --- FieldBox: a knob with its provenance and its hot/restart verdict. --- */
+.myx-fbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+}
+.myx-fbox-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink);
+}
+.myx-fbox-input {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  color: var(--strip-ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: var(--space-1) var(--space-0);
+}
+.myx-fbox-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-fbox-prov {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
+.myx-fbox-hot {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink-mute);
+}
+.myx-fbox-editable .myx-fbox-input { border-bottom: var(--hair) solid var(--strip-field-line); }
+
+/* --- Reveal: the bytes are not in the DOM until the reader asks. --- */
+.myx-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.myx-reveal-btn {
+  align-self: flex-start;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: transparent;
+  border: var(--hair) solid var(--hair-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.myx-reveal-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-reveal-body { color: var(--ink); }
+
+/* --- Empty: what is missing, and which source says so. --- */
+.myx-empt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-0);
+  padding: var(--space-4);
+  border: var(--hair) dashed var(--hair-strong);
+  border-radius: 0;
+}
+.myx-empt-text {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+.myx-empt-source {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+/* --- Figure: value, unit and basis, all as text. --- */
+.myx-fig {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.myx-fig-value {
+  font-family: var(--font-figure);
+  font-size: var(--text-6);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-strong);
+}
+.myx-fig-unit {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+.myx-fig-basis {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .myx-btn { transition: none; }
   .myx-btn:active { transform: none; }
-  .myx-meter-fill { transition: none; }
+  .myx-edge-mark { transition: none; }
+  .myx-strip > .myx-edge .myx-edge-mark { transition: none; }
 }

@@ -248,11 +248,20 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
   `import.meta.env.DEV` is true and the address carries the fixture name in the HASH query,
   `#/<address>?fixture=<name>` (pinned 2026-09-18: the shell keeps the hash query through boot,
   and under a hash router the router's `useLocation().search` IS that query, so read it there);
-  the shipped `dist` contains no fixture bytes: a STATIC import of the fixture module survives the
+  the shipped `dist` contains no fixture bytes. TWO import shapes both ship, and only the second was
+  ever written down. A STATIC import of the fixture module survives the
   DEV guard (the bundler includes the module and its strings ship; found on the hero row), so the
-  fixture is loaded with `await import('./fixtures/<name>')` inside the DEV branch and the page
+  fixture is loaded with a specifier COMPOSED AT RUNTIME inside the DEV branch and the page
   renders its board-as-prop while it loads; `node dev/web-console/fixture-leak.mjs` (M2-12) fails
-  by name on any fixture literal found in `dist`. A fixture page makes no request of its own (the
+  by name on any fixture literal found in `dist`. AND A LITERAL `await import('./fixtures/x')` SHIPS TOO,
+  which this contract used to prescribe: the specifier is statically analyzable, so the bundler keeps it
+  as a dependency edge through the single-file build even when its branch is provably dead. Measured
+  2026-09-18 (row M1-20): 44 fixture literals in `dist` across five fixtures while the leak wall
+  reported zero, and converting one page from a literal specifier to a composed one took its two to
+  zero with nothing else changed. So the rule is not "dynamic import" — it is that the BUNDLER MUST NOT
+  BE ABLE TO NAME THE MODULE, which means composing the specifier from a value at runtime. Every page
+  also carries `data-sample` on its root inside the same DEV guard, carrying the fixture's own file
+  name, so an instrument can tell a fixture-fed frame from a live one without reading the page's prose. A fixture page makes no request of its own (the
   shell's polls still run). A fixture is labeled with a `HolderEdge grey "sample data"` in the
   bay label when rendered.
 - Tests are `tests/<row>.test.ts` (vitest, node environment, no jsdom). A `.ts` file cannot

@@ -40,8 +40,10 @@ import splice.spi.AccountResetText
 import splice.spi.InflightGate
 import splice.spi.PoolAccount
 import splice.spi.ProcessElapsedNow
+import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.ProviderTuning
 import splice.spi.RateLimitCooldown
+import splice.spi.Selection
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.time.Instant
@@ -420,7 +422,7 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
     }
 
     fun holdPrimaryUntilProbe() {
-        pool.select("hold-seed").markCredentialUnavailable()
+        (pool.select("hold-seed") as Selection.Chosen).account.markCredentialUnavailable()
         accountNow.addAndGet(300_000L)
     }
 
@@ -527,6 +529,9 @@ private const val SESSION = "session-1"
 
 private const val MS_PER_SECOND = 1_000L
 
-// V4-61's ceiling on the CLIENT-FACING deadline, mirrored by HeadAdmission's MAX_CLIENT_HOLD_MS;
-// both are private to their files, so the pin states the number the law states.
-private const val CLAMP_SECONDS = 120L
+// V4-61's ceiling on the CLIENT-FACING deadline. V4-100: READS the one declaration
+// (splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS, public as of this row) instead of restating 120 here. The
+// point of the row is that the production ceiling and the two pins asserting against it are ONE
+// number; the comment this replaces ("both are private to their files, so the pin states the number
+// the law states") was the copy admitting it could not see its own source.
+private const val CLAMP_SECONDS: Long = MAX_RATE_LIMIT_COOLDOWN_MS / MS_PER_SECOND

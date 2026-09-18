@@ -14,6 +14,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ErrorType
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.wire.HttpStatus
 
 // ClassifiedFailure + FailureSource live in FailureKinds.kt (concentration, 2026-08-19).
 
@@ -117,12 +118,12 @@ public object UpstreamFailureClassifier {
             message += quotaSuffix(err)
         }
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
-            val type = if (status == BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR
+            val type = if (status == HttpStatus.BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR
             return ExtractResult.Gateway(
                 ClassifiedFailure(
                     type,
                     "upstream $status (gateway)",
-                    transient = status != null && status >= SERVER_ERROR_FLOOR,
+                    transient = status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR,
                 ),
             )
         }
@@ -144,9 +145,9 @@ public object UpstreamFailureClassifier {
             // vendor's own remedy text ("try rephrasing") rides along untouched.
             fields.code.lowercase() in POLICY_REFUSAL_CODES ->
                 ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
-            status == RATE_LIMIT_STATUS || rateRe.containsMatchIn(blob) ->
+            status == HttpStatus.TOO_MANY_REQUESTS || rateRe.containsMatchIn(blob) ->
                 ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
-            status == AUTH_STATUS || authRe.containsMatchIn(blob) ->
+            status == HttpStatus.UNAUTHORIZED || authRe.containsMatchIn(blob) ->
                 ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
             // Overload: a 502 from the gateway, or capacity by CODE SHAPE. The ChatGPT backend
             // reports "model at capacity" as HTTP 503 or an in-stream response.failed whose code is
@@ -216,9 +217,9 @@ public object UpstreamFailureClassifier {
     }
 
     private fun statusFallback(status: Int?, msg: String, code: String): ClassifiedFailure = when {
-        status != null && status >= SERVER_ERROR_FLOOR ->
+        status != null && status >= HttpStatus.INTERNAL_SERVER_ERROR ->
             ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE), transient = true)
-        status != null && status >= CLIENT_ERROR_FLOOR ->
+        status != null && status >= HttpStatus.BAD_REQUEST ->
             ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
         else -> ClassifiedFailure(
             ErrorType.API_ERROR,
@@ -228,7 +229,8 @@ public object UpstreamFailureClassifier {
     }
 
     /** 502 from the ChatGPT gateway is transient — surface as 529 so Claude Code retries. */
-    public fun mapOutStatus(status: Int): Int = if (status == BAD_GATEWAY) OVERLOADED_STATUS else status
+    public fun mapOutStatus(status: Int): Int =
+        if (status == HttpStatus.BAD_GATEWAY) HttpStatus.OVERLOADED else status
 
     private sealed class ExtractResult {
         data class Fields(val message: String, val code: String) : ExtractResult() {
@@ -240,9 +242,9 @@ public object UpstreamFailureClassifier {
              *  fields, not the object: the object sits at detekt's function budget and
              *  classifyContent at its complexity budget. */
             fun isOverload(status: Int?): Boolean = when {
-                status == BAD_GATEWAY -> true
+                status == HttpStatus.BAD_GATEWAY -> true
                 status == null -> capacityShape()
-                else -> status >= SERVER_ERROR_FLOOR && capacityShape()
+                else -> status >= HttpStatus.INTERNAL_SERVER_ERROR && capacityShape()
             }
 
             private fun capacityShape(): Boolean =
@@ -287,11 +289,4 @@ public object UpstreamFailureClassifier {
     // overload, so the shape rule alone would miss it.
     private val CAPACITY_CODES = setOf("server_is_overloaded", "slow_down")
     private val overloadCodeRe = Regex("overload", RegexOption.IGNORE_CASE)
-
-    private const val RATE_LIMIT_STATUS = 429
-    private const val AUTH_STATUS = 401
-    private const val SERVER_ERROR_FLOOR = 500
-    private const val CLIENT_ERROR_FLOOR = 400
-    private const val BAD_GATEWAY = 502
-    private const val OVERLOADED_STATUS = 529
 }

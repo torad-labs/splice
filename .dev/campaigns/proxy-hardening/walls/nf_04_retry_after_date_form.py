@@ -18,7 +18,21 @@ GREEN requires, in RetryAfter.kt: a `retryAfterMs` entry point that reaches both
 parse (`toLongOrNull`) and an RFC_1123_DATE_TIME parser; and the seconds call textually AHEAD of the
 date call, which is the numeric-first spec. A dead date helper elsewhere in the file earns nothing.
 
-EXIT 0 = date form honoured, seconds first. EXIT 1 = gap open.
+WIDENED 2026-09-18 (V4-100). The leg above pins the ONE parser it can see, which was the whole gap:
+a SECOND parser elsewhere is not a smaller version of this bug, it is a fresh copy of the original
+one, and this wall could not see it at all. app/MuseRefresh.kt had grown exactly that — its own
+`retryAfterMs` with its own ordering and its own clamping — and no checker in the tree read it. So
+the wall now also refuses a SECOND parser ANYWHERE in the gateway's main sources.
+
+The shape of the refusal is deliberately narrow, because a wall that flags every mention of the
+header is a wall that gets allowlisted: a file is a second parser only when it BOTH names the
+Retry-After header AND carries a token that only a parser has — an RFC_1123_DATE_TIME format, the
+digit-only seconds guard (`it in '0'..'9'`, either polarity), or the leading-zero normalizer. A file
+that merely reads the header and hands it to splice.spi.RetryAfter has none of those, so delegating
+stays cheap and re-implementing goes red. Measured against the tree at authoring: of every main
+source, exactly ONE file carries a marker, and it is the one allowed file.
+
+EXIT 0 = date form honoured, seconds first, and this is the only parser. EXIT 1 = gap open.
 --selftest = the POSITIVE CONTROL (gate check C6).
 """
 from __future__ import annotations
@@ -82,6 +96,57 @@ def detect(client_text: str | None) -> list[str]:
     return problems
 
 
+# --- the WIDENED leg (V4-100) ------------------------------------------------------------------
+# Detection stays pure (path -> code text) so the selftest can feed a second parser synthetically
+# instead of having to write one to disk.
+MAIN_SOURCE = "gateway"
+_HEADER_MENTION_RE = re.compile(r"Retry-After|retry_after|retryAfter", re.I)
+# Tokens ONLY a parser carries: the RFC 7231 date format, the digit-only seconds guard (either
+# polarity — `all { it in '0'..'9' }` accepts it, `any { it !in '0'..'9' }` rejects non-digits), and
+# the leading-zero normalizer that makes an arbitrarily padded seconds value small. A file that
+# merely hands the header to splice.spi.RetryAfter carries none of them, which is what keeps
+# delegating free and re-implementing red.
+_PARSER_MARKER_RES = (
+    re.compile(r"RFC_1123_DATE_TIME"),
+    re.compile(r"it\s+!?in\s+'0'\.\.'9'"),
+    re.compile(r"trimStart\('0'\)\s*\.ifEmpty"),
+)
+
+
+def detect_second_parser(sources: dict[str, str]) -> list[str]:
+    """Pure detection over main-source path -> code text. No I/O."""
+    problems: list[str] = []
+    for path, text in sorted(sources.items()):
+        if not _HEADER_MENTION_RE.search(text):
+            continue
+        markers = [r.pattern for r in _PARSER_MARKER_RES if r.search(text)]
+        if markers:
+            problems.append(
+                f"{path} parses the Retry-After header itself ({len(markers)} parser token(s): "
+                f"{', '.join(markers)}). splice.spi.RetryAfter is the ONE parser — a second copy is "
+                "a second set of ordering and clamping rules for the same header, which is the gap "
+                "this wall was blind to. Call it, do not re-derive it.")
+    return problems
+
+
+def main_source_files() -> dict[str, str]:
+    """Every main-source Kotlin file under gateway/ that is not the one allowed parser, code-only and
+    keyed by repo-relative path. The allowed file is excluded because its markers are the POINT —
+    detect() is what judges it."""
+    allowed = CLIENT.resolve()
+    out: dict[str, str] = {}
+    for path in sorted((ROOT / MAIN_SOURCE).rglob("*.kt")):
+        posix = path.as_posix()
+        if "/build/" in posix or "/src/test/" in posix:
+            continue
+        if path.resolve() == allowed:
+            continue
+        text = _read(path)
+        if text is not None:
+            out[str(path.relative_to(ROOT))] = text
+    return out
+
+
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _LINE_COMMENT = re.compile(r"//.*?$", re.M)
 _IMPORT_LINE = re.compile(r"^import .*$", re.M)
@@ -135,6 +200,41 @@ DECOY_HELPERS_FIX = (
     "fun httpDateMs(value: String): Long? = null"
 )
 
+# The widened leg's fixtures. A SECOND parser (red) is the real regression this leg exists for —
+# app/MuseRefresh.kt carried exactly this shape until V4-100 deleted it. The two GREEN fixtures are
+# the false-positive controls: one delegates (mention, no marker), one parses an RFC 1123 date for
+# something that is not this header (marker, no mention). The leg is the AND of the two, and each
+# control fails if it silently becomes an OR.
+SECOND_PARSER_FIXTURE = {
+    "gateway/app/src/main/kotlin/splice/app/SecondParser.kt": (
+        "private fun retryAfterMs(header: String?): Long? {\n"
+        "    val value = header?.trim() ?: return null\n"
+        "    if (value.all { it in '0'..'9' }) return value.toLongOrNull()\n"
+        "    return try { parse(value, DateTimeFormatter.RFC_1123_DATE_TIME) } "
+        "catch (_: Exception) { null }\n"
+        "}"
+    ),
+}
+DELEGATING_FIXTURE = {
+    "gateway/app/src/main/kotlin/splice/app/Delegating.kt": (
+        'val ms = retryAfter.retryAfterMs(response.headers["Retry-After"], clock)\n'
+    ),
+}
+UNRELATED_DATE_FIXTURE = {
+    "gateway/app/src/main/kotlin/splice/app/OtherDates.kt": (
+        "val expiry = ZonedDateTime.parse(cookie, DateTimeFormatter.RFC_1123_DATE_TIME)\n"
+    ),
+}
+# A seconds-ONLY re-derivation in a different module: no date token at all, so it is caught by the
+# digit/normalizer markers rather than the RFC one — the leg is not "the date parser moved".
+SECOND_PARSER_FIXTURE_OTHER_MODULE = {
+    "gateway/gateway/src/main/kotlin/splice/gateway/head/SecondParser.kt": (
+        'private val RETRY_AFTER = Regex("retry[-_]after", RegexOption.IGNORE_CASE)\n'
+        "fun seconds(value: String): Long = "
+        "value.trimStart('0').ifEmpty { \"0\" }.toLong()\n"
+    ),
+}
+
 
 def selftest() -> int:
     fails = []
@@ -157,14 +257,27 @@ def selftest() -> int:
         fails.append("missing RetryAfter.kt must be RED, never a vacuous pass")
     if not detect("class RetryAfterHeader"):
         fails.append("a tree without retryAfterMs (shape change) must be RED, refusing vacuous pass")
+    if not detect_second_parser(SECOND_PARSER_FIXTURE):
+        fails.append("a SECOND Retry-After parser elsewhere in the gateway must be RED — that is "
+                     "the widened leg's entire point")
+    if detect_second_parser(DELEGATING_FIXTURE):
+        fails.append(f"a file that merely delegates to splice.spi.RetryAfter must be GREEN, got "
+                     f"{detect_second_parser(DELEGATING_FIXTURE)}")
+    if detect_second_parser(UNRELATED_DATE_FIXTURE):
+        fails.append("an RFC 1123 date parsed for something that is NOT the Retry-After header must "
+                     "be GREEN — the leg is mention AND marker, never the marker alone")
+    if not detect_second_parser(SECOND_PARSER_FIXTURE_OTHER_MODULE):
+        fails.append("a seconds-only re-derivation in another module must be RED too — the leg is "
+                     "not 'the date parser moved', and a gate-only copy is still a copy")
     if fails:
         print("NF-04 SELFTEST FAIL:")
         for f in fails:
             print("  " + f)
         return 1
     print("NF-04 SELFTEST OK — red on seconds/date-only, date-first, unwired/discarded parser "
-          "results, same-name decoys, missing file, and shape change; green only on the direct "
-          "seconds-first return chain")
+          "results, same-name decoys, missing file, shape change, and a SECOND parser anywhere in "
+          "the gateway's main sources; green on the direct seconds-first return chain and on a file "
+          "that delegates")
     return 0
 
 
@@ -172,12 +285,15 @@ def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
     problems = detect(_read(CLIENT))
+    problems += detect_second_parser(main_source_files())
     if problems:
-        print("NF-04 WALL RED — Retry-After HTTP-date form is discarded:")
+        print("NF-04 WALL RED — the Retry-After header is parsed in more than one place, or its "
+              "HTTP-date form is discarded:")
         for p in problems:
             print(f"  · {p}")
         return 1
-    print("NF-04 WALL GREEN: RetryAfter.kt honours both RFC 7231 forms, seconds-first.")
+    print("NF-04 WALL GREEN: both RFC 7231 forms honoured, seconds-first, and RetryAfter.kt is the "
+          "only parser in the gateway's main sources.")
     return 0
 
 

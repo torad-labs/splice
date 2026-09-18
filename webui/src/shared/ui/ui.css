@@ -227,8 +227,85 @@
   max-width: none;
   background: var(--strip);
   color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
+  /* ---- E-1 · THE THREE-PART HOLDER EDGE (M1-24) ------------------------------
+     The comp's paper does not meet the room in one step. Cross-section across the team
+     strip's left edge at comp y=90 (material-spec.md, measured): room `#0C1010` | **1px
+     `#030402` outline, darker than the room** | **1px `#73716A` shade** | **1px `#E8E2D1`
+     lip, brighter than the paper body** | an 8px ramp 204 to 213 | body. The build crossed
+     it in one step. Per-pixel edge energy across that boundary: comp 256, build 204, over
+     88,920px of boundary. This is on every piece of paper in the frame, which is why it is
+     the single largest entry in the deficit.
+
+     Three tones need three rings, and a border cannot hold three, so the ORDER is carried
+     by nesting them: the border is the shade, the lip is an inset ring on the paper's own
+     edge, and the outline is an outer ring past the border box. Outside to inside that
+     paints outline | shade | lip | ramp | body, which is the comp's 157/158/159/160+.
+     The border stays --hair wide, so nothing about the strip's geometry or its field
+     origins moves.
+
+     WHY THE LIP IS THE BORDER AND NOT AN INSET RING. It was an inset ring first, and it
+     rendered invisible on every racked strip: an inset box-shadow paints above the element's
+     own background but BELOW its children, and `.myx-board .myx-sfield` is an opaque plate of
+     the same paper -- so the first field covered the lip and the ramp on all four sides and
+     the build showed only a dark outline. Measured on the comp at builder-strip-2, the strip
+     is lit on ALL FOUR of its edges: top y304 L232, bottom y366 L232, left x616 L225, all
+     against a paper body of 217 to 227. The border is the one ring a child cannot cover. It
+     was already --hair wide as the shade, so moving the lip there costs nothing in layout:
+     the field origins, the strip's box and every measured position are untouched.
+
+     LAW 26, and why none of the three is a hex here. Each ring is written as a mix against
+     THE PLANE IT SITS ON, so its direction is a property of the expression rather than a
+     value that could be carried into the other theme by accident: the outline is the room
+     toward black, the shade is the paper toward its own ink, the lip is the paper toward
+     white. Every fraction below is the comp's measurement solved against the dark plane --
+     the arithmetic is in each line, and re-solving it against a moved plane is a one-line
+     exercise rather than a re-sampling. The lip is the one of the three the light plane
+     cannot carry at this strength (light paper at L 245.8 has 9.2 L of headroom and the
+     comp's lip is +13.0); that is a plane problem and not a lip problem -- L-4's second
+     constraint, `--strip` in light at L <= 242, is routed in this row's note. */
+  /* the lip: comp L 226.0 = 0.76 x 216.7 (paper) + 0.24 x 255 */
+  border: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white);
+  box-shadow:
+    /* the ramp: the comp climbs 204 to 213 over the 8px inside the lip. An inset shadow with
+       no offset paints all four sides, which is what a seated card does. The spec's 5% renders
+       only 3 L of that 9 L climb once the blur spreads it, so it is corrected here to 10%: the
+       comp's edge pixel is 204 against a 217 body, and 0.90 x 217 = 195 at the boundary role
+       of a blur's half-coverage, settling to 217 by --space-2. */
+    inset 0 0 var(--space-2) color-mix(in srgb, transparent 90%, black),
+    /* the shade: comp L 112.9 = 0.52 x 216.7 */
+    0 0 0 var(--hair) color-mix(in srgb, var(--strip) 52%, black),
+    /* the outline: comp L 3.6 = 0.27 x 13.4 (the room) -- the darkest tone in the frame */
+    0 0 0 calc(var(--hair) * 2) color-mix(in srgb, var(--room) 27%, black);
   border-radius: 0;
+}
+/* ---- E-5 · THE HOLDER PIN (M1-24) ------------------------------------------
+   The mark a STATELESS strip prints where an edged one prints its colour bar. The comp's
+   team-header pin measures 14px across at the L<100 threshold with a solid core of 8-9px,
+   darkest pixel `#0A080A`; its centre sits 6px right of the strip's left edge and 10px below
+   the strip's top — and the same mark is at the header's RIGHT end, and one at each end of
+   the footer strip. It is ink printed on the paper, so it takes the paper's own ink:
+   --strip-ink measures one step from the comp's `#0A080A`, below the threshold that matters
+   on a 9px dot, so this entry needs no token at all.
+
+   WHY IT IS DRAWN ON EVERY STRIP RATHER THAN ONLY THE STATELESS ONES. The stateless case
+   cannot be named from here: Strip's Edge vocabulary is 'green' | 'amber' | 'red' | 'grey'
+   (shared/ui/types.ts) and has no member for "no state", so a modifier would have to be a
+   prop on shared/ui/strip.tsx, which this row's fence does not hold. It does not need one.
+   The mark is 16px wide at inset-inline-start 0 and full height (the rule below), it is
+   painted after this pseudo-element because it is a real child and both are positioned, and
+   it is opaque in every state -- so an edged strip covers its own pin and only a strip whose
+   mark draws nothing shows one. The geometry that follows is therefore a property of the
+   paper and not of the state, which is what makes it a world rule. */
+.myx-strip::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: var(--space-1);
+  inset-block-start: var(--space-2);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--strip-ink);
+  pointer-events: none;
 }
 .myx-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .myx-strip-fields {
@@ -361,12 +438,57 @@
 .myx-bay {
   display: flex;
   flex-direction: column;
-  background: var(--room-deep);
+  position: relative;
+  /* THE BAY IS ITS OWN PLANE (M1-35's census, bound here): `--bay` was measured in M1-13 and
+     has had NO reader since -- this rule was the one that was supposed to read it and it named
+     --room-deep instead, three steps off, so the bay rendered at 1.06:1 against the room and
+     read as nothing. Binding the name is safe by the token's own construction: in light --bay
+     already holds the value this block uses as the bay floor, so the light theme does not move
+     at all, and in dark it moves 3 L up. */
+  background: var(--bay);
   border-top: var(--hair) solid var(--hairline-strong);
   border-bottom: var(--hair) solid var(--hairline-strong);
-  /* The rack's side rails: measured 12px bands at the bay's own edges of the comp (left x
-     152..163 of a bay at 151..581, right 559..573), a wash a few steps up from the bay floor. */
-  border-inline: var(--space-4) solid var(--hairline);
+  /* ---- E-3 · THE STILES (M1-24) ---------------------------------------------
+     The bay's side rails are not a wash, they are members. Measured across a stile between
+     two bays on the comp at y=875: gutter L 10-19 | **1px outer highlight L 58.7 `#3A3B3A`** |
+     **14px face L 25-31 `#1A1D1C`-`#1D201F`** | a hard 2px edge at L 0.0 | room L 7-16. The
+     same member in band-1, a different rack 590px away, measures a 12px face at L 24-32
+     bounded at x 164-165 by L 0.0 `#000000` -- two racks agreeing on the construction, which
+     is what makes it a world rule and not a hero detail. It is what makes a bay read as a
+     container instead of a change of background.
+     Written against the bay floor it sits on: the face is the floor lifted toward white by
+     the measured fraction (9.6 -> 28 is 7.5% of the way to 255), and the highlight is the
+     face lifted again by its own measured step (28 -> 58.7 is 13.7% of that face's remaining
+     room), so neither can invert. The inner edge is the same near-black the strip's outline
+     is -- the darkest tone in the frame, and darker than everything it borders in BOTH
+     themes, so it needs no per-theme value.
+     In light the highlight lands at 190.8 against a 180.6 face: it keeps the sign and takes
+     a reduced magnitude, which ruling two allows because the light bay already separates
+     from its room at 1.690 and does not need a full dark-derived carcass on top of that.
+     The 16px rail width is unchanged, so no bay's inner width moves. */
+  /* The border is the rail for every bay that lays out around one, and the two rail layers in
+     background-image below redraw the SAME 16px band on top of it, so a bay that has no border
+     -- `.myx-board-bay { border: none }`, whose strips are placed as a percentage of the bay and
+     would all shift if a border were added -- gets the member anyway. A background layer cannot
+     move anything, which is what makes this the one shape that works for both. */
+  border-inline: var(--space-4) solid color-mix(in srgb, var(--bay) 92.5%, white);
+  box-shadow:
+    inset 0 0 0 var(--hair) color-mix(in srgb, var(--room) 27%, black),
+    0 0 0 var(--hair) color-mix(in srgb, color-mix(in srgb, var(--bay) 92.5%, white) 86.3%, white);
+  /* ---- E-4 · THE BOLT INSETS (M1-24) ----------------------------------------
+     Dark rectangular holes punched into the stile face at a regular pitch: the holes a shelf
+     rail clips into. They are RECESSES, not raised rivets -- darker than the stile, not
+     brighter. Measured down the comp's stile at x=566, y 835-960: stile median L 28.4, insets
+     at y 849-857 and y 896-904, each 9px tall and 12-14px wide, colour `#020202`, at a pitch
+     of 47px (849 -> 896, and a third at 946, +50). THAT PITCH IS THE BOLT'S OWN and it is
+     deliberately NOT the floor's 31px slot pitch -- the two rhythms are different features of
+     the same machine and unifying them would erase the distinction.
+     The 6px phase is what the comp shows: the first bolt of bay-claude sits at y 849 against a
+     bay that starts at 138, and 849 - 138 = 711 = 15 x 47 + 6.
+     The bolts ride in the same background layer as the rail they are punched into, and that
+     layer paints the full 16px band including the part of it that is the border, because a
+     background paints across the border box. So the bolts sit on the member whether or not the
+     bay lays out a border for it -- which is the same problem E-3 solves above, solved once. */
   /* The floor is ribbed, not ruled. The comp's unprinted slots sit at a 31-32px pitch (measured
      below the last lead strip: 668, 698, 729, 760, 790, 821, 852, 884, 916) and reading its own rows
      down an empty rack shows two parts, not one: a bright rule a couple of pixels wide (L45 at row
@@ -376,6 +498,17 @@
      where the hairline build read 85 and peaked at L68. So the slot is the rule AND the wash, both
      off --bay-slot: the token is the rule's tone and the wash is a fifth of it. The pitch itself is
      measured and stays. */
+  /* ---- E-2's SHADOW HALF (M1-24) --------------------------------------------
+     M1-17 closed the rail and left the shadow. Read across the comp at x=350, band-7: ground
+     L 12.4 | **rail at y 852, L 53.4 `#343634`, 1px** | floor at 853-855 | **y 856-858 at
+     L 7.4, 0.9, 3.4 -- a 3px under-shadow DARKER than the floor** (`#000102`). The rail alone
+     is a line; the rail plus a notch below it is a groove, and the notch is what the build
+     has never had. It is written as an alpha over the floor it darkens rather than as the
+     comp's near-black hex, so it darkens whichever floor it lands on and needs no token pair
+     of its own.
+     The slot's parts, in order and all in lengths: the rule (--space-1), a shoulder back to
+     the floor (--space-1 to --space-2), the notch (--space-2 to --space-2 + --space-1 +
+     --hair = 7px), then the wash out to the pitch. */
   /* RULE: EVERY STOP IN A REPEATING GRADIENT ON A RACK IS A LENGTH, NEVER A PERCENTAGE.
      A percentage stop silently redefines the gradient's period as the ELEMENT's own size, so
      mixing one with pixel stops makes the period the bay's height (809px) rather than the
@@ -383,12 +516,35 @@
      plausibly -- it looks deliberate, it passes every test, and only reading the rendered rows
      against the comp's sample catches it (52 of 240 rows against the comp's 210). If you edit
      this rule, re-run that sample; do not eyeball it. */
-  background-image: repeating-linear-gradient(
-    to bottom,
-    var(--bay-slot) 0 var(--space-1),
-    color-mix(in srgb, var(--bay-slot) 15%, transparent) var(--space-1) calc(var(--space-7) - var(--space-1)),
-    transparent calc(var(--space-7) - var(--space-1)) var(--space-7)
-  );
+  background-image:
+    /* the two stile rails, face AND bolts in one layer each (E-3, E-4): the gradient's gaps are
+       the face and its dark stops are the holes, so the rail is a single 16px band that cannot
+       fall out of register with itself. 6px phase, 9px hole, 47px pitch -- the comp's own
+       numbers, and deliberately NOT the floor's 31px slot pitch below. */
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--bay) 92.5%, white) 0 6px,
+      color-mix(in srgb, var(--bay) 20%, black) 6px 15px,
+      color-mix(in srgb, var(--bay) 92.5%, white) 15px 53px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--bay) 92.5%, white) 0 6px,
+      color-mix(in srgb, var(--bay) 20%, black) 6px 15px,
+      color-mix(in srgb, var(--bay) 92.5%, white) 15px 53px
+    ),
+    /* the floor's ribbing (M1-17, and E-2's shadow half added): rule, shoulder, notch, wash */
+    repeating-linear-gradient(
+      to bottom,
+      var(--bay-slot) 0 var(--space-1),
+      color-mix(in srgb, var(--bay-slot) 15%, transparent) var(--space-1) var(--space-2),
+      color-mix(in srgb, transparent 40%, black) var(--space-2) calc(var(--space-2) + var(--space-1) + var(--hair)),
+      color-mix(in srgb, var(--bay-slot) 15%, transparent) calc(var(--space-2) + var(--space-1) + var(--hair)) calc(var(--space-7) - var(--space-1)),
+      transparent calc(var(--space-7) - var(--space-1)) var(--space-7)
+    );
+  background-size: var(--space-4) 100%, var(--space-4) 100%, auto;
+  background-position: left top, right top, left top;
+  background-repeat: no-repeat, no-repeat, repeat;
   border-radius: 0;
 }
 /* The head plate: the comp bolts a plate over each bay, measured 184x24px, on a shaded pale ground
@@ -406,8 +562,30 @@
   width: max-content;
   margin-inline: auto;
   padding: var(--space-2) var(--space-3);
-  background: color-mix(in srgb, var(--strip) 70%, var(--strip-ink-mute));
-  border: var(--hair) solid var(--strip-ink-mute);
+  /* E-1 and E-5 on the plate (M1-24). The plate is paper, so it takes the paper's own
+     three-part edge -- measured across its left edge at comp y=155: 1px outline at L 0-5,
+     1px shade at L 103-121, 1px lip at L 200-224, then the face at L 180-186. It is the
+     same material as the strip's edge and it is written the same way, against its own
+     ground, and it carries no token of its own.
+     It also carries four CORNER PINS where the bays stand alone: comp x 267 and 440,
+     y 155 and 166, a 6-9px round mark at 6px in from each corner -- the same 6px inset
+     E-5 measures on the strip pin, which is what makes it one material and not two.
+     Two pseudos cannot hold four marks, so the pins are a background layer; the plate's
+     own fill moves to background-color so a caller can still set it without clearing them. */
+  /* THE PLATE IS ITS OWN CREAM (M1-35's census): `--plate` and `--plate-line` were measured
+     off the comp in M1-13 and have had no reader since. The plate was derived here instead
+     (`--strip` mixed toward its mute), which lands 190 against the comp's measured 178-188 --
+     --plate is 183, dead centre of that band, and it is the value the token already holds. */
+  background-color: var(--plate);
+  background-image:
+    radial-gradient(circle at 6px 6px, var(--strip-ink) 0 4.5px, transparent 4.5px),
+    radial-gradient(circle at calc(100% - 6px) 6px, var(--strip-ink) 0 4.5px, transparent 4.5px),
+    radial-gradient(circle at 6px calc(100% - 6px), var(--strip-ink) 0 4.5px, transparent 4.5px),
+    radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), var(--strip-ink) 0 4.5px, transparent 4.5px);
+  border: var(--hair) solid color-mix(in srgb, var(--plate) 76%, white);
+  box-shadow:
+    0 0 0 var(--hair) var(--plate-line),
+    0 0 0 calc(var(--hair) * 2) color-mix(in srgb, var(--room) 27%, black);
   border-radius: 0;
 }
 .myx-bay-label {

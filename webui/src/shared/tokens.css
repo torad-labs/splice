@@ -169,7 +169,15 @@
      inside a 3840 layout. app.css derives the root; the reason is in the comment there. */
   --space-1:.125rem; --space-2:.25rem; --space-3:.5rem; --space-4:.75rem;
   --space-5:1rem; --space-6:1.5rem; --space-7:2rem; --space-8:3rem;
-  --text-1:.75rem; --text-2:.875rem; --text-3:1rem; --text-4:1.125rem; --text-5:1.25rem; --text-6:1.4375rem;
+  --text-1:.75rem; --text-2:.875rem; --text-3:1rem;
+  /* THE 17 RUNG (M1-59). The contract's own line names it -- "chat label 14, bay label 16, rule text
+     17 to 18, wordmark 23" -- and the comp's scaffold derives 17px for each of its rule readouts
+     (--r-clocks-font, --r-nearest-window-font, --r-no-window-font), but this ladder stepped 16 then 18
+     with nothing between, so those readouts had nowhere to land but --text-5 (20px) and have rendered
+     2.0-2.3px of cap too tall since the day they were bound. 1.0625rem is 17px at the root's 16.
+     Lowered from 1.125rem so the rung EXISTS; no comp role is bound to it yet, which is why it is the
+     one rung that can move today without breaking a constant that currently passes. */
+  --text-4:1.0625rem; --text-5:1.25rem; --text-6:1.4375rem;
 
   --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
   --ease-out:cubic-bezier(.22,1,.36,1);
@@ -283,7 +291,15 @@
      inside a 3840 layout. app.css derives the root; the reason is in the comment there. */
   --space-1:.125rem; --space-2:.25rem; --space-3:.5rem; --space-4:.75rem;
   --space-5:1rem; --space-6:1.5rem; --space-7:2rem; --space-8:3rem;
-  --text-1:.75rem; --text-2:.875rem; --text-3:1rem; --text-4:1.125rem; --text-5:1.25rem; --text-6:1.4375rem;
+  --text-1:.75rem; --text-2:.875rem; --text-3:1rem;
+  /* THE 17 RUNG (M1-59). The contract's own line names it -- "chat label 14, bay label 16, rule text
+     17 to 18, wordmark 23" -- and the comp's scaffold derives 17px for each of its rule readouts
+     (--r-clocks-font, --r-nearest-window-font, --r-no-window-font), but this ladder stepped 16 then 18
+     with nothing between, so those readouts had nowhere to land but --text-5 (20px) and have rendered
+     2.0-2.3px of cap too tall since the day they were bound. 1.0625rem is 17px at the root's 16.
+     Lowered from 1.125rem so the rung EXISTS; no comp role is bound to it yet, which is why it is the
+     one rung that can move today without breaking a constant that currently passes. */
+  --text-4:1.0625rem; --text-5:1.25rem; --text-6:1.4375rem;
 
   --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
   --ease-out:cubic-bezier(.22,1,.36,1);

@@ -174,14 +174,20 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
 - Numbers: every figure goes through `<Figure basis=...>`; a window a provider does not report
   reads `not reported by provider`, never `0`.
 - Fixtures: a page may ship `fixtures/*.ts` for design captures. They load only when
-  `import.meta.env.DEV` is true and the address carries `?fixture=<name>`; the shipped `dist`
-  contains no fixture bytes. A fixture is labeled with a `HolderEdge grey "sample data"` in the
+  `import.meta.env.DEV` is true and the address carries the fixture name in the HASH query,
+  `#/<address>?fixture=<name>` (pinned 2026-09-18: the shell keeps the hash query through boot,
+  and under a hash router the router's `useLocation().search` IS that query, so read it there);
+  the shipped `dist` contains no fixture bytes. A fixture page makes no request of its own (the
+  shell's polls still run). A fixture is labeled with a `HolderEdge grey "sample data"` in the
   bay label when rendered.
 - Tests are `tests/<row>.test.ts` (vitest, node environment, no jsdom). A `.ts` file cannot
   hold JSX (TS1161), so component tests build elements with `React.createElement` (`const h =
   React.createElement`) and assert on the string `renderToStaticMarkup` from `react-dom/server`
   returns; stores and derivations are tested directly. A `.tsx` test is not collected and not
-  in any fence.
+  in any fence. A page exports its BOARD as a component that takes the payload as a prop,
+  beside the store-reading default export (M2-02 pattern): a static render only ever sees a
+  zustand store's initial state (v5 serves `getInitialState` as the server snapshot), so a test
+  that seeds a store renders the empty page; the test renders the board with the payload.
 - Two compilers grade the tree: `npx tsc` resolves to TypeScript 7 (`@typescript/native`) and
   refuses file arguments while a tsconfig exists, so run it only as `npx tsc --noEmit`; eslint
   parses with TypeScript 6 (`typescript` alias). Both are intentional; never edit the aliases in
@@ -189,11 +195,16 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
 - Dependencies are hoisted to the repo-root `node_modules` (npm workspaces). Check presence with
   `node -e "require.resolve('cmdk')"` from `webui/`, never with `ls webui/node_modules`.
 - Captures: start the dev server pinned, `npm run dev -w webui -- --port 5173 --strictPort`
-  (from the worktree root); delete the target PNG; then
-  `/usr/bin/google-chrome --headless=new --hide-scrollbars --window-size=<w>,<h> --screenshot=<absolute path> <url>`;
-  then confirm the file's mtime is new and its PNG header reads `<w>x<h>`. Never the snap
-  chromium (`/usr/bin/chromium-browser`, `/snap/bin/chromium`): it cannot write under a
-  dot-directory and exits 0 anyway. Stop the dev server when done.
+  (from the worktree root; if 5173 is already serving, use it and leave it running); delete the
+  target PNG; then `node .dev/web-console/capture.mjs '<url>' <absolute path> [<w> <h>]`
+  (default 1536x1024; the url is `http://localhost:5173/#/<address>...`, and it must say
+  `localhost`, since vite binds `::1` only and `127.0.0.1` is refused). A plain `--screenshot=` captures the management-key gate, not the page,
+  because a headless profile has no key: the script drives Chrome over CDP, seeds the key from
+  `~/.claude-codex/state/mgmt-key` into localStorage before boot, then captures the frame; the
+  key is never printed or written anywhere else. Then confirm the file's mtime is new and its
+  PNG header reads `<w>x<h>`. Never the snap chromium (`/usr/bin/chromium-browser`,
+  `/snap/bin/chromium`): it cannot write under a dot-directory and exits 0 anyway. Stop the dev
+  server if you started it.
 - Motion in M1 and M2: only `swell` (a strip opening into its detail column, `--dur-2`) and
   `cock` (the holder edge state change, `--dur-1`). Print, hand off and strike arrive in M3.
 

@@ -1,0 +1,130 @@
+/* The fleet page: the rack and the detail column, the same composition the accounts page uses so
+   the two read as one console. Radius 0, tokens only, motion left to the primitives. */
+
+.myx-fleet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-fleet-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-fleet-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+.myx-fleet-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* The detail column drops under the bay BELOW 1600px, not below 1120px as the accounts page does.
+   Measured 2026-09-18, after --text-3 went 13px -> 16px: a nine-field head strip needs 123
+   characters of value width, which is about 1206px with its field padding. A 24rem detail column
+   beside it leaves the bay 970px, so the rack overflowed and the bay clipped the tail of the
+   window field and all of `last turn` — the clipped-text defect the operator had already seen.
+   Full width fits it with room to spare, and the brief's own rule is that the detail drops beneath
+   the bay when the bay cannot hold the rack. */
+@media (max-width: 1600px) {
+  .myx-fleet-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.myx-fleet-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The rack scrolls rather than reflowing: the field grid is fixed-width in ch and a strip that
+   wrapped would stop reading as a row of the same rack. */
+.myx-fleet-bays > * { overflow-x: auto; }
+
+.myx-fleet-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-fleet-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.myx-fleet-detail-name {
+  font-family: var(--font-label);
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+}
+
+.myx-fleet-detail-port {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-fleet-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--hairline);
+  border-radius: 0;
+}
+
+.myx-fleet-section-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+.myx-fleet-life {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-fleet-btn {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: transparent;
+  border: var(--hair) solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.myx-fleet-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-fleet-btn:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
+.myx-fleet-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Armed reads visibly more urgent than resting, so a scan cannot mistake it for the idle control. */
+.myx-fleet-btn-armed { border-color: var(--edge-red); color: var(--edge-red); }
+
+.myx-fleet-warn {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--edge-red);
+}
+
+.myx-fleet-note {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

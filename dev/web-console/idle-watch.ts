@@ -2,9 +2,10 @@
 /**
  * IDLE WATCH for campaign seats, joined to the ledger.
  *
- * PORTED BACK 2026-09-18. This was idle-watch.py, and that file's own docstring recorded the
- * defect: it was "vendored from grailseeker-bot .dev/campaigns/idle-watch.ts … ported to python".
- * The rule said TypeScript and the tree taught Python, so a session that matched the surrounding
+ * PORTED BACK 2026-09-18. This was a .py file, and that file's own docstring recorded the defect:
+ * it was "vendored from grailseeker-bot .dev/campaigns/idle-watch.ts … ported" to the wrong
+ * language. The rule said TypeScript and the tree taught otherwise, so a session that matched the
+ * surrounding
  * style learned the wrong one — which is the drift checks/no-python.ts exists to stop, and this
  * file was its clearest exhibit. The original never left: three other repos on this box run the
  * .ts under bun right now. THIS IS NOT A COPY OF ANY OF THEM. What comes forward is the sibling
@@ -28,7 +29,7 @@
  * The --once form prints every seat's current state and exits; it is the self-check.
  *
  * LINEAGE, kept because it is the file's own history: the registry resolution and the bounded
- * tail read come from the python port; the widening re-announce on both the IDLE and the LOST
+ * tail read come from the .py it replaced; the widening re-announce on both the IDLE and the LOST
  * path came from the operator noticing an idle seat seventeen minutes before the one-shot
  * detector would have mentioned it again (campaign law 23 — a check must be able to say it did
  * not run, pointed at the watcher itself).

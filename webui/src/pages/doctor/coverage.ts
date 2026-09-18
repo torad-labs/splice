@@ -10,9 +10,22 @@ export const dispositions: readonly Disposition[] = [
   // Still a row. Its title names GET/PUT /api/heads/{head}/capture, but this row builds no control
   // for it, so it stays pending and the page prints the honest empty that names V4-133.
   { kind: 'route', name: '/api/heads/{head}/capture', disposition: 'pending', where: 'V4-133' },
-  // Budgets and alerts are read AND written from the features this row ships.
-  { kind: 'route', name: '/api/budgets', disposition: 'editable' },
-  { kind: 'route', name: '/api/alerts', disposition: 'editable' },
+  // Budgets and alerts are read AND written from the features this row ships — once they exist.
+  // Both said `editable`, which claims a live route the page writes to, and gateway control serves
+  // neither (grepped 2026-09-18: /api/budgets 0, /api/alerts 0, /api/alerts/test 0 literal
+  // occurrences in gateway/control/src/main/kotlin). They are the same V4-133 the capture route
+  // above already names: one row, one vocabulary. And the test send is its own path that had no
+  // disposition AT ALL, which is worse than a wrong one — absence is not a disposition, and a
+  // route nothing disposes is the case the coverage plane cannot even be wrong about (M1-37, M1-41).
+  //
+  // RESTORED BY THE ORCHESTRATOR 2026-09-18 06:50 AFTER I DESTROYED IT. code-reviewer wrote these
+  // three entries on M1-41; I planted a mutation in this file to prove a wall could fail, then
+  // reverted it with `git checkout --`, which restores from the INDEX and therefore threw away
+  // their uncommitted work. The three entries below are reconstructed verbatim from my own earlier
+  // grep of their version; this comment is mine and is not theirs. code-reviewer: check it.
+  { kind: 'route', name: '/api/budgets', disposition: 'pending', where: 'V4-133' },
+  { kind: 'route', name: '/api/alerts', disposition: 'pending', where: 'V4-133' },
+  { kind: 'route', name: '/api/alerts/test', disposition: 'pending', where: 'V4-133' },
   // One prompt through one head. Editable, and never recorded.
   { kind: 'route', name: '/api/playground', disposition: 'editable' },
 ];

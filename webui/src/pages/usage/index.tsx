@@ -176,8 +176,8 @@ function ModelBay({ catalog, empty }: { catalog: ModelsPayload | PendingRoute; e
               <StripField w={24} label={S.models} value={model.id} mono={false} />
               <StripField w={12} label={S.contextWindow} value={fmtTokens(model.context_window)} />
               <StripField w={20} label={S.sourceLabel} value={model.context_window_source} mono={false} />
-              <StripField w={10} label={S.inputRate} value={model.rates === null ? S.absent : String(model.rates.input)} />
-              <StripField w={10} label={S.outputRate} value={model.rates === null ? S.absent : String(model.rates.output)} />
+              <StripField w={10} label={S.inputRate} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.input)} />
+              <StripField w={10} label={S.outputRate} value={model.rates === undefined || model.rates === null ? S.absent : String(model.rates.output)} />
             </Strip>
           ))}
         </Bay>

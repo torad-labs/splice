@@ -1,0 +1,177 @@
+wire-check: 15 entity types file(s), 359 declared field(s); the control API serves 27 route(s) and emits 244 key(s) from 47 file(s)
+  244 key constant(s) resolved; 28 put() site(s) name their key at RUNTIME and cannot be enumerated statically
+  7 entity(s) declare no model/types.ts and are OUTSIDE this denominator: compact-stats, control-status, economics, events, heads, logs, usage
+
+LEVEL 1 — the 26 route(s) the console fetches:
+  NOT SERVED /api/accounts                    AccountsPayload      coverage: pending (V4-132)
+  NOT SERVED /api/alerts                      AlertSettings        coverage: pending (V4-133)
+  NOT SERVED /api/alerts                      AlertSettings        coverage: pending (V4-133)
+  NOT SERVED /api/alerts/test                 unknown              coverage: pending (V4-133)
+  NOT SERVED /api/budgets                     BudgetsPayload       coverage: pending (V4-133)
+  NOT SERVED /api/budgets                     BudgetsPayload       coverage: pending (V4-133)
+  NOT SERVED /api/claude-head                 ClaudeHeadPayload    coverage: pending (V4-129)
+  NOT SERVED /api/claude-head/unwrap          ClaudeHeadActionResult coverage: pending (V4-129)
+  NOT SERVED /api/claude-head/wrap            ClaudeHeadActionResult coverage: pending (V4-129)
+  SERVED*    /api/doctor                      DoctorPayload        coverage: read-only
+  SERVED     /api/heads                       HeadsPayload         coverage: read-only
+  SERVED     /api/heads/{}/capture            CaptureState         coverage: pending (V4-133)
+  SERVED     /api/mcp                         McpPayload           coverage: read-only
+  SERVED     /api/models                      ModelsPayload        coverage: pending (V4-127)
+  SERVED     /api/perf                        PerfPayload          coverage: read-only
+  SERVED     /api/perf/summary                PerfSummaryPayload   coverage: read-only
+  SERVED     /api/perf/turns                  PerfTurnsPayload     coverage: pending (V4-127)
+  NOT SERVED /api/projects                    ProjectsPayload      coverage: pending (V4-131)
+  NOT SERVED /api/projects/{}/files           ProjectFilesPayload  coverage: pending (V4-131)
+  SERVED     /api/sessions                    SessionsPayload      coverage: read-only
+  NOT SERVED /api/sessions/{}/edges           SessionEdgesPayload  coverage: pending (V4-130)
+  NOT SERVED /api/teams                       TeamsPayload         coverage: pending (V4-131)
+  NOT SERVED /api/teams/{}                    TeamPayload          coverage: pending (V4-131)
+  NOT SERVED /api/topology                    TopologyPayload      coverage: pending (V4-128)
+  NOT SERVED /api/topology                    TopologyWriteResult  coverage: pending (V4-128)
+  SERVED     /api/upgrade                     UpgradePayload       coverage: read-only
+
+LEVEL 2 — fields:
+  MATCHES             135
+  CONSOLE-INTERNAL     72
+  ABSENT              138
+  OFF-MODULE           14
+  MISMATCHED            0
+  UNDISPOSITIONED       0
+
+LEVEL 3a — SILENT UNDEFINED ON A ROUTE THE DAEMON SERVES TODAY (8):
+  webui/src/entities/perf/model/types.ts:16  PerfStats.max: number
+      3 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/HeadResolver.kt:97 [literal]
+  webui/src/entities/perf/model/types.ts:125  TurnRow.head: string
+      10 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:60 [literal]
+  webui/src/entities/perf/model/types.ts:195  CaptureState.head: string
+      10 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:60 [literal]
+  webui/src/entities/session/model/types.ts:43  SessionRow.pid: number | null
+      2 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/SessionsRoutes.kt:26 [literal]
+  webui/src/entities/session/model/types.ts:49  SessionRow.version: string | null
+      5 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/ControlPayloads.kt:66 [literal]
+  webui/src/entities/session/model/types.ts:54  SessionRow.started_at: number | null
+      2 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/SessionsRoutes.kt:34 [literal]
+  webui/src/entities/session/model/types.ts:59  SessionRow.head: string
+      10 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:60 [literal]
+  webui/src/entities/session/model/types.ts:79  SessionsPayload.note: string
+      4 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:61 [literal]
+
+LEVEL 3b — declared non-optional where the wire may omit, all of them (137):
+  AccountWindow — 3 field(s), webui/src/entities/account/model/types.ts:17
+      seconds, used_percent, reset_epoch_seconds
+      /api/accounts is not served; coverage names V4-132 at webui/src/pages/accounts/coverage.ts:28
+  AccountSwitch — 4 field(s), webui/src/entities/account/model/types.ts:32
+      from, to, reason, at_epoch_millis
+      /api/accounts is not served; coverage names V4-132 at webui/src/pages/accounts/coverage.ts:28
+  AccountRow — 8 field(s), webui/src/entities/account/model/types.ts:47
+      kind, label, primary, selected, available, credential_present, windows, heads
+      /api/accounts is not served; coverage names V4-132 at webui/src/pages/accounts/coverage.ts:28
+  AccountsPayload — 1 field(s), webui/src/entities/account/model/types.ts:72
+      accounts
+      /api/accounts is not served; coverage names V4-132 at webui/src/pages/accounts/coverage.ts:28
+  AlertSettings — 2 field(s), webui/src/entities/alert/model/types.ts:13
+      desktop, webhook_url
+      /api/alerts is not served; coverage names V4-133 at webui/src/pages/doctor/coverage.ts:27
+  Budget — 3 field(s), webui/src/entities/budget/model/types.ts:15
+      head, daily_usd, action
+      /api/budgets is not served; coverage names V4-133 at webui/src/pages/doctor/coverage.ts:26
+  BudgetsPayload — 1 field(s), webui/src/entities/budget/model/types.ts:23
+      budgets
+      /api/budgets is not served; coverage names V4-133 at webui/src/pages/doctor/coverage.ts:26
+  ClaudeHeadPayload — 6 field(s), webui/src/entities/claude-head/model/types.ts:19
+      mode, head, config_dir, auth_kind, claude_on_path, wrap_supported
+      /api/claude-head is not served; coverage names V4-129 at webui/src/pages/settings/coverage.ts:101
+  ClaudeHeadActionResult — 2 field(s), webui/src/entities/claude-head/model/types.ts:51
+      ok, mode
+      /api/claude-head/wrap is not served; coverage names V4-129 at webui/src/pages/settings/coverage.ts:102
+  DoctorCheck — 1 field(s), webui/src/entities/doctor/model/types.ts:22
+      detail
+      /api/doctor returns a payload built outside the control module, through the DoctorReport port — its keys are authored in gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt, which this check does not read
+  DoctorPayload.splice — 1 field(s), webui/src/entities/doctor/model/types.ts:29
+      version
+      5 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/ControlPayloads.kt:66 [literal]
+  DoctorPayload.claude_code — 1 field(s), webui/src/entities/doctor/model/types.ts:30
+      version
+      5 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/ControlPayloads.kt:66 [literal]
+  DoctorPayload.os — 2 field(s), webui/src/entities/doctor/model/types.ts:31
+      version, arch
+      5 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/ControlPayloads.kt:66 [literal]
+  DoctorPayload.jvm — 2 field(s), webui/src/entities/doctor/model/types.ts:32
+      version, vendor
+      5 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/ControlPayloads.kt:66 [literal]
+  DoctorPayload — 8 field(s), webui/src/entities/doctor/model/types.ts:26
+      schema_version, splice, claude_code, os, jvm, topology, checks, perf
+      /api/doctor returns a payload built outside the control module, through the DoctorReport port — its keys are authored in gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt, which this check does not read
+  WindowRule — 1 field(s), webui/src/entities/model/model/types.ts:37
+      prefix
+      /api/models is served but coverage marks it pending V4-127 at webui/src/pages/models/coverage.ts:11
+  HeadCatalog — 4 field(s), webui/src/entities/model/model/types.ts:74
+      discovery_prefix, default_context_window, extra_windows, window_rules
+      /api/models is served but coverage marks it pending V4-127 at webui/src/pages/models/coverage.ts:11
+  PerfStats — 1 field(s), webui/src/entities/perf/model/types.ts:16
+      max
+      3 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/HeadResolver.kt:97 [literal]
+  TurnRow — 1 field(s), webui/src/entities/perf/model/types.ts:125
+      head
+      10 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:60 [literal]
+  CaptureState — 2 field(s), webui/src/entities/perf/model/types.ts:195
+      head, enabled
+      10 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:60 [literal]
+  ProjectRow — 8 field(s), webui/src/entities/project/model/types.ts:12
+      id, root, live_sessions, teams, turns_today, cost_today_usd, day_start, last_activity
+      /api/projects is not served; coverage names V4-131 at webui/src/pages/projects/coverage.ts:11
+  ProjectsPayload — 1 field(s), webui/src/entities/project/model/types.ts:31
+      projects
+      /api/projects is not served; coverage names V4-131 at webui/src/pages/projects/coverage.ts:11
+  ProjectFile — 4 field(s), webui/src/entities/project/model/types.ts:38
+      kind, path, head, text
+      /api/projects/{}/files is not served; coverage names V4-131 at webui/src/pages/projects/coverage.ts:12
+  ProjectFilesPayload — 3 field(s), webui/src/entities/project/model/types.ts:49
+      id, files, looked_in
+      /api/projects/{}/files is not served; coverage names V4-131 at webui/src/pages/projects/coverage.ts:12
+  SessionRepo — 1 field(s), webui/src/entities/session/model/types.ts:33
+      root
+      on a SERVED route, not emitted yet; the declaration names V4-130
+  SessionRow — 4 field(s), webui/src/entities/session/model/types.ts:43
+      pid, version, started_at, head
+      2 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/SessionsRoutes.kt:26 [literal]
+  SessionsPayload — 1 field(s), webui/src/entities/session/model/types.ts:79
+      note
+      4 site(s), e.g. gateway/control/src/main/kotlin/splice/control/api/AuthRoutes.kt:61 [literal]
+  SessionEdge — 4 field(s), webui/src/entities/session/model/types.ts:99
+      from, to, at, direction
+      /api/sessions/{}/edges is not served; coverage names V4-130 at webui/src/pages/sessions/coverage.ts:16
+  SessionEdgesPayload — 2 field(s), webui/src/entities/session/model/types.ts:109
+      session_id, edges
+      /api/sessions/{}/edges is not served; coverage names V4-130 at webui/src/pages/sessions/coverage.ts:16
+  TeamSlot — 4 field(s), webui/src/entities/team/model/types.ts:16
+      role, head, lead, session
+      /api/teams is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:12
+  TeamMemberRow — 22 field(s), webui/src/entities/team/model/types.ts:30
+      name, role, head, model, account, window, lastTurn, state, sessionId, created, uptime, turns, tokensIn, tokensOut, costEst, contextLeftPct, scratchpadKb, workspace, branch, base, diff, checks
+      /api/teams/{} is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:15
+  TeamMessage — 6 field(s), webui/src/entities/team/model/types.ts:63
+      time, from, to, packet, text, fromHead
+      /api/teams/{} is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:15
+  TeamActivity — 4 field(s), webui/src/entities/team/model/types.ts:75
+      time, member, activity, detail
+      /api/teams/{} is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:15
+  TeamRow — 7 field(s), webui/src/entities/team/model/types.ts:82
+      id, name, goal, repo, created_epoch_millis, updated_epoch_millis, slots
+      /api/teams is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:12
+  TeamPayload — 4 field(s), webui/src/entities/team/model/types.ts:93
+      team, members, messages, activity
+      /api/teams/{} is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:15
+  TeamsPayload — 1 field(s), webui/src/entities/team/model/types.ts:102
+      teams
+      /api/teams is not served; coverage names V4-131 at webui/src/pages/teams/coverage.ts:12
+  TopologyFinding — 2 field(s), webui/src/entities/topology/model/types.ts:26
+      path, message
+      /api/topology is not served; coverage names V4-128 at webui/src/pages/settings/coverage.ts:100
+  TopologyPayload — 3 field(s), webui/src/entities/topology/model/types.ts:32
+      path, topology, stale
+      /api/topology is not served; coverage names V4-128 at webui/src/pages/settings/coverage.ts:100
+  TopologyWriteResult — 2 field(s), webui/src/entities/topology/model/types.ts:42
+      ok, restart_required
+      /api/topology is not served; coverage names V4-128 at webui/src/pages/settings/coverage.ts:100
+wire-check: 137 field(s) are a silent undefined by construction

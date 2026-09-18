@@ -16,7 +16,8 @@ import { S } from './strings';
  *  strip's holder edge says `no rates` once, which is where a state belongs (m1 design review
  *  B8 and B10). */
 function rateValue(model: CatalogModel, pick: (rates: NonNullable<CatalogModel['rates']>) => number): string {
-  return model.rates === null ? S.absent : String(pick(model.rates));
+  // undefined AND null: the daemon omits the key rather than sending null (M1-41, types.ts).
+  return model.rates === undefined || model.rates === null ? S.absent : String(pick(model.rates));
 }
 
 /** The catalog rack's columns: the bay head prints these once and the strips below carry values
@@ -126,11 +127,14 @@ export function HeadCatalogBay({ head, selected, onSelect }: {
 
 /** The rate card and windows of the opened model, which is what the strip could not fit. */
 export function ModelDetail({ model, head }: { model: CatalogModel; head: HeadCatalog }) {
+  // The edge is the state, so it has to read the same absence the fields do: a missing key used to
+  // paint GREEN and label the strip `rates` for a model that declares none (M1-41).
+  const noRates = model.rates === undefined || model.rates === null;
   return (
     <div className="myx-models-detail">
       <h3 className="myx-models-sub">{model.id}</h3>
       <p className="myx-models-note">{model.description}</p>
-      <Strip edge={model.rates === null ? 'grey' : 'green'} edgeLabel={model.rates === null ? S.noRates : S.rates} ariaLabel={S.rates}>
+      <Strip edge={noRates ? 'grey' : 'green'} edgeLabel={noRates ? S.noRates : S.rates} ariaLabel={S.rates}>
         <StripField w={13} label={S.rateInput} value={rateValue(model, (rates) => rates.input)} />
         <StripField w={13} label={S.rateRead} value={rateValue(model, (rates) => rates.cache_read)} />
         <StripField w={13} label={S.rateWrite} value={model.rates?.cache_write === undefined ? S.absent : String(model.rates.cache_write)} />

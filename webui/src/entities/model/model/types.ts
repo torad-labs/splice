@@ -49,7 +49,13 @@ export interface CatalogModel {
    *  prefix rule, the provider default). Free text on purpose: naming it lets the page print the
    *  provenance without inventing an enum the daemon may resolve differently. */
   context_window_source: string;
-  rates: ModelRates | null;
+  /** OPTIONAL, not merely nullable, and the difference is the whole of M1-41. ModelsRoute.kt:130
+   *  is `entry.rates?.let { put("rates", ratesJson(it)) }` — the daemon OMITS the key when a model
+   *  declares no rates, it does not send null. `rates: ModelRates | null` claimed the key is ALWAYS
+   *  PRESENT and may hold null, so `rates === null` was false for a missing key and four call sites
+   *  took the has-rates branch on `undefined`. A type that cannot express doubt about the wire
+   *  cannot be checked by anyone (M1-37's second column). */
+  rates?: ModelRates | null;
   /** True for the head's pinned model, the one every launch plants as the client's window. */
   pinned: boolean;
 }

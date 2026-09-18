@@ -98,11 +98,16 @@ public class UpstreamTransport {
 // socketTimeoutMillis, not TCP connect.
 private const val CONNECT_TIMEOUT_MS = 10_000L
 
-private const val BACKOFF_BASE_MS = 200L
-private const val MAX_BACKOFF_MS = 10_000L
-private const val JITTER_PCT = 10
-private const val DNS_BACKOFF_BASE_MS = 1_000L
-private const val DNS_MAX_BACKOFF_MS = 4_000L
+// V4-100: PUBLIC, and that is the single-sourcing rather than a widening. UpstreamClient next door
+// re-typed these five numbers as its own private consts, because it budgets a curve before sleeping
+// it and could not read these; a re-typed number is one that can drift, and the drift would be
+// silent in exactly the wrong direction — UpstreamClient would approve a wait the curve then
+// exceeds. It reads THESE now, so the budget check and the sleep read one number.
+public const val BACKOFF_BASE_MS: Long = 200L
+public const val MAX_BACKOFF_MS: Long = 10_000L
+public const val JITTER_PCT: Int = 10
+public const val DNS_BACKOFF_BASE_MS: Long = 1_000L
+public const val DNS_MAX_BACKOFF_MS: Long = 4_000L
 
 // G26: java.net.http.HttpClient/Builder expose no public API to read or set TCP_NODELAY per
 // connection (confirmed via javap on ktor-client-java-jvm; JDK-8338681 is an open

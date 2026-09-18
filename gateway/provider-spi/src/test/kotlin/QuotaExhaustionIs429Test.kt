@@ -21,9 +21,9 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.wire.HttpStatus
 import splice.spi.ClientFrameEmitted
 import splice.spi.PostContext
-import splice.spi.RATE_LIMITED
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 import java.util.concurrent.atomic.AtomicInteger
@@ -81,11 +81,11 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = true, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(RATE_LIMITED, thrown.status, "the rewrite is what every layer above reads")
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status,"the rewrite is what every layer above reads")
         assertTrue(client.rateLimitedForMs > 0L, "a quota wall must arm the follower horizon like a 429")
         assertEquals(0, refreshes.get(), "billing is not auth: no refresh may be spent on a quota wall")
         assertTrue(
-            notices.any { it.contains("403 is a quota exhaustion") && it.contains("$RATE_LIMITED") },
+            notices.any { it.contains("403 is a quota exhaustion") && it.contains("${HttpStatus.TOO_MANY_REQUESTS}") },
             "one line must name the REAL status and the rewrite, got: $notices",
         )
     }
@@ -100,7 +100,7 @@ class QuotaExhaustionIs429Test {
             client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
-        assertEquals(RATE_LIMITED, thrown.status, "deepseek answers Insufficient Balance as 402")
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, thrown.status,"deepseek answers Insufficient Balance as 402")
         assertTrue(client.rateLimitedForMs > 0L, "and it arms the horizon the same way")
         assertEquals(0, refreshes.get())
         assertTrue(

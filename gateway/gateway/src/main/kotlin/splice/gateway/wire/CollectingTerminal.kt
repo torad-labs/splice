@@ -12,16 +12,10 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.core.wire.ErrorEnvelope
+import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val OK_STATUS = 200
-private const val DEFAULT_ERROR_STATUS = 502
-private const val STATUS_INVALID = 400
-private const val STATUS_AUTH = 401
-private const val STATUS_PERMISSION = 403
-private const val STATUS_NOT_FOUND = 404
-private const val STATUS_RATE_LIMIT = 429
-private const val STATUS_OVERLOADED = 529
 
 public class CollectingTerminal(
     private val model: String,
@@ -38,7 +32,7 @@ public class CollectingTerminal(
     override val hasEnded: Boolean get() = ended.get()
 
     private var body: JsonObject? = null
-    private var status = DEFAULT_ERROR_STATUS
+    private var status = HttpStatus.BAD_GATEWAY
     private var degraded: String? = null
 
     // DR-87: the emit-time Success->error rewrites below were invisible to the caller — StreamFinish
@@ -169,12 +163,12 @@ public class CollectingTerminal(
     // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
     // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.
     private fun statusFor(type: ErrorType): Int = when (type) {
-        ErrorType.INVALID_REQUEST -> STATUS_INVALID
-        ErrorType.AUTHENTICATION -> STATUS_AUTH
-        ErrorType.PERMISSION -> STATUS_PERMISSION
-        ErrorType.NOT_FOUND -> STATUS_NOT_FOUND
-        ErrorType.RATE_LIMIT -> STATUS_RATE_LIMIT
-        ErrorType.OVERLOADED -> STATUS_OVERLOADED
-        ErrorType.API_ERROR -> DEFAULT_ERROR_STATUS
+        ErrorType.INVALID_REQUEST -> HttpStatus.BAD_REQUEST
+        ErrorType.AUTHENTICATION -> HttpStatus.UNAUTHORIZED
+        ErrorType.PERMISSION -> HttpStatus.FORBIDDEN
+        ErrorType.NOT_FOUND -> HttpStatus.NOT_FOUND
+        ErrorType.RATE_LIMIT -> HttpStatus.TOO_MANY_REQUESTS
+        ErrorType.OVERLOADED -> HttpStatus.OVERLOADED
+        ErrorType.API_ERROR -> HttpStatus.BAD_GATEWAY
     }
 }

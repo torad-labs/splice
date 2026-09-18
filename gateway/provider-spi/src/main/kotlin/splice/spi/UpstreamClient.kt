@@ -49,13 +49,15 @@ public class UpstreamClient(
     // wire a recording waiter and the 200/400/800ms schedule becomes an assertion on a list instead
     // of 1.4 seconds of real sleeping.
     waiter: Waiter = ProcessWaiter(),
-    // V4-110 retry-curve knobs: the generic bounded curve's base/cap/jitter, defaulted to the same
-    // numbers the constants below always held. Read from the head config by the factory; the
-    // defaults here are for direct construction (tests, embedders). Known errors keep their specific
-    // plans (DNS 1s/2s/4s, 429 Retry-After); this is the bounded floor everything unpredicted falls on.
-    private val backoffBaseMs: Long = RETRY_BACKOFF_BASE_MS,
-    private val backoffCapMs: Long = RETRY_BACKOFF_MAX_MS,
-    private val backoffJitterPct: Int = RETRY_BACKOFF_JITTER_PCT,
+    // V4-110 retry-curve knobs: the generic bounded curve's base/cap/jitter. V4-100: the defaults
+    // READ UpstreamTransport's public curve constants rather than this file's own copies of them, so
+    // the ceiling this class budgets against and the schedule `backoff` actually sleeps cannot drift.
+    // Read from the head config by the factory; the defaults here are for direct construction (tests,
+    // embedders). Known errors keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the
+    // bounded floor everything unpredicted falls on.
+    private val backoffBaseMs: Long = BACKOFF_BASE_MS,
+    private val backoffCapMs: Long = MAX_BACKOFF_MS,
+    private val backoffJitterPct: Int = JITTER_PCT,
     private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
         waiter,
         baseMs = backoffBaseMs,
@@ -314,7 +316,7 @@ public class UpstreamClient(
     /** Both transport paths budget the curve before sleeping and preserve the original failure. */
     private suspend fun applyTransportBackoff(e: Throwable, ctx: PostContext, attempt: Int, t0: Long) {
         val plannedDelayMs = if (transportFailures.isDnsFailureTransport(e)) {
-            retryBackoffCeilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_BACKOFF_MAX_MS)
+            retryBackoffCeilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS)
         } else {
             retryBackoffCeilingMs(attempt)
         }
@@ -389,13 +391,6 @@ public class UpstreamClient(
 // The width of an upstream error quoted into a retry notice. Read here and by RetryPolicy.kt's
 // give-up / attempt notices, which quote the same failure text.
 internal const val ERR_SNIPPET = 160
-
-// Mirror UpstreamTransport's generic and DNS defaults so opaque backoff seams can be budgeted before they run.
-private const val RETRY_BACKOFF_BASE_MS = 200L
-private const val RETRY_BACKOFF_MAX_MS = 10_000L
-private const val RETRY_BACKOFF_JITTER_PCT = 10
-private const val DNS_BACKOFF_BASE_MS = 1_000L
-private const val DNS_BACKOFF_MAX_MS = 4_000L
 
 /**
  * What [UpstreamClient.post] answers: the handler's value, or the one refusal the loop DECIDES.

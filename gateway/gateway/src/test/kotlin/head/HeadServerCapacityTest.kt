@@ -48,6 +48,7 @@ import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.InflightGate
+import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.PoolAccount
 import splice.spi.ProcessElapsedNow
 import splice.spi.ProviderTuning
@@ -469,9 +470,9 @@ class HeadServerCapacityTest {
 
 private const val MS_PER_S = 1_000L
 
-// V4-61's ceiling on the client-facing deadline (RateLimitCooldown's MAX_RATE_LIMIT_COOLDOWN_MS,
-// which HeadAdmission mirrors as MAX_CLIENT_HOLD_MS); both are private to their files, so the pin
-// states the number the law states.
-private const val CLAMP_SECONDS = 120L
+// V4-61's ceiling on the client-facing deadline. V4-100: READS RateLimitCooldown's
+// MAX_RATE_LIMIT_COOLDOWN_MS itself, which is now public — the pin used to restate 120 because both
+// declarations were private to their files, which is precisely the copy this row retires.
+private const val CLAMP_SECONDS: Long = MAX_RATE_LIMIT_COOLDOWN_MS / MS_PER_S
 
 private const val THREE_DAYS_MS = 3L * 24 * 60 * 60 * 1_000

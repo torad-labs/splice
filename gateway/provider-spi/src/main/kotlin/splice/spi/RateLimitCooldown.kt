@@ -34,6 +34,7 @@ package splice.spi
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.core.wire.ErrorEnvelope
+import splice.core.wire.HttpStatus
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
@@ -192,7 +193,7 @@ public class RateLimitCooldown public constructor(
         // provider-spi cannot import :gateway, so our own fail-fast body was free to drift from the
         // shape the classifier reads. It no longer can.
         val body = ErrorEnvelope.of("rate_limit_error", detail).toString()
-        throw UpstreamFailed(body, RATE_LIMITED)
+        throw UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS)
     }
 
     /** Every 429 with retry budget left is WAITED OUT and retried here in splice — a short
@@ -297,8 +298,6 @@ public class RateLimitCooldown public constructor(
     }
 }
 
-internal const val RATE_LIMITED = 429
-
 // Cooldown length when a 429 carries no Retry-After (the ChatGPT backend's bare
 // {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
 // recovered account resumes within one client-retry cycle.
@@ -308,9 +307,16 @@ internal const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
 // legitimately carry multi-day resets (142h observed 2026-07-26) and accumulateAndGet(max)
 // makes the longest value ever seen win permanently — one malformed pushback would poison
 // the head for every future turn with no operator escape short of killing the daemon.
-// 120s starves a herd but lets a recovering account resume inside one client-retry cycle;
+// 120s starves a herd but lets a recovered account resume inside one client-retry cycle;
 // the true pushback still reaches the operator in the surfaced upstream body.
-private const val MAX_RATE_LIMIT_COOLDOWN_MS = 120_000L
+//
+// V4-100: PUBLIC, and that is the point of the ceiling rather than a widening for its own sake.
+// The admission plane hands the client a deadline derived from the same number (HeadAdmission's
+// clamp on the Retry-After it writes, and the CLAMP_SECONDS both head tests pin), so the ceiling
+// is a CROSS-MODULE fact with three existing readers in :gateway. It lived private here and was
+// re-typed there, which is the copy this export retires: one number, one declaration, and the
+// client's deadline cannot outlive the cooldown the gateway is actually holding.
+public const val MAX_RATE_LIMIT_COOLDOWN_MS: Long = 120_000L
 
 // A saturated or hostile header must not poison reset reporting after the local re-probe opens.
 // Seven days preserves legitimate multi-day resets while bounding the reporting-only state too.

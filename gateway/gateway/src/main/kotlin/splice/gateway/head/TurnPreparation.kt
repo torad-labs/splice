@@ -193,8 +193,11 @@ internal class TurnPreparation(
         return Preparation.Rejected("invalid request body")
     }
 
-    private fun who(sessionId: String?): String = sessionId?.let { "session ${it.take(TAG_CHARS)}, " } ?: ""
+    // V4-100: SESSION_TAG_CHARS is the ONE session-tag width (declared in TurnDrive.kt, same
+    // package). This file's own `TAG_CHARS = 8` was the same number under a second name, so the log
+    // line here and the one TurnTelemetry writes could disagree about how much of a session id is
+    // enough to identify it — a reader comparing the two would see two different tags for one turn.
+    private fun who(sessionId: String?): String = sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}, " } ?: ""
 }
 
 private const val SESSION_HEADER = "x-claude-code-session-id"
-private const val TAG_CHARS = 8

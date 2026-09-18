@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import splice.core.util.Cancellables
+import splice.core.wire.HttpStatus
 import java.io.IOException
 import java.net.ConnectException
 import java.net.URI
@@ -19,10 +20,6 @@ import java.time.Duration
 import javax.net.ssl.SSLException
 
 private const val HTTP_OK = 200
-private const val HTTP_NOT_FOUND = 404
-private const val HTTP_FORBIDDEN = 403
-private const val HTTP_TOO_MANY = 429
-private const val HTTP_SERVER_ERROR = 500
 private const val FETCH_TIMEOUT_S = 300L
 
 /** GET a URL (https or file://): the bytes, null when the asset is ABSENT (404, no such file), and
@@ -48,7 +45,7 @@ internal class JdkUpgradeFetch(
             val reply = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
             when (val status = reply.statusCode()) {
                 HTTP_OK -> reply.body()
-                HTTP_NOT_FOUND -> null
+                HttpStatus.NOT_FOUND -> null
                 else -> throw UpgradeFetchFailed("HTTP $status (${statusClass(status)})")
             }
         }
@@ -61,9 +58,9 @@ internal class JdkUpgradeFetch(
     }
 
     private fun statusClass(status: Int): String = when {
-        status == HTTP_FORBIDDEN -> "forbidden"
-        status == HTTP_TOO_MANY -> "rate limited, retry later"
-        status >= HTTP_SERVER_ERROR -> "server error, retry later"
+        status == HttpStatus.FORBIDDEN -> "forbidden"
+        status == HttpStatus.TOO_MANY_REQUESTS -> "rate limited, retry later"
+        status >= HttpStatus.INTERNAL_SERVER_ERROR -> "server error, retry later"
         else -> "refused"
     }
 

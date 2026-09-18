@@ -16,6 +16,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.WallClock
 import splice.spi.ElapsedNow
+import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.spi.PostContext
 import splice.spi.RateLimitCooldown
 import splice.spi.RateLimitTurn
@@ -170,9 +171,9 @@ class RateLimitCooldownTest {
 
         cooldown.markUnavailable(Long.MAX_VALUE)
 
-        assertEquals(120_000L, cooldown.unavailableForMs())
+        assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.unavailableForMs())
         assertEquals(604_800_000L, cooldown.providerUnavailableForMs())
-        elapsed += 120_000L
+        elapsed += MAX_RATE_LIMIT_COOLDOWN_MS
         assertEquals(0L, cooldown.unavailableForMs())
         elapsed += 604_800_000L
         assertEquals(0L, cooldown.providerUnavailableForMs())
@@ -185,7 +186,7 @@ class RateLimitCooldownTest {
 
         cooldown.markUnavailable(Long.MAX_VALUE)
 
-        assertEquals(120_000L, cooldown.unavailableForMs())
+        assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.unavailableForMs())
         assertEquals(1_000_000L, cooldown.providerUnavailableForMs())
         elapsed = Long.MAX_VALUE
         assertEquals(0L, cooldown.unavailableForMs())
@@ -206,8 +207,8 @@ class RateLimitCooldownTest {
         )
 
         assertTrue(notices.any { it.contains("arming 120000ms follower protection") })
-        assertEquals(120_000L, cooldown.remainingMs())
-        assertEquals(120_000L, cooldown.unavailableForMs())
+        assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.remainingMs())
+        assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.unavailableForMs())
         assertEquals(86_400_000L, cooldown.providerUnavailableForMs())
     }
 
@@ -298,7 +299,11 @@ class RateLimitCooldownTest {
             onRetry = RetryNotice {},
             nextRefreshed = false,
         )
-        assertEquals(120_000L, cooldown.remainingMs(), "the armed horizon clamps; the provider reset does not")
+        assertEquals(
+            MAX_RATE_LIMIT_COOLDOWN_MS,
+            cooldown.remainingMs(),
+            "the armed horizon clamps; the provider reset does not",
+        )
 
         val bodies = mutableListOf<String>()
         listOf(32_000L, 34_000L, 39_000L).forEach { gap ->
@@ -339,7 +344,7 @@ class RateLimitCooldownTest {
             body = body,
         )
 
-        assertEquals(120_000L, cooldown.remainingMs(), "the ARMED horizon still clamps at 120s")
+        assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.remainingMs(), "the ARMED horizon still clamps at 120s")
         assertEquals(23_300_000L, cooldown.providerUnavailableForMs(), "the body reset is 6h28m20s out")
 
         // No clock advance before reading the body: the cooldown is armed to 120s, so the
@@ -538,7 +543,11 @@ class RateLimitCooldownBudgetTest {
 
         assertEquals(3, calls.get(), "every attempt in the budget is spent before the client sees a 429")
         assertEquals(listOf(15_000L, 15_000L), waiter.waits, "the schedule is the 15s floor, not the 5301s header")
-        assertEquals(120_000L, client.rateLimitedForMs, "exhaustion arms the follower horizon, clamped")
+        assertEquals(
+            MAX_RATE_LIMIT_COOLDOWN_MS,
+            client.rateLimitedForMs,
+            "exhaustion arms the follower horizon, clamped",
+        )
     }
 
     // V4-48 REVERSED THIS. It used to assert that a short pooled 429 never enters retry backoff —

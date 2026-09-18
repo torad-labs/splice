@@ -312,7 +312,8 @@
      face and size, not the page's (found by M2-01 when --text-3 grew and every field clipped);
      and a ch count must never shrink: as a flex item the default flex-shrink squeezed nine
      columns at once below their declared widths instead of letting the bay scroll. */
-  font-family: var(--font-figure);
+  /* CODE: the ch ANCHOR: a field's declared width in ch must mean the same in every rack, so this box keeps the 0.6em advance even though it displays nothing itself. */
+  font-family: var(--font-code);
   font-size: var(--text-3);
   flex: 0 0 auto;
 }
@@ -344,7 +345,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* FIGURE: a strip field marked as a figure. */
 .myx-sfield-figure { font-family: var(--font-figure); }
+font-variant-numeric: tabular-nums;
 /* A prose value keeps the label face; the box's figure face exists for the ch unit. */
 .myx-sfield-value:not(.myx-sfield-figure) { font-family: var(--font-label); }
 .myx-sfield-basis {
@@ -364,14 +367,27 @@
   /* The rack's side rails: measured 12px bands at the bay's own edges of the comp (left x
      152..163 of a bay at 151..581, right 559..573), a wash a few steps up from the bay floor. */
   border-inline: var(--space-4) solid var(--hairline);
-  /* The floor is ruled: the comp shows the rack's unprinted slots as hairlines at a 31-32px pitch
-     (measured below the last lead strip: 668, 698, 729, 760, 790, 821, 852, 884, 916), and they read
-     wherever no strip covers them - in the gaps between strips and under the last one. Every strip
-     is opaque paper, so the rule only ever shows where the rack is empty. */
+  /* The floor is ribbed, not ruled. The comp's unprinted slots sit at a 31-32px pitch (measured
+     below the last lead strip: 668, 698, 729, 760, 790, 821, 852, 884, 916) and reading its own rows
+     down an empty rack shows two parts, not one: a bright rule a couple of pixels wide (L45 at row
+     698, L40 at 728) and a soft wash carrying the rest of the pitch (a plateau at L11-13), with a
+     dark notch under each rule (L2-6). One --hair of --hairline per pitch puts all of that tone in a
+     single row: sampling 240 rows, the comp reads 232 brighter than its floor and peaks at L52,
+     where the hairline build read 85 and peaked at L68. So the slot is the rule AND the wash, both
+     off --bay-slot: the token is the rule's tone and the wash is a fifth of it. The pitch itself is
+     measured and stays. */
+  /* RULE: EVERY STOP IN A REPEATING GRADIENT ON A RACK IS A LENGTH, NEVER A PERCENTAGE.
+     A percentage stop silently redefines the gradient's period as the ELEMENT's own size, so
+     mixing one with pixel stops makes the period the bay's height (809px) rather than the
+     pitch: this rule rendered one 27px ramp where a ribbed floor was intended, and it renders
+     plausibly -- it looks deliberate, it passes every test, and only reading the rendered rows
+     against the comp's sample catches it (52 of 240 rows against the comp's 210). If you edit
+     this rule, re-run that sample; do not eyeball it. */
   background-image: repeating-linear-gradient(
     to bottom,
-    var(--hairline) 0 var(--hair),
-    transparent var(--hair) var(--space-7)
+    var(--bay-slot) 0 var(--space-1),
+    color-mix(in srgb, var(--bay-slot) 15%, transparent) var(--space-1) calc(var(--space-7) - var(--space-1)),
+    transparent calc(var(--space-7) - var(--space-1)) var(--space-7)
   );
   border-radius: 0;
 }
@@ -400,7 +416,9 @@
   color: var(--strip-ink);
 }
 .myx-bay-count {
+  /* FIGURE: a bay's count is a number in a column. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-1);
   font-variant-numeric: tabular-nums;
   color: var(--strip-ink-mute);
@@ -461,7 +479,9 @@
   color: var(--scope-ink);
 }
 .myx-scope-basis {
+  /* FIGURE: the basis word is read beside a chart's figure, on its baseline. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-1);
   color: var(--scope-ink);
 }
@@ -490,7 +510,9 @@
   color: var(--strip-ink);
 }
 .myx-fbox-input {
+  /* FIGURE: a printed field's value: a config value lines up with every other one. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   font-variant-numeric: tabular-nums;
   color: var(--strip-ink);
@@ -561,7 +583,9 @@
   border-radius: 0;
 }
 .myx-empt-text {
+  /* FIGURE: an honest empty is printed words, not code, so it takes the display face. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-3);
   color: var(--strip-ink);
 }
@@ -586,13 +610,17 @@
   gap: var(--space-1);
 }
 .myx-fig-value {
+  /* FIGURE: the Figure primitive's own value. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: inherit;
   font-variant-numeric: tabular-nums;
   color: var(--ink-strong);
 }
 .myx-fig-unit {
+  /* FIGURE: the unit beside a figure; it sits on the figure's baseline. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: inherit;
   color: var(--ink-mute);
 }

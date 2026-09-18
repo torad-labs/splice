@@ -36,7 +36,9 @@
 .myx-rule-clocks {
   left: 10%;
   width: 19%;
+  /* FIGURE: the clocks are the comp's own printed line. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-5);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
@@ -52,7 +54,9 @@
 .myx-rule-window {
   left: 41%;
   width: 30%;
+  /* FIGURE: the nearest-window readout is the comp's own printed line. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-5);
   color: var(--ink);
   overflow: hidden;
@@ -77,7 +81,9 @@
 .myx-rule-none {
   left: 72%;
   width: 27%;
+  /* FIGURE: the rule's "heads report none" readout is the comp's own printed line. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-5);
   color: var(--ink);
   overflow: hidden;

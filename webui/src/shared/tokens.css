@@ -64,7 +64,7 @@
   /* the retired faces alias to the two in the new world (fonts.css) */
   --font-display:var(--font-label);
   --font-body:var(--font-label);
-  --font-mono:var(--font-figure);
+  --font-mono:var(--font-code);
 
   /* ---------- SEMANTIC · themed via light-dark(LIGHT, DARK) ---------- */
   --surface:        light-dark(var(--paper-50),  var(--obsidian-900));
@@ -147,7 +147,18 @@
   --ease-out:cubic-bezier(.22,1,.36,1);
 
   --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
-  --font-figure:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  /* A FIGURE is a number or an identifier that has to line up in a column, and the
+     comp shows exactly what that looks like: its strip figures advance 0.389em,
+     which is narrower than every monospace in circulation (0.5 to 0.75em), so the
+     comp did not set them in one (M1-15 measured 17 strings on team-board-a.png).
+     --font-figure is therefore the label face, and figures take their alignment
+     from tabular-nums, which is what the board ships. */
+  --font-figure:var(--font-label);
+  /* CODE is a TOML body, a log line, a transcript block or a file path -- genuinely
+     monospace, and the comp shows none of them, so the brief's words decide. It also
+     anchors the ch unit (ui.css's .myx-sfield): a field's declared width in ch has to
+     mean the same thing in every rack, so that box keeps the 0.6em advance. */
+  --font-code:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   /* ---------- GROUND ---------- */
   /* the room is one graphite field: the rule, the rail and the floor between
@@ -186,7 +197,7 @@
                            bay (9,13,13) - four steps down, ratio about 1.06. A rack
                            reads as a rack by its rules and its plate, not by this
                            difference, which is why the three below carry the work. */
-  --bay-slot:rgba(236,234,226,.12);
+  --bay-slot:rgba(236,234,226,.19);
                         /* the rule across the rack's unprinted floor: measured peaks
                            at rgb (43,46,44) over a floor of 12, 2px wide with its
                            antialiasing, at a 31-32px pitch. */
@@ -246,7 +257,18 @@
   --ease-out:cubic-bezier(.22,1,.36,1);
 
   --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
-  --font-figure:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  /* A FIGURE is a number or an identifier that has to line up in a column, and the
+     comp shows exactly what that looks like: its strip figures advance 0.389em,
+     which is narrower than every monospace in circulation (0.5 to 0.75em), so the
+     comp did not set them in one (M1-15 measured 17 strings on team-board-a.png).
+     --font-figure is therefore the label face, and figures take their alignment
+     from tabular-nums, which is what the board ships. */
+  --font-figure:var(--font-label);
+  /* CODE is a TOML body, a log line, a transcript block or a file path -- genuinely
+     monospace, and the comp shows none of them, so the brief's words decide. It also
+     anchors the ch unit (ui.css's .myx-sfield): a field's declared width in ch has to
+     mean the same thing in every rack, so that box keeps the 0.6em advance. */
+  --font-code:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   /* ---------- GROUND ----------
      The paper bay is a LADDER, not one sheet of paper. The page is the matte
@@ -302,7 +324,7 @@
      2.03:1). The plate keeps its dark relationship to its own neighbours rather
      than the dark value: 1.34:1 under the strip, 1.45:1 above the bay floor. */
   --bay:#ABB0AC;            /* the deeper matte, already this block's bay floor */
-  --bay-slot:rgba(31,36,34,.20);
+  --bay-slot:rgba(31,36,34,.32);
                             /* the floor's rule: one step past --hairline (.16) and
                                well short of --hairline-strong (.32), which is the
                                weight the dark 12-percent wash reads at on a matte */

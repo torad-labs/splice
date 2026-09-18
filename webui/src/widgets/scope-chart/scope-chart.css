@@ -53,7 +53,9 @@
 .myx-swatch-deferred { opacity: 0.4; }
 
 .myx-schart-figure {
+  /* FIGURE: the chart's figure line, tabular so columns line up. */
   font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
   font-variant-numeric: tabular-nums;
   font-size: var(--text-5);
   color: var(--scope-ink);

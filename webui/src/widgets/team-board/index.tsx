@@ -11,10 +11,20 @@
 // a field the comp does not show does not exist, and a figure the daemon does
 // not report prints its absence rather than a zero.
 import { Bay, Strip, StripField } from '@shared/ui';
-import type { CSSProperties } from 'react';
-import type { TeamMemberRow, TeamMessage, TeamPayload } from '@entities/team';
+import type { TeamMemberRow, TeamPayload } from '@entities/team';
+import { BoardFooter, BoardHeader, MSG_COLS, MessageStrip } from './parts';
 import { S } from './strings';
 import './board.css';
+
+// The board's other two views, re-exported so a page reads every view of the team through the
+// slice's one entry point (the boundaries rule in eslint.config.mjs).
+export { TeamBoardByRole, TeamTimeline } from './views';
+export {
+  costPerRole, focusMember, groupByRole, roleRows, slotName, timeRule, timelineRows, turnsPerMember,
+} from './model';
+export type {
+  RoleBay, RoleEvent, TeamEconomicsSession, TeamHourPoint, TeamTurn, TeamViewData, TimelineRow,
+} from './model';
 
 /** The comp's two head bays, in the order it draws them. */
 const HEAD_BAY = ['myx-board-bay-0', 'myx-board-bay-1'];
@@ -35,14 +45,12 @@ const LEAD_COLS_2 = [5.83, 7.02, 6.19, 5.48, 4.17, 5.48, 5.71, 5.36];
 const BUILDER_COLS_2 = [9.17, 6.43, 5.24, 4.53, 4.17, 5.24, 5.36, 5.12];
 const LEAD_COLS_3 = [5.83, 5.95, 12.50, 7.74, 3.33, 5.24, 4.64];
 const BUILDER_COLS_3 = [5.24, 6.07, 12.86, 8.10, 3.10, 5.24, 4.64];
-/** The header's five boxes, from the same scan of the header strip. */
-const HEAD_COLS = [27.38, 39.41, 42.26, 21.31, 30.00];
 const BAY_COLS = [
   { l1: LEAD_COLS, l2: LEAD_COLS_2, l3: LEAD_COLS_3 },
   { l1: BUILDER_COLS, l2: BUILDER_COLS_2, l3: BUILDER_COLS_3 },
 ];
-/** The chat's columns and the activity's, from the same scan of their bays. */
-const MSG_COLS = [5.48, 10.12, 2.26, 12.14, 4.41, 19.05];
+/** The activity rack's columns, from the same scan of its bay. The chat's live in parts.tsx,
+   where the message strip that uses them does. */
 const ACT_COLS = [5.00, 11.43, 16.79, 20.24];
 
 /* The two racks below are pitched, not stacked: the comp spaces its chat strips
@@ -69,15 +77,6 @@ const money = (value: number | null): string => (value === null ? 'n/r' : `$${va
 const thousand = (value: number): string => value.toLocaleString('en-US');
 const pct = (value: number | null): string => (value === null ? 'n/r' : `${value}%`);
 const kb = (value: number | null): string => (value === null ? 'n/r' : `${value} k`);
-
-/** The stamp the comp prints: YYYY-MM-DD HH:MM:SS, in UTC so a capture reads
- *  the same on every machine. */
-function stamp(epochMs: number): string {
-  const at = new Date(epochMs);
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  const date = `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`;
-  return `${date} ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}:${pad(at.getUTCSeconds())}`;
-}
 
 /** The session strips of one member: three printed lines, as the comp racks them.
  *  The edge follows the comp: the slot flagged lead prints green, every other
@@ -133,48 +132,16 @@ function MemberStrips({ member, line, cols }: {
   );
 }
 
-/** One message strip: the six fields the comp prints, with the sender's edge. */
-function MessageStrip({ message, className = 'myx-board-msg', style = {}, cols = MSG_COLS }: {
-  message: TeamMessage;
-  className?: string;
-  style?: CSSProperties;
-  cols?: number[];
-}) {
-  return (
-    <Strip
-      className={className}
-      style={style}
-      edge={message.fromHead === 'claude' ? 'green' : 'grey'}
-      edgeLabel=""
-      ariaLabel={`${message.from} to ${message.to}`}
-    >
-      <StripField w={cols[0]} label={S.time} value={message.time} />
-      <StripField w={cols[1]} label={S.from} value={message.from} mono={false} />
-      <StripField w={cols[2]} label={S.arrow} value="→" mono={false} />
-      <StripField w={cols[3]} label={S.to} value={message.to} mono={false} />
-      <StripField w={cols[4]} label={S.packet} value={message.packet} mono={false} />
-      <StripField w={cols[5]} label={S.message} value={message.text} mono={false} />
-    </Strip>
-  );
-}
-
 export function TeamBoard({ board }: { board: TeamPayload }) {
   const heads: string[] = [];
   for (const member of board.members) if (!heads.includes(member.head)) heads.push(member.head);
 
-  const leadSlot = board.team.slots.find((slot) => slot.lead);
   const handoff = board.messages[board.messages.length - 1] ?? null;
 
   return (
     <section className="myx-board" aria-label={S.board}>
       {/* the team header strip: five boxed fields, the team's own identity */}
-      <Strip className="myx-board-header" edge="green" edgeLabel="" ariaLabel={board.team.name}>
-        <StripField w={HEAD_COLS[0]} label={S.team} value={board.team.name} mono={false} />
-        <StripField w={HEAD_COLS[1]} label={S.goal} value={board.team.goal} mono={false} />
-        <StripField w={HEAD_COLS[2]} label={S.repo} value={board.team.repo} mono={false} />
-        <StripField w={HEAD_COLS[3]} label={S.slots} value={`${board.team.slots.length} slots, ${board.team.slots.filter((s) => s.session !== null).length} bound`} mono={false} />
-        <StripField w={HEAD_COLS[4]} label={S.leadDriving} value={leadSlot?.session ?? 'none'} mono={false} />
-      </Strip>
+      <BoardHeader board={board} />
 
       {/* one bay per head, in the order the members run */}
       {heads.slice(0, HEAD_BAY.length).map((head, index) => (
@@ -275,11 +242,7 @@ export function TeamBoard({ board }: { board: TeamPayload }) {
       </Bay>
 
       {/* the team's identity at the foot of the console, across the rail's edge */}
-      <div className="myx-board-footer">
-        <span className="myx-board-footer-cell">{S.teamId} {board.team.id}</span>
-        <span className="myx-board-footer-cell">{S.teamCreated} {stamp(board.team.created_epoch_millis)}</span>
-        <span className="myx-board-footer-cell">{S.teamUpdated} {stamp(board.team.updated_epoch_millis)}</span>
-      </div>
+      <BoardFooter board={board} />
     </section>
   );
 }

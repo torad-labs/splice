@@ -16,11 +16,15 @@
 // views, decides where they live once there is more than one view to switch to.
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router';
-import { fetchTeam, fetchTeams, isPending, useTeam, useTeams } from '@entities/team';
+import { PENDING_TEAMS, fetchTeam, fetchTeams, isPending, useTeam, useTeams } from '@entities/team';
 import { ViewTabs, useViews, type View } from '@features/views';
-import { TeamBoard } from '@widgets/team-board';
-import { Empty } from '@shared/ui';
-import type { TeamPayload, TeamState, TeamsState } from '@entities/team';
+import { TeamBoard, TeamBoardByRole, TeamTimeline } from '@widgets/team-board';
+import type { TeamViewData } from '@widgets/team-board';
+import { TeamChat } from '@widgets/team-chat';
+import { ActivityFeed } from '@widgets/activity-feed';
+import { TeamCompose, draftOf } from '@features/team-compose';
+import { Bay, Empty, Strip, StripField } from '@shared/ui';
+import type { TeamPayload, TeamRow, TeamState, TeamsState } from '@entities/team';
 import { S } from './strings';
 import './teams.css';
 
@@ -38,14 +42,20 @@ export function wantsFixture(search: string): boolean {
 }
 
 
-/** The three views of one team. Only the first is built in this row. */
+/** The team list's columns, in ch, sized to print the fixture team whole (the first capture cut
+ *  `storefront-api` at 16ch). A layout cannot compress a string: these are the widths the
+ *  values need, and the bay scrolls if a longer one arrives. */
+const LIST_COLS = [22, 40, 44, 16, 10];
+
+/** The three views of one team. */
 const VIEWS: View[] = [
   { id: 'by-head', name: 'board by head', layout: 'board', filter: {}, sort: null, group: 'head', fields: [] },
   { id: 'by-role', name: 'board by role', layout: 'board', filter: {}, sort: null, group: 'role', fields: [] },
   { id: 'timeline', name: 'timeline', layout: 'timeline', filter: {}, sort: null, group: null, fields: [] },
 ];
 
-const BOARD_VIEW = 'by-head';
+const ROLE_VIEW = 'by-role';
+const TIMELINE_VIEW = 'timeline';
 
 /** What the page shows, as a pure function of what the daemon answered.
  *  Split out so each of the three answers — the board, the honest empty naming
@@ -56,31 +66,77 @@ export interface TeamsBodyInput {
   teams: TeamsState | null;
   team: TeamState | null;
   error?: string | null;
+  /** The board the by-role and timeline views draw, when the address asked for the fixture. */
+  views?: TeamPayload | null;
+  /** The turns, economics and hour samples those views read. Null against the live daemon, where
+   *  every panel that needs them prints the honest empty naming V4-131. */
+  viewData?: TeamViewData | null;
 }
 
-export function teamsBodyFor({ fixture, view, teams, team, error = null }: TeamsBodyInput) {
-  if (view !== BOARD_VIEW) return <Empty text="view not built" source="row M2-08" />;
-  if (fixture !== null) return <TeamBoard board={fixture} />;
-
+export function teamsBodyFor({ fixture, view, teams, team, error = null, views = null, viewData = null }: TeamsBodyInput) {
   const live = team !== null && !isPending(team) ? team : null;
+  // The by-role board and the timeline read the same team. Against the fixture they read the
+  // payload its own comps draw (team-board-b and team-board-c); against the daemon they read the
+  // live one, and their panels print the honest empty naming V4-131 for every route still to come.
+  const board = views ?? fixture ?? live;
+  if (view === ROLE_VIEW || view === TIMELINE_VIEW) {
+    if (board === null) return liveEmpty({ teams, team, error });
+    if (view === TIMELINE_VIEW) return <TeamTimeline board={board} data={viewData} />;
+    return (
+      <TeamBoardByRole
+        board={board}
+        data={viewData}
+        chat={<TeamChat state={viewData === null ? { pending: PENDING_TEAMS } : { messages: board.messages }} />}
+        feed={<ActivityFeed state={viewData === null ? { pending: PENDING_TEAMS } : { activity: board.activity, clientMatching: true }} />}
+      />
+    );
+  }
+  if (fixture !== null) return <TeamBoard board={fixture} />;
   if (live !== null) return <TeamBoard board={live} />;
+  return liveEmpty({ teams, team, error });
+}
 
+/** What the page says when no board answered: which of the four silences this is. */
+function liveEmpty({ teams, team, error }: { teams: TeamsState | null; team: TeamState | null; error: string | null }) {
   // The route itself is missing (V4-131): that is not the same answer as a
   // daemon that answers with no teams, and neither is a failure.
   if (isPending(teams) || isPending(team)) return <Empty text="no teams route" source="V4-131 pending" />;
   // Nothing has answered yet: say that, rather than claiming a failure or an
   // absence the daemon never reported.
   if (teams === null && team === null) return <Empty text={S.reading} source="GET /api/teams" />;
-  if (teams !== null && teams.teams.length === 0) {
+  if (teams !== null && !isPending(teams) && teams.teams.length === 0) {
     return <Empty text={S.noTeams} source="GET /api/teams" />;
   }
   return <Empty text={S.unreadable} source={error ?? 'the daemon did not answer'} />;
 }
 
+/** The team list bay: every team the operator owns, archived ones included and marked. Archiving
+ *  is a flag and never a deletion (FEATURES 4.13), so this bay filters nothing. */
+export function TeamList({ teams }: { teams: readonly (TeamRow & { archived?: boolean })[] }) {
+  return (
+    <Bay
+      className="myx-teams-list"
+      label={S.teams}
+      count={teams.length}
+      empty={{ text: S.noTeams, source: 'GET /api/teams' }}
+    >
+      {teams.map((team) => (
+        <Strip key={team.id} edge={team.archived === true ? 'grey' : 'green'} edgeLabel="" ariaLabel={team.name} struck={team.archived === true}>
+          <StripField w={LIST_COLS[0]} label={S.name} value={team.name} mono={false} />
+          <StripField w={LIST_COLS[1]} label={S.goal} value={team.goal} mono={false} />
+          <StripField w={LIST_COLS[2]} label={S.repo} value={team.repo} mono={false} />
+          <StripField w={LIST_COLS[3]} label={S.slots} value={`${team.slots.length} slots, ${team.slots.filter((slot) => slot.session !== null).length} bound`} mono={false} />
+          <StripField w={LIST_COLS[4]} label={S.state} value={team.archived === true ? S.archived : S.live} mono={false} />
+        </Strip>
+      ))}
+    </Bay>
+  );
+}
+
 export function TeamsPage() {
   const { search } = useLocation();
   const { active } = useViews(PAGE_ID, VIEWS);
-  const [sample, setSample] = useState<{ name: string; payload: TeamPayload } | null>(null);
+  const [sample, setSample] = useState<{ name: string; payload: TeamPayload; views: TeamPayload | null; data: TeamViewData | null } | null>(null);
   const fixture = sample === null ? null : sample.payload;
 
   // A fixture loads only in dev and only when the address asks for it by name
@@ -106,8 +162,13 @@ export function TeamsPage() {
     // at runtime shipped none). CONTRACTS.md section 4 asks for the dynamic import; this is the half
     // of it the bundler can actually drop.
     void import(/* @vite-ignore */ `./fixtures/${FIXTURE}.ts`)
-      .then((module: { heroBoard?: TeamPayload }) => {
-        setSample(module.heroBoard === undefined ? null : { name: FIXTURE, payload: module.heroBoard });
+      .then((module: { heroBoard?: TeamPayload; viewsBoard?: TeamPayload; viewsData?: TeamViewData }) => {
+        setSample(module.heroBoard === undefined ? null : {
+          name: FIXTURE,
+          payload: module.heroBoard,
+          views: module.viewsBoard ?? null,
+          data: module.viewsData ?? null,
+        });
       })
       .catch(() => undefined);
   }, [search]);
@@ -130,7 +191,17 @@ export function TeamsPage() {
     teams: teams.data,
     team: team.data,
     error: team.error ?? teams.error,
+    views: sample?.views ?? null,
+    viewData: sample?.data ?? null,
   });
+
+  // The list and the composer are the page's own flow, under the board: the comp's first viewport
+  // is the board and nothing else (the hero gate vetoes ink the comp does not have), so everything
+  // this page adds to it lives one scroll below.
+  const listed = fixture !== null
+    ? [fixture.team]
+    : teams.data !== null && !isPending(teams.data) ? teams.data.teams : [];
+  const draft = fixture === null ? null : draftOf(fixture.team);
 
   return (
     <div
@@ -139,6 +210,13 @@ export function TeamsPage() {
     >
       {body}
       <ViewTabs pageId={PAGE_ID} defaults={VIEWS} />
+      {isPending(teams.data) && fixture === null
+        ? <Empty text="no teams route" source={`${PENDING_TEAMS} pending`} />
+        : <TeamList teams={listed} />}
+      {/* Keyed by the team it drafts: the fixture arrives after the first render, and a form's
+          state is seeded once, so without the key the composer kept the blank draft it was born
+          with (measured in the first capture of this page). */}
+      {draft === null ? <TeamCompose key="blank" /> : <TeamCompose key={fixture?.team.id ?? 'team'} initial={draft} />}
     </div>
   );
 }

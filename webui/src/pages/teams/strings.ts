@@ -6,4 +6,11 @@ export const S = {
   unreadable: 'teams unreadable',
   noTeams: 'no teams yet',
   reading: 'reading teams',
+  name: 'name',
+  goal: 'goal',
+  repo: 'repo',
+  slots: 'slots',
+  state: 'state',
+  archived: 'archived',
+  live: 'live',
 } as const;

@@ -1,0 +1,45 @@
+/* The activity feed: one ruled paper slip per sample, time | member | activity, as the comp's
+   activity rows are drawn (team-board-b, right column foot). */
+.myx-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.myx-feed-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  font-weight: 400;
+  color: var(--ink);
+}
+.myx-feed-tag { font-size: var(--text-1); color: var(--ink-mute); }
+.myx-feed-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.myx-feed-row {
+  display: grid;
+  grid-template-columns: auto max-content max-content minmax(0, 1fr);
+  align-items: stretch;
+  background: var(--strip);
+  color: var(--strip-ink);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+}
+.myx-feed-row > .myx-edge .myx-edge-label { display: none; }
+.myx-feed-row > .myx-edge .myx-edge-mark { width: var(--space-2); inset-block: 0; }
+.myx-feed-cell {
+  padding: var(--space-2) var(--space-3);
+  border-inline-end: var(--hair) solid var(--strip-ink-mute);
+  overflow-wrap: anywhere;
+}
+.myx-feed-cell:last-child { border-inline-end: 0; }
+.myx-feed-fig { font-family: var(--font-figure); font-variant-numeric: tabular-nums; }

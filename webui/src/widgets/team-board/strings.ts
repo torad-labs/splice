@@ -53,6 +53,16 @@ export const S = {
   teamId: 'team id:',
   teamCreated: 'created:',
   teamUpdated: 'updated:',
+  /** the by-role board and the timeline (comps team-board-b and team-board-c) */
+  session: 'session',
+  boundSlot: 'bound to slot',
+  lastMessage: 'last message received',
+  turn: 'turn',
+  duration: 'duration',
+  total: 'total',
+  teamSlots: 'team slots',
+  costPerRole: 'cost per role',
+  turnsPerMember: 'turns per member',
   /** the board's accessible name */
   board: 'team board',
 } as const;

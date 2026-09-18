@@ -6,21 +6,16 @@
 package splice.app
 
 import kotlinx.coroutines.cancel
-import splice.app.cli.DoctorCommand
-import splice.app.console.ConsoleUpgradeStatus
-import splice.app.console.DrainingRestartAdapter
 import splice.app.launch.HookProcessExec
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.control.ControlServer
 import splice.control.DashboardPage
-import splice.control.DoctorReport
 import splice.control.FailedHeads
 import splice.control.LaunchService
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
 import splice.control.TurnPathStalled
-import splice.control.UpgradeStatus
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
 import splice.core.compaction.CompactionInstructions
@@ -28,10 +23,7 @@ import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.HookExec
 import splice.core.launch.McpAccessKey
-import splice.core.launch.McpRewrite
 import splice.core.launch.McpSharing
 import splice.core.sessions.HeadOfPid
 import splice.core.sessions.ProcessEnvironment
@@ -40,7 +32,6 @@ import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
-import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
@@ -135,22 +126,10 @@ internal class ControlPlane(
         // cannot check this line, which is exactly why a pin exists: removing it must fail a test,
         // not just leave the route answering its named 5xx in production.
         srv.compaction = compactionInstructions
-        // V4-127: the console's three read ports, assigned for the same reason [compaction] is and
-        // carrying the same hazard — the compiler cannot check any of these four lines, so deleting
-        // one does not break the build. Each route then answers its NAMED 5xx, and the upgrade one
-        // is the worst of them: an unwired port there reads as a measured payload saying nothing is
-        // newer, which tells an operator they are up to date when nobody has ever looked. The
-        // deletion pins in DaemonWiringTest are what make that a red instead of a quiet lie.
-        srv.declaredHeads = topology.declaredHeads
-        srv.doctor = DoctorReport(DoctorCommand()::reportJson)
-        srv.upgrade = UpgradeStatus(ConsoleUpgradeStatus()::json)
-        // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
-        // unassigned is SAFE BY CONSTRUCTION — ControlServer.supervised is null until set and the
-        // route refuses on null, so an unwired port declines to drain rather than draining a daemon
-        // nothing would restart. It is assigned here anyway because the refusal is not the answer we
-        // want on a host where systemd does run the daemon, and pinned below for the same reason the
-        // others are: the compiler cannot see this line either.
-        srv.supervised = DrainingRestartAdapter()
+        // V4-127/V4-137: the console's four ports, assigned for the same reason [compaction] is and
+        // carrying the same hazard. They live in ConsoleWiring.kt (V4-156, concentration); this call
+        // is pinned by ConsoleWiringPinTest, because deleting it would unwire all four at once.
+        ConsoleWiring.wire(srv, topology)
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes
@@ -179,22 +158,4 @@ internal class ControlPlane(
             initializeTimeout = ms(Knob.MCP_INITIALIZE_TIMEOUT_MS).milliseconds,
         )
     }
-}
-
-/** Builds the daemon's [ClaudeConfigMaterializer]. The caller NAMES the exec so the noexec
- *  capture-hook guard cannot be silently unwired — a materializer built without one skips the
- *  exec-probe and a pasted credential would reach the model on a noexec mount (law 19).
- *
- *  [hookExec] has NO DEFAULT, deliberately. A default is the shape this law exists to forbid: the
- *  omission that disables a guard compiles, runs, and looks exactly like the wiring that enables it,
- *  so no test can tell the two apart. Without one, omitting the argument is a compile error — the
- *  strongest pin available, because it cannot be satisfied by accident. The wiring pin in
- *  DaemonMaterializerTest guards the other half (the caller passing the REAL exec rather than any
- *  exec), which the type system cannot state. */
-internal object DaemonMaterializer {
-    internal fun build(
-        home: Path,
-        rewrite: McpRewrite?,
-        hookExec: HookExec,
-    ): ClaudeConfigMaterializer = ClaudeConfigMaterializer(home, mcpRewrite = rewrite, hookExec = hookExec)
 }

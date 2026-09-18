@@ -1,14 +1,10 @@
 // NEW: bounded framed protocol between splice and its bundled JavaScript worker.
 package splice.app.codemode
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -134,10 +130,10 @@ internal object CodeModeWire {
 
 internal object CodeModeFrames {
     fun parseStart(frame: JsonObject): WorkerStart {
-        requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS))
-        require(requiredString(frame, FIELD_TYPE) == TYPE_START) { "Expected a code-mode start frame" }
-        val source = requiredString(frame, FIELD_SOURCE).also { requireText(it, FIELD_SOURCE) }
-        val rawTools = requiredArray(frame, FIELD_TOOLS)
+        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS))
+        require(CodeModeFields.requiredString(frame, FIELD_TYPE) == TYPE_START) { "Expected a code-mode start frame" }
+        val source = CodeModeFields.requiredString(frame, FIELD_SOURCE).also { requireText(it, FIELD_SOURCE) }
+        val rawTools = CodeModeFields.requiredArray(frame, FIELD_TOOLS)
         require(rawTools.size <= CodeModeWire.maxToolCatalog) { TOO_MANY_TOOLS }
         val tools = rawTools.map { element ->
             (element as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
@@ -149,23 +145,26 @@ internal object CodeModeFrames {
     }
 
     fun parseResults(frame: JsonObject): List<CodeModeResult> {
-        requireKeys(frame, setOf(FIELD_TYPE, FIELD_RESULTS))
-        require(requiredString(frame, FIELD_TYPE) == TYPE_RESULTS) { "Expected a code-mode results frame" }
-        val rawResults = requiredArray(frame, FIELD_RESULTS)
+        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_RESULTS))
+        require(CodeModeFields.requiredString(frame, FIELD_TYPE) == TYPE_RESULTS) {
+            "Expected a code-mode results frame"
+        }
+        val rawResults = CodeModeFields.requiredArray(frame, FIELD_RESULTS)
         require(rawResults.size <= CodeModeWire.maxCallsPerBatch) { "Too many code-mode results" }
         return rawResults.map { element ->
             val result = element as? JsonObject ?: throw IllegalArgumentException("Code-mode result must be an object")
-            requireKeys(result, setOf(FIELD_ID, FIELD_OUTPUT, FIELD_IS_ERROR))
+            CodeModeFields.requireKeys(result, setOf(FIELD_ID, FIELD_OUTPUT, FIELD_IS_ERROR))
             CodeModeResult(
-                id = requiredString(result, FIELD_ID).also { requireText(it, "result id") },
-                output = requiredString(result, FIELD_OUTPUT).also { requireText(it, DESCRIPTION_RESULT_OUTPUT) },
-                isError = requiredBoolean(result, FIELD_IS_ERROR),
+                id = CodeModeFields.requiredString(result, FIELD_ID).also { requireText(it, "result id") },
+                output = CodeModeFields.requiredString(result, FIELD_OUTPUT)
+                    .also { requireText(it, DESCRIPTION_RESULT_OUTPUT) },
+                isError = CodeModeFields.requiredBoolean(result, FIELD_IS_ERROR),
             )
         }
     }
 
     fun parseReply(frame: JsonObject, tools: Set<String>, nextId: Int): WorkerReply =
-        when (requiredString(frame, FIELD_TYPE)) {
+        when (CodeModeFields.requiredString(frame, FIELD_TYPE)) {
             TYPE_CALLS -> parseCalls(frame, tools, nextId)
             TYPE_COMPLETED -> parseCompleted(frame)
             CODE_MODE_FATAL_FRAME_TYPE -> CodeModeFatalFrame.parse(frame)
@@ -196,20 +195,20 @@ internal object CodeModeFrames {
     }
 
     private fun parseCalls(frame: JsonObject, tools: Set<String>, nextId: Int): WorkerReply {
-        requireKeys(frame, setOf(FIELD_TYPE, FIELD_CALLS))
-        val rawCalls = requiredArray(frame, FIELD_CALLS)
-        ensureWorker(
+        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_CALLS))
+        val rawCalls = CodeModeFields.requiredArray(frame, FIELD_CALLS)
+        CodeModeFields.ensureWorker(
             rawCalls.isNotEmpty() && rawCalls.size <= CodeModeWire.maxCallsPerBatch,
             "Code-mode worker sent an invalid call batch",
         )
         val calls = rawCalls.mapIndexed { index, element ->
-            val call = requiredObject(element, "Code-mode worker sent an invalid call")
-            requireKeys(call, setOf(FIELD_ID, FIELD_NAME, FIELD_ARGUMENTS))
-            val id = requiredString(call, FIELD_ID)
-            ensureWorker(id == (nextId + index).toString(), "Code-mode worker sent an invalid call id")
-            val name = requiredString(call, FIELD_NAME)
-            ensureWorker(name in tools, "Code-mode worker requested an unauthorized tool")
-            val arguments = requiredObject(
+            val call = CodeModeFields.requiredObject(element, "Code-mode worker sent an invalid call")
+            CodeModeFields.requireKeys(call, setOf(FIELD_ID, FIELD_NAME, FIELD_ARGUMENTS))
+            val id = CodeModeFields.requiredString(call, FIELD_ID)
+            CodeModeFields.ensureWorker(id == (nextId + index).toString(), "Code-mode worker sent an invalid call id")
+            val name = CodeModeFields.requiredString(call, FIELD_NAME)
+            CodeModeFields.ensureWorker(name in tools, "Code-mode worker requested an unauthorized tool")
+            val arguments = CodeModeFields.requiredObject(
                 call[FIELD_ARGUMENTS],
                 "Code-mode worker sent non-object tool arguments",
             )
@@ -219,8 +218,8 @@ internal object CodeModeFrames {
     }
 
     private fun parseCompleted(frame: JsonObject): WorkerReply {
-        requireKeys(frame, setOf(FIELD_TYPE, FIELD_OUTPUT, FIELD_ERROR))
-        val output = requiredString(frame, FIELD_OUTPUT).also { requireText(it, FIELD_OUTPUT) }
+        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_OUTPUT, FIELD_ERROR))
+        val output = CodeModeFields.requiredString(frame, FIELD_OUTPUT).also { requireText(it, FIELD_OUTPUT) }
         val error = when (val element = frame[FIELD_ERROR]) {
             JsonNull -> null
             is JsonPrimitive -> element.takeIf(JsonPrimitive::isString)?.content
@@ -230,38 +229,4 @@ internal object CodeModeFrames {
         error?.let { requireText(it, "error") }
         return WorkerReply(calls = null, output = output, error = error)
     }
-
-    private fun requireKeys(frame: JsonObject, expected: Set<String>) {
-        if (frame.keys != expected) throw IOException("Code-mode protocol fields are invalid")
-    }
-
-    private fun ensureWorker(condition: Boolean, message: String) {
-        if (!condition) throw IOException(message)
-    }
-
-    private fun requiredObject(element: JsonElement?, message: String): JsonObject =
-        element as? JsonObject ?: throw IOException(message)
-
-    private fun requiredString(frame: JsonObject, name: String): String =
-        (frame[name] as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
-            ?: throw IOException("Code-mode protocol field $name must be a string")
-
-    private fun requiredBoolean(frame: JsonObject, name: String): Boolean =
-        (frame[name] as? JsonPrimitive)?.booleanOrNull
-            ?: throw IOException("Code-mode protocol field $name must be a boolean")
-
-    private fun requiredArray(frame: JsonObject, name: String): JsonArray =
-        frame[name] as? JsonArray ?: throw IOException("Code-mode protocol field $name must be an array")
 }
-
-internal object CodeModeJson {
-    val codec: Json = Json { explicitNulls = true }
-}
-
-internal data class WorkerStart(val source: String, val tools: Set<String>)
-
-internal data class WorkerReply(
-    val calls: List<CodeModeCall>?,
-    val output: String?,
-    val error: String?,
-)

@@ -5,7 +5,29 @@
   flex-direction: column;
   gap: var(--space-5);
   padding: var(--space-5) var(--space-6);
+
+/* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44). The board stretches instead of
+   starting at the top, the rack area takes the height that is left, and the bay takes the rack
+   area's height - so the ruled floor runs to the bottom of the frame the way the comp's does
+   (bay-claude is y138..947 of a 1024 frame, and its slot rules continue below the last strip).
+   min-height and not height: a page taller than its room still grows and the room scrolls. */
+  min-height: 100%;
 }
+
+/* The head rack is the page's room once the insets above it are laid out, and it takes what is
+   left: measured before this, the deepest bay stopped at 1335 of a 2160 frame and the bottom 38
+   percent of the page was bare ground. */
+.myx-usage > .myx-bay {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. That is the whole difference between bare paper and a full row. */
+.myx-usage .myx-strip { width: 100%; }
+.myx-usage .myx-sfield { flex: 1 1 auto; }
 
 .myx-usage-head {
   display: flex;

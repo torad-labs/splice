@@ -1,4 +1,10 @@
 /* Compaction: the law line and the feed. Tokens only for spacing and type. */
+.myx-compaction .myx-strip { width: 100%; }
+.myx-compaction .myx-sfield { flex: 1 1 auto; }
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The racks on this page are the
+   compact feed's, so the scope is this page's own root rather than a bays container of ours.
+   Measured before this: the widest strip left 489px of bare bay to its right. */
 .myx-compaction {
   display: flex;
   flex-direction: column;

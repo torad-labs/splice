@@ -293,6 +293,61 @@
   position: absolute;
   border: none;
 }
+/* TWO KINDS OF QUANTITY, AND ONLY ONE OF THEM IS TYPOGRAPHIC (M1-105, the orchestrator's ruling).
+   A bay's box is COMPOSITIONAL - it is the room the rack is given and it fits the board it sits in -
+   so it stays a fraction of the board and always fits, at any aspect.
+   A strip's pitch, a plate's height, a field row are TYPOGRAPHIC - line-height plus padding - and
+   they must scale with the root, because a strip that does not grow with its own text is the
+   distortion this row measured.
+   THE FIRST CONVERSION HERE WAS THE WRONG LAYER: the bay boxes were moved to rem, which gave the
+   strips 2.500 for free (they are percentages OF the bay) while making the bays 2022.56px inside a
+   2011.5px board. That is recorded rather than hidden because it is the exact shape of the error -
+   the right number obtained one layer up from where it belongs, with a contradiction as the receipt.
+   The typographic values live in the widget's inline per-row plate heights, not in this file, so
+   converting THEM is the step this row still owes and it needs a fence that reaches
+   widgets/team-board/index.tsx. The boxes below are the compositional set, unchanged.
+   (History, struck: these were briefly top 4.93125rem / height 50.5625rem.) */
+/* OLD HEADER, KEPT FOR THE RECORD: THE BOARD'S VERTICAL GEOMETRY IS rem, ITS HORIZONTAL IS PERCENT. These four boxes were
+   percentages of the board, and the board's height is 100vh minus the rule band - a vh quantity
+   minus a vw one - so every strip traced inside them inherited the HEIGHT law: measured, the strip
+   went 63 -> 131.4px from 1536 to 3840, a ratio of 2.085, where the root font size in the same
+   frames went 16.0005 -> 40.0013, a ratio of 2.500. Same element, same token, two laws, and the
+   board was the only address that disagreed.
+   THE CONVERSION IS A TRANSCRIPTION, not a re-derivation: the comp frame's root is 16px, so a traced
+   comp PIXEL is a rem value at the comp frame - the board at the comp is 964.6px tall, so 8.174% is
+   78.9px and 4.93125rem, and 83.864% is 809px and 50.5625rem. No judgement per value.
+   WIDTH AND LEFT STAY PERCENTAGES on purpose: the board's width already tracks the frame, which is
+   the same axis the root tracks, so the horizontal geometry was obeying the right law all along. The
+   vertical was obeying the box's. All four boxes convert together rather than one at a time because
+   a half-converted board has two contradictory vertical laws inside it, which is the defect rather
+   than a step towards fixing it. */
+/* THE BOARD'S TYPE FOLLOWS THE BOARD, NOT THE ROOT (M1-105). Measured before this rule: the root
+   font size went 16.0005 -> 40.0013 (2.500) while the board's plates went 63 -> 131.4 (2.085), so the
+   type and its container obeyed different laws inside one object and the plates CROWDED as the frame
+   widened - 16px of type in a 63px strip is 25.4 percent fill at the comp, and 40px in 131.4px is
+   30.4 percent at 3840. The board is a COMPOSITION THAT FITS ITS SLOT: everything placed in it scales
+   by the board's own factor, so the type must too.
+   THE CONVERSION: the board's box is 964.6px at the comp frame, so one percent of its height is
+   9.646px and 16px is 1.6587 percent - hence cqh, the container-query height unit, on the
+   DESCENDANTS. NOT on `.myx-board` itself: a container cannot query itself, so a cqh font-size there
+   would resolve against some outer container or silently fall back, which in a tree with no other
+   query container is a wrong number rather than an error. Checked before writing: `container-type`
+   and `container-name` appear ZERO times in webui/src, so this board is the only query container and
+   every cqh below resolves against it.
+   THE TRADE, recorded rather than discovered later: type in cqh does not respond to the browser's
+   base-font-size setting or to text-only zoom. Page zoom still works. For a comp-faithful hero
+   composition that is defensible - the board is a poster and its proportions are the approved
+   artifact - while the rest of the console stays in rem and stays adjustable. */
+.myx-board { container-type: size; }
+/* 16px, 14px and 12px at the comp frame, as a share of the board's own height. */
+.myx-board .myx-sfield-value,
+.myx-board .myx-bay-label,
+.myx-board .myx-board-strip .myx-sfield-value { font-size: 1.6587cqh; }
+.myx-board .myx-sfield-label { font-size: 1.2439cqh; }
+.myx-board .myx-board-act .myx-sfield-value,
+.myx-board .myx-board-msg .myx-sfield-value { font-size: 1.4514cqh; }
+.myx-board .myx-board-foot { font-size: 1.2439cqh; }
+
 .myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; }
 .myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; }
 

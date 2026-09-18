@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.StatePaths
+import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -60,20 +61,47 @@ internal class DaemonProcess {
 
     private val boundary = DaemonBoundary()
 
+    /** V4-109: the `[daemon].state_dir` override, resolved once the topology has parsed — the
+     *  behaviour the key promised and never had (it was parsed, echoed by the doctor, and read by
+     *  nothing). A value that cannot be used leaves the default in place rather than failing the
+     *  boot: the key was INERT before this row, so a value operators were free to write must not
+     *  become a startup failure now that it means something (NEVER-BELOW-STATUS-QUO). Blank is
+     *  treated as absent for the same reason. */
+    private fun statePathsFor(topology: Topology, fallback: StatePaths): StatePaths {
+        val declared = topology.daemon.stateDir?.takeIf { it.isNotBlank() } ?: return fallback
+        // An unusable declared state_dir falls back to the default BY DESIGN (the function's KDoc):
+        // null here is the complete disposition, not a swallowed failure, and the operator still
+        // sees the dropped override through the doctor row V4-110 adds.
+        // ast-grep-ignore: kt-no-silent-result-collapse -- unusable state_dir falls back to the default by design (KDoc) and stays visible via the V4-110 doctor row
+        val path = runCatching { Paths.get(declared) }.getOrNull() ?: return fallback
+        return StatePaths(baseOverride = path)
+    }
+
     internal fun runDaemon() {
         armShutdownOwnership()
-        val statePaths = StatePaths()
+        // The BOOTSTRAP state paths: the crash log needs a path before anything can throw, and
+        // [daemon].state_dir cannot be known until the topology below has parsed — so the net is
+        // armed against the default and the override is applied immediately after the parse.
+        val bootstrapPaths = StatePaths()
         // JW-01: the boot-failure net exists BEFORE anything that can throw (lock, TOML parse,
         // daemon.start). Both cold-start paths used to launch the JVM with output discarded, so a
         // pre-logger stack trace died in /dev/null and the operator saw only "failed version
         // handshake (got <none>)".
-        Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(statePaths))
+        Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(bootstrapPaths))
         // The topology is read BEFORE the lock so a loser can health-check the winner's control
         // port (DaemonLockWait): reading is what the winner does next anyway, and a materialized
         // example is idempotent between the two.
         val topologyPath = TopologyLoader.configPath()
         val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)
         val topology = loaded.topology
+        // V4-109: [daemon].state_dir is HONOURED from here on. It could not be applied before this
+        // point: the boot-failure net is armed at the top with a StatePaths because it must exist
+        // before anything that can throw (JW-01), and the state dir is what the lock, config.json
+        // and the per-head stat files are rooted at — so the override is resolved the moment the
+        // topology has parsed and then used by EVERY later step. The one visible consequence of
+        // that ordering is stated rather than left to be discovered: an overriding daemon moves its
+        // state but not the crash log, which the net already captured against the default.
+        val statePaths = statePathsFor(topology, bootstrapPaths)
         val lock = DaemonLock(statePaths.daemonLockFile)
         val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
         val lockWait = DaemonLockWait()
@@ -181,7 +209,11 @@ internal class DaemonProcess {
             runBlocking {
                 withTimeoutOrNull(STOP_DEADLINE_MS) { boundary.runCatchingDaemonBoundary { daemon.stop() } }
             }
-            AsyncFileIo.drain()
+            // The file lane's flush is the last reportable signal before lock.close() and the halt
+            // watchdog: a false means daemon.log / usage / economics writes were lost on the way out.
+            if (!AsyncFileIo.drain()) {
+                System.err.println("[daemon] file lane did not flush before halt — telemetry writes may be lost\n")
+            }
             lock.close()
         }
     }

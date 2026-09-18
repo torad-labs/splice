@@ -14,6 +14,7 @@ package splice.gateway.head
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.spi.Provider
@@ -72,7 +73,7 @@ internal class CancellationSeal(
             !seal || drive.emitter.hasEnded -> Unit
             drive.channel.clientGone.get() -> {
                 drive.emitter.abandon()
-                telemetry.recordPerf(drive, "client_abort")
+                telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
             }
             // clientGone flips only on a FAILED write, but Ktor/Netty cancels on
             // channel-inactive with no write having failed — a user abort mid-lull reaches here
@@ -94,7 +95,7 @@ internal class CancellationSeal(
                     try {
                         drive.emitter.emitError(ErrorType.OVERLOADED, cancelMsg)
                         log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
-                        telemetry.recordPerf(drive, "error:cancelled")
+                        telemetry.recordPerf(drive, OutcomeTag.CANCELLED.wire)
                         health.local()
                     } catch (io: IOException) {
                         // emitError's error frame could not reach the wire — the cancel WAS a client
@@ -103,7 +104,7 @@ internal class CancellationSeal(
                         // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
                         log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}) — client gone\n")
                         drive.emitter.abandon()
-                        telemetry.recordPerf(drive, "client_abort")
+                        telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
                     }
                 }
         }

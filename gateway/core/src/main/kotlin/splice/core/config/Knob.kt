@@ -156,6 +156,17 @@ public enum class Knob(
     // headers each round already carries. Any other value keeps polling.
     QUOTA_POLL("quotaPoll", KnobKind.STRING, listOf("CLAUDEX_QUOTA_POLL"), "auto", restartRequired = true),
 
+    // V4-110: how often a subscription head re-polls its provider's plan-usage endpoint, in
+    // milliseconds. Same five-minute cadence the poller always ran; floored in ConfigCoercion so an
+    // operator's too-fast value cannot hammer the provider's usage endpoint.
+    QUOTA_POLL_INTERVAL_MS(
+        "quotaPollIntervalMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 300_000L,
+        restartRequired = true,
+    ),
+
     // Per-head admission (each head is a different backend/account). Bounded by default since the
     // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
     // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn
@@ -172,6 +183,32 @@ public enum class Knob(
         // 4 attempts matches the surveyed harness floor (codex 4, gemini/Claude Code higher);
         // the old default of 2 with ~200ms total backoff still failed turns on 2-3s blips (G4b).
         4L,
+        restartRequired = true,
+    ),
+
+    // V4-110 retry curve, promoted beside upstreamRetries. The DEFAULT IS THE GENERIC BOUNDED
+    // CURVE: every UNPREDICTED failure backs off on 200ms-base / 10s-cap / ±10%-jitter — never a
+    // bare failure and never a made-up cause. Known errors keep their SPECIFIC plans (DNS 1s/2s/4s,
+    // 429 Retry-After); this is the bounded floor everything else falls onto.
+    RETRY_BACKOFF_BASE_MS(
+        "retryBackoffBaseMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 200L,
+        restartRequired = true,
+    ),
+    RETRY_BACKOFF_CAP_MS(
+        "retryBackoffCapMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 10_000L,
+        restartRequired = true,
+    ),
+    RETRY_BACKOFF_JITTER_PCT(
+        "retryBackoffJitterPct",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 10L,
         restartRequired = true,
     ),
     UPSTREAM_TIMEOUT_MS(
@@ -201,6 +238,27 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
         300_000L,
+        restartRequired = true,
+    ),
+
+    // V4-116. The MID-OUTPUT STALL RE-ANCHOR tier: how long a round may sit silent AFTER the client
+    // has seen content before splice stops waiting and resumes the turn itself (cancel the round,
+    // re-POST from the salvage as an assistant prefill). 20s because a breach here is not a verdict,
+    // it is the trigger of a repair the client cannot see: the measured deepseek stall (session
+    // b10459ba, 2026-09-17) burned the whole 300_000 STREAM_IDLE_MS tier before ending a turn that
+    // was continuable the entire time. NOT a replacement for STREAM_IDLE_MS — arm it for a head
+    // whose upstream has been MEASURED to continue from a prefill (reanchor_prefill), because for a
+    // head that cannot be prefilled an early reap has nothing to resume into and only costs a
+    // slow-but-alive generation. STREAM_IDLE_MS stays that head's floor. Keep it at or above
+    // 3 x the poll floor (250ms) or the poller samples it too late to matter.
+    STALL_REANCHOR_MS(
+        "stallReanchorMs",
+        KnobKind.NUMBER,
+        listOf("CLAUDEX_STALL_REANCHOR_MS"),
+        // Named, not positional: §magic-number (the write-time mirror of detekt's MagicNumber)
+        // blocks a NEW bare literal in a call argument, and this is the spelling it blesses. The
+        // sibling entries above pass only because their literals are pre-existing.
+        default = 20_000L,
         restartRequired = true,
     ),
     AUTH_CACHE_MS(
@@ -263,6 +321,67 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_USAGE_WARN_TOKENS_5H"),
         0L,
+        restartRequired = true,
+    ),
+
+    // ── shared MCP hosting (v0.4.0, FEATURES.md §8) ────────────────────────────────────────────
+    // One McpHost serves every head; these four shape its lifecycle. Daemon-global, read once at
+    // ControlPlane.start — a per-head override is meaningless but harmless. The [daemon] spellings
+    // (mcp_idle_timeout_ms etc.) are the same knob under DaemonConfig's @SerialName transliteration.
+    MCP_IDLE_TIMEOUT_MS(
+        "mcpIdleTimeoutMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 1_800_000L,
+        restartRequired = true,
+    ),
+    MCP_MAX_SERVERS(
+        "mcpMaxServers",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 32L,
+        restartRequired = true,
+    ),
+    MCP_REQUEST_TIMEOUT_MS(
+        "mcpRequestTimeoutMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 1_800_000L,
+        restartRequired = true,
+    ),
+    MCP_INITIALIZE_TIMEOUT_MS(
+        "mcpInitializeTimeoutMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 60_000L,
+        restartRequired = true,
+    ),
+
+    // ── request materialization (v0.4.0) ───────────────────────────────────────────────────────
+    // The largest request BODY splice will decode/translate, in bytes; past it the client gets a
+    // 413 rather than splice reading an unbounded body. Read per head from getConfig (HeadDeps).
+    MAX_REQUEST_BYTES(
+        "maxRequestBytes",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 8 * 1024 * 1024L,
+        restartRequired = true,
+    ),
+    REQUEST_READ_TIMEOUT_MS(
+        "requestReadTimeoutMs",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 30_000L,
+        restartRequired = true,
+    ),
+
+    // PROCESS-SHARED, not per head: the count of requests concurrently decoding/translating across
+    // the whole daemon (RequestMaterializationGate). One value for every head, read at daemon boot.
+    MATERIALIZATION_PERMITS(
+        "materializationPermits",
+        KnobKind.NUMBER,
+        emptyList(),
+        default = 16L,
         restartRequired = true,
     ),
 

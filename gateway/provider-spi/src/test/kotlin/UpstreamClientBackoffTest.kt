@@ -22,7 +22,7 @@ import splice.spi.PostContext
 import splice.spi.RemainingTurnWait
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
-import splice.spi.UpstreamTurnWaitExhausted
+import splice.spi.UpstreamPost
 import splice.spi.Waiter
 import java.io.IOException
 import java.net.ConnectException
@@ -158,15 +158,19 @@ class UpstreamClientBackoffTest {
                 fixture.failuresLeft = 1
                 fixture.consumeOnAttemptMs = 0L
 
-                val failure = assertThrows<Exception> { fixture.post() }
-
-                assertTrue(fixture.waits.isEmpty())
                 if (remaining == 0L) {
+                    // V4-114 PIN: a spent turn-wait budget THROWS NOTHING now — it answers
+                    // UpstreamPost.TurnWaitExhausted. Against the old shape this arm's
+                    // assertEquals does not compile (post returned String and threw), which is
+                    // what makes it a pin and not a restatement.
+                    assertEquals(UpstreamPost.TurnWaitExhausted, fixture.postRaw())
+                    assertTrue(fixture.waits.isEmpty())
                     assertEquals(1, fixture.calls.get(), "the second round must not reach upstream")
-                    assertTrue(failure is UpstreamTurnWaitExhausted)
                     assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
                     assertEquals("upstream turn wait budget exhausted before attempt 1/3", fixture.notices.single())
                 } else {
+                    val failure = assertThrows<Exception> { fixture.post() }
+                    assertTrue(fixture.waits.isEmpty())
                     fixture.assertFailure(failure)
                     assertEquals(2, fixture.calls.get(), "the second round may try once but must not retry")
                     assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
@@ -330,11 +334,14 @@ class UpstreamClientBackoffTest {
             assertTrue(generateSequence<Throwable>(actual) { it.cause }.any { it === failure })
         }
 
-        suspend fun post(): String = client.post(context, "{}") { "ok" }
+        suspend fun post(): String = client.posted(context, "{}") { "ok" }
+
+        /** The un-narrowed answer, for the one test whose subject IS the refusal (V4-114). */
+        suspend fun postRaw(): UpstreamPost<String> = client.post(context, "{}") { "ok" }
 
         suspend fun postWithTornStream(): String {
             var torn = true
-            return client.post(context.copy(clientFrameEmitted = { false }), "{}") {
+            return client.posted(context.copy(clientFrameEmitted = { false }), "{}") {
                 if (torn) {
                     torn = false
                     throw failure

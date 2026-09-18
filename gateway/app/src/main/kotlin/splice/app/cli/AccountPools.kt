@@ -40,6 +40,7 @@ internal class JdkAccountPoolRead(
 
     override fun invoke(port: Int, env: EnvReader): Map<String, HeadAccountPoolView>? {
         val key = (AdminSupport.readMgmtKey(env) as? MgmtKeyRead.Present)?.key ?: return null
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): the file header declares the null: no mgmt key, nothing answering, or a body that is not the /api/auth shape all read as 'no pools to show'.
         return Cancellables.runCatchingCancellable {
             val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/auth"))
                 .timeout(Duration.ofSeconds(READ_TIMEOUT_S))

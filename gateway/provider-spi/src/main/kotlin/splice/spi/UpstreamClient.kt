@@ -49,8 +49,20 @@ public class UpstreamClient(
     // wire a recording waiter and the 200/400/800ms schedule becomes an assertion on a list instead
     // of 1.4 seconds of real sleeping.
     waiter: Waiter = ProcessWaiter(),
-    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(waiter),
-    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter),
+    // V4-110 retry-curve knobs: the generic bounded curve's base/cap/jitter, defaulted to the same
+    // numbers the constants below always held. Read from the head config by the factory; the
+    // defaults here are for direct construction (tests, embedders). Known errors keep their specific
+    // plans (DNS 1s/2s/4s, 429 Retry-After); this is the bounded floor everything unpredicted falls on.
+    private val backoffBaseMs: Long = RETRY_BACKOFF_BASE_MS,
+    private val backoffCapMs: Long = RETRY_BACKOFF_MAX_MS,
+    private val backoffJitterPct: Int = RETRY_BACKOFF_JITTER_PCT,
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
+        waiter,
+        baseMs = backoffBaseMs,
+        capMs = backoffCapMs,
+        jitterPct = backoffJitterPct,
+    ),
+    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter, jitterPct = backoffJitterPct),
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
@@ -94,16 +106,20 @@ public class UpstreamClient(
         ctx: PostContext,
         bodyJson: String,
         block: UpstreamHandler<T>,
-    ): T {
+    ): UpstreamPost<T> {
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         var body = request.body(bodyJson)
         val state = RetryState()
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
-                is LoopStep.Done -> return step.value
+                is LoopStep.Done -> return UpstreamPost.Delivered(step.value)
                 is LoopStep.Amend -> body = request.body(step.bodyJson)
                 LoopStep.Continue -> Unit
+                // V4-114: the one refusal this loop DECIDES rather than suffers, so it rides the
+                // return type instead of a thrown UpstreamTurnWaitExhausted the caller had to know
+                // to catch by name. giveUp below still throws: that is the upstream's failure.
+                LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
         return retryRules.giveUp(state.lastErr, activeCooldown(ctx))
@@ -143,6 +159,10 @@ public class UpstreamClient(
         data class Done<T>(val value: T) : LoopStep<T>()
         data class Amend(val bodyJson: String) : LoopStep<Nothing>()
         data object Continue : LoopStep<Nothing>()
+
+        /** The whole-turn wait budget was already gone: no attempt was made and no upstream
+         *  response exists to classify. [post] lifts this to [UpstreamPost.TurnWaitExhausted]. */
+        data object TurnWaitExhausted : LoopStep<Nothing>()
     }
 
     /** One retry-loop iteration: a deadline check, the request attempt, and the retry/backoff
@@ -169,7 +189,7 @@ public class UpstreamClient(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
             if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx))
-            throw UpstreamTurnWaitExhausted()
+            return LoopStep.TurnWaitExhausted
         }
         activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
         val creds = ctx.requireAuth()
@@ -199,13 +219,21 @@ public class UpstreamClient(
             return onTransportError(transportError, ctx, streamHandedOff, state, t0)
         }
         val outcome = attempted.getOrThrow()
-        if (outcome is RetryOutcome.Done) return LoopStep.Done(outcome.value)
-        check(outcome is RetryOutcome.Failed) // sealed: Done or Failed, and Done returned above
-        state.lastErr = outcome
-        // RC-4: a one-shot content amendment outranks the normal retry plan — a deterministic
-        // 400 (stale encrypted reasoning) would otherwise GIVE_UP; the amended body gets exactly
-        // one immediate resend, then normal classification owns whatever happens next.
-        return state.amendStep(ctx, outcome, body.json) ?: planStep(ctx, outcome, state, t0)
+        // RetryOutcome is SEALED, so this is an exhaustive match rather than a guard plus a
+        // check() — and folding the two arms into one `when` keeps the function inside detekt's
+        // ReturnCount budget of 3 (the transport guard above spends one of them). Behaviour is
+        // unchanged: only the Done arm skips `lastErr`, exactly as the early return did.
+        return when (outcome) {
+            is RetryOutcome.Done -> LoopStep.Done(outcome.value)
+            is RetryOutcome.Failed -> {
+                state.lastErr = outcome
+                // RC-4: a one-shot content amendment outranks the normal retry plan — a
+                // deterministic 400 (stale encrypted reasoning) would otherwise GIVE_UP; the
+                // amended body gets exactly one immediate resend, then normal classification owns
+                // whatever happens next.
+                state.amendStep(ctx, outcome, body.json) ?: planStep(ctx, outcome, state, t0)
+            }
+        }
     }
 
     /** The transport-error half of one attempt (split so [runAttempt] stays under the complexity
@@ -320,14 +348,14 @@ public class UpstreamClient(
     /** Conservative ceiling of the shipped generic or DNS jittered curve. */
     private fun retryBackoffCeilingMs(
         attempt: Int,
-        baseMs: Long = RETRY_BACKOFF_BASE_MS,
-        maxMs: Long = RETRY_BACKOFF_MAX_MS,
+        baseMs: Long = backoffBaseMs,
+        maxMs: Long = backoffCapMs,
     ): Long {
         var currentMs = baseMs
         repeat(attempt.coerceAtLeast(0)) {
             currentMs = if (currentMs > maxMs / 2) maxMs else currentMs * 2
         }
-        return currentMs * RETRY_BACKOFF_JITTER_NUMERATOR / RETRY_BACKOFF_JITTER_DENOMINATOR
+        return currentMs * (100 + backoffJitterPct) / 100
     }
 
     /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
@@ -365,7 +393,27 @@ internal const val ERR_SNIPPET = 160
 // Mirror UpstreamTransport's generic and DNS defaults so opaque backoff seams can be budgeted before they run.
 private const val RETRY_BACKOFF_BASE_MS = 200L
 private const val RETRY_BACKOFF_MAX_MS = 10_000L
+private const val RETRY_BACKOFF_JITTER_PCT = 10
 private const val DNS_BACKOFF_BASE_MS = 1_000L
 private const val DNS_BACKOFF_MAX_MS = 4_000L
-private const val RETRY_BACKOFF_JITTER_NUMERATOR = 11L
-private const val RETRY_BACKOFF_JITTER_DENOMINATOR = 10L
+
+/**
+ * What [UpstreamClient.post] answers: the handler's value, or the one refusal the loop DECIDES.
+ *
+ * V4-114 (kt-no-exception-as-outcome): the exhausted turn-wait budget used to arrive as a thrown
+ * `UpstreamTurnWaitExhausted`, which every `catch (e: Exception)` and `runCatching` on the turn
+ * path saw as indistinguishable from a broken invariant, and which no signature announced. It is a
+ * VALUE the one caller (SseRoundPost) hands to the translator, so the compiler now checks that the
+ * caller handled it. Every OTHER ending of [UpstreamClient.post] stays an exception, because every
+ * other one is a failure rather than a decision: the upstream host's HTTP refusal after retries
+ * (UpstreamFailed), a missing local credential (UpstreamAuthMissing), a torn transport
+ * (StreamTornBeforeClient) — see the dated dispositions in UpstreamErrors.kt.
+ */
+public sealed class UpstreamPost<out T> {
+    /** The upstream answered and [value] is what the caller's handler made of it. */
+    public data class Delivered<T>(public val value: T) : UpstreamPost<T>()
+
+    /** The whole-turn wait budget expired BEFORE a request went out, so there is no HTTP response
+     *  to classify and nothing was sent. The caller owns the terminal. */
+    public data object TurnWaitExhausted : UpstreamPost<Nothing>()
+}

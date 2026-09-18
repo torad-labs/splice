@@ -103,7 +103,7 @@ class ManagedHeadFactoryAccountsTest {
             ),
             probeScope = scope,
             log = log,
-            startQuotaPoller = { _, _, _ -> },
+            startQuotaPoller = { _, _, _, _ -> },
         )
     }
 

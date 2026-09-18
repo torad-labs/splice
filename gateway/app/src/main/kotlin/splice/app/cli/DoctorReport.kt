@@ -19,6 +19,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -56,7 +57,7 @@ internal class DoctorReport(
         } else {
             if (options.withLogs) {
                 println("daemon log lines leaving the machine in $out (after redaction):")
-                (report["logs"] as? JsonArray)?.forEach { println("  " + (it as JsonPrimitive).content) }
+                (report["logs"] as? JsonArray)?.forEach { println("  " + JsonScalars.strOrEmpty(it)) }
             }
             Files.writeString(out, text + "\n")
             println("doctor report written to $out")

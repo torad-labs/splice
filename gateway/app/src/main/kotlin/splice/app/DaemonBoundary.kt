@@ -78,6 +78,9 @@ internal class DaemonBoundary {
         var writer: java.io.Writer? = null
         var written = Cancellables
             .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+            .onFailure {
+                System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}) — starting at 0\n")
+            }
             .getOrDefault(0L)
         return LogSink { msg ->
             val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
@@ -101,8 +104,10 @@ internal class DaemonBoundary {
                     // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
                     // daemon.log went silent permanently. Reconcile from disk so the next line
                     // self-corrects, and say so on stderr (the one lane still alive here).
+                    // The rotate failure and the reconciled size are printed together below; this
+                    // stat's own failure has nowhere further to go than that same line, so it maps to 0.
                     written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
-                        .getOrDefault(0L)
+                        .getOrElse { 0L }
                     System.err.print(
                         "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}) — " +
                             "size reconciled to $written\n",
@@ -166,6 +171,10 @@ internal class DaemonBoundary {
         ProcessBuilder("ss", "-ltnpH", "( sport = :$port )").redirectErrorStream(true).start()
             .inputStream.bufferedReader().use { it.readText() }
             .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
+    }.onFailure {
+        // An empty list and "ss is missing / refused" read identically to the stop ladder, which is
+        // the 2026-07-18 shape exactly: say which one happened.
+        System.err.print("[daemon] port->pid lookup via ss failed (${SafeFailureText.render(it)})\n")
     }.getOrDefault(emptyList())
 }
 

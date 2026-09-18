@@ -7,11 +7,9 @@ package splice.control
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.longOrNull
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
+import splice.core.util.JsonScalars
 
 internal class StatuslineWindowLearner(
     private val catalog: ModelCatalog?,
@@ -24,7 +22,7 @@ internal class StatuslineWindowLearner(
         store?.record(text(root["session_id"]), size)
     }
 
-    private fun text(element: JsonElement?): String? = (element as? JsonPrimitive)?.contentOrNull
+    private fun text(element: JsonElement?): String? = JsonScalars.str(element)
 
-    private fun long(element: JsonElement?): Long? = (element as? JsonPrimitive)?.longOrNull
+    private fun long(element: JsonElement?): Long? = JsonScalars.str(element)?.toLongOrNull()
 }

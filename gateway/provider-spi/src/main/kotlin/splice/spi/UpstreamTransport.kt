@@ -52,24 +52,36 @@ public class UpstreamTransport {
         }
     }
 
-    /** Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
-     *  it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
-     *  Sleeps through [waiter] so a test can replace the WAIT without re-authoring the CURVE. */
-    public fun defaultBackoff(waiter: Waiter): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
-        val base = cappedExponentialBase(BACKOFF_BASE_MS, MAX_BACKOFF_MS, attempt)
-        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
+    /** Exponential backoff, jittered ±[jitterPct]% (codex shape — synchronized retry herds re-collide
+     *  without it), capped at [capMs]; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
+     *  Sleeps through [waiter] so a test can replace the WAIT without re-authoring the CURVE. The
+     *  base/cap/jitter are the generic bounded curve an unpredicted failure falls onto (V4-110). */
+    public fun defaultBackoff(
+        waiter: Waiter,
+        baseMs: Long = BACKOFF_BASE_MS,
+        capMs: Long = MAX_BACKOFF_MS,
+        jitterPct: Int = JITTER_PCT,
+    ): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
+        val base = cappedExponentialBase(baseMs, capMs, attempt)
+        val jittered = (base * jitterMultiplier(jitterPct)).toLong()
         waiter.wait(maxOf(jittered, minDelayMs))
     }
 
     /** DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
      *  blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
      *  generic 200/400/800ms curve undershoots. No minDelayMs — transport errors never carry
-     *  a Retry-After header (no response was received). */
-    public fun defaultDnsBackoff(waiter: Waiter): DnsBackoff = DnsBackoff { attempt ->
+     *  a Retry-After header (no response was received). Shares the jitter knob with the generic
+     *  curve so the budget check and the sleep cannot drift apart. */
+    public fun defaultDnsBackoff(waiter: Waiter, jitterPct: Int = JITTER_PCT): DnsBackoff = DnsBackoff { attempt ->
         val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
-        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
+        val jittered = (base * jitterMultiplier(jitterPct)).toLong()
         waiter.wait(jittered)
     }
+
+    /** A multiplier in [1 - pct/100, 1 + pct/100) — the shared jitter range for both curves. Zero
+     *  jitter is the exact multiplier, never a zero-width Random range (which would throw). */
+    private fun jitterMultiplier(pct: Int): Double =
+        if (pct == 0) 1.0 else Random.nextDouble((100 - pct) / 100.0, (100 + pct) / 100.0)
 
     private fun cappedExponentialBase(baseMs: Long, maxMs: Long, attempt: Int): Long {
         var current = baseMs
@@ -88,8 +100,7 @@ private const val CONNECT_TIMEOUT_MS = 10_000L
 
 private const val BACKOFF_BASE_MS = 200L
 private const val MAX_BACKOFF_MS = 10_000L
-private const val JITTER_LO = 0.9
-private const val JITTER_HI = 1.1
+private const val JITTER_PCT = 10
 private const val DNS_BACKOFF_BASE_MS = 1_000L
 private const val DNS_MAX_BACKOFF_MS = 4_000L
 

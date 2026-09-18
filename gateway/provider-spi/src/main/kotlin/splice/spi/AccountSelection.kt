@@ -1,6 +1,7 @@
 // NEW: v0.4.0 FEATURES.md §11 — one account chosen once at the turn boundary.
 package splice.spi
 
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
 import java.time.Instant
@@ -35,13 +36,17 @@ public data class PoolAccount(
     /** Account-specific identity headers, notably Kimi's device identity. */
     public val extraHeaders: CredentialHeaders? = null,
 ) {
-    private val credentialEligibility = AccountCredentialEligibility(
-        auth as? AccountCredentialIdentitySource,
-        credentialPresent,
-    )
+    private val identitySource = TtlCredentialIdentitySource(auth as? AccountCredentialIdentitySource)
+    private val credentialEligibility = AccountCredentialEligibility(identitySource, credentialPresent)
 
     init {
         require(AccountLabelPolicy.isSafe(label)) { "invalid OAuth account label" }
+    }
+
+    /** Re-reads this account's credential evidence OFF the sticky-session monitor; [AccountPool.select]
+     *  calls it for every account before taking the lock, so the in-monitor selection reads the cache. */
+    internal fun refreshCredentialEvidence() {
+        identitySource.refresh()
     }
 
     internal fun acquireCredential(at: Long, now: AccountNow): AccountCredentialEligibility.Lease? =
@@ -71,6 +76,47 @@ public data class PoolAccount(
     internal fun resetCredentialAvailability() {
         credentialEligibility.reset()
     }
+}
+
+private const val CREDENTIAL_EVIDENCE_TTL_NANOS = 2_000_000_000L
+
+/** Caches one account's credential evidence behind a short TTL so the sticky-session monitor never
+ *  holds a filesystem round-trip. [refresh] re-reads the delegate OFF the monitor; within the TTL
+ *  [credentialEvidence] returns the cached observation instead of touching the credential file. */
+internal class TtlCredentialIdentitySource(
+    private val delegate: AccountCredentialIdentitySource?,
+) : AccountCredentialIdentitySource {
+    private val cached = AtomicReference<Cached?>(null)
+
+    fun refresh() {
+        val evidence = delegate?.credentialEvidence() ?: unknownEvidence()
+        cached.set(Cached(System.nanoTime(), evidence))
+    }
+
+    override fun credentialEvidence(): AccountCredentialIdentitySource.CredentialEvidence {
+        val current = cached.get()
+        if (current != null && System.nanoTime() - current.readAtNanos < CREDENTIAL_EVIDENCE_TTL_NANOS) {
+            return current.evidence
+        }
+        return delegate?.credentialEvidence() ?: unknownEvidence()
+    }
+
+    override fun credentialIdentity(): CredentialFileIdentity? = delegate?.credentialIdentity()
+
+    override fun credentialPresence(): AccountCredentialIdentitySource.CredentialPresence =
+        delegate?.credentialPresence()
+            ?: AccountCredentialIdentitySource.CredentialPresence.UNKNOWN
+
+    private fun unknownEvidence(): AccountCredentialIdentitySource.CredentialEvidence =
+        AccountCredentialIdentitySource.CredentialEvidence(
+            null,
+            AccountCredentialIdentitySource.CredentialPresence.UNKNOWN,
+        )
+
+    private data class Cached(
+        val readAtNanos: Long,
+        val evidence: AccountCredentialIdentitySource.CredentialEvidence,
+    )
 }
 
 /** Why one session moved between accounts. Labels are operator-safe; no provider identity is carried. */

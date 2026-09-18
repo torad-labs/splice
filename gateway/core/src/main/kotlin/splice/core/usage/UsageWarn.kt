@@ -4,6 +4,7 @@
 // is the fallback (warnTokens5h = 0 disables it); critical at remaining<=0 or >=98% used.
 package splice.core.usage
 
+import splice.core.config.Knob
 import kotlin.math.roundToInt
 
 public data class RateLimitState(
@@ -21,7 +22,6 @@ public data class UsageWarn(
 )
 
 private const val CRITICAL_PCT = 98.0
-private const val DEFAULT_WARN_PCT = 80
 private const val FULL_PCT = 100.0
 
 /** The tier cascade, as a named object since the 2026-08-16 style migration (HD-M8) — PURE and
@@ -31,17 +31,22 @@ public object UsageWarnPolicy {
 
     // the tier cascade is the ported contract: ratelimit headers first, then the 5h-token fallback,
     // then the inert "ok". Each tier returns null to defer to the next.
+    /** [warnPct] is the `usageWarnPct` knob: the percentage of a plan window at which the level
+     *  becomes `warn`. V4-109: **0 DISABLES the warn tier**, it does not fall back to a default —
+     *  an operator who writes 0 is asking for silence, and answering with 80 is the config layer
+     *  lying about the value it read. `critical` still fires, because that is the hard edge
+     *  (`remaining <= 0` or >=98% used), not a percentage preference. The parameter's default
+     *  READS the knob rather than restating its literal, so the one operator-facing source of 80
+     *  stays Knob.USAGE_WARN_PCT and the two cannot drift (const-single-source's KNOB-SHADOW). */
     public fun computeUsageWarn(
         outputTokens5h: Long = 0,
         ratelimit: RateLimitState? = null,
-        warnPct: Int = DEFAULT_WARN_PCT,
+        warnPct: Int = (Knob.USAGE_WARN_PCT.default as Long).toInt(),
         warnTokens5h: Long = 0,
-    ): UsageWarn {
-        val pctThreshold = if (warnPct > 0) warnPct else DEFAULT_WARN_PCT
-        return ratelimitTierWarn(ratelimit, pctThreshold)
-            ?: tokens5hTierWarn(outputTokens5h, warnTokens5h, pctThreshold)
+    ): UsageWarn =
+        ratelimitTierWarn(ratelimit, warnPct)
+            ?: tokens5hTierWarn(outputTokens5h, warnTokens5h, warnPct)
             ?: UsageWarn("ok", 0, "none", null)
-    }
 
     // ratelimit headers are the real signal. Null when the header pair is absent/unusable so the
     // caller falls through to the next tier.
@@ -51,7 +56,7 @@ public object UsageWarnPolicy {
         val usedPct = ((1.0 - remaining.toDouble() / limit) * FULL_PCT).coerceIn(0.0, FULL_PCT)
         val level = when {
             remaining <= 0 || usedPct >= CRITICAL_PCT -> "critical"
-            usedPct >= pctThreshold -> "warn"
+            pctThreshold > 0 && usedPct >= pctThreshold -> "warn"
             else -> "ok"
         }
         return UsageWarn(level, usedPct.roundToInt(), "ratelimit", ratelimit.resetTokens)
@@ -63,7 +68,7 @@ public object UsageWarnPolicy {
         val usedPct = ((outputTokens5h.toDouble() / warnTokens5h) * FULL_PCT).coerceAtMost(FULL_PCT).roundToInt()
         val level = when {
             outputTokens5h >= warnTokens5h -> "critical"
-            usedPct >= pctThreshold -> "warn"
+            pctThreshold > 0 && usedPct >= pctThreshold -> "warn"
             else -> "ok"
         }
         return UsageWarn(level, usedPct, "tokens5h", null)

@@ -7,6 +7,7 @@
 // TurnUsageStamp.kt (concentration, 2026-08-19).
 package splice.gateway.head
 
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
@@ -69,7 +70,7 @@ internal class TurnFinish(
         // makes the downgrade visible to the log and to head health (perf carries the honest tag
         // below). Local attribution: the downgrade is the gateway's own call — G20's
         // providerReported stays translator-owned.
-        if (outcome is TurnOutcome.Success && outcomeTag != "ok") {
+        if (outcome is TurnOutcome.Success && outcomeTag != OutcomeTag.OK.wire) {
             log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag — client received an error terminal"))
             health.local()
         }

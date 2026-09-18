@@ -2,6 +2,7 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.gateway.head
 
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.gateway.pipeline.FailurePresenter
@@ -33,7 +34,7 @@ internal class TurnKnownEnd(
             // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
             // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
             // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
-            telemetry.recordPerf(drive, "error:auth-missing")
+            telemetry.recordPerf(drive, OutcomeTag.AUTH_MISSING.wire)
             health.local() // no upstream call ever happened: missing local credentials
             drive.emitter.emitError(
                 ErrorType.AUTHENTICATION,
@@ -59,7 +60,7 @@ internal class TurnKnownEnd(
             // DR-128: account BEFORE the emit — same law as the auth-missing arm above.
             // A 429 is the quota instrument's most load-bearing event: it is the exact moment the
             // plan said no, and it must be countable in the rollup, not just greppable in the log.
-            telemetry.recordPerf(drive, "error:upstream-failed", failure.type == ErrorType.RATE_LIMIT)
+            telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FAILED.wire, failure.type == ErrorType.RATE_LIMIT)
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
             // V4-71 re-sited by V4-81: the FIRST turn to meet a persistent 429 must reach the
             // client RETRYABLE, and a 200 is already committed at TurnStreamer.stream before the

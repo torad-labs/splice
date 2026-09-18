@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.onEach
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.spi.Provider
-import splice.spi.WsRoundNeedsSse
 import splice.spi.WsRoundRunner
 
 internal class WsRoundDriver(
@@ -32,6 +31,17 @@ internal class WsRoundDriver(
         val runner = provider.wsRunner ?: return null
         val drive = inputs.drive
         clearAccountBoundary(runner, drive)
+        return driveRound(runner, drive, inputs)
+    }
+
+    /** The round body, extracted (V4-114 continuation) so [run] stays inside detekt's
+     *  CyclomaticComplexMethod budget — the `when`, the accepted-null guard and the finally guard
+     *  all move here. Behaviour is unchanged; the reporting contract below still binds. */
+    private suspend fun driveRound(
+        runner: WsRoundRunner,
+        drive: TurnDrive,
+        inputs: WsRoundInputs,
+    ): TurnOutcome? {
         // CON-003 + DR-91: every exit below reports the round exactly once, INCLUDING a
         // cancellation that lands while credentials()/attempt() are in flight — the WS send may
         // already have advanced the runner's chaining state, and an unreported unwind left the
@@ -107,23 +117,17 @@ internal class WsRoundDriver(
                 inputs.frameEmittedThisRound,
                 accepted.pathPulse,
             )
-            return try {
-                roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
-            } catch (needsSse: WsRoundNeedsSse) {
-                // The round failed while the client had seen nothing, so it can still be re-served
-                // with the full recovery machinery. Serving the failure raw over the WebSocket
-                // instead would bypass retry/refresh/cooldown entirely — the one way this overlay
-                // could land BELOW the status quo. The line names the server's failure terminal
-                // (type, code, message): a chained turn the server refuses re-reads the whole
-                // transcript cold over SSE, and which turns it refuses is the finding.
-                log(
-                    "[${provider.key}] websocket round failed before any client frame " +
-                        "(${needsSse.detail}) — serving over SSE\n",
-                )
-                runner.roundBypassed(drive.meta)
-                reported = true
-                null
+            // V4-114: the fallback is a VALUE on drive()'s return type, so this branch is
+            // compiler-checked — adding a WsRoundResult case can no longer slip past a `catch` on
+            // a name. Both arms report the round (Streamed via roundEnded inside drive, NeedsSse
+            // via roundBypassed), so `reported` is set once after the when returns — after the
+            // report, so an exception still leaves it false and the finally clears the chain.
+            val outcome = when (val result = roundDrive.drive(inputs, runner, startingEvents)) {
+                is WsRoundResult.Streamed -> result.outcome
+                is WsRoundResult.NeedsSse -> bypassToSse(runner, drive, result.detail)
             }
+            reported = true
+            return outcome
         } finally {
             if (!reported) runner.roundEnded(drive.meta, ok = false)
             poller?.cancel()
@@ -132,6 +136,25 @@ internal class WsRoundDriver(
             // stays an incomplete child of turnJob and the turn cannot finish.
             roundJob?.complete()
         }
+    }
+
+    /** The round failed while the client had seen nothing, so it can still be RE-SERVED with the
+     *  full recovery machinery. Serving the failure raw over the WebSocket instead would bypass
+     *  retry/refresh/cooldown entirely — the one way this overlay could land BELOW the status quo.
+     *  The line names the server's failure terminal (type, code, message): a chained turn the server
+     *  refuses re-reads the whole transcript cold over SSE, and which turns it refuses is the
+     *  finding. Always returns null — the caller's `run` falls through to the SSE path. */
+    private fun bypassToSse(
+        runner: WsRoundRunner,
+        drive: TurnDrive,
+        detail: String,
+    ): TurnOutcome? {
+        log(
+            "[${provider.key}] websocket round failed before any client frame " +
+                "($detail) — serving over SSE\n",
+        )
+        runner.roundBypassed(drive.meta)
+        return null
     }
 
     private fun clearAccountBoundary(runner: WsRoundRunner, drive: TurnDrive) {

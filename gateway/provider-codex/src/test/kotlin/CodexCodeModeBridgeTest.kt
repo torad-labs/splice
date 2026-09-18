@@ -9,10 +9,28 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodexCodeModeTurnBuilder
+import splice.spi.CodeModeCell
 import splice.spi.CodeModeResult
+import splice.spi.CodeModeRuntime
 import splice.spi.CodeModeStep
 
 class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
+    @Test
+    fun `onHeadStop closes the code-mode runtime`() {
+        var closed = false
+        val runtime = object : CodeModeRuntime {
+            override suspend fun start(source: String, tools: Set<String>): CodeModeCell = error("unused")
+            override fun close() {
+                closed = true
+            }
+        }
+        val bridge = bridge(runtime)
+
+        bridge.onHeadStop()
+
+        assertTrue(closed, "onHeadStop must close the code-mode runtime")
+    }
+
     @Test
     fun `immediate completion rewrites opaque pair and aggregates real upstream usage`() = runTest {
         val bridge = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("answer")))))
@@ -331,6 +349,15 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             builder.prepare(nonTextResultBody(), false, "s", built("gpt-6-astra", lite = true))
         }
         assertTrue(error.message.orEmpty().contains("unsupported non-text content"))
+
+        // V4-114: text FOLLOWED by an image refuses too. The cast that used to read this content
+        // (`(it as TextBlock).text`, guarded by a separate `all {}` require) is now a per-part
+        // `require(part is TextBlock)` smart-cast — same type, same message, and the refusal cannot
+        // decay into a silent `filterIsInstance` that ships the text half as the whole result.
+        val mixed = assertThrows(IllegalArgumentException::class.java) {
+            builder.prepare(mixedResultBody(), false, "s", built("gpt-6-astra", lite = true))
+        }
+        assertTrue(mixed.message.orEmpty().contains("unsupported non-text content"), mixed.message)
     }
 
     @Test

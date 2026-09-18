@@ -92,7 +92,14 @@ internal class QuirksOverlay {
             stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.stripCacheControl,
             synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.synthesizeSignatures,
             reanchorPrefill = providerCfg.quirks.reanchorPrefill ?: base.reanchorPrefill,
+            toolNameCap = toolNameCap(providerCfg, base),
         )
+
+    /** V4-110: the tool-name cap is an overlay — an operator's TOML value wins over the head's base
+     *  (muse's 64), and absent TOML keeps the base, so an un-edited config is unchanged. Its own
+     *  function so [passthroughQuirks] stays under the complexity ceiling. */
+    private fun toolNameCap(providerCfg: ProviderConfig, base: PassthroughQuirks): Int =
+        providerCfg.quirks.toolNameCap ?: base.toolNameCap
 
     /** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
      *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never

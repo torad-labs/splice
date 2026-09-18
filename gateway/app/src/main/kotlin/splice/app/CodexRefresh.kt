@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
 
@@ -90,5 +91,6 @@ public class CodexRefresh {
             refreshToken = JsonScalars.str(obj, "refresh_token"),
             idToken = JsonScalars.str(obj, "id_token"),
         )
-    }.getOrNull()
+    }.onFailure { System.err.println("[codex] refresh body did not parse: ${SafeFailureText.render(it)}") }
+        .getOrNull()
 }

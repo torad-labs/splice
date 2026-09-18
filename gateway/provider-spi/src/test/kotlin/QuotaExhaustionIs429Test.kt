@@ -78,7 +78,7 @@ class QuotaExhaustionIs429Test {
         val notices = mutableListOf<String>()
         val client = clientOver(engineReturning(403))
         val thrown = assertThrows<UpstreamFailed> {
-            client.post(ctx(QuotaAuth(declared = true, refreshes), notices), "{}") { "unreachable" }
+            client.posted(ctx(QuotaAuth(declared = true, refreshes), notices), "{}") { "unreachable" }
         }
 
         assertEquals(RATE_LIMITED, thrown.status, "the rewrite is what every layer above reads")
@@ -97,7 +97,7 @@ class QuotaExhaustionIs429Test {
         // NOT declared by the auth port: 402 is a protocol fact, not a vendor spelling.
         val client = clientOver(engineReturning(402))
         val thrown = assertThrows<UpstreamFailed> {
-            client.post(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
+            client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
         assertEquals(RATE_LIMITED, thrown.status, "deepseek answers Insufficient Balance as 402")
@@ -115,7 +115,7 @@ class QuotaExhaustionIs429Test {
         val notices = mutableListOf<String>()
         val client = clientOver(engineReturning(403))
         val thrown = assertThrows<UpstreamFailed> {
-            client.post(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
+            client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
         assertEquals(403, thrown.status, "an undeclared 403 keeps today's behaviour exactly")

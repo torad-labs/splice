@@ -141,7 +141,7 @@ class SseRoundConsumeTest {
         ),
         emitter = NoopTerminal(),
         watchdog = TurnWatchdog(budget),
-        slot = InflightGate(LiveLimit { 1 }).acquire(),
+        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(tmp.resolve("compact-dr90.jsonl")),
             log = {},

@@ -47,7 +47,7 @@ internal fun clientOver(
     clock = clock,
 )
 
-internal suspend fun postOnce(client: UpstreamClient): String = client.post(
+internal suspend fun postOnce(client: UpstreamClient): String = client.posted(
     PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
     "{}",
 ) { "ok" }

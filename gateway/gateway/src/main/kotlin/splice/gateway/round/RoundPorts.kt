@@ -107,6 +107,20 @@ internal fun interface SearchRoundCounter {
     operator fun invoke(rounds: Int)
 }
 
+/**
+ * Records one SPENT re-anchor — the round was re-POSTed from its own salvage (V4-116).
+ *
+ * No parameter, and the absence is deliberate: the number the perf row wants is the SILENCE that
+ * triggered it, and the only thing that knows that is the watchdog, which the wiring site already
+ * holds. Carrying it through the runner would mean teaching every caller of this hook a fact none
+ * of them can see, and the runner's own answer (or lack of one) would then be the thing that drifts.
+ * Called once per continuation the loop actually spends, so the count cannot exceed the controller's
+ * budget and cannot count an attempt that was never made.
+ */
+internal fun interface ReanchorSpentHook {
+    operator fun invoke()
+}
+
 /** Shared per-loop collaborators for the round runners: liveness gates + the health hook for
  *  absorbed failures (one construction site in TurnDriveFactory.assembleDrive — the policies never
  *  drift apart). */
@@ -117,4 +131,8 @@ internal data class RunnerSignals(
     /** Search-continuation counter sink — the expected-delta instrument. Stamped as an absolute
      *  count, so a turn that never searched records nothing and a turn that did records exactly N. */
     val onSearchRound: SearchRoundCounter = SearchRoundCounter {},
+    /** V4-116: the evidence-row sink — one call per re-anchor the turn SPENT. Defaulted to a no-op so
+     *  every existing construction (tests included) is unchanged, and so a turn that never
+     *  re-anchors records nothing rather than a zero. */
+    val onReanchor: ReanchorSpentHook = ReanchorSpentHook {},
 )

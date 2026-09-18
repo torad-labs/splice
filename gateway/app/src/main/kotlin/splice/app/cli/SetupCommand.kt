@@ -17,6 +17,7 @@ import splice.app.cli.prompt.WizardCancelled
 import splice.app.cli.prompt.WizardFrame
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Topology
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -77,8 +78,8 @@ internal class SetupCommand(
         frame.note("Summary", summaryLines(start, path, bin, heads))
         if (!frame.confirm("Install now?", true)) frame.cancel("not installing")
         spinner.start("Installing")
-        val result = runCatching { runInstall() }
-        val installed = result.getOrNull() == true
+        val result = Cancellables.runCatchingBestEffort { runInstall() }
+        val installed = result.fold(onSuccess = { it }, onFailure = { false })
         spinner.stop(if (installed) "Installed wrappers" else "Install failed")
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false

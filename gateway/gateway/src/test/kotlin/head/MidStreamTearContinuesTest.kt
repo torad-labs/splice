@@ -38,6 +38,7 @@ import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -67,6 +68,8 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /** What one upstream connection does with its turn. */
@@ -86,6 +89,11 @@ private enum class Act {
 
     /** Content, then hold the connection open — the arm where the CLIENT is the one that leaves. */
     HOLD_AFTER_CONTENT,
+
+    /** V4-116 (3): real content, then an RST. The tear KIND the census listed as never pinned:
+     *  every other post-content shape here dies by a FIN or by a torn chunk, while this one kills
+     *  the socket outright, and the reader sees a SocketException rather than an EOF. */
+    RESET_AFTER_CONTENT,
 }
 
 private const val TEAR_DELIVERY_PAUSE_MS = 250L
@@ -98,11 +106,21 @@ private const val PERF_POLL_MS = 50L
 
 private const val HOLD_MS = 6_000L
 
+/** V4-116: the armed mid-output stall-re-anchor tier the stall arms run under. A reply inside a
+ *  few multiples of this can only have come from the tier — the heads' streamIdle is 120_000ms. */
+private const val STALL_TIER_MS = 1_000L
+private const val MS_PER_NANO = 1_000_000L
+
 // The perf row is JSON, so the tag is asserted as its own FIELD — and the tag itself comes from
 // the one definition in core, never a second spelling here. A test that re-spells the string it
 // is pinning cannot catch the string changing.
 private const val PERF_OUTCOME_FIELD = "\"outcome\":\""
 private const val QUOTE = "\""
+
+// V4-116 (5): the two evidence fields, asserted by their rendered name so a renamed key cannot
+// pass this arm while leaving the operator grepping for a key that no longer exists.
+private const val REANCHORS_FIELD = "\"reanchors\":"
+private val STALL_MS_RE = Regex("\"stall_ms\":(\\d+)")
 
 /** An Anthropic-shaped upstream that can die mid-response. [acts] is consumed by request index, the
  *  last entry repeating, so a test states the whole conversation up front. Request BODIES are
@@ -183,6 +201,11 @@ private class TearingAnthropicUpstream {
                 out.chunk(openingFrames() + delta(FIRST_HALF))
                 Thread.sleep(HOLD_MS)
             }
+            Act.RESET_AFTER_CONTENT -> {
+                out.chunk(openingFrames() + delta(FIRST_HALF))
+                Thread.sleep(TEAR_DELIVERY_PAUSE_MS)
+                socket.setSoLinger(true, 0) // close() now sends RST, not FIN
+            }
         }
     }
 
@@ -262,12 +285,21 @@ class MidStreamTearContinuesTest {
     private var prefillPort = 0
     private var honestPort = 0
 
+    /** V4-116: the two heads with the mid-output stall tier ARMED. Everything else about them is
+     *  the same head, so an arm that passes here and fails on [prefillPort] is measuring the tier
+     *  and nothing else. 1000ms is far below the 120s streamIdle these heads run under — a reply
+     *  inside a couple of seconds can only have come from the stall tier. */
+    private var stallPrefillPort = 0
+    private var stallHonestPort = 0
+
     @BeforeAll
     fun setUp() = runBlocking {
         tmp = Files.createTempDirectory("head-mid-stream-tear")
         upstream.start()
         prefillPort = startHead(prefill = true)
         honestPort = startHead(prefill = false)
+        stallPrefillPort = startHead(prefill = true, stallMs = STALL_TIER_MS)
+        stallHonestPort = startHead(prefill = false, stallMs = STALL_TIER_MS)
         Thread.sleep(700) // Netty warmup (HeadServerCapacityTest convention)
     }
 
@@ -277,7 +309,7 @@ class MidStreamTearContinuesTest {
         upstream.stop()
     }
 
-    private suspend fun startHead(prefill: Boolean): Int {
+    private suspend fun startHead(prefill: Boolean, stallMs: Long? = null): Int {
         val port = freshPort()
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
@@ -292,8 +324,15 @@ class MidStreamTearContinuesTest {
                 auth = TearTestAuth(),
                 baseUrl = upstream.baseUrl,
                 // Deliberately large: no watchdog may fire inside these windows, or the arms
-                // measure a stall instead of a tear.
-                watchdog = WatchdogBudget(120.seconds, 120.seconds, 300.seconds),
+                // measure a stall instead of a tear. [stallMs] arms the V4-116 mid-output
+                // stall-re-anchor tier — the ONLY tier small enough to fire here, which is what
+                // makes the stall arms below measure the re-anchor rather than the tear.
+                watchdog = WatchdogBudget(
+                    120.seconds,
+                    120.seconds,
+                    300.seconds,
+                    stallReanchor = stallMs?.milliseconds ?: Duration.INFINITE,
+                ),
             ),
             quirks = PassthroughQuirks(
                 providerTag = if (prefill) "deepseek-like" else "muse-like",
@@ -550,6 +589,145 @@ class MidStreamTearContinuesTest {
             1,
             upstream.requestBodies.size,
             "a hang-up must not buy the upstream another round" + diagnostics(seen.toString()),
+        )
+    }
+
+    // ARM 8 — THE SCAR (V4-116). claude-deepseek session b10459ba streamed 3810 content frames,
+    // went silent, and sat the WHOLE 300s mid-output tier before ending a turn that was continuable
+    // the entire time — because the watchdog's Failure carried no `partial`, so the controller's
+    // first line (`round.failure.partial ?: return null`) answered before any eligibility rule was
+    // read. A stall and a truncation are the same fact; this arm is the proof that they now end the
+    // same way. The harness is the tear one deliberately: ONLY the failure's origin changed, so a
+    // difference in the client's bytes would be a difference the salvage caused.
+    @Test
+    fun `a mid-output stall resumes from the salvage and the client reads one coherent message`() {
+        reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
+        val started = System.nanoTime()
+        val received = drainTurn(stallPrefillPort)
+        val elapsedMs = (System.nanoTime() - started) / MS_PER_NANO
+
+        assertTrue(
+            received.contains(FIRST_HALF),
+            "the frames the client already saw must stand" + diagnostics(received),
+        )
+        assertTrue(received.contains(SECOND_HALF), "the stall must be RESUMED, not ended" + diagnostics(received))
+        assertEquals(
+            1,
+            occurrences(received, "event: message_stop"),
+            "a spliced turn ends in exactly ONE terminal" + diagnostics(received),
+        )
+        assertFalse(
+            received.contains("event: error"),
+            "a recovered stall shows the client no error" + diagnostics(received),
+        )
+        assertEquals(
+            1,
+            occurrences(received, FIRST_HALF),
+            "a proxy cannot un-send bytes: the salvaged text must never be replayed" + diagnostics(received),
+        )
+        assertEquals(2, upstream.requestBodies.size, "the continuation must have been POSTed" + diagnostics(received))
+        assertTrue(
+            upstream.requestBodies[1].contains(FIRST_HALF.trimEnd()),
+            "the continuation carries the salvage as an assistant prefill" + diagnostics(received),
+        )
+        assertTrue(
+            elapsedMs < STALL_TIER_MS * 4,
+            "the turn ended on the ${STALL_TIER_MS}ms STALL tier, not the 120s streamIdle — " +
+                "otherwise this arm would pass on unmodified code: took ${elapsedMs}ms" + diagnostics(received),
+        )
+    }
+
+    // ARM 9 — NEVER BELOW STATUS QUO, the stall half. The same silence on a head that has NOT been
+    // measured to accept an assistant prefill keeps the honest error: there is no continuation to
+    // reap INTO, so reaping early could only ever cost a slow-but-alive generation. This is the
+    // "streamIdle stays the hard floor for prefill-off providers" clause as a test — the tier FIRES
+    // (the reply is seconds, not 120s) and the controller declines, which is the whole difference
+    // between the two heads.
+    @Test
+    fun `the same stall on a head without the prefill quirk keeps the honest error`() {
+        reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
+        val started = System.nanoTime()
+        val received = drainTurn(stallHonestPort)
+        val elapsedMs = (System.nanoTime() - started) / MS_PER_NANO
+
+        assertTrue(received.contains("event: error"), "the honest ending is an error event" + diagnostics(received))
+        assertTrue(
+            received.contains("overloaded_error"),
+            "and it stays the retryable type the client understands" + diagnostics(received),
+        )
+        assertEquals(
+            0,
+            occurrences(received, "event: message_stop"),
+            "an errored turn never claims a clean terminal" + diagnostics(received),
+        )
+        assertEquals(
+            1,
+            upstream.requestBodies.size,
+            "no continuation may be sent to an upstream that has not been measured to accept one" +
+                diagnostics(received),
+        )
+        assertTrue(
+            elapsedMs < STALL_TIER_MS * 4,
+            "the tier must still have FIRED — took ${elapsedMs}ms, so this arm is not proving the " +
+                "20s-vs-300s distinction" + diagnostics(received),
+        )
+    }
+
+    // ARM 10 — V4-116 (3), the tear KIND the census could not find. Every post-content shape above
+    // dies by a FIN or by a torn chunk; an RST kills the socket outright and the reader sees a
+    // SocketException instead of an EOF. The claim under test is that this kind is not special:
+    // the translator's IOException catch already turns it into a truncation WITH its partial, so a
+    // post-content reset reaches the same re-anchor. If it does not, this is the arm that says so.
+    @Test
+    fun `a reset after content continues like the torn chunk it is`() {
+        reset(Act.RESET_AFTER_CONTENT, Act.FULL)
+        val received = drainTurn(prefillPort)
+
+        assertTrue(received.contains(FIRST_HALF), "the delivered prefix must stand" + diagnostics(received))
+        assertTrue(
+            received.contains(SECOND_HALF),
+            "an RST after content must reach the SAME re-anchor a torn chunk does" + diagnostics(received),
+        )
+        assertEquals(
+            1,
+            occurrences(received, "event: message_stop"),
+            "one terminal across the re-anchor" + diagnostics(received),
+        )
+        assertFalse(received.contains("event: error"), "no error reaches the client" + diagnostics(received))
+        assertEquals(2, upstream.requestBodies.size, "the continuation must have been POSTed" + diagnostics(received))
+    }
+
+    // ARM 11 — V4-116 (5), THE EVIDENCE ROW. The next incident must be answerable from the perf row
+    // ALONE, which is what the operator could not do for session b10459ba: the row said `attempts=1`
+    // and nothing distinguished "never retried" from "retried and gave up", nor said how long the
+    // upstream had actually been silent before the proxy gave up waiting.
+    //
+    // Asserted on the ROW rather than on a counter object deliberately: the JSONL is the artifact
+    // the operator greps, and a counter that is set but never rendered would pass a unit test and
+    // still leave the incident unanswerable.
+    @Test
+    fun `a spent re-anchor stamps reanchors and the stall it was reaped on`() {
+        reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
+        val received = drainTurn(stallPrefillPort)
+        assertTrue(
+            received.contains(SECOND_HALF),
+            "precondition: this arm only means anything if the stall WAS re-anchored" + diagnostics(received),
+        )
+
+        val row = perfRow(stallPrefillPort)
+        assertTrue(
+            row.contains(REANCHORS_FIELD + "1"),
+            "the spent continuation must be countable from the row, got: " + row,
+        )
+        val stallMs = STALL_MS_RE.find(row)?.groupValues?.get(1)?.toLong()
+        assertNotNull(
+            stallMs,
+            "and the row must carry HOW LONG the upstream was silent, got: " + row,
+        )
+        assertTrue(
+            stallMs != null && stallMs >= STALL_TIER_MS,
+            "STALL_MS is the watchdog's own idleMs, so it can never be under the tier that fired " +
+                "(${STALL_TIER_MS}ms), got: $stallMs in " + row,
         )
     }
 }

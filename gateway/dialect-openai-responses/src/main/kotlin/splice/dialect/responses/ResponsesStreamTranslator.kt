@@ -28,11 +28,12 @@ package splice.dialect.responses
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.spi.BufferCapacity
+import splice.spi.SseFrameTooLargeException
+import splice.spi.StreamTornBeforeClient
 import splice.spi.StreamTranslator
 import splice.spi.WireSink
 import java.io.IOException
@@ -45,6 +46,11 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
     private var runawayGuard: String? = null
+
+    /** V4-116: the unrecognised throwable the generic catch swallowed, if any — see [relabelUnrecognised]
+     *  for why this dialect records it and rewrites the sentence afterwards instead of branching
+     *  inside its own terminal decision the way the chat and passthrough twins do. */
+    private var unexpected: RuntimeException? = null
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome =
         if (ctx.dedupeRepeatedSummaryParts) {
@@ -92,10 +98,24 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
             if (ctx.watchdogFired() == null) throw e
         } catch (ignored: IOException) {
             // upstream read error: fall through to the honest terminal decision
-        } catch (ignored: SerializationException) {
-            // malformed upstream frame: fall through to the honest terminal decision
-        } catch (ignored: IllegalArgumentException) {
-            // malformed value in a frame: fall through to the honest terminal decision
+        } catch (ignored: RuntimeException) {
+            // V4-116, OPERATOR RULING 2026-09-18 "RETRY DEFAULT IS TOTAL": THE GENERIC FALLTHROUGH.
+            // The named arms above are a classifier with only KNOWN cells; SerializationException
+            // and IllegalArgumentException both extend RuntimeException, so one arm covers them plus
+            // every failure class this dialect has never seen. An unrecognised throwable used to
+            // ESCAPE, reaching the turn boundary with no partial — the same unrecoverable shape as
+            // the stall scar, for a class nobody had enumerated. Once content is on the wire the
+            // salvage is the only thing that makes a round resumable, so this arm keeps the collect
+            // loop's failure INSIDE the round and lets the same terminal decision judge it.
+            // AND IT ONLY APPLIES MID-STREAM. Before the client has seen content there is nothing
+            // to salvage, and an escaping throwable already gets MORE retry than this arm can give
+            // it: the G5 reissue budget, the WS overlay's NeedsSse fallback and the connect-phase
+            // budgets all live above this seam and key off the exception class. Swallowing a
+            // pre-content throw would starve every one of them, and would also lose the
+            // conn-reset provenance SseRoundDriver.tearOutcome and TurnConnEnd exist to carry —
+            // which is what a first pass at this arm did, and what its tests caught.
+            if (isSpiTransportSignal(ignored) || !clientSawContent(state)) throw ignored
+            unexpected = ignored
         }
 
         latchSweptToolBlocks(state)
@@ -103,7 +123,46 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         ResponsesTerminalBackfill().harvestFallback(state)
         val outcome = ResponsesTerminalDecision(ctx, ResponsesOutcomePayload(ctx)).terminalOutcome(state, runawayGuard)
         captureTurnReasoning(state, outcome)
-        return outcome
+        return relabelUnrecognised(outcome)
+    }
+
+    /** V4-116: an unrecognised throwable says so in its own words.
+     *
+     *  The chat and passthrough twins branch inside their own `unfinishedOutcome`, which they own.
+     *  This dialect does not own its version of that sentence — the terminal decision lives in
+     *  ResponsesTerminalDecision — so the same correction is applied here, one step later and
+     *  WITHOUT moving the decision: the round's states, precedence and salvage are untouched, and
+     *  only the words the client reads are repaired.
+     *
+     *  "truncated" is a DIAGNOSIS, and reporting an undiagnosed failure under one is exactly the
+     *  mislabelling the generic arm exists to avoid. The gate is [ctx.watchdogFired] being null: a
+     *  fired watchdog owns its own verdict and its own sentence (see the idle/total-cap split in
+     *  ResponsesTerminalDecision.watchdogOutcome), and rewriting that one would hide why the turn
+     *  really ended. `Throwable.toString()` is the repo's own diagnostic rendering (TurnEnding uses
+     *  the same form), so a bug of ours stays tellable from an upstream failure we have never seen.
+     *
+     *  Two guard clauses rather than one joined condition: each names a single way the sentence must
+     *  be left alone, which is also what keeps the condition under the complexity wall. */
+    /** The SPI failures that already have a turn-boundary owner, so the generic catch must pass
+     *  them through untouched (see that arm for why each one is in the set). ONE definition per
+     *  dialect so the set cannot be widened in one arm and forgotten in the next. */
+    /** V4-116: has the client already been shown content this round? The generic catch is
+     *  mid-stream-only, so this is the gate that decides whether a failure is OURS to
+     *  salvage or the upper layers' to retry. Mirrors what the partial carries. */
+    private fun clientSawContent(state: ResponsesTurnState): Boolean =
+        state.emittedText || state.emittedThinking
+
+    private fun isSpiTransportSignal(e: RuntimeException): Boolean =
+        e is StreamTornBeforeClient || e is SseFrameTooLargeException
+
+    private fun relabelUnrecognised(outcome: TurnOutcome): TurnOutcome {
+        val failure = outcome as? TurnOutcome.Failure ?: return outcome
+        val e = unexpected ?: return outcome
+        return if (ctx.watchdogFired() == null) {
+            failure.copy(message = "splice: upstream stream failed ($e) — retry")
+        } else {
+            outcome
+        }
     }
 
     /** DR-106: the closeAll sweep is a THIRD tool-block close path — an upstream that streamed

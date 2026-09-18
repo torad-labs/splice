@@ -8,13 +8,13 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.app.PerfRowsFileSource
 import splice.app.TopologyLoader
 import splice.control.api.PerfSummary
 import splice.control.api.PerfWindow
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
@@ -70,9 +70,9 @@ internal class PerfCommand {
 
     private fun printHead(key: String, s: JsonObject) {
         println()
-        val count = s.getValue("count").jsonPrimitive.content
+        val count = num(s, "count")
         println("  $BOLD$key$RESET  $DIM$count turn(s)$RESET" + note(s))
-        if (s.getValue("empty").jsonPrimitive.content == "true") {
+        if (JsonScalars.str(s, "empty") == "true") {
             println("  $DIM–  no rows in this window$RESET")
             return
         }
@@ -81,7 +81,7 @@ internal class PerfCommand {
         println("  total                   ${pct(s["total_ms"])}")
         val shares = (s["failure_shares"] as? JsonObject).orEmpty()
         val outcomes = s.getValue("outcomes").jsonObject.entries.joinToString(" ") { (k, v) ->
-            "$k=${v.jsonPrimitive.content}" + shares[k]?.let { " (${share(it)})" }.orEmpty()
+            "$k=${JsonScalars.strOrEmpty(v)}" + shares[k]?.let { " (${share(it)})" }.orEmpty()
         }
         println("  outcomes                $outcomes  (failure share ${share(s["failure_share"])})")
         println("  retries / refreshes     ${num(s, "retries")} / ${num(s, "refreshes")}")
@@ -98,7 +98,7 @@ internal class PerfCommand {
         return note.orEmpty() + error.orEmpty()
     }
 
-    private fun num(s: JsonObject, key: String): String = (s[key] as? JsonPrimitive)?.content ?: "-"
+    private fun num(s: JsonObject, key: String): String = JsonScalars.str(s, key) ?: "-"
 
     /** Every percentile with its denominator: three fast successes among thousands of failed turns
      *  read as n=3, not as the head's latency. */
@@ -109,6 +109,6 @@ internal class PerfCommand {
     }
 
     private fun share(value: JsonElement?): String =
-        (value as? JsonPrimitive)?.content?.toDoubleOrNull()?.let { String.format(Locale.ROOT, "%.1f%%", it * PERCENT) }
+        JsonScalars.str(value)?.toDoubleOrNull()?.let { String.format(Locale.ROOT, "%.1f%%", it * PERCENT) }
             ?: "-"
 }

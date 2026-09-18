@@ -77,9 +77,14 @@ loopback-only, both proxies:
 
 Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←
 state/config.json ← env ← runtime PATCH. Env is the boot authority (the launcher
-writes it); PATCH wins until restart and persists to the file layer. `port`,
-`grokPort`, `controlPort`, `upstreamTimeoutMs` need a restart; everything else
-hot-applies on the next request.
+writes it); PATCH wins until restart and persists to the file layer.
+
+Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
+and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
+snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
+`restartRequiredKnobKeys` in `gateway/core/.../config/KnobKind.kt`, derived from the `Knob` enum's
+own flag, and the same list on the wire as `restart_required_keys` from `GET /mgmt/config`.
+Everything else hot-applies on the next request.
 
 All heads share ONE `ConfigService` (one JVM — unlike the Node lineage's
 process-per-head), so a knob read via `getConfig()` governs EVERY head. Anything

@@ -67,3 +67,5 @@ credentials.json
 
 # gradle-slot.sh lock + holder (checks/gradle-slot.sh)
 gateway/.gradle-slot.lock*
+# buildgate's per-project lock (hostshield build-reaper.sh:60) — a machine artifact, never source
+gateway/.hostshield-build.lock

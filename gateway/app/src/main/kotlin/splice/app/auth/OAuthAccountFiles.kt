@@ -41,18 +41,48 @@ public fun interface OAuthAccountIdentity {
     public operator fun invoke(authJson: JsonObject): String?
 }
 
-/** One login's already-validated credential destination. */
-public data class OAuthLoginAccount(
-    val kind: AuthKind.OAuth,
-    val primary: Boolean,
-    val label: String?,
-    val defaultLabel: OAuthAccountLabel? = null,
+/**
+ * One login's already-validated credential destination, and the OWNER of that login's mutable
+ * handoff state: the ordinal reservation lease it holds until the credential is persisted, and the
+ * label that was actually written.
+ *
+ * NOT a `data class`, and V4-114 (kt-no-atomic-in-data-class) is why. A `data class` is a value you
+ * compare and copy; this is a LEASE HOLDER — `holdReservation`'s `check(compareAndSet(null, lease))`
+ * is an invariant about ONE instance, and exactly one instance is threaded from [OAuthAccountFiles.
+ * loginAccount] through the login spec to [releaseReservation]. The generated members lied about
+ * both halves: `equals`/`hashCode` compared the two atomics by reference, so two accounts with
+ * identical fields were unequal; and `copy()` does not carry a body property at all, so a copied
+ * account had silently dropped the lease its own uniqueness check relies on. Identity equality is
+ * the truth here, and [copy] below is now an explicit, reviewed operation that says so.
+ */
+public class OAuthLoginAccount(
+    public val kind: AuthKind.OAuth,
+    public val primary: Boolean,
+    public val label: String?,
+    public val defaultLabel: OAuthAccountLabel? = null,
     /** Only token-derived labels may move after exchange; ordinal labels bind device identity. */
-    val tokenDerivedLabel: Boolean = false,
-    val identity: OAuthAccountIdentity? = null,
+    public val tokenDerivedLabel: Boolean = false,
+    public val identity: OAuthAccountIdentity? = null,
 ) {
     private val reservation = AtomicReference<OAuthLoginReservation.Lease?>(null)
     private val writtenLabel = AtomicReference<String?>(null)
+
+    /** A RE-PLANNED destination for a login that has not started: the reservation and the persisted
+     *  label are deliberately NOT carried, because a lease belongs to exactly one account and the
+     *  caller holds it at this point (LoginKimi/LoginMuse reserve, re-plan, THEN
+     *  [holdReservation]). Hand-written rather than generated so that "carries no lease" is a
+     *  documented decision instead of a `data class` side effect nothing pointed at (V4-114). */
+    public fun copy(
+        kind: AuthKind.OAuth = this.kind,
+        primary: Boolean = this.primary,
+        label: String? = this.label,
+        defaultLabel: OAuthAccountLabel? = this.defaultLabel,
+        tokenDerivedLabel: Boolean = this.tokenDerivedLabel,
+        identity: OAuthAccountIdentity? = this.identity,
+    ): OAuthLoginAccount {
+        check(reservation.get() == null) { "re-plan an OAuth login account BEFORE it holds a reservation" }
+        return OAuthLoginAccount(kind, primary, label, defaultLabel, tokenDerivedLabel, identity)
+    }
 
     public fun resolvedLabel(authJson: JsonObject? = null): String? = label ?: defaultLabel?.invoke(authJson)
 

@@ -122,7 +122,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes) {
     internal fun ghCheck(envReader: EnvReader): DoctorCheck {
         val gh = path.binaryOnPath("gh", envReader)
             ?: return DoctorCheck("gh", CheckStatus.INFO, "not installed (only needed to verify release-mode installs)")
-        val authed = Cancellables.runCatchingCancellable {
+        val probe = Cancellables.runCatchingCancellable {
             val process = ProcessBuilder(gh.toString(), "auth", "status")
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
@@ -133,8 +133,19 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes) {
                 process.destroyForcibly()
                 false
             }
-        }.getOrDefault(false)
-        return if (authed) {
+        }
+        probe.exceptionOrNull()?.let { failure ->
+            // A probe that could not RUN is a different fact from an unauthenticated gh, and telling
+            // the operator to `gh auth login` over a spawn failure is the misdiagnosis this wall exists
+            // for. The fix stays the same; the detail says what actually happened.
+            return DoctorCheck(
+                "gh",
+                CheckStatus.WARN,
+                "installed, but `gh auth status` could not be run (${SafeFailureText.render(failure)})",
+                "gh auth login",
+            )
+        }
+        return if (probe.getOrThrow()) {
             DoctorCheck("gh", CheckStatus.OK, "${capturedVersion(listOf(gh.toString(), FLAG_VERSION))}, authenticated")
         } else {
             DoctorCheck(
@@ -161,7 +172,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes) {
             line.trim().let { if (it.length > VERSION_MAX_CHARS) it.take(VERSION_MAX_CHARS) + "…" else it }
                 .ifEmpty { "present" }
         }
-    }.getOrDefault("present (version probe failed)")
+    }.getOrElse { "present (version probe failed: ${SafeFailureText.render(it)})" }
 }
 
 private const val VERSION_MAX_CHARS = 48

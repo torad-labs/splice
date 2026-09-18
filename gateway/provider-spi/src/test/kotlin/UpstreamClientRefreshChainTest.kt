@@ -84,7 +84,7 @@ class UpstreamClientRefreshChainTest {
     )
 
     private suspend fun postOnce(client: UpstreamClient, auth: RefreshableAuthProvider, perf: TurnPerf): String =
-        client.post(
+        client.posted(
             PostContext(
                 url = "https://api.example.test/v1",
                 auth = auth,

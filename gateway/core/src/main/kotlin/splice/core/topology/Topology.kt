@@ -22,6 +22,7 @@ package splice.core.topology
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.compaction.CompactionConfig
+import splice.core.config.Knob
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -56,8 +57,22 @@ public data class Topology(
     /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
      *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
      *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
-    public fun portCollisions(): Map<Int, List<String>> =
-        heads.entries.groupBy({ it.value.port }, { it.key }).filterValues { it.size > 1 }
+    /** V4-109: the CONTROL PLANE is a listener too, and it was invisible to this check — a head
+     *  declaring the daemon's own port was reported as clean, then the two fought over the bind at
+     *  start. [DaemonConfig.controlPort] is folded in under a name that cannot be mistaken for a
+     *  head key.
+     *
+     *  The EFFECTIVE port, not just the declared one: an absent `control_port` still yields a real
+     *  listener on the knob's default, so a head on that number collides in practice. What this
+     *  cannot see is a port pinned later by env (`SPLICE_CONTROL_PORT`) or by state config.json —
+     *  this is a pure function of the topology and deliberately reads no environment; an operator
+     *  who moves the control port onto a head's number at runtime gets the bind failure, which is
+     *  the same behaviour as before this check existed. */
+    public fun portCollisions(): Map<Int, List<String>> {
+        val controlPort = daemon.controlPort ?: (Knob.CONTROL_PORT.default as Long).toInt()
+        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER)
+        return declared.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
+    }
 
     /** CTL-005: heads whose port is outside the valid TCP range — 0, negative, or > 65535 all
      *  parse fine as an Int and otherwise surface only at bind time, as an opaque error that
@@ -282,3 +297,8 @@ public data class HeadConfig(
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000
 private val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")
+
+/** What a control-plane port collision names as its owner in [Topology.portCollisions] — the
+ *  dotted form [DaemonConfig.controlPort]'s own TOML key, so the report points at where to look
+ *  and cannot be confused with a head key. */
+private const val CONTROL_PLANE_OWNER: String = "daemon.controlPort"

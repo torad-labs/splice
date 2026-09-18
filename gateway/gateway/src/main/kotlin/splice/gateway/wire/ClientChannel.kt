@@ -29,7 +29,6 @@ import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.spi.Ticker
-import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -66,8 +65,10 @@ private const val CLIENT_PING_INTERVAL_MS = 2_000L
 private const val DETACHED_NOTE = "compaction continues detached; its answer is held for a retry"
 
 /** Per-turn client write surface: the coalesced writer, a mutex serializing the emitter vs the
- *  keepalive pinger, and the clientGone flag a failed write flips. */
-internal data class ClientChannel(
+ *  keepalive pinger, and the clientGone flag a failed write flips. A class, not a `data class`:
+ *  it owns mutable atomic handoff state (clientGone/detached/socketFrames), which a value bundle's
+ *  equals/hashCode/copy would compare by reference or silently share. */
+internal class ClientChannel(
     val coalesced: ImmediateSseWriter,
     val writeMutex: Mutex,
     val clientGone: AtomicBoolean,
@@ -107,11 +108,14 @@ internal data class ClientChannel(
         recording?.append(frame)
         if (detached.get()) return
         val t = clock()
-        try {
-            coalesced.write(frame)
-        } catch (e: IOException) {
+        // A dead client fails the write in two shapes: IOException from the engine write, and
+        // IllegalStateException from a channel Ktor already closed. runCatchingCleanup captures both
+        // (and rethrows cancellation by contract), so neither escapes as an unclassified fault —
+        // clientGone is always set and the recording channel detaches instead of failing the turn.
+        val writeResult = Cancellables.runCatchingCleanup { coalesced.write(frame) }
+        if (writeResult.isFailure) {
             clientGone.set(true)
-            if (!detachIfRecording()) throw e
+            if (!detachIfRecording()) writeResult.getOrThrow()
             return
         }
         socketFrames.incrementAndGet()
@@ -199,7 +203,11 @@ internal data class ClientChannel(
                 } else {
                     silentTicks += 1
                 }
-                try {
+                // A dead client fails the keepalive in the same two shapes as the frame write; the
+                // heartbeat rides timedClientWrite, so its failure surfaces here too.
+                // runCatchingCleanup rethrows cancellation by contract, so a cancelled pinger is
+                // never misread as a dead client.
+                val pingFailure = Cancellables.runCatchingCleanup {
                     if (silentTicks >= HEARTBEAT_EVERY_TICKS) {
                         // Outside writeMutex: the heartbeat is an emitter frame and takes the lock
                         // itself on the way through timedClientWrite (a non-reentrant Mutex).
@@ -211,14 +219,15 @@ internal data class ClientChannel(
                     } else {
                         writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
                     }
-                } catch (e: IOException) {
-                    pingFailed(e, turnJob, headKey, log, session)
+                }.exceptionOrNull()
+                if (pingFailure != null) {
+                    pingFailed(pingFailure, turnJob, headKey, log, session)
                     return@launch
                 }
             }
         }
 
-    private fun pingFailed(e: IOException, turnJob: Job, headKey: String, log: LogSink, session: String?) {
+    private fun pingFailed(e: Throwable, turnJob: Job, headKey: String, log: LogSink, session: String?) {
         clientGone.set(true)
         // The class, not just the message: ClosedChannelException carries none, and
         // "keepalive write failed: null" said nothing about who closed what (2026-09-02).

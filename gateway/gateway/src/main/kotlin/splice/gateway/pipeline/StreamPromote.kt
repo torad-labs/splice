@@ -3,6 +3,7 @@
 // terminal emit.
 package splice.gateway.pipeline
 
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.turn.ModelTextPicker
 import splice.core.turn.TurnMeta
@@ -12,7 +13,7 @@ import splice.gateway.wire.TurnTerminal
 
 /** What the promote step decided: [endedTag] when the turn ended here (an error terminal was
  *  emitted), else null and the turn flows on to mirror+terminal, tagged [cleanTag] for the log. */
-internal data class PromoteVerdict(val endedTag: String?, val cleanTag: String = "ok")
+internal data class PromoteVerdict(val endedTag: String?, val cleanTag: String = OutcomeTag.OK.wire)
 
 internal class StreamPromote(
     private val compact: StreamCompact,
@@ -46,7 +47,7 @@ internal class StreamPromote(
             meta.compact -> {
                 // An empty compact is an ERROR, not an empty success (Claude Code would store a
                 // blank summary and lose the thread). Never invent locally.
-                compact.record(meta, "empty_model", elapsedMs, error = "api_error")
+                compact.record(meta, OutcomeTag.EMPTY_MODEL.wire, elapsedMs, error = "api_error")
                 log("[gateway] empty-turn shape compact=true ${outcome.outputShape}\n")
                 // V4-42 (operator law, 2026-09-17: retry on every error, never stall): OVERLOADED,
                 // the same retryable wire type as the empty_model branch below. A compaction that
@@ -56,14 +57,14 @@ internal class StreamPromote(
                     ErrorType.OVERLOADED,
                     "splice: compact returned no content from model — retry (upstream ${outcome.outputShape})",
                 )
-                PromoteVerdict("empty_compact")
+                PromoteVerdict(OutcomeTag.EMPTY_COMPACT.wire)
             }
             outcome.messageClosed -> {
                 // The model closed a message with nothing in it: a finished answer, not a failure
                 // (codex ends the turn here). Ending clean is what stops the client retrying the
                 // same request a dozen times; the line keeps the shape so the class stays greppable.
                 log("[gateway] empty-message turn compact=false ${outcome.outputShape} — ending clean\n")
-                PromoteVerdict(null, cleanTag = "empty_message")
+                PromoteVerdict(null, cleanTag = OutcomeTag.EMPTY_MESSAGE.wire)
             }
             honesty.nothingReachesTheClient(outcome, meta) -> {
                 // Name what the backend actually sent: a reasoning-only round, an item type this
@@ -83,7 +84,7 @@ internal class StreamPromote(
                     ErrorType.OVERLOADED,
                     "splice: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
                 )
-                PromoteVerdict("empty_model")
+                PromoteVerdict(OutcomeTag.EMPTY_MODEL.wire)
             }
             else -> PromoteVerdict(null)
         }

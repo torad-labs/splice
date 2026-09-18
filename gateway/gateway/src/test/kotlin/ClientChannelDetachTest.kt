@@ -59,4 +59,26 @@ class ClientChannelDetachTest {
         assertTrue(ch.detached.get())
         assertTrue(ch.clientGone.get())
     }
+
+    @Test
+    fun `a closed channel is client loss - a recording channel detaches, nothing thrown`() {
+        val recording = FrameRecording()
+        var dead = false
+        val ch = channel(recording) { if (dead) error("Channel is already closed") }
+        val perf = TurnPerf()
+        ch.timedClientWrite("event: message_start\n\n", perf, clock)
+        dead = true
+        ch.timedClientWrite("event: content_block_delta\n\n", perf, clock) // ISE: detaches
+        assertTrue(ch.clientGone.get())
+        assertTrue(ch.detached.get())
+        assertEquals(2, recording.size)
+    }
+
+    @Test
+    fun `a closed channel without a recording still throws ISE and flips clientGone`() {
+        val ch = channel(null) { error("Channel is already closed") }
+        assertThrows(IllegalStateException::class.java) { ch.timedClientWrite("event: ping\n\n", TurnPerf(), clock) }
+        assertTrue(ch.clientGone.get())
+        assertFalse(ch.detached.get())
+    }
 }

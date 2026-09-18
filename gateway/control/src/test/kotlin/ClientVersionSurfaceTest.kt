@@ -2,6 +2,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -40,6 +41,7 @@ import java.nio.file.Files
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ClientVersionSurfaceTest {
     private val client = HttpClient(CIO) { expectSuccess = false }
+    private var key = ""
 
     @AfterAll
     fun tearDown() = client.close()
@@ -51,11 +53,13 @@ class ClientVersionSurfaceTest {
         val versions = ClientVersionTracker(testedVersion = "2.1.257")
         versions.observe("session-new", "claude-cli/2.1.258")
         versions.observe("session-equal", "claude-cli/2.1.257")
+        val mgmt = MgmtKey(paths)
+        key = mgmt.get()
         val server = ControlServer(
             port = port,
             heads = mapOf("test" to managedHead()),
             config = ConfigService(paths),
-            mgmtKey = MgmtKey(paths),
+            mgmtKey = mgmt,
             dashboardHtml = { "" },
             log = {},
             clientVersions = versions,
@@ -86,6 +90,7 @@ class ClientVersionSurfaceTest {
 
     private suspend fun statusline(port: Int, session: String): String =
         client.post("http://127.0.0.1:$port/statusline/test") {
+            header("Authorization", "Bearer $key")
             contentType(ContentType.Application.Json)
             setBody("""{"session_id":"$session","model":{"id":"model","display_name":"Model"}}""")
         }.bodyAsText()

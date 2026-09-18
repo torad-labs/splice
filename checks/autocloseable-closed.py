@@ -51,10 +51,11 @@ NOT CAUGHT, and stated rather than discovered later:
   - A handle passed into a helper that closes it through its own parameter name. The helper's
     parameter IS a binding of that type, so the name is collected and the evidence found there —
     but only if the parameter is spelled with the concrete type. A helper taking the INTERFACE
-    (`fun shut(r: CodeModeRuntime) = r.close()`) closes the implementation without this checker
-    seeing it, which would report a false RED. No such helper exists today (measured: the six
-    concrete closeables are closed by forms 1-3 or not at all); when one appears the honest fix is
-    to teach this checker interface-typed handles, not to allowlist the finding.
+    (`fun shut(r: CodeModeRuntime) = r.close()`) is now handled by `interface_closed()` (2026-09-17,
+    V4-107): closing a handle typed by a closeable INTERFACE is taken as closing its (single)
+    concrete implementer, so `config.runtime.close()` in CodexCodeModeBridge.onHeadStop closes
+    JvmCodeModeRuntime without the checker needing a concrete-typed handle. Taught rather than
+    allowlisted, per this header's own promise.
   - Anonymous closeables (`return AutoCloseable { timer.cancel() }`, Spinner.kt:26). They have no
     declaration to enumerate and no name to track. Spinner closes its own through
     `pulses?.close()`.
@@ -274,6 +275,27 @@ def closed_by_name(sources: dict[str, str], names: set[str]) -> bool:
     return False
 
 
+def interface_closed(
+    main: dict[str, str], decls: list[Decl], closeable: set[str], super_name: str
+) -> bool:
+    """True when super_name is a closeable INTERFACE that has main-source closing evidence.
+
+    Closing through the interface is the AutoCloseable idiom — `close()`/`use {}` on the CONTRACT
+    type, not the concrete one — and a handle typed by the interface (`val runtime: CodeModeRuntime`
+    … `runtime.close()`) closes whichever concrete implementation it holds. The name-based evidence
+    above cannot follow a construction into an interface-typed handle, so this is the false RED the
+    checker's header promised to teach once such a helper appeared. Scoped to INTERFACES, not
+    concrete superclasses: an interface's close() IS the contract its implementer honours, whereas a
+    closed Parent handle does not prove a given Child was closed.
+    """
+    base = super_name.split(".")[-1]
+    if base not in closeable:
+        return False
+    if next((d.kind for d in decls if d.name == base), None) != "interface":
+        return False
+    return construct_and_use(main, base) or closed_by_name(main, handle_names(main, base))
+
+
 def read(root: pathlib.Path, patterns) -> dict[str, str]:
     out = {}
     for pattern in patterns if isinstance(patterns, tuple) else (patterns,):
@@ -329,6 +351,8 @@ def audit(root: pathlib.Path) -> list[str]:
             continue
         names = handle_names(main, decl.name)
         if construct_and_use(main, decl.name) or closed_by_name(main, names):
+            continue
+        if any(interface_closed(main, decls, closeable, super_name) for super_name in decl.supers):
             continue
         constructed = re.search(
             r"\b(?:[A-Za-z_][\w.]*\.)?" + re.escape(decl.name) + r"\s*\(", "\n".join(main.values())
@@ -420,6 +444,25 @@ class CodeModeRuntimeTest {
     fun reclaims() {
         JvmCodeModeRuntime().use { runtime -> runtime.start() }
     }
+}
+"""
+
+# The interface-typed close: a concrete closeable constructed in main and closed through its
+# interface-typed handle (the AutoCloseable idiom) — the false-RED interface_closed() was taught to
+# close. `Arm.build` constructs it; `Config.shutdown` closes it through the `CodeModeRuntime` port.
+INTERFACE_CLOSED_APP = """package splice.app
+
+public class JvmCodeModeRuntime : CodeModeRuntime {
+    override fun start() = Unit
+    override fun close() = Unit
+}
+
+internal class Config(private val runtime: CodeModeRuntime) {
+    fun shutdown() { runtime.close() }
+}
+
+internal class Arm {
+    fun build() = Config(runtime = JvmCodeModeRuntime())
 }
 """
 
@@ -540,6 +583,19 @@ def selftest() -> int:
         if not any("refusing to pass vacuously" in h for h in hits):
             failures.append(f"6b. a tree with no main sources must REFUSE, got: {hits}")
 
+        # 7. the interface-typed close is closing evidence; removing the close goes RED by name.
+        write(root, {SPI: SPI_CONTRACT, APP: INTERFACE_CLOSED_APP})
+        hits = audit(root)
+        if hits:
+            failures.append(f"7. a close through the interface must be GREEN, got: {hits}")
+        write(
+            root,
+            {SPI: SPI_CONTRACT, APP: INTERFACE_CLOSED_APP.replace("    fun shutdown() { runtime.close() }", "    fun shutdown() = Unit")},
+        )
+        hits = audit(root)
+        if not any("JvmCodeModeRuntime" in h for h in hits):
+            failures.append(f"7b. removing the interface-typed close must be RED by name, got: {hits}")
+
     if failures:
         print("autocloseable-closed --selftest FAIL")
         for failure in failures:
@@ -548,7 +604,8 @@ def selftest() -> int:
     print(
         "autocloseable-closed --selftest OK — compliant GREEN (all 3 evidence forms), boring "
         "one-type case GREEN and red-provable, two-hop test-only closer RED by name, same tree "
-        "GREEN once closed from main, dated allowlist GREEN / undated RED, empty parse REFUSES"
+        "GREEN once closed from main, interface-typed close GREEN and red-provable, dated "
+        "allowlist GREEN / undated RED, empty parse REFUSES"
     )
     return 0
 

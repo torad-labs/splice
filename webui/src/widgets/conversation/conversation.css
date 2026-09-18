@@ -22,7 +22,7 @@
 /* A turn body is text, not a figure: the figure face would set every line as a
    value. It scrolls inside the column rather than stretching it. */
 .myx-cv-text {
-  margin: var(--space-0);
+  margin: 0;
   padding: var(--space-3);
   max-height: 34vh;
   overflow: auto;

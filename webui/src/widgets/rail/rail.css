@@ -3,7 +3,7 @@
    frame with a 7% width, which inside the rail is 13.33% / 77.78%.
 
    The tabs themselves are the comp's, read off its own pixels rather than from
-   a component default: each address is a 77x29px plate of --mist-400 (the comp
+   a component default: each address is an 80x29px plate of --plate (the comp
    measures #b5a68f there, against the strips' #ded9c6), ruled off from the room
    on every side, carrying its label in the plate's ink at --text-2 (the comp's
    ascenders measure 13px and its labels are about 15px per word pair). The
@@ -14,6 +14,15 @@
    so the bays keep the comp's 29px tab and 33px gap at any window size. */
 
 .myx-rail {
+  /* The comp's rail plates measure #b5a68f, a cream a step or two under --strip.
+     Section 1 carries no such token, and the plate is not --strip (that is the
+     strip bay's paper), so it is derived from the world's own two grounds here
+     rather than borrowed from a retired ramp. */
+  /* mixed against the warm mute ink rather than the room, which keeps the
+     comp's warmth: the plate measures (184,172,149) and this lands at
+     (182,178,161) */
+  --plate: color-mix(in srgb, var(--strip) 70%, var(--strip-ink-mute));
+  --plate-hover: color-mix(in srgb, var(--strip) 88%, var(--room));
   position: relative;
   overflow: hidden;
   background: var(--room-deep);
@@ -50,7 +59,7 @@
   margin-inline-start: var(--space-2);
   /* the comp's label starts 13px into the plate */
   padding-inline-start: var(--space-4);
-  background: var(--mist-400);
+  background: var(--plate);
   border: var(--hair) solid var(--room);
   border-radius: 0;
   text-decoration: none;
@@ -59,21 +68,16 @@
 /* The holder edge prints its label in the room's ink by default; on a plate the
    label belongs to the plate, and the plate carries the comp's near-black. */
 .myx-rail-tab .myx-edge-label {
-  /* The comp's longest label ("compaction") measures 65px inside a 77px plate,
-     which is --text-1 in the label face: its ascenders are taller than that --
-     the comp's type is condensed, as its strips are -- but a size that fits the
-     plate is the one the plate can carry, and the words are the comp's. */
   color: var(--strip-ink);
   font-family: var(--font-label);
-  font-size: var(--text-1);
+  /* --text-2 on the wdth axis's 75, no transform: the comp's labels measure a
+     13-14px ascender and its longest word, "compaction", 65px inside an 80px
+     plate. At the axis's floor that word is 53px, which leaves the plate half
+     empty; at 75 it is 61px and the ink stands at the height the crop shows. */
+  font-size: var(--text-2);
+  font-variation-settings: 'wdth' 75;
   /* the comp's label ink is dense enough to break a whole row of its plate */
   font-weight: 600;
-  /* The comp's label ink is 13-14px tall on a 29px plate where --text-1 gives
-     9: its type is condensed the way its strips are, tall for its width. The
-     width is what has to fit an 80px plate, so the size stays at the rung that
-     fits and the height is scaled back to the comp's. */
-  transform: scaleY(1.6);
-  transform-origin: center;
 }
 /* The comp prints a small holder mark inside each plate, 4px in and no taller
    than the label's own x-height, in the plate's ink rather than the edge
@@ -90,7 +94,7 @@
   margin-block-start: calc(-1 * (var(--space-2) + var(--space-1)) / 2);
   background: var(--strip-ink);
 }
-.myx-rail-tab:hover { background: var(--mist-300); }
+.myx-rail-tab:hover { background: var(--plate-hover); }
 .myx-rail-tab[aria-current='page']::after {
   content: '';
   position: absolute;
@@ -101,6 +105,6 @@
   background: var(--edge-green);
 }
 .myx-rail-tab:focus-visible {
-  outline: var(--focus-width) solid var(--focus);
-  outline-offset: var(--focus-offset);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }

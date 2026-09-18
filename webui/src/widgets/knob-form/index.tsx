@@ -13,7 +13,8 @@ import { useState } from 'react';
 import type { ConfigValue } from '@shared/api';
 import { parseConfigInput } from '@entities/config';
 import type { KnobDisposition } from '@entities/config';
-import { Btn, FieldBox, HolderEdge } from '@shared/ui';
+import { Key } from '@shared/controls';
+import { FieldBox, HolderEdge } from '@shared/ui';
 import { S } from './strings';
 import './knob-form.css';
 
@@ -53,7 +54,7 @@ export function KnobForm({ index, disposition, pending, busy, onSave }: {
       <span className="myx-knob-act">
         {pending ? <HolderEdge state="amber" label={S.pending} /> : null}
         {dirty ? (
-          <Btn kind="primary" busy={busy ?? false} onClick={() => onSave(disposition.key, parsed)}>{S.save}</Btn>
+          <Key busy={busy ?? false} onClick={() => onSave(disposition.key, parsed)}>{S.save}</Key>
         ) : null}
       </span>
     </div>

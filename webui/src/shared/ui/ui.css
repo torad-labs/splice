@@ -434,6 +434,25 @@
    the strip's outer box line is the paler --strip-field-line. */
 .myx-sfield-label {
   font-family: var(--font-label);
+  /* THE LADDER'S FLOOR, AND THE COMP IS BELOW IT (M1-64). The comp's strip profile, read off its own
+     pixels: the label's ink band spans 6 rows of the lead-strip plate (y218..223, against its value's
+     11 at y243..253) and 8 rows of lead-strip-2's (plate rows 7..14, against its value's 12 at rows
+     33..44). Six to eight rows is a cap near 6px, about 8.6px in Archivo, and this label rendered at
+     14px -- a 10px cap, half again too big. That is the truncation: `context l…` and `scratchp…` are
+     field labels with no room.
+     THE COMP'S SIZE IS NOT REACHABLE FROM THE LADDER, AND DOES NOT NEED TO BE. 8.6px is the retired
+     sheet's `--text-0` (.54rem), which sits in tokens.css's "rungs the new ladder does not cover"
+     section -- outside the two world blocks -- so section 1 does not sanction it and the world wall
+     (tests/world.test.ts) fails any file that uses it. Measured at the sanctioned floor instead: at
+     --text-1 every one of the 79 field labels fits (0 clipped, against 4 at the old 14px: `context
+     left`, `window`, `tokens out`, `context left`), and the label's cap is 9 against the comp's 6-8.
+     The floor clears the defect, so no rung has to be added below it.
+     THIS BINDING WAS DEAD WHEN IT WAS FIRST WRITTEN, and the capture caught it: board.css's
+     `.myx-board .myx-sfield-label` carried its own `font-size: var(--text-2)` at (0,2,0), so it won
+     over this rule at (0,1,0) and the label kept rendering at 14px while this line claimed the
+     opposite. Two rules binding one role, the more specific one silently deciding, is the defect
+     class this row is about -- the size now lives here alone and the board's rule carries only what
+     is genuinely the board's (weight, the pinned line box, the rule's ink). */
   font-size: var(--text-1);
   line-height: 1.4;
   color: var(--strip-ink-mute);
@@ -639,7 +658,11 @@
 }
 .myx-bay-label {
   font-family: var(--font-label);
-  font-size: var(--text-1);
+  /* THE CONTRACT'S BAY LABEL IS 16, NOT 12 (M1-64). Bound to --text-1 it rendered a 9.0px cap where
+     the comp measures 10.9 -- and it is the role that made the ladder's middle collapse, because the
+     rule's readouts sat at 20 above it. At --text-3 its cap is 11.82, which is the comp's 10.9 plus
+     the face's ~8 percent. */
+  font-size: var(--text-3);
   color: var(--strip-ink);
 }
 .myx-bay-count {

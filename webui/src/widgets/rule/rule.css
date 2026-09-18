@@ -79,7 +79,7 @@
   /* FIGURE: the clocks are the comp's own printed line. */
   font-family: var(--font-figure);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-5);
+  font-size: var(--text-4);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
@@ -89,7 +89,13 @@
   color: var(--ink-mute);
 }
 
-.myx-rule-health { left: 30%; width: 10%; }
+/* HEALTH TAKES A SIZE (M1-64). It had no font-size at all, so it inherited the root's 16px while the
+   comp measures its cap at 12.4 -- and the contract names 18 for it. There is no 18 rung in the
+   ladder any more (M1-59 moved the 18 to 17 to create the rung the readouts need and nothing put one
+   back), so it is bound to the 17 rung, which is the closest rung to its comp size and lands its cap
+   at 12.6 against the comp's 12.4. That +0.2 is the one residual in this row that is NOT the face's
+   ~7 percent, and it is named here rather than hidden: health is the role whose rung does not exist. */
+.myx-rule-health { left: 30%; width: 10%; font-size: var(--text-4); }
 
 .myx-rule-window {
   left: 41%;
@@ -97,7 +103,7 @@
   /* FIGURE: the nearest-window readout is the comp's own printed line. */
   font-family: var(--font-figure);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-5);
+  font-size: var(--text-4);
   color: var(--ink);
   overflow: hidden;
 }
@@ -124,7 +130,7 @@
   /* FIGURE: the rule's "heads report none" readout is the comp's own printed line. */
   font-family: var(--font-figure);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-5);
+  font-size: var(--text-4);
   color: var(--ink);
   overflow: hidden;
 }

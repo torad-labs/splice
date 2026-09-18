@@ -7,6 +7,10 @@
 // The route does not exist, so this is the contract the console builds against; the honest empty a
 // page renders is the pending state, never a mocked catalog.
 
+import type { PendingRoute } from '@shared/api';
+
+export type { PendingRoute };
+
 /** The four Claude Code tiers a head can declare, in the daemon's own vocabulary
  *  (Topology.kt headModelSlots). */
 export const MODEL_SLOTS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
@@ -53,6 +57,14 @@ export interface CatalogModel {
 export interface HeadCatalog {
   key: string;
   label: string;
+  /** The provider this head runs on, when the payload reports one.
+   *
+   *  NEEDED BY THE MODELS PAGE'S by-provider view, and NOT in FEATURES.md section 6's description
+   *  of the route ("catalog per head with slots, windows, sources, rates, pinned"). It is optional
+   *  because the route does not exist yet: when it lands without this field the view groups under
+   *  one honest bay saying the payload does not report a provider, rather than deriving a provider
+   *  from the head key and printing a guess as data. Requested on the M2-06 ledger note. */
+  provider?: string;
   discovery_prefix: string;
   /** The head's pinned model (ANTHROPIC_MODEL at launch), or "" when the head pins none. */
   pinned_model: string;
@@ -69,15 +81,8 @@ export interface ModelsPayload {
   heads: HeadCatalog[];
 }
 
-/**
- * A route the daemon has not built yet; the store resolves to this instead of a catalog, and the
- * page prints the v0.4.0 item that will serve it (CONTRACTS.md 8). Declared here rather than shared
- * because a slice may not import a sibling slice and `src/shared/**` is not this row's fence; the
- * same shape is declared in entities/perf, and the finish row can hoist both into one place.
- */
-export interface PendingRoute {
-  pending: string;
-}
+// PendingRoute moved to @shared/api (CONTRACTS.md 8): the shape and its `pendingOf` mapping are now
+// one definition every slice imports, instead of a copy per data row.
 
 /** One tier of a head: the model that fills it, or null when the head declares none. A null row is
  *  what FEATURES.md 4.8 asks the page to show ("which tiers Claude Code will and will not get"), so

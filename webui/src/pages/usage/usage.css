@@ -1,0 +1,75 @@
+/* Usage: the windows, the head rack, and the insets for the opened head. Tokens
+   only for spacing and type; radius 0; no shadow or glow. */
+.myx-usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+}
+
+.myx-usage-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-usage-title {
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+.myx-usage-windows {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.myx-usage-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-usage-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-usage-sub {
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+  margin: 0;
+}
+
+.myx-usage-note {
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+/* Two insets per row on a wide screen, one below; the charts hold their own
+   height so a row of them stays aligned whatever the series holds. */
+.myx-usage-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.myx-usage-read {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-usage-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin: 0;
+}

@@ -33,7 +33,7 @@ const ZERO: Totals = {
   upstreamBytes: 0, toolsEager: 0, toolsDeferred: 0, deferralTurns: 0, rateLimited: 0,
 };
 
-export function sum(buckets: EconomicsBucket[]): Totals {
+export function sum(buckets: readonly EconomicsBucket[]): Totals {
   return buckets.reduce<Totals>((a, b) => ({
     turns: a.turns + b.turns,
     inTokens: a.inTokens + b.in_tokens,
@@ -50,7 +50,7 @@ export function sum(buckets: EconomicsBucket[]): Totals {
 }
 
 /** Buckets within the last [hours], relative to [now]. */
-export function within(buckets: EconomicsBucket[], hours: number, now: number): EconomicsBucket[] {
+export function within(buckets: readonly EconomicsBucket[], hours: number, now: number): EconomicsBucket[] {
   const cutoff = now - hours * HOUR_MS;
   return buckets.filter((b) => b.hour >= cutoff);
 }
@@ -145,6 +145,45 @@ export function burn(
     hoursToExhaustion: hours,
     exhaustsAt: hours !== null && Number.isFinite(hours) ? now + hours * HOUR_MS : null,
   };
+}
+
+/**
+ * A rate card, structurally the daemon's `ModelRates` (splice/core/model/TokenCost.kt): USD per
+ * MILLION tokens, cache_write optional because a vendor that does not report a separate write
+ * bucket bills those tokens at the input rate.
+ *
+ * Declared here rather than imported from `@entities/model` because one slice may not import
+ * another; the shapes are structurally identical, so a catalog row's rates satisfy this directly.
+ */
+export interface CostRates {
+  input: number;
+  cache_read: number;
+  output: number;
+  cache_write?: number;
+}
+
+const TOKENS_PER_MILLION = 1_000_000;
+
+/**
+ * USD for [totals] at [rates], computed the way the daemon computes it (`TokenCost.of`).
+ *
+ * THE FRESH-BUCKET SUBTRACTION IS THE WHOLE POINT. `in_tokens` is the TOTAL the plan meters and it
+ * already CONTAINS the cache-read and cache-write halves, so billing it at the input rate on top of
+ * billing those halves at their own rates charges the same tokens twice — at the most expensive
+ * rate in the card. Fresh = total - read - write, floored at 0 for a bucket written before V4-86
+ * whose `cache_write_tokens` is absent.
+ *
+ * A write with no declared write rate bills at the INPUT rate and not at zero: a cache write never
+ * costs less than a miss (TokenCost.kt, ModelRates.cacheWrite).
+ */
+export function costOf(totals: Totals, rates: CostRates): number {
+  const fresh = Math.max(0, totals.inTokens - totals.cachedTokens - totals.cacheWriteTokens);
+  const perWrite = rates.cache_write ?? rates.input;
+  const usd = fresh * rates.input
+    + totals.cachedTokens * rates.cache_read
+    + totals.cacheWriteTokens * perWrite
+    + totals.outTokens * rates.output;
+  return usd / TOKENS_PER_MILLION;
 }
 
 /** Per-hour input tokens over the last [hours], oldest first, with missing hours as 0 so the

@@ -97,6 +97,45 @@ type Basis = 'measured' | 'estimated' | 'unavailable' | 'stale';
 Rules: no border radius above 0, no icons, no gradients, no shadows, no glow. Attention is a
 holder edge with a printed label. Color is never the only signal.
 
+### 2b. Controls (`src/shared/controls`, row M1-07)
+
+The five things a page needs that are not a printed readout. They compose section 2 and use
+section 1 tokens only. A page that needs to be pressed, typed into, waited on, or told about a
+failure imports from `@shared/controls` and NEVER from the old primitives (`Btn`, `ConfirmBtn`,
+`Field`, `ErrorNote`, `SkeletonRows`, `Panel`, `StatusPill`, `EmptyState`, `MeterBar`, `Metric`,
+`Stale`, `Well`), which carry the released Torad plate system and are deleted in M3-04. The gap
+that this section closes is what made the console read as that old world; `webui/tests/world.test.ts`
+fails by name on any old import or old token anywhere in the new tree.
+
+```tsx
+// The world's button: printed strip paper, radius 0, label of at most two words, an edge mark
+// that cocks on hover, press and focus. `armed` is the cocked half of a two-step key.
+<Key variant?: 'plain' | 'armed' type?: 'button' | 'submit' onClick?: () => void
+     disabled?: boolean busy?: boolean ariaLabel?: string>{children}</Key>
+
+// Inline two-step for anything destructive or restarting, NEVER a dialog. The key cocks to a
+// second label beside a cancel and disarms itself after ARM_MS (4s). ConfirmKeys is the
+// controlled pair (both keys in the markup, so a static render can show the armed state).
+<Confirm label={node} confirmLabel={node} onConfirm={() => void} busy?: boolean />
+<ConfirmKeys label={node} confirmLabel={node} armed={boolean} busy?: boolean
+             onArm={() => void} onConfirm={() => void} onCancel={() => void} />
+
+// An editable StripField box: the label above, w in ch, the figure face and the numeric keypad
+// when numeric — never `input type=number`.
+<Input label="string" value={string} onChange={(next: string) => void} numeric?: boolean
+       w?: number id?: string placeholder?: string invalid?: boolean disabled?: boolean />
+
+// A bay waiting: n unprinted strips at the strip module's height. No shimmer, no skeleton grey.
+<Blank strips={number} label?: string />
+
+// The world's error note: one strip with a red holder edge carrying the daemon's own words, and
+// a retry Key only when there is something to retry.
+<Fault message="string" onRetry?: () => void retryLabel?: node w?: number />
+```
+
+Deliberately absent, and not to be added: a dialog, a menu, a tooltip, a toast, a spinner.
+Confirmation is inline, attention is a holder edge, absence is a printed word.
+
 ## 3. Shell (`src/app`, `src/widgets/rail`, `src/widgets/rule`, `src/features/palette`, `src/features/views`, row M1-03)
 
 Router: React Router v7, `createBrowserRouter`? No: the artifact is a single file served at `/`

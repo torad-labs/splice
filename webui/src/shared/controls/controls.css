@@ -1,0 +1,128 @@
+/* The world's controls. CONTRACTS.md section 1 tokens only; radius 0 everywhere; the two faces
+   only (--font-label for words, --font-figure for values). Nothing here paints a ground of its own
+   except the strip paper: a key is a strip, a field is a strip's box, and a fault is a strip. */
+
+/* ---------- the key: a printed strip that can be pressed ---------- */
+
+.myx-key {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+
+/* The holder edge, on a key: the mark is inside a 2px column on the left, and it says what the key
+   is doing. At rest it is the quiet edge the rest of the room uses. */
+.myx-key-edge {
+  align-self: stretch;
+  width: var(--space-2);
+  background: var(--edge-grey);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+/* Hover and press cock the edge to amber - the same gesture a strip uses for "this one is live" -
+   and the border takes the strip's own ink so the key reads as lifted without a shadow. */
+.myx-key:hover .myx-key-edge,
+.myx-key:active .myx-key-edge { background: var(--edge-amber); }
+.myx-key:hover { border-color: var(--strip-ink); }
+
+/* Focus is the world's ring, never the browser's outline, and it is on the BUTTON so a keyboard
+   reader sees the same 2px frame every other focusable thing in the console wears. */
+.myx-key:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.myx-key[disabled] {
+  cursor: not-allowed;
+  color: var(--strip-ink-mute);
+}
+.myx-key[disabled] .myx-key-edge { background: var(--edge-grey); }
+
+/* Armed: the second half of a two-step key. The edge stays amber and the box line goes to the
+   strip's ink, so an armed key is unmistakable without a colour the palette does not have. */
+.myx-key-armed { border-color: var(--strip-ink); }
+.myx-key-armed .myx-key-edge { background: var(--edge-amber); }
+
+.myx-key-label { white-space: nowrap; }
+
+/* Two keys, one gesture: the armed key and its cancel sit together and never apart. */
+.myx-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- the input: a strip's field box with a caret in it ---------- */
+
+.myx-input {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.myx-input-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-input-box {
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip-field);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.myx-input-box::placeholder { color: var(--strip-ink-mute); }
+.myx-input-box:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.myx-input-box[disabled] {
+  color: var(--strip-ink-mute);
+  cursor: not-allowed;
+}
+/* An invalid field is not a red box: the box line goes to the strip's ink and the edge colour is
+   carried by whatever prints the reason. Colour is never the only signal. */
+.myx-input-invalid .myx-input-box { border-color: var(--strip-ink); }
+
+/* ---------- the blank: an unprinted strip ---------- */
+
+.myx-blank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The strip module's height, derived from the same parts a StripField pads with (its own pad, the
+   label, the gap, the value), so a blank rack is exactly as tall as the rack it is standing in
+   for. No shimmer and no grey: paper, a hairline, and nothing printed on it. */
+.myx-blank-strip {
+  display: block;
+  height: calc(var(--space-2) * 2 + var(--text-1) + var(--space-1) + var(--text-3));
+  background: var(--strip);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+}
+
+/* ---------- the fault: a strip with a red holder edge ---------- */
+
+.myx-fault {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}

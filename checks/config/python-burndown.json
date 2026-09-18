@@ -69,7 +69,6 @@
       "reason": "The campaign-ledger CLI is still Python and V4-143 owns converting it. These callers did not ADD Python: their .py predecessors named the same command and were invisible only because the invoker census skips .py files, so converting them to .ts made them new invokers. The exclusion dies automatically when V4-143 lands and this tool is gone.",
       "recorded": "2026-09-18",
       "callers": [
-        ".claude/hooks/modules/sessionstart/10_laws.ts",
         ".claude/hooks/modules/sessionstart/12_inflight_reanchor.ts",
         ".claude/hooks/modules/pretooluse/08_manifest_single_channel.ts",
         ".claude/hooks/modules/stop/05_campaign_inflight_note.ts",

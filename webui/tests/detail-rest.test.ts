@@ -104,8 +104,20 @@ export function restState(tsx: string, css: string, cls: string): Rest {
 
 /** Must not hold width at rest. The wall proper. */
 export const NO_RESTING_COLUMN: Record<string, string> = {
-  fleet: 'M1-102 unmounted it; guarded here so the next page cannot re-add it. Dead region 13.5%.',
-  models: 'M1-112 unmounted it, mirroring fleet. Dead region 21.5%, the second worst in the set.',
+  fleet: 'COLLAPSES at rest since M1-116 -- its track is 0 and the -open class widens it, with '
+    + 'the gutter moving with the track. It read "M1-102 unmounted it" until M1-122: the mechanism '
+    + 'changed and the disposition did not, so the file documented a repair the code no longer '
+    + 'used. Dead region 13.5%.',
+  models: 'COLLAPSES at rest since M1-116, the same mechanism as fleet -- it read "M1-112 unmounted '
+    + 'it" until M1-122 for the same reason. Dead region 21.5%, the second worst in the set.',
+  // M1-117 moved this unit here from HELD, and M1-122 moved the registration INTO this literal
+  // rather than assigning it after the object was built. A collect-time mutation is fragile by
+  // inspection -- it guards only if the assignment happens to precede the Object.keys() that
+  // reads it -- and a guarded list that can silently lose a member is the failure this file
+  // exists to prevent. Entry order in a literal cannot be reordered by accident.
+  'compact-feed': 'src/widgets/compact-feed/compact-feed.css: .myx-cfeed second track is 0 at '
+    + 'rest and the -open class widens it, with column-gap moving with the track so the collapse '
+    + 'leaves no gutter of its own (M1-117, mirroring sessions and M1-119).',
   turns: 'already collapses its track to 0 at rest and transitions it open. Dead region 17.7%.',
   sessions: 'already collapses its track to 0 at rest and transitions it open. Dead region 10.2%.',
   projects: 'already collapses its track to 0 at rest and transitions it open. Its 43.7% dead '
@@ -146,13 +158,6 @@ describe('no detail column holds width at rest', () => {
     expect(columns.length).toBeGreaterThanOrEqual(9);
     expect(columns.map((c) => c.unit)).toContain('turns');
   });
-
-/** Takes no second track at rest: it collapses rather than unmounting, so the swell has a track
- *  to open FROM and CONTRACTS section 6's --dur-2 gesture can actually perform. */
-NO_RESTING_COLUMN['compact-feed'] =
-  'src/widgets/compact-feed/compact-feed.css: .myx-cfeed second track is 0 at rest and the '
-  + '-open class widens it, with column-gap moving with the track so the collapse leaves no '
-  + 'gutter of its own (M1-117, mirroring sessions and M1-119).';
 
   test.each(Object.keys(NO_RESTING_COLUMN))('%s takes no track at rest', (unit) => {
     const col = columns.find((c) => c.unit === unit);

@@ -1,0 +1,6 @@
+# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
+# LAW [2026-07-24]: PRECONDITION [2026-07-24]: stacked on feat/stream-reanchor — starts after PR #42 merges; same translator seams
+# LAW [2026-07-24]: INJECT-ONCE-PER-TURN [2026-07-24, eli risk 1+2]: injection is driven by the ASSISTANT message's tool_use blocks (immutable), never by which tool_results arrived (partial batches lie); ONE reasoning injection immediately before the FIRST function_call of its turn; rs_ ids verbatim, each at most once — duplication or misplacement is a hard upstream 400
+# LAW [2026-07-24]: NEVER-BELOW-STATUS-QUO [2026-07-24]: cache miss, eviction, or staleness degrades to exactly today's behavior (no injection), never to a failed turn; on invalid_encrypted_content the request retries ONCE with the reasoning items stripped
+# LAW [2026-07-24]: RETENTION [2026-07-24]: the gateway now holds conversation-derived OPAQUE material (encrypted envelopes only, never plaintext thinking) bounded + TTL'd — documented in PRODUCT/security notes as part of RC-5, never silently
+# LAW [2026-07-24]: NO PUSH, CLI-ONLY [2026-07-24]: agents never push or rewrite history; ledger updates only via manifest.py

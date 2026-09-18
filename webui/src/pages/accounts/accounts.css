@@ -1,0 +1,61 @@
+/* The accounts page layout. A rack column and a detail column, the same composition the comp
+   shows: the bay holds the strips, the opened one's actions sit beside it. Below a wide desktop
+   the detail drops under the bays, because the second monitor comes first but a laptop is still
+   a machine this runs on. Radius 0, tokens only. */
+
+.myx-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-accounts-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-accounts-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+.myx-accounts-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 1120px) {
+  .myx-accounts-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.myx-accounts-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The rack scrolls rather than reflowing: the field grid is fixed-width in ch and a strip that
+   wrapped would stop reading as a row of the same rack. */
+.myx-accounts-bays > * { overflow-x: auto; }
+
+.myx-accounts-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The selector's own order, printed beside the rack's label rather than hidden in a tooltip: the
+   mark on a strip is only meaningful if the rule that produced it is on the screen. */
+.myx-accounts-order {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

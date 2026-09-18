@@ -34,6 +34,40 @@ function eventKey(row: CompactRow, index: number): string {
   return `${row.head}-${row.ts}-${index}`;
 }
 
+/** The column widths, in ch, named once so the name row and the cells under it cannot drift apart.
+ *  They were inline on the strips before this row; a fields row repeating the numbers by hand is
+ *  two lists checking each other, which is the shape §24 names and this campaign has paid for. */
+const OUTCOME = 26;
+const COUNT = 12;
+const WHEN = 13;
+const HEAD = 18;
+const EVENT = 20;
+const CHARS = 13;
+const TOOK = 11;
+
+/** A rack's column names, once, at the same ch widths as the cells they name — the `fields` row
+ *  Bay has shipped since m1 and doctor already uses (m1 design review B9).
+ *
+ *  THE GROWTH IS THE HALF THAT IS EASY TO MISS: `strip-field.tsx` sets flexGrow to the field's OWN
+ *  ch so cells share their rack's slack in proportion to their declared widths (M1-73), and a name
+ *  fixed at `w ch` therefore drifts off the column under it — further the more slack the rack has,
+ *  and this page's outcomes rack renders 26ch as 847px. The name takes the same growth.
+ *
+ *  It is a third copy of doctor's helper, and that is deliberate rather than unnoticed: the shared
+ *  primitive question is already filed for m3 planning (M2-28), and a widget reaching into a page
+ *  for it would be the FSD boundary violation the walls refuse. */
+function ColumnNames({ columns }: { columns: readonly { w: number; label: string }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span key={column.label} className="myx-cfeed-col" style={{ width: `${column.w}ch`, flexGrow: column.w }}>
+          {column.label}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function CompactFeed({ payload, sample = false }: { payload: CompactPayload; sample?: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
   const outcomes = Object.entries(payload.stats.by_outcome);
@@ -60,14 +94,18 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
           label={S.outcomes}
           count={outcomes.length}
           empty={{ text: S.none, source: 'GET /api/compact' }}
+          fields={<ColumnNames columns={[{ w: OUTCOME, label: S.outcome }, { w: COUNT, label: S.count }]} />}
         >
           {/* THE TOTAL IS A SPAN, NOT A WIDE FIRST FIELD (M1-73). It is one value stated across
               the whole row, so it declares the two tracks this bay's outcome rows use -- w=26+w=12
               -- and says span=2 so anything comparing first-field edges excludes it by
               declaration instead of by not looking. Measured before: this row's single w=12 field
-              rendered 902.5px against the outcome rows' 617.5px, a 384px span across the bay. */}
+              rendered 902.5px against the outcome rows' 617.5px, a 384px span across the bay.
+              NO FIELD LABEL, for a reason the other rows do not have: the holder edge beside it
+              already prints the word `total`, so the label was the same five characters twice on
+              one row and a third time in the bay's own head (m1 design review B10). */}
           <Strip edge="grey" edgeLabel={S.total} ariaLabel={S.total}>
-            <StripField w={38} span={2} label={S.total} value={fmtInt(payload.stats.total)} />
+            <StripField w={OUTCOME + COUNT} span={2} value={fmtInt(payload.stats.total)} />
           </Strip>
           {outcomes.map(([outcome, count]) => (
             <Strip
@@ -76,8 +114,12 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
               edgeLabel={outcome}
               ariaLabel={`${S.outcome} ${outcome}`}
             >
-              <StripField w={26} label={S.outcome} value={outcome} mono={false} />
-              <StripField w={12} label={S.count} value={fmtInt(count)} />
+              {/* NO PER-CELL LABELS: the bay prints its column names once, above the rack (B9).
+                  Measured on this page before the change: every strip stood 63.8px tall and 42px
+                  of that was the value -- 21.8px of every row, a third of it, spent reprinting
+                  two words the rack states once. Seven rows here, six in the tail. */}
+              <StripField w={OUTCOME} value={outcome} mono={false} />
+              <StripField w={COUNT} value={fmtInt(count)} />
             </Strip>
           ))}
         </Bay>
@@ -86,6 +128,14 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
           label={S.events}
           count={tail.length}
           empty={{ text: S.none, source: 'GET /api/compact' }}
+          fields={(
+            <ColumnNames
+              columns={[
+                { w: WHEN, label: S.when }, { w: HEAD, label: S.head }, { w: EVENT, label: S.outcome },
+                { w: CHARS, label: S.chars }, { w: TOOK, label: S.took },
+              ]}
+            />
+          )}
         >
           {tail.map((row, index) => {
             const key = eventKey(row, index);
@@ -102,11 +152,12 @@ export function CompactFeed({ payload, sample = false }: { payload: CompactPaylo
                 onOpen={() => setOpen(open === key ? null : key)}
                 ariaLabel={`${S.openEvent} ${outcome}`}
               >
-                <StripField w={13} label={S.when} value={timeAgo(row.ts)} />
-                <StripField w={18} label={S.head} value={row.head} mono={false} />
-                <StripField w={20} label={S.outcome} value={outcome} mono={false} />
-                <StripField w={13} label={S.chars} value={row.chars === undefined ? '' : fmtInt(row.chars)} />
-                <StripField w={11} label={S.took} value={row.ms === undefined ? '' : fmtMs(row.ms)} />
+                {/* NO PER-CELL LABELS: the bay prints its five column names once (B9). */}
+                <StripField w={WHEN} value={timeAgo(row.ts)} />
+                <StripField w={HEAD} value={row.head} mono={false} />
+                <StripField w={EVENT} value={outcome} mono={false} />
+                <StripField w={CHARS} value={row.chars === undefined ? '' : fmtInt(row.chars)} />
+                <StripField w={TOOK} value={row.ms === undefined ? '' : fmtMs(row.ms)} />
               </Strip>
             );
           })}

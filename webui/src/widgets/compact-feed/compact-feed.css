@@ -76,3 +76,15 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* THE RACK'S COLUMN NAMES, ONCE (m1 design review B9, M2-32). The cells the names sit over are
+   `flex: 0 0 auto` with an inline flex-grow of their own ch, so a name has to take the same basis
+   and the same growth or it drifts off its column -- further the more slack the rack has, and the
+   outcomes rack renders 26ch as 847px. The widths and the growth arrive inline from ColumnNames;
+   what belongs here is only what is true of every name: it does not shrink, and it clips rather
+   than wrapping, because a wrapped name would make the head taller than the rows it labels. */
+.myx-cfeed-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}

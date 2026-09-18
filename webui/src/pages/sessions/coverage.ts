@@ -14,4 +14,5 @@ export const dispositions: Disposition[] = [
   { kind: 'route', name: '/api/sessions/{id}/repo', disposition: 'pending', where: 'V4-130' },
   { kind: 'route', name: '/api/sessions/{id}/transcript', disposition: 'pending', where: 'V4-130' },
   { kind: 'route', name: '/api/sessions/{id}/edges', disposition: 'pending', where: 'V4-130' },
+  { kind: 'route', name: '/api/sessions/edges', disposition: 'pending', where: 'V4-130' },
 ];

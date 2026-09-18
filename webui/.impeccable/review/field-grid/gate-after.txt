@@ -1,0 +1,11 @@
+look-gate
+
+  ok    ladder-steps          skipped: fewer than three px rungs declared
+  ok    type-distribution     54/146 (37%) of font-size declarations are on the two smallest rungs · --text-0:1 --text-1:53 --text-2:50 --text-3:16 --text-4:10 --text-5:6 --text-6:10
+  warn  spacing-distribution  263/395 (67%) of spacing uses are at rungs 1-3 (<=8px) · --space-0:22 --space-1:58 --space-2:116 --space-3:89 --space-4:63 --space-5:26 --space-6:12 --space-7:7 --space-8:1 --space-9:1
+  ok    no-type-transform     webui/src/shared/motion/motion.css:21 scaleX(0) · webui/src/shared/motion/motion.css:22 scaleX(1)
+  warn  absence-vocabulary    11 distinct absence phrasings: n/r(15) none(12) unknown(7) unavailable(6) ineligible(2) not reported by provider(1) not reported(1) no fix offered(1) no turn in flight(1) not built(1) no rates declared(1)
+  ok    field-grid            skipped: aligned on 0 captures · 12 skipped (filename names no theme, so the wrong room could have been checked)
+  warn  tonal-drift           comp mid-tone 12.3% · worst capture projects.png at 2.1% (17% of the comp) · 11/14 captures below half the comp
+
+  LOOK-GATE: PASS

@@ -860,8 +860,9 @@ function main(argv: string[]): number {
     process.stderr.write("usage: safe-failure-render.ts {check|report} <repo-root>\n");
     return 2;
   }
-  // THE ROOT IS PASSED AS GIVEN, never resolved: python globs Path(argv[2]) and prints the paths
-  // that yields, so `check .` reports `gateway/app/...` and an absolute root reports absolute paths.
+  // THE ROOT IS PASSED AS GIVEN, never resolved: the walk globs argv[2] verbatim and prints the
+  // paths that yields, so `check .` reports `gateway/app/...` and an absolute root reports
+  // absolute paths. The caller chooses the shape of every reported path by how it spells the root.
   // Resolving here made every path absolute, which the tree differential could not see (no violation
   // lines to print on a clean tree) and the arms could not see either (they pass an absolute root).
   // Only `report`, which prints every site, exposed it.

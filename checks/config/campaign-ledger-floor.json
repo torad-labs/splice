@@ -12,8 +12,8 @@
     "rows": 13
   },
   "cli-wizard.toml": {
-    "lines": 88,
-    "rows": 9
+    "lines": 229,
+    "rows": 10
   },
   "drift-repair.toml": {
     "lines": 3037,
@@ -36,11 +36,11 @@
     "rows": 88
   },
   "proxy-hardening/oracle/expectations.toml": {
-    "lines": 250,
+    "lines": 257,
     "rows": 0
   },
   "proxy-hardening/walls/law_registry.toml": {
-    "lines": 122,
+    "lines": 134,
     "rows": 0
   },
   "proxy-hardening/walls/wall_registry.toml": {
@@ -52,8 +52,12 @@
     "rows": 6
   },
   "v0.4.0.toml": {
-    "lines": 1303,
-    "rows": 31
+    "lines": 4754,
+    "rows": 140
+  },
+  "web-console.toml": {
+    "lines": 1406,
+    "rows": 75
   },
   "ws-transport.toml": {
     "lines": 125,

@@ -1,0 +1,44 @@
+/* The four gestures, as classes. The durations are the --dur-N tokens (CONTRACTS.md
+   section 1), which are already 0ms under prefers-reduced-motion; the JS side refuses
+   to pair or schedule there too, so neither half animates alone.
+
+   Every gesture is under --dur-3 (400ms) and none of them loops. */
+
+/* PRINT: a strip enters from the top edge of its bay. It slides down into its own
+   place rather than fading in, so the row reads as printed onto the rack. */
+@keyframes myx-print {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+.myx-strip-print {
+  animation: myx-print var(--dur-2) var(--ease-out) both;
+}
+
+/* STRIKE: the line draws across the strip before it leaves. The line itself is the
+   existing .myx-strip-strike hairline; this only makes it draw rather than appear. */
+@keyframes myx-strike {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.myx-strip-struck .myx-strip-strike,
+.myx-strip-strike.myx-strip-struck {
+  transform-origin: left center;
+  animation: myx-strike var(--dur-2) var(--ease-out) both;
+}
+
+/* HAND OFF: a strip slides between bays. The registry computes the FLIP transform and
+   the hook applies it for one frame; the transition below carries it the rest of the
+   way, which is what makes the move continuous instead of a jump. */
+.myx-strip {
+  transition: transform var(--dur-3) var(--ease-out);
+}
+
+/* No gesture at all under reduced motion — including the transition above, which would
+   otherwise still be an instant move to a moved position. */
+@media (prefers-reduced-motion: reduce) {
+  .myx-strip { transition: none; }
+  .myx-strip-print { animation: none; }
+  .myx-strip-struck .myx-strip-strike { animation: none; }
+}

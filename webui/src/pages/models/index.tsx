@@ -90,8 +90,8 @@ export function ModelsBoard({ catalog, sample }: {
               This shape is turns', sessions' and projects', mirrored rather than re-invented.
               THE EMPTY STAYS GONE, deliberately: an honest empty says what a panel is missing and
               which source supplies it, and at rest there is no panel to be missing anything, so a
-              card reading "none open" captions a panel that does not exist. `EMPTIES.noneOpen` is
-              left in model.ts, which is outside this row's fence. */}
+              card reading "none open" captions a panel that does not exist. `EMPTIES.noneOpen` went
+              with it: M1-112 could not delete it from model.ts, outside that fence, and M2-28 did. */}
           <aside className="myx-models-detail" aria-label={S.catalog} aria-hidden={opened === null}>
             {opened === null ? null : <ModelDetail model={opened.model} head={opened.head} />}
           </aside>

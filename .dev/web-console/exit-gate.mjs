@@ -44,6 +44,20 @@ const PASSED = 'PASSED', FAILED = 'FAILED', DID_NOT_RUN = 'DID NOT RUN';
 /** The page the look leg reads: the campaign's own comp-of-record surface. */
 const LOOK_URL = 'http://localhost:5173/#/teams?fixture=hero';
 
+/**
+ * The frames every rendered leg runs at. The comp's own, and the operator's.
+ *
+ * Added 2026-09-18 after M1-33 measured what was missing: `comp-check.mjs` carried a hardcoded
+ * `FRAMES = [[1536, 1024]]` of which only `[0]` was ever read, and `look.mjs` defaulted to the
+ * same size, so NOTHING in this gate had ever rendered at a second viewport. The operator uses
+ * 3840x2160 monitors. Every finding of the 3840 blind pass — 13.7% mean paper coverage, 9px of
+ * ink on knob names and column headers, 801px gaps in the rule bar — passed all nine legs green.
+ *
+ * This is the gate's own instance of the campaign's oldest defect: not a check that lied, a check
+ * whose DENOMINATOR came from itself. One frame, measured perfectly, forever.
+ */
+const FRAMES = ['1536x1024', '3840x2160'];
+
 /** Run a command; never throw. Returns {code, out} with stdout and stderr merged. */
 function sh(cmd, args, cwd) {
   try {
@@ -150,10 +164,19 @@ const LEGS = [
     needsServer: true,
     probe: () => sh('node', ['.dev/web-console/comp-check.mjs', '--list'], ROOT),
     probeProof: /rail/,
-    run: () => sh('node', ['.dev/web-console/comp-check.mjs'], ROOT),
-    // its line format is `PASS <page> <constant>` / `FAIL <page> <constant>`; with no proof a run
-    // that checked nothing reads the same as one that checked everything
-    proof: /^(?:PASS|FAIL) /m,
+    // BOTH FRAMES, and the second one is the whole point. Until 2026-09-18 this leg ran
+    // comp-check's hardcoded `FRAMES = [[1536, 1024]]` and look.mjs's identical default, so
+    // NOTHING in this gate rendered at a second size — M1-33's coverage finding. The operator's
+    // monitors are 3840x2160; every defect the 3840 blind pass found passed all nine legs.
+    run: () => {
+      const runs = FRAMES.map((f) => sh('node', ['.dev/web-console/comp-check.mjs', '--frame', f], ROOT));
+      return { code: runs.some((r) => r.code !== 0) ? 1 : 0, out: runs.map((r) => r.out).join('\n') };
+    },
+    // The proof is the summary line with a NON-ZERO compared count, once per frame. It used to be
+    // /^(?:PASS|FAIL) /m — and comp-check prints no PASS line at all, so that regex could only ever
+    // match a FAILURE. The gate would have gone unproven at the exact moment the build went green,
+    // which is the one direction none of tonight's other holes pointed in.
+    proof: new RegExp(FRAMES.map((f) => `at ${f}[^\\n]*?, [1-9]\\d* compared against the comp`).join('[\\s\\S]*'), 'm'),
     failIf: /^FAIL /m,
     failHint: 'comp-check found a comp constant off on a live page; those belong on the punch list, not in a weakened proof',
   },
@@ -167,7 +190,17 @@ const LEGS = [
     probeProof: /usage: node dev\/web-console\/look\.mjs '<url>'/,
     // it takes a URL: called with none it prints usage and exits 2, which the old wiring reported
     // as a FAILED look pass rather than as a missing argument
-    run: () => sh('node', ['.dev/web-console/look.mjs', LOOK_URL], ROOT),
+    // Both frames, same reason as comp-check: look.mjs takes --width/--height and defaulted to
+    // 1536x1024, so the rendered rule pass had never seen the size the console is used at. The
+    // rendered rules that care most about size — clipped-overflow-container, text-occlusion,
+    // cramped-padding, line-length — are exactly the ones a single frame cannot exercise.
+    run: () => {
+      const runs = FRAMES.map((f) => {
+        const [w, h] = f.split('x');
+        return sh('node', ['.dev/web-console/look.mjs', LOOK_URL, '--width', w, '--height', h], ROOT);
+      });
+      return { code: runs.some((r) => r.code !== 0) ? 1 : 0, out: runs.map((r, i) => `--- ${FRAMES[i]}\n${r.out}`).join('\n') };
+    },
     proof: /look — \S+/,
     failIf: /LOOK: BLOCKED|look-gate\s+FAIL/,
     failHint: 'the look gate found blocking findings on this page; fix them or put them on the punch list',

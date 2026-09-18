@@ -3801,6 +3801,7 @@ VERDICT_SIGIL_RE = re.compile(r"^VERDICT: outcome=\w+")
 
 def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=None):
     notify = _notify_orchestrator if _notify is None else _notify
+    text = _one_line("note text", text)
 
     # The other half of the ONE-REVIEW-PER-ROW anchoring (_one_review_per_row_error): a note is free
     # to DISCUSS a verdict, but only cmd_verdict may AUTHOR the line the guard reads. Refusing here
@@ -4280,6 +4281,11 @@ def cmd_handover(
 
 
 def cmd_add(path, item_id, phase, title, files, verify, status="todo", override_bare_dir=False):
+    item_id = _one_line("--id", item_id)
+    phase = _one_line("--phase", phase)
+    title = _one_line("--title", title)
+    files = _one_line("--files", files)
+    verify = _one_line("--verify", verify)
     bare_dirs = _bare_directory_fence_entries([f.strip() for f in files.split(",")])
     if bare_dirs and not override_bare_dir:
         sys.exit(_bare_dir_fence_block_error(item_id, bare_dirs))
@@ -4865,6 +4871,187 @@ def cmd_verify_phase(path, phase, evidence):
         cmd_note(path, item_id, f"VERIFY-PHASE {phase} {stamp}: {evidence}")
         cmd_set_status(path, item_id, "verified")
     print(f"verify-phase {phase}: {len(done_rows)} row(s) -> verified ({', '.join(done_rows)})")
+
+
+def _one_line(label: str, value: str) -> str:
+    """Free text is ONE line. A newline in a note/title/verify/evidence is a TOML injection:
+    `[[items]]` inside a note block becomes a forged row that `validate` blesses (grailseeker
+    Eli F5, ported here 2026-09-18). Every free-text arg lands in a single ledger line, so a
+    newline must be refused before it reaches the lock."""
+    if isinstance(value, str) and re.search(r"[\r\n]", value):
+        sys.exit(f"error: {label} must be a single line (newlines are refused: they would inject TOML into the ledger)")
+    return value
+
+
+_GLOB_CHARS_RE = re.compile(r"[*?\[]")
+
+
+def _bad_receipt_path(p: str) -> bool:
+    """A touched path must be repo-relative, plain, and glob-free — the three shapes `stage`
+    could otherwise mis-resolve (an absolute path, a `..` escape, or a `*` that fans out to
+    files the receipt never named)."""
+    if not isinstance(p, str) or not p:
+        return True
+    if p.startswith("/") or ".." in p.replace("\\", "/").split("/"):
+        return True
+    if _GLOB_CHARS_RE.search(p) or re.search(r"\s", p):
+        return True
+    return False
+
+
+_RECEIPT_RE = re.compile(r"^RECEIPT files=(\S+) blobs=(\S+)$")
+
+
+def _latest_receipt(lines: list[str], s: int, e: int) -> dict | None:
+    """The most recent RECEIPT note of an item, parsed back to its files + per-file blob hashes.
+    Notes append, so the last RECEIPT line wins — a builder re-runs its verify and records a
+    fresh receipt, and `stage` reads only the newest one."""
+    for line in reversed(lines[s:e]):
+        body = _note_body(line)
+        if body is None:
+            continue
+        match = _RECEIPT_RE.match(body)
+        if match:
+            files = [f for f in match.group(1).split(",") if f]
+            blobs = [b for b in match.group(2).split(",") if b]
+            return {"files": files, "blobs": blobs}
+    return None
+
+
+def _git_repo_root_or_die(path: str) -> Path:
+    root = _git_repo_root(path)
+    if root is None:
+        sys.exit(f"error: {path} is not inside a git repository (receipt/stage/reattest need one)")
+    return root
+
+
+def _git_blob_hash(root: Path, rel: str) -> str | None:
+    """The file's blob hash as it is on disk now, or None when it does not exist — the bytes
+    `stage` compares against the receipt so another builder's half-edit cannot ride this row's
+    commit (grailseeker Eli F4)."""
+    proc = subprocess.run(
+        ["git", "-C", str(root), "hash-object", "--", rel],
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _git_changed_paths(root: Path) -> list[str]:
+    """Every tracked-modified + untracked path from the worktree, one per entry — the pool
+    `stage` filters by the row's fence to find fenced files changed but not receipted."""
+    try:
+        diff = _run_git(root, ["diff", "--name-only", "-z"]).stdout
+    except subprocess.CalledProcessError:
+        diff = ""
+    try:
+        others = _run_git(root, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout
+    except subprocess.CalledProcessError:
+        others = ""
+    return [p for p in (diff + others).split("\0") if p]
+
+
+def cmd_receipt(path, item_id, files):
+    """THE BUILDER'S PROOF. `receipt <ID> --files f1 f2 ...` records each file's `git
+    hash-object` blob hash as one dated note under the row. `stage` later compares those bytes,
+    so the touched list is no longer a self-report — it is the row's evidence in a shared
+    worktree (seat law 13). Refuses a missing file, a path outside the fence, and a glob."""
+    files = [part for arg in files for part in arg.split(",")]
+    files = [f.strip() for f in files if f.strip()]
+    if not files:
+        sys.exit("error: receipt requires at least one file: receipt <ID> --files f1 f2 ...")
+    bad = [f for f in files if _bad_receipt_path(f)]
+    if bad:
+        sys.exit(
+            "error: receipt --files must be repo-relative plain paths without whitespace or globs "
+            f"(rejected: {', '.join(bad)})"
+        )
+    fence = _item_files(path, item_id) or []
+    outside = [f for f in files if not _scope_matches(f, fence)]
+    if outside:
+        sys.exit(f"error: receipt names files outside the fence: {', '.join(outside)}")
+    root = _git_repo_root_or_die(path)
+    blobs = [_git_blob_hash(root, f) for f in files]
+    missing = [f for f, blob in zip(files, blobs) if blob is None]
+    if missing:
+        sys.exit(f"error: receipt touched files do not exist: {', '.join(missing)}")
+    cmd_note(path, item_id, f"RECEIPT files={','.join(files)} blobs={','.join(blobs)}")
+    print(f"{item_id}: receipt recorded ({len(files)} files)")
+
+
+def cmd_stage(path, item_id):
+    """THE ORCHESTRATOR'S ONLY PER-ROW JUDGMENT, MADE MECHANICAL. `git add` exactly the latest
+    receipt's files and refuse by name: a fenced file changed but not on the receipt (the
+    omission that lets CI test old code), and a receipted file whose blob moved since the
+    receipt (another builder's edit riding this commit). Orchestrator-only."""
+    if os.environ.get(VERIFY_PHASE_ENV) != "1":
+        sys.exit(f"error: stage is orchestrator-only — run with {VERIFY_PHASE_ENV}=1")
+    lines = _read(path)
+    s, e = _find(lines, item_id)
+    receipt = _latest_receipt(lines, s, e)
+    if receipt is None:
+        sys.exit(f"error: {item_id} has no receipt to stage from")
+    fence = _item_files(path, item_id) or []
+    if not fence:
+        sys.exit(f"error: {item_id} declares no files; a row without a fence cannot be staged")
+    outside = [f for f in receipt["files"] if not _scope_matches(f, fence)]
+    if outside:
+        sys.exit(f"error: {item_id}: receipt names files outside the fence: {', '.join(outside)}")
+    root = _git_repo_root_or_die(path)
+    touched = receipt["files"]
+    omitted = [f for f in _git_changed_paths(root) if _scope_matches(f, fence) and f not in touched]
+    if omitted:
+        sys.exit(
+            f"error: {item_id}: fenced files changed but not on the receipt: {', '.join(omitted)} — "
+            "the builder re-runs its verify and records a new receipt"
+        )
+    moved = [f for f, blob in zip(touched, receipt["blobs"]) if _git_blob_hash(root, f) != blob]
+    if moved:
+        sys.exit(
+            f"error: {item_id}: bytes moved since the receipt: {', '.join(moved)} — "
+            "someone edited after the verify ran; new receipt required"
+        )
+    _run_git(root, ["add", "--", *touched])
+    print(f"{item_id}: staged {len(touched)} files — commit now")
+
+
+def cmd_reattest(path, item_id):
+    """THE ONE SANCTIONED REPAIR for a wedged receipt: re-bind the latest receipt's blob hashes
+    to the bytes as they are now, under the lock. Orchestrator-only; the caller reviews
+    `git diff -- <files>` and notes what it blessed."""
+    if os.environ.get(VERIFY_PHASE_ENV) != "1":
+        sys.exit(f"error: reattest is orchestrator-only — run with {VERIFY_PHASE_ENV}=1")
+    lines = _read(path)
+    s, e = _find(lines, item_id)
+    receipt = _latest_receipt(lines, s, e)
+    if receipt is None:
+        sys.exit(f"error: {item_id} has no receipt to reattest")
+    root = _git_repo_root_or_die(path)
+    blobs = [_git_blob_hash(root, f) for f in receipt["files"]]
+    missing = [f for f, blob in zip(receipt["files"], blobs) if blob is None]
+    if missing:
+        sys.exit(f"error: reattest: receipted files no longer exist: {', '.join(missing)}")
+    cmd_note(path, item_id, f"RECEIPT files={','.join(receipt['files'])} blobs={','.join(blobs)}")
+    print(
+        f"{item_id}: reattested — proof re-bound to current bytes of {len(receipt['files'])} files; "
+        f"review `git diff -- {', '.join(receipt['files'])}` and note what was blessed"
+    )
+
+
+def cmd_focus(path, item_id, seat=None):
+    """The active pointer the SessionStart hook reads to re-anchor a compacted seat — the same
+    `.claude/state/ledger-active-<seat>.json` shape 12_inflight_reanchor consumes."""
+    lines = _read(path)
+    _find(lines, item_id)
+    seat_name = re.sub(r"[^a-zA-Z0-9._-]", "_", seat or os.environ.get("TMUX_PANE") or "default")[:128] or "default"
+    root = _git_repo_root_or_die(path)
+    state_dir = root / ".claude" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(
+        state_dir / f"ledger-active-{seat_name}.json",
+        {"ledger_path": str(Path(path).resolve()), "item_id": item_id},
+    )
+    print(f"{item_id}: active pointer written for seat {seat_name}")
 
 
 def cmd_add_law(path, text):

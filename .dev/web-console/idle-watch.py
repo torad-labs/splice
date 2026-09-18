@@ -34,7 +34,54 @@ RECENT_S = 24 * 3600  # a seat's transcript was written today; skip the archive
 HEAD_BYTES = 64 * 1024  # the custom-title entry sits at the head of the transcript
 
 
+def registry_file_for(seat: str) -> str | None:
+    """Resolve a seat through the session REGISTRY, where the name is a field.
+
+    The registry is ~/.claude*/sessions/<pid>.json carrying {name, sessionId, pid, status,
+    cwd}; the transcript is <projects-dir>/<sessionId>.jsonl. No window, no offset, no rename
+    hazard. It is mirrored across the config roots (.claude, .claude-claude-kimi, …), so glob
+    them all and dedupe on sessionId.
+
+    This replaced a scan for '"customTitle":"<seat>"' inside the first 64 KB of every recent
+    transcript, which assumed a seat is NAMED AT BIRTH. Measured 2026-09-18 by claude-splice-main:
+    splice-builder's customTitle sits at byte 23, and splice-design's -- a seat renamed
+    mid-session -- sits at byte 2,328,657 of a 33 MB transcript, 35x past the window. That seat
+    was invisible to its own watcher.
+
+    And the miss was silent by construction: `lost.add(seat)` after one LOST line meant an
+    unlocatable seat produced one message at startup and permanent silence after, which is
+    indistinguishable from a seat that is fine. That is this file's own recurring defect --
+    the same one the widening NAG_FIRST/NAG_MAX re-announce was added to fix for the IDLE case,
+    left unfixed on the LOST path. Both are now re-announced on the widening interval.
+    """
+    best: tuple[float, str] | None = None
+    for p in glob.glob(os.path.expanduser("~/.claude*/sessions/*.json")):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if d.get("name") != seat:
+            continue
+        sid = d.get("sessionId")
+        if not sid:
+            continue
+        for root in dirs:
+            t = os.path.join(root, f"{sid}.jsonl")
+            try:
+                m = os.stat(t).st_mtime
+            except OSError:
+                continue
+            if best is None or m > best[0]:
+                best = (m, t)
+    return None if best is None else best[1]
+
+
 def file_for(seat: str) -> str | None:
+    """The registry first; the head scan only as a fallback for a seat it does not list."""
+    found = registry_file_for(seat)
+    if found is not None:
+        return found
     needle = f'"customTitle":"{seat}"'.encode()
     now = time.time()
     hits: list[str] = []
@@ -123,6 +170,8 @@ files: dict[str, str] = {}
 # An idle seat is now re-announced on a widening interval, so silence means one thing.
 idle_since: dict[str, float] = {}
 next_nag: dict[str, float] = {}
+lost_since: dict[str, float] = {}   # seat -> when it first could not be located
+lost_nag: dict[str, float] = {}     # seat -> when to say so again
 NAG_FIRST = 300.0   # five minutes after the first STALL/FREE
 NAG_MAX = 1800.0    # then doubling, capped at half an hour, so a parked seat never goes quiet
 while True:
@@ -132,11 +181,29 @@ while True:
         if p is None or not os.path.exists(p):
             p = file_for(seat)
             if p is None:
-                if seat not in lost:
-                    print(f"LOST  {seat}: no transcript found", flush=True)
-                    lost.add(seat)
+                # Re-announce on the same widening interval the idle path uses. A single LOST line
+                # followed by permanent silence reads exactly like a healthy seat, which is the
+                # defect this whole file exists to avoid: the watcher must keep saying it cannot
+                # see something, or its silence means two different things.
+                now = time.time()
+                first = seat not in lost_since
+                if first:
+                    lost_since[seat] = now
+                    lost_nag[seat] = now + NAG_FIRST
+                if first or now >= lost_nag.get(seat, 0.0):
+                    mins = int((now - lost_since[seat]) / 60)
+                    print(f"LOST  {seat}: no transcript found"
+                          + ("" if first else f" — still unseen after {mins}m"), flush=True)
+                    if not first:
+                        lost_nag[seat] = now + min(NAG_MAX, (now - lost_nag[seat]) * 2 + NAG_FIRST)
+                    else:
+                        lost_nag[seat] = now + NAG_FIRST
                 continue
             files[seat] = p
+            if seat in lost_since:
+                print(f"FOUND {seat}: transcript located after "
+                      f"{int((time.time() - lost_since.pop(seat)) / 60)}m", flush=True)
+                lost_nag.pop(seat, None)
             lost.discard(seat)
         s, detail = state(p)
         prev = last.get(seat)

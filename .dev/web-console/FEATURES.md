@@ -470,7 +470,7 @@ Small, mostly read-only, all under the existing bearer guard.
 
 | Route | Purpose | Server-side today |
 |---|---|---|
-| `GET /api/perf/turns?head=&n=&since=` | per-turn rows for the turn list, waterfall, session detail, chart click-through | `PerfStats.tailNumeric` exists; needs the non-numeric fields (model, outcome, session, account) |
+| `GET /api/perf/turns?head=&n=&since=` | per-turn rows for the turn list, waterfall, session detail, chart click-through; every row carries `head` (the per-head perf files do not record it; the aggregating route adds it from the file it read); an unknown head answers 400 with `error.message` naming the head, never 404 (the console reads 404 on this path as "route not built yet") | `PerfStats.tailNumeric` exists; needs the non-numeric fields (model, outcome, session, account) |
 | `GET /api/models` | catalog per head with slots, windows, sources, rates, pinned | `ModelCatalog`, `Topology` |
 | `GET /api/doctor` | the `doctor --json` report | `DoctorCommand` |
 | `GET /api/topology`, `PUT /api/topology` | read and validated write of `splice.toml`, backup first, structure-preserving | the `add-model` TOML writer, `TopologySchema` |

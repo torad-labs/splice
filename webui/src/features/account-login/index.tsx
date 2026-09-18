@@ -268,6 +268,7 @@ export function HeadAuthStrip({ head, kind, present, masked, note, selected, onO
 }) {
   return (
     <Strip
+      className="myx-strip-fixed"
       edge={present ? 'green' : 'grey'}
       edgeLabel={present ? 'signed in' : 'no credential'}
       selected={selected ?? false}
@@ -276,10 +277,14 @@ export function HeadAuthStrip({ head, kind, present, masked, note, selected, onO
     >
       {/* Widths are the CONTENT width plus the field's own inline padding (~2.5ch at --text-3):
           'chatgpt-oauth' is 13 characters and truncated in a 13ch box. */}
-      <StripField w={16} label={S.head} value={head} mono={false} />
-      <StripField w={16} label={S.provider} value={kind} mono={false} />
-      <StripField w={20} label={S.account} value={masked ?? NOT_REPORTED} mono={false} />
-      {note === null ? null : <StripField w={24} label={S.note} value={note} mono={false} />}
+      <StripField w={16} fixed label={S.head} value={head} mono={false} />
+      <StripField w={16} fixed label={S.provider} value={kind} mono={false} />
+      <StripField w={20} fixed label={S.account} value={masked ?? NOT_REPORTED} mono={false} />
+      {/* THE TRACK RENDERS EMPTY (M1-107), the fourth of four sites that made the FIELD vanish
+          where twenty-two render it and fall back the value. An optional note is an empty cell in
+          a track, not a row with one fewer column -- the grid's whole affordance is that field N
+          is at the same x on every strip. */}
+      <StripField w={24} fixed label={S.note} value={note ?? ''} mono={false} />
     </Strip>
   );
 }

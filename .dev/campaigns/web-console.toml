@@ -927,13 +927,15 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/shared/ui && npx vitest
 id = "M1-13"
 phase = "m1"
 title = "CHOICE, FLAG, AND THE FIVE CONTROLS CORRECTED (m1 design review section D, webui/.impeccable/review/m1-design-review.md; two of these block the page sweep). 1. D6, the gap: the control set has no CHOICE and no FLAG, so the Logs page still renders four native selects and log-tail a system-blue checkbox, which is browser chrome showing through the world (B14). Build Choice (the strip's own field box holding a set of printed options, the chosen one marked the way the comp marks a selected strip, keyboard as a native select is, no popup layer if a printed row of options fits, no chevron drawn as an icon) and Flag (a two-state printed mark in a field box, the world's checkbox, a word beside it always, never colour alone). 2. D1, blocking: an armed Key and a hovered Key are pixel-identical (controls.css:34-36 against 53-54 are the same two declarations), so Confirm's armed state is invisible under the pointer that just clicked it. The armed state must read as armed with the pointer on it. 3. D2, blocking: Fault truncates the daemon's message at 60ch through StripField's ellipsis (fault.tsx:27). A failure prints its whole sentence and wraps. 4. D3, D4, D5, D7 as the report writes them: the key's edge is colour with no word; busy disables the button and draws nothing; the 4 second auto-disarm; and the two smaller ones. CONTRACTS.md section 2b gains Choice and Flag on receipt (orchestrator). Same tokens, same faces, radius 0, no icon, no popup unless the report says one is unavoidable. TEST tests/controls.test.ts covers both new controls and each correction, and the armed-vs-hover difference is asserted on the computed declarations, not by eye."
-files = ["webui/src/shared/controls/**", "webui/tests/controls.test.ts"]
+files = ["webui/src/shared/controls/**", "webui/tests/controls.test.ts", "webui/src/shared/tokens.css"]
 status = "in_flight"
 verify = "cd webui && npx tsc --noEmit && npx eslint src/shared/controls tests/controls.test.ts && npx vitest run tests/controls.test.ts tests/labels.test.ts tests/primitives.test.ts && cd .. && ast-grep scan -c sgconfig.yml webui/src/shared/controls && node /home/user/.claude/skills/impeccable/scripts/detect.mjs webui/src/shared/controls"
 # [2026-09-18] DISPATCH: to=design-builder4 (packet emitted)
 # [2026-09-18] 2026-09-18 orchestrator: dispatched to design-builder4 after M1-12 landed (29369f50); D6 blocks the page sweep's last native controls.
 # [2026-09-18] CLAIM: owner=design-builder4 at=2026-09-18T08:57:25Z
 # [2026-09-18] ATTEST-START: tree=349eff35b106a2d0a4bf099b9eb841f3700d66e1 at=2026-09-18T08:57:25Z
+# [2026-09-18] FENCE-EDITED: files = ["webui/src/shared/controls/**", "webui/tests/controls.test.ts"] -> files = ["webui/src/shared/controls/**", "webui/tests/controls.test.ts", "webui/src/shared/tokens.css"] (by=orchestrator implied; no flag)
+# [2026-09-18] 2026-09-18 orchestrator: fence extended to tokens.css now that M1-11 is committed, so the rack's four measured token values (bay ground, slot line rgba(236,234,226,.12), plate ground #C3B6A0 with edge #645F50, ghost alpha about 15 percent paper) land in the same seat that measured them off the comp. Review E4 and B11.
 
 [[items]]
 id = "M1-14"

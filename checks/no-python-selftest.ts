@@ -142,6 +142,56 @@ arm("a .gitignore'd vendor .py is NOT charged", "green", (r) => {
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
 }, (r) => existsSync(join(r, "vendor", "dep.py")) && !tracked(r).includes("vendor/dep.py"));
 
+// ---- THE FOURTH CENSUS: a caller that outlived the file it calls. ----
+// The live defect this was written from: gate.sh named a converted script on two lines
+// and only one was repointed, so the gate failed at run time while every other census
+// reported a clean burn-down.
+
+arm("a .sh calling a script that does NOT exist", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), "bun checks/config/gone.ts check .\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "run.sh")) && !existsSync(join(r, "checks", "config", "gone.ts")));
+
+arm("a .sh calling a script that DOES exist", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, "run.sh"), "bun checks/no-python.ts\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => existsSync(join(r, "checks", "no-python.ts")));
+
+// ---- THE FIFTH CENSUS: a ledger instruction naming a file that is gone. ----
+// Graded ONLY on rows that have not run yet. The two green arms below are the boundary,
+// and they matter more than the red one: without them the obvious "any missing path is
+// bad" implementation passes its red arm and then charges correct ledger authorship.
+
+const ledger = (r: string, id: string, status: string, verify: string) => {
+  mkdirSync(join(r, "dev", "campaigns"), { recursive: true });
+  writeFileSync(join(r, "dev", "campaigns", "c.toml"), `[[items]]\nid = "${id}"\nstatus = "${status}"\nverify = "${verify}"\n`);
+};
+
+arm("a TODO row whose verify names a missing .py", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  ledger(r, "T-1", "todo", "python3 checks/gone.py");
+  writeFileSync(join(r, LIST), list(["a.py"], ["dev/campaigns/c.toml"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !existsSync(join(r, "checks", "gone.py")));
+
+arm("a TODO row naming a .ts it will CREATE", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  ledger(r, "T-2", "todo", "bun checks/not-yet-written.ts");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !existsSync(join(r, "checks", "not-yet-written.ts")));
+
+arm("a VERIFIED row's verify is history, not an instruction", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  ledger(r, "T-3", "verified", "python3 checks/long-since-converted.py");
+  writeFileSync(join(r, LIST), list(["a.py"], ["dev/campaigns/c.toml"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "base");
+}, (r) => !existsSync(join(r, "checks", "long-since-converted.py")));
+
 arm("an unparseable burn-down list", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");
   writeFileSync(join(r, LIST), "not json");

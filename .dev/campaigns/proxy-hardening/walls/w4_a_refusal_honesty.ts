@@ -16,6 +16,25 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+/** Python repr() of a string, and of a list of strings. An f-string that interpolates a LIST
+ *  renders THIS -- `['a', 'b']` -- not JSON, so a port that used JSON.stringify produced a
+ *  DIFFERENT failure message than the original on every red path while agreeing on every green
+ *  one. Caught by driving the mutants as a CLI rather than feeding detect() a fixed corpus. */
+function pyReprStr(s: string): string {
+  const useDouble = s.includes("'") && !s.includes('"');
+  const q = useDouble ? '"' : "'";
+  let body = s
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r")
+    .replaceAll("\t", "\\t");
+  body = body.replaceAll(q, "\\" + q);
+  return q + body + q;
+}
+function pyRepr(items: string[]): string {
+  return "[" + items.map(pyReprStr).join(", ") + "]";
+}
+
 const ROOT = resolve(import.meta.dir, "../../../..");
 
 const PASS = [
@@ -194,7 +213,7 @@ function selftestDerived(fails: string[], liveSources: Record<string, string | n
   if (detect(liveSources).length > 0) {
     fails.push(
       "the real sources must be GREEN before a half-fix can be derived from them; " +
-        `got ${JSON.stringify(detect(liveSources))}`,
+        `got ${pyRepr(detect(liveSources))}`,
     );
     return;
   }
@@ -208,7 +227,7 @@ function selftestDerived(fails: string[], liveSources: Record<string, string | n
     // ANY-OF lists hold equivalent spellings, so only the spelling actually PRESENT can be deleted.
     const present = conversion.filter((token) => text!.includes(token));
     if (present.length === 0) {
-      fails.push(`cannot derive a ${one} half-fix: none of ${JSON.stringify(conversion)} is in the real source`);
+      fails.push(`cannot derive a ${one} half-fix: none of ${pyRepr(conversion)} is in the real source`);
       return;
     }
     for (const token of present) text = text!.replace(token, "");
@@ -217,7 +236,7 @@ function selftestDerived(fails: string[], liveSources: Record<string, string | n
     if (problems.length === 0) {
       fails.push(`${one} with ONLY its verdict call site deleted must be RED`);
     } else if (!problems.some((p) => p.startsWith(one) && p.includes(NO_VERDICT))) {
-      fails.push(`${one} half-fix must be red for the NO-VERDICT reason, got ${JSON.stringify(problems)}`);
+      fails.push(`${one} half-fix must be red for the NO-VERDICT reason, got ${pyRepr(problems)}`);
     }
   }
 }

@@ -6,7 +6,9 @@
 // [WallClock]. Isolating it is what keeps that exception visible instead of buried in a retry class
 // whose invariant is the opposite.
 //
-// WALL: .dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.py reads THIS file.
+// WALL: .dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.py reads THIS file, and
+// since V4-100 also every OTHER main-source file that touches the Retry-After header — this is the
+// one parser, so a second copy anywhere is the mirror that wall exists to refuse.
 package splice.spi
 
 import splice.core.util.WallClock
@@ -16,8 +18,14 @@ import splice.core.util.WallClock
  * decides). Read INSIDE the response's execute block by UpstreamClient.attemptRequest, and consumed
  * three ways: as the backoff FLOOR (`minDelayMs`), as the absurd-pushback give-up threshold, and as
  * the 429 cooldown horizon.
+ *
+ * V4-100: PUBLIC because there is now a SECOND consumer, not because the boundary moved. MuseRefresh
+ * (:app, provider-owned credential state) had grown its own private copy of both forms — a mirror no
+ * wall read, so its seconds/date ordering and its past-date clamp were free to drift from this one
+ * with nothing noticing. It calls this class instead, which is why the class has to cross the module
+ * boundary; the supplied [WallClock] keeps its test seam.
  */
-internal class RetryAfter {
+public class RetryAfter {
     /** Strict seconds FIRST so nothing on the pre-NF-04 path changes; the HTTP-date form (NF-04:
      *  Cloudflare and gateway fronts emit it) is the FALLBACK.
      *
@@ -26,7 +34,7 @@ internal class RetryAfter {
      *  now falls through to [httpDateMs], which cannot match it and returns null too. Identical
      *  observable result — no RFC 1123 date is also a Long, so a WELL-FORMED value can never reach
      *  the second parser, and the only strings that do are ones both parsers reject. */
-    fun retryAfterMs(header: String?, nowEpochMs: WallClock = WallClock(System::currentTimeMillis)): Long? {
+    public fun retryAfterMs(header: String?, nowEpochMs: WallClock = WallClock(System::currentTimeMillis)): Long? {
         val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         return secondsFormMs(value) ?: httpDateMs(value, nowEpochMs)
     }
@@ -71,4 +79,5 @@ internal class RetryAfter {
 
 // One definition of the second, read here (seconds -> ms) and by RateLimitCooldown's fail-fast
 // message (ms -> whole seconds remaining).
-internal const val MS_PER_S = 1000L
+// MS_PER_S is declared once, PUBLICLY, in Watchdog.kt — the dialects read it across modules, so
+// the public declaration is the one that must survive and this file (same package) simply uses it.

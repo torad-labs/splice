@@ -20,19 +20,20 @@ import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintMode
 import splice.provider.muse.MuseOAuth
 import splice.provider.muse.MuseOAuthEndpoints
-import java.time.Duration
-import java.time.Instant
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
+import splice.spi.RetryAfter
 
 private val museRefreshClient: HttpClient by lazy { AuthHttpClientFactory().create() }
 private const val MAX_MINT_RETRY_AFTER_MS = 3_600_000L
-private const val MINT_MS_PER_SECOND = 1_000L
 
 /** App-owned HTTP boundary, separate from provider-owned credential state and persistence. */
 public class MuseRefresh(private val clock: WallClock = WallClock(System::currentTimeMillis)) : MuseKeyMintCall {
     private val oauth = MuseOAuth()
+
+    // V4-100: the ONE Retry-After parser is splice.spi.RetryAfter. This file used to carry its own
+    // copy of both RFC 7231 forms (`retryAfterMs`, deleted here) — the mirror nf_04's widened wall
+    // now refuses, and the reason it mattered: only THIS copy bounded the value to the mint's hour,
+    // so a second parser was a second set of ordering and clamping rules for the same header.
+    private val retryAfter = RetryAfter()
 
     override suspend fun invoke(accessToken: String, mode: MuseMintMode): MuseMintAttempt =
         refresh(MuseOAuthEndpoints.KEY_URL, accessToken, mode)
@@ -53,7 +54,10 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
         val body = response.bodyAsText()
         when {
             response.status == HttpStatusCode.TooManyRequests ->
-                MuseMintAttempt.RateLimited(retryAfterMs(response.headers["Retry-After"]))
+                MuseMintAttempt.RateLimited(
+                    retryAfter.retryAfterMs(response.headers["Retry-After"], clock)
+                        ?.coerceAtMost(MAX_MINT_RETRY_AFTER_MS),
+                )
             response.status == HttpStatusCode.Unauthorized -> MuseMintAttempt.InvalidAccountToken
             response.status == HttpStatusCode.Forbidden && oauth.isAuthFailureBody(body) ->
                 MuseMintAttempt.InvalidAccountToken
@@ -62,19 +66,4 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
         }
     }
 
-    /** Both Retry-After forms, bounded before arithmetic; malformed advice uses the provider's default hold. */
-    private fun retryAfterMs(header: String?): Long? {
-        val value = header?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        if (value.all { it in '0'..'9' }) {
-            val seconds = value.trimStart('0').ifEmpty { "0" }.toLongOrNull() ?: Long.MAX_VALUE
-            return seconds.coerceAtMost(MAX_MINT_RETRY_AFTER_MS / MINT_MS_PER_SECOND) * MINT_MS_PER_SECOND
-        }
-        return try {
-            val at = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
-            val now = Instant.ofEpochMilli(clock())
-            Duration.between(now, at.coerceIn(now, now.plusMillis(MAX_MINT_RETRY_AFTER_MS))).toMillis()
-        } catch (_: DateTimeParseException) {
-            null
-        }
-    }
 }

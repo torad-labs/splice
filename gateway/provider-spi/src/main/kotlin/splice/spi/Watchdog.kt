@@ -189,9 +189,9 @@ public class TurnWatchdog(
         // operator lowered this week. A tighter limit than streamIdle is exactly "the stall tier is
         // the one that fired".
         val tier = when {
-            !seen -> "first-output"
+            !seen -> FIRST_OUTPUT_TIER
             limitMs < budget.streamIdle.inWholeMilliseconds -> "mid-output stall re-anchor"
-            else -> "mid-output"
+            else -> MID_OUTPUT_TIER
         }
         log(
             "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
@@ -236,3 +236,13 @@ private const val MAX_POLL_MS = 15_000L
 // Three missed server pings at the ~20 s cadence: a path that has not pinged for this long is not
 // the path the round is waiting on, and the idle verdict stands.
 private const val PATH_PING_GRACE_MS = 60_000L
+
+// V4-116 — the single source for the tier names a stalled round can be judged by, and the
+// milliseconds-per-second divisor the translators scale their "silent Ns" lines with. PUBLIC
+// because both stream translators (dialect-anthropic-passthrough, dialect-openai-chat) import them
+// rather than re-declaring the same three file-local constants — the one-spelling-each rule that
+// keeps a log line and a client-visible sentence from naming the same tier twice.
+public const val FIRST_OUTPUT_TIER: String = "first-output"
+public const val MID_OUTPUT_TIER: String = "mid-output"
+// why: milliseconds in a second — dividing a millisecond figure by it reads seconds
+public const val MS_PER_S: Long = 1000L

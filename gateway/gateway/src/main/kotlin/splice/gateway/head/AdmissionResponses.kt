@@ -13,16 +13,12 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import splice.core.wire.ErrorEnvelope
+import splice.core.wire.HttpStatus
 import splice.spi.AccountResetText
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-// Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its own const
-// to avoid a cross-module const import and satisfy detekt MagicNumber).
-private const val GATEWAY_CAPACITY_STATUS = 529
-private const val CONTENT_TOO_LARGE_STATUS = 413
-private const val RATE_LIMITED_STATUS = 429
 private const val INVALID_REQUEST_ERROR = "invalid_request_error"
 
 /** The admission plane's response shapes: one owner for all five wire terminals a request can meet
@@ -46,7 +42,7 @@ internal class AdmissionResponses {
         call.respondText(
             errorBodyJson("overloaded_error", message),
             ContentType.Application.Json,
-            HttpStatusCode(GATEWAY_CAPACITY_STATUS, "Gateway At Capacity"),
+            HttpStatusCode(HttpStatus.OVERLOADED, "Gateway At Capacity"),
         )
     }
 
@@ -64,7 +60,7 @@ internal class AdmissionResponses {
         call.respondText(
             errorBodyJson("rate_limit_error", message),
             ContentType.Application.Json,
-            HttpStatusCode(RATE_LIMITED_STATUS, "Rate Limited"),
+            HttpStatusCode(HttpStatus.TOO_MANY_REQUESTS, "Rate Limited"),
         )
     }
 
@@ -75,7 +71,7 @@ internal class AdmissionResponses {
         call.respondText(
             errorBodyJson(INVALID_REQUEST_ERROR, "request body exceeds $limit bytes"),
             ContentType.Application.Json,
-            HttpStatusCode(CONTENT_TOO_LARGE_STATUS, "Content Too Large"),
+            HttpStatusCode(HttpStatus.CONTENT_TOO_LARGE, "Content Too Large"),
         )
     }
 

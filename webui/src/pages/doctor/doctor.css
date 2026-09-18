@@ -39,13 +39,45 @@
    place, for every page row; until it is hoisted there it is repeated here with this note. */
 @media (max-width: 1120px) {
   .myx-doc-body { grid-template-columns: minmax(0, 1fr); }
+  /* The inner pair stacks with it: two racks whose cells total 82ch cannot sit side by side in a
+     column that has just lost the detail column's 24rem. */
+  .myx-doc-bays { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* TWO COLUMNS OF MEMBERS, NOT ONE COLUMN OF SEVEN (M2-22). The checks are one table and the
+   report's own facts are a second; side by side they cost the height of the taller of the two
+   instead of the sum. 1.2 : 1 is the ratio the two racks' own declared widths ask for -- the checks
+   carry 44ch across two cells, the facts 38ch -- measured at 1536 as 520px and 434px in a 966px
+   bay area, both inside their columns with no rack scrolling. */
 .myx-doc-bays {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: var(--space-4);
+  align-items: start;
   min-width: 0;
+}
+
+/* A TABLE'S ROWS, NOT A RACK'S STRIPS. `--space-7` between rows is the comp's measurement for
+   strips in a rack -- "34px (a 96px pitch carrying a 62px strip)", ui.css -- and it is right where
+   a rack holds a handful of rows a person reads one at a time. A table is read as a column, and the
+   comp draws its own table the other way: scanning down the activity bay of team-board-a, its
+   header strip occupies y 619..642 and its five data rows are 33, 34, 32, 32 and 33px tall at a
+   37-39px pitch -- a ~5px gap, which is --space-2. Before this rule doctor paid 96px per check. */
+.myx-doc-bays .myx-bay-rows {
+  gap: var(--space-2);
+  padding: var(--space-3) 0 var(--space-4);
+}
+
+/* The bay's own box does not add a second column of slack: it is one table, and a table that is
+   1000px wide holding 400px of cells is the defect this row is about. */
+.myx-doc-bays > .myx-bay { min-width: 0; }
+
+/* THE RACK'S COLUMN NAMES, at the same ch widths as the cells they name (B9's own instruction) and
+   with the cell's own box, so a name and its column cannot drift apart. */
+.myx-doc-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed

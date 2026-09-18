@@ -15,7 +15,7 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Bay, Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
-import { EMPTIES, attentionCount, canSend, groupChecks, playgroundNext, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
+import { EMPTIES, attentionCount, canSend, groupChecks, playgroundNext, reportFacts, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
 import type { PlaygroundEvent } from './model';
 import { fixtureDoctor } from './fixtures/doctor';
 import { fixtureName } from './model';
@@ -27,8 +27,14 @@ export { dispositions };
 
 const PAGE_ID = 'doctor';
 const POLL_MS = 60000;
+/** The check's id and its remedy. The widths are ch, so the two racks below stay a grid at every
+ *  breakpoint; a rack that does not fit its column scrolls (`.myx-bay-rows`) rather than clipping. */
 const WIDE = 22;
 const NARROW = 10;
+/** The report's own facts: the field's own name, and its value. Sized to the longest of each the
+ *  payload can carry -- `schema_version` at 14 and `2026-09-18T07:45:00Z` at 20. */
+const FACT_KEY = 16;
+const FACT_VALUE = 22;
 
 export const DEFAULT_VIEWS: readonly View[] = [
   { id: 'attention-first', name: 'attention first', layout: 'bay', filter: {}, sort: { field: 'status', dir: 'desc' }, group: 'section', fields: [] },
@@ -63,13 +69,51 @@ export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; se
       onOpen={onOpen}
       ariaLabel={check.id}
     >
-      <StripField w={WIDE} label={S.checks} value={check.id} mono={false} />
+      {/* NO PER-CELL LABEL: the rack prints its column names once (B9), and this is the rack B9
+          measured on ("doctor.png: three x fourteen"). The stack is what made every check two
+          lines of type in a 64px row where one line of 16px fits. */}
+      <StripField w={WIDE} value={check.id} mono={false} />
       {/* No status field: the holder edge above prints the identical word on every strip (m1
           design review B10). A check with nothing to fix prints the absence glyph in the fix
           cell; the sentence `no fix offered` is what the opened check's note says, which is where
           a Doctor fix's paragraph belongs. */}
-      <StripField w={WIDE} label={S.fix} value={fix ?? S.absent} mono={false} />
+      <StripField w={WIDE} value={fix ?? S.absent} mono={false} />
     </Strip>
+  );
+}
+
+/** The report's own facts, one row each: the payload's field name beside its value. A HOMOGENEOUS
+ *  rack, so its column names print once on the bay and no cell carries a label (B9). */
+function FactStrip({ field, value }: { field: string; value: string }) {
+  return (
+    <Strip edge="grey" edgeLabel="" ariaLabel={field}>
+      <StripField w={FACT_KEY} value={field} mono={false} />
+      <StripField w={FACT_VALUE} value={value} mono={false} />
+    </Strip>
+  );
+}
+
+/** A rack's column names, once, at the same ch widths as the cells they name.
+ *
+ *  THE GROWTH IS THE HALF THAT IS EASY TO MISS, and the names were 71px and 44px off their own
+ *  columns before it was added. `strip-field.tsx` sets `flexGrow` to the field's OWN ch so the
+ *  cells share their rack's slack in proportion to their declared widths (M1-73), which means a
+ *  cell is never its declared width -- so a name row fixed at `w ch` drifts away from the column
+ *  under it, and drifts further the more slack the rack has. The name takes the same growth for
+ *  the same reason. Measured at 1536, after: the checks rack's names sit 1px from their cells. */
+function ColumnNames({ columns }: { columns: readonly { w: number; label: string }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span
+          key={column.label}
+          className="myx-doc-col"
+          style={{ width: `${column.w}ch`, flexGrow: column.w }}
+        >
+          {column.label}
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -186,13 +230,34 @@ export function DoctorPage() {
       )}
 
       <div className="myx-doc-body">
+        {/* ---- M2-22: TWO COLUMNS, ONE TABLE, AND THE FACTS THE PAGE WAS ALREADY SERVED --------
+            WHAT WAS HERE: one column of seven section bays. Each was a plate, a column-name row,
+            rails and 32px of padding top and bottom -- measured 141px of chrome for a bay holding
+            ONE check -- and the seven of them stacked to a 1344px body in a 1024px frame, so six
+            of the ten checks were in frame and the rest were below the fold. That is the shape
+            splice-design named on accounts the same night: "60px of band above each group header
+            to show one data row, five times".
+            WHAT IS HERE: the checks are ONE table with its column names printed once, and the
+            report's own facts -- which the page was served and printed NOWHERE -- are a second
+            table beside it.
+            THE SECTION IS NOT LOST WITH THE BAYS. A check id IS "<section>/<name>", so the section
+            is printed in the first cell of every row, and `groupChecks` still decides the ORDER --
+            worst section first under `attention first`, alphabetical under `by section` -- which is
+            what both views' `group: 'section'` meant. The plates were the sections' only other job.
+            THE DETAIL COLUMN IS UNTOUCHED: it carries real content at rest (M1-112) and this row
+            says so; nothing below the grid changed. */}
         <div className="myx-doc-bays">
           {payload === null || !clean ? null : checks.length === 0 ? (
             <Empty text={EMPTIES.noChecks.text} source={EMPTIES.noChecks.source} />
           ) : (
-            groups.map((group) => (
-              <Bay key={group.key} label={group.key} count={group.checks.length}>
-                {group.checks.map((check) => (
+            <>
+              <Bay
+                className="myx-doc-checks"
+                label={S.checks}
+                count={checks.length}
+                fields={<ColumnNames columns={[{ w: WIDE, label: S.check }, { w: WIDE, label: S.fix }]} />}
+              >
+                {groups.flatMap((group) => group.checks).map((check) => (
                   <CheckStrip
                     key={check.id}
                     check={check}
@@ -201,7 +266,18 @@ export function DoctorPage() {
                   />
                 ))}
               </Bay>
-            ))
+
+              <Bay
+                className="myx-doc-report"
+                label={S.report}
+                count={reportFacts(payload).length}
+                fields={<ColumnNames columns={[{ w: FACT_KEY, label: S.field }, { w: FACT_VALUE, label: S.value }]} />}
+              >
+                {reportFacts(payload).map((fact) => (
+                  <FactStrip key={fact.field} field={fact.field} value={fact.value} />
+                ))}
+              </Bay>
+            </>
           )}
         </div>
 

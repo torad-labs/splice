@@ -5,7 +5,15 @@
 // em-dash separator lives inside the check detail, which is data, not a label.
 export const S = {
   title: 'doctor',
+  /** The rack's plate. */
   checks: 'checks',
+  /** What the rack's first column is: the check's own id, whole. Singular, because a column name
+   *  and the rack it names are two different words in this page's own copy (M2-22). */
+  check: 'check',
+  /** The report's own facts, as served: the payload's field name beside its value. */
+  report: 'report',
+  field: 'field',
+  value: 'value',
   version: 'version',
   installed: 'installed',
   latest: 'latest',

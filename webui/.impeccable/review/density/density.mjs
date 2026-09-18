@@ -18,12 +18,12 @@
 // rectangle -- because "unused space" is a geometric fact about where the emptiness SITS, and no
 // area ratio can tell a page with thin margins everywhere from a page with one dead quadrant.
 //
-// WHY .mjs AND NOT .py: the repo runs no Python as an instrument (M1-78 ported sweep-d7.py for
-// exactly this reason). Python appears here only as an image DECODER subprocess, which is the
-// idiom look-gate.mjs's pixels() already established beside this file.
-import { execFileSync } from 'node:child_process';
+// EVERY INSTRUMENT IN THIS REPO RUNS UNDER BUN, including this one's PNG decoder — see pixels()
+// below, which decodes in-process rather than shelling out to another runtime the way its sibling
+// look-gate.mjs still does.
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 const ROOT = '/home/user/Documents/dev/projects/atlas/repo/.claude/worktrees/v0.4.0';
 const SECTIONS = path.join(ROOT, 'webui/.impeccable/review/sections');
@@ -31,20 +31,66 @@ const COMP = path.join(ROOT, 'webui/.impeccable/mocks/team-board-a.png');
 const OUT = path.join(ROOT, 'webui/.impeccable/review/density');
 const THEME_GROUND = 11;   // the dark room, the one theme these captures are taken in
 
-/** Decode a PNG to raw RGB. The decoder idiom is look-gate.mjs's, not a new dependency. */
+/**
+ * Decode a PNG to raw RGB, in this runtime.
+ *
+ * This used to shell out to another runtime's imaging library, copying look-gate.mjs's idiom, and
+ * its comment argued that a dependency is how gates stop being run. That argument is right and it
+ * does not need a second runtime: zlib is already here, and the rest of a non-interlaced 8-bit PNG
+ * is five filter cases. Converted 2026-09-18 because the no-python wall went red on this file — the
+ * only NEW offender on the branch, added after the burn-down was recorded, and the wall refuses the
+ * one edit that would have silenced it.
+ *
+ * NARROW ON PURPOSE, AND LOUD ABOUT IT. Every capture this reads is 8-bit, colour type 2, not
+ * interlaced (measured across the sections directory and the comp). Anything else throws by name
+ * rather than decoding to plausible-looking wrong pixels: a density number computed from a
+ * misread frame is the failure this whole review plane exists to avoid.
+ */
 export function pixels(pngPath) {
-  const out = execFileSync('python3', ['-c', `
-import sys
-from PIL import Image
-import numpy as np
-im=Image.open(sys.argv[1]).convert("RGB")
-a=np.array(im)
-sys.stdout.buffer.write(bytes(f"{a.shape[1]} {a.shape[0]}\\n","ascii"))
-sys.stdout.buffer.write(a.tobytes())
-`, pngPath], { maxBuffer: 1 << 28 });
-  const nl = out.indexOf(0x0a);
-  const [w, h] = out.slice(0, nl).toString('ascii').trim().split(' ').map(Number);
-  return { w, h, data: out.slice(nl + 1) };
+  const buf = fs.readFileSync(pngPath);
+  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error(`${pngPath}: not a PNG`);
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  const [bitDepth, colorType, , , interlace] = [buf[24], buf[25], buf[26], buf[27], buf[28]];
+  if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6) || interlace !== 0) {
+    throw new Error(
+      `${pngPath}: bitDepth ${bitDepth}, colorType ${colorType}, interlace ${interlace} — this reader ` +
+      `handles 8-bit truecolour (2) and truecolour+alpha (6), not interlaced. Refusing to guess.`,
+    );
+  }
+  const idat = [];
+  for (let p = 8; p + 8 <= buf.length;) {
+    const len = buf.readUInt32BE(p), type = buf.toString('ascii', p + 4, p + 8);
+    if (type === 'IDAT') idat.push(buf.subarray(p + 8, p + 8 + len));
+    if (type === 'IEND') break;
+    p += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const bpp = colorType === 6 ? 4 : 3;
+  const stride = w * bpp;
+  const data = Buffer.allocUnsafe(w * h * 3);
+  let prev = Buffer.alloc(stride);
+  for (let y = 0, at = 0; y < h; y++) {
+    const filter = raw[at++];
+    const line = Buffer.from(raw.subarray(at, at + stride));
+    at += stride;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? line[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
+      if (filter === 1) line[i] = (line[i] + a) & 0xff;
+      else if (filter === 2) line[i] = (line[i] + b) & 0xff;
+      else if (filter === 3) line[i] = (line[i] + ((a + b) >> 1)) & 0xff;
+      else if (filter === 4) {
+        const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+        line[i] = (line[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xff;
+      } else if (filter !== 0) throw new Error(`${pngPath}: unknown PNG filter ${filter} on row ${y}`);
+    }
+    // Alpha is dropped, never composited — the same RGB conversion the previous decoder did.
+    for (let x = 0; x < w; x++) {
+      const s = x * bpp, d = (y * w + x) * 3;
+      data[d] = line[s]; data[d + 1] = line[s + 1]; data[d + 2] = line[s + 2];
+    }
+    prev = line;
+  }
+  return { w, h, data };
 }
 
 const lumAt = (im, x, y) => {

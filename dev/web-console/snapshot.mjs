@@ -30,8 +30,14 @@ export const LOOK_DIR = 'webui/.impeccable/review/look';
 
 /** One address, one file name: `#/teams?fixture=hero` becomes `teams-hero.html`. */
 export function nameFor(url) {
-  const fragment = url.includes('#') ? url.slice(url.indexOf('#') + 1) : url;
-  const slug = fragment.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+  // The address, not the origin: a hash address names its route, a bare URL names its path, and a
+  // bare origin is the root. Slugging the WHOLE url (what this did until its own selftest caught
+  // it) turned `http://x/` into `http-x.html` - a name that describes the host rather than the
+  // page, on the argument every other caller passes as a full URL.
+  const after = url.includes('#')
+    ? url.slice(url.indexOf('#') + 1)
+    : (url.replace(/^https?:\/\/[^/]+/, '') || '/');
+  const slug = after.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
   return `${slug === '' ? 'root' : slug}.html`;
 }
 
@@ -102,6 +108,29 @@ export async function snapshot(url, out, width = 1536, height = 1024, theme = 'd
     return { out, bytes: html.length };
   });
 }
+
+/** The mutation proof (M1-55): the address mapping and the theme contract must fail on a
+ *  synthetic violation before anyone trusts them. A snapshot's file name decides which page a
+ *  detector later reads, and its theme decides which room - both were once silently wrong. */
+function selftest() {
+  let pass = 0; let fail = 0;
+  const check = (name, ok, detail) => {
+    console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}  (${detail})`);
+    ok ? pass++ : fail++;
+  };
+  check('a fixture address maps to its own file name',
+    nameFor('http://x/#/teams?fixture=hero') === 'teams-fixture-hero.html',
+    nameFor('http://x/#/teams?fixture=hero'));
+  check('two different addresses never share a name',
+    nameFor('http://x/#/fleet') !== nameFor('http://x/#/teams?fixture=hero'),
+    `${nameFor('http://x/#/fleet')} vs ${nameFor('http://x/#/teams?fixture=hero')}`);
+  check('an address with no fragment still gets a name',
+    nameFor('http://x/') === 'root.html', nameFor('http://x/'));
+  console.log(`\nselftest: ${pass} passed, ${fail} failed`);
+  process.exit(fail === 0 ? 0 : 1);
+}
+
+if (process.argv.includes('--selftest')) selftest();
 
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/^.*?(?=\/dev\/|$)/, ''));
 if (isMain) {

@@ -44,7 +44,7 @@ bun checks/config/ast-grep-rule-docs.ts severity . || fail=1
 bun checks/config/dependabot-kotlin-scope.ts || fail=1
 
 # 5. The concentration leg is routed AND still ratchets. package.json is a config surface like any
-# other here, and `"gate:concentration": "python3 checks/concentration.py --top 5"` is a one-line
+# other here, and `"gate:concentration": "bun checks/concentration.ts --top 5"` is a one-line
 # edit that exits 0 forever while checks/gate.sh keeps printing a green concentration leg. Same
 # completeness shape checks/rule-routing.sh applies to ast-grep rule directories, one surface up.
 bun checks/config/concentration-leg-routed.ts || fail=1

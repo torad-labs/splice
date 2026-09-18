@@ -2,7 +2,6 @@
   "recorded": "2026-09-18",
   "law": "Operator rule, stated 2026-09-18: this repo has no Python — tooling is bun/TypeScript. Every line here is DEBT that predates the wall, not permission. The gate fails when a tracked .py file is NOT listed here (new Python) and when a listed one is gone or already converted (stale). The list may only SHRINK: adding a line to make the gate pass is the violation the wall exists to catch. Burn it down per the migration rows in .dev/campaigns/v0.4.0.toml. SECOND CENSUS (added 2026-09-18 after the first read a triumphant 90 while 29 .sh files invoked python3 167 times): `invokers` lists every tracked non-.py file that RUNS or NAMES python. Counting files called .py is not counting Python. Same rules — it may only shrink.",
   "files": [
-    "checks/concentration.py",
     ".dev/campaigns/manifest.py"
   ],
   "invokers": [
@@ -15,8 +14,6 @@
     "CHANGELOG.md",
     "README.md",
     "bin/splice-launch",
-    "checks/concentration-selftest.sh",
-    "checks/config-guard.sh",
     "checks/e2e/README.md",
     "checks/e2e/docker/Dockerfile",
     "checks/e2e/docker/inside.sh",
@@ -62,7 +59,6 @@
     "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt",
     "gateway/provider-spi/src/test/kotlin/UpstreamFailurePolicyRefusalTest.kt",
     "install.sh",
-    "package.json",
     "webui/.impeccable/review/light-room.md",
     "webui/.impeccable/review/material-spec.md"
   ],
@@ -79,15 +75,6 @@
         ".claude/hooks/modules/stop/05_campaign_inflight_note.ts",
         ".dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts",
         ".dev/campaigns/ledger.ts"
-      ]
-    },
-    {
-      "tool": "checks/concentration.py",
-      "row": "V4-158",
-      "reason": "checks/config/concentration-leg-routed.ts guards the concentration leg, and its inverse half PINS the oracle's argv: a python interpreter (const PYTHON, line 84, executable code rather than prose) then checks/concentration.py. That pin is correct for exactly as long as the oracle is Python, so the caller cannot drop the token while concentration.py exists. The exclusion expires in the very commit where the pin has to change: when V4-158 converts concentration.py, this entry dies, the wall starts counting the .ts, and it reds BY NAME if the pin was not moved with the oracle. The exclusion and the coupling constraint die together, so the constraint enforces itself instead of living in a row note.",
-      "recorded": "2026-09-18",
-      "callers": [
-        "checks/config/concentration-leg-routed.ts"
       ]
     }
   ]

@@ -274,6 +274,19 @@ if (process.argv.includes('--selftest')) {
   process.exit(bad === 0 ? 0 : 1);
 }
 
+// ---- THE ENTRY-POINT GUARD (M1-111).
+//
+// IMPORTING THIS MODULE USED TO EXECUTE IT. There was no guard, so `import { cutFor }` printed the
+// whole table and REWROTE density.json -- which is exactly how it was found: a reader who wanted
+// one exported function to check a single frame got a full run and a write to a tracked file
+// instead. That is the M1-32 defect, fixed in capture.mjs and still standing here, and it is why
+// the M1-111 premise-block had to copy these three definitions rather than import them.
+//
+// The guard is the same one capture.mjs uses, and the same reasoning: the CLI runs only when this
+// file is the program. Its exported functions are pure and now safe to import.
+const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+
+if (isMain) {
 const comp = pixels(COMP);
 const compCut = cutFor(comp);
 const compL = layers(comp, compCut);
@@ -296,3 +309,4 @@ for (const r of rows) {
 }
 fs.writeFileSync(path.join(OUT, 'density.json'), JSON.stringify({ comp: compL, pages: rows }, null, 1));
 console.log(`\nwrote ${path.join(OUT, 'density.json')}`);
+}

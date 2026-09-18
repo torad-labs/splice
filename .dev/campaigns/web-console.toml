@@ -3149,3 +3149,4 @@ title = "COMPACTIONS DEAD COLUMN IS NOT ON THE COMPACTION PAGE, WHICH IS WHY TWO
 files = ["webui/src/widgets/compact-feed", "webui/tests/detail-rest.test.ts"]
 status = "todo"
 verify = "cd webui && npx vitest run tests/detail-rest.test.ts"
+# [2026-09-18] DISPATCH: to=design-builder (packet emitted)

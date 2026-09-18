@@ -1,12 +1,13 @@
-package splice.app.provider.local
+// NEW: moved from splice.app.provider.local with the probe it pins (V4-103).
+package splice.spi.local
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.dialect.chat.LocalHttp
-import splice.dialect.chat.LocalHttpReply
+import splice.spi.LocalHttp
+import splice.spi.LocalHttpReply
 
 /** models() is null only when the list call fails; these routes always answer it. */
 private fun LocalRuntimeProbe.listed(runtime: LocalRuntime) = checkNotNull(models(runtime))

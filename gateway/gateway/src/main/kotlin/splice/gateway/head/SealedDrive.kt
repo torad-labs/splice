@@ -1,4 +1,4 @@
-// NEW (V4-99 item 5): the SEAL CONTRACT as its own collaborator.
+// NEW: V4-99 item 5 — the SEAL CONTRACT as its own collaborator.
 //
 // TurnStreamer and CollectTurn each held the whole TurnDriver, but each used exactly ONE thing from
 // it — driveSealingCancellation — which meant two entries that need a drive driven both depended on

@@ -15,7 +15,7 @@
 //   LM Studio GET /api/v0/models -> data[].max_context_length (+ loaded_context_length when loaded)
 //   vLLM      GET /v1/models -> data[].max_model_len
 //   other     GET /v1/models only; context unknown, so a declared window is trusted but reported as such
-package splice.app.provider.local
+package splice.spi.local
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -28,8 +28,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.dialect.chat.JdkLocalHttp
-import splice.dialect.chat.LocalHttp
+import splice.spi.LocalHttp
 
 private const val HTTP_OK = 200
 
@@ -55,7 +54,7 @@ public data class LocalRowVerdict(val id: String, val ok: Boolean, val reason: S
 /** doctor --live: one tiny streamed request with one tool. */
 public data class LocalLiveProbe(val streams: Boolean, val toolCalls: Boolean, val detail: String)
 
-public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp = JdkLocalHttp()) {
+public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
     private val json = Json { ignoreUnknownKeys = true }
     private val v1 = baseUrl.trimEnd('/')
     private val root = v1.removeSuffix("/v1")

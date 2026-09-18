@@ -41,6 +41,13 @@ class LoginInterceptionWireTest {
     // chmod-failure test injects and would otherwise fail first — DR-8 redo-3 / codex catch).
     private val passProbe = HookExecProbe { _, _ -> null }
 
+    // The file-I/O half of the exec probe with a fake spawn. The ProcessBuilder half moved to :app
+    // (V4-103), so "no false positive on an ordinary dir" now lives in HookProcessExecTest; this
+    // still exercises createTempFile, residue cleanup and the symlink guard against a fake exec.
+    private val fileProbe = HookExecProbe { dir, chmod ->
+        HookScriptFiles.probeExecutability(dir, chmod, HookExec { _, _ -> null })
+    }
+
     // The stage is a unique createTempFile now ("$name.<random>.tmp"), so "no stranded stage" is a
     // glob over the dir, not a fixed-name existence check that a random name passes vacuously.
     private fun strayFiles(dir: Path, glob: String): List<String> =
@@ -51,31 +58,17 @@ class LoginInterceptionWireTest {
         loginCommand: String,
         tokenCapture: TokenCaptureSpec?,
         log: MutableList<String>,
-        execProbe: HookExecProbe? = null,
-    ) = if (execProbe == null) {
-        // Existing arms run the REAL default probe, so every green arm also proves the probe does
-        // not false-positive on an ordinary executable temp dir.
-        LoginInterception.wire(
-            configDir = configDir,
-            loginCommand = loginCommand,
-            signInLabel = "OpenRouter",
-            globalCommands = null,
-            viaBrowser = false,
-            tokenCapture = tokenCapture,
-            log = LogSink { log += it },
-        )
-    } else {
-        LoginInterception.wire(
-            configDir = configDir,
-            loginCommand = loginCommand,
-            signInLabel = "OpenRouter",
-            globalCommands = null,
-            viaBrowser = false,
-            tokenCapture = tokenCapture,
-            log = LogSink { log += it },
-            execProbe = execProbe,
-        )
-    }
+        execProbe: HookExecProbe = fileProbe,
+    ) = LoginInterception.wire(
+        configDir = configDir,
+        loginCommand = loginCommand,
+        signInLabel = "OpenRouter",
+        globalCommands = null,
+        viaBrowser = false,
+        tokenCapture = tokenCapture,
+        log = LogSink { log += it },
+        execProbe = execProbe,
+    )
 
     // DR-8 redo-2 (codex noexec catch): chmod(0700) succeeds on a noexec mount while exec fails
     // EACCES, so the landed chmod-outcome check accepted a capture hook that could never run. The
@@ -117,7 +110,7 @@ class LoginInterceptionWireTest {
     }
 
     @Test
-    fun `the real exec probe leaves no residue beside the hooks`(@TempDir tmp: Path) {
+    fun `the exec probe leaves no residue beside the hooks`(@TempDir tmp: Path) {
         val log = mutableListOf<String>()
 
         val hooks = wire(tmp, loginCommand = "openrouter login", tokenCapture = capture, log = log)
@@ -413,7 +406,7 @@ class LoginInterceptionWireTest {
     }
 
     // DR-8 SECURITY (codex): the SAME symlink-follow hazard on the exec probe's own fixed
-    // ".splice-exec-probe.tmp". The real probe (createTempFile) must leave a pre-planted victim
+    // ".splice-exec-probe.tmp". The probe (createTempFile) must leave a pre-planted victim
     // untouched. RED on a fixed-name probe (the probe's write clobbers the victim).
     @Test
     fun `a pre-planted symlink at the probe path cannot redirect the probe write to a victim`(@TempDir tmp: Path) {

@@ -16,7 +16,14 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
-import java.util.concurrent.TimeUnit
+
+/** Spawns [script] and waits up to [timeoutSeconds] for it to exit; null on a clean exit, or the
+ *  failure naming why not (timed out, non-zero exit, or the spawn's IOException). The one
+ *  child-process step :core must not own — the ProcessBuilder implementation lives in :app
+ *  (V4-103, the same port-out as FileIoTask/DirectoryProbe). */
+public fun interface HookExec {
+    public operator fun invoke(script: Path, timeoutSeconds: Int): Throwable?
+}
 
 /** Applies the owner-only executable mode to a generated hook script. A seam because the one step a
  *  test must be able to fail on demand is exactly this one — no temp filesystem refuses a chmod —
@@ -38,10 +45,12 @@ internal object HookScriptFiles {
     const val HOOK_TIMEOUT_SECONDS: Int = 15
 
     /** The real [HookExecProbe]: write a throwaway owner-only `exit 0` script beside the hooks and
-     *  RUN it. Executability is a property of the mount + mode + uid, not of content, so a sibling
-     *  probe file proves exactly what the hook needs without executing any hook logic. EACCES from
-     *  a noexec mount surfaces here as ProcessBuilder's IOException — the codex /run/lock repro. */
-    fun probeExecutability(dir: Path, chmod: HookChmod): Throwable? {
+     *  RUN it through [exec]. Executability is a property of the mount + mode + uid, not of content,
+     *  so a sibling probe file proves exactly what the hook needs without executing any hook logic.
+     *  EACCES from a noexec mount surfaces through [exec]'s IOException — the codex /run/lock repro.
+     *  The spawn itself is [exec]'s (a port implemented in :app, V4-103); :core owns only the file
+     *  I/O here. */
+    fun probeExecutability(dir: Path, chmod: HookChmod, exec: HookExec): Throwable? {
         // DR-8 redo-3 (codex symlink catch): a FIXED ".splice-exec-probe.tmp" was a predictable
         // path a local peer could pre-plant as a symlink (the write would follow it and clobber the
         // victim) and a shared name two concurrent launches raced. createTempFile picks a random
@@ -54,15 +63,7 @@ internal object HookScriptFiles {
             probe = Files.createTempFile(dir, ".splice-exec-probe.", ".tmp")
             Files.writeString(probe, "#!/bin/sh\nexit 0\n")
             chmod(probe, PosixFilePermissions.fromString("rwx------"))
-            val process = ProcessBuilder(probe.toString()).redirectErrorStream(true).start()
-            if (!process.waitFor(HOOK_TIMEOUT_SECONDS.toLong(), TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                IOException("exec probe timed out after ${HOOK_TIMEOUT_SECONDS}s")
-            } else if (process.exitValue() != 0) {
-                IOException("exec probe exited ${process.exitValue()}")
-            } else {
-                null
-            }
+            exec(probe, HOOK_TIMEOUT_SECONDS)
         } catch (e: IOException) {
             e
         } catch (e: UnsupportedOperationException) {

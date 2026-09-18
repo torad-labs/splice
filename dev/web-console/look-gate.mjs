@@ -31,8 +31,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import zlib from 'node:zlib';
+import { decodePng } from './lib/png.mjs';
 import { mgmtKey, shoot, show, withChrome } from './lib/cdp.mjs';
 
 const ARGS = process.argv.slice(2);
@@ -270,23 +270,45 @@ function checkAbsenceVocabulary(srcDir) {
 
 // ---------------------------------------------------------------- capture checks (PNG only)
 
-/** Minimal PNG reader: we only need raw RGB, and pulling in a dependency for a gate is how
- *  gates stop being run. Uses `python3 -c` with PIL, which this repo's review already relies on;
- *  when PIL is absent the capture checks skip rather than fail, and say so. */
+/**
+ * Minimal PNG reader: we only need raw RGB, and pulling in a dependency for a gate is how gates
+ * stop being run. Decoded in-process by `lib/png.mjs` on `node:zlib` alone — no library, and no
+ * subprocess either (M1-125).
+ *
+ * WHAT THE SUBPROCESS COST, WHICH IS THE REASON THIS CHANGED RATHER THAN THE LANGUAGE RULE. This
+ * shelled out to a Python interpreter with PIL and numpy, and the catch below swallowed its absence
+ * exactly as it swallows a corrupt file. So on any machine without PIL EVERY capture check skipped
+ * and the gate reported no-checks as though it had looked — a did-not-run dressed as a pass, and
+ * documented as intentional, which is how it survived this campaign's whole hunt for that shape.
+ *
+ * PROVEN BYTE-IDENTICAL BEFORE THE SWAP, over exactly the set this function is called on — the comp
+ * plus every PNG in the captures directory, the denominator taken from the three call sites rather
+ * than chosen: 28 of 28 byte-identical, 0 differ, all colour type 2. `decodePng` THROWS on anything
+ * it does not understand (interlaced, 16-bit, palette) instead of guessing, which is the right
+ * default for a gate: a decoder that guesses produces plausible wrong pixels, and a verdict from a
+ * misread frame is precisely what this review plane exists to prevent. The one PNG in the tree it
+ * refuses is a palette image under `reference/competitors/` that this gate never reads.
+ *
+ * DROPPING ALPHA RATHER THAN COMPOSITING IT is what `.convert("RGB")` did, so `px()` and every
+ * reader downstream are unaffected.
+ *
+ * THE CATCH STAYS QUIET, AND THAT IS A RULING RATHER THAN AN OVERSIGHT (M1-124). A decode failure
+ * no longer means "the interpreter is missing on this machine"; it means the file is broken or its
+ * colour type is unsupported. It is still not a floor: the condition is named per address in the
+ * coverage table, and `checkFieldGrid` already reds when it judges zero captures — so a single
+ * unreadable capture is named and skipped while a total decode failure still fails the gate.
+ */
 function pixels(pngPath) {
   try {
-    const out = execFileSync('python3', ['-c', `
-import sys
-from PIL import Image
-import numpy as np
-im=Image.open(sys.argv[1]).convert("RGB")
-a=np.array(im)
-sys.stdout.buffer.write(bytes(f"{a.shape[1]} {a.shape[0]}\\n","ascii"))
-sys.stdout.buffer.write(a.tobytes())
-`, pngPath], { maxBuffer: 1 << 28 });
-    const nl = out.indexOf(0x0a);
-    const [w, h] = out.slice(0, nl).toString('ascii').trim().split(' ').map(Number);
-    return { w, h, data: out.slice(nl + 1) };
+    const im = decodePng(fs.readFileSync(pngPath));
+    if (im.channels === 3) return { w: im.width, h: im.height, data: im.pixels };
+    const data = Buffer.allocUnsafe(im.width * im.height * 3);
+    for (let i = 0, n = im.width * im.height; i < n; i++) {
+      data[i * 3] = im.pixels[i * 4];
+      data[i * 3 + 1] = im.pixels[i * 4 + 1];
+      data[i * 3 + 2] = im.pixels[i * 4 + 2];
+    }
+    return { w: im.width, h: im.height, data };
   } catch {
     return null;
   }
@@ -559,7 +581,7 @@ function checkFieldGrid(capturesDir) {
     let mtime = 0; try { mtime = fs.statSync(path.join(ROOTREF.root, capturesDir, f)).mtimeMs; } catch { mtime = 0; }
     if (mtime < bar) { staleCount++; drop(`capture is older than ${SRC}`); continue; }
     const im = pixels(path.join(ROOTREF.root, capturesDir, f));
-    if (!im) { skipped++; drop('capture could not be decoded (no PIL?)'); continue; }
+    if (!im) { skipped++; drop('capture is broken or its colour type is unsupported'); continue; }
     const mid = stripScanlines(im, 200, Math.min(1100, im.w - 20));
     // A SILENT DROP WITH NO COUNTER AT ALL (M1-124), AND IT IS NOT THE ONE THAT HID TEAMS.
     // This was a bare `continue`: not a count, not a name, nothing. A page whose paper produced
@@ -663,7 +685,7 @@ function checkFieldGrid(capturesDir) {
   }
   const detail = (bad.length ? bad.join(' · ') : `aligned on ${checked} captures`)
     + (honoured.length ? ` · honoured a declared span: ${honoured.join(' · ')}` : '')
-    + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
+    + (skipped ? ` · ${skipped} skipped (broken PNG or unsupported colour type)` : '')
     + (scanty ? ` · ${scanty} skipped (fewer than 2 strip scanlines found — see page-coverage for which)` : '')
     + (unthemed ? ` · ${unthemed} skipped (filename names no theme, so the wrong room could have been checked)` : '')
     + (undeclaredNoDump.length ? ` · ${undeclaredNoDump.length} capture(s) read with no declaration dump beside them, so nothing could be honoured by declaration: ${undeclaredNoDump.slice(0, 3).join(', ')}${undeclaredNoDump.length > 3 ? ', …' : ''}` : '')
@@ -676,7 +698,7 @@ function checkFieldGrid(capturesDir) {
   // capture can be present and still unjudgeable (all stale, all unreadable, none naming a theme),
   // and this returned ok with the word `skipped`. A leg that looked at N files and judged none of
   // them has not checked the grid; it has reported that it could not. The counts are named because
-  // the remedy differs — `0 of 19, 19 stale` means run a capture, `0 of 19, 19 skipped (no PIL)`
+  // the remedy differs — `0 of 19, 19 stale` means run a capture, `0 of 19, 19 skipped (broken PNG)`
   // means fix the environment, and a bare non-zero would have told the next seat neither (the
   // defect M1-76 found in exit-gate's runLeg, one level down).
   const coverage = expected === null
@@ -758,7 +780,7 @@ function checkTonalDrift(capturesDir, compPath) {
     // carries a disposition, so a reader asking "what did tonal-drift do with teams" gets the same
     // answer as if the loop had never been written.
     for (const a of addresses() ?? []) covers('tonal-drift', a, `comp unreadable at ${compPath}, so nothing was compared`);
-    return record('tonal-drift', false, false, `DID NOT RUN: comp unreadable at ${compPath} (no PIL, or the file moved) — nothing was compared`);
+    return record('tonal-drift', false, false, `DID NOT RUN: comp unreadable at ${compPath} (broken PNG, unsupported colour type, or the file moved) — nothing was compared`);
   }
   const ref = tonal(comp);
   const files = (() => { try { return fs.readdirSync(path.join(ROOTREF.root, capturesDir)).filter((f) => f.endsWith('.png')); } catch { return []; } })();
@@ -780,7 +802,7 @@ function checkTonalDrift(capturesDir, compPath) {
     const im = pixels(path.join(ROOTREF.root, capturesDir, f));
     if (!im) {
       unreadable++;
-      if (at !== null) covers('tonal-drift', at, 'capture could not be decoded (no PIL?)');
+      if (at !== null) covers('tonal-drift', at, 'capture is broken or its colour type is unsupported');
       continue;
     }
     const t = tonal(im);
@@ -808,7 +830,7 @@ function checkTonalDrift(capturesDir, compPath) {
        : ` · covering ${covered.length}/${expected.length} addresses`)
     + (missing.length ? ` · NO FRESH CAPTURE for ${missing.join(', ')}` : '')
     + (stale.length ? ` · ${stale.length} skipped (older than ${SRC}, so not evidence about this build)` : '')
-    + (unreadable ? ` · ${unreadable} skipped (no PIL)` : '');
+    + (unreadable ? ` · ${unreadable} skipped (broken PNG or unsupported colour type)` : '');
   // DID NOT RUN IS NOT A PASS, and that is this file's own doctrine rather than an invention of
   // this row: the capture block below already states "a run that cannot capture is a DID NOT RUN
   // for every capture-reading check, never a pass -- law 23". A leg that read nothing reporting ok
@@ -879,7 +901,7 @@ function rackProbe(spec, theme = 'dark') {
  *  driven through `checkFieldGrid` over a directory -- decoder, dump read and `record` included --
  *  instead of over a hand-made pixel object. Two new conditions RED the gate in this row, and a new
  *  red that no test can reach is the decorative check this campaign keeps cataloguing. Colour type
- *  2 (RGB), filter 0 on every row: the smallest encoder PIL reads. */
+ *  2 (RGB), filter 0 on every row: the smallest encoder `lib/png.mjs` reads. */
 function encodePng(im) {
   const chunk = (type, body) => {
     const len = Buffer.alloc(4); len.writeUInt32BE(body.length);

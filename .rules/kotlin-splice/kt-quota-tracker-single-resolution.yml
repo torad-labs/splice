@@ -89,14 +89,27 @@ rule:
     # a navigation, so HeadDeps.kt's own `val accountQuotas` stays silent.
     #
     # EXCEPT WHERE THE RESOLVER IS BUILT, added 2026-09-18 after this wall flagged the one construct
-    # it exists to create. The header above predicted a file-local `TurnQuota.forSession(...)` and
-    # exempted TurnQuota.kt accordingly; what V4-99 actually landed is an injected COLLABORATOR,
-    # constructed once at HeadDeps.kt:58 with the map handed in:
+    # it exists to create — the canonical resolver's own wiring, at HeadDeps.kt:58:
     #     internal val turnQuota: TurnQuota =
     #         TurnQuota(quotaBundle.accountPool, quotaBundle.accountQuotas, quotaBundle.quota)
-    # The design moved from a static resolver to a constructed one and the `ignores:` path did not
-    # move with it, so the selection clause fired on the resolver's own wiring. Reported from three
-    # separate rows before it was believed, which is the actual cost of a wall that cries wolf.
+    #
+    # THE CAUSE, TRACED THROUGH THE HISTORY RATHER THAN INFERRED FROM THE SHAPE. This clause was
+    # correct when it was written and nothing about it changed. The line used to read
+    #     internal val turnQuota: TurnQuota = TurnQuota(accountPool, accountQuotas, quota)
+    # with BARE IDENTIFIERS — no navigation, so `$X.accountQuotas` did not match, exactly as the
+    # comment above promises for HeadDeps' own declaration. Commit f10b92ae ("give each collaborator
+    # the deps it reads, not the 25-field bundle") grouped those flat fields into `quotaBundle`, and
+    # three bare reads became three NAVIGATIONS. The rule did not drift; a refactor two rows away
+    # walked the code into it, which is why the row verify that landed the refactor could not see it.
+    #
+    # (An earlier version of this comment blamed the resolver being a constructed class rather than a
+    # file-local `forSession`, and said the `ignores:` path failed to follow a design change. That was
+    # wrong and is corrected here: the resolver was ALWAYS constructed, and `ignores:` was never the
+    # mechanism. The right cause was already written down in ledger row V4-138, traced from the diff,
+    # before anyone guessed at this one.)
+    #
+    # Reported from three separate rows before it was believed, which is the real cost of a wall that
+    # cries wolf on its own canonical shape.
     #
     # THE EXEMPTION IS THE ARGUMENT POSITION, NOT THE FILE. Adding HeadDeps.kt to `ignores:` was the
     # obvious fix and is wrong: it would blind the whole file, and HeadDeps is exactly where a future

@@ -374,7 +374,9 @@ class Daemon {
     const fd = openSync(this.log, "w");
     // start_new_session=True -> detached: the child leads its own process GROUP, which is what makes
     // stop()'s killpg reach java's whole tree rather than just the JVM.
-    this.proc = spawn("java", [`-Duser.home=${this.home}`, "-jar", this.jar, "daemon"], {
+    // -Dsplice.noSystemBrowser: the wall against opening the operator's browser (LoginIo.kt) is set
+    // only on the Gradle TEST JVM, and this daemon is a different JVM that inherits none of it.
+    this.proc = spawn("java", ["-Dsplice.noSystemBrowser=1", `-Duser.home=${this.home}`, "-jar", this.jar, "daemon"], {
       cwd: this.home,
       env: this.env(),
       stdio: ["ignore", fd, fd],
@@ -727,7 +729,8 @@ async function checkDoctor(
   d: Daemon, good: string, bad: string[], model: string, badRows: Mapping, label: string,
 ): Promise<Mapping> {
   void bad;
-  const proc = spawnSync("java", [`-Duser.home=${d.home}`, "-jar", d.jar, "doctor", "--json"], {
+  // Same browser wall as the daemon spawn above: a separate JVM inherits no Gradle test property.
+  const proc = spawnSync("java", ["-Dsplice.noSystemBrowser=1", `-Duser.home=${d.home}`, "-jar", d.jar, "doctor", "--json"], {
     env: d.env(),
     encoding: "utf8",
     timeout: 120_000,

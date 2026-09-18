@@ -89,9 +89,13 @@ const slugOf = (value: string): string =>
  */
 export function canonicalHash(rawHash: string): string {
   const slug = slugOf(rawHash);
-  if (isAddress(slug)) return `#/${slug}`;
+  // The query rides along untouched: `?fixture=<name>` is how a page loads its
+  // design fixture in dev (CONTRACTS.md section 4), and it must survive boot.
+  const at = rawHash.indexOf('?');
+  const query = at === -1 ? '' : rawHash.slice(at);
+  if (isAddress(slug)) return `#/${slug}${query}`;
   const legacy = LEGACY_ADDRESS[slug];
-  return `#/${legacy ?? ADDRESSES[0]}`;
+  return `#/${legacy ?? ADDRESSES[0]}${query}`;
 }
 
 /** The address a router pathname is showing. An alias path lands on its address. */

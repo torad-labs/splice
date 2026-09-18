@@ -2,7 +2,8 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.spi.CodeModeCall
@@ -46,9 +47,10 @@ internal class CodexCodeModeMachine(
     suspend fun emit(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
         if (calls.isEmpty()) {
             return TurnOutcome.Failure(
-                ErrorType.API_ERROR,
                 "code-mode has no client calls to emit",
                 deterministic = true,
+                cause = FailureCause.CODE_MODE_PROTOCOL,
+                phase = FailurePhase.MID_OUTPUT,
             )
         }
         calls.forEach { call ->
@@ -66,7 +68,12 @@ internal class CodexCodeModeMachine(
 
     fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure {
         registry.lose(record, message)
-        return TurnOutcome.Failure(ErrorType.API_ERROR, message, deterministic = true)
+        return TurnOutcome.Failure(
+            message,
+            deterministic = true,
+            cause = FailureCause.CODE_MODE_PROTOCOL,
+            phase = FailurePhase.MID_OUTPUT,
+        )
     }
 
     fun lostMessage(record: CodeModeRecord): String =

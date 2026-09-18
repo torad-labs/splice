@@ -6,7 +6,8 @@
 // law (input/cached are last-known, output/reasoning accrue).
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.round.RoundSplice
@@ -17,8 +18,9 @@ class RoundSpliceSalvageTest {
     private val rounds = RoundSplice()
 
     private fun failure(partialUsage: Usage?): TurnOutcome.Failure = TurnOutcome.Failure(
-        type = ErrorType.API_ERROR,
         message = "upstream died",
+        cause = FailureCause.UPSTREAM_REPORTED,
+        phase = FailurePhase.MID_OUTPUT,
         partial = partialUsage?.let { TurnOutcome.PartialRound(usage = it) },
     )
 

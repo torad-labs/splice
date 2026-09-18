@@ -52,6 +52,8 @@ import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -716,7 +718,11 @@ class WsRoundDriverTest {
             provider(runner),
             log = {},
             classifyZeroEvent = ZeroEventClassifier { _, _, _, _ ->
-                TurnOutcome.Failure(ErrorType.API_ERROR, "the classifier reclassified this round as failed")
+                TurnOutcome.Failure(
+                    "the classifier reclassified this round as failed",
+                    cause = FailureCause.UPSTREAM_REPORTED,
+                    phase = FailurePhase.MID_OUTPUT,
+                )
             },
         )
 

@@ -13,7 +13,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -93,8 +94,9 @@ private fun retryableFailure(
     hasToolUse: Boolean = false,
     toolTearOpen: Boolean = false,
 ) = TurnOutcome.Failure(
-    ErrorType.OVERLOADED,
     "mid-stream death",
+    cause = FailureCause.UPSTREAM_STALLED,
+    phase = FailurePhase.MID_OUTPUT,
     providerReported = true,
     partial = TurnOutcome.PartialRound(
         thinkingText = thinkingText,

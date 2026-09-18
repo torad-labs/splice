@@ -21,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
+import splice.core.wire.HttpStatus
 
 /**
  * The amend path, as a type rather than the file-level functions it used to be (Kotlin main sources
@@ -31,7 +32,10 @@ internal class ToolSurfaceRecovery {
     /** Deliberately broad (status-shape, not exact wording) — a narrower literal match is exactly
      *  what the 2026-07-24 review flagged as letting a backend wording drift skip the recovery. */
     fun isToolSurfaceRejection(status: Int, responseText: String): Boolean {
-        if (status < REJECTION_STATUS_MIN || status > REJECTION_STATUS_MAX) return false
+        // V4-117: the two bounds read the shared HttpStatus members rather than re-typing 400 and
+        // 422. The numbers were the same numbers, spelled twice — the class of duplicate
+        // kt-http-status-single-source exists to catch, and these were two of the sites it named.
+        if (status < HttpStatus.BAD_REQUEST || status > HttpStatus.UNPROCESSABLE_ENTITY) return false
         val lower = responseText.lowercase()
         return lower.contains(TYPE_TOOL_SEARCH) || lower.contains(FIELD_DEFER_LOADING)
     }
@@ -106,9 +110,6 @@ internal class ToolSurfaceRecovery {
 
     private fun itemType(t: JsonElement): String = JsonScalars.strOrEmpty((t as? JsonObject)?.get(FIELD_TYPE))
 }
-
-private const val REJECTION_STATUS_MIN = 400
-private const val REJECTION_STATUS_MAX = 422
 
 private const val FIELD_TYPE = "type"
 private const val FIELD_TOOLS = "tools"

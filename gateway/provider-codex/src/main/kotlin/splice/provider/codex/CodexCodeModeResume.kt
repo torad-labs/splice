@@ -1,7 +1,8 @@
 // NEW: validates and resumes active or lost code-mode records from client tool results.
 package splice.provider.codex
 
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.spi.CodeModeResult
 import splice.spi.WireSink
@@ -23,7 +24,7 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        record.error?.let { return failure(it, ErrorType.API_ERROR) }
+        record.error?.let { return failure(it) }
         if (record.lastDigest == context.digest && record.pending.isNotEmpty()) {
             val pending = record.visiblePending().filter { it.clientId !in record.results }
             if (pending.isNotEmpty()) return machine.emit(pending, context.sink)
@@ -160,6 +161,11 @@ internal class CodexCodeModeResume(
         CodeModeResult(pending.runtimeId, result.output, result.isError)
     }
 
-    private fun failure(message: String, type: ErrorType = ErrorType.INVALID_REQUEST): TurnOutcome.Failure =
-        TurnOutcome.Failure(type, message, deterministic = true)
+    private fun failure(message: String): TurnOutcome.Failure =
+        TurnOutcome.Failure(
+            message,
+            deterministic = true,
+            cause = FailureCause.CODE_MODE_PROTOCOL,
+            phase = FailurePhase.MID_OUTPUT,
+        )
 }

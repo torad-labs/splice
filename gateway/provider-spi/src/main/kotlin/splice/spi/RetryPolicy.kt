@@ -18,6 +18,7 @@ package splice.spi
 
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerfTiming
+import splice.core.wire.HttpStatus
 
 internal data class RetryPlan(
     val decision: RetryDecision,
@@ -46,9 +47,13 @@ internal class RetryRules(private val maxRetries: Int) {
      *  rather than a property of each planner branch; re-arming an armed horizon is a max() and
      *  costs nothing. The pushback is the header's own value, clamped by arm() exactly as before,
      *  or the bare-429 default when there was none. */
-    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown): Nothing {
-        if (last?.status == RATE_LIMITED) cooldown.arm(last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
-        throw UpstreamFailed(last?.text.orEmpty(), last?.status)
+    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown, layers: Int): Nothing {
+        if (last?.status == HttpStatus.TOO_MANY_REQUESTS) {
+            cooldown.arm(last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+        }
+        // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
+        // rather than counted here, because this file decides and never counts (see the header).
+        throw UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
     }
 
     suspend fun planRetry(
@@ -117,7 +122,7 @@ internal class RetryRules(private val maxRetries: Int) {
             )
             return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
-        if (failed.status == RATE_LIMITED) {
+        if (failed.status == HttpStatus.TOO_MANY_REQUESTS) {
             val canRetry = attempt < maxRetries - 1
             return rateLimit.cooldown.rateLimitedPlan(
                 failed.retryAfterMs,
@@ -171,7 +176,7 @@ internal class RetryRules(private val maxRetries: Int) {
     // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays
     // terminal (Not Implemented never heals) and 4xx stays terminal except 408/429 (G4a).
     fun isRetryableStatus(status: Int): Boolean =
-        status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
+        status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.REQUEST_TIMEOUT ||
             (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
 }
 
@@ -203,15 +208,17 @@ internal class ReissueRules {
 // definition, so a log line can never claim a budget the interlock is not enforcing.
 internal const val MAX_STREAM_REISSUES = 2
 
-private const val REQUEST_TIMEOUT = 408
 private const val NOT_IMPLEMENTED = 501
 
-private const val SERVER_ERROR_MIN = 500
+// 599 stays local: no site ANSWERS with it, it is only the top of the 5xx window this file tests
+// membership in, so there is no second declaration for HttpStatus to retire.
 private const val SERVER_ERROR_MAX = 599
 
 // FILE SCOPE ON PURPOSE: one IntRange for the process, same reasoning as FailureRules.kt's
-// authBodyRe: allocate it once, not once per RetryRules.
-private val SERVER_ERRORS = SERVER_ERROR_MIN..SERVER_ERROR_MAX
+// authBodyRe: allocate it once, not once per RetryRules. Its floor reads the shared HttpStatus
+// member: the bottom of the 5xx window IS 500, so re-typing it here was a second declaration of
+// the same status code dressed as a range bound.
+private val SERVER_ERRORS = HttpStatus.INTERNAL_SERVER_ERROR..SERVER_ERROR_MAX
 
 // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
 // Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback

@@ -973,6 +973,29 @@ class ResponsesRefusalHonestyTest {
         assertEquals(null, f.partial)
     }
 
+    /** V4-122 item 11. THE ARGUMENT WAS LOST WHILE ITS COMMENT SURVIVED: `refusalFailure` documents
+     *  `permanent = true` as load-bearing and records the consequence of omitting it — the
+     *  pre-content rule relabelled the refusal `overloaded_error` and the client re-sent the
+     *  identical bytes up to 300 times — yet the call passed only `providerReported`, so `permanent`
+     *  silently defaulted false. Its siblings at ResponsesTerminalDecision.kt:49 and :95 pass it.
+     *
+     *  Decided from the BEHAVIOUR rather than the comment: a refusal is deterministic, so a retry
+     *  re-sends identical bytes for an identical verdict and the client cannot fix it by retrying.
+     *  The test above pins `partial` but never pinned `permanent`, which is why the loss went
+     *  unnoticed. MUTATION: delete `permanent = true` from refusalFailure and this reddens. */
+    @Test
+    fun `a refusal is permanent, so the client is not invited to re-send identical bytes`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Refusing: policy."}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(f.providerReported, "the model's own refusal is provider-reported, not a local verdict")
+        assertTrue(f.permanent, "a deterministic refusal must be permanent — see V4-122 item 11")
+    }
+
     @Test
     fun `a streamed refusal delta is a provider-reported failure, not a clean completed turn`() = runTest {
         val sink = RecordingSink()

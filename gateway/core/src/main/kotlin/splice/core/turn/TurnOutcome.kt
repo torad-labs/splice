@@ -136,8 +136,16 @@ public sealed class TurnOutcome {
     ) : TurnOutcome()
 
     public data class Failure(
-        val type: ErrorType,
         val message: String,
+        /** V4-117: WHY this turn failed. REQUIRED, with no default, so the compiler is the wall:
+         *  a site that forgets it does not compile, which is stronger than the ast-grep rule that
+         *  used to police this. The value is the truth about the turn, never what the client is
+         *  told — see [phase] and the derived [type]. */
+        val cause: FailureCause,
+        /** V4-117: HOW FAR the turn had got, as the site knows it. The boundary — which alone
+         *  knows whether a client frame actually went out — corrects this with copy(phase = ...),
+         *  and [type] follows, so nobody authors the wire type. */
+        val phase: FailurePhase,
         /** True when a genuine upstream-reported error produced this failure (an error event/body
          *  the provider actually sent); false for locally-synthesized verdicts (watchdog stall,
          *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
@@ -181,7 +189,22 @@ public sealed class TurnOutcome {
          *  failure class absent from the perf row it is grepped in. Defaulted false, so every
          *  other construction of this type is byte-unchanged. */
         val connReset: Boolean = false,
-    ) : TurnOutcome()
+        /** V4-117: how many upstream attempts the retry loop made before this failure, stamped by
+         *  the LOOP (UpstreamFailed.layers) and carried here so the perf row can record it as
+         *  layers=<n>. Zero is the honest default: a failure that never reached the loop — a
+         *  watchdog, a refusal, a locally-decided verdict — genuinely had no attempts to report, and
+         *  a caller that has no count must not be forced to invent one. */
+        val layers: Int = 0,
+    ) : TurnOutcome() {
+
+        /** V4-117: DERIVED, never passed. The retry class the client keys on is a function of what
+         *  went wrong and how far the turn had got, so the site states the cause and the phase and
+         *  this follows — which is what makes it impossible for a failure and the wire to disagree.
+         *  It used to be a constructor argument, hand-picked at twenty-seven sites, and the emitter
+         *  relabelled it again for the pre-content case; now there is one author and the pre-content
+         *  rule is a property of [WireType] that the phase alone selects. */
+        val type: ErrorType get() = WireType.of(cause, phase)
+    }
 
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:
      *  the wire is already at a clean block boundary (translators closeAll before the terminal

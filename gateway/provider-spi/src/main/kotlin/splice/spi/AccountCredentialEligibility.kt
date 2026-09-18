@@ -2,6 +2,7 @@
 package splice.spi
 
 import splice.core.auth.CredentialFileIdentity
+import splice.core.util.WallClock
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -20,7 +21,7 @@ internal class AccountCredentialEligibility(
     private val evidence = CredentialEvidence(identitySource, configuredCredentialPresent)
     private val state = AtomicReference(evidence.initialState())
 
-    fun acquire(at: Long, now: AccountNow): Lease? {
+    fun acquire(at: Long, now: WallClock): Lease? {
         while (true) {
             val current = reconcile()
             val holdActive = current.excludedUntilEpochMillis?.let { it > at } == true
@@ -151,7 +152,7 @@ internal class AccountCredentialEligibility(
         val identity: CredentialFileIdentity?,
         val generation: Long,
         val probeToken: Long?,
-        val now: AccountNow,
+        val now: WallClock,
     )
 
     data class Status(

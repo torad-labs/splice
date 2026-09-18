@@ -43,8 +43,7 @@ public class QuotaTracker(
 
     /** Upstream response headers of the round that just completed. A no-op for the common case
      *  of an upstream that sends neither family. */
-    public fun observe(header: HeaderLookup) {
-        val read = QuotaHeaderRead { name -> header(name) }
+    public fun observe(read: QuotaHeaderRead) {
         (headers.fromUpstream(read) ?: extraFamily?.snapshot(read, clock))?.let(::record)
     }
 

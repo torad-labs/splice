@@ -33,8 +33,8 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
+import splice.core.usage.QuotaHeaderRead
 import splice.core.util.LogSink
-import splice.gateway.usage.HeaderLookup
 import splice.gateway.usage.QuotaTracker
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -242,7 +242,7 @@ class ManagedHeadFactoryQuotaPollTest {
 
     private fun assertCodexRound(tracker: QuotaTracker) {
         tracker.observe(
-            HeaderLookup { name ->
+            QuotaHeaderRead { name ->
                 mapOf(
                     "x-codex-primary-used-percent" to "14",
                     "x-codex-primary-window-minutes" to "300",

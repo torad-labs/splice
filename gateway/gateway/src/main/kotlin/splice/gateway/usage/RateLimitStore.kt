@@ -3,6 +3,7 @@
 // own collaborator (HD-24, 2026-08-17). USG-003 and the 2026-07-22 review comments travel intact.
 package splice.gateway.usage
 
+import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -13,7 +14,7 @@ import splice.core.util.SafeFailureText
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-/** Ratelimit persistence: [HeaderLookup] in, a coalesced write to [file] and an in-memory-first
+/** Ratelimit persistence: [QuotaHeaderRead] in, a coalesced write to [file] and an in-memory-first
  *  read back out. [writeLock] is the SAME lock [UsageStore] hands to [UsageRingFile] — splitting
  *  it into two locks would be a logic change (review 2026-07-22). `internal`: [file] is the
  *  internal [RateLimitFile] type, and the only construction site is [UsageStore] in this module. */
@@ -37,7 +38,7 @@ internal class RateLimitStore(
     // upstream round, and a per-round atomic rewrite of this tiny latest-wins file was pure churn
     // (review 2026-07-22). flushNow() forces the pending payload out synchronously; readRateLimit()
     // serves it straight from memory instead (review 2026-07-22 round 3).
-    public fun persistRateLimit(header: HeaderLookup) {
+    public fun persistRateLimit(header: QuotaHeaderRead) {
         Cancellables.runCatchingCancellable {
             val candidate = headers.pendingFrom(header) ?: return
             // Parse once here (not in readRateLimit) — see PendingRateLimit. USG-003: two turns can

@@ -40,9 +40,9 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.gateway.head.HeadServer
 import splice.gateway.usage.QuotaTracker
-import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.InflightGate
@@ -453,7 +453,7 @@ class HeadServerCapacityTest {
                 // pins the refusal path rather than a snapshot's window members.
                 quota = quotaFor(
                     QuotaTracker(tmp.resolve("pooled-quota.json"), log = LogSink { }),
-                    AccountPool(listOf(account), AccountNow(System::currentTimeMillis)),
+                    AccountPool(listOf(account), WallClock(System::currentTimeMillis)),
                 ),
             ).copy(
                 // The second rig writes its OWN store files: two heads in one test sharing a usage

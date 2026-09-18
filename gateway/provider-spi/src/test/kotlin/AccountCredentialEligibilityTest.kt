@@ -14,6 +14,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.util.ElapsedClock
 import splice.spi.AccountCredentialIdentitySource
 import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
 import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
@@ -21,7 +22,6 @@ import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.AccountSelection
-import splice.spi.ElapsedNow
 import splice.spi.PoolAccount
 import splice.spi.RateLimitCooldown
 import splice.spi.Selection
@@ -57,7 +57,7 @@ class AccountCredentialEligibilityTest {
             primary = true,
             auth = auth,
             quota = AccountQuotaSource { null },
-            cooldown = RateLimitCooldown(ElapsedNow { 0L }),
+            cooldown = RateLimitCooldown(ElapsedClock { 0L }),
         )
         observations.set(0)
 

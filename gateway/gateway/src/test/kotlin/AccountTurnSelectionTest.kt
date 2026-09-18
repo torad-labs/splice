@@ -28,12 +28,12 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.WallClock
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
-import splice.spi.AccountNow
 import splice.spi.AccountPool
 import splice.spi.AccountQuotaSource
 import splice.spi.AccountResetText
@@ -348,7 +348,7 @@ private class AccountTurnRig(private val credentialPresent: Boolean = true) {
             account("primary", primary = true, primaryAuth, primaryQuota, primaryCooldown),
             account("backup", primary = false, backupAuth, backupQuota, backupCooldown),
         ),
-        AccountNow(accountNow::get),
+        WallClock(accountNow::get),
     )
     private val head = HeadServer(
         provider = provider(),

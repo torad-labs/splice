@@ -1,0 +1,1032 @@
+{
+  "tool": "comp-diff",
+  "version": 1,
+  "createdAt": "2026-09-18T10:27:55.085Z",
+  "label": "r7",
+  "comp": ".impeccable/mocks/team-board-a.png",
+  "build": "/tmp/m124/r7.png",
+  "spec": ".impeccable/build/spec.json",
+  "compSize": "1536x1024",
+  "buildSize": "1536x1024",
+  "align": "top",
+  "overall": 0.876,
+  "verdict": "match",
+  "scores": {
+    "overall": 0.876,
+    "structure": 0.8711,
+    "color": 0.7973,
+    "colorIntersection": 0.6044,
+    "paletteMatch": 0.9012,
+    "detail": 0.8873,
+    "detailRaw": 0.8977,
+    "detailAdded": 0.0208,
+    "bands": 1
+  },
+  "palette": {
+    "comp": [
+      {
+        "hex": "#0c0e0e",
+        "coverage": 0.6305
+      },
+      {
+        "hex": "#ddd8c6",
+        "coverage": 0.2362
+      },
+      {
+        "hex": "#b6ac97",
+        "coverage": 0.0465
+      },
+      {
+        "hex": "#736f63",
+        "coverage": 0.0375
+      },
+      {
+        "hex": "#413f3b",
+        "coverage": 0.0334
+      },
+      {
+        "hex": "#1d281c",
+        "coverage": 0.0159
+      }
+    ],
+    "build": [
+      {
+        "hex": "#0c1010",
+        "coverage": 0.6431
+      },
+      {
+        "hex": "#d6d4c4",
+        "coverage": 0.2714
+      },
+      {
+        "hex": "#696861",
+        "coverage": 0.0485
+      },
+      {
+        "hex": "#3b3b3b",
+        "coverage": 0.0307
+      },
+      {
+        "hex": "#d8c68e",
+        "coverage": 0.0036
+      },
+      {
+        "hex": "#588838",
+        "coverage": 0.0027
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "top-rule",
+      "x": 0,
+      "y": 0,
+      "w": 1,
+      "h": 0.058,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.7174,
+        "structure": 0.9134,
+        "color": 0.8237,
+        "colorIntersection": 0.6701,
+        "paletteMatch": 0.9064,
+        "detail": 0.4874,
+        "detailRaw": 0.5655,
+        "detailAdded": 0.1563,
+        "bands": 0.4667
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 7,
+          "y": 6,
+          "w": 1524,
+          "h": 53
+        },
+        "build": {
+          "x": 8,
+          "y": 17,
+          "w": 1513,
+          "h": 23
+        }
+      }
+    },
+    {
+      "id": "wordmark",
+      "x": 0.005,
+      "y": 0.008,
+      "w": 0.085,
+      "h": 0.042,
+      "kind": "text",
+      "score": {
+        "overall": 0.6701,
+        "structure": 0.6585,
+        "color": 0.8463,
+        "colorIntersection": 0.741,
+        "paletteMatch": 0.903,
+        "detail": 0.4146,
+        "detailRaw": 0.4562,
+        "detailAdded": 0.0833,
+        "bands": 0.6701
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 14,
+          "w": 130,
+          "h": 30
+        },
+        "build": {
+          "x": 0,
+          "y": 13,
+          "w": 59,
+          "h": 21
+        }
+      }
+    },
+    {
+      "id": "clocks",
+      "x": 0.1,
+      "y": 0.012,
+      "w": 0.19,
+      "h": 0.034,
+      "kind": "text",
+      "score": {
+        "overall": 0.626,
+        "structure": 0.6159,
+        "color": 0.8255,
+        "colorIntersection": 0.7072,
+        "paletteMatch": 0.8892,
+        "detail": 0.4778,
+        "detailRaw": 0.5455,
+        "detailAdded": 0.1354,
+        "bands": 0.4
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 17,
+          "w": 291,
+          "h": 27
+        },
+        "build": {
+          "x": 0,
+          "y": 16,
+          "w": 213,
+          "h": 14
+        }
+      }
+    },
+    {
+      "id": "health",
+      "x": 0.3,
+      "y": 0.012,
+      "w": 0.1,
+      "h": 0.034,
+      "kind": "text",
+      "score": {
+        "overall": 0.6955,
+        "structure": 0.7394,
+        "color": 0.8519,
+        "colorIntersection": 0.7808,
+        "paletteMatch": 0.8902,
+        "detail": 0.3712,
+        "detailRaw": 0.3869,
+        "detailAdded": 0.0313,
+        "bands": 0.5714
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 17,
+          "w": 146,
+          "h": 27
+        },
+        "build": {
+          "x": 0,
+          "y": 14,
+          "w": 67,
+          "h": 18
+        }
+      }
+    },
+    {
+      "id": "nearest-window",
+      "x": 0.41,
+      "y": 0.012,
+      "w": 0.3,
+      "h": 0.034,
+      "kind": "text",
+      "score": {
+        "overall": 0.6908,
+        "structure": 0.7266,
+        "color": 0.7841,
+        "colorIntersection": 0.6172,
+        "paletteMatch": 0.8739,
+        "detail": 0.4501,
+        "detailRaw": 0.5022,
+        "detailAdded": 0.1042,
+        "bands": 0.64
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 17,
+          "w": 461,
+          "h": 27
+        },
+        "build": {
+          "x": 1,
+          "y": 15,
+          "w": 341,
+          "h": 19
+        }
+      }
+    },
+    {
+      "id": "no-window",
+      "x": 0.72,
+      "y": 0.012,
+      "w": 0.27,
+      "h": 0.034,
+      "kind": "text",
+      "score": {
+        "overall": 0.6151,
+        "structure": 0.7084,
+        "color": 0.8352,
+        "colorIntersection": 0.7017,
+        "paletteMatch": 0.9071,
+        "detail": 0.1802,
+        "detailRaw": 0.2844,
+        "detailAdded": 0.2083,
+        "bands": 0.25
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 415,
+          "h": 44
+        },
+        "build": {
+          "x": 1,
+          "y": 11,
+          "w": 414,
+          "h": 21
+        }
+      }
+    },
+    {
+      "id": "rail",
+      "x": 0,
+      "y": 0.058,
+      "w": 0.09,
+      "h": 0.942,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.6877,
+        "structure": 0.6531,
+        "color": 0.689,
+        "colorIntersection": 0.4153,
+        "paletteMatch": 0.8364,
+        "detail": 0.5472,
+        "detailRaw": 0.5472,
+        "detailAdded": 0,
+        "bands": 1
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 7,
+          "y": 3,
+          "w": 131,
+          "h": 953
+        },
+        "build": {
+          "x": 14,
+          "y": 11,
+          "w": 124,
+          "h": 924
+        }
+      }
+    },
+    {
+      "id": "rail-labels",
+      "x": 0.012,
+      "y": 0.065,
+      "w": 0.07,
+      "h": 0.78,
+      "kind": "control",
+      "score": {
+        "overall": 0.6095,
+        "structure": 0.6183,
+        "color": 0.619,
+        "colorIntersection": 0.315,
+        "paletteMatch": 0.7826,
+        "detail": 0.573,
+        "detailRaw": 0.573,
+        "detailAdded": 0,
+        "bands": 1
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 2,
+          "w": 106,
+          "h": 780
+        },
+        "build": {
+          "x": 5,
+          "y": 3,
+          "w": 98,
+          "h": 777
+        }
+      }
+    },
+    {
+      "id": "team-header",
+      "x": 0.1,
+      "y": 0.062,
+      "w": 0.885,
+      "h": 0.05,
+      "kind": "text",
+      "score": {
+        "overall": 0.5723,
+        "structure": 0.6216,
+        "color": 0.6958,
+        "colorIntersection": 0.4014,
+        "paletteMatch": 0.8544,
+        "detail": 0.3623,
+        "detailRaw": 0.3936,
+        "detailAdded": 0.0625,
+        "bands": 0.3314
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 1359,
+          "h": 52
+        },
+        "build": {
+          "x": 3,
+          "y": 1,
+          "w": 1356,
+          "h": 50
+        }
+      }
+    },
+    {
+      "id": "bay-claude",
+      "x": 0.098,
+      "y": 0.135,
+      "w": 0.28,
+      "h": 0.79,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.7439,
+        "structure": 0.611,
+        "color": 0.7278,
+        "colorIntersection": 0.4654,
+        "paletteMatch": 0.8691,
+        "detail": 0.8014,
+        "detailRaw": 0.8639,
+        "detailAdded": 0.125,
+        "bands": 0.9852
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 430,
+          "h": 791
+        },
+        "build": {
+          "x": 0,
+          "y": 9,
+          "w": 430,
+          "h": 599
+        }
+      }
+    },
+    {
+      "id": "bay-claude-label",
+      "x": 0.17,
+      "y": 0.145,
+      "w": 0.12,
+      "h": 0.025,
+      "kind": "text",
+      "score": {
+        "overall": 0.5962,
+        "structure": 0.5362,
+        "color": 0.661,
+        "colorIntersection": 0.327,
+        "paletteMatch": 0.8409,
+        "detail": 0.5473,
+        "detailRaw": 0.6202,
+        "detailAdded": 0.1458,
+        "bands": 0.8077
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 184,
+          "h": 48
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 184,
+          "h": 47
+        }
+      }
+    },
+    {
+      "id": "lead-strip",
+      "x": 0.105,
+      "y": 0.2,
+      "w": 0.255,
+      "h": 0.065,
+      "kind": "control",
+      "score": {
+        "overall": 0.6947,
+        "structure": 0.6707,
+        "color": 0.7054,
+        "colorIntersection": 0.43,
+        "paletteMatch": 0.8537,
+        "detail": 0.73,
+        "detailRaw": 0.7508,
+        "detailAdded": 0.0417,
+        "bands": 0.9
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 392,
+          "h": 66
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 392,
+          "h": 65
+        }
+      }
+    },
+    {
+      "id": "lead-strip-2",
+      "x": 0.105,
+      "y": 0.3,
+      "w": 0.255,
+      "h": 0.065,
+      "kind": "control",
+      "score": {
+        "overall": 0.6531,
+        "structure": 0.5835,
+        "color": 0.7024,
+        "colorIntersection": 0.4442,
+        "paletteMatch": 0.8415,
+        "detail": 0.7234,
+        "detailRaw": 0.7547,
+        "detailAdded": 0.0625,
+        "bands": 0.6286
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 392,
+          "h": 67
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 392,
+          "h": 66
+        }
+      }
+    },
+    {
+      "id": "lead-strip-3",
+      "x": 0.105,
+      "y": 0.395,
+      "w": 0.255,
+      "h": 0.065,
+      "kind": "control",
+      "score": {
+        "overall": 0.6488,
+        "structure": 0.5664,
+        "color": 0.743,
+        "colorIntersection": 0.5516,
+        "paletteMatch": 0.8461,
+        "detail": 0.6691,
+        "detailRaw": 0.7368,
+        "detailAdded": 0.1354,
+        "bands": 0.7467
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 392,
+          "h": 67
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 392,
+          "h": 66
+        }
+      }
+    },
+    {
+      "id": "bay-deepseek",
+      "x": 0.39,
+      "y": 0.135,
+      "w": 0.275,
+      "h": 0.79,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.7723,
+        "structure": 0.6385,
+        "color": 0.7118,
+        "colorIntersection": 0.4496,
+        "paletteMatch": 0.853,
+        "detail": 0.8923,
+        "detailRaw": 0.8923,
+        "detailAdded": 0,
+        "bands": 0.9852
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 412,
+          "h": 721
+        },
+        "build": {
+          "x": 0,
+          "y": 9,
+          "w": 405,
+          "h": 488
+        }
+      }
+    },
+    {
+      "id": "bay-deepseek-label",
+      "x": 0.445,
+      "y": 0.145,
+      "w": 0.14,
+      "h": 0.025,
+      "kind": "text",
+      "score": {
+        "overall": 0.6088,
+        "structure": 0.539,
+        "color": 0.6695,
+        "colorIntersection": 0.3638,
+        "paletteMatch": 0.8341,
+        "detail": 0.5368,
+        "detailRaw": 0.6098,
+        "detailAdded": 0.1458,
+        "bands": 0.9143
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 10,
+          "w": 215,
+          "h": 38
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 215,
+          "h": 47
+        }
+      }
+    },
+    {
+      "id": "builder-strip",
+      "x": 0.397,
+      "y": 0.2,
+      "w": 0.255,
+      "h": 0.065,
+      "kind": "control",
+      "score": {
+        "overall": 0.7299,
+        "structure": 0.7192,
+        "color": 0.7092,
+        "colorIntersection": 0.447,
+        "paletteMatch": 0.8503,
+        "detail": 0.7901,
+        "detailRaw": 0.811,
+        "detailAdded": 0.0417,
+        "bands": 0.805
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 391,
+          "h": 66
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 391,
+          "h": 65
+        }
+      }
+    },
+    {
+      "id": "builder-strip-2",
+      "x": 0.397,
+      "y": 0.3,
+      "w": 0.255,
+      "h": 0.065,
+      "kind": "control",
+      "score": {
+        "overall": 0.6462,
+        "structure": 0.5302,
+        "color": 0.7198,
+        "colorIntersection": 0.5063,
+        "paletteMatch": 0.8348,
+        "detail": 0.7784,
+        "detailRaw": 0.7992,
+        "detailAdded": 0.0417,
+        "bands": 0.7564
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 391,
+          "h": 67
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 391,
+          "h": 66
+        }
+      }
+    },
+    {
+      "id": "builder-strip-3",
+      "x": 0.397,
+      "y": 0.395,
+      "w": 0.255,
+      "h": 0.065,
+      "kind": "control",
+      "score": {
+        "overall": 0.6575,
+        "structure": 0.5515,
+        "color": 0.7378,
+        "colorIntersection": 0.5218,
+        "paletteMatch": 0.8542,
+        "detail": 0.7557,
+        "detailRaw": 0.7922,
+        "detailAdded": 0.0729,
+        "bands": 0.81
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 391,
+          "h": 67
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 391,
+          "h": 66
+        }
+      }
+    },
+    {
+      "id": "handoff-strip",
+      "x": 0.185,
+      "y": 0.47,
+      "w": 0.47,
+      "h": 0.16,
+      "kind": "control",
+      "score": {
+        "overall": 0.6212,
+        "structure": 0.5221,
+        "color": 0.7177,
+        "colorIntersection": 0.4622,
+        "paletteMatch": 0.8553,
+        "detail": 0.6751,
+        "detailRaw": 0.7064,
+        "detailAdded": 0.0625,
+        "bands": 0.8351
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 722,
+          "h": 164
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 722,
+          "h": 164
+        }
+      }
+    },
+    {
+      "id": "chat-bay",
+      "x": 0.68,
+      "y": 0.135,
+      "w": 0.31,
+      "h": 0.42,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.7831,
+        "structure": 0.7123,
+        "color": 0.7196,
+        "colorIntersection": 0.435,
+        "paletteMatch": 0.8728,
+        "detail": 0.8157,
+        "detailRaw": 0.8209,
+        "detailAdded": 0.0104,
+        "bands": 1
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 477,
+          "h": 430
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 477,
+          "h": 429
+        }
+      }
+    },
+    {
+      "id": "chat-label",
+      "x": 0.75,
+      "y": 0.145,
+      "w": 0.14,
+      "h": 0.025,
+      "kind": "text",
+      "score": {
+        "overall": 0.591,
+        "structure": 0.4753,
+        "color": 0.7024,
+        "colorIntersection": 0.4568,
+        "paletteMatch": 0.8347,
+        "detail": 0.5787,
+        "detailRaw": 0.6516,
+        "detailAdded": 0.1458,
+        "bands": 0.91
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 11,
+          "w": 215,
+          "h": 37
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 215,
+          "h": 47
+        }
+      }
+    },
+    {
+      "id": "chat-strips",
+      "x": 0.685,
+      "y": 0.2,
+      "w": 0.3,
+      "h": 0.28,
+      "kind": "control",
+      "score": {
+        "overall": 0.6879,
+        "structure": 0.6122,
+        "color": 0.7408,
+        "colorIntersection": 0.4792,
+        "paletteMatch": 0.8817,
+        "detail": 0.7655,
+        "detailRaw": 0.7811,
+        "detailAdded": 0.0313,
+        "bands": 0.9818
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 461,
+          "h": 287
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 461,
+          "h": 286
+        }
+      }
+    },
+    {
+      "id": "activity-bay",
+      "x": 0.68,
+      "y": 0.555,
+      "w": 0.31,
+      "h": 0.37,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.7226,
+        "structure": 0.5469,
+        "color": 0.7231,
+        "colorIntersection": 0.4443,
+        "paletteMatch": 0.8731,
+        "detail": 0.8018,
+        "detailRaw": 0.807,
+        "detailAdded": 0.0104,
+        "bands": 1
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 477,
+          "h": 379
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 477,
+          "h": 379
+        }
+      }
+    },
+    {
+      "id": "activity-label",
+      "x": 0.745,
+      "y": 0.565,
+      "w": 0.15,
+      "h": 0.025,
+      "kind": "text",
+      "score": {
+        "overall": 0.5366,
+        "structure": 0.4158,
+        "color": 0.6835,
+        "colorIntersection": 0.4749,
+        "paletteMatch": 0.7958,
+        "detail": 0.4371,
+        "detailRaw": 0.5621,
+        "detailAdded": 0.25,
+        "bands": 0.9233
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 12,
+          "w": 223,
+          "h": 23
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 231,
+          "h": 47
+        }
+      }
+    },
+    {
+      "id": "activity-strips",
+      "x": 0.685,
+      "y": 0.61,
+      "w": 0.3,
+      "h": 0.22,
+      "kind": "control",
+      "score": {
+        "overall": 0.6251,
+        "structure": 0.504,
+        "color": 0.7603,
+        "colorIntersection": 0.5637,
+        "paletteMatch": 0.8662,
+        "detail": 0.661,
+        "detailRaw": 0.7287,
+        "detailAdded": 0.1354,
+        "bands": 1
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 461,
+          "h": 225
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 461,
+          "h": 225
+        }
+      }
+    },
+    {
+      "id": "footer-strip",
+      "x": 0.01,
+      "y": 0.94,
+      "w": 0.36,
+      "h": 0.03,
+      "kind": "text",
+      "score": {
+        "overall": 0.5225,
+        "structure": 0.4957,
+        "color": 0.7111,
+        "colorIntersection": 0.4445,
+        "paletteMatch": 0.8546,
+        "detail": 0.3125,
+        "detailRaw": 0.4479,
+        "detailAdded": 0.2708,
+        "bands": 0.5
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 7,
+          "y": 13,
+          "w": 538,
+          "h": 22
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 553,
+          "h": 48
+        }
+      }
+    }
+  ],
+  "files": {
+    "sideBySide": "/tmp/m124/diff7/side-by-side.png",
+    "heatmap": "/tmp/m124/diff7/heatmap.png",
+    "regionFiles": [
+      "/tmp/m124/diff7/regions/top-rule.png",
+      "/tmp/m124/diff7/regions/wordmark.png",
+      "/tmp/m124/diff7/regions/clocks.png",
+      "/tmp/m124/diff7/regions/health.png",
+      "/tmp/m124/diff7/regions/nearest-window.png",
+      "/tmp/m124/diff7/regions/no-window.png",
+      "/tmp/m124/diff7/regions/rail.png",
+      "/tmp/m124/diff7/regions/rail-labels.png",
+      "/tmp/m124/diff7/regions/team-header.png",
+      "/tmp/m124/diff7/regions/bay-claude.png",
+      "/tmp/m124/diff7/regions/bay-claude-label.png",
+      "/tmp/m124/diff7/regions/lead-strip.png",
+      "/tmp/m124/diff7/regions/lead-strip-2.png",
+      "/tmp/m124/diff7/regions/lead-strip-3.png",
+      "/tmp/m124/diff7/regions/bay-deepseek.png",
+      "/tmp/m124/diff7/regions/bay-deepseek-label.png",
+      "/tmp/m124/diff7/regions/builder-strip.png",
+      "/tmp/m124/diff7/regions/builder-strip-2.png",
+      "/tmp/m124/diff7/regions/builder-strip-3.png",
+      "/tmp/m124/diff7/regions/handoff-strip.png",
+      "/tmp/m124/diff7/regions/chat-bay.png",
+      "/tmp/m124/diff7/regions/chat-label.png",
+      "/tmp/m124/diff7/regions/chat-strips.png",
+      "/tmp/m124/diff7/regions/activity-bay.png",
+      "/tmp/m124/diff7/regions/activity-label.png",
+      "/tmp/m124/diff7/regions/activity-strips.png",
+      "/tmp/m124/diff7/regions/footer-strip.png"
+    ]
+  }
+}

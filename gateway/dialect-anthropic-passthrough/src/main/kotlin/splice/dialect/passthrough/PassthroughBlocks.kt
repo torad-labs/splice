@@ -14,4 +14,11 @@ internal enum class Kind { TEXT, THINKING, TOOL, RAW, IGNORED }
 
 internal data class Block(val kind: Kind, val wire: WireBlockIndex?) {
     var signatureSeen: Boolean = false
+
+    // V4-157: did THIS block actually receive thinking text? Per-block and not the turn-wide
+    // [PassthroughProseChannels.emittedThinking], which answers a different question — a turn with
+    // two thinking blocks, one full and one empty, latches that flag once and cannot tell them
+    // apart, and it is the empty one that must not be signed. Latched on isNotBlank, the same
+    // threshold the prose channel uses for its own flag (CX-09/DR-75's empty-delta-latch family).
+    var receivedThinkingText: Boolean = false
 }

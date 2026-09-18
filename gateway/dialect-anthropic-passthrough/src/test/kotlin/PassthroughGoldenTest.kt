@@ -29,7 +29,9 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -49,6 +51,13 @@ import java.nio.file.Path
 
 /** KIMI's deformation set — see the CH-2 note in the file header. */
 private val KIMI_QUIRKS = KimiProfileFixture().kimi("kimi")
+
+/** V4-157: one remedy for all three halves of the shape guard — the block goes back, whichever
+ *  half went missing. A fixture entry that is only ever INPUT has no other way to say it matters. */
+private const val INCIDENT_BLOCK_REQUIRED =
+    "BLOCK_ALLOWLIST_FIXTURE must keep the V4-157 incident block at content.0 — a thinking block " +
+        "with blank text and a NON-EMPTY signature (request_id req_011CfBPZe8HG2qTVWNVXBmZm). It " +
+        "produces no bytes now that the rule drops it, so nothing else here would notice its loss."
 
 private val GOLDEN_DIR: Path = Path.of("src", "test", "resources", "goldens")
 private val JSON = Json {
@@ -194,9 +203,20 @@ private const val COMPACT_FIXTURE = """
 """
 
 /** the block allowlist: redacted_thinking / document / search_result are DROPPED today, and an
- *  empty unsigned thinking block is dropped while a signed one rides verbatim. */
+ *  EMPTY thinking block is dropped whether or not it carries a signature — only thinking that
+ *  contains thinking rides, signature verbatim.
+ *
+ *  V4-157 REWROTE THIS RULE AND THE FIXTURE BELOW, and the old one is worth naming because it
+ *  shipped a dead turn to a live operator session on 2026-09-18: a blank thinking block was dropped
+ *  only when its signature was ALSO empty, so a blank-but-SIGNED block was judged content-bearing
+ *  and rode upstream, where Anthropic answered the whole request with 400 invalid_request_error —
+ *  `messages.903.content.0.thinking: each thinking block must contain thinking`, request_id
+ *  req_011CfBPZe8HG2qTVWNVXBmZm. Every retry resent the same block, so the turn could not be
+ *  recovered and compaction was impossible for the rest of the session. The first block below IS
+ *  that shape; it must never appear in `request-block-allowlist.json` again. */
 private const val BLOCK_ALLOWLIST_FIXTURE = """
 {"model":"m","messages":[{"role":"assistant","content":[
+  {"type":"thinking","thinking":"","signature":"sig-empty-but-signed"},
   {"type":"thinking","thinking":"kept","signature":"sig-abc"},
   {"type":"thinking","thinking":"   ","signature":""},
   {"type":"redacted_thinking","data":"enc-blob"},
@@ -229,6 +249,20 @@ class PassthroughGoldenTest {
 
     @Test
     fun `content block allowlist is byte-stable`() {
+        // V4-157: the incident block at content.0 of the fixture is LOAD-BEARING INPUT for a proof
+        // this golden can no longer see. It red the wall ONCE, on unmodified HEAD, by riding into
+        // the built request; now that the rule drops it the output is byte-identical whether the
+        // block is in the fixture or not — so deleting it would take the proof away in silence,
+        // with every test still green, which is precisely the shape the block was added to catch.
+        // Guarded here, ahead of the comparison, so the two cannot be separated. The SHAPE is what
+        // is pinned, never the signature string: anyone may rotate that value without weakening it.
+        val incident = Json.parseToJsonElement(BLOCK_ALLOWLIST_FIXTURE).jsonObject
+            .getValue("messages").jsonArray.single().jsonObject
+            .getValue("content").jsonArray.first().jsonObject
+        assertEquals("thinking", incident["type"]?.jsonPrimitive?.content, INCIDENT_BLOCK_REQUIRED)
+        assertTrue(incident["thinking"]?.jsonPrimitive?.content?.isBlank() == true, INCIDENT_BLOCK_REQUIRED)
+        assertTrue(incident["signature"]?.jsonPrimitive?.content?.isNotEmpty() == true, INCIDENT_BLOCK_REQUIRED)
+
         assertGolden("request-block-allowlist.json", buildKimi(BLOCK_ALLOWLIST_FIXTURE))
     }
 

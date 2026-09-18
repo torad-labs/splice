@@ -1,0 +1,74 @@
+THE TYPE LADDER — the comp of record against the build, rung by rung
+comp: .impeccable/mocks/team-board-a.png (1536x1024), caps from its measured spec
+
+  COMP (7 roles with real lettering, largest first)
+      15.9px  wordmark
+      12.4px  health
+        12px  clocks
+        12px  no-window
+      11.7px  nearest-window
+      10.9px  bay-deepseek-label
+       9.8px  chat-label
+  comp roles EXCLUDED as unmeasured (a cap from fewer than 6 glyphs is the matcher failing):
+       3.3px  activity-label (1 glyph)
+       2.7px  bay-claude-label (1 glyph)
+       2.6px  team-header (2 glyphs)
+
+  BUILD at 1536x1024
+     17.00px  rule.wordmark      Archivo 500 23.0007px   comp 15.9px  delta +1.10
+     17.00px  page.title         Archivo 500 23.0007px
+     14.00px  rule.clocks        Archivo 400 20.0006px   comp 12px  delta +2.00
+     14.00px  rule.window        Archivo 400 20.0006px   comp 11.7px  delta +2.30
+     14.00px  rule.none          Archivo 400 20.0006px   comp 12px  delta +2.00
+     11.00px  rule.health        Archivo 400 16.0005px   comp 12.4px  delta -1.40
+     11.00px  rail.tab           Archivo 400 16.0005px
+     10.00px  strip.field-label  Archivo 600 14.0004px
+     10.00px  strip.field-value  Archivo 600 14.0004px
+      9.00px  bay.label          Archivo 600 12.0004px   comp 10.9px  delta -1.90
+      9.00px  chat.label         Archivo 600 12.0004px   comp 9.8px  delta -0.80
+
+  THE RUNG-TO-RUNG RATIOS, which is what reads as hierarchy (a mean hides a flat rung):
+    pair                                     comp    build   delta
+    rule.clocks / rule.none                  1.000   1.000   +0.000
+    rule.none / rule.window                  1.026   1.000   -0.026
+    rule.window / bay.label                  1.073   1.556   +0.482  <-- OFF
+    bay.label / chat.label                   1.112   1.000   -0.112  <-- OFF
+
+  BUILD at 3840x2160
+     40.00px  rule.wordmark      Archivo 500 57.5018px   comp 15.9px  scaled ×2.516
+     40.00px  page.title         Archivo 500 57.5018px
+     34.00px  rule.clocks        Archivo 400 50.0016px   comp 12px  scaled ×2.833
+     34.00px  rule.window        Archivo 400 50.0016px   comp 11.7px  scaled ×2.906
+     34.00px  rule.none          Archivo 400 50.0016px   comp 12px  scaled ×2.833
+     28.00px  rule.health        Archivo 400 40.0013px   comp 12.4px  scaled ×2.258
+     28.00px  rail.tab           Archivo 400 40.0013px
+     24.00px  strip.field-label  Archivo 600 35.0011px
+     24.00px  strip.field-value  Archivo 600 35.0011px
+     20.00px  bay.label          Archivo 600 30.001px   comp 10.9px  scaled ×1.835
+     20.00px  chat.label         Archivo 600 30.001px   comp 9.8px  scaled ×2.041
+
+  THE RUNG-TO-RUNG RATIOS, which is what reads as hierarchy (a mean hides a flat rung):
+    pair                                     comp    build   delta
+    rule.clocks / rule.none                  1.000   1.000   +0.000
+    rule.none / rule.window                  1.026   1.000   -0.026
+    rule.window / bay.label                  1.073   1.700   +0.627  <-- OFF
+    bay.label / chat.label                   1.112   1.000   -0.112  <-- OFF
+
+THE SPACING LADDER — gaps, not leading; the operator named spacing beside text size
+rack gaps measured on #/fleet; the rail plates are measured wherever they render
+
+  BUILD at 1536x1024
+    label-to-value           4.0px   comp —
+    row-to-row              32.0px  (pitch 95.8px)   comp 33.3px  delta -1.3
+    bay-label-to-rack       37.0px   comp 30.7px  delta +6.3
+    plate-to-plate          34.0px  (pitch 62.5px)   comp —
+
+  BUILD at 3840x2160 (absolute gaps scale; the ratio to the frame is what travels)
+    label-to-value          10.0px   comp —
+    row-to-row              80.0px  (pitch 235.0px)   comp 33.3px  delta +46.7
+    bay-label-to-rack       91.0px   comp 30.7px  delta +60.3
+    plate-to-plate          71.0px  (pitch 130.4px)   comp —
+
+  COMP, derived from its own region boxes rather than typed:
+    row-to-row              33.3px   (99.8px pitch − 66.6px strip)
+    bay-label-to-rack       30.7px   (label plate bottom to the first strip)

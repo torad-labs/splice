@@ -52,6 +52,10 @@ import { mgmtKey, show, withChrome } from './lib/cdp.mjs';
 // carried the THIRD copy of it, still naming 'demo' for six addresses, which made every rack row in
 // its table a measurement of live daemon data (M1-28).
 import { FIXTURES, urlFor as fixtureUrl } from './lib/fixtures.mjs';
+// THE LADDER'S RATIOS come from the one module that defines them, so the check and the measurement
+// cannot drift apart (M1-50): this file carried exactly ONE type constant against a comp with a
+// dozen roles, and every green run was silent about the rung-to-rung hierarchy.
+import { ROLE_PAIRS, RATIO_LIMIT, checkRatios, compLadder } from './type-ladder.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 // The comp's own frame, and the default because every constant here was measured on it.
@@ -189,6 +193,7 @@ const PROBE = `(() => {
       role('strip.field-label', one('.myx-sfield-label')),
       role('strip.field-value', one('.myx-sfield-value')),
       role('rail.tab', one('.myx-rail-tab')),
+      role('chat.label', one('.myx-board-bay-chat .myx-bay-label')),
     ].filter(Boolean),
     bays,
   });
@@ -301,6 +306,9 @@ const TEXT_ROLES = [
   { id: 'text.strip.field-label', probe: 'strip.field-label', region: null },
   { id: 'text.strip.field-value', probe: 'strip.field-value', region: null },
   { id: 'text.rail.tab', probe: 'rail.tab', region: null },
+  // The comp measured this one too (chat-label, 25 glyphs, 9.8px). It was missing here, and its
+  // absence is what made the bay.label/chat.label rung invisible.
+  { id: 'text.chat.label', probe: 'chat.label', region: 'chat-label' },
 ];
 
 const LICENSED = ['Archivo', 'JetBrains Mono'];
@@ -362,6 +370,21 @@ function report(measurement, address) {
     try { compValue = constant.comp(); } catch { compValue = null; }
     record(address, constant.id, constant.kind, compValue, constant.got(measurement), constant.note, constant.fails);
   }
+  // THE RUNG-TO-RUNG RATIOS, checked here because a ladder correct on average and wrong at the
+  // extremes is what "everything looks flat" feels like from the outside. Same pairs, same limit,
+  // same code as the measurement (type-ladder.mjs), so this can never again be silent about type.
+  {
+    const spec = JSON.parse(readFileSync(join(ROOT, 'webui/.impeccable/build/spec.json'), 'utf8'));
+    const compLadderRows = compLadder(spec).measured;
+    const buildCaps = measurement.text.map((t) => ({ id: t.name, cap: t.cap * t.scale }));
+    for (const finding of checkRatios(compLadderRows, buildCaps)) {
+      failures.push(`${address} ladder.${finding.pair}`);
+      rows.push({ address, id: `ladder.${finding.pair}`, comp: `comp ${finding.comp.toFixed(3)}`,
+        got: `got ${finding.build.toFixed(3)}`, delta: `delta ${finding.delta >= 0 ? '+' : ''}${finding.delta.toFixed(3)}`,
+        verdict: 'FAIL', note: `a rung off by more than ${RATIO_LIMIT}` });
+    }
+  }
+
   for (const role of TEXT_ROLES) {
     const face = measurement.text.find((t) => t.name === role.probe);
     if (!face) {

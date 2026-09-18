@@ -241,6 +241,26 @@
                            cream: 1.38:1 under the strip it labels and far above the
                            floor, which is what makes it read as a separate object. */
   --plate-line:#645F50; /* the plate's own edge, measured (100,95,80). */
+  --plate-ink-mute:#454034;
+                        /* THE PLATE'S MUTE, and it exists because no other mute could carry it
+                           (M1-77). What it is FOR: ink on --plate, the printed head plate over a
+                           bay, whose paper is #C3B6A0 - a plane no other mute clears. --strip-ink-mute
+                           measures 3.63:1 there and the retired --ink-mute 3.56, and this campaign
+                           has already recorded that number once: the comment at --bay-count below
+                           documents the same #565955 failing the same way, which is the same defect
+                           arriving on a second reader. This value clears 5.17:1 on the plate.
+                           WHAT IT IS NOT FOR: anything on --room, on --strip, or on --scope. Those
+                           planes have their own inks and this one is dark-on-pale by construction -
+                           printed on the room it would be a dark ink on near-black, which is the
+                           whole failure this token exists to stop repeating.
+                           READERS: .myx-accounts-order (pages/accounts/accounts.css). The second
+                           reader this contract was cut for, .myx-bay-count, has NO RULE IN THE TREE
+                           as of M1-77 - the tokens comments below still name it, and M1-38's bay
+                           work is the likely reason it moved or went. Named here because a contract
+                           that lists a reader nobody can find is the same defect as a token with no
+                           plane: the next seat greps, finds nothing, and prints this rung on the
+                           room where it is a dark ink on near-black. */
+
   --ghost:rgba(222,217,198,.15);
                         /* a departing strip's trail: the comp lays the same slip
                            down three times and the ones behind measure 15 percent

@@ -37,6 +37,25 @@
 import { globSync, readFileSync, existsSync } from "node:fs";
 import { resolve, relative } from "node:path";
 
+/** Python repr() of a string, and of a list of strings. An f-string that interpolates a LIST
+ *  renders THIS -- `['a', 'b']` -- not JSON, so a port that used JSON.stringify produced a
+ *  DIFFERENT failure message than the original on every red path while agreeing on every green
+ *  one. Caught by driving the mutants as a CLI rather than feeding detect() a fixed corpus. */
+function pyReprStr(s: string): string {
+  const useDouble = s.includes("'") && !s.includes('"');
+  const q = useDouble ? '"' : "'";
+  let body = s
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r")
+    .replaceAll("\t", "\\t");
+  body = body.replaceAll(q, "\\" + q);
+  return q + body + q;
+}
+function pyRepr(items: string[]): string {
+  return "[" + items.map(pyReprStr).join(", ") + "]";
+}
+
 const ROOT = resolve(import.meta.dir, "../../../..");
 const SOURCE_ROOT_GLOB = "gateway/*/src/main/kotlin";
 const SEAM_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt";
@@ -564,9 +583,9 @@ function selftest(): number {
   ): void => {
     const got = detect(srcs, seamText);
     if (wantRed && got.length === 0) { fails.push(`${name}: must be RED`); return; }
-    if (!wantRed && got.length > 0) { fails.push(`${name}: must be GREEN, got ${JSON.stringify(got)}`); return; }
+    if (!wantRed && got.length > 0) { fails.push(`${name}: must be GREEN, got ${pyRepr(got)}`); return; }
     if (mustName && !got.some((g) => g.includes(mustName))) {
-      fails.push(`${name}: must name ${mustName}, got ${JSON.stringify(got)}`);
+      fails.push(`${name}: must name ${mustName}, got ${pyRepr(got)}`);
     }
   };
 

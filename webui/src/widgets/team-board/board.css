@@ -1,0 +1,241 @@
+/* THE BOARD, bound to the measured comp.
+
+   Every box below is a region of webui/.impeccable/build/scaffold/layout.css,
+   measured in percent of the comp frame (1536x1024). This page is drawn inside
+   the shell, whose rail takes the frame's left 9% and whose rule takes its top
+   5.8%, so each number appears twice in the comment beside it: the frame
+   percentage the comp measured, and the page-relative percentage this sheet
+   actually places it with (left = (x-9)/0.91, top = (y-5.8)/0.942). Only the
+   footer escapes that, because the comp draws it across the rail's own edge.
+
+   The strip's type is the comp's: labels at the smallest rung, values one step
+   up, and the field grid is a ch grid so the columns line up strip to strip
+   the way the comp's do. */
+
+.myx-board {
+  /* The comp draws two creams, not one: its session strips measure #dfd7c5 and
+     its label plates and footer a step darker at #c2b59f. The first is --strip;
+     no token carries the second, so it is derived from the first here rather
+     than written as a literal. */
+  --plate-deep: color-mix(in srgb, var(--strip) 87%, var(--room));
+  position: relative;
+  /* cancel the page's own padding: the comp's boxes are measured from the frame */
+  margin: calc(-1 * var(--space-5));
+  height: calc(100% + var(--space-5) * 2);
+  min-height: calc(100% + var(--space-5) * 2);
+  overflow: hidden;
+}
+
+/* --- the strip's type and grid --- */
+.myx-board .myx-strip {
+  position: absolute;
+  border-radius: 0;
+}
+.myx-board .myx-strip > .myx-edge { padding-inline-start: var(--space-4); }
+.myx-board .myx-strip > .myx-edge .myx-edge-mark { inset-block: 0; width: var(--space-4); }
+/* The comp's strip face is condensed. Measured on the same strings at the
+   ladder's floor, its glyphs advance about 0.8 of what either shipped face
+   gives, and its columns are sized to that: the comp's own words do not fit the
+   comp's own columns in Archivo or in JetBrains Mono. Neither face carries a
+   width axis (font-stretch is inert on both, measured), so each cell is laid
+   out at the width its words need and scaled back onto the comp's column. That
+   is the comp's density at a legal size, instead of a rung under the floor. */
+.myx-board .myx-sfield {
+  /* The comp's strip is a single plate: its cells are told apart by the rules
+     between them, not by a second fill. The fill is opaque all the same,
+     because the condensed type below lays a value out wider than its cell. */
+  background: var(--strip);
+  overflow: hidden;
+  font-size: var(--text-1);
+  /* The comp's grid starts at its own left edge, so the inset lives in the
+     strip's edge column and the fields take none. Its labels sit at y13 and its
+     rule at y24, which is where the label's line box ends at this size. The
+     comp sets its strips smaller than the ladder's floor; the floor wins, so
+     the longest values run out of their columns rather than shrink below it. */
+  padding: var(--space-4) 0 var(--space-0);
+}
+.myx-board .myx-sfield-label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--text-1);
+  line-height: 1.2;
+  width: 128.2%;
+  transform: scaleX(0.78);
+  transform-origin: left center;
+  border-bottom: var(--hair) solid var(--strip-field-line);
+}
+.myx-board .myx-sfield-value {
+  font-weight: 600;
+  font-size: var(--text-1);
+  padding-block-start: var(--space-3);
+  width: 128.2%;
+  transform: scaleX(0.78);
+  transform-origin: left center;
+}
+
+/* --- team header: region team-header (frame x10 y6.2 w88.5 h5) --- */
+.myx-board-header {
+  left: 1.099%;
+  top: 0.425%;
+  width: 97.253%;
+  height: 5.308%;
+}
+
+/* --- the head bays: regions bay-claude and bay-deepseek --- */
+.myx-board-bay {
+  position: absolute;
+  border: none;
+}
+.myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; }
+.myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; }
+
+/* The bay's label plate is its own measured region, centered on the rack:
+   bay-claude-label (frame x17 y14.5 w12 h2.5) inside bay-claude (x9.8 y13.5
+   w28 h79); bay-deepseek-label (x44.5 y14.5 w14 h2.5) inside bay-deepseek. */
+.myx-board-bay .myx-bay-head {
+  position: absolute;
+  justify-content: center;
+  padding: var(--space-0) var(--space-2);
+  background: var(--plate-deep);
+  border: var(--hair) solid var(--strip-field-line);
+}
+.myx-board-bay-0 .myx-bay-head { left: 25.71%; top: 1.266%; width: 42.857%; height: 3.165%; }
+.myx-board-bay-1 .myx-bay-head { left: 20.00%; top: 1.266%; width: 50.909%; height: 3.165%; }
+.myx-board-bay .myx-bay-label {
+  font-weight: 600;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--strip-ink);
+}
+
+/* the rack: the strips are placed by their own regions, so the rows container
+   must not become their positioning context */
+.myx-board-bay .myx-bay-rows { display: contents; }
+
+/* session strips: regions lead-strip/2/3 (frame x10.5 w25.5 h6.5, y20/30/39.5)
+   inside bay-claude, and builder-strip/2/3 (frame x39.7 w25.5, same ys) inside
+   bay-deepseek. */
+.myx-board-strip { left: 2.5%; width: 91.071%; height: 8.228%; }
+.myx-board-bay-1 .myx-board-strip { left: 2.545%; width: 92.727%; }
+.myx-board-strip-0 { top: 8.228%; }
+.myx-board-strip-1 { top: 20.886%; }
+.myx-board-strip-2 { top: 32.911%; }
+
+/* the empty slots of the rack, below the strips (each one's top is set inline,
+   from the same rack rhythm) */
+.myx-board-slot {
+  position: absolute;
+  left: 1.5%;
+  width: 97%;
+  height: 5.5%;
+  border-top: var(--hair) solid var(--hairline);
+  border-bottom: var(--hair) solid var(--hairline);
+}
+
+/* --- the hand-off: region handoff-strip (frame x18.5 y47 w47 h16) --- */
+.myx-board-handoff {
+  position: absolute;
+  left: 10.440%;
+  top: 43.737%;
+  width: 51.648%;
+  height: 16.986%;
+  pointer-events: none;
+}
+/* The comp's gesture, read off its own pixels: the live strip's top-right
+   corner sits at the region's right edge and its top-left lands 47px lower, so
+   the cluster is a 612x56 strip turned 4.41 degrees, with each ghost a further
+   88px down and 34px left. The percentages below are those offsets over the
+   strip's own box, which is what a transform's translate resolves against. */
+.myx-board-handoff .myx-strip { position: relative; height: 100%; }
+/* Both lifted rows are tighter than a racked one. The chat's label row starts
+   at y8 against the rack's y13, with its value at y30; the hand-off's label
+   starts at y10. Measure each against its own crop rather than assuming the
+   rack's inset. */
+.myx-board-msg .myx-sfield { padding-block-start: var(--space-2); }
+.myx-board-msg .myx-sfield-value { padding-block-start: var(--space-3); }
+.myx-board-handoff-msg .myx-sfield { padding-block-start: var(--space-3); }
+.myx-board-handoff-msg .myx-sfield-value { padding-block-start: var(--space-2); }
+.myx-board-handoff-live,
+.myx-board-ghost {
+  position: absolute;
+  left: 14.14%;
+  /* the comp's live strip turns about a centre that puts its top-right corner
+     on the region's top edge; at this height that is 14% down */
+  top: 14%;
+  width: 84.76%;
+  height: 34.1%;
+}
+.myx-board-handoff-live { transform: rotate(-4.41deg); z-index: 3; }
+.myx-board-ghost { filter: brightness(0.62) saturate(0.8); }
+.myx-board-ghost-1 { transform: rotate(-4.41deg) translate(-5.56%, 157%); z-index: 2; }
+.myx-board-ghost-2 { transform: rotate(-4.41deg) translate(-11.11%, 314%); z-index: 1; }
+
+/* --- the chat bay: region chat-bay (frame x68 y13.5 w31 h42) --- */
+.myx-board-bay-chat { left: 64.835%; top: 8.174%; width: 34.066%; height: 44.586%; }
+.myx-board-bay-chat .myx-bay-head { left: 22.58%; top: 2.381%; width: 45.16%; height: 5.95%; }
+/* The comp pitches its chat strips down the region instead of stacking them:
+   its plates measure 74px on a 287px region, one every 100px. Each row's own
+   top is set inline from that rhythm. */
+.myx-board-msgs {
+  position: absolute;
+  left: 1.613%;
+  top: 15.476%;
+  width: 96.774%;
+  height: 66.667%;
+}
+.myx-board-msgs > .myx-board-msg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 25.8%;
+  overflow: hidden;
+}
+/* The comp wraps a message too long for its line. This is the one field in the
+   board that wraps; everywhere else the value clips, because a wrapped value
+   would make one strip taller than its neighbours and break the row pitch. */
+.myx-board-msgs > .myx-board-msg .myx-sfield:last-child .myx-sfield-value {
+  white-space: normal;
+}
+
+/* --- the activity bay: region activity-bay (frame x68 y55.5 w31 h37) --- */
+.myx-board-bay-activity { left: 64.835%; top: 52.760%; width: 34.066%; height: 39.278%; }
+.myx-board-bay-activity .myx-bay-head { left: 20.97%; top: 2.70%; width: 48.39%; height: 6.757%; }
+/* The activity sample is pitched too: the comp's first strip starts 22px below
+   the region and the rest follow every 38px, so each row's top is set inline. */
+.myx-board-acts {
+  position: absolute;
+  left: 1.613%;
+  top: 14.865%;
+  width: 96.774%;
+  height: 59.459%;
+}
+.myx-board-acts > .myx-board-act {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 13.8%;
+  overflow: hidden;
+}
+
+/* --- the footer: region footer-strip (frame x1 y94 w36 h3), which the comp
+   draws across the rail's edge, so it is placed against the frame itself --- */
+.myx-board-footer {
+  position: fixed;
+  left: 1%;
+  bottom: 3%;
+  width: 36%;
+  height: 3%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-0) var(--space-2);
+  background: var(--plate-deep);
+  border: var(--hair) solid var(--strip-field-line);
+  color: var(--strip-ink);
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.myx-board-footer-cell { white-space: nowrap; }

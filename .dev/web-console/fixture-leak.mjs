@@ -33,6 +33,17 @@
 // say DID NOT RUN, and it is never the same as PASSED). It exits non-zero, by name, and it never
 // reports a count that reads like a check.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH.
+//   SHAPE ONE, does every FAIL reach the exit code? YES. Each failure path exits non-zero by name;
+//     nothing here prints a finding and returns 0.
+//   SHAPE TWO, if the build produced nothing, what would it print? IT REFUSES, TWICE, EXPLICITLY:
+//     :166 guards `evidence.length === 0` and :196 guards `markerFiles.length === 0`, each exiting
+//     1 rather than reporting a clean sweep of an empty set. The header above already said it in
+//     words — "a fixture with no evidence is a FAILURE, not a quiet pass ... it never reports a
+//     count that reads like a check" — and unlike the same sentence in comp-check's SIDES doc
+//     comment (which described an intention the code did not carry, found by M1-70) this one is
+//     true of the code. Verified by reading both guards, not by trusting the paragraph.
+//
 // Usage: node .dev/web-console/fixture-leak.mjs   (from the worktree root; builds first)
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';

@@ -7,6 +7,18 @@
 // in the theme they were not using. So the run is exhaustive, and each capture carries the
 // measurement that would expose it: the fraction of its pixels that are the room's own colour.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH.
+//   SHAPE ONE, does every FAIL reach the exit code? YES. The capture loop's catch does not swallow:
+//     every failure pushes to `fixtureFailures`, and a non-empty `fixtureFailures` exits 1. There is
+//     no path here that prints a failure and returns 0 — traced by reading every catch in the file
+//     this row rather than trusting the shape.
+//   SHAPE TWO, if every page threw, what would it print? IT WOULD FAIL, LOUDLY. Because the failure
+//     path is a PUSH and not a print, an all-throwing run produces the maximum number of entries
+//     rather than the minimum: the denominator does not empty itself when the work goes wrong, it
+//     fills. That is the inversion law 34 is about, and this file already had it the right way up —
+//     the opposite of capture.mjs's --sweep, whose walk() catch let an unreadable directory empty
+//     the denominator and report a clean sweep (fixed in this row).
+//
 // Usage: node .dev/web-console/gate.mjs <milestone> [--dry-run]
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';

@@ -13,6 +13,49 @@
 // A number copied into this file would agree with itself while the comp drifted, which is the
 // failure mode the whole campaign is about.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. This is the
+// file the row was cut from, and it carried BOTH shapes at once.
+//   SHAPE ONE, does every FAIL reach the exit code? NOW YES. M1-70 fixed the four SIDES loops that
+//     printed the word FAIL and pushed nothing, so a constant with no entry, an entry with no
+//     constant, a pair with no verdict and a pair whose two sides named DIFFERENT OBJECTS all
+//     printed FAIL and exited 0 — in the file built to catch the M1-56 class, with its detector
+//     switched off. This row adds the fifth: a `comp()` accessor that THREW was caught into
+//     `compValue = null`, which record() prints as `comp n/a` — the same disposition a constant
+//     that legitimately has no comp carries — so a renamed token silently stopped a constant being
+//     checked while the run stayed green. It now fails by name as `<id>.comp-unreadable`.
+//   SHAPE TWO, if every page threw, what would it print? IT PRINTED ITS OWN EMPTINESS AS A CLEAN
+//     RUN. `compared` was computed, printed, and read by nothing, so `0 compared against the comp`
+//     — an instrument whose entire job is comparing this side to the comp, reporting that it
+//     compared nothing — exited 0. Three emptinesses now fail by name: no address measured, no row
+//     produced, and zero of N rows compared. The ladder carried the same defect one level down and
+//     is fixed with it: checkRatios skipped an unresolvable pair silently, so `ladder: 0 rungs off
+//     by more than 0.08` was the literal a verify greps for whether six pairs held or none was
+//     looked at. It now prints `N pair(s) compared of 6 named x M addresses`, names every skip, and
+//     pushes `ladder-did-not-run` into `failures` when nothing resolved. The first run after that
+//     fix reported the live ladder grading 4 of 6 — see type-ladder.mjs beside ROLE_PAIRS.
+//   THE SIX MIS-KINDED CONSTANTS (M1-76 item two), judged ONE AT A TIME and each with its own
+//     reason written beside it. `kind: 'box'` prints a percent sign; six constants carried it while
+//     returning a raw CSS length, so a 1px hairline printed as `1.00%` — 15.36px at this frame —
+//     and an 8px inset printed as `8.00%`, which is the one that hid longest because the digits
+//     coincide. THE DENOMINATOR WAS ENUMERATED, not eyeballed: all 23 `kind: 'box'` constants were
+//     split by whether their `got` divides by a reference length. Sixteen divide by m.frame.w/h and
+//     are genuine percentages (rail.plate.* among them, which is why a sweep would have corrupted
+//     them). Six divide by nothing and are now 'px'. THE TWENTY-THIRD IS bay.label-centre AND IT
+//     STAYS 'box': it divides by the BAY's own width, so it is a percentage of its container rather
+//     than of the frame. My first discriminator asked only about the frame and flagged it as a
+//     seventh — half-right, the failure mode this campaign has caught five times tonight, caught
+//     here by reading the probe field instead of trusting the rule. The corrected rule is
+//     "normalised by SOME reference length", frame or container.
+//     PROVEN INERT: every one has `comp: () => null`, so record() takes its `target === null` branch
+//     and `failed` is `fails(gotValue)` regardless of kind — scaling, tolerance and REPORT_ONLY are
+//     all untouched. Measured across 13 addresses before and after: the same 14 failures, by the
+//     same names. A display-unit correction that moved no verdict, which is what it was meant to be.
+//   WHAT STILL ONLY REPORTS, BY RULING AND NOT BY ACCIDENT: the absolute cap rows (M1-64's
+//     REPORT_ONLY) and `field.label-ink-start`/`field.label-rule-offset`. Each prints its delta and
+//     its cause and gates nothing DELIBERATELY, with the reason written beside it. A check that
+//     says which of its output gates is not decorative; one that lets a reader assume all of it
+//     does is, which is why the summary line names the counts separately.
+//
 // THE TWO CONSTANTS THE REVIEW FOUND BROKEN, and what each one catches:
 //   the x of a strip's field origin inside its bay — the rack staggers today (review B1), so two
 //     strips in one bay start their fields at different x. The comp puts every strip 0.7% of the
@@ -28,7 +71,62 @@ const TOLERANCE = {
   // The spec's detector reports boxes rounded to 0.1% of the frame and the scaffold is generated
   // from those, so a point of the frame is the width of the source's own uncertainty. Tighter
   // would fail the comp against itself.
-  box: { limit: 1.0, unit: 'percent of frame', why: 'the comp boxes are reported to 0.1% and the scaffold is generated from them' },
+  // THE QUANTITY A BOX TOLERANCE IS EXPRESSED IN — the ruling M1-99 was cut to make.
+  //
+  // It was `1.0 percent of frame`, applied to every box row, and the defect was that this ONE
+  // NUMBER IS THREE DIFFERENT CONSTRAINTS. A point of WIDTH is 15.36px at the comp frame; a point
+  // of HEIGHT is 10.24px; and bay.label-centre is a share of its BAY, so a point there is a
+  // fraction of a container whose size is not the frame at all. Nothing said so, and a reader
+  // seeing one number across every row assumes one meaning.
+  //
+  // Worse in relative terms: rule.h is 5.80% of the frame, so a point let the rule bar be ~17%
+  // too tall; rule.wordmark.x is 0.50%, so a point let it be 200% wrong — three times its own
+  // size. Uniform in absolute frame-share, wildly non-uniform in the error a reader cares about.
+  //
+  // THE CHOICE: ABSOLUTE, IN COMP-FRAME PIXELS, converted per constant through the length it is a
+  // share OF. One number that means one thing everywhere, printed beside every row in both units.
+  //
+  // WHY ABSOLUTE AND NOT RELATIVE-TO-THE-CONSTANT, which was the obvious alternative and is
+  // REJECTED ON THE MEASUREMENT: the error sources do not scale with the constant's magnitude. A
+  // position at 72% of the frame is not measured a hundred times less precisely than one at 0.7%.
+  // The two real sources are the comp's own granularity (boxes reported to 0.1 of a point: 1.54px
+  // wide, 1.02px tall) and sub-pixel render rounding (~1px) — both ABSOLUTE. And a relative
+  // tolerance LOOSENS exactly the rows that are currently exact: at 5% of the constant,
+  // rule.none.x (72.00%) would be allowed 3.60 points against today's 1.00, and bay.label-centre
+  // (47.14%) would be allowed 2.36 points — which is MORE than its live delta of 2.30, so the one
+  // real geometry finding this instrument currently reports would have gone green. A tolerance
+  // model that erases a true finding is disqualified by that alone.
+  //
+  // ALSO REJECTED: a floor-plus-relative pair, max(floor, rel x comp). It inherits the same defect
+  // at the top end — the relative term only ever binds on the LARGE constants, which are precisely
+  // the ones reading delta 0.00 today and needing no slack. It adds a second number to explain and
+  // buys nothing this data supports.
+  //
+  // WHY 5px: the two error sources sum to about 2.6px at the comp frame, and this is that doubled.
+  // It is between a third and a half of today's effective limit, it leaves every currently-passing
+  // row passing, and it catches the defect that proved the old limit unreadable — M1-86's mutation
+  // I(a), a rule bar 10% too tall, which is 5.94px of error and passed silently at 1.0 point.
+  //
+  // WHAT MOVED, measured over thirteen addresses at both frames before and after: the comp frame
+  // did not change at all (14 failures, same names), and 3840 gained EXACTLY ONE — `teams strip.h`,
+  // delta -0.86 against a ±0.49 point limit. It is a real property of the build and not slack
+  // taken away: on the twelve list addresses the strip's height moves 63.8px -> 155.1px (x2.431,
+  // width-driven less a hairline that does not scale), while on the teams BOARD it moves
+  // 63.0px -> 131.3px (x2.085, which is the HEIGHT ratio 2.109). The same element obeys two
+  // different scaling laws depending on which layout renders it, and M1-26 says it should obey the
+  // width one everywhere. The old limit was wide enough to cover the difference, so an
+  // inconsistency of 8.9px at 3840 read as agreement. One new red, with a named mechanism, is what
+  // this row wanted: a tolerance change that reddens nothing proved nothing.
+  box: { limitPx: 5, unit: 'comp-frame px', why: 'the comp boxes are reported to 0.1 of a point (1.54px wide, 1.02px tall) and rendering rounds by ~1px; 5px is that doubled' },
+  // A VERTICAL share of the frame, same source and same granularity as `box`, so the same limit.
+  // What differs is not the tolerance but the TARGET: a share of height is only frame-independent
+  // when the length is height-driven, and in this console no length is — the root tracks the
+  // viewport WIDTH (M1-26). So the comp value is restated by the aspect factor away from the comp
+  // frame, and at the comp frame that factor is 1 and nothing moves (M1-86).
+  // Same quantity and same 5px for the same reasons; what differs from `box` is only the TARGET,
+  // which is restated by the aspect factor away from the comp frame (M1-86). A vertical share is
+  // always a share of frame height, so its pixel conversion is the height one.
+  vbox: { limitPx: 5, unit: 'comp-frame px', why: 'as box; a vertical share is converted through frame height, and its comp target is restated for the frame\'s aspect because the length is width-driven' },
   // Cap heights are ink runs measured on a 1536-wide raster; half a pixel is that measurement's
   // granularity and is below a visible step at these sizes.
   cap: { limit: 0.5, unit: 'px', why: 'the comp caps are ink runs on a 1536-wide raster; half a pixel is their granularity' },
@@ -278,7 +376,14 @@ const CONSTANTS = [
   // The comp's `rail-labels` region is the LABEL COLUMN (x 1.2%, w 7.0%), not one plate: the plates
   // sit inside it. So the column is what compares, and the plate prints beside it uncompared.
   { id: 'rail.column.x', kind: 'box', comp: () => pct('rail-labels', 'x'), got: (m) => m.railTabs && (m.railTabs.x / m.frame.w) * 100 },
-  { id: 'rail.column.y', kind: 'box', comp: () => pct('rail-labels', 'y'), got: (m) => m.railTabs && (m.railTabs.y / m.frame.h) * 100 },
+  // kind 'vbox' (M1-86): a share of frame HEIGHT whose pixel value is width-driven. Measured across
+  // twelve addresses, this y moves 68.6px -> 167.6px between the frames, a factor of 2.443 against a
+  // width ratio of 2.500 and a height ratio of 2.109 — so it tracks width, and dividing it by height
+  // made it read 6.70% at 1536 and 7.76% at 3840 for a reason that is the FRAME and not the build.
+  // It is 2.443 rather than a clean 2.500 because the rail column's offset carries a hairline that
+  // is one device pixel at both sizes; the residue after the restatement is +0.06 and well inside
+  // the 1.0 tolerance, and it is a property of the build, which is the point.
+  { id: 'rail.column.y', kind: 'vbox', comp: () => pct('rail-labels', 'y'), got: (m) => m.railTabs && (m.railTabs.y / m.frame.h) * 100 },
   { id: 'rail.column.w', kind: 'box', comp: () => pct('rail-labels', 'w'), got: (m) => m.railTabs && (m.railTabs.w / m.frame.w) * 100 },
   { id: 'rail.plate.x', kind: 'box', comp: () => null, got: (m) => m.railTab && (m.railTab.x / m.frame.w) * 100,
     note: 'spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column)' },
@@ -288,7 +393,14 @@ const CONSTANTS = [
     note: 'spec.json has no plate region; rail.css cites the crop (29px on this column)' },
   { id: 'rail.plates', kind: 'count', comp: () => 13, got: (m) => m.tabs,
     note: 'spec.json rail-labels: "thirteen page labels as small plates"' },
-  { id: 'rule.h', kind: 'box', comp: () => pct('top-rule', 'h'), got: (m) => m.rule && (m.rule.h / m.frame.h) * 100 },
+  // kind 'vbox' (M1-86), and this is the PURE case that proves the mechanism: the rule bar's height
+  // moves 59.4px -> 148.4px, a factor of 2.499 against the width ratio of 2.500 — width-driven with
+  // no residue at all. Its share of height therefore grew by exactly the aspect factor, 6.87/5.80 =
+  // 1.1845 against (1.778/1.500) = 1.18519, agreeing to three decimals. It read DEAD-ON against the
+  // comp at the comp frame (5.80 against 5.80, delta -0.00) and FAILED by +1.07 at 3840, which is
+  // the clearest possible statement that the build was right and the normalisation was wrong. Not a
+  // single pixel of the build is changed by this row.
+  { id: 'rule.h', kind: 'vbox', comp: () => pct('top-rule', 'h'), got: (m) => m.rule && (m.rule.h / m.frame.h) * 100 },
   { id: 'rule.wordmark.x', kind: 'box', comp: () => pct('wordmark', 'x'), got: (m) => m.cells.wordmark && (m.cells.wordmark.x / m.frame.w) * 100 },
   { id: 'rule.clocks.x', kind: 'box', comp: () => pct('clocks', 'x'), got: (m) => m.cells.clocks && (m.cells.clocks.x / m.frame.w) * 100 },
   { id: 'rule.health.x', kind: 'box', comp: () => pct('health', 'x'), got: (m) => m.cells.health && (m.cells.health.x / m.frame.w) * 100 },
@@ -305,7 +417,13 @@ const CONSTANTS = [
   // PLATE against PLATE since M1-56. The comp side measured this off its own image (the paper band
   // inside the lead-strip region, 60px, 5.859%) rather than from the region box (67px, 6.543%), which
   // is what the got side never measured: the rendered strip element.
-  { id: 'strip.h', kind: 'box', comp: () => COMP_STRIP_PLATE.fraction * 100,
+  // kind 'vbox' (M1-86). Both sides are height-normalised — the comp side is compPlate().fraction,
+  // which is band px / png.height — and the strip's own height moves 63.8px -> 155.1px, a factor of
+  // 2.431. Width-driven with a residue, like rail.column.y and for the same reason. WORTH KNOWING
+  // IF YOU RE-MEASURE THIS ONE: `teams` is the single address of thirteen whose board layout gives a
+  // different reading (6.15 where the other twelve give 6.23), so a spot-check on teams alone makes
+  // this constant look as though it does not drift at all. It does; the other twelve say so.
+  { id: 'strip.h', kind: 'vbox', comp: () => COMP_STRIP_PLATE.fraction * 100,
     got: (m) => { const s = firstStrip(m); return s && (s.rect.h / m.frame.h) * 100; },
     object: 'strip-plate', compVia: 'comp plate (paper band in the lead-strip region)', gotVia: 'element .myx-strip height' },
   // The head plate, as the comp actually places it: the label plate's CENTRE inside its own bay,
@@ -339,23 +457,48 @@ const CONSTANTS = [
   // differently from a plain bay — its bays are border:none (board.css:102) and the hairlines come
   // from the empty slots (board.css:151-152), while a plain bay carries them itself (ui.css:362-363)
   // — and a reviewer needs to see which composition an address used.
-  { id: 'bay.rail-top', kind: 'box', comp: () => null, got: (m) => (m.bays[0] ? m.bays[0].rails.top : null),
+  // kind 'px' AND NOT 'box' (M1-76): `rails.top` is `parseFloat(s.borderTopWidth)` — a CSS border
+  // width in pixels, divided by nothing. As 'box' it printed a 1px hairline as `1.00%`, which at
+  // this frame reads as 15.36px. Judged on its own and not swept: the value's own expression in the
+  // probe is the evidence, and this one performs no normalisation at all.
+  { id: 'bay.rail-top', kind: 'px', comp: () => null, got: (m) => (m.bays[0] ? m.bays[0].rails.top : null),
     note: 'comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362)' },
-  { id: 'bay.rail-bottom', kind: 'box', comp: () => null, got: (m) => (m.bays[0] ? m.bays[0].rails.bottom : null),
+  // kind 'px' for the same reason and judged separately: `parseFloat(s.borderBottomWidth)`, a
+  // border width in pixels. Same expression shape as its sibling, same verdict, arrived at by
+  // reading the probe field rather than by pattern-matching the neighbouring line.
+  { id: 'bay.rail-bottom', kind: 'px', comp: () => null, got: (m) => (m.bays[0] ? m.bays[0].rails.bottom : null),
     note: 'comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363)' },
   // The field box: the comp's cell was measured for the CSS (label ink 216, divider 229, value ink
   // 241, strip 208..269) but spec.json carries no field region, so the padding has no machine value
   // to compare against and prints what renders for the reviewer to read against that crop. The
   // divider and the label rule DO have a comp shape — the crop shows both — so they are rules.
-  { id: 'field.pad-start', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).padStart,
+  // kind 'px' AND NOT 'box' (M1-76): `padStart` is `parseFloat(fs.paddingInlineStart)`, a CSS
+  // padding in pixels with no division by anything. Judged on its own: a padding is an absolute
+  // inset, and the note beside it already cites the comp's crop in PIXELS (216, 229, 241), so the
+  // unit the reader is asked to compare against was pixels while the printed unit said percent.
+  { id: 'field.pad-start', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).padStart,
     note: 'comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241)' },
-  { id: 'field.pad-end', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).padEnd,
+  // kind 'px', judged separately: `parseFloat(fs.paddingInlineEnd)`. Same class as pad-start but a
+  // different edge, and the reason is its own expression rather than its sibling's verdict.
+  { id: 'field.pad-end', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).padEnd,
     note: 'comp carries no field region; measured for the reviewer' },
-  { id: 'field.label-pad-start', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).labelPadStart,
+  // kind 'px' (M1-76), and this is the one the row named with its number: it printed `8.00%` for an
+  // 8px inset. The two happen to share a digit, which is exactly why it went unread for so long —
+  // the value looked plausible as a percentage. `parseFloat(cs(fl).paddingInlineStart)`, no division.
+  { id: 'field.label-pad-start', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).labelPadStart,
     note: 'the inset a composition may move onto the label instead of the box' },
   { id: 'field.label-ink-start', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).labelInkStart,
     note: 'where the label ink starts inside the box, in px: the number a reviewer reads against the crop' },
-  { id: 'field.divider', kind: 'box', comp: () => null, got: (m) => firstField(m) && firstField(m).divider,
+  // kind 'px' AND NOT 'box' (M1-76), and this is the one of the six that GATES, so it was judged
+  // hardest. Its own `fails` clause settles the unit without reference to the probe: `!(v >= 1)` is
+  // a ONE PIXEL floor — the world's `--hair`. Read as a percentage that threshold would mean "at
+  // least 1% of the frame", 15.36px at this size, which is not a hairline and is not what the comp
+  // shows. So the failure rule and the printed kind DISAGREED, and the failure rule was right.
+  // THE VERDICT DOES NOT MOVE: `comp()` is null, so record() takes the `target === null` branch and
+  // `failed` is `fails(gotValue)` regardless of kind — the tolerance, the scaling and REPORT_ONLY
+  // are all untouched. This is a display-unit correction and cannot change what gates, which is the
+  // claim the before/after failure sets are compared to prove.
+  { id: 'field.divider', kind: 'px', comp: () => null, got: (m) => firstField(m) && firstField(m).divider,
     fails: (v) => !(v >= 1), note: 'the comp cell carries a vertical divider; the world declares --hair (1px)' },
   // THE NAME AND THE BODY DISAGREED, and the fix is both halves (M1-70). This note read 'the comp
   // cell carries the rule at row y=229' while the body returns a border WIDTH — an offset in the
@@ -495,16 +638,71 @@ const UNIT = { box: '%', cap: 'px' };
  * named as their cause, so the operator's question stays visible instead of being tuned away.
  */
 const REPORT_ONLY = new Set(['cap']);
+
+// ------------------------------------------------- what each box constant is a share OF (M1-99)
+
+/**
+ * A box constant's REFERENCE LENGTH: the thing its percentage is a percentage of. A tolerance in
+ * pixels is only meaningful through this, and it differs per constant — which is the fact the old
+ * single `1.0 percent of frame` concealed.
+ *
+ * DERIVED FROM THE ACCESSOR'S OWN SOURCE, not from a hand-kept list beside it, so a constant added
+ * later cannot silently inherit the wrong axis: the two lists could not disagree, because there is
+ * only one. A constant this cannot resolve is NOT defaulted to an axis — it fails by name at load
+ * (§24: every item needs a disposition and absence is not one). The container-normalised constants
+ * are the declared exception, and they are declared HERE rather than guessed.
+ */
+const REF_CONTAINER = {
+  // bay.label-centre is a share of the BAY it sits in, never of the frame — the reason a sweep over
+  // `kind: box` would have corrupted it (M1-76) and the reason it needs its own reference here. The
+  // comp's own bay-claude width is the length to convert through, read from the spec like every
+  // other comp value rather than typed.
+  'bay.label-centre': { of: "the comp's bay-claude width", px: () => pct('bay-claude', 'w') / 100 * DEFAULT_FRAME[0] },
+};
+
+function refOf(constant) {
+  const declared = REF_CONTAINER[constant.id];
+  if (declared !== undefined) return { of: declared.of, px: declared.px() };
+  const src = String(constant.got);
+  const byWidth = /m\.frame\.w\b/.test(src);
+  const byHeight = /m\.frame\.h\b/.test(src);
+  if (byWidth && !byHeight) return { of: 'frame width', px: DEFAULT_FRAME[0] };
+  if (byHeight && !byWidth) return { of: 'frame height', px: DEFAULT_FRAME[1] };
+  return null;
+}
+
+/** The tolerance this constant is actually held to, in its own printed unit and in pixels. */
+function toleranceOf(constant) {
+  const spec = TOLERANCE[constant.kind];
+  if (spec?.limitPx === undefined) return { points: spec?.limit, px: null, of: null };
+  const ref = refOf(constant);
+  return { points: (spec.limitPx / ref.px) * 100, px: spec.limitPx, of: ref.of, refPx: ref.px };
+}
+
+// THE ASSERTION THAT MAKES THE DERIVATION SAFE. Without it, a box constant whose accessor names
+// neither axis (or both) would fall through to `undefined` and take whatever tolerance that
+// produced — the silent default this row exists to end. It runs at load, before any page is
+// opened, so the failure is immediate and names the constant.
+{
+  const unresolved = CONSTANTS.filter((c) => TOLERANCE[c.kind]?.limitPx !== undefined && refOf(c) === null);
+  if (unresolved.length > 0) {
+    for (const c of unresolved) {
+      console.error(`FAIL tolerance-reference ${c.id}: its got() names neither m.frame.w nor m.frame.h (or names both), so what its percentage is a percentage OF cannot be derived. Declare it in REF_CONTAINER or make the accessor name one axis.`);
+    }
+    process.exit(2);
+  }
+}
+
 const fmt = (value, kind) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return String(value);
   if (kind === 'cap' || kind === 'px') return `${value.toFixed(2)}px`;
-  if (kind === 'box') return `${value.toFixed(2)}%`;
+  if (kind === 'box' || kind === 'vbox') return `${value.toFixed(2)}%`;
   return String(value);
 };
 
 /** Record one constant. `fails` is the verdict rule: the tolerance by default, and a named rule
  *  where the comp carries a shape rather than a number (a bay whose rail is missing). */
-function record(address, id, kind, compValue, gotValue, note, fails) {
+function record(address, id, kind, compValue, gotValue, note, fails, tol) {
   // An absolute-pixel constant is compared against the comp's value SCALED BY THE FRAME, not
   // dropped and not compared raw.
   //
@@ -520,8 +718,36 @@ function record(address, id, kind, compValue, gotValue, note, fails) {
   // at every size; one that was pinned in px fails here and nowhere else.
   const absolute = kind === 'px' || kind === 'cap';
   const ratio = width / DEFAULT_FRAME[0];
-  const target = compValue !== null && absolute && !atComp ? compValue * ratio : compValue;
-  const tolerance = absolute && !atComp ? TOLERANCE[kind].limit * ratio : TOLERANCE[kind]?.limit;
+  // A VERTICAL SHARE-OF-HEIGHT IS RESTATED IN THIS FRAME'S TERMS BY THE ASPECT FACTOR (M1-86).
+  //
+  // `vbox` is a vertical length expressed as a share of frame HEIGHT whose underlying pixel length
+  // is width-driven — which, since M1-26 made the root track the viewport WIDTH, is every vertical
+  // length in this console. A share of height is therefore NOT frame-independent: it carries the
+  // aspect ratio. Measured across twelve addresses at the two frames, and the controls are what
+  // prove it rather than the failures — EVERY length scales with width, horizontal and vertical
+  // alike (rule.h 59.4->148.4px = 2.499x, rail.column.w 106.8->268.0px = 2.511x, the width ratio
+  // being 2.500 and the height ratio 2.109). The width-normalised constants read flat across frames
+  // only because they divide by width; these three drifted only because they divide by height.
+  //
+  // THE ALGEBRA IS THE SAME RULE `px` AND `cap` ALREADY USE, written in the unit this constant
+  // prints in. target = comp% x (W/H)/(Wc/Hc) reduces to comp_px x widthRatio / frameHeight, so the
+  // comparison being made is "is the build's vertical length the comp's, scaled by width?" — which
+  // is M1-26's own claim stated as an assertion, and is like-for-like. It is NOT a fudge factor
+  // applied to make a red row green: at the comp's own frame the factor is exactly 1, so every
+  // comp-frame reading is unchanged to the last digit, which this row's acceptance requires and
+  // which is checked by diffing the 1536 run before and against after.
+  const aspect = kind === 'vbox';
+  const aspectRatio = (width / height) / (DEFAULT_FRAME[0] / DEFAULT_FRAME[1]);
+  const target = compValue === null ? compValue
+    : absolute && !atComp ? compValue * ratio
+    : aspect && !atComp ? compValue * aspectRatio
+    : compValue;
+  // THE TOLERANCE THIS ROW IS HELD TO, per constant and not per kind (M1-99). `tol` carries the
+  // 5px converted through THIS constant's own reference length, so one number in the source means
+  // one thing on every row. Falls back to the kind's flat limit for the kinds that have one (cap,
+  // count, family, scale), which are absolute already and need no conversion.
+  const flat = absolute && !atComp ? TOLERANCE[kind].limit * ratio : TOLERANCE[kind]?.limit;
+  const tolerance = tol?.points ?? flat;
   const comparable = typeof target === 'number' && typeof gotValue === 'number'
     && Number.isFinite(target) && Number.isFinite(gotValue);
   const delta = comparable ? gotValue - target : null;
@@ -537,13 +763,27 @@ function record(address, id, kind, compValue, gotValue, note, fails) {
   const faceDelta = !gating && deltaPct !== null
     ? `reports rather than gates: ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% against the comp's ink band at this size (the calibration line names the ratios)` : null;
   const scaledHere = absolute && !atComp && compValue !== null;
+  // M1-71's ruling, carried: an instrument never prints a cross-frame delta without stating the
+  // frame it was taken at and the factor that makes it comparable. This is that sentence for the
+  // vertical shares, on the row itself rather than in a header nobody reads beside the number.
+  const aspectHere = aspect && !atComp && compValue !== null;
+  // THE THRESHOLD, ON THE ROW (M1-99, and the row said this may be worth more than the choice of
+  // quantity — the defect was that the constraint was UNREADABLE, not that it was wrong). A reader
+  // can now see what THIS constant is held to instead of inferring it from a global number that
+  // meant three different things. Both units, because the pixel figure is what the number was
+  // chosen in and the point figure is what the delta beside it is printed in.
+  const held = tol?.px === undefined || tol?.px === null
+    ? (tolerance === undefined ? null : `±${tolerance} ${TOLERANCE[kind]?.unit ?? ''}`.trim())
+    : `±${tol.px}px = ±${tol.points.toFixed(2)}% of ${tol.of}`;
   rows.push({
-    address, id,
+    address, id, held,
     comp: target === null ? 'comp n/a' : `comp ${fmt(target, kind)}`,
     got: gotValue === null || gotValue === undefined ? 'got n/a' : `got ${fmt(gotValue, kind)}`,
     delta: delta === null ? '' : `delta ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`,
     verdict: target === null && fails === undefined ? 'comp n/a' : failed ? 'FAIL' : (!gating && comparable ? 'report' : 'ok'),
-    note: [scaledHere ? `comp value scaled ${ratio}x for this frame` : null, faceDelta, note].filter(Boolean).join('; '),
+    note: [scaledHere ? `comp value scaled ${ratio}x for this frame` : null,
+      aspectHere ? `comp value restated for this frame's aspect (x${aspectRatio.toFixed(4)}): a share of HEIGHT is not frame-independent when the length is width-driven` : null,
+      faceDelta, note].filter(Boolean).join('; '),
   });
 }
 
@@ -562,7 +802,7 @@ function report(measurement, address) {
       failures.push(`${address} ${constant.id}.comp-unreadable`);
       console.error(`FAIL comp-unreadable ${constant.id}: its comp accessor threw (${error.message}) — the constant was NOT compared`);
     }
-    record(address, constant.id, constant.kind, compValue, constant.got(measurement), constant.note, constant.fails);
+    record(address, constant.id, constant.kind, compValue, constant.got(measurement), constant.note, constant.fails, toleranceOf(constant));
   }
   // THE RUNG-TO-RUNG RATIOS, checked here because a ladder correct on average and wrong at the
   // extremes is what "everything looks flat" feels like from the outside. Same pairs, same limit,
@@ -671,6 +911,70 @@ if (wantsList) {
   process.exit(0);
 }
 
+/**
+ * The tolerance arithmetic, mutation-proved without a browser (M1-99).
+ *
+ * This file had no selftest at all: every claim it makes was only ever exercised by driving Chrome
+ * against a live server, so the pure arithmetic underneath — which is what this row changed — had
+ * no way to fail on its own. The cases below are the ones that would have caught the defect the row
+ * was cut for, and the one that proves the load-time reference assertion can fire.
+ */
+function selftest() {
+  let pass = 0; let fail = 0;
+  const check = (name, ok, detail) => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}  (${detail})`); };
+  const [W, H] = DEFAULT_FRAME;
+
+  const x = CONSTANTS.find((c) => c.id === 'rule.wordmark.x');
+  const h = CONSTANTS.find((c) => c.id === 'rule.h');
+  check('an x constant resolves its reference to frame WIDTH', refOf(x)?.px === W, `${refOf(x)?.of} = ${refOf(x)?.px}px`);
+  check('a vertical constant resolves its reference to frame HEIGHT', refOf(h)?.px === H, `${refOf(h)?.of} = ${refOf(h)?.px}px`);
+  const bay = CONSTANTS.find((c) => c.id === 'bay.label-centre');
+  check('a container-normalised constant resolves to its DECLARED container, not an axis',
+    refOf(bay) !== null && refOf(bay).px !== W && refOf(bay).px !== H, `${refOf(bay)?.of} = ${refOf(bay)?.px.toFixed(1)}px`);
+  // The assertion at load can only be trusted if this branch is reachable, so it is driven here.
+  check('a constant naming NEITHER axis resolves to null, which is what makes the load guard fire',
+    refOf({ id: 'synthetic', got: (m) => m.whatever }) === null, 'null');
+  check('a constant naming BOTH axes also resolves to null rather than guessing one',
+    refOf({ id: 'synthetic2', got: (m) => (m.a / m.frame.w) * (m.b / m.frame.h) }) === null, 'null');
+
+  const tx = toleranceOf(x); const th = toleranceOf(h);
+  check('5px through frame width is 0.33 of a point', Math.abs(tx.points - (5 / W) * 100) < 1e-9, `${tx.points.toFixed(4)}%`);
+  check('5px through frame height is 0.49 of a point', Math.abs(th.points - (5 / H) * 100) < 1e-9, `${th.points.toFixed(4)}%`);
+  // THE DEFECT THIS ROW FIXED, AS AN ASSERTION: one number in the source used to mean two different
+  // constraints and nothing said so. It still means two, and now it says so on every row.
+  check('the two axes are DIFFERENT constraints, which the old single number concealed',
+    Math.abs(tx.points - th.points) > 0.15, `width ±${tx.points.toFixed(2)}% vs height ±${th.points.toFixed(2)}%`);
+
+  // M1-86's mutation I(a), as arithmetic: a rule bar 10% too tall passed the old 1.0-point limit
+  // and must not pass this one. This is the failure-to-fail that made the old tolerance visible.
+  const ruleBarPx = 0.058 * H;
+  const tenPercentTooTall = ruleBarPx * 0.10;
+  check('a rule bar 10% too tall PASSED the old 1.0-point limit (the reason this row exists)',
+    (tenPercentTooTall / H) * 100 <= 1.0, `${tenPercentTooTall.toFixed(2)}px = ${((tenPercentTooTall / H) * 100).toFixed(2)} points`);
+  check('and the same defect FAILS the 5px limit', tenPercentTooTall > TOLERANCE.vbox.limitPx,
+    `${tenPercentTooTall.toFixed(2)}px against ±${TOLERANCE.vbox.limitPx}px`);
+
+  // THE LIVE DENOMINATOR, walked rather than sampled: every box/vbox constant in the real list must
+  // resolve a reference. A selftest over hand-written inputs proves the function and says nothing
+  // about the thing it guards (M1-49's lesson, carried).
+  const needRef = CONSTANTS.filter((c) => TOLERANCE[c.kind]?.limitPx !== undefined);
+  const unresolved = needRef.filter((c) => refOf(c) === null);
+  check(`every box/vbox constant in the LIVE list resolves a reference (${needRef.length} walked)`,
+    needRef.length > 0 && unresolved.length === 0, unresolved.length === 0 ? 'all resolved' : unresolved.map((c) => c.id).join(', '));
+
+  // The aspect restatement must be exactly 1 at the comp frame, which is what keeps M1-86's
+  // comp-frame readings unchanged. Asserted rather than assumed, because it is the whole safety
+  // argument for that row.
+  const aspectAt = (w, hh) => (w / hh) / (W / H);
+  check('the aspect restatement is exactly 1 at the comp frame', aspectAt(W, H) === 1, `${aspectAt(W, H)}`);
+  check('and is the measured 1.1852 at 3840x2160', Math.abs(aspectAt(3840, 2160) - 1.18519) < 1e-4, `${aspectAt(3840, 2160).toFixed(5)}`);
+
+  console.log(`\nselftest ${pass}/${pass + fail} PASS`);
+  process.exit(fail === 0 ? 0 : 1);
+}
+
+if (flags.includes('--selftest')) selftest();
+
 const list = only === undefined ? addresses() : [only];
 
 // --frame WxH, defaulting to the comp's own. Refused rather than silently defaulted when it does
@@ -712,7 +1016,7 @@ for (const row of rows) {
     current = row.address;
     console.log(`\n${current}  (${width}x${height})`);
   }
-  console.log(`  ${row.id.padEnd(24)} ${row.comp.padEnd(22)} ${row.got.padEnd(16)} ${row.delta.padEnd(13)} ${row.verdict}${row.note ? `  (${row.note})` : ''}`);
+  console.log(`  ${row.id.padEnd(24)} ${row.comp.padEnd(22)} ${row.got.padEnd(16)} ${row.delta.padEnd(13)} ${(row.held ?? '').padEnd(34)} ${row.verdict}${row.note ? `  (${row.note})` : ''}`);
 }
 
 const compared = rows.filter((row) => row.comp.startsWith('comp ') && row.comp !== 'comp n/a').length;
@@ -745,6 +1049,18 @@ console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list
 // resolved pairs printed the clean shape verbatim. `compared` is counted from the loop, the skipped
 // pairs are named with the side that was missing, and a run that compared nothing FAILS: it goes
 // into `failures`, so it reaches the exit code rather than merely being visible in the tail.
+// THE TOLERANCE MODEL, STATED ONCE PER RUN (M1-99). The per-row thresholds above say what each
+// constant is held to; this says what the number MEANS, so a reader never has to infer the model
+// from a column. The defect this replaced was not a wrong limit but an unreadable one.
+{
+  const box = TOLERANCE.box.limitPx;
+  const byW = (box / DEFAULT_FRAME[0]) * 100; const byH = (box / DEFAULT_FRAME[1]) * 100;
+  console.log(`\ngeometry tolerance: ±${box} comp-frame px, converted through each constant's own reference length — ` +
+    `±${byW.toFixed(2)}% of frame width, ±${byH.toFixed(2)}% of frame height, and a share of its own container where that is what the constant measures. ` +
+    `ABSOLUTE and not relative to the constant: the error sources (comp granularity ±0.1 point, render rounding ~1px) do not scale with a constant's size, ` +
+    `and a relative limit would allow rule.none.x (72.00%) 3.60 points where it now reads 0.00.`);
+}
+
 const ladderTail = `${LADDER.compared} pair(s) compared of ${ROLE_PAIRS.length} named x ${LADDER.addresses} address${LADDER.addresses === 1 ? '' : 'es'} measured`;
 if (LADDER.compared === 0) failures.push(`ladder-did-not-run (0 of ${ROLE_PAIRS.length * LADDER.addresses} pair-addresses resolved)`);
 console.log(LADDER.findings === 0

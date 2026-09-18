@@ -6,7 +6,7 @@
 // took it from 11 were e6e8da60 (declaredHeads, V4-127) and 40369f4d (compactionInstructions,
 // V4-136) — each correct on its own and neither aware of the other. detekt cannot see this growth
 // at all (gateway/detekt.yml:38-43 ignores defaulted parameters, which all three of these are),
-// which is exactly why checks/constructor-width.py exists.
+// which is exactly why checks/constructor-width.ts exists.
 //
 // THESE THREE AND NOT SOME OTHER THREE. The remedy the wall names is "take the bundle apart", and
 // the honest bundle is the one whose members describe a single thing rather than the one that

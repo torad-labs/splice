@@ -118,40 +118,13 @@ BASELINE_REL = "checks/config/const-single-source-baseline.json"
 # checklist. It is the only hand-authored list in this file, so it is cross-checked: an entry that
 # no longer names a real COPY/COLLISION fails as STALE, and a reason left blank fails by name.
 # Adding a name here is a claim that the two declarations must agree — write why, or do not add it.
-NAMED_SCARS: dict[str, str] = {
-    "TAG_CHARS": (
-        "one session-tag width in head logging — LocalResponses and TurnPreparation print the "
-        "same tag, and TurnDrive's SESSION_TAG_CHARS = 8 is a third spelling of it"
-    ),
-    "DEFAULT_CACHE_MS": (
-        "one auth-cache TTL policy, replicated once per OAuth provider (grok/kimi/muse) — the "
-        "next provider copies it again"
-    ),
-    "DEFAULT_MAX_CONTINUATIONS": (
-        "one re-anchor retry cap, forked across the two dialects that re-anchor (passthrough and "
-        "responses); they re-anchor against the same client budget"
-    ),
-    "ERR_BODY_CAP": (
-        "one error-body truncation width for the login flow, in the two files that render it — "
-        "two widths would make the same upstream error read differently depending on the path"
-    ),
-    "BACKOFF_BASE_MS": (
-        "one name over two retry budgets, 200ms in the MCP hosted-server and 5s in the upstream "
-        "transport — whoever greps the name finds the wrong one and tunes the wrong retry"
-    ),
-    "EPOCH_MILLIS_FLOOR": (
-        "the seconds-vs-millis discriminator for quota headers, in FOUR files with THREE different "
-        "thresholds — disagreement here silently mis-scales a reset time by 1000x"
-    ),
-    "ERR_SNIPPET": (
-        "one log-snippet width across the ws / turn-telemetry / upstream surfaces that are read "
-        "together when a turn fails; 160 in two of them and 200 in the third"
-    ),
-    "DEPTH_CAP": (
-        "one JSON recursion bound, 10 in the passthrough sanitizer and cache-control walk and 200 "
-        "in the responses loop guard — the same untrusted nesting arrives at all three"
-    ),
-}
+# V4-122 EMPTIED THIS LIST, and that is the goal rather than an omission: every one of the six
+# names it held — DEFAULT_MAX_CONTINUATIONS, ERR_BODY_CAP, BACKOFF_BASE_MS, EPOCH_MILLIS_FLOOR,
+# ERR_SNIPPET, DEPTH_CAP — had its duplication RESOLVED rather than baselined, so each entry became
+# STALE by this file's own rule and was deleted. The list is the fix row's checklist, and a
+# checklist that keeps ticked items is unearned room. It stays here, empty, because the mechanism is
+# what enforces the class: adding a name is a claim that two declarations must agree.
+NAMED_SCARS: dict[str, str] = {}
 
 DECL = re.compile(
     r"^[ \t]*(?:(?:public|internal|private|protected)\s+)?const\s+val\s+"
@@ -838,8 +811,8 @@ DUP_SPELLING_B = 'package splice.b\n\nprivate const val MS_PER_S = 1_000\n'
 COLLIDE_A = 'package splice.a\n\nprivate const val SEAM_BOUND = 10\n'
 COLLIDE_B = 'package splice.b\n\nprivate const val SEAM_BOUND = 200\n'
 # a NAMED_SCARS name, so the strict plane must fire even when the baseline records it
-SCAR_A = 'package splice.a\n\nprivate const val TAG_CHARS = 8\n'
-SCAR_B = 'package splice.b\n\nprivate const val TAG_CHARS = 8\n'
+SCAR_A = 'package splice.a\n\nprivate const val ERR_BODY_CAP = 8\n'
+SCAR_B = 'package splice.b\n\nprivate const val ERR_BODY_CAP = 8\n'
 
 EQUAL_COMMENT = """package splice.a
 
@@ -901,17 +874,24 @@ def base(groups: dict[str, list[str]], denominator: int = 0) -> dict:
 
 
 def shipped_list_problems() -> list[str]:
-    """The SHIPPED NAMED_SCARS list, checked without a tree: non-empty, every entry reasoned.
+    """The SHIPPED NAMED_SCARS list, checked without a tree: every entry reasoned and well-named.
 
     The fixture plane below neutralises NAMED_SCARS so a temp tree that does not happen to contain
     the real tree's duplicates is not reported STALE eight times over — the STALE arm is a claim
     about the REAL list against the REAL tree, and checks/const-single-source-selftest.sh is where
     it is proven (its control runs the shipped list against the shipped source). This function is
-    what stops that neutralising from also hiding an empty or unreasoned shipped list.
+    what stops that neutralising from also hiding an UNREASONED shipped entry.
+
+    AN EMPTY LIST IS A VALID STATE, and the guard that used to reject it was wrong in a way V4-122
+    demonstrated rather than argued: it said an empty list makes the strict plane toothless, but the
+    strict plane's teeth are the SOURCE-derived classes — EQUAL-BY-COMMENT, KNOB-SHADOW — which fire
+    whether or not this list has entries. On the run that emptied it, EQUAL-BY-COMMENT still reddened
+    the tree with the list empty, which is the proof. Worse, the guard made the goal unreachable: a
+    row that FIXES every scar must delete its entries (a kept one reds as STALE), so 'all scars
+    fixed' and 'list non-empty' could not both hold. The two arms that remain still catch the failure
+    the guard was reaching for: a stale entry reds, and a blank reason reds.
     """
     problems: list[str] = []
-    if not NAMED_SCARS:
-        problems.append("the shipped NAMED_SCARS list is EMPTY — the strict plane would be toothless")
     for name, reason in sorted(NAMED_SCARS.items()):
         if not reason.strip():
             problems.append(f"shipped NAMED_SCARS[{name}] carries no reason")
@@ -986,20 +966,24 @@ def selftest() -> int:  # noqa: C901 — one linear fixture list; splitting it h
            base({"COLLISION SEAM_BOUND": [A_KT, B_KT]}))
 
     # ── NAMED-SCAR outranks the baseline ──────────────────────────────────────────────────────
-    # TAG_CHARS is taken from the SHIPPED list, reason and all, so these two fixtures exercise a
-    # real entry rather than a fixture-only one.
+    # The entry is FIXTURE-ONLY now, and it has to be: V4-122 fixed every name the shipped list
+    # held, so there is no shipped entry left to borrow and the old code — shipped["ERR_BODY_CAP"] —
+    # raises KeyError. That is the instrument telling the truth about its own list rather than a
+    # fixture bug: what these cases prove is the RULE (a listed name outranks the baseline), and the
+    # shipped list's own well-formedness is checked separately, by the ratchet reding a STALE entry
+    # or a blank reason.
     scar_files = {"app/A.kt": SCAR_A, "core/B.kt": SCAR_B}
-    NAMED_SCARS = {"TAG_CHARS": shipped["TAG_CHARS"]}
+    NAMED_SCARS = {"ERR_BODY_CAP": "one error-body truncation width; fixture reason"}
     expect(ratchet, "9. a NAMED-SCAR copy is RED with an empty baseline", False,
-           scar_files, empty, "NAMED-SCAR (COPY)", "TAG_CHARS", "regardless of the ratchet baseline")
+           scar_files, empty, "NAMED-SCAR (COPY)", "ERR_BODY_CAP", "regardless of the ratchet baseline")
     expect(ratchet, "10. a NAMED-SCAR copy is STILL RED when the baseline records it", False,
-           scar_files, base({"COPY TAG_CHARS": [A_KT, B_KT]}),
-           "NAMED-SCAR (COPY)", "TAG_CHARS", "cannot be both baselined and strict")
+           scar_files, base({"COPY ERR_BODY_CAP": [A_KT, B_KT]}),
+           "NAMED-SCAR (COPY)", "ERR_BODY_CAP", "cannot be both baselined and strict")
     # ...and the same tree with the name NOT on the list falls through to the ratchet, baselined
     # and green — the other half of "the list is what makes it strict".
     NAMED_SCARS = {}
     expect(ratchet, "10b. the same copy, NOT on the list, is held by the baseline", True,
-           scar_files, base({"COPY TAG_CHARS": [A_KT, B_KT]}))
+           scar_files, base({"COPY ERR_BODY_CAP": [A_KT, B_KT]}))
     NAMED_SCARS = {}
 
     # ── the instrument's own guards ────────────────────────────────────────────────────────────

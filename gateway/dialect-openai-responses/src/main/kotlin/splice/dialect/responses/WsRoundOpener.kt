@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import java.io.IOException
 

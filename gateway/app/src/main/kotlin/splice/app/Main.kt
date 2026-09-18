@@ -11,6 +11,7 @@ import splice.core.topology.Topology
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.Security
@@ -70,10 +71,20 @@ internal class DaemonProcess {
     private fun statePathsFor(topology: Topology, fallback: StatePaths): StatePaths {
         val declared = topology.daemon.stateDir?.takeIf { it.isNotBlank() } ?: return fallback
         // An unusable declared state_dir falls back to the default BY DESIGN (the function's KDoc):
-        // null here is the complete disposition, not a swallowed failure, and the operator still
-        // sees the dropped override through the doctor row V4-110 adds.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- unusable state_dir falls back to the default by design (KDoc) and stays visible via the V4-110 doctor row
-        val path = runCatching { Paths.get(declared) }.getOrNull() ?: return fallback
+        // a path the JVM cannot parse is dropped, not a swallowed failure, and the operator still
+        // sees the dropped override through the doctor row V4-110 adds. The named catch keeps the
+        // same disposition without runCatching swallowing a coroutine cancellation on this boot path.
+        //
+        // V4-122 item 7, the disposition this site owed: the parameter is `_` because the exception
+        // is DELIBERATELY not used — that is detekt's own allowance (allowedExceptionNameRegex) and
+        // this tree's idiom at 67 other sites, not a per-site suppression. Binding it to a name and
+        // then ignoring it would claim a use that does not exist, and @Suppress is refused by this
+        // repo's wall in favour of expressing the intent in the code.
+        val path = try {
+            Paths.get(declared)
+        } catch (_: InvalidPathException) {
+            return fallback
+        }
         return StatePaths(baseOverride = path)
     }
 

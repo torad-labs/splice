@@ -1,6 +1,7 @@
 // NEW: Codex x-codex-* quota headers, sorted into the two client slots by window length.
 package splice.provider.codex
 
+import splice.core.usage.EPOCH_MILLIS_FLOOR
 import splice.core.usage.FIVE_HOURS_SECONDS
 import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.QuotaSlots
@@ -45,4 +46,3 @@ public class CodexQuotaHeaderFamily : QuotaHeaderFamily {
 
 private const val MILLIS = 1000L
 private const val SECONDS_PER_MINUTE = 60L
-private const val EPOCH_MILLIS_FLOOR = 100_000_000_000.0

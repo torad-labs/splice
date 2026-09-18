@@ -24,6 +24,8 @@ private const val MIN_FIRST_BYTE_MS = 10_000L
 private const val MIN_STREAM_IDLE_MS = 30_000L
 private const val TEST_IDLE_FLOOR_MS = 250L
 private const val MIN_AUTH_CACHE_MS = 5_000L
+
+// why: a poll faster than the five-minute cadence would hammer the provider's usage endpoint
 private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
 private const val MAX_PORT = 65_535L
 private const val MAX_INT = Int.MAX_VALUE.toLong()

@@ -6,6 +6,7 @@ package splice.dialect.responses
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean

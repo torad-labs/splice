@@ -27,7 +27,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ErrorType
 import splice.core.util.Cancellables
-import splice.gateway.head.ERR_SNIPPET
+import splice.core.util.ERR_SNIPPET
 
 /** A failure as the client should read it: a stable, greppable [code] and a human [body]. */
 internal data class FailureText(val code: String, val body: String)

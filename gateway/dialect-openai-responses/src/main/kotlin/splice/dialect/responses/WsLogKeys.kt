@@ -2,8 +2,7 @@
 // key, in every log line this transport writes.
 package splice.dialect.responses
 
-/** Enough of an upstream error message to diagnose from daemon.log without unbounded growth. */
-internal const val ERR_SNIPPET = 160
+import splice.core.util.ERR_SNIPPET
 
 /** The operator-facing key form. The connection key deliberately concatenates the CHAIN key
  *  (the client's session id + conversation identity — raw client-derived text) with the header

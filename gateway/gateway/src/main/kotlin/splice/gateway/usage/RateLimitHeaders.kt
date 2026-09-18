@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.RateLimitState
 import splice.core.util.WallClock
 
@@ -19,9 +20,12 @@ import splice.core.util.WallClock
  * Absent headers are the ordinary case — most upstreams send no rate-limit family at all, and the
  * whole persist is a no-op without a limit.
  */
-public fun interface HeaderLookup {
-    public operator fun invoke(name: String): String?
-}
+public typealias HeaderLookup = QuotaHeaderRead
+// V4-122 RECONCILED THIS onto [QuotaHeaderRead] rather than leaving it a second declaration of the
+// same role. QuotaHeaderRead's own KDoc already ADMITTED the duplication — that the gateway's
+// HeaderLookup lived a module away with the identical (String) -> String? shape — and an admitted
+// duplication is still a duplication: two declarations of one role drift the moment one is changed.
+// The typealias keeps every call site and SAM conversion compiling while leaving one declaration.
 
 /** Ratelimit header codec: HeaderLookup in, [PendingRateLimit] or a parsed [RateLimitState] out. */
 public class RateLimitHeaders(private val clock: WallClock) {

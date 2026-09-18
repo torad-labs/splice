@@ -213,6 +213,18 @@ public class SharedSummaryParts(
     }
 }
 
+// NEW: V4-122 — the ONE re-anchor continuation budget, in core because both re-anchoring dialects
+// read it and neither may own the other's constant.
+//
+// Two dialect files declared this at 5 — PassthroughReanchorController.kt and
+// ResponsesReanchorController.kt — and the checker held the name as a scar because they re-anchor
+// against the SAME client budget: the number is one policy, and a fork of it makes the two dialects
+// behave differently depending on which head the operator happens to be running. It used to be
+// widened from 2 to 5 at codex-rs parity (11ce5512) in one dialect at a time, which is exactly the
+// drift a single declaration prevents. Beside [WatchdogBudget] because it is the same kind of fact:
+// a bound on how long splice keeps a turn alive on its own.
+public const val DEFAULT_MAX_CONTINUATIONS: Int = 5
+
 /** The watchdog knobs (v35 doctrine): before the client has seen output the idle limit is
  *  firstByteTimeout (prefill is legitimately silent for minutes); after, [stallReanchor] when the
  *  round can be continued and [streamIdle] otherwise; totalCap bounds the whole turn. */

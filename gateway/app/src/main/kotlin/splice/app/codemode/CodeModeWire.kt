@@ -12,6 +12,8 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.wire.FIELD_ERROR
+import splice.core.wire.FIELD_TYPE
 import splice.spi.CodeModeCall
 import splice.spi.CodeModeLimits
 import splice.spi.CodeModeProtocol
@@ -23,7 +25,6 @@ import java.io.IOException
 private const val DESCRIPTION_RESULT_OUTPUT: String = "result output"
 private const val FIELD_ARGUMENTS: String = "arguments"
 private const val FIELD_CALLS: String = "calls"
-private const val FIELD_ERROR: String = "error"
 private const val FIELD_ID: String = "id"
 private const val FIELD_IS_ERROR: String = "isError"
 private const val FIELD_NAME: String = "name"
@@ -31,7 +32,6 @@ private const val FIELD_OUTPUT: String = "output"
 private const val FIELD_RESULTS: String = "results"
 private const val FIELD_SOURCE: String = "source"
 private const val FIELD_TOOLS: String = "tools"
-private const val FIELD_TYPE: String = "type"
 private const val TYPE_CALLS: String = "calls"
 private const val TYPE_COMPLETED: String = "completed"
 private const val TYPE_RESULTS: String = "results"

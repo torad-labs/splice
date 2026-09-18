@@ -19,15 +19,17 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.control.ManagedHead
+import splice.core.perf.ECONOMICS_RETENTION_HOURS
 import splice.core.util.WallClock
 
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
 
-// Mirrors EconomicsStore's RETENTION_MS (8 days) — the UI needs the window it is reading over to
-// size the week bar honestly when the buckets do not yet fill it.
-private const val ECONOMICS_RETENTION_HOURS = 192
+// V4-122: this was 192 with a comment claiming it mirrored EconomicsStore's RETENTION_MS — an
+// equality asserted in PROSE, which nothing enforced and which :control could not import even if it
+// wanted to, having no dependency edge to :gateway. Both spellings of the window now come from
+// splice.core.perf, which is the lowest module both reach.
 
 internal class EconomicsPayloads(
     private val heads: Map<String, ManagedHead>,

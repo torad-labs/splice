@@ -13,7 +13,7 @@ HTTP only in `entities/*/api` through `shared/api`.
 ## 1. Tokens (`src/shared/tokens.css`, row M1-01)
 
 Both themes are complete token sets on the root element: `:root, :root[data-theme="dark"]`
-is the dark graphite room and the default; `:root[data-theme="light"]` is the paper bay.
+is the dark room and the default; `:root[data-theme="light"]` is the paper bay.
 Every color below exists in both. Spacing and type sizes are only ever used through
 `var(--space-N)` and `var(--text-N)` (ast-grep wall `webui-css-tokens-only`).
 
@@ -29,20 +29,29 @@ Colors (name, role):
 
 | token | role |
 |---|---|
-| `--room` | page ground (dark: graphite `#1B1D1C` class; light: paper) |
+| `--room` | page ground (dark: the comp's room, measured `#0C1010`, shipped `#0B0E0E`; light: the comp's matte panel) |
 | `--room-deep` | rail ground, one step darker than the room |
 | `--hairline`, `--hairline-strong` | the COLOR of hairline rails and rules (`--hair` stays the existing 1px width token, used by about twenty old rules; a rail is `border-top: var(--hair) solid var(--hairline)`) |
 | `--ink`, `--ink-mute`, `--ink-strong` | text on the room |
-| `--strip` | strip paper (dark theme: pale `#ECEAE2` class; light: white paper) |
+| `--strip` | strip paper (dark: the comp's strips, measured `#DDD8C6`..`#DFD9C8`; light: the comp's `#F6F6F3`) |
 | `--strip-ink`, `--strip-ink-mute` | text on a strip |
 | `--strip-field`, `--strip-field-line` | boxed field fill and its box line |
 | `--edge-green`, `--edge-amber`, `--edge-red`, `--edge-grey` | holder edge states |
 | `--scope`, `--scope-ink`, `--scope-grid` | chart inset ground, ink, grid |
 | `--focus` | the visible focus ring, 2px, offset 1px |
 | `--font-label` | Archivo (variable), labels and copy |
-| `--font-figure` | JetBrains Mono (variable), figures, `font-variant-numeric: tabular-nums` |
+| `--font-figure` | the figure face, `font-variant-numeric: tabular-nums` (JetBrains Mono was authored, not measured, and row M1-15 is re-deriving it from the comp's own advance) |
 | `--dur-1`, `--dur-2`, `--dur-3` | 120, 240, 400 ms; every transition under `--dur-3` |
 | `--ease-out` | the one easing |
+
+EVERY NUMBER IN THIS TABLE IS A MEASUREMENT OFF `webui/.impeccable/mocks/team-board-a.png`, NEVER A
+NAME. This paragraph exists because three of them once were names: the room was written up as
+"graphite `#1B1D1C` class" and the strips as "pale `#ECEAE2` class", and neither was ever sampled
+from the comp, which measures `#0C1010` and `#DDD8C6`..`#DFD9C8`. The m1 design review's finding
+B12 then read the build against this prose, called the room "near-black, not graphite", and was
+withdrawn on remeasurement: the build sits 0.98 of a luminance point from the comp, and the
+CONTRACT was the thing that disagreed. When a token and this table diverge, sample the comp and
+correct whichever one the comp contradicts.
 
 Old tokens (`--paper-0`, `--ink-900`, `--surface`, `--font-mono`, ...) stay defined until the
 finish row deletes the last consumer. New code never uses them.

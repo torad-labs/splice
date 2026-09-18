@@ -1,8 +1,8 @@
 {
   "_note": "AUTHORED BY checks/const-single-source.py --record, MEASURED never estimated. One entry per duplicated const NAME, keyed '<CLASS> <NAME>' with the sorted files that declare it. COPY = same normalised value in 2+ files; COLLISION = one name, different values. These are the LOW-certainty classes: the 2026-09-17 review established that most of them are file-local names for different wires whose values coincide, and that making one import the other would ADD coupling. So they are held, not failed: --ratchet fails on a group that is NOT here, on a group that has SPREAD to a new file, and on a STALE entry. The high-certainty classes (EQUAL-BY-COMMENT, KNOB-SHADOW, NAMED-SCAR) are STRICT and no entry here can reach them \u2014 a NAMED_SCARS name recorded here is itself an error.",
   "recorded": "2026-09-17",
-  "denominator": 1184,
-  "total": 136,
+  "denominator": 1156,
+  "total": 124,
   "groups": {
     "COLLISION CLIENT_ID": [
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
@@ -44,7 +44,7 @@
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
     ],
     "COLLISION FIELD_TYPE": [
-      "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
+      "gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesCodeModeProjection.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsIdentity.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsRunner.kt",
@@ -53,7 +53,6 @@
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ToolSurfaceRecovery.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ToolWireObjects.kt",
       "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt",
-      "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt",
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
@@ -64,7 +63,7 @@
     ],
     "COLLISION LIVE_MAX_TOKENS": [
       "gateway/app/src/main/kotlin/splice/app/cli/AddChecks.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalRuntimeProbe.kt"
+      "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalRuntimeProbe.kt"
     ],
     "COLLISION LOCK_WAIT_MS": [
       "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt",
@@ -108,7 +107,7 @@
     "COLLISION PROBE_TIMEOUT_S": [
       "gateway/app/src/main/kotlin/splice/app/cli/AddHttp.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeInflight.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/LocalHttp.kt"
+      "gateway/app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
     ],
     "COLLISION REDIRECT_PORT": [
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
@@ -177,10 +176,6 @@
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesSystemPrompt.kt"
     ],
-    "COPY CONTENT_TOO_LARGE_STATUS": [
-      "gateway/control/src/main/kotlin/splice/control/api/StatuslineRoute.kt",
-      "gateway/gateway/src/main/kotlin/splice/gateway/head/AdmissionResponses.kt"
-    ],
     "COPY CSI_CUU": [
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
@@ -209,10 +204,6 @@
       "gateway/app/src/main/kotlin/splice/app/cli/CliStyle.kt",
       "gateway/control/src/main/kotlin/splice/control/StatuslineBars.kt",
       "gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
-    ],
-    "COPY DNS_BACKOFF_BASE_MS": [
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamTransport.kt"
     ],
     "COPY EXECUTION_CLIENT": [
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsIdentity.kt",
@@ -243,10 +234,6 @@
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ToolSearchIndex.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ToolWireObjects.kt",
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
-    ],
-    "COPY FIELD_ERROR": [
-      "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
-      "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt"
     ],
     "COPY FIELD_EXECUTION": [
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsIdentity.kt",
@@ -342,22 +329,6 @@
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
     ],
-    "COPY HTTP_BAD_REQUEST": [
-      "gateway/app/src/main/kotlin/splice/app/OAuthCallbackPage.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalLiveReading.kt",
-      "gateway/control/src/main/kotlin/splice/control/mcp/McpHost.kt"
-    ],
-    "COPY HTTP_FORBIDDEN": [
-      "gateway/app/src/main/kotlin/splice/app/RefreshRetry.kt",
-      "gateway/app/src/main/kotlin/splice/app/cli/DaemonStop.kt",
-      "gateway/app/src/main/kotlin/splice/app/cli/UpgradeFetch.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalLiveReading.kt"
-    ],
-    "COPY HTTP_NOT_FOUND": [
-      "gateway/app/src/main/kotlin/splice/app/cli/UpgradeFetch.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalLiveReading.kt",
-      "gateway/control/src/main/kotlin/splice/control/mcp/McpHost.kt"
-    ],
     "COPY HTTP_OK": [
       "gateway/app/src/main/kotlin/splice/app/OAuthCallbackPage.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/AccountPools.kt",
@@ -365,39 +336,14 @@
       "gateway/app/src/main/kotlin/splice/app/cli/DaemonStop.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeFetch.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeInflight.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalLiveReading.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalRuntimeProbe.kt",
       "gateway/app/src/main/kotlin/splice/app/quota/QuotaProbes.kt",
-      "gateway/control/src/main/kotlin/splice/control/mcp/McpHost.kt"
-    ],
-    "COPY HTTP_SERVER_ERROR": [
-      "gateway/app/src/main/kotlin/splice/app/cli/UpgradeFetch.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalLiveReading.kt"
-    ],
-    "COPY HTTP_TOO_MANY": [
-      "gateway/app/src/main/kotlin/splice/app/RefreshRetry.kt",
-      "gateway/app/src/main/kotlin/splice/app/cli/UpgradeFetch.kt"
-    ],
-    "COPY HTTP_UNAUTHORIZED": [
-      "gateway/app/src/main/kotlin/splice/app/RefreshRetry.kt",
-      "gateway/app/src/main/kotlin/splice/app/cli/DaemonStop.kt",
-      "gateway/app/src/main/kotlin/splice/app/provider/local/LocalLiveReading.kt"
-    ],
-    "COPY HTTP_UNAVAILABLE": [
-      "gateway/app/src/main/kotlin/splice/app/RefreshRetry.kt",
-      "gateway/control/src/main/kotlin/splice/control/mcp/McpHost.kt"
+      "gateway/control/src/main/kotlin/splice/control/mcp/McpHost.kt",
+      "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalLiveReading.kt",
+      "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalRuntimeProbe.kt"
     ],
     "COPY INACTIVE_PAD": [
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/SelectPrompt.kt"
-    ],
-    "COPY JITTER_HI": [
-      "gateway/provider-spi/src/main/kotlin/splice/spi/CredentialLock.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamTransport.kt"
-    ],
-    "COPY JITTER_LO": [
-      "gateway/provider-spi/src/main/kotlin/splice/spi/CredentialLock.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamTransport.kt"
     ],
     "COPY KEY": [
       "gateway/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
@@ -493,8 +439,8 @@
       "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnProgressLine.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"
+      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt",
+      "gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt"
     ],
     "COPY NAME": [
       "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",

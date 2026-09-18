@@ -80,7 +80,10 @@ public class QuotaHeaders(private val clock: WallClock) {
         return QuotaWindow(utilization * PERCENT, reset, seconds)
     }
 
-    /** Providers disagree on seconds vs millis; anything past year 2286 in seconds is millis. */
+    /** Providers disagree on seconds vs millis; anything past [EPOCH_MILLIS_FLOOR] — the year 5138
+     *  read as seconds, March 1973 read as millis — is millis. The comparison converts for free:
+     *  Kotlin compares a Double against a Long directly, so the shared constant stays one Long and
+     *  no site restates it in its own numeric type. */
     private fun epochSeconds(value: Double): Long =
         if (value > EPOCH_MILLIS_FLOOR) (value / MILLIS).toLong() else value.toLong()
 }
@@ -88,4 +91,15 @@ public class QuotaHeaders(private val clock: WallClock) {
 private const val UNIFIED = "anthropic-ratelimit-unified"
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L
-private const val EPOCH_MILLIS_FLOOR = 10_000_000_000.0
+
+/** V4-122: the seconds-versus-milliseconds discriminator for a quota reset timestamp, declared
+ *  ONCE. Four files carried this name across three different values, which the checker held as a
+ *  scar because disagreement here silently mis-scales a reset time by 1000x — a bar that says six
+ *  days when the plan resets in nine minutes.
+ *
+ *  THE VALUE IS NOT A JUDGMENT CALL, which is why it could be unified from the code rather than
+ *  from a preference: read in SECONDS this threshold is the year 5138, in MILLISECONDS it is March
+ *  1973, so a real timestamp in either scale sits decades from the edge. This file's old
+ *  10_000_000_000.0 was the outlier — the same semantics with the comparison inverted, and the only
+ *  value close enough to a live timestamp for the direction of the test to matter. */
+public const val EPOCH_MILLIS_FLOOR: Long = 100_000_000_000

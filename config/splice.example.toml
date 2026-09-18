@@ -715,6 +715,13 @@ command = "claude-splice"
 #   CLAUDEX_REASONING_EFFORT / CODEX_REASONING_EFFORT effort
 #   CLAUDEX_REASONING_SUMMARY / CODEX_REASONING_SUMMARY summary
 #   CLAUDEX_REPLAY_REASONING / CODEX_REPLAY_REASONING replayReasoning
+#   SPLICE_QUOTA_POLL_INTERVAL_MS quotaPollIntervalMs
+#   SPLICE_RETRY_BACKOFF_BASE_MS retryBackoffBaseMs   SPLICE_RETRY_BACKOFF_CAP_MS retryBackoffCapMs
+#   SPLICE_RETRY_BACKOFF_JITTER_PCT retryBackoffJitterPct
+#   SPLICE_MCP_IDLE_TIMEOUT_MS mcpIdleTimeoutMs       SPLICE_MCP_MAX_SERVERS mcpMaxServers
+#   SPLICE_MCP_REQUEST_TIMEOUT_MS mcpRequestTimeoutMs SPLICE_MCP_INITIALIZE_TIMEOUT_MS mcpInitializeTimeoutMs
+#   SPLICE_MAX_REQUEST_BYTES maxRequestBytes          SPLICE_REQUEST_READ_TIMEOUT_MS requestReadTimeoutMs
+#   SPLICE_MATERIALIZATION_PERMITS materializationPermits
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup

@@ -17,15 +17,14 @@
 #      denominator and not decoration
 #   4  the checker's own --selftest                                  -> the fixture arms
 #
-# THE CONTROL IS INVERTED HERE, and deliberately. Every other selftest in this repo asserts the
-# unmutated tree is GREEN first. This wall's unmutated tree is RED today: `splice add openrouter`
-# and the first-run starter both declare eight OpenRouter ids config/splice.example.toml never
-# mentions (recorded in the V4-98 ledger note; V4-99's fix row owns the repair). So the control
-# asserts the KNOWN red — exactly 8 distinct drifted ids across exactly 2 emitters, openrouter and
-# nothing else — which is a stronger control than "green": it pins both that the wall fires and
-# that it fires on the one provider that has actually drifted. When the fix row lands, this control
-# flips to expecting green; until then a control that went GREEN would mean the wall stopped
-# reading, and a control that named a NEW provider would mean something else regressed.
+# THE CONTROL ASSERTS THE KNOWN GREEN, now that the drift is fixed. Until V4-109, the unmutated
+# tree was RED: `splice add openrouter` and the first-run starter declared eight OpenRouter ids
+# config/splice.example.toml never mentioned (recorded in the V4-98 ledger note). The control then
+# asserted that KNOWN red by shape — exactly 8 distinct drifted ids across exactly 2 emitters,
+# openrouter and nothing else — a stronger control than "green" because it pinned both that the
+# wall fires and that it fires on the one provider that had actually drifted. V4-109 fixed the
+# drift (2026-09-18), so the control now asserts the shipped tree is GREEN: a red here means the
+# wall fires on the tree as shipped — a regression, or a NEW provider that drifted.
 #
 # EVERYTHING RUNS OUT OF TREE: a mktemp -d holding copies of the three real files under their real
 # relative paths, plus a copy of the checker. Nothing is written into the working tree.
@@ -65,30 +64,13 @@ must_fail() { # must_fail <label> <substring the failure must name>
   fi
 }
 
-# ── control: the KNOWN red, pinned by shape ───────────────────────────────────────────────────
+# ── control: the KNOWN green, pinned since V4-109 ─────────────────────────────────────────────
 reset_tree
 wall
-if [ "$rc" -eq 0 ]; then
-  err "CONTROL: the real tree is expected RED today (openrouter drift). A clean pass means the wall stopped reading the tree — or the fix row landed, in which case flip this control to expect green."
+if [ "$rc" -ne 0 ]; then
+  err "CONTROL: the shipped tree is expected GREEN (V4-109 fixed the openrouter drift, 2026-09-18). A red here means the wall fires on the tree as shipped — a regression, or a NEW provider drifted: $(head -3 "$tmp/out" | tr '\n' ' ')"
 else
-  drifted="$(grep -oE '\[openrouter\]: [^ ]+' "$tmp/out" | awk '{print $2}' | sort -u | wc -l | tr -d ' ')"
-  emitters="$(grep -oE '^  [^ ]+\.(kt|toml)(:DEFAULT_TOML)? \[' "$tmp/out" | sort -u | wc -l | tr -d ' ')"
-  others="$(grep -cE '^  [^ ]+ \[(codex|grok|kimi|muse|deepseek|claude|api-key|xai|anthropic|fireworks)\]' "$tmp/out")"
-  if [ "$drifted" != "8" ]; then
-    err "CONTROL: expected 8 distinct drifted openrouter ids, counted $drifted: $(grep -c . "$tmp/out") lines"
-  else
-    note "✓ CONTROL: 8 distinct drifted openrouter ids, as recorded in the V4-98 ledger note"
-  fi
-  if [ "$emitters" != "2" ]; then
-    err "CONTROL: expected the drift in exactly 2 emitters (catalog + DEFAULT_TOML), counted $emitters"
-  else
-    note "✓ CONTROL: the drift is in exactly 2 emitters"
-  fi
-  if [ "$others" != "0" ]; then
-    err "CONTROL: expected openrouter to be the ONLY drifted provider, but $others line(s) name another"
-  else
-    note "✓ CONTROL: openrouter is the only drifted provider"
-  fi
+  note "✓ CONTROL: the shipped tree is green — the openrouter drift V4-109 fixed has not come back"
 fi
 
 # ── 1. a context window edited in the real AddProfileCatalog.kt ────────────────────────────────
@@ -176,6 +158,6 @@ if [ "$fail" -ne 0 ]; then
   echo "  ✗ model-catalogs-single-source-selftest: FAILED"
   exit 1
 fi
-echo "  ✓ model-catalogs-single-source-selftest: the wall fires on the recorded openrouter drift and"
-echo "    on a window edited in either emitter, on a row deleted from the source, and its own"
+echo "  ✓ model-catalogs-single-source-selftest: the shipped tree is green, and the wall fires on a"
+echo "    window edited in either emitter, on a row deleted from the source, and its own"
 echo "    fixture arms are green"

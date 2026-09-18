@@ -14,6 +14,7 @@ package splice.dialect.responses
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.spi.ReanchorController
@@ -99,7 +100,10 @@ public class ResponsesReanchorController(
 // thing — it says the first retry usually works, not that abandoning after the second is right,
 // and it counts only rounds that were re-anchor ELIGIBLE at all. Turn recovery and its cooldown
 // backoff are unchanged; this widens only how many times they may run.
-private const val DEFAULT_MAX_CONTINUATIONS: Int = 5
+//
+// V4-122: the budget itself is splice.core.turn.DEFAULT_MAX_CONTINUATIONS now. This dialect's
+// twin declared the same 5, and both re-anchor against the same client budget, so one of them
+// owning the number meant a change in one head silently diverged from the other.
 
 private const val MARKER_TEXT: String =
     "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +

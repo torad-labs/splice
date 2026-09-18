@@ -4,6 +4,7 @@ package splice.gateway.head
 
 import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.gateway.pipeline.FailurePresenter
 import splice.spi.FailureSource

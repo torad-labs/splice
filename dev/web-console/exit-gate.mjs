@@ -106,11 +106,15 @@ const LEGS = [
     proof: /fixture/i,
   },
   {
-    name: 'ast-grep',
-    why: 'the structural walls',
-    probe: () => sh('ast-grep', ['--version'], ROOT),
-    probeProof: /\d+\./,
-    run: () => sh('ast-grep', ['scan', '-c', 'sgconfig.yml', 'webui/src'], ROOT),
+    name: 'scan',
+    why: 'the structural walls, through the wrapper that refuses a path they did not read',
+    // NOT `ast-grep scan` directly: it prints "ERROR: no such file" and exits 0, and
+    // detect.mjs prints "cannot access" and exits 0. scan.mjs is that sentence's fix, and
+    // its own file count is the proof the walls saw something.
+    probe: () => sh('node', ['dev/web-console/scan.mjs', '--selftest'], ROOT),
+    probeProof: /selftest \d+\/\d+ PASS/,
+    run: () => sh('node', ['dev/web-console/scan.mjs', 'webui/src'], ROOT),
+    proof: /scan: \d+ path\(s\), [1-9]\d* file\(s\) read/,
   },
   {
     name: 'comp-check',

@@ -567,6 +567,45 @@ async function run() {
         disposition = 'CONSOLE-INTERNAL';
         detail = 'not reachable from any request<T>, so it is not a claim about the wire';
       }
+      // THE CONDITIONAL FLAG IS PER-NAME AND NOT PER-SITE, AND THAT IS THIS CHECK'S LARGEST KNOWN
+      // IMPRECISION (M1-45). `hit` is looked up by field NAME across the whole control module, so
+      // `hit.conditional` means "SOME site anywhere emits a key of this name conditionally" — not
+      // "the site that builds THIS payload can omit it". The console has to survive the worst site
+      // of the payload it actually receives; this asks it to survive the worst site in the daemon.
+      //
+      // MEASURED ON THE TREE THAT LANDED THIS ROW, so the next reader does not re-derive it. Nine
+      // entries stood in Level 3a when M1-41 was cut. ONE was real — `ModelRates` on
+      // ModelsRoute.kt:130, `entry.rates?.let { put("rates", ratesJson(it)) }`, the daemon genuinely
+      // omitting the key — and M1-41 fixed it. The other EIGHT are this artefact, every one:
+      //
+      //   PerfStats.max        its own site is PerfSummary.kt:177 `put("max", sorted.last())`,
+      //                        unconditional. The flag comes off HeadResolver.kt:97, the GATE
+      //                        snapshot — a different payload, which entities/heads already handles.
+      //   SessionRow.pid       SessionsRoutes.kt:26, unconditional. Flag from McpStatus.kt:45,
+      //                        `server?.pid?.let { out.put("pid", it) }` — the MCP payload.
+      //   SessionRow.started_at SessionsRoutes.kt:34, unconditional. Flag from McpStatus.kt:50.
+      //   SessionRow.version   SessionsRoutes.kt:30, unconditional. Flag from HeadResolver.kt:90.
+      //   SessionsPayload.note SessionsRoutes.kt:19 `put("note", HEADLESS_NOTE)`, unconditional.
+      //                        Flag from AuthRoutes.kt:61, the refresh failure note.
+      //   SessionRow.head      SessionsRoutes.kt:37 `put("head", s.head ?: UNKNOWN_HEAD)` — the
+      //   TurnRow.head         elvis GUARANTEES the key. Flag from ConfigRoutes.kt:34,
+      //   CaptureState.head    `headKey?.let { put("head", it) }`, the config payload. The two perf
+      //                        types are worse than per-name: there is no put("head") in the perf
+      //                        payloads at all, so even their MATCH is a name collision.
+      //
+      // THREE OF THE EIGHT ARE ALSO PER-LINE. `omits` is a regex for `if (` or `?.let {` ON THE
+      // LINE, so a line that emits the key on BOTH branches reads as conditional:
+      // HeadResolver.kt:97 is `if (h.gateLimit <= 0) put("max", "unlimited") else put("max",
+      // h.gateLimit)` — two of `max`'s three recorded sites are that one line, and it cannot omit
+      // the key under any input. HeadResolver.kt:90 does the same with a null VALUE, not an absent
+      // key, which is the exact distinction this file exists to teach.
+      //
+      // IT IS LEFT AS IT IS, DELIBERATELY. Fixing it means resolving each field to the payload
+      // builder that serves ITS route, which is the live half's job (V4-140) and not a static one —
+      // and the error is in the SAFE direction: it over-reports a field as possibly-omitted, never
+      // under-reports one. That is also why 3a and 3b do not gate: an over-reporting census that
+      // failed the build would fail it eight times for nothing, and the ruling beside the exit rule
+      // is what that would cost.
       const mayOmit = disposition !== 'CONSOLE-INTERNAL' &&
         (disposition !== 'MATCHES' || hit.conditional);
       rows.push({
@@ -628,6 +667,11 @@ function report({ rows, routeRows, wire, withoutTypes, typeFiles }) {
   const live = risky.filter((r) => r.viaRoute === null && r.disposition !== 'ABSENT' &&
     !offModuleTypes.has(r.owner.split('.')[0]));
   if (live.length > 0) {
+    // READ THE PER-NAME LIMITATION BESIDE `mayOmit` IN run() BEFORE ACTING ON THESE. Every one of
+    // the eight standing here when M1-45 landed is an artefact of the conditional flag being keyed
+    // by field NAME rather than by emission SITE; each is named there with the site that actually
+    // builds its payload. This section is a place to LOOK, not a list of defects, which is the
+    // other half of why it does not gate.
     console.error(`\nLEVEL 3a — SILENT UNDEFINED ON A ROUTE THE DAEMON SERVES TODAY (${live.length}):`);
     for (const r of live) console.error(`  ${r.at}  ${r.owner}.${r.name}: ${r.type}\n      ${r.detail}`);
   }
@@ -655,7 +699,7 @@ async function selftest() {
   const ts = await parser();
   const { writeFileSync, rmSync, mkdtempSync, mkdirSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
-  const { execFileSync } = await import('node:child_process');
+  const { spawnSync } = await import('node:child_process');
   const cases = [];
   const ok = (name, got, want) => cases.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
 
@@ -698,9 +742,15 @@ async function selftest() {
 
   // law 23: every way this check could read nothing, each of which must exit non-zero
   const self = process.argv[1];
-  const exit = (cwd) => {
-    try { execFileSync(process.execPath, [self], { cwd, encoding: 'utf8', stdio: 'pipe' }); return 0; } catch (e) { return e.status ?? 1; }
+  // BOTH STREAMS, because the exit-rule cases below assert what the check SAID and not only what it
+  // returned. A case that asserts exit 0 alone would pass just as well if Level 3b were deleted
+  // outright, which is the failure it exists to prevent — law 27, and the vacuous-wall shape this
+  // campaign has now found twice.
+  const runIn = (cwd) => {
+    const r = spawnSync(process.execPath, [self], { cwd, encoding: 'utf8' });
+    return { status: r.status ?? 1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
   };
+  const exit = (cwd) => runIn(cwd).status;
   const bare = mkdtempSync(join(tmpdir(), 'wire-check-'));
   const put = (path, body) => {
     mkdirSync(join(bare, path.split('/').slice(0, -1).join('/')), { recursive: true });
@@ -719,6 +769,31 @@ async function selftest() {
   ok('a console and a daemon that AGREE come back clean', exit(bare), 0);
   put('webui/src/entities/probe/model/types.ts', 'export interface P { a_typo: string }\n');
   ok('a planted MISMATCH is red', exit(bare) !== 0, true);
+
+  // THE EXIT RULE ITSELF (M1-45). Every case above proves the check can FAIL; not one proves WHICH
+  // rule fired, and this row changes exactly that. Both cases run on the same bare tree, one
+  // condition apart, so the difference between them IS the rule.
+  put('webui/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
+  // `if (` on the put's own line is what marks the key conditional, so `a` is a non-optional
+  // declaration against a key the wire may omit: a Level 3a AND 3b entry, and nothing else wrong.
+  put('gateway/control/src/main/kotlin/Empty.kt',
+    'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { if (flag) put("a", 1) }\n');
+  const census = runIn(bare);
+  ok('a tree whose ONLY finding is the 3b census comes back CLEAN', census.status, 0);
+  // and it is clean because the census does not gate, NOT because the census vanished — assert the
+  // check still said it out loud, or this pair would pass against a wire-check with Level 3 deleted
+  ok('and it still printed that census, loudly, on the way to exit 0',
+    census.out.includes('LEVEL 3b') && census.out.includes('PRINTED, NOT GATED'), true);
+
+  put('webui/src/entities/probe/model/types.ts', 'export interface P { a: string }\nexport interface Q { }\n');
+  put('webui/src/entities/probe/api/index.ts',
+    "const x = request<P>('/api/probe');\nconst y = request<Q>('/api/nope');\n");
+  const undisposed = runIn(bare);
+  // Q declares no fields, so the ONLY thing wrong with this tree is the route — the red cannot come
+  // from a field row, and the assertion on the message is what proves that rather than assuming it.
+  ok('one route the console fetches that nobody serves and no coverage disposes is RED', undisposed.status !== 0, true);
+  ok('and the rule that fired is named the route rule, not a field or census rule',
+    undisposed.out.includes('no coverage row disposes'), true);
   rmSync(bare, { recursive: true, force: true });
 
   for (const c of cases) {
@@ -739,6 +814,39 @@ if (ARGS.includes('--selftest')) {
   if (ARGS.includes('--json')) console.log(JSON.stringify({ routes: result.routeRows, rows: result.rows }, null, 2));
   else report(result);
 
+  // ------------------------------------------------------------------- THE EXIT RULE (M1-45)
+  //
+  // THREE THINGS TURN THIS CHECK RED, AND EVERY ONE OF THEM IS A DEFECT RATHER THAN A CENSUS:
+  //
+  //   a route the console fetches that nobody serves and no coverage row disposes — including one
+  //                     disposed LIVE while the daemon does not serve it, because a false
+  //                     disposition is not a weaker disposition, it is a claim that is wrong
+  //   MISMATCHED        the daemon emits a NEAR SPELLING and not this name — the
+  //                     context_window_source class, the defect this whole file was cut for
+  //   UNDISPOSITIONED   a field in NONE of the dispositions. This is M1-37's core law — absence is
+  //                     not a disposition — and it is the only thing standing between this check
+  //                     and a new field arriving unnoticed.
+  //
+  // LEVEL 3a AND 3b PRINT LOUDLY AND GATE NOTHING, and the ruling is this: A CENSUS THAT FAILS THE
+  // BUILD TEACHES PEOPLE TO STOP RUNNING IT. 3b is 137 fields on the tree that landed this row, and
+  // all but eight of them are non-optional declarations against routes the daemon has not built yet
+  // — V4-127 through V4-133, every single one named by the console's own coverage.ts. Not one is
+  // actionable before its route lands, so gating on the count holds the check permanently red for
+  // work that is already scheduled, and a permanently red check is one people stop reading and then
+  // stop running. It would also invert the row order: with M1-41's six dispositions landed, the
+  // route line and the field line are GONE — not reduced, absent — and the 137-field census was the
+  // only thing holding a bare run at exit 1.
+  //
+  // THE CENSUS BECOMES A DEFECT THE MOMENT ITS ROUTE LANDS, and that transition is the reason it is
+  // safe to print rather than gate. On that day the field stops being "declared against a route
+  // that does not exist" and becomes a silent undefined on the operator's screen — and the entry
+  // MOVES: out of 3b, into 3a, and into MISMATCHED or UNDISPOSITIONED at Level 2, which do gate. A
+  // route landing is a row, and a row's milestone re-runs this check, so the catch is the milestone
+  // re-run and not a count that was already red before the route existed.
+  //
+  // NOTHING IS SOFTENED BY THIS. 3a and 3b still go to STDERR, still print every entry with its
+  // file:line, and the summary still says the count out loud on an otherwise clean run — so exit 0
+  // cannot be read as "there is nothing here". What changed is which sentence the build listens to.
   const bad = badRows(result.rows);
   const routeBad = badRoutes(result.routeRows);
   const risky = result.rows.filter((r) => r.risk);
@@ -751,11 +859,18 @@ if (ARGS.includes('--selftest')) {
     console.error(`wire-check: ${bad.length} field(s) the console declares that the daemon does not emit under that name`);
     failed = true;
   }
+  // COUNTED AND NAMED, NEVER A GATE — the ruling is written above, and it is written here too so a
+  // reader who deletes this branch to "make the check strict" meets the reason first.
   if (risky.length > 0) {
-    console.error(`wire-check: ${risky.length} field(s) are a silent undefined by construction`);
-    failed = true;
+    console.error(`\nwire-check: ${risky.length} field(s) are a silent undefined by construction — PRINTED, NOT GATED (M1-45)`);
   }
-  if (!failed) console.log('\nwire-check: every route is served or disposed, every field is dispositioned, and none is a silent undefined');
+  // LAW 27: this line asserts what must be TRUE, and a census entry is not a claim it can make. It
+  // used to end "and none is a silent undefined", which on a clean run with 137 of them in 3b above
+  // would have been the check contradicting its own stderr in its own last sentence.
+  if (!failed) {
+    console.log(`\nwire-check: every route is served or disposed, every field is dispositioned, ` +
+      `and none is MISMATCHED or UNDISPOSITIONED${risky.length > 0 ? ` (${risky.length} in the 3b census above, which does not gate)` : ''}`);
+  }
   // `process.exitCode` and NOT `process.exit()`: --json writes a report larger than a pipe buffer
   // and exiting kills the flush mid-write. Measured while building this — the JSON came back cut
   // at 8,178 bytes and a reader downstream saw a parse error instead of a report.

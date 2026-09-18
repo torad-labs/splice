@@ -64,7 +64,7 @@ export function ModelsBoard({ catalog, sample }: {
       ) : null}
 
       {pending ? null : (
-        <div className="myx-models-body">
+        <div className={opened === null ? 'myx-models-body' : 'myx-models-body myx-models-body-open'}>
           <div className="myx-models-bays">
             {views.active.id === 'by-provider' ? (
               byProvider(heads).map((group) => (
@@ -81,13 +81,20 @@ export function ModelsBoard({ catalog, sample }: {
             )}
           </div>
 
-          <aside className="myx-models-detail" aria-label={S.catalog}>
-            {opened === null ? (
-              <Empty text={EMPTIES.noneOpen.text} source={EMPTIES.noneOpen.source} />
-            ) : (
+          {/* THE COLUMN ARRIVES WITH ITS CONTENT (M1-112, following M1-102 on fleet). It is not
+              rendered at rest at all: the resting column measured a 432x784 dead region, 21.5% of
+              the frame, against the comp's own 11.2%. THE EMPTY GOES WITH IT, deliberately rather
+              than by oversight -- an honest empty says what a panel is missing and which source
+              supplies it, and at rest there is no panel to be missing anything; the console has not
+              been asked for a model yet, so a card reading "none open" is not reporting an absence,
+              it is a caption for a panel that does not exist. The strips are the affordance, and
+              the comp of record has no resting detail column anywhere in its frame.
+              `EMPTIES.noneOpen` is left in model.ts, which is outside this row's fence. */}
+          {opened === null ? null : (
+            <aside className="myx-models-detail" aria-label={S.catalog}>
               <ModelDetail model={opened.model} head={opened.head} />
-            )}
-          </aside>
+            </aside>
+          )}
         </div>
       )}
     </div>

@@ -77,9 +77,16 @@
   border-bottom: var(--hair) solid var(--strip-ink-mute);
 }
 /* The board's values are set in the same condensed face as its labels, with
-   tabular figures so the columns still line up strip to strip. JetBrains Mono
-   has no width axis, so at a legal size its advance (0.6em against the comp's
-   0.34em) cannot fit the comp's own columns; see the row note. */
+   tabular figures so the columns still line up strip to strip. This is a
+   MEASURED deviation, not a workaround, and M1-15 re-derived it rather than
+   assuming it: on team-board-a.png the comp's figures advance 4.67px at
+   --text-1 (0.389em) across seventeen strings of five strips, mono-tight
+   (pstdev 0.27), and every monospace obtainable at or above the type floor is
+   wider than that -- JetBrains Mono 7.20px (+54%), Martian Mono 7.20px at its
+   wdth floor of 75 (+54%), Recursive 7.20px at MONO 1 (+54%), Iosevka 6.02px
+   (+29%), and Iosevka Narrow's published 0.4375em would still be +12% and is
+   not published as a webfont. Archivo at wdth 62 reaches 52.9px on the comp's
+   48px sample, +10%, so it is the closest face that exists. */
 .myx-board .myx-sfield-value {
   font-family: var(--font-label);
   font-variant-numeric: tabular-nums;

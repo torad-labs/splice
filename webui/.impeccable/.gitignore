@@ -1,0 +1,9 @@
+# regenerable design-pipeline bytes stay out of history; the contracts (brief, spec, scaffold,
+# state, the three approved comps with their prompt sidecars, the hero capture) are tracked
+decision/
+reference/
+questions/
+build/comp-grid.png
+review/diff/
+review/responsive/
+review/sections/

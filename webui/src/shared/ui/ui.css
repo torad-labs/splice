@@ -193,7 +193,15 @@
 .myx-edge-label {
   font-family: var(--font-label);
   font-size: var(--text-1);
-  color: var(--ink);
+  /* THE LABEL TAKES ITS GROUND'S INK (M2R-01). This was `var(--ink)`, the ROOM's ink, as the base
+     rule -- right for a holder edge standing in the room (rule cells, page heads, settings options,
+     11.03:1 dark) and wrong on every paper ground, which is why three consumers overrode it back to
+     --strip-ink (the strip edge below, rail.css, team-compose.css) and the fourth, the log tail's
+     Flag, did not: #C9C3B4 on the key's #DED9C6 measured 1.24:1 in the dark room. Three overrides
+     and one miss is a wrong default. Every ground in this world already declares its own ink
+     (body --ink via app.css, .myx-strip and .myx-key --strip-ink), so the label inherits it: a room
+     edge still prints room ink and a paper edge prints paper ink without anyone remembering to. */
+  color: inherit;
 }
 
 /* --- Strip: the one row module. The edge column holds a holder edge whose

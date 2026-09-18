@@ -21,9 +21,18 @@
   gap: var(--space-4);
   flex-wrap: wrap;
   background: var(--strip);
+  /* THE HEAD IS PAPER, SO IT DECLARES PAPER INK (M2R-01). Everything on it that inherits -- the
+     Flag's word now included, since the edge label takes its ground's ink -- reads on the strip. */
+  color: var(--strip-ink);
   border: var(--hair) solid var(--strip-field-line);
   padding: var(--space-3) var(--space-4);
 }
+/* The new-lines count is a Figure, and Figure paints ROOM ink (--ink-strong / --ink-mute) unless
+   it stands in a .myx-strip (ui.css). This head is strip paper without being a strip, so the count
+   printed light-on-light beside the follow Flag in the dark room -- the same defect as the Flag's,
+   caught in the same capture. */
+.myx-lt-head .myx-fig-value { color: var(--strip-ink); }
+.myx-lt-head .myx-fig-unit { color: var(--strip-ink-mute); }
 
 .myx-lt-controls {
   display: flex;

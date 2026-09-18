@@ -30,7 +30,6 @@
     "checks/config/dependabot-kotlin-scope.py",
     "checks/config/env-vars-documented.py",
     "checks/config/knob-keys-documented.py",
-    "checks/config/quirks-keys-documented.py",
     "checks/config/terminal-restore-bracketed.py",
     "checks/config/tests-are-discovered.py",
     "checks/const-single-source.py",
@@ -59,8 +58,6 @@
     ".dev/campaigns/proxy-hardening/walls/cx_11_is_error_structured.py",
     ".dev/campaigns/proxy-hardening/walls/cx_18_usage_aliases.py",
     ".dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.py",
-    ".dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.py",
-    ".dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.py",
     ".dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.py",
     ".dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.py",
     ".dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py",
@@ -85,9 +82,7 @@
     ".dev/campaigns/proxy-hardening/walls/sh_10_muse_merge_never_rewrite.py",
     ".dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.py",
     ".dev/campaigns/proxy-hardening/walls/sh_12_mgmtkey_loud_remint.py",
-    ".dev/campaigns/proxy-hardening/walls/sh_14_daemon_log_rotate_selfheals.py",
-    ".dev/campaigns/proxy-hardening/walls/w4_a_refusal_honesty.py",
-    ".dev/web-console/idle-watch.py"
+    ".dev/campaigns/proxy-hardening/walls/sh_14_daemon_log_rotate_selfheals.py"
   ],
   "invokers": [
     ".claude/settings.json",

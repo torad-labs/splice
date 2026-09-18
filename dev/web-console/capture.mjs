@@ -63,7 +63,8 @@
 //        node dev/web-console/capture.mjs --help
 import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { mgmtKey, shoot, show, withChrome } from './lib/cdp.mjs';
+import { shoot, show, withChrome } from './lib/cdp.mjs';
+import { THEMES, themeValues } from './theme.mjs';
 import { colorFraction, decodePng, hexToRgb } from './lib/png.mjs';
 
 const REPO = resolve(import.meta.dirname, '../..');
@@ -101,7 +102,7 @@ const ROOT = '.myx-console, #root';
 /** The smallest a real console root can be: below this the app did not lay out. */
 const MIN_ROOT = { w: 300, h: 200 };
 
-const HELP = `usage: node dev/web-console/capture.mjs '<url>' <absolute out.png> [<width> <height>]
+const HELP = `usage: node dev/web-console/capture.mjs '<url>' <absolute out.png> [<width> <height>] [--theme dark|light]
        node dev/web-console/capture.mjs --sweep <dir> [<dir> ...]
 
 Captures one page of the console and writes the frame only if it can prove it captured a page:
@@ -268,7 +269,20 @@ if (isMain && argv[0] === '--sweep') {
 
 // ------------------------------------------------------------------ the capture
 
-const [url, out, w = '1536', h = '1024'] = argv;
+// --theme, THROUGH theme.mjs (M1-60). This file could photograph the console in one room only:
+// it seeded the management key and nothing else, so every frame it has ever written is the default
+// room. That is the capability M1-55 put in the shared toolbox and that three seats had each
+// rebuilt privately — and this tool, the campaign's main camera, still could not reach it.
+const themeAt = argv.indexOf('--theme');
+const theme = themeAt === -1 ? 'dark' : argv[themeAt + 1];
+const positional = argv.filter((a, i) => a !== '--theme' && argv[i - 1] !== '--theme');
+const [url, out, w = '1536', h = '1024'] = positional;
+if (isMain && !THEMES.includes(theme)) {
+  // REFUSED and not defaulted: an unknown theme renders the default room and writes a frame
+  // labelled with a room nobody photographed, which is the lie theme.mjs exists to refuse.
+  console.error(`REFUSED: --theme ${theme} is not one of ${THEMES.join(', ')}`);
+  process.exit(2);
+}
 if (isMain && (!url || !out)) {
   console.error(HELP);
   process.exit(2);
@@ -277,7 +291,7 @@ const width = Number(w);
 const height = Number(h);
 
 if (isMain) try {
-  await withChrome({ 'myx-mgmt-key': mgmtKey() }, async (send) => {
+  await withChrome(themeValues(theme), async (send) => {
     const { claim, frame, paper, state, reasons } = await capturePage(send, url, width, height, out);
     if (state === 'empty') {
       // NAMED, NEVER REFUSED. The first cut of this refused the middle state unless --allow-empty
@@ -291,7 +305,7 @@ if (isMain) try {
       console.error('  An honest empty is a legitimate thing to photograph. Do not compute a coverage, ink or');
       console.error('  tonal number from this frame without saying that is what it is.');
     }
-    console.log(`wrote ${out} (${width}x${height}) — ${state === 'page' ? 'PHOTOGRAPHED A PAGE' : 'PHOTOGRAPHED AN EMPTY PAGE'}`);
+    console.log(`wrote ${out} (${width}x${height} ${theme}) — ${state === 'page' ? 'PHOTOGRAPHED A PAGE' : 'PHOTOGRAPHED AN EMPTY PAGE'}`);
     console.log(`  root ${claim.rootBox.w}x${claim.rootBox.h}, ${claim.rootChildren} elements, top colour ${(frame.share * 100).toFixed(1)}% ${frame.colour}, paper ${(paper * 100).toFixed(2)}%${claim.sample === null ? '' : `, data-sample=${claim.sample}`}`);
   });
 } catch (error) {

@@ -17,7 +17,7 @@
    a value. They stay on the room, inside the reveal's own body, and scroll
    rather than stretching the column. */
 .myx-fv-text {
-  margin: var(--space-0);
+  margin: 0;
   padding: var(--space-3);
   max-height: 40vh;
   overflow: auto;

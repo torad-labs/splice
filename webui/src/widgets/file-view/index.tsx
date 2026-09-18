@@ -8,7 +8,8 @@
 import { useEffect } from 'react';
 import { fetchProjectFiles, useProjectFiles } from '@entities/project';
 import type { ProjectFilesPayload, ProjectFilesSlice } from '@entities/project';
-import { Empty, ErrorNote, Reveal, Strip, StripField } from '@shared/ui';
+import { Fault } from '@shared/controls';
+import { Empty, Reveal, Strip, StripField } from '@shared/ui';
 import { S } from './strings';
 import './file-view.css';
 
@@ -30,7 +31,7 @@ export function FileView({ projectId, files }: { projectId: string; files?: Proj
     if (files === undefined) void fetchProjectFiles(projectId);
   }, [projectId, files]);
 
-  if (files === undefined && state.error !== null) return <ErrorNote message={state.error} />;
+  if (files === undefined && state.error !== null) return <Fault message={state.error} />;
   const data = files ?? state.data;
   if (data === undefined || data === null) return null;
   if ('pending' in data) {

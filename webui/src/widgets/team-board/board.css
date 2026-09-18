@@ -32,21 +32,26 @@
   border-radius: 0;
 }
 .myx-board .myx-strip > .myx-edge { padding-inline-start: var(--space-4); }
+/* The board's strips carry no edge label -- the value beside the mark already
+   says what the row is (design review B10) -- so the column's fixed 6ch budget
+   for one would just push the comp's grid 42px to the right. */
+.myx-board .myx-strip > .myx-edge .myx-edge-label { display: none; }
 .myx-board .myx-strip > .myx-edge .myx-edge-mark { inset-block: 0; width: var(--space-4); }
-/* The comp's strip face is condensed. Measured on the same strings at the
-   ladder's floor, its glyphs advance about 0.8 of what either shipped face
-   gives, and its columns are sized to that: the comp's own words do not fit the
-   comp's own columns in Archivo or in JetBrains Mono. Neither face carries a
-   width axis (font-stretch is inert on both, measured), so each cell is laid
-   out at the width its words need and scaled back onto the comp's column. That
-   is the comp's density at a legal size, instead of a rung under the floor. */
+/* The comp's lettering is condensed, and the face now says so: Archivo's wdth
+   axis (62-125, declared in shared/fonts.css) is set to 62 on the board's cells
+   rather than a transform squeezing them. Measured on the comp: its strip type
+   advances 4.7-5.0px per character against a 12-15px ink height, which is 0.34em
+   -- a width no uncondensed face reaches and which a scaleX can only fake by
+   rendering glyphs smaller than the size every check downstream reads. At
+   --text-2 on the axis's floor, "gs-backend-claude" measures 85.9px against the
+   comp's 84. */
 .myx-board .myx-sfield {
   /* The comp's strip is a single plate: its cells are told apart by the rules
-     between them, not by a second fill. The fill is opaque all the same,
-     because the condensed type below lays a value out wider than its cell. */
+     between them, not by a second fill. */
   background: var(--strip);
   overflow: hidden;
-  font-size: var(--text-1);
+  font-size: var(--text-2);
+  font-variation-settings: 'wdth' 62;
   /* The comp's grid starts at its own left edge, so the inset lives in the
      strip's edge column and the fields take none. Its labels sit at y13 and its
      rule at y24, which is where the label's line box ends at this size. The
@@ -55,7 +60,7 @@
   /* The comp's label row is 4px deep, not 12: its rule sits 19px below the
      plate's top (lead-strip-2 measures it at row 19 of a plate that starts at
      0), and the label's line box ends where that rule is. */
-  padding: var(--space-2) 0 var(--space-0);
+  padding: var(--space-2) 0 0;
   /* the comp's rules between cells are the same ink as the rule under the label
      row: it prints one weight of rule on the whole strip */
   border-inline-end: var(--hair) solid var(--strip-ink-mute);
@@ -63,22 +68,24 @@
 .myx-board .myx-sfield-label {
   display: block;
   font-weight: 600;
-  font-size: var(--text-1);
-  line-height: 1.2;
-  width: 128.2%;
-  transform: scaleX(0.78);
-  transform-origin: left center;
+  font-size: var(--text-2);
+  /* 1.05 puts the rule under the label row at y19 of the plate, where the comp's
+     sits (its divider measures row 19-20 of a plate starting at row 0) */
+  line-height: 1.05;
   /* the comp's rule under the label row measures #5e5d50, which is the mute
      ink, not the light field line the primitive defaults to */
   border-bottom: var(--hair) solid var(--strip-ink-mute);
 }
+/* The board's values are set in the same condensed face as its labels, with
+   tabular figures so the columns still line up strip to strip. JetBrains Mono
+   has no width axis, so at a legal size its advance (0.6em against the comp's
+   0.34em) cannot fit the comp's own columns; see the row note. */
 .myx-board .myx-sfield-value {
+  font-family: var(--font-label);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: var(--text-1);
+  font-size: var(--text-2);
   padding-block-start: var(--space-3);
-  width: 128.2%;
-  transform: scaleX(0.78);
-  transform-origin: left center;
 }
 
 /* --- team header: region team-header (frame x10 y6.2 w88.5 h5) --- */
@@ -103,7 +110,7 @@
 .myx-board-bay .myx-bay-head {
   position: absolute;
   justify-content: center;
-  padding: var(--space-0) var(--space-2);
+  padding: 0 var(--space-2);
   background: var(--plate-deep);
   border: var(--hair) solid var(--strip-field-line);
 }
@@ -228,11 +235,17 @@
   width: 96.774%;
   height: 59.459%;
 }
+/* the activity rows are the tightest rack on the page: the value follows its
+   label by two pixels, not eight, or the last line of a 38px plate is cut */
+.myx-board-act .myx-sfield-value { padding-block-start: var(--space-1); }
 .myx-board-acts > .myx-board-act {
   position: absolute;
   left: 0;
   right: 0;
-  height: 13.8%;
+  /* The comp's activity plates tile their region at the same 38px as their
+     pitch, not the 31px the plate-row scan first suggested: its labels sit 6px
+     into a plate and its values 29px in, and a value needs the room. */
+  height: 16.9%;
   overflow: hidden;
 }
 
@@ -247,7 +260,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  padding: var(--space-0) var(--space-2);
+  padding: 0 var(--space-2);
   background: var(--plate-deep);
   border: var(--hair) solid var(--strip-field-line);
   color: var(--strip-ink);

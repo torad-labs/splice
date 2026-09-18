@@ -1,3 +1,34 @@
+# wire-check run of record — M1-45, the exit rule. Captured 2026-09-18T11:38:50Z.
+# The row's verify, run AS A CHAIN and not leg by leg:
+#   node .dev/web-console/wire-check.mjs --selftest && node .dev/web-console/wire-check.mjs && node .dev/web-console/scan.mjs .dev/web-console/wire-check.mjs
+
+===== LEG 1: --selftest
+  PASS  the defect this row was cut for is among the candidates
+  PASS  and the other real key is offered beside it rather than hidden
+  PASS  a real field is not called a near spelling of something else
+  PASS  a one-word field with no wire key raises no false near spelling
+  PASS  every property signature is a field
+  PASS  a nested object literal declares its own type
+  PASS  `?` is read as optional
+  PASS  `| null` is NOT optional — it claims the key is present
+  PASS  `| null` is read as nullable
+  PASS  a referenced interface is reachable from its root
+  PASS  an unrelated interface is NOT reachable
+  PASS  a tree with no entities directory is DID NOT RUN, not a pass
+  PASS  entity types but no api segment is DID NOT RUN, not a pass
+  PASS  a console side but no gateway tree is DID NOT RUN, not a pass
+  PASS  control kotlin that emits no keys at all is DID NOT RUN, not a pass
+  PASS  keys but no served route is DID NOT RUN, not a pass
+  PASS  a console and a daemon that AGREE come back clean
+  PASS  a planted MISMATCH is red
+  PASS  a tree whose ONLY finding is the 3b census comes back CLEAN
+  PASS  and it still printed that census, loudly, on the way to exit 0
+  PASS  one route the console fetches that nobody serves and no coverage disposes is RED
+  PASS  and the rule that fired is named the route rule, not a field or census rule
+
+selftest 22/22 PASS
+
+===== LEG 2: the check itself
 wire-check: 15 entity types file(s), 359 declared field(s); the control API serves 27 route(s) and emits 244 key(s) from 47 file(s)
   244 key constant(s) resolved; 28 put() site(s) name their key at RUNTIME and cannot be enumerated statically
   7 entity(s) declare no model/types.ts and are OUTSIDE this denominator: compact-stats, control-status, economics, events, heads, logs, usage
@@ -174,4 +205,39 @@ LEVEL 3b — declared non-optional where the wire may omit, all of them (137):
   TopologyWriteResult — 2 field(s), webui/src/entities/topology/model/types.ts:42
       ok, restart_required
       /api/topology is not served; coverage names V4-128 at webui/src/pages/settings/coverage.ts:100
-wire-check: 137 field(s) are a silent undefined by construction
+
+wire-check: 137 field(s) are a silent undefined by construction — PRINTED, NOT GATED (M1-45)
+
+wire-check: every route is served or disposed, every field is dispositioned, and none is MISMATCHED or UNDISPOSITIONED (137 in the 3b census above, which does not gate)
+
+===== LEG 3: scan
+scan: 1 path(s), 1 file(s) read
+CHAIN EXIT=0
+
+===== MUTATION PROOF OF THE THREE NEW ASSERTIONS
+# A green selftest proves nothing until each new case has been shown to fail for its own
+# reason. Each mutant is the unmutated file with ONE change, run out of tree against a
+# symlinked node_modules so nothing inside the fence was edited to produce these.
+
+--- MUTATION 1: the pre-M1-45 exit rule restored (the census gates again)
+  FAIL  a tree whose ONLY finding is the 3b census comes back CLEAN — wanted 0, got 1
+  PASS  and it still printed that census, loudly, on the way to exit 0
+  PASS  and the rule that fired is named the route rule, not a field or census rule
+selftest 21/22 FAIL
+
+--- MUTATION 2: the Level 3b print deleted (census goes silent, exit rule untouched)
+  PASS  a tree whose ONLY finding is the 3b census comes back CLEAN
+  FAIL  and it still printed that census, loudly, on the way to exit 0 — wanted true, got false
+  PASS  and the rule that fired is named the route rule, not a field or census rule
+selftest 21/22 FAIL
+
+--- MUTATION 3: badRoutes returns [] (unserved+undisposed routes stop gating)
+  PASS  a tree whose ONLY finding is the 3b census comes back CLEAN
+  PASS  and it still printed that census, loudly, on the way to exit 0
+  FAIL  one route the console fetches that nobody serves and no coverage disposes is RED — wanted true, got false
+  FAIL  and the rule that fired is named the route rule, not a field or census rule — wanted true, got false
+selftest 20/22 FAIL
+
+# Each mutation kills exactly the case(s) that name its rule and leaves the others green:
+# 1 kills the clean-census case only (3b still printed), 2 kills the printed-loudly case
+# only (exit rule still correct), 3 kills both route cases only. The pair discriminates.

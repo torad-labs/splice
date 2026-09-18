@@ -77,7 +77,17 @@
         ".claude/hooks/modules/sessionstart/12_inflight_reanchor.ts",
         ".claude/hooks/modules/pretooluse/08_manifest_single_channel.ts",
         ".claude/hooks/modules/stop/05_campaign_inflight_note.ts",
-        "dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts"
+        "dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts",
+        "dev/campaigns/ledger.ts"
+      ]
+    },
+    {
+      "tool": "checks/concentration.py",
+      "row": "V4-158",
+      "reason": "checks/config/concentration-leg-routed.ts guards the concentration leg, and its inverse half PINS the oracle's argv: a python interpreter (const PYTHON, line 84, executable code rather than prose) then checks/concentration.py. That pin is correct for exactly as long as the oracle is Python, so the caller cannot drop the token while concentration.py exists. The exclusion expires in the very commit where the pin has to change: when V4-158 converts concentration.py, this entry dies, the wall starts counting the .ts, and it reds BY NAME if the pin was not moved with the oracle. The exclusion and the coupling constraint die together, so the constraint enforces itself instead of living in a row note.",
+      "recorded": "2026-09-18",
+      "callers": [
+        "checks/config/concentration-leg-routed.ts"
       ]
     }
   ]

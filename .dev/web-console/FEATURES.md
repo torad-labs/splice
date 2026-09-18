@@ -61,6 +61,8 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `GET /api/logs/{head}?tail=` | log tail | logs page |
 | `GET /api/mcp` | hosted MCP servers: eligible, hosted, pid, sessions, streams, restarts, last error (v0.4.0) | none |
 | `POST /launch/{head}`, `/statusline/{head}` | used by the shim and the status line, not by the console | n/a |
+| `GET /mcp/{name}`, `POST /mcp/{name}`, `DELETE /mcp/{name}` | the hosted MCP servers' streamable-HTTP transport for clients (open, post, close a stream), not an operator surface | n/a (excluded: client transport) |
+| `GET /`, `GET /dashboard` | the console itself (dist/index.html) | n/a (excluded: it is the console) |
 
 ### 2.2 Runtime knobs
 

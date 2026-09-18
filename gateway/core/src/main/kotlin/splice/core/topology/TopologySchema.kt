@@ -5,6 +5,28 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.prompt.SystemPromptMode
+
+/** V4-124: a `[projects."ROOT"]` table — standing instructions for every session whose working
+ *  directory is ROOT or below it, whatever head serves it. The same three keys as a head's
+ *  (`system_prompt`, `system_prompt_file`, `system_prompt_mode`); a relative `system_prompt_file`
+ *  resolves against ROOT, so the prompt can live in the repo it governs. [heads] narrows a further
+ *  layer to one head inside this project. Resolution and composition: SystemPromptLayers. */
+@Serializable
+public data class ProjectConfig(
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+    val heads: Map<String, ProjectHeadPrompt> = emptyMap(),
+)
+
+/** V4-124: a `[projects."ROOT".heads.KEY]` table — the project layer for ONE head of that project. */
+@Serializable
+public data class ProjectHeadPrompt(
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+)
 
 @Serializable
 public enum class Dialect {

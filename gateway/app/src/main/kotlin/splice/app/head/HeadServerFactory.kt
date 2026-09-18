@@ -5,9 +5,12 @@
 package splice.app.head
 
 import splice.app.provider.ProviderBuild
+import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
+import splice.core.prompt.SystemPromptLayers
+import splice.core.topology.ProjectConfig
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.gateway.compact.ShadowClassifier
@@ -15,6 +18,7 @@ import splice.gateway.head.CompactionTail
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
+import splice.gateway.head.SessionProjectLookup
 import splice.spi.InflightGate
 import splice.spi.Provider
 import java.nio.file.Path
@@ -29,8 +33,14 @@ internal class HeadServerFactory(
     /** The topology's directory: a relative `system_prompt_file` under [splice.core.topology.HeadConfig]
      *  resolves against it, the same rule `[compaction] file =` follows (V4-36). */
     private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
+    /** V4-124: the topology's `[projects."ROOT"]` tables. Every head gets its own layers from them. */
+    private val projects: Map<String, ProjectConfig> = emptyMap(),
 ) {
     private val upstreamFactory = UpstreamFactory()
+
+    /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a
+     *  project is configured, and it keeps its own cache. */
+    private val sessionProject = SessionProject()
     private val requestMaterializationGate = RequestMaterializationGate(materializationPermits())
 
     internal fun headServerFor(
@@ -68,13 +78,18 @@ internal class HeadServerFactory(
                 seams = HeadDeps.HeadSeams(
                     requestMaterializationGate = requestMaterializationGate,
                     clientVersions = clientVersions,
+                    sessionProject = SessionProjectLookup { sessionProject.projectFor(it) },
                 ),
                 policy = HeadDeps.HeadPolicy(
-                    // Per HEAD, resolved once here from its own [heads.KEY] entry: a standing prompt
-                    // is a property of the head, not of the model or the project a session runs in.
-                    // This constructor is where a missing system_prompt_file becomes a load-time
-                    // config error rather than a prompt that silently never rides.
-                    systemPrompt = ctx.head.systemPromptFor(key, configDir),
+                    // Per HEAD, resolved once here: its own [heads.KEY] layer plus the V4-124
+                    // project layers for this head. This constructor is where a missing
+                    // system_prompt_file or a relative project root becomes a load-time config
+                    // error rather than a prompt that silently never rides.
+                    systemPrompt = SystemPromptLayers(
+                        head = ctx.head.systemPromptFor(key, configDir),
+                        projects = projects,
+                        headKey = key,
+                    ),
                     forwardClientAuth = forwardClientAuth,
                     mirrorReasoning = cfg.mirrorReasoning,
                     progressLine = cfg.progressLine,

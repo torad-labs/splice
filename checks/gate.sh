@@ -221,7 +221,7 @@ run "terminal-restore selftest" python3 checks/config/terminal-restore-bracketed
 # `codex`, types the org gate rejects — the exact divergence pr-title.sh's own header describes as
 # fixed history. Denominator is `git ls-files`, so an untracked sidecar or editor backup cannot red
 # the gate; a second copy must be tracked to reach main.
-run "one conventional type list" python3 checks/config/one-conventional-type-list.py check .
+run "one conventional type list" bun checks/config/one-conventional-type-list.ts check .
 run "one conventional type list selftest" bash checks/one-conventional-type-list-selftest.sh
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary

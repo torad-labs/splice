@@ -19,6 +19,27 @@
 //   npm run dev -w webui -- --port 5173 --strictPort
 // Host must be localhost — vite binds ::1 only and 127.0.0.1 is refused.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file.
+//   SHAPE ONE, does every FAIL reach the exit code? NOW YES, AND IT DID NOT — in the runner that
+//     judges every other leg. runLeg() tested `leg.proof` BEFORE it read `r.code`, so a leg that
+//     ran, found a real defect and exited 1 was reported DID NOT RUN whenever its output happened
+//     not to satisfy a regex written here. Measured on the comp-check leg: `--only comp-check`
+//     returned `DID NOT RUN ... exited 1 but produced no evidence it ran` while comp-check itself
+//     printed its summary at BOTH frames and exited 1 on 51 real findings. The exit code decides
+//     now; the proof is an additional assertion on a leg that already passed on it, and keeps the
+//     one case it was built for — a leg that exits ZERO having done nothing. The verdict then comes
+//     through failIf where a leg has one, so the gate names WHICH constant is off instead of
+//     reporting that something exited 1. `bad` still drives `process.exit(bad.length ? 1 : 0)`.
+//   SHAPE TWO, if every leg threw, what would it print? IT REFUSES, and it did before this row:
+//     `legs.length === 0` exits 2 rather than printing `0/0 passed` (a typo in --only must not read
+//     as green), a leg whose command cannot start gets `r.status ?? 127` from sh() rather than a
+//     null read as 0, and a leg that dies mid-run has a non-zero code which — as of this row — is
+//     what its verdict is built on. Clean, and it was clean.
+//   AND THE SELFTEST'S OWN CONTROL ARM, which is the finding under the finding: all six runner
+//     cases carried a proof that MATCHES whenever the leg exits non-zero, so not one of them could
+//     ever enter the branch where the two disagree. A selftest whose control arm cannot fail is
+//     why this shipped. Four cases now drive the disagreement deliberately, in both directions.
+//
 //   node .dev/web-console/exit-gate.mjs [--only <name,...>] [--json]
 //   node .dev/web-console/exit-gate.mjs --selftest
 
@@ -319,15 +340,36 @@ function runLeg(leg) {
   }
   const startedAt = Date.now();
   const r = leg.run();
-  if (leg.proof && !leg.proof.test(r.out)) {
-    return { status: DID_NOT_RUN, detail: `exited ${r.code} but produced no evidence it ran (expected ${leg.proof})` };
-  }
+  // THE EXIT CODE DECIDES; THE PROOF IS AN ADDITIONAL ASSERTION ON A LEG THAT ALREADY PASSED ON IT.
+  //
+  // This tested `leg.proof` FIRST and returned DID NOT RUN before it ever read `r.code`, so a leg
+  // that ran, found a real defect and exited 1 was filed as a leg that never ran — whenever its
+  // output happened not to satisfy a regex written here. Measured 2026-09-18 on the comp-check leg:
+  // `exit-gate.mjs --only comp-check` returned `DID NOT RUN comp-check / exited 1 but produced no
+  // evidence it ran`, while comp-check itself printed its summary at BOTH frames and exited 1 on 51
+  // real findings. The gate could not tell "the check found nothing" from "the check found
+  // something" — the mirror image of the mislabel the probe was added in M1-59 to prevent, produced
+  // by the probe itself. This row's own subject, in the runner that judges every other leg: a check
+  // whose verdict is decorative, because the evidence that outranked it was a regex over prose.
+  //
+  // A NON-ZERO EXIT IS THE STRONGEST EVIDENCE A LEG RAN. A process that dies before printing its
+  // summary still has an exit code, so an exit code and an output that disagree are settled by the
+  // exit code (claude-splice-main's ladder classifies every leg this way and has never carried this
+  // hole — `if "${@:2}"; then ✓ else ✗`, no output parsing anywhere). The proof keeps the one job
+  // it is the right tool for and the one it was built for: catching a leg that exits ZERO having
+  // done nothing. An unproven FAILURE is still a failure, and it says so — the proof miss rides
+  // along as detail on the FAILED verdict instead of replacing it.
+  const unproven = leg.proof !== undefined && !leg.proof.test(r.out);
+  const alsoUnproven = unproven ? `\n(and it produced no evidence it ran: expected ${leg.proof})` : '';
   if (leg.failIf) {
     const m = leg.failIf.exec(r.out);
-    if (m) return { status: FAILED, detail: `exited ${r.code} but its own output reports a failure: ${m[0].trim()}${leg.failHint ? ` — ${leg.failHint}` : ''}` };
+    if (m) return { status: FAILED, detail: `exited ${r.code} but its own output reports a failure: ${m[0].trim()}${leg.failHint ? ` — ${leg.failHint}` : ''}${alsoUnproven}` };
   }
   if (r.code !== 0) {
-    return { status: FAILED, detail: r.out.trim().split('\n').slice(-12).join('\n') };
+    return { status: FAILED, detail: `${r.out.trim().split('\n').slice(-12).join('\n')}${alsoUnproven}` };
+  }
+  if (unproven) {
+    return { status: DID_NOT_RUN, detail: `exited 0 and produced no evidence it ran (expected ${leg.proof})` };
   }
   const late = leg.after?.(startedAt);
   if (late) return { status: DID_NOT_RUN, detail: late };
@@ -354,13 +396,33 @@ function selftest() {
       leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 0, out: 'ran\nLOOK: BLOCKED (1)' }), proof: /ran/, failIf: /LOOK: BLOCKED/ } },
     { label: 'a stale artifact is DID NOT RUN', want: DID_NOT_RUN,
       leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 0, out: 'ran' }), proof: /ran/, after: () => 'artifact older than the run' } },
+    // ---- THE ORDERING (M1-76). Every case above this line has a proof that MATCHES whenever the
+    // leg exits non-zero, so not one of them ever reached the branch where the two disagree — which
+    // is why the runner shipped for a month filing real failures as did-not-runs. These four drive
+    // the disagreement deliberately, in both directions.
+    { label: 'a REAL DEFECT whose output misses the proof is FAILED, never DID NOT RUN', want: FAILED,
+      detail: /produced no evidence it ran/,
+      leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 1, out: 'died before its summary' }), proof: /ran/ } },
+    { label: 'a leg that exits 0 with no evidence is STILL DID NOT RUN (the proof keeps its job)', want: DID_NOT_RUN,
+      detail: /exited 0 and produced no evidence/,
+      leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 0, out: 'quiet' }), proof: /ran/ } },
+    { label: 'failIf still names the output on a leg that ALSO exits non-zero and misses the proof', want: FAILED,
+      detail: /its own output reports a failure: LOOK: BLOCKED/,
+      leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 1, out: 'LOOK: BLOCKED (1)' }), proof: /ran/, failIf: /LOOK: BLOCKED/ } },
+    { label: 'a leg with NO proof at all still fails on its exit code', want: FAILED,
+      leg: { name: 't', probe: () => ({ code: 0, out: 'ok' }), probeProof: /ok/, run: () => ({ code: 1, out: 'anything' }) } },
   ];
   let bad = 0;
   for (const c of cases) {
-    const got = runLeg(c.leg).status;
-    const ok = got === c.want;
+    const verdict = runLeg(c.leg);
+    // THE DETAIL IS PART OF THE VERDICT, not decoration. A FAILED that says nothing about WHY is
+    // what sends the next seat to the wrong file, and the ordering fix above turns a proof miss
+    // into detail rather than a verdict — so the detail is what proves it was not simply dropped.
+    const detailOk = c.detail === undefined || c.detail.test(verdict.detail ?? '');
+    const ok = verdict.status === c.want && detailOk;
     if (!ok) bad++;
-    console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${c.label} — wanted ${c.want}, got ${got}`);
+    console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${c.label} — wanted ${c.want}, got ${verdict.status}`
+      + (detailOk ? '' : ` (detail did not match ${c.detail}: ${JSON.stringify((verdict.detail ?? '').slice(0, 90))})`));
   }
   // THE LEGS ARRAY ITSELF, which nothing here had ever looked at. Every case above drives runLeg
   // with a HAND-WRITTEN leg, so a malformed entry in the real LEGS — one missing `run`, say —

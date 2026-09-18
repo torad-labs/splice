@@ -24,6 +24,23 @@
 // point: `--strip-field: #FFFFFF` survived three nights on the plane the light room shows most of,
 // unphotographed by anything.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH.
+//   SHAPE ONE, does every FAIL reach the exit code? YES. The CLI's per-theme catch prints
+//     `FAIL <theme> <message>` and sets `process.exitCode = 1` on the same line — it does not
+//     `continue` past a failure silently. themeValues() THROWS on an unknown theme rather than
+//     defaulting, which is what makes `--theme nonsense` a refusal instead of a frame labelled with
+//     a room nobody photographed. The selftest's own `fail` counter drives its exit.
+//   SHAPE TWO, if the tree went empty, what would it print? IT ASSERTS ITS DENOMINATOR: the wall
+//     case is `tree.size > 0 && live.unexempt.length === 0`, so a walk that returned nothing FAILS
+//     rather than reporting one implementation in an empty toolbox. That conjunct is the whole
+//     lesson of M1-49 one row later, and it is why this wall cannot be defeated by breaking the
+//     walk. The CLI loop's denominator (`wanted`) is THEMES or a single named theme and cannot be
+//     empty; an unknown name throws rather than producing an empty set.
+//   THE WALL IS CURRENTLY RED AND NOT BECAUSE OF THIS FILE: look-gate.mjs:480 seeds the key inline
+//     instead of through themeValues(), so `--selftest` reports 15/1 SECOND IMPLEMENTATION. That is
+//     M1-74's fence and is reported in the M1-76 notes rather than reached into. The wall firing on
+//     a real second implementation is the wall working.
+//
 // Usage: node dev/web-console/theme.mjs --selftest
 //        node dev/web-console/theme.mjs '<url>' [--theme both|light|dark] [--out DIR] [--width W --height H]
 import { mkdirSync } from 'node:fs';

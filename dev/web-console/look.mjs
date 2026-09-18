@@ -6,6 +6,22 @@
 //
 // Usage: node dev/web-console/look.mjs '<url>' [--out DIR] [--width W] [--height H] [--json]
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH.
+//   SHAPE ONE, does every FAIL reach the exit code? YES, and the shape is the reason: findings are
+//     PUSHED to `blocks`, and `process.exit(blocks.length === 0 ? 0 : 1)` is the only exit. Every
+//     catch in the file pushes — the snapshot catch (:527), the look-gate non-zero (:580), the
+//     theme/room mismatch (:619), the measure catch (:622) — so there is no path that prints a
+//     block and returns 0. The one worth naming because it is the easiest to get wrong: the
+//     dom-pass failure does NOT die where it is caught. `domError` is recorded and then reaches
+//     `blocks` at :645 as `no rule ran on the page`, so a run in which NEITHER engine produced a
+//     rule is blocked rather than reported as a page with no findings. That is the distinction
+//     between "clean" and "did not run", made at the exact point most files lose it.
+//   SHAPE TWO, if every page threw, what would it print? IT WOULD BLOCK, LOUDLY — and this is the
+//     inversion that matters. Because failures are pushes and not prints, an all-throwing run makes
+//     `blocks` its LONGEST, not its shortest; the denominator fills as things go wrong instead of
+//     emptying. Compare capture.mjs's --sweep before this row, where an unreadable directory emptied
+//     the frame list and the summary read as a clean sweep. Same language, opposite polarity.
+//
 // WHY THE SNAPSHOT AND NOT THE URL: the console is behind the management-key gate (see
 // snapshot.mjs).
 //

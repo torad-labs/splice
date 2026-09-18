@@ -17,6 +17,22 @@
 // roughly flat across frames, because a console that is "the 1536 render scaled" holds its text at
 // the same share of the screen at any size.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH,
+// by being honest about not being a check at all.
+//   SHAPE ONE, does every FAIL reach the exit code? THERE IS NO FAIL TO REACH IT. This file prints
+//     no FAIL line anywhere and carries no pass/fail verdict; its only non-zero exit is the usage
+//     refusal. gate-coverage disposes it TOOL, NEVER GATES, and that disposition is accurate — it
+//     is a measuring instrument a human reads, not a gate. Vacuously clean, and the distinction
+//     matters: a file that gates nothing AND CLAIMS NOTHING is not decorative. Shape One is a check
+//     that prints FAIL and gates nothing, and the lie is in the word FAIL. This file never says it.
+//   SHAPE TWO, if every size produced nothing, what would it print? A TABLE WITH NO ROWS, which
+//     carries no verdict either way and misleads nobody, because no verify line greps it and no leg
+//     runs it. The reason law 34 bites elsewhere is that an empty denominator gets SUMMARISED into
+//     a clean verdict; there is no verdict here to be corrupted.
+//   IF THAT DISPOSITION EVER CHANGES — if a leg starts running this or a verify line greps its
+//     output — both answers change with it, and the first thing it would need is the guard the rest
+//     of this fence has: an empty size list, or a page that rendered no text, must refuse.
+//
 // Usage: node dev/web-console/scale.mjs '<url>' [--sizes 1536x1024,1920x1080,...] [--json]
 import process from 'node:process';
 import { mgmtKey, show, withChrome } from './lib/cdp.mjs';

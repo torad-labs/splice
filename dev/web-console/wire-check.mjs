@@ -53,6 +53,22 @@
 // substitutes for the other — static catches a spelling before anything boots, live catches a
 // route that stopped sending a key it used to send. Deliberately NO fetch here.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH.
+//   SHAPE ONE, does every FAIL reach the exit code? YES, and the interesting part is that some
+//     FAILs are MEANT not to. M1-45 narrowed the exit rule to badRoutes + MISMATCHED +
+//     UNDISPOSITIONED on the ruling that a census which fails the build teaches people to stop
+//     running it, and the Level 3b census prints loudly while gating nothing — DELIBERATELY, with
+//     the ruling written out and the summary line naming the non-gating count so no reader mistakes
+//     it for silence. That is a disposition, not a hole: the file says which of its output gates and
+//     why. Everything the exit rule does cover reaches `process.exitCode = failed ? 1 : 0`
+//     (exitCode and not exit(), because --json writes more than a pipe buffer holds).
+//   SHAPE TWO, if every tree were unreadable, what would it print? IT REFUSES FIVE TIMES OVER, and
+//     did before this row: :102 no entity directories, :259 no .kt under a main source set, :260 no
+//     control/src/main tree, :452 no entity declares model/types.ts, :465 no fields parsed out of
+//     any types file. Each is a fail() by name, not a zero quietly summarised. This is the file the
+//     rest of the fence should have been written like — it is the only one that guarded EVERY
+//     denominator rather than the one its author happened to think of.
+//
 // Usage: node dev/web-console/wire-check.mjs            (from the worktree root)
 //        node dev/web-console/wire-check.mjs --json
 //        node dev/web-console/wire-check.mjs --selftest  mutation-proof, both directions

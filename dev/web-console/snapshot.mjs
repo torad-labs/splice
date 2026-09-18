@@ -19,6 +19,21 @@
 // so the artifact cannot re-boot the app, re-fetch an API it has no route to, or lose its fixture.
 // What the detector then reads is the frame the browser actually laid out.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH.
+//   SHAPE ONE, does every FAIL reach the exit code? YES. The selftest's `fail` counter is the only
+//     thing `process.exit(fail === 0 ? 0 : 1)` reads, and the capture path does not print failures
+//     at all — it THROWS, which is the strongest form of reaching the exit code. That includes the
+//     serialisation floor: a page that comes back under 200 bytes throws rather than writing a
+//     snapshot a detector would then read as a clean empty page.
+//   SHAPE TWO, if the page produced nothing, what would it print? NOTHING — it throws before
+//     writeFileSync, so there is no artifact to mislead the detector and no summary to mistake for
+//     a pass. The emptiness is refused at the point it is created rather than counted later.
+//   AND THE GUARD THAT MAKES BOTH TRUE was itself the hole once: M1-60 found the isMain suffix form
+//     here true on IMPORT, and the `--selftest` call sitting one line ABOVE the guard added to fix
+//     that class — so look.mjs growing a --selftest would have run snapshot's instead and exited 0
+//     on a suite that never started. Both fixed there; this file has carried pathToFileURL since,
+//     and it is the pattern law-check, capture and type-ladder were brought up to in this row.
+//
 // Usage: node dev/web-console/snapshot.mjs '<url>' [<out.html>] [<width> <height>]
 import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';

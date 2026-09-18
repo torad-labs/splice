@@ -63,6 +63,22 @@
 // The last one matters most — if the leg list stops parsing, every GATE LEG claim in the table
 // becomes unverifiable, and reporting that as a pass is exactly the shape this file was built to end.
 //
+// M1-76 DISPOSITION — the two ways a check can be decorative, answered for this file. CLEAN BOTH,
+// and this is the one file in the fence that was built against exactly these two shapes.
+//   SHAPE ONE, does every FAIL reach the exit code? YES. Every finding lands in `bad` and
+//     `process.exitCode = bad.length > 0 ? 1 : 0` is the only exit in the audit path; the selftest's
+//     is `passed === cases.length`. There is no console.error here that is not also a push — checked
+//     line by line this row, not assumed because the file is about gating.
+//   SHAPE TWO, if the walk returned nothing, what would it print? IT REFUSES, IN WORDS, and it did
+//     before this row: :254 returns 'dev/web-console holds no .mjs files, so the denominator is
+//     empty and nothing could be checked' rather than reporting every checker disposed, and :298
+//     handles a checker no leg runs. The denominator is a DIRECTORY WALK, never a list, which is
+//     the property that makes the refusal meaningful — a list cannot go empty by accident and so
+//     cannot detect that it has.
+//   NOT A HOLE BUT WORTH THE LINE: the disposition table is hand-authored against a walked
+//     denominator, which is the correct shape (§24: enumerate from the source, dispose every item).
+//     Two hand-authored lists checking each other would not be, and this is not that.
+//
 // Usage: node dev/web-console/gate-coverage.mjs
 //        node dev/web-console/gate-coverage.mjs --selftest
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -154,7 +170,7 @@ const DISPOSITIONS = {
   },
 
   'theme.mjs': {
-    kind: LIBRARY, of: 'webui/.impeccable/review/coverage/coverage.mjs',
+    kind: LIBRARY, of: 'dev/web-console/look.mjs',
     why: 'M1-55\'s shared theme-seeding capability, which that row cut precisely so a fourth seat ' +
       'would not rebuild it privately. THE SENTENCE HERE USED TO READ "its only consumer is a ' +
       'row\'s review script", which was true when it was written and M1-60 made false: snapshot.mjs, ' +
@@ -166,9 +182,12 @@ const DISPOSITIONS = {
       '"no leg reaches it either way", which M1-60 falsified in the same commit — look.mjs IS a ' +
       'leg, and it now imports themeValues AND themeLanded and runs both, so the gate exercises ' +
       'this file on every look pass and blocks when the room it measured is not the room it names. ' +
-      'The accurate `of` today is look.mjs; it is left as the review script because changing it is ' +
-      'a change to the DISPOSITION and this row is prose only (M1-70). That re-point is the next ' +
-      'seat\'s one-line row, and the count does not move when they make it',
+      'THE RE-POINT IS MADE (M1-76): `of` is now dev/web-console/look.mjs, the caller that is a ' +
+      'LEG and exercises both exports on every look pass, rather than the review script that is ' +
+      'the furthest thing from the gate. M1-70 correctly left it alone as out of scope for a prose ' +
+      'row and named it as the next seat\'s one-line change; this is that seat. The count does not ' +
+      'move — 21 of 21 settled before and after — because the disposition KIND is unchanged and ' +
+      'only the named caller differs, which is the whole reason it could be deferred safely',
   },
 
   // ---- tools that never gate

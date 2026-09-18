@@ -470,7 +470,7 @@ const LICENSED = ['Archivo', 'JetBrains Mono'];
 const failures = [];
 const rows = [];
 /** The ladder's own tally, printed as its own line: this is the leg that GATES (see REPORT_ONLY). */
-const LADDER = { findings: 0, addresses: 0 };
+const LADDER = { findings: 0, addresses: 0, compared: 0, skipped: new Set() };
 /** The face ratios the probe actually measured, keyed by face and weight, as the run's calibration. */
 const calibrationSeen = {};
 
@@ -550,7 +550,18 @@ function record(address, id, kind, compValue, gotValue, note, fails) {
 function report(measurement, address) {
   for (const constant of CONSTANTS) {
     let compValue = null;
-    try { compValue = constant.comp(); } catch { compValue = null; }
+    // A COMP ACCESSOR THAT THROWS IS A FAILURE, NOT A `comp n/a` (M1-76). `comp()` reads spec.json
+    // and layout.css, and every constant whose accessor threw became a row with no comp value —
+    // which record() prints as `comp n/a` and does NOT compare, the same disposition a constant
+    // that legitimately has no comp carries. Rename a token in layout.css or a region id in the
+    // spec and the affected constants stopped being checked while the run stayed green. If every
+    // accessor threw, every row read `comp n/a`, `compared` went to 0, `failures` stayed empty and
+    // the summary printed `N rows, 0 compared against the comp, 0 outside tolerance`, exit 0 —
+    // law 34's empty denominator, wearing the same words a clean run uses.
+    try { compValue = constant.comp(); } catch (error) {
+      failures.push(`${address} ${constant.id}.comp-unreadable`);
+      console.error(`FAIL comp-unreadable ${constant.id}: its comp accessor threw (${error.message}) — the constant was NOT compared`);
+    }
     record(address, constant.id, constant.kind, compValue, constant.got(measurement), constant.note, constant.fails);
   }
   // THE RUNG-TO-RUNG RATIOS, checked here because a ladder correct on average and wrong at the
@@ -561,7 +572,16 @@ function report(measurement, address) {
     const compLadderRows = compLadder(spec).measured;
     const buildCaps = measurement.text.map((t) => ({ id: t.name, cap: t.cap * t.scale }));
     LADDER.addresses += 1;
-    for (const finding of checkRatios(compLadderRows, buildCaps)) {
+    // THE PAIRS ACTUALLY COMPARED, CARRIED OUT OF THE LOOP (M1-76). checkRatios skips a pair whose
+    // build role or comp rung it cannot find, and until this row it skipped SILENTLY and returned
+    // only the findings — so `ladder: 0 rungs off by more than 0.08` was the same sentence whether
+    // six pairs held or the probe had stopped resolving any of them. That literal is what this
+    // row's own verify line greps for. The denominator travels now and the summary refuses to be
+    // printed without it.
+    const ladder = checkRatios(compLadderRows, buildCaps);
+    LADDER.compared += ladder.compared;
+    for (const skip of ladder.skipped) LADDER.skipped.add(`${skip.pair} (${skip.why})`);
+    for (const finding of ladder.findings) {
       LADDER.findings += 1;
       failures.push(`${address} ladder.${finding.pair}`);
       rows.push({ address, id: `ladder.${finding.pair}`, comp: `comp ${finding.comp.toFixed(3)}`,
@@ -699,7 +719,16 @@ const compared = rows.filter((row) => row.comp.startsWith('comp ') && row.comp !
 const scaled = rows.filter((row) => (row.note ?? '').includes('comp value scaled')).length;
 // The frame is in the summary line because the gate runs this twice and two identical-looking
 // clean runs at one size is exactly the report M1-33 found the gate was giving.
-console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list.length} addresses, ${rows.length} rows, ${compared} compared against the comp${scaled ? `, ${scaled} px rows compared against a ${(width / DEFAULT_FRAME[0])}x-scaled comp value` : ''}, ${failures.length} outside tolerance`);
+// AND `compared` GATES (M1-76). It was printed and nothing read it, so `0 compared against the comp`
+// was a clean run: an instrument whose whole job is comparing this side to the comp, reporting that
+// it compared nothing, and exiting 0. Same for zero rows and zero addresses — three emptinesses, one
+// sentence each, all three red. This is the boring case §24 names: the one that gets waved through
+// because it does not look like a violation, it looks like a quiet morning.
+const outsideTolerance = failures.length;   // snapshot: the three below are not tolerance failures
+if (list.length === 0) failures.push('did-not-run: no address was measured');
+if (rows.length === 0) failures.push('did-not-run: no row was produced');
+if (compared === 0) failures.push(`did-not-run: 0 of ${rows.length} rows were compared against the comp`);
+console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list.length} addresses, ${rows.length} rows, ${compared} compared against the comp${scaled ? `, ${scaled} px rows compared against a ${(width / DEFAULT_FRAME[0])}x-scaled comp value` : ''}, ${outsideTolerance} outside tolerance${failures.length > outsideTolerance ? `, and ${failures.length - outsideTolerance} DID NOT RUN` : ''}`);
 
 // THE LADDER'S LINE, AND IT IS THE ONE THAT GATES THE VERIFY: the cap rows above report because the
 // face is not the tree's to fix, and a line that can never go green teaches the next seat to weaken
@@ -710,10 +739,18 @@ console.log(`\nat ${width}x${height}${atComp ? ' (the comp frame)' : ''}: ${list
 // can satisfy that grep. Without it a ladder of ten or more pairs going red with exactly ten findings
 // would print "10 rungs off" and pass a grep looking for "0 rungs off" — the check would report clean
 // on the one number that means it is not.
-const ladderTail = `${ROLE_PAIRS.length} pairs per address, ${LADDER.addresses} address${LADDER.addresses === 1 ? '' : 'es'} measured`;
+// AND THE DENOMINATOR IS IN THE TAIL (M1-76), which is the half this line did not have. It printed
+// `${ROLE_PAIRS.length} pairs per address` — a LITERAL, six, true of the source and not of the run —
+// beside a findings count computed from however many pairs checkRatios could actually resolve. Zero
+// resolved pairs printed the clean shape verbatim. `compared` is counted from the loop, the skipped
+// pairs are named with the side that was missing, and a run that compared nothing FAILS: it goes
+// into `failures`, so it reaches the exit code rather than merely being visible in the tail.
+const ladderTail = `${LADDER.compared} pair(s) compared of ${ROLE_PAIRS.length} named x ${LADDER.addresses} address${LADDER.addresses === 1 ? '' : 'es'} measured`;
+if (LADDER.compared === 0) failures.push(`ladder-did-not-run (0 of ${ROLE_PAIRS.length * LADDER.addresses} pair-addresses resolved)`);
 console.log(LADDER.findings === 0
   ? `ladder: 0 rungs off by more than ${RATIO_LIMIT} (${ladderTail})`
   : `ladder: ${LADDER.findings} rungs (of ${ROLE_PAIRS.length} pairs) off by more than ${RATIO_LIMIT} — ${ladderTail}`);
+for (const skip of [...LADDER.skipped].sort()) console.log(`  NOT COMPARED ${skip}`);
 console.log(`cap calibration, measured in the faces at 200px so the metric is continuous: ${Object.keys(calibrationSeen).length === 0 ? 'NOT MEASURED — the probe returned no calibration' : Object.entries(calibrationSeen).map(([face, ratio]) => `${face} ${ratio.toFixed(4)}`).join(', ')}`);
 
 // BOTH SIDES OF EVERY CONSTANT, and the comp roles the instrument cannot see. Printed on every run:

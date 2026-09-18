@@ -90,6 +90,33 @@ COLLECT_REASON = ("the COLLECT path (stream:false), where the failure's real HTT
                   "the retry semantics — a buffered 429 stays 429 and a buffered api_error stays "
                   "502 — so the in-band remap must NOT reach it (V4-81 finding 3)")
 
+# V4-102 added two more, and the SHAPE is deliberately the same triple: file, the mark that keeps
+# the exemption honest, and the dated reason. The law governs IN-BAND SSE ERROR EVENTS on a stream
+# the client is already reading; a body that never becomes one is outside its subject, not exempt
+# from a rule it was never in scope for. Both entries below answer with a real HTTP STATUS, which
+# is what Claude Code keys its retry on — so the in-band relabel is not merely unnecessary, there
+# is no in-band event for it to apply to.
+PRE_TURN_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/head/AdmissionResponses.kt"
+PRE_TURN_MARK = "AdmissionResponses"
+PRE_TURN_REASON = ("2026-09-17: the PRE-TURN admission plane. Every verdict here is decided before "
+                   "a turn exists — 400/401/408/413/429/529, each with its real status and, for the "
+                   "429, a Retry-After — so there is no emitter to route through and no in-band "
+                   "event to relabel. The client retries on the STATUS, not on the body's type")
+POOLED_FILE = "gateway/provider-spi/src/main/kotlin/splice/spi/RateLimitCooldown.kt"
+POOLED_MARK = "RateLimitCooldown"
+POOLED_REASON = ("2026-09-17: the POOLED-REFUSAL fail-fast body, synthesized by the cooldown itself "
+                 "and carried as the 429 the transport sends. Like the pre-turn plane it reaches the "
+                 "client as a status, and provider-spi cannot import :gateway, so it could not route "
+                 "through the seam even if the relabel applied")
+
+# The written exemptions, in the order they were granted. Each is pinned to its file AND to a mark
+# inside it, so an exemption cannot outlive the reason it was written for.
+EXEMPTIONS = (
+    (COLLECT_FILE, COLLECT_MARK, COLLECT_REASON),
+    (PRE_TURN_FILE, PRE_TURN_MARK, PRE_TURN_REASON),
+    (POOLED_FILE, POOLED_MARK, POOLED_REASON),
+)
+
 ROUTED = "PreContentWireType.of("
 RULE_OBJECT = "object PreContentWireType"
 # The two types the law was founded on (V4-71 rate-limit, V4-78 api_error). The live governed set
@@ -97,12 +124,23 @@ RULE_OBJECT = "object PreContentWireType"
 FOUNDING = ("RATE_LIMIT", "API_ERROR")
 # A `.wireName` reaching one of these is a value going INTO a client-visible envelope, as opposed to
 # the many `.wireName` reads that are telemetry tags and log lines (those take no envelope writer).
-ENVELOPE_WRITERS = ("put", "putJsonObject", "add", "JsonPrimitive", "errorEnvelope")
+ENVELOPE_WRITERS = ("put", "putJsonObject", "add", "JsonPrimitive", "errorEnvelope", "of")
+# V4-102 added "of": the envelope builder is now a STATIC FACTORY — `ErrorEnvelope.of(x.wireName, …)`
+# — and `_enclosing_call` sees only the innermost name, so without it the wall goes blind at the one
+# place the routed type is handed over, and refuses vacuously. "of" is broad, and the narrowing that
+# keeps it safe is the one this function already applies: it only ever fires on a line carrying a
+# literal `.wireName`, so a bare `of(` with no error type in it stays invisible.
 _GOVERNED_RE = re.compile(r"==\s*ErrorType\.([A-Z][A-Z_0-9]*)\b")
 _OF_SIGNATURE_RE = re.compile(r"\bfun\s+of\s*\(")
 _ROUTED_HEAD_RE = re.compile(r"^PreContentWireType\s*\.\s*of\s*\(")
 _NAMED_ARG_RE = re.compile(r"^([A-Za-z_]\w*)\s*=(?!=)\s*(.*)$")
-_ENVELOPE_FUN_RE = re.compile(r"\b(\w*[eE]rrorEnvelope)\s*\(")
+# V4-102: the envelope builder moved to core as a STATIC FACTORY — `ErrorEnvelope.of(...)` — so the
+# recognizer must know that spelling or it goes blind exactly where the type is handed over. The
+# optional `(?:\.of)?` matches both forms and loosens nothing: the receiver must still be named
+# `…errorEnvelope…`, which is why a bare `of(` or any other static call stays invisible here.
+# This is the coordination the envelope rule's header described as checked; it was checked against
+# the inline builder, so it went stale the moment that builder moved rather than being wrong.
+_ENVELOPE_FUN_RE = re.compile(r"\b(\w*[eE]rrorEnvelope)(?:\s*\.\s*of)?\s*\(")
 _WIRENAME_RE = re.compile(r"\.wireName\b")
 _BIND_RE = re.compile(r"\b(?:val|var)\s+([A-Za-z_]\w*)\b[^=\n]*?=\s*")
 
@@ -468,11 +506,13 @@ def detect(sources: dict[str, str] | None, seam_text: str | None) -> list[str]:
                     "is applied once, at the emitter seam; a hand copy here is the V4-79 defect "
                     "(four copies of one rule) that made a new ending able to skip it")
         exempt = path == SEAM_FILE
-        if path == COLLECT_FILE:
-            if COLLECT_MARK not in code:
-                problems.append(f"{path} holds this wall's ONE envelope exemption but no longer "
-                                f"declares `{COLLECT_MARK}` — the exemption was written for "
-                                f"{COLLECT_REASON}; it may not outlive that reason")
+        for ex_file, ex_mark, ex_reason in EXEMPTIONS:
+            if path != ex_file:
+                continue
+            if ex_mark not in code:
+                problems.append(f"{path} holds a written envelope exemption but no longer "
+                                f"declares `{ex_mark}` — the exemption was written for "
+                                f"{ex_reason}; it may not outlive that reason")
             else:
                 exempt = True
         sites = envelope_sites(code)
@@ -661,6 +701,28 @@ def selftest() -> int:
          _tree(NewEnding=_ENVELOPE_OUTSIDE), _SEAM_OK, want_red=True, must_name="NewEnding.kt:3")
     case("envelopes: a new errorEnvelope( builder outside the seam",
          _tree(NewEnding=_ENVELOPE_BUILDER), _SEAM_OK, want_red=True, must_name="NewEnding.kt:2")
+    # V4-102's two new exemptions. Each gets a GREEN case AND a RED twin whose only difference is
+    # the missing mark, because the pairing is what proves the exemption fires for the enumerated
+    # reason rather than for whatever happens to be in the file. The red twin is also the check that
+    # the stale-exemption rule survived turning the single exemption into a tuple.
+    _envelope_body = 'fun body() = buildJsonObject { put("type", "error") }'
+    case("envelopes: the pre-turn admission plane keeps its WRITTEN exemption",
+         {SEAM_FILE: _SEAM_OK, COLLECT_FILE: _COLLECT,
+          PRE_TURN_FILE: f'object {PRE_TURN_MARK} {{ {_envelope_body} }}'},
+         _SEAM_OK, want_red=False)
+    case("envelopes: the pre-turn exemption without its mark is RED",
+         {SEAM_FILE: _SEAM_OK, COLLECT_FILE: _COLLECT,
+          PRE_TURN_FILE: f'object SomethingElse {{ {_envelope_body} }}'},
+         _SEAM_OK, want_red=True, must_name=PRE_TURN_MARK)
+    case("envelopes: the pooled refusal keeps its WRITTEN exemption",
+         {SEAM_FILE: _SEAM_OK, COLLECT_FILE: _COLLECT,
+          POOLED_FILE: f'class {POOLED_MARK} {{ {_envelope_body} }}'},
+         _SEAM_OK, want_red=False)
+    case("envelopes: the pooled exemption without its mark is RED",
+         {SEAM_FILE: _SEAM_OK, COLLECT_FILE: _COLLECT,
+          POOLED_FILE: f'class SomethingElse {{ {_envelope_body} }}'},
+         _SEAM_OK, want_red=True, must_name=POOLED_MARK)
+
     case("envelopes: the collect path keeps its WRITTEN exemption", _tree(), _SEAM_OK,
          want_red=False)
     case("envelopes: the exemption's file is no longer the collect terminal",

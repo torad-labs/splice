@@ -244,5 +244,6 @@ private const val PATH_PING_GRACE_MS = 60_000L
 // keeps a log line and a client-visible sentence from naming the same tier twice.
 public const val FIRST_OUTPUT_TIER: String = "first-output"
 public const val MID_OUTPUT_TIER: String = "mid-output"
+
 // why: milliseconds in a second — dividing a millisecond figure by it reads seconds
 public const val MS_PER_S: Long = 1000L

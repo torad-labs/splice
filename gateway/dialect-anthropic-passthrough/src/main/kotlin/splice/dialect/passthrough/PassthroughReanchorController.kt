@@ -55,6 +55,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.spi.ReanchorController
@@ -137,9 +138,12 @@ private const val THINKING_DISABLED = "disabled"
 private val THINKING_OFF: JsonObject = buildJsonObject { put(THINKING_TYPE, THINKING_DISABLED) }
 
 // Parity with the Responses twin, which took this number from codex-rs's own
-// DEFAULT_STREAM_MAX_RETRIES. One definition per dialect so a log line cannot quote a budget the
-// controller is not enforcing.
-private const val DEFAULT_MAX_CONTINUATIONS: Int = 5
+// DEFAULT_STREAM_MAX_RETRIES.
+//
+// V4-122: the continuation budget itself is splice.core.turn.DEFAULT_MAX_CONTINUATIONS now — one
+// declaration, because this dialect's twin declared the same 5 and they re-anchor against the same
+// client budget. A log line that quotes a budget still quotes the one the controller enforces,
+// since there is only one.
 
 // FILE SCOPE ON PURPOSE: one shared immutable set, read once per failure classification.
 //

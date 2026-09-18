@@ -31,6 +31,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
+import splice.core.perf.ECONOMICS_RETENTION_MS
 import splice.core.util.CoalescedFlush
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
@@ -40,9 +41,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val HOUR_MS = 60L * 60 * 1000
 
-// 8 days: one full weekly quota window plus a day of overlap, so the week-to-date figure stays
-// exact across a reset boundary instead of losing its head.
-private const val RETENTION_MS = 8L * 24 * 60 * 60 * 1000
+// V4-122: RETENTION_MS is splice.core.perf.ECONOMICS_RETENTION_MS now. The console reports the same
+// window in HOURS from :control/api, which has no dependency edge to this module, so the comment
+// that used to claim the two mirrored each other is replaced by one declaration both can read.
 
 // 192 buckets x ~200 bytes is single-digit KB; 1MB is a corrupt-file guard with headroom.
 private const val MAX_FILE_BYTES = 1L * 1024 * 1024
@@ -153,7 +154,7 @@ public class EconomicsStore(
     }
 
     private fun trimUnderLock() {
-        val cutoff = clock() - RETENTION_MS
+        val cutoff = clock() - ECONOMICS_RETENTION_MS
         buckets.keys.filter { it < cutoff }.forEach { buckets.remove(it) }
     }
 

@@ -33,6 +33,7 @@
 package splice.spi
 
 import io.ktor.client.HttpClient
+import splice.core.util.ERR_SNIPPET
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,

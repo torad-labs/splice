@@ -10,16 +10,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.wire.CLIENT_JSON_DEPTH_CAP
 
 internal class PassthroughCacheControl(private val enabled: Boolean) {
 
     /** Recursively remove every `cache_control` key; other structure passes verbatim. Bounded by
-     *  [DEPTH_CAP] (mirrors MfjsSanitizer's guard): client-supplied JSON deeper than the cap is
+     *  [CLIENT_JSON_DEPTH_CAP]: client-supplied JSON deeper than the cap is
      *  passed through AS-IS beyond that point — cache_control stripping at extreme depth is
      *  immaterial, and this must never StackOverflow on adversarially nested input. */
     fun stripCacheControl(element: JsonElement, depth: Int = 0): JsonElement {
         if (!enabled) return element
-        if (depth >= DEPTH_CAP) return element
+        if (depth >= CLIENT_JSON_DEPTH_CAP) return element
         return when (element) {
             is JsonObject -> buildJsonObject {
                 for ((key, value) in element) {
@@ -32,6 +33,5 @@ internal class PassthroughCacheControl(private val enabled: Boolean) {
     }
 }
 
-// stripCacheControl's recursion guard (WIRE-1) — far above any legitimate request's
-// nesting, well below a stack-overflow depth.
-private const val DEPTH_CAP = 200
+// stripCacheControl's recursion guard (WIRE-1) is splice.core.wire.CLIENT_JSON_DEPTH_CAP — the one
+// declaration shared with LoopGuard's canonicalisation walk, which is the same invariant.

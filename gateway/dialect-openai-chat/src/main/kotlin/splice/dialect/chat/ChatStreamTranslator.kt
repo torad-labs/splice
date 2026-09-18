@@ -16,9 +16,13 @@ package splice.dialect.chat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.spi.BufferCapacity
+import splice.spi.FIRST_OUTPUT_TIER
+import splice.spi.MID_OUTPUT_TIER
+import splice.spi.MS_PER_S
 import splice.spi.SseFrameTooLargeException
 import splice.spi.StreamTornBeforeClient
 import splice.spi.StreamTranslator
@@ -117,9 +121,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
      *  The stall line names the TIER and the number it compared; "upstream stalled" alone left the
      *  operator unable to tell a 300s mid-output verdict from a 20s stall-tier one. */
     private fun stalledOutcome(fired: WatchdogFired): TurnOutcome = TurnOutcome.Failure(
-        ErrorType.OVERLOADED,
         "chat: ${stallDetail(fired)}; retry",
         partial = partialRound(),
+        cause = FailureCause.UPSTREAM_STALLED,
+        phase = FailurePhase.MID_OUTPUT,
     )
 
     private fun unfinishedOutcome(): TurnOutcome =
@@ -130,13 +135,18 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             // defaults to null, which reads as "this dialect cannot continue" — so the connect-phase
             // and G5 budgets sat unused behind a 2xx that EOFed early.
             TurnOutcome.Failure(
-                ErrorType.OVERLOADED,
                 // An UNRECOGNISED throwable says so in its own words rather than borrowing the
                 // truncation sentence: "truncated" is a diagnosis, and reporting an undiagnosed
                 // failure under one is the mislabelling the generic arm exists to avoid.
                 unexpected?.let { "chat: upstream stream failed ($it) — retry" }
                     ?: "chat: stream ended without a finish_reason (truncated); retry",
                 partial = partialRound(),
+                // V4-117: TWO shapes in ONE expression, so two causes. A TRUNCATION is the upstream
+                // going quiet with content already delivered. An UNRECOGNISED throwable is not
+                // attributed to the upstream at all — stamping UPSTREAM_* on it would borrow a
+                // cause it has not earned, which is the refusal INTERNAL exists to make.
+                cause = if (unexpected != null) FailureCause.INTERNAL else FailureCause.UPSTREAM_TRUNCATED,
+                phase = FailurePhase.MID_OUTPUT,
             )
         }
 
@@ -183,9 +193,3 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         emittedThinking = channels.emittedThinking,
     )
 }
-
-// The two tier names this translator can be judged by (see [stallDetail]). FILE SCOPE ON PURPOSE:
-// one spelling each, so a log line and a client-visible sentence cannot name the same tier twice.
-private const val MID_OUTPUT_TIER = "mid-output"
-private const val FIRST_OUTPUT_TIER = "first-output"
-private const val MS_PER_S = 1000L

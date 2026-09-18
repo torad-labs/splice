@@ -4,6 +4,7 @@ package splice.spi
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
+import splice.core.util.WallClock
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 
@@ -19,10 +20,15 @@ public fun interface AccountQuotaSource {
     public fun snapshot(): QuotaSnapshot?
 }
 
-/** Epoch time seam used to compare provider reset timestamps without a process-global clock in policy code. */
-public fun interface AccountNow {
-    public operator fun invoke(): Long
-}
+/** Epoch time seam used to compare provider reset timestamps without a process-global clock in policy code.
+ *
+ *  V4-122 RECONCILED THIS onto [splice.core.util.WallClock], which is the same role: a reading of
+ *  calendar time in epoch milliseconds. The registry had marked it DELIBERATELY ABSENT — red by name
+ *  until a fix row reconciled it — because disposing of it in prose would have closed the wall
+ *  without merging the two declarations the wall exists to catch. A typealias is the merge: every
+ *  call site keeps compiling, SAM conversion included, and there is no longer a second declaration
+ *  of one role for the next wall to find. */
+public typealias AccountNow = WallClock
 
 /** One OAuth identity in a head-local pool. Secrets remain behind [auth]. */
 public data class PoolAccount(
@@ -78,7 +84,9 @@ public data class PoolAccount(
     }
 }
 
-private const val CREDENTIAL_EVIDENCE_TTL_NANOS = 2_000_000_000L // why: 2s keeps the sticky-session monitor off the credential file for a whole select loop, then re-reads so a freshly-written auth.json is seen
+// why: 2s keeps the sticky-session monitor off the credential file for a whole select loop, then
+// re-reads so a freshly-written auth.json is seen
+private const val CREDENTIAL_EVIDENCE_TTL_NANOS = 2_000_000_000L
 
 /** Caches one account's credential evidence behind a short TTL so the sticky-session monitor never
  *  holds a filesystem round-trip. [refresh] re-reads the delegate OFF the monitor; within the TTL

@@ -12,6 +12,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.Cancellables
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
@@ -21,12 +22,11 @@ import splice.gateway.usage.TurnEconomics
 import splice.spi.WatchdogFired
 import splice.spi.WatchdogHeld
 
-// MERGED: TurnDriver's and TurnTelemetry's private companions each carried an identical
-// `ERR_SNIPPET = 200`. Two file-scope consts cannot share a name, and the two values were never
-// meant to diverge — one declaration now serves both. WIDENED to `internal` (was `private` on
-// TurnDriver.kt): TurnFailures.kt, TurnEnding.kt and TearAwareEvents.kt all read it now that the
-// error-surfacing code that used to share TurnDriver.kt's file scope lives across four files.
-internal const val ERR_SNIPPET = 200
+// V4-122: ERR_SNIPPET lives in splice.core.util now, at the same 200 this declaration carried.
+// It was declared three times — here at 200, in UpstreamClient.kt and WsLogKeys.kt at 160 — for one
+// meaning, so the same upstream message appeared at two lengths in one investigation. This value
+// was the one KEPT because it is what FailureText.kt and TurnKnownEnd.kt use for text the client
+// can SEE, and those bytes are oracle-pinned; the two log-only surfaces widened to match.
 
 /** Renders the per-turn observability: the turn line, error lines, the perf row+line, and the
  *  cache log line. Split out so the driver stays drive-only (the audit's god-file finding). */

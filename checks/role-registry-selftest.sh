@@ -80,24 +80,15 @@ else
   note "✓ CONTROL A: the fixture selftest passes"
 fi
 
-# ── B. control: the real tree is GREEN once every name is accounted for ──────────────────────────
-# Built by APPENDING the three duplicate names to the entries that already dispose their
-# signatures, which is what the fix row makes unnecessary. If this is not green, the wall's green
-# path does not work against the live tree and every red arm below is meaningless.
-python3 - "$CONFIG" <<'PY'
-import pathlib, re, sys
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-pairs = [('()->Long', ('ElapsedNow', 'AccountNow')), ('(String)->String?', ('HeaderLookup',))]
-for signature, missing in pairs:
-    anchor = f'signature = "{signature}"'
-    at = text.index(anchor)
-    names_at = text.index("names = [", at)
-    close = text.index("]", names_at)
-    added = "".join(f'    "{name}",\n' for name in missing)
-    text = text[:close] + added + text[close:]
-path.write_text(text)
-PY
+# ── B. control: the real tree with the REAL config is GREEN ──────────────────────────────────────
+# This used to APPEND three duplicate names to the entries disposing their signatures, because those
+# three were the fix row's work list and the row had not run yet. V4-122 reconciled all three — onto
+# ElapsedClock, WallClock and QuotaHeaderRead — so the names no longer exist and appending them made
+# the control CONSTRUCT the staleness it then reported: a config listing a name the tree no longer
+# declares is red by this wall's own rule, correctly. The real config IS the fully-dispositioned one
+# now, so the control runs it unchanged. Its purpose is unchanged and still the load-bearing half:
+# if this is not green, the wall's green path does not work against the live tree and every red arm
+# below is meaningless.
 run_check
 if [ "$rc" -ne 0 ]; then
   err "CONTROL B: the real tree with a fully-dispositioned config must be GREEN (exit $rc): $(grep -c 'NO DISPOSITION\|STALE' "$tmp/out") finding(s): $(head -4 "$tmp/out" | tr '\n' ' ')"
@@ -111,18 +102,21 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
-# ── 1. the shipped config reds on EXACTLY the three duplicates ───────────────────────────────────
+# ── 1. the shipped config accounts for EVERY shared signature ────────────────────────────────────
+# This arm used to require the tree to be RED on exactly three duplicates, naming ElapsedNow,
+# AccountNow and HeaderLookup — the row's own work list. V4-122 reconciled all three onto
+# ElapsedClock, WallClock and QuotaHeaderRead, so a red here would now mean the row FAILED rather
+# than that the wall worked; a control pinned to red stops being a control the moment the red is
+# fixed. What it asserts instead is the state the row was supposed to reach.
+#
+# NOT VACUOUS, and arm 2 is why: that arm plants a seam the config does NOT list and requires the
+# red BY NAME, so the NO-DISPOSITION path is still proven with a synthetic violation rather than
+# with the shipped tree's own backlog.
 run_check
-must_fail "1. the tree as it stands is red on the row's three duplicates" "NO DISPOSITION"
-for name in ElapsedNow AccountNow HeaderLookup; do
-  grep -q "NO DISPOSITION: $name " "$tmp/out" ||
-    err "1. expected $name to be red BY NAME (it is the duplicate the row was opened for)"
-done
-found="$(grep -c 'NO DISPOSITION\|STALE DISPOSITION\|UNTRUSTED' "$tmp/out")"
-if [ "$found" -ne 3 ]; then
-  err "1. the shipped disposition must leave EXACTLY the three duplicates unaccounted for, got $found finding(s): $(grep 'NO DISPOSITION\|STALE\|UNTRUSTED' "$tmp/out" | cut -c1-90 | tr '\n' ' ')"
+if [ "$rc" -ne 0 ]; then
+  err "1. the shipped config leaves signatures unaccounted for (exit $rc): $(grep -c 'NO DISPOSITION\|STALE' "$tmp/out") finding(s): $(head -3 "$tmp/out" | cut -c1-90 | tr '\n' ' ')"
 else
-  note "✓ 1. exactly 3 findings, all NO DISPOSITION, naming ElapsedNow / AccountNow / HeaderLookup"
+  note "✓ 1. every shared signature is accounted for — $(tail -1 "$tmp/out")"
 fi
 
 # ── 2. GROWTH: a synthetic seam joining a dispositioned group ────────────────────────────────────
@@ -141,8 +135,8 @@ run_check
 must_fail "2. GROWTH — a new name joining a dispositioned group" "NO DISPOSITION: SelftestClientVanished"
 grep -q "()->Boolean" "$tmp/out" ||
   err "2. GROWTH — the finding must name the shared signature so the fix is obvious"
-if [ "$(grep -c 'NO DISPOSITION' "$tmp/out")" -ne 4 ]; then
-  err "2. GROWTH — expected the 3 standing duplicates plus the synthetic name, got: $(grep -c 'NO DISPOSITION' "$tmp/out")"
+if [ "$(grep -c 'NO DISPOSITION' "$tmp/out")" -ne 1 ]; then
+  err "2. GROWTH — expected EXACTLY the synthetic name (V4-122 reconciled the three standing duplicates, so the count is 1, not 4), got: $(grep -c 'NO DISPOSITION' "$tmp/out")"
 fi
 reset
 

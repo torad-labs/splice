@@ -38,7 +38,8 @@ public object OAuthLoginFlow {
 
     /** Shortest thing accepted as a BARE code — below this it is almost certainly a stray key. */
     private const val MIN_BARE_CODE = 8
-    private const val ERR_BODY_CAP = 300
+    // V4-122: ERR_BODY_CAP is LoginIo's declaration now, read from this package — one width for the
+    // login flow rather than one per file that renders it.
 
     /** Runs the browser OAuth flow to completion; returns true on success. */
     public suspend fun run(spec: LoginSpec): Boolean {

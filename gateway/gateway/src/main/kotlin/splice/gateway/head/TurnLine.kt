@@ -4,6 +4,7 @@ package splice.gateway.head
 
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.util.ERR_SNIPPET
 import splice.spi.WatchdogFired
 import splice.spi.WatchdogHeld
 

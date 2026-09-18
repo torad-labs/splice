@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.spi.BufferCapacity
 import java.io.IOException

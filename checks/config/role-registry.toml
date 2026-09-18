@@ -16,18 +16,25 @@
 # sentence, and a name listed here that no longer exists fails as STALE, which is how a fix is
 # detected.
 #
-# THREE NAMES ARE DELIBERATELY ABSENT, and that is the point of the row that created this file.
-# They are not distinct roles, so no reason can honestly be written for them:
-#   ElapsedNow    (provider-spi/RuntimeSeams.kt:40)      == ElapsedClock  (core/util/RuntimePorts.kt:143)
-#   AccountNow    (provider-spi/AccountSelection.kt:22)  == WallClock     (core/util/RuntimePorts.kt:105)
-#   HeaderLookup  (gateway/usage/RateLimitHeaders.kt:22) == QuotaHeaderRead (core/usage/QuotaHeaders.kt:15)
-# Each was verified against the declarations, not taken from the audit: ElapsedNow's KDoc says
-# "a monotonic now-reading in milliseconds … retry deadlines and the shared 429 cooldown", which is
-# ElapsedClock's contract verbatim; AccountNow's says "epoch time seam used to compare provider
-# reset timestamps", which is exactly WallClock's "compared against a foreign epoch"; and
-# QuotaHeaderRead's KDoc ADMITS the duplication — "the gateway's own HeaderLookup lives a module
-# above this one, so the header families are decoded against this port". `role-registry.py check`
-# is RED on those three names until the sibling fix row reconciles them.
+# THREE NAMES WERE DELIBERATELY ABSENT, and V4-122 RECONCILED ALL THREE rather than disposing of
+# them — which is what this file said the fix row would have to do:
+#   ElapsedNow    (provider-spi/RuntimeSeams.kt)      -> typealias of ElapsedClock  (core/util/RuntimePorts.kt)
+#   AccountNow    (provider-spi/AccountSelection.kt)  -> typealias of WallClock     (core/util/RuntimePorts.kt)
+#   HeaderLookup  (gateway/usage/RateLimitHeaders.kt) -> typealias of QuotaHeaderRead (core/usage/QuotaHeaders.kt)
+# They were never distinct roles, and the evidence was in the declarations rather than the audit:
+# ElapsedNow's KDoc said "a monotonic now-reading in milliseconds … retry deadlines and the shared
+# 429 cooldown", which is ElapsedClock's contract verbatim; AccountNow's said "epoch time seam used to
+# compare provider reset timestamps", exactly WallClock's "compared against a foreign epoch"; and
+# QuotaHeaderRead's KDoc ADMITTED the duplication — "the gateway's own HeaderLookup lives a module
+# above this one". The honest fix was to make each pair ONE declaration, not to write a reason for
+# two names of one role: listing them here would have closed the wall without merging anything, which
+# is what the note above meant by calling that a lie. A typealias merges them and keeps every call
+# site and SAM conversion compiling, so the names are gone from this file because they are gone from
+# the tree — a disposition may not outlive its subject, and these subjects were fixed.
+#
+# WHAT IS STILL LISTED, AND WHY: every remaining name in a shared group is a role that genuinely
+# differs from its siblings, and each carries a reason saying what it IS. The wall stays useful
+# because ADDING a lambda-shaped port still costs one sentence.
 #
 # HOW TO ADD AN ENTRY. Run `python3 checks/role-registry.py report .` for the census, then write
 # the signature verbatim, today's date, the names, and a reason that says what each role IS. A
@@ -42,10 +49,12 @@ names = [
     "CodeModeCleanup",
     "FileIoTask",
     "HaltJvm",
+    "HandoffMark",
     "MuseMintWriteGuard",
     "ProtocolAnomaly",
     "PulseTick",
     "RawSseFlush",
+    "ReanchorSpentHook",
     "RestoreStep",
     "ShutdownDaemon",
     "StopControl",
@@ -62,10 +71,14 @@ refresh happened mid-attempt), WorkerExited (the code-mode worker process died),
 PulseTick (the spinner's next frame is due). Actions the caller commands: HaltJvm (exit the \
 process), Teardown and StopControl (shut this component / the control plane down), ShutdownDaemon \
 (the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \
-(release the worker's cell), RawSseFlush (push buffered bytes to the client socket), RestoreStep \
+(release the worker's cell), RawSseFlush (push buffered bytes to the client socket), ReanchorSpentHook \
+(stamp one spent re-anchor on the perf row), RestoreStep \
 (undo one already-applied upgrade step), FileIoTask (the body to run on the file-IO dispatcher), \
-MuseMintWriteGuard (the pre-write assertion before a minted key is persisted). Substituting any \
-for any other is not a type error and would be silent: HaltJvm for Teardown kills the process \
+MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), HandoffMark (the \
+turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \
+its own rather than folded onto one of the observers above: an observer is subscribed to, a mark \
+is set). Substituting any for any other is not a type error and would be silent: HaltJvm for \
+Teardown kills the process \
 where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
 middle of a turn. These need MORE naming than a shared shape, not less."""
 

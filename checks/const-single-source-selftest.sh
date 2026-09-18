@@ -80,8 +80,15 @@ case "$control_out" in
 esac
 STRICT_BASE="$(strict_count "$control_out")"
 MOVED_BASE="$(moved_count "$control_out")"
-if [ -z "$STRICT_BASE" ] || [ "$control_code" -ne 1 ]; then
-  echo "  ✗ const-single-source-selftest: CONTROL did not produce a strict count (exit $control_code);"
+# V4-122 fixed every strict finding the shipped tree carried, so this control no longer expects a
+# RED tree — requiring one would make the row's own success fail its own selftest, which is the
+# stale-control failure this file already hit twice today (a control that pins a red state stops
+# being a control the moment the red is fixed). What the control must still establish is that the
+# instrument RAN and produced a READABLE count, and that the ratchet plane matches the tree; the
+# strict arm is proven below by fixtures that plant their own violations, so a strict base of 0 does
+# not make it vacuous — and the shape guard above still refuses a drifted or unparsable run.
+if [ -z "$STRICT_BASE" ]; then
+  echo "  ✗ const-single-source-selftest: CONTROL produced no strict count at all (exit $control_code);"
   echo "    every fixture below is UNPROVEN."
   printf '%s\n' "$control_out" | tail -4 | sed 's/^/      /'
   exit 1
@@ -94,8 +101,8 @@ if [ "$MOVED_BASE" -ne 0 ]; then
   printf '%s\n' "$control_out" | grep -E '^  ✗ (GROWTH|STALE)' | sed 's/^/      /'
   exit 1
 fi
-echo "  ✓ control: strict $STRICT_BASE (unbaselined by design), growth/stale 0 (the baseline matches the tree),"
-echo "            and the shipped NAMED_SCARS list still names real duplicates"
+echo "  ✓ control: strict $STRICT_BASE (V4-122 fixed the shipped tree's strict findings; the fixtures"
+echo "            below plant their own), growth/stale 0 (the baseline matches the tree)"
 printf '%s\n' "$control_out" | grep -E 'const declarations|STRICT findings|COPY/COLLISION|NAMED_SCARS' | sed 's/^/      /'
 
 expect_delta() { # label, strict-delta, moved-delta, needle...
@@ -167,24 +174,43 @@ expect_delta "4. a baseline entry for a group the tree no longer has" 0 1 \
 # ── 5. a NAMED_SCARS name recorded in the baseline ────────────────────────────────────────────
 # The two planes must not be able to launder each other: recording a strict name in the ratchet
 # baseline is itself an error, and the strict finding still fires.
+#
+# V4-122 MADE THIS ARM SELF-CONTAINED. It used TAG_CHARS, which was a real shipped scar — so it
+# depended on the tree still carrying the duplication the row was fixing, and went red the moment
+# the row succeeded. It now PLANTS both halves: a duplication in a synthetic module (a real
+# directory, never through build_harness's symlinks) and the matching scar entry in the harness's
+# own copy of the checker. The claim is unchanged — the ratchet may not launder a strict name — and
+# it is now a claim about the instrument, which is what a fixture should assert.
 build_harness
-python3 - "$BASELINE" <<'PY'
+mkdir -p "$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic"
+printf 'package splice.synthetic\n\nprivate const val SCAR_DUP = 5\n' \
+  >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt"
+printf 'package splice.synthetic\n\nprivate const val SCAR_DUP = 5\n' \
+  >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt"
+python3 - "$BASELINE" "$CHECKER" <<'PY'
 import json, sys
-doc = json.load(open(sys.argv[1]))
-doc["groups"]["COPY TAG_CHARS"] = [
-    "gateway/gateway/src/main/kotlin/splice/gateway/head/LocalResponses.kt",
-    "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnPreparation.kt",
+baseline, checker = sys.argv[1], sys.argv[2]
+doc = json.load(open(baseline))
+doc["groups"]["COPY SCAR_DUP"] = [
+    "gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt",
+    "gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt",
 ]
 doc["total"] += 1
-json.dump(doc, open(sys.argv[1], "w"), indent=2)
+json.dump(doc, open(baseline, "w"), indent=2)
+# The scar goes into the HARNESS's copy of the checker, which build_harness cp's (a real file, not
+# a symlink) — so this never touches the shipped NAMED_SCARS list.
+text = open(checker).read()
+old = "NAMED_SCARS: dict[str, str] = {}"
+assert text.count(old) == 1, "the harness copy does not carry the empty shipped list"
+open(checker, "w").write(text.replace(old, 'NAMED_SCARS = {"SCAR_DUP": "fixture scar: one value, two files"}'))
 PY
-expect_delta "5. a NAMED_SCARS name recorded in the baseline" 0 1 \
-  "STALE" "TAG_CHARS" "cannot be both baselined and strict"
+expect_delta "5. a NAMED_SCARS name recorded in the baseline" 1 1 \
+  "STALE" "SCAR_DUP" "cannot be both baselined and strict"
 # ...and the strict finding for it is STILL there, unlaundered.
 out="$(run_gate)"
 case "$out" in
-  *"NAMED-SCAR (COPY): TAG_CHARS"*) echo "  ✓ 5b. the NAMED-SCAR finding survives being baselined" ;;
-  *) err "5b. baselining TAG_CHARS suppressed its NAMED-SCAR finding" ;;
+  *"NAMED-SCAR (COPY): SCAR_DUP"*) echo "  ✓ 5b. the NAMED-SCAR finding survives being baselined" ;;
+  *) err "5b. baselining SCAR_DUP suppressed its NAMED-SCAR finding" ;;
 esac
 
 # ── 6. a synthetic must-stay-equal comment ────────────────────────────────────────────────────
@@ -227,12 +253,35 @@ fi
 # The ledger note tells the orchestrator to wire exactly:
 #   run "const single source"  python3 checks/const-single-source.py --ratchet
 # Proven verbatim here (with --root, the harness's only difference from the repo root).
+#
+# V4-122 CHANGED WHAT THIS ARM PINS. It used to run the documented line against a harness copy of
+# the shipped tree and expect non-zero, which only worked while the tree CARRIED strict findings —
+# so the row fixing them would have broken the arm that proves the gate gates. That is a control
+# pinned to a red state, and it stops being a control the moment the red is fixed. The gate now gets
+# a tree that is GREEN to begin with and then a VIOLATION planted in it, so the arm proves the thing
+# it names: the documented line fails on a tree that offends, and passes on one that does not.
 build_harness
-if python3 "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
-  err "9. the documented gate line exited 0 on a tree carrying $STRICT_BASE strict findings"
+if ! python3 "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
+  err "9. the documented gate line is non-zero on a CLEAN harness tree — the arm below cannot distinguish a violation from a broken gate"
 else
-  echo "  ✓ 9. the documented gate line fails on the tree it is wired against"
+  # PLANT INTO A REAL MODULE DIR, NEVER THROUGH build_harness's SYMLINK. That function links
+  # $tmp/gateway/<mod> at the REAL module, so writing "$tmp/gateway/core/src/..." writes into the
+  # repository — this arm did exactly that on its first run and left two files in gateway/core plus
+  # their compiled classes, which the next run's CONTROL then reported as real growth. A synthetic
+  # module is what the checker's own glob (gateway/*/src/main/**) is happy to scan and what nothing
+  # else in this harness aliases.
+  mkdir -p "$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic"
+  printf 'package splice.synthetic\n\nprivate const val SYNTHETIC_DUP = 7\n' \
+    >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/A.kt"
+  printf 'package splice.synthetic\n\nprivate const val SYNTHETIC_DUP = 7\n' \
+    >"$tmp/gateway/syntheticmod/src/main/kotlin/splice/synthetic/B.kt"
+  if python3 "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
+    err "9. the documented gate line exited 0 on a tree carrying a PLANTED duplication"
+  else
+    echo "  ✓ 9. the documented gate line passes clean and fails on a planted violation"
+  fi
 fi
+build_harness
 
 # ── 10. bare `check` is the inventory: it prints the held plane and ignores the baseline ───────
 build_harness

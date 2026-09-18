@@ -1,5 +1,6 @@
 import { control } from '@shared/api';
 import type { ConfigValue, PatchResult } from '@shared/api';
+import { markRestartPending } from '../model/restart';
 import { configStore } from '../model/store';
 
 export async function fetchConfig(head?: string): Promise<void> {
@@ -21,6 +22,9 @@ export async function applyConfigPatch(
   head?: string,
 ): Promise<PatchResult> {
   const result = await control.patchConfig(patch);
+  // The daemon names which keys it will not read until it restarts; that list is what cocks the
+  // daemon strip, so it is recorded here, from the daemon's answer and never from a hand list.
+  markRestartPending(result.restart_required);
   await fetchConfig(head);
   return result;
 }

@@ -6,6 +6,19 @@
 //   GET /api/topology -> TopologyPayload      (PENDING V4-128, typed from FEATURES.md 6 + 2.3)
 //   PUT /api/topology -> TopologyWriteResult  (same row)
 import type { PendingRoute } from '@shared/api';
+import type { Provenance } from '@shared/ui';
+
+/**
+ * What every topology field box prints as its provenance.
+ *
+ * The FieldBox vocabulary (CONTRACTS.md section 2) names the six CONFIG layers, weakest first:
+ * enum default, `[defaults]`, `[heads.<key>.overrides]`, state file, env, PATCH. A topology key's
+ * source is none of those — it is the file — and 'defaults table' is the only name in the closed
+ * set that means "the TOML file". It is printed BESIDE a row that names `splice.toml` outright, so
+ * the operator reads the file name and not the shorthand; the gap is recorded on the M2-05 ledger
+ * note for the orchestrator to close with a real name if the shorthand is not good enough.
+ */
+export const TOPOLOGY_PROVENANCE: Provenance = 'defaults table';
 
 /** One finding from the pure validator, or from the daemon's structured writer. */
 export interface TopologyFinding {

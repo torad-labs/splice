@@ -65,14 +65,25 @@ type Basis = 'measured' | 'estimated' | 'unavailable' | 'stale';
 
 // A printed strip. Focusable (tabIndex 0, Enter/Space call onOpen). Cocked = holder edge
 // amber or red with the edgeLabel printed; struck = line drawn across, edge grey.
-<Strip edge={Edge} edgeLabel="string, 3 words or fewer" cocked?: boolean struck?: boolean
+// edgeLabel has a SIX CHARACTER budget (2026-09-18, review B1): it sits inside the strip's
+// fixed-width edge column, and that fixed width is what makes every strip in a bay start its
+// fields at the same x. A longer label used to set each strip's field origin and stagger the rack.
+<Strip edge={Edge} edgeLabel="string, 6 characters or fewer" cocked?: boolean struck?: boolean
        selected?: boolean onOpen?: () => void ariaLabel="string">{Field children}</Strip>
 
 // A fixed-width boxed field inside a strip. w is a ch count; the value is clipped, never wrapped.
-<StripField w={number} label="string" value={string | number} basis?: Basis mono?: boolean />
+// `label` is OPTIONAL as of 2026-09-18 (review B9): a rack of homogeneous strips declares its
+// columns ONCE on the bay head and omits the label on every row, which is what stops the column
+// names being reprinted on all of them. A strip whose fields differ from its neighbours keeps its
+// labels. `basis` is optional in the type, so a caller with exactOptionalPropertyTypes must omit
+// the prop rather than pass undefined.
+<StripField w={number} label?: string value={string | number} basis?: Basis mono?: boolean />
 
 // A labeled rack. count prints beside the label. When children are empty it renders <Empty>.
-<Bay label="string" count?: number empty={{ text: string; source: string }} actions?: ReactNode>
+// `fields` is the column header row (2026-09-18, review B9): a rack of homogeneous strips
+// declares its column names here ONCE, at the same ch widths and starting past the edge column,
+// and the strips below omit their own labels.
+<Bay label="string" count?: number fields?: ReactNode empty={{ text: string; source: string }} actions?: ReactNode>
 
 // The colored holder edge on its own (rail tabs, rule cells). Always prints its label.
 <HolderEdge state={Edge} label="string" />
@@ -91,6 +102,8 @@ type Basis = 'measured' | 'estimated' | 'unavailable' | 'stale';
 <Empty text="string" source="string" />
 
 // A number that says what it is. Renders value, unit, and the basis as text, never color alone.
+// A `measured` basis prints NOTHING: it is the default reading of any figure and the word is noise
+// on every row (review B5, 2026-09-18); `estimated`, `unavailable` and the rest still print.
 <Figure value={string | number} unit?: string basis={Basis} />
 ```
 

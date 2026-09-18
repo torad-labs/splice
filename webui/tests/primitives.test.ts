@@ -183,11 +183,14 @@ describe('Empty', () => {
 });
 
 describe('Figure', () => {
-  test('prints value, unit and basis as text', () => {
+  // A measured basis prints nothing: "measured" is the default reading of any figure, so the word
+  // is noise on every row that carries it (design review B5). StripField has read this way since
+  // M2-10; Figure matches it here. An unavailable or estimated basis still prints, below.
+  test('prints value and unit, and stays silent about a measured basis', () => {
     const out = render(h(Figure, { value: 74, unit: '%', basis: 'measured' }));
     expect(out).toContain('>74<');
     expect(out).toContain('>%<');
-    expect(out).toContain('>measured<');
+    expect(out).not.toContain('>measured<');
   });
 
   test('names an unavailable basis rather than printing a zero', () => {

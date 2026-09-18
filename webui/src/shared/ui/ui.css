@@ -879,6 +879,18 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink-strong);
 }
+
+/* FIGURE ON A STRIP (M1-77). Figure renders on --room 56 times and passes; it renders on --strip
+   once and fails - the logs page's `.myx-lt-head`, where a figure's value printed --ink-strong
+   #EAE8D9 on strip paper #DED9C6 at 1.15:1 in dark, and its unit printed --ink-mute at 1.98:1. The
+   light room passed both at 16.85 and 8.85, which is why neither instrument saw it: the defect is
+   the dark plane only, and a token swap on the class would have moved it rather than removed it
+   (M1-52 measured that shape: their first cut moved `.myx-head-key` from 1.07 to 1.06).
+   So the rules are PLANE-SCOPED: the strip already has its own ink vocabulary - --strip-ink and
+   --strip-ink-mute, the latter recorded as the comp's #6B685B darkened one step - and these two
+   rules print it. The room case above is untouched, which is what keeps the other 56 renders. */
+.myx-strip .myx-fig-value { color: var(--strip-ink); }
+.myx-strip .myx-fig-unit { color: var(--strip-ink-mute); }
 .myx-fig-unit {
   /* FIGURE: the unit beside a figure; it sits on the figure's baseline. */
   font-family: var(--font-figure);

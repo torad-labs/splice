@@ -22,6 +22,9 @@ export interface ProjectRow {
    *  console must not print "today" over a boundary it guessed (a local midnight, a rolling 24h
    *  and a UTC day all render differently and only the daemon knows which one it counted). */
   day_start: number;
+  /** Epoch ms of the newest activity on any session in this repo, or null when the repo has none
+   *  registered. Null is a real answer ("no session has touched it"), never a zero timestamp. */
+  last_activity: number | null;
 }
 
 export interface ProjectsPayload {
@@ -48,6 +51,10 @@ export interface ProjectFilesPayload {
   /** The directories the reader looked in. FEATURES.md 4.14 requires the empty to name the exact
    *  directory it searched, so the daemon sends them and the page prints them. */
   looked_in: string[];
+  /** The client's own per-project memory switch, when the daemon can read it. FEATURES.md 4.14
+   *  names `autoMemoryEnabled` as the thing an empty memory list must blame when it is the reason,
+   *  rather than leaving the operator to guess why the directory was empty. */
+  auto_memory_enabled?: boolean;
 }
 
 export type ProjectsSlice = ProjectsPayload | PendingRoute;

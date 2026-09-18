@@ -1,0 +1,103 @@
+/* The sessions page: a rack of bays beside a detail column that swells open.
+   Tokens only (CONTRACTS.md section 1); radius 0, no shadow, no glow. */
+
+.myx-sx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-sx-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-sx-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-5);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+/* The daemon's own sentence about what this registry never shows. Explanation
+   is on demand, never inline (the brief's copy rule). */
+.myx-sx-note {
+  margin: var(--space-2) var(--space-0) var(--space-0);
+  padding: var(--space-3);
+  max-width: 62ch;
+  background: var(--room-deep);
+  border: var(--hair) solid var(--hairline);
+  color: var(--ink-mute);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+}
+
+/* The board: the bays, and the detail column at zero width until a strip is
+   opened. The swell is the one motion, --dur-2. */
+.myx-sx-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  gap: var(--space-4);
+  align-items: start;
+  transition: grid-template-columns var(--dur-2) var(--ease-out);
+}
+.myx-sx-board-open {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+}
+
+.myx-sx-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.myx-sx-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.myx-sx-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.myx-sx-detail-name {
+  font-family: var(--font-figure);
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+}
+
+/* The two controls this page owns. A printed plate, like every other control in
+   the world: pale ground, black ink, a hairline that darkens on hover. */
+.myx-sx-open,
+.myx-sx-close {
+  padding: var(--space-1) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.myx-sx-open:hover,
+.myx-sx-close:hover { border-color: var(--strip-ink); }
+.myx-sx-open:focus-visible,
+.myx-sx-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+.myx-sx-window {
+  display: flex;
+  gap: var(--space-5);
+  align-items: baseline;
+}

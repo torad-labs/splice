@@ -650,6 +650,17 @@ function checkFieldGrid(capturesDir) {
     if (!judged.ok) bad.push(`${f}: ${judged.detail}${honouredClause(judged)}`);
     else if (judged.honoured.length > 0) honoured.push(`${f}: ${judged.honoured.join(', ')}`);
   }
+  // AN ADDRESS WITH NO FILE ON DISK IS A DROP, NOT A HOLE IN THE AUDIT (M1-124, found by the
+  // red-green on captureSet's wrong-room guard). This loop walks the DIRECTORY, so an address whose
+  // capture was never written is never iterated and records nothing -- and `page-coverage` then
+  // reports UNACCOUNTED, which is reserved for the audit losing track of a page it should have
+  // seen. It had never shown, because all thirteen captures normally exist; forcing one address to
+  // fail the capture leg made it visible at once. The distinction is the whole point of the table:
+  // "this leg could not look because there was nothing to look at" is a stated reason, and
+  // "nobody knows what this leg did" is a defect in the instrument.
+  for (const a of expected ?? []) {
+    if (!coverageOf('field-grid', a).known) covers('field-grid', a, `no capture on disk in ${capturesDir}`);
+  }
   const detail = (bad.length ? bad.join(' · ') : `aligned on ${checked} captures`)
     + (honoured.length ? ` · honoured a declared span: ${honoured.join(' · ')}` : '')
     + (skipped ? ` · ${skipped} skipped (no PIL)` : '')
@@ -787,6 +798,11 @@ function checkTonalDrift(capturesDir, compPath) {
   const expected = addresses();
   const covered = (expected ?? []).filter((a) => rows.some((r) => r.f.startsWith(`${a}-`)));
   const missing = (expected ?? []).filter((a) => !rows.some((r) => r.f.startsWith(`${a}-`)));
+  // The same backfill as its sibling: an address with no file on disk is a DROP with a stated
+  // reason, never an UNACCOUNTED cell (M1-124).
+  for (const a of expected ?? []) {
+    if (!coverageOf('tonal-drift', a).known) covers('tonal-drift', a, `no capture on disk in ${capturesDir}`);
+  }
   const provenance = `read ${rows.length} of ${files.length} capture(s)`
     + (expected === null ? ` · coverage unknown (${ADDRESSES_FILE}: no ADDRESSES table)`
        : ` · covering ${covered.length}/${expected.length} addresses`)
@@ -1628,6 +1644,39 @@ function selftest() {
       record('page-coverage', false, ok,
         ok ? 'a page dropped at the no-counter site is named in the table'
            : `the silent site stayed silent: ${table.detail.replace(/\n/g, ' | ')}`);
+      return findings[0];
+    }, true],
+    // ---- AN ADDRESS WITH NO FILE ON DISK IS A DROP, NOT A HOLE (M1-124). Both reading legs walk
+    // the DIRECTORY, so an address whose capture was never written is never iterated and records
+    // nothing -- and the table then calls it UNACCOUNTED, which is reserved for the instrument
+    // losing track. Found by the red-green on captureSet's wrong-room guard, where forcing one
+    // address to fail the capture leg made every downstream cell for it read as an audit hole.
+    // `fleet` has a capture here and `teams` does not; both must end up with a stated disposition.
+    ['page-coverage', () => {
+      findings.length = 0; COVERAGE.clear();
+      const good = rackProbe([
+        { bay: 0, left: 219, edges: [373, 527] }, { bay: 0, left: 219, edges: [373, 527] },
+      ]);
+      const tmp = fs.mkdtempSync('/tmp/lookgate-nofile-');
+      seedCaptures(tmp, ['fleet'], { im: good.im, strips: good.known });
+      fs.writeFileSync(path.join(tmp, 'webui/src/app/rows.ts'),
+        "export const ADDRESSES = ['fleet', 'teams'] as const;\n");
+      fs.mkdirSync(path.join(tmp, 'mocks'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'mocks/comp.png'), encodePng(good.im));
+      const future = new Date(Date.now() + 10_000);
+      for (const f of fs.readdirSync(path.join(tmp, 'caps'))) fs.utimesSync(path.join(tmp, 'caps', f), future, future);
+      const saved = ROOTREF.root; ROOTREF.root = tmp;
+      covers('capture-set', 'fleet', null); covers('capture-set', 'teams', 'not written');
+      checkFieldGrid('caps'); checkTonalDrift('caps', 'mocks/comp.png'); checkPageCoverage();
+      ROOTREF.root = saved;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      const table = findings[findings.length - 1];
+      const ok = /teams\s+capture-set=DROPPED .* field-grid=DROPPED \(no capture on disk/.test(table.detail)
+        && !/UNACCOUNTED/.test(table.detail);
+      findings.length = 0;
+      record('page-coverage', false, ok,
+        ok ? 'an address with no capture on disk is DROPPED with a reason, not UNACCOUNTED'
+           : `a missing capture read as an audit hole: ${table.detail.replace(/\n/g, ' | ')}`);
       return findings[0];
     }, true],
     ['field-grid', () => fieldProbe('dark', 'dark'), false],

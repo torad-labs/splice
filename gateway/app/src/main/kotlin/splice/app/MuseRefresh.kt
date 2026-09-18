@@ -65,5 +65,4 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
             else -> MuseMintAttempt.Denied("key mint failed (HTTP ${response.status.value})")
         }
     }
-
 }

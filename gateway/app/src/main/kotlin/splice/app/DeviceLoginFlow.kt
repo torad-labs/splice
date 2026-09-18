@@ -17,6 +17,7 @@ import io.ktor.http.isSuccess
 import splice.core.auth.CredentialExpiry
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.core.wire.HttpStatus
 import splice.spi.ProcessWaiter
 import splice.spi.Waiter
 
@@ -36,7 +37,6 @@ public object DeviceLoginFlow {
     // CredentialExpiry does (unrepresentable → the synthetic 4h ceiling, never an instant expiry) and
     // the interval is capped in seconds before it is multiplied; both are no-ops for RFC 8628 values.
     private const val MAX_POLL_INTERVAL_S = 3600L
-    private const val HTTP_SERVER_ERROR_FLOOR = 500
 
     private enum class Outcome { SUCCESS, ABORT, EXPIRED }
 
@@ -157,7 +157,7 @@ public object DeviceLoginFlow {
     ): PollStep {
         val body = resp.bodyAsText()
         if (resp.status.isSuccess()) return persistPollSuccess(spec, body, loginIo)
-        if (resp.status.value >= HTTP_SERVER_ERROR_FLOOR) {
+        if (resp.status.value >= HttpStatus.INTERNAL_SERVER_ERROR) {
             println("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return PollStep.Stop(Outcome.ABORT)
         }

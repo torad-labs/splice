@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# checks/constructor-width-selftest.sh — red-green proof for the V4-93 constructor-width ratchet,
+# taken against the REAL tree rather than against fixtures alone.
+#
+# WHY BOTH HALVES EXIST. `constructor-width.py --selftest` proves the LOGIC on temp fixtures (the
+# limits themselves, a 13-parameter defaulted data class, a widened entry, a padded entry) and it
+# grades its own class census against ast-grep's `primary_constructor` nodes. What it cannot prove
+# is that the checker is still pointed at THIS tree: a checker whose glob stops matching measures
+# zero constructors, finds zero offenders and exits 0. That is the failure
+# checks/concentration-selftest.sh exists for — a gate leg that spent a month executing `true`.
+#
+# THE OTHER HALF IS THE PREMISE. This wall exists because gateway/detekt.yml:38-43 turns
+# LongParameterList off for data classes and defaulted parameters. If someone deletes those two
+# ignores, detekt starts billing the width and this wall is redundant; if someone deletes the RULE,
+# this wall is the only thing left. Either way the premise must not change silently, so it is
+# asserted here — the one place that re-reads it on every gate run.
+#
+# EVERYTHING RUNS OUT OF TREE. mktemp -d holding a COPY of the checker and of the baseline, plus one
+# SYMLINK per gateway module — the checker measures the real source (ROOT comes from its own
+# __file__, so a copy under $tmp/checks measures $tmp) while every mutation lands on a throwaway.
+#
+# THE CONTROL COMES FIRST: each arm claims "this mutation turns green into red", which is worth
+# nothing unless the unmutated harness is green.
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+fail=0
+err() { echo "  x constructor-width-selftest: $1"; fail=1; }
+note() { printf '  %s\n' "$1"; }
+
+CHECK="$tmp/checks/constructor-width.py"
+BASELINE="$tmp/checks/config/constructor-width-baseline.json"
+SYNTH="$tmp/gateway/zz-selftest-width/src/main/kotlin/splice/selftest"
+
+mkdir -p "$tmp/checks/config" "$tmp/gateway"
+for main in "$ROOT"/gateway/*/src/main; do
+  [ -d "$main" ] || continue
+  mod="${main#"$ROOT"/gateway/}"
+  mod="${mod%%/*}"
+  ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+done
+[ -e "$tmp/gateway/core" ] || { echo "  x constructor-width-selftest: no gateway modules found under $ROOT"; exit 1; }
+
+reset_all() {
+  cp "$ROOT/checks/constructor-width.py" "$CHECK"
+  cp "$ROOT/checks/config/constructor-width-baseline.json" "$BASELINE"
+  rm -rf "$tmp/gateway/zz-selftest-width"
+}
+reset_all
+# NOTHING MAY LAND IN THE TREE (the 2026-09-17 scar: an earlier public-surface harness
+# `ln -s`-ed THROUGH an existing symlink and created gateway/build-logic/build-logic in the
+# working tree). Recorded before the arms run, re-checked at exit.
+tree_state="$(cd "$ROOT/gateway" && ls -1A)"
+
+rc=0
+check() { python3 "$CHECK" "$@" >"$tmp/out" 2>&1; rc=$?; }
+
+must_fail() { # must_fail <label> <substring the failure must name>
+  if [ "$rc" -eq 0 ]; then
+    err "$1 — MUST exit non-zero, exited 0. The arm it is supposed to prove is not enforcing."
+  elif ! grep -qF -- "$2" "$tmp/out"; then
+    err "$1 — exited $rc, but not for the stated reason (expected '$2'): $(head -4 "$tmp/out" | tr '\n' ' ')"
+  else
+    note "ok $1 (exit $rc)"
+  fi
+}
+
+# -- the premise: detekt still cannot see this ------------------------------------------------
+DETEKT="$ROOT/gateway/detekt.yml"
+if ! grep -q "LongParameterList:" "$DETEKT"; then
+  err "PREMISE: gateway/detekt.yml no longer configures LongParameterList — re-read this wall's header before trusting either instrument"
+elif ! grep -q "ignoreDataClasses: true" "$DETEKT" || ! grep -q "ignoreDefaultParameters: true" "$DETEKT"; then
+  note "PREMISE CHANGED: detekt's ignoreDataClasses/ignoreDefaultParameters are no longer both true — detekt may now bill some of these widths itself; re-read checks/constructor-width.py's header"
+else
+  note "ok PREMISE: detekt ignores data classes AND defaulted parameters, so nothing but this wall bills the width"
+fi
+
+# -- control ---------------------------------------------------------------------------------
+python3 "$ROOT/checks/constructor-width.py" --selftest >"$tmp/out" 2>&1 || {
+  err "CONTROL: the fixture selftest (incl. the ast-grep denominator) must be green: $(tail -6 "$tmp/out" | tr '\n' ' ')"
+}
+check --ratchet
+if [ "$rc" -ne 0 ]; then
+  err "CONTROL: the unmutated tree must hold its baseline (exit $rc): $(tail -6 "$tmp/out" | tr '\n' ' ')"
+fi
+live="$(grep -oE 'primary constructors[[:space:]]+measured[[:space:]]+[0-9]+' "$tmp/out" | grep -oE '[0-9]+$')"
+if [ -z "${live:-}" ] || [ "$live" -lt 200 ]; then
+  err "CONTROL: the harness measured ${live:-no} primary constructor(s) — the source glob is not pointed at the real tree, so every arm below is unproven"
+else
+  note "ok CONTROL: baseline holds over $live real primary constructors"
+fi
+if [ "$fail" -ne 0 ]; then
+  echo "  x constructor-width-selftest: control failed — the arms below are UNPROVEN, not passing"
+  exit 1
+fi
+
+# -- 1. GROWTH in the exact shape detekt ignores ---------------------------------------------
+# A data class whose every parameter is defaulted: ignoreDataClasses AND ignoreDefaultParameters
+# both apply, so detekt reports nothing and this is the only instrument that can.
+mkdir -p "$SYNTH"
+python3 - "$SYNTH/SelftestWide.kt" <<'PY'
+import pathlib, sys
+params = ",\n".join(f"    val p{i}: Int = 0" for i in range(13))
+pathlib.Path(sys.argv[1]).write_text(
+    "package splice.selftest\n\npublic data class SelftestWideCtor(\n" + params + ",\n)\n"
+)
+PY
+check --ratchet
+must_fail "1. GROWTH — a 13-parameter defaulted data class nothing records" "GROWTH"
+grep -q "SelftestWideCtor" "$tmp/out" ||
+  err "1. GROWTH — the failure does not NAME the planted class, so the arm went red for something else"
+reset_all
+
+# -- 2. GROWTH by SUBSYSTEM, with the parameter count well inside ----------------------------
+mkdir -p "$SYNTH"
+python3 - "$SYNTH/SelftestSubs.kt" <<'PY'
+import pathlib, sys
+imports = "\n".join(f"import splice.selftestsub{i}.Type{i}" for i in range(7))
+params = ",\n".join(f"    val p{i}: Type{i}" for i in range(7))
+pathlib.Path(sys.argv[1]).write_text(
+    "package splice.selftest\n\n" + imports + "\n\npublic class SelftestSubsCtor(\n" + params + ",\n)\n"
+)
+PY
+check --ratchet
+must_fail "2. GROWTH — 7 splice subsystems in a 7-parameter constructor" "subsystems (max 6)"
+grep -q "SelftestSubsCtor" "$tmp/out" || err "2. the subsystem arm does not NAME the planted class"
+reset_all
+
+# -- 3. WIDENED: a recorded offender gains parameters ----------------------------------------
+# The arm without which a baseline entry is a licence: HeadDeps could go 25 -> 40 under a green
+# gate. The mutation is applied to the CHECKER's view by shrinking the recorded number, which is
+# the same arithmetic as the class gaining parameters and does not touch the working tree.
+python3 - "$BASELINE" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+key = next(k for k, v in data["offenders"].items() if v["params"] > 13)
+data["offenders"][key]["params"] -= 1
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+check --ratchet
+must_fail "3. WIDENED — a recorded offender measuring wider than its entry" "WIDENED"
+reset_all
+
+# -- 4. PADDED: an entry recorded above the measurement --------------------------------------
+python3 - "$BASELINE" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+key = next(iter(data["offenders"]))
+data["offenders"][key]["params"] += 7
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+check --ratchet
+must_fail "4. PADDED — an entry recorded above the measured width" "PADDED"
+reset_all
+
+# -- 5. STALE: an entry naming a constructor that is not wide --------------------------------
+python3 - "$BASELINE" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["offenders"]["gateway/core/src/main/kotlin/splice/core/Nope.kt WasWideOnce"] = {"params": 30, "subsystems": 0}
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+check --ratchet
+must_fail "5. STALE — an entry naming a constructor the tree does not have" "STALE"
+reset_all
+
+# -- 6. an undated baseline, and a missing one, are hard errors ------------------------------
+python3 - "$BASELINE" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["recorded"] = ""
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+check --ratchet
+must_fail "6. an undated baseline is a hard error" "recorded"
+reset_all
+
+rm -f "$BASELINE"
+check --ratchet
+must_fail "6b. a missing baseline refuses rather than passing" "missing"
+reset_all
+
+# -- 7. the BORING case: a lost denominator must refuse, not report a clean tree -------------
+python3 - "$CHECK" <<'PY'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+text, n = re.subn(r'^SRC_GLOB = .*$', 'SRC_GLOB = "gateway/*/src/nowhere"', path.read_text(), count=1, flags=re.M)
+assert n == 1, "SRC_GLOB assignment not found — the lost-denominator fixture cannot be built"
+path.write_text(text)
+PY
+check --ratchet
+must_fail "7. a source glob that matches nothing must REFUSE, not pass vacuously" "vacuously"
+reset_all
+
+if [ "$tree_state" != "$(cd "$ROOT/gateway" && ls -1A)" ]; then
+  err "the harness changed gateway/ — everything here must land in mktemp"
+fi
+
+if [ "$fail" -eq 0 ]; then
+  note "constructor-width selftest: premise asserted, control green over the real tree, 8 mutation arms red for their stated reasons, gateway/ untouched"
+fi
+exit "$fail"

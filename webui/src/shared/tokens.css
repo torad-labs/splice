@@ -174,6 +174,31 @@
                                box reads as a field and not as the strip itself */
   --strip-field-line:#A8A392;
 
+  /* ---------- THE RACK (measured off the comp by M1-12, cut by M1-13) ----------
+     The comp is not two planes; it is a rack. Four values it draws and this sheet
+     had no name for, every one measured on team-board-a.png at 1:1 - the bay's own
+     ground, the rule across its empty floor, the plate bolted over each bay, and the
+     ghost of a strip in motion. They are what a tonal census finds in the comp and
+     not in the build: the comp is 11.9 percent mid-tone, the build of that comp was
+     7.9, and by area the console was 96.7 percent two flat values. */
+  --bay:#090D0D;        /* the comp's bay interior, scanned at the same y as the
+                           room so the mock's vignette cancels: room (13,17,17),
+                           bay (9,13,13) - four steps down, ratio about 1.06. A rack
+                           reads as a rack by its rules and its plate, not by this
+                           difference, which is why the three below carry the work. */
+  --bay-slot:rgba(236,234,226,.12);
+                        /* the rule across the rack's unprinted floor: measured peaks
+                           at rgb (43,46,44) over a floor of 12, 2px wide with its
+                           antialiasing, at a 31-32px pitch. */
+  --plate:#C3B6A0;      /* the plate over each bay, sampled (195,182,160) - a third
+                           cream: 1.38:1 under the strip it labels and far above the
+                           floor, which is what makes it read as a separate object. */
+  --plate-line:#645F50; /* the plate's own edge, measured (100,95,80). */
+  --ghost:rgba(222,217,198,.15);
+                        /* a departing strip's trail: the comp lays the same slip
+                           down three times and the ones behind measure 15 percent
+                           paper over the floor. */
+
   /* ---------- HOLDER EDGE ----------
      The four states carry attention, so each must clear 3:1 on the room AND on
      the pale strip. On a near-black floor and a #DED9C6 strip that leaves one
@@ -269,6 +294,26 @@
                                  --strip-field-line the way the dark block's 1.07:1
                                  box reads by its own */
   --strip-field-line:rgba(31,36,34,.55);
+
+  /* ---------- THE RACK (M1-13; the dark values are the comp's own) ----------
+     Nothing here re-derives the block above it. --bay holds the value this block
+     already uses as the bay floor, so binding the bays to the name cannot move the
+     two rungs the block was landed on (room|room-deep 1.69:1, room-deep|strip
+     2.03:1). The plate keeps its dark relationship to its own neighbours rather
+     than the dark value: 1.34:1 under the strip, 1.45:1 above the bay floor. */
+  --bay:#ABB0AC;            /* the deeper matte, already this block's bay floor */
+  --bay-slot:rgba(31,36,34,.20);
+                            /* the floor's rule: one step past --hairline (.16) and
+                               well short of --hairline-strong (.32), which is the
+                               weight the dark 12-percent wash reads at on a matte */
+  --plate:#D6D8D3;          /* a third cream on the matte, keeping the dark plate's
+                               position between its strip and its floor */
+  --plate-line:rgba(31,36,34,.55);
+                            /* the plate's own edge, at the weight this block gives
+                               every line drawn on paper */
+  --ghost:rgba(246,246,243,.15);
+                            /* the strip's own paper at the dark alpha, so a leaving
+                               strip trails its own material in both themes */
 
   /* ---------- HOLDER EDGE ---------- */
   --edge-green:#1F882C;  /* the comp's green dot #029703 measures 2.97:1 on the

@@ -53,25 +53,6 @@
 }
 
 .myx-views-rename { display: flex; align-items: end; gap: var(--space-2); }
-.myx-views-field { display: grid; gap: var(--space-1); }
-.myx-views-field-label {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
-.myx-views-field input {
-  font-family: var(--font-label);
-  font-size: var(--text-3);
-  color: var(--strip-ink);
-  background: var(--strip);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  padding: var(--space-1) var(--space-2);
-}
-.myx-views-field input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
 
 .myx-views-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .myx-views-action {

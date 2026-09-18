@@ -23,22 +23,3 @@
   color: var(--ink-strong);
 }
 
-.myx-lg-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.myx-lg-field-label {
-  font-family: var(--font-label);
-  font-size: var(--text-1);
-  color: var(--ink-mute);
-}
-.myx-lg-field select {
-  padding: var(--space-1) var(--space-2);
-  background: var(--strip);
-  color: var(--strip-ink);
-  border: var(--hair) solid var(--strip-field-line);
-  border-radius: 0;
-  font-family: var(--font-figure);
-  font-size: var(--text-2);
-}

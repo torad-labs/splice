@@ -70,20 +70,15 @@
   font-size: var(--text-2);
 }
 
-.myx-lt-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-label);
-  font-size: var(--text-2);
-  /* D7 (M1-52): the follow toggle is printed on the log strip's PAPER, measured --strip in both
-     themes, so it takes the paper's ink. --ink is the room's and is light in the dark theme:
-     1.24:1 there against a 4.5 bar, while light happened to pass at 15.08:1 because light's --ink
-     is dark. This rule was invisible to the first sweep because the colour is INHERITED by the
-     toggle's children rather than printed on a text node of its own. */
-  color: var(--strip-ink);
-  cursor: pointer;
-}
+/* THE FOLLOW TOGGLE'S RULE IS GONE WITH ITS MARKUP (M1-103). It dressed a `.myx-lt-toggle` label
+   around a native checkbox; the toggle is now `Flag`, which is a button with role="switch" carrying
+   a HolderEdge, and the edge prints its own word in its own ink.
+   THE MEASUREMENT IT RECORDED IS CARRIED, NOT LOST: M1-52 found the toggle's colour was the ROOM's
+   inherited by its children rather than printed on a text node of its own -- 1.24:1 on the strip's
+   paper in dark against a 4.5 bar, while light passed at 15.08:1 only because light's --ink happens
+   to be dark. That is why the label was invisible to the first sweep, and it is the instance the
+   D7 series ends on. The fact now lives where the replacement's ink is decided: HolderEdge's own
+   rules in shared/ui/ui.css, which were measured against the same paper. */
 
 /* The rack. A fixed height so the virtualizer has a viewport, and it scrolls both ways: the line's
    text field is wider than the room, and a log line is not something to wrap. */

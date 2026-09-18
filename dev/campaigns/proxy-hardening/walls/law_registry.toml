@@ -33,7 +33,7 @@ law_present = true
 
 [[law]]
 tag = "LOCKED-NON-GOALS"
-wall = "dev/campaigns/proxy-hardening/walls/law_locked_non_goals.py"
+wall = "dev/campaigns/proxy-hardening/walls/law_locked_non_goals.ts"
 note = "banned-term scan over item titles"
 law_present = true
 
@@ -112,7 +112,7 @@ law_present = true
 [[law]]
 tag = "MIGRATION-ORACLE"
 wall = ""
-note = "MISMAPPED at first authoring (2026-07-26): cx_19_oracle_replay.py is CX-19's ITEM wall, which must be RED while CX-19 is todo — the inverse polarity of a law enforcer, so C9 read it as a live law violation. The law's INTEGRITY half (every fixture still hashes to its captured sha256) is a genuine always-true invariant and needs its own enforcer split out of the item wall."
+note = "MISMAPPED at first authoring (2026-07-26): cx_19_oracle_replay.ts is CX-19's ITEM wall, which must be RED while CX-19 is todo — the inverse polarity of a law enforcer, so C9 read it as a live law violation. The law's INTEGRITY half (every fixture still hashes to its captured sha256) is a genuine always-true invariant and needs its own enforcer split out of the item wall."
 law_present = true
 
 [[law]]

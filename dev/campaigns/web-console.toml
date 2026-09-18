@@ -2817,6 +2817,7 @@ status = "in_flight"
 verify = "cd webui && npx tsc --noEmit && npx eslint src && npx vitest run && npx vite build"
 # [2026-09-18] CLAIM: owner=design-builder3 at=2026-09-18T14:39:16Z
 # [2026-09-18] ATTEST-START: tree=842a61e26f7ead874e890272efdf7ab4ddaee214 at=2026-09-18T14:39:16Z
+# [2026-09-18] RECEIPT files=webui/src/pages/fleet/fleet.css,webui/src/pages/fleet/index.tsx blobs=0d1cc91d6e37dded6f48e120ccd92d1e53b2a367,48a72f6e3a7d285e4e86aa446a57e8d37e7cd26c
 
 [[items]]
 id = "M1-103"
@@ -2853,3 +2854,23 @@ title = "A SURFACE CAN PASS THE INK INSTRUMENT AND BE INVISIBLE TO EVERY PICTURE
 files = ["dev/web-console/look-gate.mjs", "webui/.impeccable/review/axes"]
 status = "todo"
 verify = "node dev/web-console/look-gate.mjs --selftest"
+
+[[items]]
+id = "M1-107"
+phase = "m1"
+title = "THE FIELD GRID DOES NOT HOLD ON THREE PAGES AND THE GATE IS RED ABOUT IT RIGHT NOW -- LOOK-GATE: FAIL, ONE BLOCKING (design-reviewer, reported while closing M1-94 and correctly not fixed there; independent of their diff and pre-existing in M1-92s receipted state). THE MEASUREMENT, from the live leg: accounts-dark 120px across 12 scanlines, logs-dark 159px across 23, turns-dark 76px across 15. Those are first-field edges that should land on one x and do not. This is a BUILD defect, not an instrument one, and it is the first red the campaign has had that nobody owns. WHY IT IS ONLY VISIBLE NOW, and the answer is three rows deep: M1-83 made the gate load fixtures, so these pages render content instead of an honest empty; M1-92 taught the leg to honour a declared span, so it stopped being confused by the one case that was legitimate; and M1-94 gave it a freshness bar, so it is now reading THIS build. Three instrument rows had to land before a real build defect could be seen at all. That is the campaign working, and it is also the answer to anyone asking why so much of tonight went into the instruments. START FROM M1-73, WHICH IS THE SAME DEFECT FAMILY AND IS SOLVED. flex-grow 1 shares leftover space EQUALLY PER CELL, so a rack whose rows have different cell counts cannot hold a grid by construction; the fix was flexGrow proportional to the declared ch, making a cell ch_i + slack x ch_i/sum(ch) -- the declared grid scaled rather than the leftover divided. compaction and mcp were fixed that way. CHECK WHETHER THESE THREE ARE THE SAME THING BEFORE ASSUMING IT: count the row shapes on each page and their ch totals. If the shapes differ in cell count, it is M1-73 again and the primitive already handles it, so the question becomes why these pages do not benefit. If the shapes AGREE and the edges still disagree, it is something else and that is the more interesting answer. TWO LEADS FROM TONIGHT, NEITHER CONFIRMED HERE. M1-93 found controls.css:136 still governs the blank strip, because blank.tsx:34 writes a myx-sfield span BY HAND rather than through StripField, so those cells carry no inline grow -- if any of these three render a rack the primitive does not build, that is where it shows. And M1-97 found ui.css width: max-content on .myx-strip is right for a rack and wrong for a placed board. logs IS FENCED OUT of this row: M1-103 is live in pages/logs. Do accounts and turns, measure logs read-only, and say whether its 159px is the same cause so the next row can take it."
+files = ["webui/src/pages/accounts/accounts.css", "webui/src/pages/turns/turns.css"]
+status = "in_flight"
+verify = "node dev/web-console/look-gate.mjs 2>&1 | grep -qE field-grid"
+# [2026-09-18] CLAIM: owner=design-builder at=2026-09-18T14:44:57Z
+# [2026-09-18] ATTEST-START: tree=c505afddee2fb423babb9fe9186f5d097e1032b3 at=2026-09-18T14:44:57Z
+
+[[items]]
+id = "M1-108"
+phase = "m1"
+title = "AN EMPTY CAPTURE SET PASSES A BLOCKING LEG, AND THE ORCHESTRATOR RULES THAT IT MUST NOT (design-reviewer reported it and correctly refused to change it alone; code-reviewer found the same shape from the other side; this row is the ruling they asked for). THE DEFECT: checkFieldGrids checked === 0 and files.length === 0 branches both return ok. A leg that could not run reports a pass. It is the type-ladder rule inverted -- M1-72 proved that zero pairs compared must not read as zero rungs off, and that leg now exits 2 rather than reporting all clear -- and it is the same shape as every decorative check this campaign has catalogued, one level down. THE RULING, SO NOBODY HAS TO GUESS: CHANGE IT. An empty or unreadable capture set is a DID NOT RUN and a DID NOT RUN is a FAILURE on a blocking leg. The files own capture block already says so in words -- a run that cannot capture is a DID NOT RUN for every capture-reading check, never a pass, law 23 -- so the code is contradicting prose that is already in the file, which is the M1-78 shape: the sentence stayed true and the code stopped matching it. I AM AWARE THIS CHANGES THE EXIT CODE FOR EVERY SEAT IN THE REPO and that is why design-reviewer routed it to me rather than taking it: a blocking leg that starts failing is everyones problem for the next hour. It is still right. A gate that passes when it cannot see is worse than a gate that fails loudly, because the first one is invisible and the second one gets fixed. TWO CONDITIONS ON THE CHANGE. It must SAY WHY it failed, naming the count it got and the count it needed, so a seat meeting the new red knows in one line whether the fix is to run a capture or to fix the code -- a bare non-zero here would be exactly the defect exit-gate had in M1-76. And it must be mutation-proven in BOTH directions before it lands: a case where the set is empty and the leg fails, and a case where the set is full and the leg still passes unchanged. M1-94 gave this leg a coverage floor taken from the ADDRESSES table in rows.ts rather than from the directory; USE THAT SAME DENOMINATOR here rather than inventing a second one, because two floors that disagree is a worse outcome than the bug."
+files = ["dev/web-console/look-gate.mjs"]
+status = "in_flight"
+verify = "node dev/web-console/look-gate.mjs --selftest"
+# [2026-09-18] CLAIM: owner=code-reviewer at=2026-09-18T14:45:13Z
+# [2026-09-18] ATTEST-START: tree=76fa2040fb1667409af0c0330679232dccbe2ad8 at=2026-09-18T14:45:13Z

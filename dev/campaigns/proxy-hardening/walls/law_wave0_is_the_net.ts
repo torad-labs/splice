@@ -23,6 +23,25 @@
  */
 import { resolve } from "node:path";
 
+/** Python repr() of a string, and of a list of strings. An f-string that interpolates a LIST
+ *  renders THIS -- `['a', 'b']` -- not JSON, so a port that used JSON.stringify produced a
+ *  DIFFERENT failure message than the original on every red path while agreeing on every green
+ *  one. Caught by driving the mutants as a CLI rather than feeding detect() a fixed corpus. */
+function pyReprStr(s: string): string {
+  const useDouble = s.includes("'") && !s.includes('"');
+  const q = useDouble ? '"' : "'";
+  let body = s
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r")
+    .replaceAll("\t", "\\t");
+  body = body.replaceAll(q, "\\" + q);
+  return q + body + q;
+}
+function pyRepr(items: string[]): string {
+  return "[" + items.map(pyReprStr).join(", ") + "]";
+}
+
 const ROOT = resolve(import.meta.dir, "../../../..");
 const BOARD = resolve(ROOT, "dev/campaigns/proxy-hardening.toml");
 
@@ -56,7 +75,7 @@ function selftest(): number {
   const kase = (name: string, items: Item[], wantRed: boolean): void => {
     const got = detect(items);
     if (wantRed && got.length === 0) fails.push(`${name}: must be RED`);
-    if (!wantRed && got.length > 0) fails.push(`${name}: must be GREEN, got ${JSON.stringify(got)}`);
+    if (!wantRed && got.length > 0) fails.push(`${name}: must be GREEN, got ${pyRepr(got)}`);
   };
 
   const netTodo = { id: NET, phase: "W0-net", status: "todo" };

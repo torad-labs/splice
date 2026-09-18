@@ -57,6 +57,9 @@ const LOOK_URL = 'http://localhost:5173/#/teams?fixture=hero';
  * whose DENOMINATOR came from itself. One frame, measured perfectly, forever.
  */
 const FRAMES = ['1536x1024', '3840x2160'];
+/** comp-check's per-frame summary, with a non-zero compared count so a run that read nothing
+ *  cannot pass as a run that read everything. One frame's worth, so the leg can say WHICH. */
+const frameSummary = (f) => new RegExp(`at ${f}[^\\n]*?, [1-9]\\d* compared against the comp`);
 
 /** The rendered-rule pass's cells: [frame, theme]. See the `look` leg for why this is a diagonal. */
 const LOOKS = [['1536x1024', 'dark'], ['3840x2160', 'dark'], ['3840x2160', 'light']];
@@ -226,15 +229,24 @@ const LEGS = [
     // NOTHING in this gate rendered at a second size — M1-33's coverage finding. The operator's
     // monitors are 3840x2160; every defect the 3840 blind pass found passed all nine legs.
     run: () => {
-      const runs = FRAMES.map((f) => sh('node', ['.dev/web-console/comp-check.mjs', '--frame', f], ROOT));
-      return { code: runs.some((r) => r.code !== 0) ? 1 : 0, out: runs.map((r) => r.out).join('\n') };
+      const runs = FRAMES.map((f) => [f, sh('node', ['.dev/web-console/comp-check.mjs', '--frame', f], ROOT)]);
+      // NAME THE FRAME THAT WENT SILENT. The proof below spans BOTH frames, so one missing summary
+      // read as "produced no evidence it ran" for the whole leg with no way to tell which frame was
+      // quiet — the leg failing in the exact way it exists to catch. Measured 2026-09-18 12:20: both
+      // frames summarise correctly when run by hand and the concatenation matches the proof, so a
+      // gate run that reported no evidence had one silent frame and could not say so.
+      const silent = runs.filter(([f, r]) => !frameSummary(f).test(r.out));
+      const audit = silent.map(([f, r]) =>
+        `comp-check: ${f} produced NO summary line (exit ${r.code}) — last line: ${r.out.trim().split('\n').pop() || '(no output at all)'}`);
+      return { code: runs.some(([, r]) => r.code !== 0) || silent.length > 0 ? 1 : 0, out: [...runs.map(([, r]) => r.out), ...audit].join('\n') };
     },
     // The proof is the summary line with a NON-ZERO compared count, once per frame. It used to be
     // /^(?:PASS|FAIL) /m — and comp-check prints no PASS line at all, so that regex could only ever
     // match a FAILURE. The gate would have gone unproven at the exact moment the build went green,
     // which is the one direction none of tonight's other holes pointed in.
-    proof: new RegExp(FRAMES.map((f) => `at ${f}[^\\n]*?, [1-9]\\d* compared against the comp`).join('[\\s\\S]*'), 'm'),
-    failIf: /^FAIL /m,
+    proof: new RegExp(FRAMES.map((f) => frameSummary(f).source).join('[\\s\\S]*'), 'm'),
+    // A silent frame is now a FAILURE that names itself, not an unattributable DID NOT RUN.
+    failIf: /^FAIL |produced NO summary line/m,
     failHint: 'comp-check found a comp constant off on a live page; those belong on the punch list, not in a weakened proof',
   },
   {

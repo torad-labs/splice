@@ -81,7 +81,7 @@ type Basis = 'measured' | 'estimated' | 'unavailable' | 'stale';
 <ScopeInset title="string" basis={Basis}>{children}</ScopeInset>
 
 // A form field with its provenance layer. hot = applies live; otherwise the daemon strip cocks.
-<FieldBox label="string" value={string} provenance={'default' | 'defaults table' | 'head override'
+<FieldBox label="string" value={string} provenance={'splice.toml' | 'default' | 'defaults table' | 'head override'
          | 'state file' | 'env' | 'patch'} hot?: boolean onChange?: (v: string) => void />
 
 // Hidden until an explicit action. Children render only after the click.

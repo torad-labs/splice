@@ -97,9 +97,17 @@ const OVER = 1.15;
 const UNDER = 0.6;
 
 /** The classification: which layer is short, which is over, said in words rather than a score. */
-export function verdict(row) {
+export function verdict(row, theme = 'dark') {
   if (row.missing === true) return 'MISSING ROW (no fixture, cannot be captured with content)';
   if (row.error !== undefined) return `UNCAPTURED (${row.error})`;
+  // THE LEGEND SAID LIGHT IS NOT GRADED AGAINST THE COMP AND THIS FUNCTION GRADED IT ANYWAY (M1-91).
+  // It took only `row` and compared against the single COMP constant, which is the DARK comp, so
+  // every light row was handed a verdict computed against a target the file itself had just said
+  // does not exist for it - "paper OVER +15.7" on the hero being the clearest lie of the set, since
+  // there is no light comp for it to be over. A light row now says what it is: NO COMP TARGET, a
+  // measurement of the room we built rather than a distance from a room we were given. It is not a
+  // weaker verdict, it is a different question, and printing the one it cannot answer was the bug.
+  if (theme === 'light') return 'NO COMP TARGET (light has no comp; measures the room we built)';
   const notes = [];
   const over = (v, target) => v > target * OVER;
   const under = (v, target) => v < target * UNDER;
@@ -192,7 +200,7 @@ for (const theme of ['dark', 'light']) {
     const f = (v) => (v === undefined ? '    -' : String(v.toFixed(1)).padStart(6));
     lines.push(`  ${row.name.padEnd(11)} ${String(row.source).slice(0, 24).padEnd(25)}`
       + `${String(row.frame ?? '-').padEnd(12)}${f(row.paper)}${f(row.printed)}${f(row.ruled)}`
-      + `${String(row.ruleRows ?? '-').padStart(6)}  ${verdict(row)}`);
+      + `${String(row.ruleRows ?? '-').padStart(6)}  ${verdict(row, theme)}`);
   }
   lines.push('');
 }

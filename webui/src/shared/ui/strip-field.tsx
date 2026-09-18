@@ -6,8 +6,14 @@ import type { CSSProperties } from 'react';
 import { cx } from '../lib';
 import type { Basis } from './types';
 
-export function StripField({ w, label, value, basis, mono }: {
+export function StripField({ w, span, label, value, basis, mono }: {
   w: number;
+  /** THE TRACKS THIS FIELD SPANS, DECLARED. A total is one value stated across the whole row; a
+   *  reason is one sentence across four cells. Both are spans, and a span is not a first field
+   *  that happens to be wide -- so it says so, and anything comparing FIRST-FIELD EDGES across a
+   *  rack can exclude it BY DECLARATION rather than by happening not to look (M1-73). Omitted
+   *  means one track, which is what almost every field is. */
+  span?: number;
   /** Omit inside a bay whose head prints the column names once (m1 design review B9): a rack of
    *  homogeneous rows prints its columns on the rack, not on every slip. The cell is then one
    *  line, which is also what a compact rack (the activity feed) needs. */
@@ -22,7 +28,31 @@ export function StripField({ w, label, value, basis, mono }: {
   // value is prose rather than a figure.
   const figure = mono !== false;
   return (
-    <div className="myx-sfield" style={{ width: `${w}ch` } as CSSProperties}>
+    // ---- flex-grow IS THE FIELD'S OWN ch, AND THAT IS WHAT MAKES THE GRID A GRID (M1-73) --------
+    // `width` alone is the DECLARED box. Nine page sheets then add M1-39's strip-fills-its-bay
+    // rule (`{ width: 100% }` on the strip, `{ flex: 1 1 auto }` on the cells) so the rack reaches
+    // the right edge of its bay instead of ending in a slab of bare paper -- and `flex: 1 1 auto`
+    // sets flex-grow: 1, which shares the LEFTOVER EQUALLY PER CELL. Equal per cell is only equal
+    // per track when every row has the SAME NUMBER OF CELLS, so a rack with more than one row
+    // shape cannot hold a grid, by construction.
+    //
+    // MEASURED at 1536 on the two pages that have more than one shape: compaction renders four
+    // shapes in one bay (total 1 field, outcome 2, event 5, opened 3) and its first field edge
+    // spans 384px across 14 strips (x 762..1146); mcp renders two (5 and 2) and spans 58px across
+    // 18 (x 488..546). Both pages carry the identical two-line rule. It is not their defect.
+    //
+    // With flex-grow = w, a cell's width becomes ch_i + slack x ch_i/sum(ch): the DECLARED GRID,
+    // SCALED, and identical in every row shape. A field that spans four tracks already declares
+    // four tracks' ch (mcp's reason is NARROW x 4), so it takes four tracks' share with no extra
+    // mechanism -- which is the test that this is the right abstraction rather than a patch.
+    // It is set INLINE because a cell's ch count is not knowable from the stylesheet, and inline
+    // beats the page rule's shorthand, so no page sheet has to change and the nine redundant
+    // `flex: 1 1 auto` lines can be retired as cleanup rather than as part of this fix.
+    <div
+      className="myx-sfield"
+      style={{ width: `${w}ch`, flexGrow: w } as CSSProperties}
+      {...(span === undefined ? {} : { 'data-span': String(span) })}
+    >
       {label !== undefined ? <span className="myx-sfield-label">{label}</span> : null}
       <span className={cx('myx-sfield-value', figure && 'myx-sfield-figure')}>
         <span className="myx-sfield-text">{value}</span>

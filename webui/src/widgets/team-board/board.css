@@ -345,6 +345,43 @@
 /* the activity rows are the tightest rack on the page: the value follows its
    label by two pixels, not eight, or the last line of a 38px plate is cut */
 .myx-board-act .myx-sfield-value { padding-block-start: var(--space-1); }
+/* L-7 -- THE COLUMN NAMES PRINT ONCE, ON THE RACK. The comp's activity bay is a table: the region
+   crop shows one header row under the plate and five data rows beneath it, each row a rule apart.
+   The build printed `time member activity detail` on every slip, so six data rows and six header
+   rows alternated down the bay -- small enough at 1536 to read as texture, and at 3840 the most
+   repetitive object on the page, which is what the light-room review filed as L-7.
+   The header row is the rack's, so it is placed against the bay and not against the rows; it takes
+   the same left inset the strips' cells start at (the edge column plus the strip's own hairline)
+   and the same ch widths, so the two grids line up on one measurement rather than two. */
+.myx-board-bay-activity .myx-bay-fields {
+  position: absolute;
+  left: 1.613%;
+  top: 8.3%;
+  width: 96.774%;
+  padding-inline-start: calc(var(--space-4) + var(--hair));
+  /* IT IS PAPER, NOT INK ON THE BAY. The comp's header row is a printed bar like every other row
+     in the table -- cream, with the rule under it -- so it takes the strip's own ground and ink;
+     written as ink on the bay it rendered invisible, which is how the first version of this rule
+     shipped for the length of one capture. */
+  background: var(--strip);
+  color: var(--strip-ink);
+  border-inline: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white);
+  border-block-start: var(--hair) solid color-mix(in srgb, var(--strip) 76%, white);
+  border-block-end: var(--hair) solid var(--strip-ink-mute);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  font-variation-settings: 'wdth' 62;
+  font-weight: 600;
+  padding-block: var(--space-1) var(--space-2);
+}
+/* the same width AND the same hairline the cell carries, so a ch column lands in the same place
+   in the header as it does in the row under it */
+.myx-board-act-head {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  border-inline-end: var(--hair) solid transparent;
+}
 .myx-board-acts > .myx-board-act {
   position: absolute;
   left: 0;

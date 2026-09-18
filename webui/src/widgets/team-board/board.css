@@ -13,11 +13,11 @@
    the way the comp's do. */
 
 .myx-board {
-  /* The comp draws two creams, not one: its session strips measure #dfd7c5 and
-     its label plates and footer a step darker at #c2b59f. The first is --strip;
-     no token carries the second, so it is derived from the first here rather
-     than written as a literal. */
-  --plate-deep: color-mix(in srgb, var(--strip) 87%, var(--room));
+  /* The comp draws two creams, not one: its session strips measure #dfd7c5 and its label
+     plates and footer a step darker at #c2b59f. The second IS a token -- `--plate`, sampled
+     (195,182,160) in M1-13 -- and this local derivation stood in for it because nothing read
+     the token. It is derived again here only to be deleted: 190 against the comp's measured
+     178-188, where the token lands at 183, dead centre. */
   position: relative;
   /* cancel the page's own padding: the comp's boxes are measured from the frame */
   margin: calc(-1 * var(--space-5));
@@ -102,6 +102,34 @@
   width: 97.253%;
   height: 5.308%;
 }
+/* ---- E-8 · THE GREEN BAR IS DELETED (M1-24) --------------------------------
+   Measured on the team header (y 66-111, x 159-1510): the comp has ZERO green pixels where
+   the build paints 498 at `#548630`, a full-height bar at the strip's leading edge, and it
+   is the most saturated object in the hero. The world's own claim is the reason it goes: a
+   holder edge means ATTENTION STATE and always carries a text label, and a header has no
+   state -- `edgeLabel=""` on this very strip is the build admitting it. A bar with no state
+   is either meaningless colour or a false claim of one, and both are worse than nothing.
+   Green holder edges stay exactly where the comp puts them, on the data rows inside the
+   bays, where a row HAS a state.
+   THE COLUMN STAYS. What is deleted is the mark, not the 16px edge column: the header's
+   fields have to stay on the same grid as the strips under them, and every strip in the
+   bay reserves that column. The comp agrees -- its header's paper runs to x 159 and its
+   first field starts past the same inset.
+   What the comp puts there instead is E-5's two pins: one at x 164.5 and one at x 1504.5,
+   both centred at y 75.5, against a strip whose paper starts at x 159 and y 66. The leading
+   one is ui.css's, uncovered now that the mark draws nothing; the trailing one is this rule. */
+.myx-board-header > .myx-edge .myx-edge-mark { background: none; }
+.myx-board-header::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  inset-block-start: var(--space-2);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--strip-ink);
+  pointer-events: none;
+}
 
 /* --- the head bays: regions bay-claude and bay-deepseek --- */
 .myx-board-bay {
@@ -118,8 +146,10 @@
   position: absolute;
   justify-content: center;
   padding: 0 var(--space-2);
-  background: var(--plate-deep);
-  border: var(--hair) solid var(--strip-field-line);
+  /* background-COLOR, not the shorthand: the plate's four corner pins are a background
+     LAYER (ui.css, E-5), and the shorthand would clear them. The border is left to
+     ui.css as well, so the plate keeps the same three-part edge as the paper it bolts to. */
+  background-color: var(--plate);
 }
 .myx-board-bay-0 .myx-bay-head { left: 25.71%; top: 1.266%; width: 42.857%; height: 3.165%; }
 .myx-board-bay-1 .myx-bay-head { left: 20.00%; top: 1.266%; width: 50.909%; height: 3.165%; }
@@ -197,12 +227,79 @@
   width: 84.76%;
   height: 35.4%;
 }
-.myx-board-handoff-live { transform: rotate(-4.41deg); z-index: 3; }
-/* the comp's ghosts measure 0.5 of the plate's cream (110,105,94 against
-   #ded9c6), not the 0.62 a default dim would give */
-.myx-board-ghost { filter: brightness(0.5); }
-.myx-board-ghost-1 { transform: rotate(-4.41deg) translate(-30%, 110%); z-index: 2; }
-.myx-board-ghost-2 { transform: rotate(-4.41deg) translate(-105%, 245%); z-index: 1; }
+/* ---- E-6 · THE LIFT (M1-24) -------------------------------------------------
+   The one gesture in the comp that is a MOMENT rather than a state, and the single most
+   expressive element in the frame. It is hero-only and deliberately so: it belongs to the
+   hand-off, not to every strip.
+
+   THE ANGLE IS RE-FITTED HERE, and the number moved. M1-05 read it off the region's own
+   corners and got -4.41deg; E-6 fitted the strip's top edge over 15 columns sampled every
+   40px and got -0.0726 px/px. Re-taken against the comp for this row, the same 15 columns
+   at x 420..980 return y 524, 522, 519, 516, 513, 511, 508, 505, 501, 499, 497, 493, 490,
+   487, 483 -- a least-squares slope of -0.07259, or -4.152deg. The fit is the better
+   evidence (15 samples against 2 corners) and it is the value that goes in. The 0.26deg it
+   moves is under 3px at the strip's far end and is named here so the change is not silent.
+
+   THE SHADOW IS A LINE, NOT A BLUR. Sampled at four columns where open rack lies below the
+   strip (x 400, 430, 460, 490): a hard dark line at L 2.6-8.5, 5-6px below the strip's lower
+   edge, against a rack ground of L 18-25 -- 15 to 22 L below the surface it falls on. The
+   rows either side of it are 3-4x brighter. So it is `0 6px 0 -1px`: six pixels down, a
+   negative spread so the shadow reads as the plate's own footprint rather than a halo, and
+   ZERO blur. A blurred box-shadow is the wrong instrument here and would read as the old
+   world. Written against the ground it falls on -- the rack floor, which is what --room-deep
+   renders at -- rather than as the hex E-6 sampled, so it cannot invert: a cast shadow is
+   darker than its floor in both themes. */
+.myx-board-handoff-live {
+  transform: rotate(-4.15deg);
+  z-index: 3;
+  box-shadow: 0 6px 0 -1px color-mix(in srgb, var(--room-deep) 48%, black);
+}
+/* ---- L-2 · THE GHOST, MIXED TOWARD ITS GROUND (M1-24) -----------------------
+   This was `filter: brightness(0.5)`. Brightness multiplies luminance, so it always
+   moves a colour toward BLACK -- which reads as receding on a dark ground and as
+   ADVANCING on a light one. That is why it survived review: the ghost's relationship to
+   its own live twin is preserved almost exactly (3.913 light against 3.672 dark), and the
+   only thing that inverts is its relationship to the ground. Order the planes. Dark: bay
+   9.6 | room 13.4 | GHOST 108.7 | paper 216.7 -- the ghost sits between ground and paper,
+   a faded strip, correct. Light: GHOST 122.9 | bay 174.6 | room 225.4 | paper 245.8 -- the
+   ghost falls below the bay floor and becomes the heaviest object on the page, and in the
+   light teams render the two ghosted hand-off strips are the first thing the eye lands on.
+
+   The invariant is not the filter's 0.5, it is where the ghost sits in the interval:
+   (108.7 - 9.6) / (216.7 - 9.6) = 47.9 percent of the way from the ground to the paper.
+   Hold the FRACTION and the ground decides the rest -- dark 108.8 against the comp's
+   108.7, light 208.7, a value between bay and paper, where a faded strip belongs.
+   Written as a mix toward --room-deep, which is both the light-room's measured ground
+   (9.6 dark, 174.6 light) and the value the rack floor actually renders at, so the ghost
+   is a fixed distance from the surface it is lying on rather than from black.
+
+   The ghost is dimmed as a MATERIAL, not as one property: paper, ink and rule all move
+   the same 47.9 percent, which is what the filter did uniformly and what a single
+   background override would not. */
+.myx-board-ghost {
+  --ghost-paper: color-mix(in srgb, var(--strip) 47.9%, var(--room-deep));
+  --ghost-ink: color-mix(in srgb, var(--strip-ink) 47.9%, var(--room-deep));
+  --ghost-rule: color-mix(in srgb, var(--strip-ink-mute) 47.9%, var(--room-deep));
+}
+.myx-board-ghost .myx-strip { background-color: var(--ghost-paper); color: var(--ghost-ink); }
+.myx-board-ghost .myx-sfield {
+  background-color: var(--ghost-paper);
+  border-inline-end-color: var(--ghost-rule);
+}
+.myx-board-ghost .myx-sfield-label { border-bottom-color: var(--ghost-rule); }
+/* THE TWO GHOSTS ARE NOT THE SAME DENSITY, which is what the token sheet already says.
+   `--ghost` is `rgba(222,217,198,.15)` with the note "the comp lays the same slip down three
+   times and the ones behind measure 15 percent paper over the floor" -- and M1-35's census
+   found no reader for it. Reading the comp's hand-off band row by row, the plate tones are
+   bimodal rather than flat: peaks at L 25-35 and 60-80 and a dominant band at 100-125. The
+   near slip is the 47.9 percent above; the far one is the token's own 15, and it is bound as
+   an ALPHA over whatever is behind it rather than as a mix, which is precisely why the comp's
+   far ghost reads as a spread of tones and the build's two ghosts read as one flat 105. */
+.myx-board-ghost-2 .myx-strip,
+.myx-board-ghost-2 .myx-sfield { background-color: var(--ghost); }
+.myx-board-ghost-2 .myx-strip { color: var(--strip-ink-mute); }
+.myx-board-ghost-1 { transform: rotate(-4.15deg) translate(-30%, 110%); z-index: 2; }
+.myx-board-ghost-2 { transform: rotate(-4.15deg) translate(-105%, 245%); z-index: 1; }
 
 /* --- the chat bay: region chat-bay (frame x68 y13.5 w31 h42) --- */
 .myx-board-bay-chat { left: 64.835%; top: 8.174%; width: 34.066%; height: 44.586%; }
@@ -270,9 +367,23 @@
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  padding: 0 var(--space-2);
-  background: var(--plate-deep);
-  border: var(--hair) solid var(--strip-field-line);
+  /* wider than it was: E-5's pin occupies the first 11px and the comp's first word
+     starts at 14px, so the text has to clear the mark it sits beside. */
+  padding: 0 var(--space-3);
+  background: var(--plate);
+  /* E-1 and E-5 on the footer, which is the strip's own material on a plate ground.
+     Measured across its top edge at comp x=300: 1px outline at L 4, 1px shade at L 115,
+     1px lip at L 189, then the face at L 178-186 -- the same three steps the strip's left
+     edge makes, with the shade landing on the same absolute grey (115 against the strip's
+     113), which is why the shade is taken from --strip here and not from the plate. The
+     lip IS relative to its own ground, so it is written against --plate, which the footer now
+     reads instead of the local derivation that stood in for it (M1-35's census).
+     The two pins are E-5's, at 6px in from each end and 12.5px down, the same mark the
+     header carries: comp x 27 and x 550 against a plate starting at x 22. */
+  border: var(--hair) solid color-mix(in srgb, var(--plate) 76%, white);
+  box-shadow:
+    0 0 0 var(--hair) color-mix(in srgb, var(--strip) 52%, black),
+    0 0 0 calc(var(--hair) * 2) color-mix(in srgb, var(--room) 27%, black);
   color: var(--strip-ink);
   /* FIGURE: the footer's team id and stamps are the comp's own. */
   font-family: var(--font-figure);
@@ -282,4 +393,17 @@
   white-space: nowrap;
   overflow: hidden;
 }
+.myx-board-footer::before,
+.myx-board-footer::after {
+  content: '';
+  position: absolute;
+  inset-block-start: var(--space-2);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--strip-ink);
+  pointer-events: none;
+}
+.myx-board-footer::before { inset-inline-start: var(--space-1); }
+.myx-board-footer::after { inset-inline-end: var(--space-1); }
 .myx-board-footer-cell { white-space: nowrap; }

@@ -520,6 +520,8 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/pages/mcp src/pages/doc
 # [2026-09-18] FENCE-EDITED: files = ["webui/src/pages/mcp/**", "webui/src/pages/doctor/**", "webui/src/pages/playground/**", "webui/src/features/budgets/**", "webui/src/features/alerts/**", "webui/src/entities/mcp/**", "webui/src/entities/doctor/**", "webui/src/entities/budget/**", "webui/src/entities/alert/**", "webui/tests/mcp-doctor.test.ts"] -> files = ["webui/src/pages/mcp/**", "webui/src/pages/doctor/**", "webui/src/features/budgets/**", "webui/src/features/alerts/**", "webui/src/entities/mcp/**", "webui/src/entities/doctor/**", "webui/src/entities/budget/**", "webui/src/entities/alert/**", "webui/tests/mcp-doctor.test.ts"] (by=orchestrator implied; no flag)
 # [2026-09-18] 2026-09-18 CONTRACT CHANGE (orchestrator, from M2-D1's finding): entity api modules call their routes through the exported request<T> helper of @shared/api and declare payload types locally; no row edits shared/api (CONTRACTS.md section 8).
 # [2026-09-18] 2026-09-18 orchestrator (from M2-D3): GET /api/upgrade (FEATURES.md 4.12, route in V4-127) has no entity; add its call to entities/doctor in this row beside the doctor read. The four MCP host limits are runtime knobs (MCP_*): read them from @entities/config, never restate constants.
+# [2026-09-18] DISPATCH: to=design-builder2 (packet emitted)
+# [2026-09-18] 2026-09-18 orchestrator: dispatched to design-builder2 after M2-01 landed (34846f11).
 
 [[items]]
 id = "M2-08"
@@ -541,6 +543,7 @@ verify = "cd webui && npx tsc --noEmit && npx eslint src/entities src/shared/lib
 # [2026-09-18] VERIFY-EDITED: verify = "cd webui && npx tsc --noEmit && npx eslint src/entities src/shared/lib tests/events.test.ts && npx vitest run tests/events.test.ts && cd .. && ast-grep scan -c sgconfig.yml webui/src/entities webui/src/shared/lib && node /home/user/.claude/skills/impeccable/scripts/detect.mjs webui/src/entities webui/src/shared/lib" -> verify = "cd webui && npx tsc --noEmit && npx eslint src/entities src/shared/lib tests/events.test.ts && npx vitest run tests/events.test.ts && cd .. && for d in webui/src/entities webui/src/shared/lib; do test -e \"$d\" || exit 1; done && ast-grep scan -c sgconfig.yml webui/src/entities webui/src/shared/lib && node /home/user/.claude/skills/impeccable/scripts/detect.mjs webui/src/entities webui/src/shared/lib" (by=orchestrator implied; no flag)
 # [2026-09-18] 2026-09-18 CONTRACT CHANGE (orchestrator, from M2-D1's finding): entity api modules call their routes through the exported request<T> helper of @shared/api and declare payload types locally; no row edits shared/api (CONTRACTS.md section 8).
 # [2026-09-18] 2026-09-18 from M2-05: the Rule cannot cock on a pending restart; the signal exists (entities/config useRestartPending) but widgets/rule reads no config state. Wire it in this row (rule reads the restart-pending signal; HolderEdge amber while pending).
+# [2026-09-18] 2026-09-18 from M2-01: @entities/usage now exports the nearest-window derivation with the exact signature the rule bar computes locally; adopt it in widgets/rule (one line) in this row.
 
 [[items]]
 id = "M3-02"

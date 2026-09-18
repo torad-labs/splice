@@ -467,6 +467,30 @@
 }
 .myx-sfield-value {
   font-size: var(--text-3);
+  /* THE ROLE'S WEIGHT, BOUND HERE SO IT IS A DECISION RATHER THAN A DEFAULT (M1-89). This rule set
+     no weight, so the role took the browser's 400 while the board's own rule set 600 -- one role,
+     two weights, the same shape M1-85 closed one property over. 400 WINS ON TWO INDEPENDENT READINGS:
+
+     THE COMP, measured off team-board-a with the method CALIBRATED against its own recorded regions.
+     The comp records a stem width and a weight class for some of its text, and for two of them it
+     says regular: bay-deepseek-label (stemW 0.1241, cap 10.9) and chat-label (stemW 0.1270, cap 9.8).
+     Measured with the method below, those read a 2px modal stem at 31.1 and 26.7 percent ink density.
+     The comp's strip VALUES -- which carry no type record at all, because its strip cells are
+     'control' regions -- read a 1px modal stem at 20.7 and 25.4 percent. So the thing this role
+     renders measures AT OR BELOW the comp's own regular weight on both signals, never above it: the
+     recording supports 400 and gives no support to 600. It is not a comp constant and is not offered
+     as one -- the comp never measured this role -- but it is a reading of the comp of record, taken
+     the same way for the reference regions and for the strips.
+
+     THE COST, measured before the change on the board at 1536 with fixture=hero: at 600 the strip's
+     value cells clip 10 of 99 with 85px of total overflow and a 17px worst cell; at 400 they clip 5
+     of 99 with 32px and 13px. The bold weight was costing half again the truncation, which is the
+     operator's original complaint in miniature.
+
+     The method, for whoever re-measures: rows whose dark count exceeds the window's own structural
+     floor by a margin give the text band; the modal length of horizontal dark runs up to 6px in that
+     band gives the stem, and dark pixels over band area gives the density. */
+  font-weight: 400;
   line-height: 1.5;
   color: var(--strip-ink);
   font-variant-numeric: tabular-nums;

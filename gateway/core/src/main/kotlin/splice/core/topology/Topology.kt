@@ -40,6 +40,8 @@ public data class Topology(
     val defaults: Map<String, String> = emptyMap(),
     val providers: Map<String, ProviderConfig> = emptyMap(),
     val heads: Map<String, HeadConfig> = emptyMap(),
+    /** V4-124: per-repo standing prompts, keyed by the project root path. Absent = today's bytes. */
+    val projects: Map<String, ProjectConfig> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY

@@ -139,21 +139,34 @@ internal class TurnPreparation(
         } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
         // AFTER the tail, so the compaction request hash and its applied check keep reading the
         // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-        return applySystemPrompt(withTail)
+        return applySystemPrompt(withTail, sessionId)
     }
 
-    /** The head's standing prompt rides on EVERY turn (not only compact ones), at its own seam.
-     *  Same honesty rule as the compaction tail above: a dialect that could not place the prompt
-     *  returns the request as it was, and the meta then says so instead of claiming text the wire
-     *  never carried. */
-    private fun applySystemPrompt(turn: BuiltTurn): BuiltTurn {
-        val prompt = deps.policy.systemPrompt.resolve() ?: return turn
-        val prompted = provider.withSystemPrompt(turn, prompt.text, prompt.mode)
-        val applied = prompted.requestBody != turn.requestBody
+    /** The standing prompt layers ride on EVERY turn (not only compact ones), at the dialect's seam,
+     *  one layer after another in the order [splice.core.prompt.SystemPromptLayers] resolved them.
+     *  Same honesty rule as the compaction tail above: a dialect that could not place a layer
+     *  returns the request as it was, and the meta then says so for that layer instead of claiming
+     *  text the wire never carried. The session lookup runs only when a project is configured, so a
+     *  topology without projects does no extra work and sends V4-36's bytes. */
+    private fun applySystemPrompt(turn: BuiltTurn, sessionId: String?): BuiltTurn {
+        val layers = deps.policy.systemPrompt
+        val cwd = if (layers.hasProjects) deps.seams.sessionProject(sessionId) else null
+        val resolved = layers.resolve(cwd)
+        if (resolved.isEmpty()) return turn
+        val placed = BooleanArray(resolved.size)
+        val prompted = resolved.foldIndexed(turn) { index, current, layer ->
+            val next = provider.withSystemPrompt(current, layer.text, layer.mode)
+            placed[index] = next.requestBody != current.requestBody
+            next
+        }
+        val applied = resolved.filterIndexed { index, _ -> placed[index] }
+        val source = resolved.withIndex().joinToString("+") { (index, layer) ->
+            if (placed[index]) layer.source else "${layer.source} (not applied)"
+        }
         return prompted.copy(
             meta = prompted.meta.copy(
-                systemPrompt = if (applied) prompt.text else null,
-                systemPromptSource = if (applied) prompt.source else "${prompt.source} (not applied)",
+                systemPrompt = applied.takeIf { it.isNotEmpty() }?.joinToString("\n\n") { it.text },
+                systemPromptSource = source,
             ),
         )
     }

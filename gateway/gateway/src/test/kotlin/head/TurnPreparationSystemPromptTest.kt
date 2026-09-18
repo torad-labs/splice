@@ -35,6 +35,7 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.TurnPerf
 import splice.core.prompt.HeadSystemPrompt
+import splice.core.prompt.SystemPromptLayers
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
@@ -249,7 +250,7 @@ class TurnPreparationSystemPromptTest {
             upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             log = {},
-            policy = HeadDeps.HeadPolicy(systemPrompt = prompt),
+            policy = HeadDeps.HeadPolicy(systemPrompt = SystemPromptLayers(prompt)),
         )
         return TurnPreparation(
             provider,

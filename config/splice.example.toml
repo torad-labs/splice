@@ -436,6 +436,29 @@ share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE
 #             it deliberately, usually on a head you drive yourself rather than through Claude Code.
 #   system_prompt_mode = "append"
 
+# ── per-project system prompt, and per head of that project ──
+# Two more layers keyed by the repo a session works in (its cwd, from Claude Code's session
+# registry or transcript). The key is the project ROOT as a quoted absolute path (~/ is home); a
+# relative key is a config error at load, and a root missing on disk is a `splice doctor` WARN. The
+# DEEPEST configured root that is the cwd or one of its ancestors wins, so nested repos work. The
+# same three keys as a head, but a relative system_prompt_file resolves against the PROJECT ROOT,
+# so the prompt can live in the repo:
+#   [projects."~/work/api"]
+#   system_prompt_file = ".splice/prompt.md"
+#   [projects."~/work/api".heads.claudex]              # only when head claudex serves this repo
+#   system_prompt = "Run the api test suite before you say done."
+#
+# Composition, in order head -> project -> project-head: append layers stack as separate blocks
+# after the client's system field, in that order. A replace at ANY layer substitutes the client's
+# field AND every earlier layer; later append layers still land after it. A session whose cwd
+# cannot be resolved gets the head layer only. No [projects] table at all is exactly today's bytes.
+#
+# CACHE TRADE: every layer is a trailing block, so a breakpoint Claude Code sets inside `system`
+# never invalidates, and editing a layer misses the message-level breakpoints for ONE turn before
+# they re-cache. But each project gets different bytes, so a head serving four repos holds four
+# cache prefixes instead of one. That is cheap for a short prompt; know it before attaching a long
+# one to many repos.
+
 [heads.claudex]
 provider = "codex"
 port = 3099

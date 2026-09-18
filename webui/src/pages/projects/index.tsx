@@ -48,16 +48,38 @@ interface Field {
 // The repo column carries an absolute root, and the cost column carries
 // "$12.84 estimated": both are measured against the widest thing they print,
 // because StripField clips rather than wraps (found in the 2026-09-18 capture).
-// A root deeper than 44 characters clips here and is printed whole in the
+// A root deeper than 49 characters clips here and is printed whole in the
 // detail header when the strip is opened.
 // ONE declaration per column, because the rack prints its names once on the bay head and the
 // strips below carry values only (CONTRACTS.md section 2, m1 design review B9).
+// ---- THE BUDGET STAYS AND THE SHARES MOVE (M2-31, the diagnostic M2-29 brought) --------------
+// Declared width over content held, per column, measured rack-wide at 1536 dark with every cell
+// cloned unconstrained so the number is what the column ACTUALLY holds rather than what it was
+// once sized for. Healthy reads 1.0 to 1.5. This rack read, before:
+//
+//   repo 1.69 · live 2.88 · teams 1.76 · turns 2.28 · cost 2.07 · last seen 1.91
+//
+// 676px of content inside a rack declaring 1287px -- which is M1-111's finding measured rather
+// than described: four repositories using HALF THE FRAME to say almost nothing. That symptom is
+// this ratio and not a second defect. The 471px below the last strip was checked against the comp
+// separately and is the comp's own idiom: bay-claude's slot rules continue below the last strip at
+// a 31-32px pitch (team-board-a.png, and the note already in projects.css line 9).
+//
+// THE TOTAL IS UNCHANGED AT 102ch, which is not a nicety -- it is the whole constraint. A strip is
+// `width: max-content` and each cell carries `flexGrow: w`, so rendered width is proportional to
+// declared ch and the rack has no slack to redistribute; fitting every column to its content does
+// not tighten the rack, it ends the rack early and leaves bare ground to the bay edge (M2-29
+// measured 453px of it on fleet, past tsc, forty tests and a zero-clipped check). So each column
+// now takes the share of the SAME budget that its content actually needs.
+//
+// Width went to `repo`, the only column holding a name, and away from the three counters and the
+// cost phrase. No phrase was shortened and no absence renamed to buy the pixels.
 const COLUMNS: Record<string, { label: string; w: number }> = {
-  repo: { label: S.repo, w: 44 },
-  sessions: { label: S.sessions, w: 8 },
-  teams: { label: S.teams, w: 7 },
-  turns: { label: S.turns, w: 8 },
-  cost: { label: S.cost, w: 23 },
+  repo: { label: S.repo, w: 49 },
+  sessions: { label: S.sessions, w: 5 },
+  teams: { label: S.teams, w: 8 },
+  turns: { label: S.turns, w: 7 },
+  cost: { label: S.cost, w: 21 },
   last: { label: S.last, w: 12 },
 };
 

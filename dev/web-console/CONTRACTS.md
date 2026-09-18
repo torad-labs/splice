@@ -177,7 +177,11 @@ Storage key `localStorage['splice.views.<pageId>']`. Removing the last view rest
   `import.meta.env.DEV` is true and the address carries the fixture name in the HASH query,
   `#/<address>?fixture=<name>` (pinned 2026-09-18: the shell keeps the hash query through boot,
   and under a hash router the router's `useLocation().search` IS that query, so read it there);
-  the shipped `dist` contains no fixture bytes. A fixture page makes no request of its own (the
+  the shipped `dist` contains no fixture bytes: a STATIC import of the fixture module survives the
+  DEV guard (the bundler includes the module and its strings ship; found on the hero row), so the
+  fixture is loaded with `await import('./fixtures/<name>')` inside the DEV branch and the page
+  renders its board-as-prop while it loads; `node dev/web-console/fixture-leak.mjs` (M2-12) fails
+  by name on any fixture literal found in `dist`. A fixture page makes no request of its own (the
   shell's polls still run). A fixture is labeled with a `HolderEdge grey "sample data"` in the
   bay label when rendered.
 - Tests are `tests/<row>.test.ts` (vitest, node environment, no jsdom). A `.ts` file cannot

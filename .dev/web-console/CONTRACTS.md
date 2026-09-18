@@ -234,12 +234,19 @@ request on the owner row; it never edits the owner's directory.
 
 ## 6. Events (row M3-01)
 
-`entities/events` exports `connect(): void` (one `EventSource` on `/api/events` with the
-bearer, `Last-Event-ID` resume, reconnect with backoff) and
-`subscribe(kind: EventKind, fn: (e: Event) => void): () => void`. Kinds follow
-`FEATURES.md` section 6: `head.state`, `turn.start`, `turn.end`, `session.change`,
-`message.edge`, `account.switch`. Entity stores subscribe and refetch; pages never subscribe
-directly, so live wiring edits only `entities/**` and `shared/lib/live.ts`.
+`entities/events` exports `connect(): void` and
+`subscribe(kind: EventKind, fn: (e: Event) => void): () => void`. The connection (row M3-00,
+split from M3-01 on 2026-09-18) is ONE streaming `fetch` of `/api/events` from the entity's api
+segment with the `Authorization: Bearer` header (the fetch wall allows fetch in
+`entities/*/api`; the browser `EventSource` API cannot send a header, so it is not used): SSE
+frames (`id:` monotonic integer, `event:` kind, `data:` one JSON object, `: heartbeat` comments)
+parsed incrementally from the `ReadableStream` by `shared/lib/live.ts`, `Last-Event-ID` sent as
+a request header on reconnect from the last id seen, backoff 1s doubling to 30s and reset on a
+frame, a stop on 401 (the shared client's lock), and a store carrying the state (`live`,
+`reconnecting`, `off`) plus the last frame time, which the rule prints beside health. Kinds
+follow `FEATURES.md` section 6: `head.state`, `turn.start`, `turn.end`, `session.change`,
+`message.edge`, `account.switch`. Entity stores subscribe and refetch (row M3-01); pages never
+subscribe directly.
 
 ## 7. Deletions are deferred to the finish row
 

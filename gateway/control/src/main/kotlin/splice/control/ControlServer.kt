@@ -34,6 +34,8 @@ import splice.control.api.ConfigRoutes
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.EconomicsPayloads
+import splice.control.api.EventBus
+import splice.control.api.EventsRoute
 import splice.control.api.HeadResolver
 import splice.control.api.HeadRoutes
 import splice.control.api.JsonBody
@@ -88,7 +90,18 @@ public class ControlServer(
     sessions: SessionRegistry? = null,
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
+    /** v0.4.0 (V4-126, FEATURES.md §6): the console event bus. PUBLIC because the daemon publishes
+     *  to it from the turn path in :app — this is the one type that crosses that boundary.
+     *
+     *  A BODY property, not a constructor parameter, and that is a wall decision rather than a style
+     *  one: as a parameter it widened this constructor 17 -> 18, which the constructor-width ratchet
+     *  reported as WIDENED on a file already recorded as debt ("a recorded offender is DEBT, not
+     *  permission to keep adding parameters"). The bus is a derived collaborator with no
+     *  construction-time input, so the body is also where it belongs — the same disposition HeadDeps
+     *  gave its own derived collaborator. */
+    public val events: EventBus = EventBus()
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
+    private val eventsRoute = EventsRoute(events)
     private val sessionsRoutes = sessions?.let(::SessionsRoutes)
     private val payloads =
         ControlPayloads(
@@ -154,6 +167,8 @@ public class ControlServer(
                     get("/api/sessions") { guarded(call) { respond(call, sessionsRoutes.sessionsJson()) } }
                 }
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
+                // V4-126: additive. Every poll route above is untouched and stays the fallback.
+                get("/api/events") { guarded(call) { eventsRoute.stream(call) } }
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
                 get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }

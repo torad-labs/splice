@@ -5,8 +5,6 @@
 // caller's responsibility is to stop what it already started and exit cleanly in that case.
 package splice.app
 
-import java.nio.file.Path
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.cancel
 import splice.app.cli.DoctorCommand
 import splice.app.console.ConsoleUpgradeStatus
@@ -42,6 +40,8 @@ import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
+import java.nio.file.Path
+import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
     private val statePaths: StatePaths,

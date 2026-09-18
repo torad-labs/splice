@@ -4726,3 +4726,11 @@ title = "THE SINGLE QUOTA RESOLVER NOW TRIPS ITS OWN WALL, a V4-105 ripple the r
 files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/HeadDeps.kt", ".rules/kotlin-splice/kt-quota-tracker-single-resolution.yml"]
 status = "todo"
 verify = "npm run --silent gate:rules && bash checks/gradle-slot.sh V4-138 :gateway:test"
+
+[[items]]
+id = "V4-139"
+phase = "walls"
+title = "BURN THE kt-tests-no-wall-clock ALLOWLIST TO EMPTY — the remaining 30 files, placed as a row because V4-111 title promised empty and delivered three. HONEST PROVENANCE: V4-111 removed exactly the three sites the 2026-09-17 audit named (HeadServerStopDrainTest, FrameRecordingTest, MockChatGptUpstream) and its fence covered nothing else, so its title overstated its scope and the gap was recorded on that row rather than hidden. THE WALL ITSELF IS SOUND, checked before rowing this: files: at line 134 scopes it to every gateway test and testFixtures source, and the per-file exemptions live under ignores: at 138 — the two wildcards at 135-136 are SCOPE and not a blanket exemption, so the rule does fire. THE WORK: each entry is a test that waits on the wall clock; drive it through runTest virtual time (delay inside runTest is exempt), an injected clock or waiter (ElapsedClock, RemainingTurnWait), or a condition polled against a DEADLINE, then delete its line. DO NOT delete a line without changing its test — an entry removed while the sleep remains just moves the red from the allowlist to the scan. MockChatGptUpstream pacer seam from V4-111 is the worked example for a helper that must still sleep by default. SEQUENCING: this row touches many test files, so it runs LAST among the wall rows and asks for each file group as it reaches it rather than fencing the whole test tree, which is the glob-vs-glob shape this campaign deadlocked on twice."
+files = [".rules/kotlin-splice/kt-tests-no-wall-clock.yml"]
+status = "todo"
+verify = "npm run --silent gate:rules; bash checks/gradle-slot.sh V4-139 :gateway:test :core:test :control:test"

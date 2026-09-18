@@ -159,22 +159,36 @@ const MEMBER_DECL = /^\s+(?:public\s|override\s+public\s|public\s+override\s)/;
  *  "close enough to stop lying" rather than "a Kotlin parser":
  *   · the header scan is CAPPED (SIGNATURE_MAX_LINES) so a header that never closes cannot swallow
  *     the file;
- *   · members are found by their `public` line, so a member's body is excluded and only the
+ *   · members are found by their `public` line, so a member's body is excluded and only its
  *     signature is read — but a type named ONLY inside a private member still slips through, which
  *     OVER-justifies. That direction is chosen deliberately: over-justifying costs a missed
- *     declaration, and under-justifying is what cost five good ones in V4-104. */
-function signatureOf(lines: string[], at: number): string {
+ *     declaration, and under-justifying is what cost five good ones in V4-104.
+ *
+ *  V4-153 — AND THE COMMENT ABOVE USED TO BE A LIE, which is the whole reason this row exists. It
+ *  claimed "only the signature is read" while the code pushed the member's FIRST LINE and nothing
+ *  else. A one-line member hides that; a member whose parameter list spans lines does not, and
+ *  TurnWatchdog.launchIn is exactly that — `probe: ProviderProbe?` sits on its fifteenth line, so the
+ *  type was invisible and ProviderProbe was reported as unconsumed for a whole row. The fix is
+ *  [headerOf], applied to members as well as to the declaration itself. */
+function headerOf(lines: string[], at: number): string[] {
   const out: string[] = [];
-  // The header: this line, through the continuation, to the body.
-  let head = at;
-  for (; head < lines.length && head - at < SIGNATURE_MAX_LINES; head += 1) {
-    out.push(lines[head]);
-    if (lines[head].includes("{") || /=\s*$/.test(lines[head])) break;
+  for (let i = at; i < lines.length && i - at < SIGNATURE_MAX_LINES; i += 1) {
+    out.push(lines[i]);
+    if (lines[i].includes("{") || /=\s*$/.test(lines[i])) break;
   }
-  // The public members, to the next top-level declaration.
-  for (let i = head + 1; i < lines.length; i += 1) {
+  return out;
+}
+
+function signatureOf(lines: string[], at: number): string {
+  const out = headerOf(lines, at);
+  for (let i = at + Math.max(out.length, 1); i < lines.length; i += 1) {
     if (PUBLIC_DECL.test(lines[i])) break;
-    if (MEMBER_DECL.test(lines[i])) out.push(lines[i]);
+    if (MEMBER_DECL.test(lines[i])) {
+      const member = headerOf(lines, i);
+      out.push(...member);
+      // Past the member's own header, so its parameter lines are not re-read as members.
+      i += member.length - 1;
+    }
   }
   return out.join("\n");
 }
@@ -758,6 +772,29 @@ function selftest(): number {
   };
   arm("17. a `kept` reason for an entry the baseline does not hold (red)", orphanReason, "ORPHAN KEPT");
 
+  // ── V4-153 ──────────────────────────────────────────────────────────────────────────
+  //
+  // THE ARM V4-149 SHOULD HAVE HAD, and the reason it did not is the lesson worth keeping. Arm 14
+  // proves a member's return type rides its consumed class — but its member is a ONE-LINER, and a
+  // one-liner hides the exact bug that shipped: the scan captured each member's FIRST LINE only, so a
+  // member whose parameter list spans lines hid its own types. TurnWatchdog.launchIn carries
+  // `probe: ProviderProbe?` on its fifteenth line and was invisible for a whole row.
+  //
+  // These two arms differ from 14/15 ONLY in that the member's parameters WRAP. If they had been
+  // written first, the bug could not have shipped; an arm that tests the right SHAPE but not the
+  // shape that BREAKS is a green light wired to the wrong wire.
+  const wrappedMember = (withConsumer: boolean): ((root: string) => void) => (root: string) => {
+    fixture(root);
+    writeModule(root, ":lib", "src/main/kotlin", "Store.kt",
+      "package fix.lib\n\npublic class Store {\n    public fun read(\n        flag: Boolean,\n        hidden: Hidden,\n    ): Int = 0\n}\n\npublic class Hidden\n");
+    if (withConsumer) {
+      writeModule(root, ":other", "src/main/kotlin", "Use.kt", "package fix.other\nimport fix.lib.Store\ninternal class Use(val s: Store)\n");
+    }
+    baselineFixture(root, []);
+  };
+  arm("18. a WRAPPED member parameter list carries its type to the consumer (green)", wrappedMember(true), null);
+  arm("19. ...and with that consumer gone the type offends again (red)", wrappedMember(false), "GROWTH");
+
   if (failures.length > 0) {
     process.stdout.write("public-surface SELFTEST FAIL:\n");
     for (const failure of failures) process.stdout.write("  x " + failure + "\n");
@@ -770,7 +807,8 @@ function selftest(): number {
       "unjustified public type, a sibling test-only caller, a stale baseline entry (justified " +
       "and deleted), an undated baseline, a tree with no library modules, a tree with no public " +
       "declarations, a missing module law, that SAME return type once its member is internal, a " +
-      "blank `kept` reason and an orphan `kept` reason are all red\n",
+      "blank `kept` reason and an orphan `kept` reason are all red — and a type reached through a " +
+      "WRAPPED member parameter list is green while its consumer stands and red once it is gone\n",
   );
   return 0;
 }

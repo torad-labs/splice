@@ -63,14 +63,6 @@ export function captureUrl(address) {
 export function falseRed(band, rowsFirstFieldX, tolerance = 2) {
   if (band.isStrip) return { contributes: false, why: 'it is a strip, so the leg is entitled to read it' };
   if (band.height < 20) return { contributes: false, why: `its box is ${band.height}px tall, under the 20px run stripScanlines needs` };
-  // PALENESS, and this condition was MISSING from the first census, which is why it flagged the Bay
-  // primitive's own head on four instances. `stripScanlines` does not collect every box in a bay: it
-  // collects PALE RUNS, rows whose ground is more than half above mean luminance 150. A dark band is
-  // not a scanline at all - it BREAKS a run - so no border on it is ever read, whatever its box or
-  // its ink. Caught by cross-checking the census against a capture: sessions was flagged three times
-  // and its capture reads ten scanlines at x=491, spread ZERO. A census that convicts a page the
-  // pixels acquit is the same false-red class this row exists to remove, one level up.
-  if (!band.pale) return { contributes: false, why: 'its ground is not pale, so stripScanlines never forms a run through it and the leg never reads it' };
   if (!band.fieldLineBorder) return { contributes: false, why: 'it holds a field but draws no border in the field-line ink, so fieldBorders finds nothing' };
   if (rowsFirstFieldX === null) return { contributes: false, why: 'the bay has no rows to compare against' };
   const delta = Math.abs(band.firstFieldX - rowsFirstFieldX);
@@ -78,14 +70,22 @@ export function falseRed(band, rowsFirstFieldX, tolerance = 2) {
   return { contributes: true, why: `its first field-line border is at x=${band.firstFieldX} against the rows' ${rowsFirstFieldX} - ${delta}px, outside the ${tolerance}px tolerance` };
 }
 
-/**
- * The ground an element is actually painted on, composited from its ancestors until opaque, and
- * whether that ground is pale by the leg's own threshold (mean luminance > 150).
- */
-export function paleGround(rgb, threshold = 150) {
-  if (rgb === null || rgb === undefined) return null;
-  return (rgb[0] + rgb[1] + rgb[2]) / 3 > threshold;
-}
+// A FOURTH CONDITION IS MISSING HERE AND IT IS STATED RATHER THAN GUESSED AT: the leg collects PALE
+// RUNS, not boxes, so a band whose ground is dark is never read however far its border sits from the
+// rows. WITHOUT IT THIS CENSUS OVER-REPORTS - the four `header.myx-bay-head` instances below are
+// dark and the leg never reads them; sessions was flagged three times and its capture reads ten
+// scanlines at x=491 with spread ZERO.
+//
+// I TRIED TO ADD IT FROM THE DOM AND THE ATTEMPT IS RECORDED HERE BECAUSE IT MADE THINGS WORSE, not
+// better, and the reason is structural. Compositing a band's ancestor backgrounds gives the ground
+// the WRAPPER is painted on, and a wrapper's own ground is the dark room while the pale strips
+// inside it are what forms the run: with that proxy, logs and accounts BOTH dropped out of the red
+// list, and both are genuine - logs is the M1-110 finding and accounts is the one red the row says
+// is real. The proxy is wrong in principle: paleness is a property of PIXELS along a scanline, not
+// of any element's computed background, and `stripScanlines` reads the PNG. The honest fix is to
+// sample the capture at each band's y-range, which needs the capture set this instrument does not
+// read. Until then this census is a CANDIDATE LIST, not a verdict, and it should be read that way.
+export const PALENESS_NOT_TESTED = 'pixels, not computed backgrounds - see the note above falseRed';
 
 const SELFTEST = [
   { name: 'a strip is never a false red', band: { isStrip: true, height: 64, pale: true, fieldLineBorder: true, firstFieldX: 166 }, rows: 325, want: false },
@@ -93,10 +93,7 @@ const SELFTEST = [
   { name: 'a band too short for the leg to collect is not a red', band: { isStrip: false, height: 12, pale: true, fieldLineBorder: true, firstFieldX: 166 }, rows: 325, want: false },
   { name: 'a band that draws no field-line border is invisible to the leg', band: { isStrip: false, height: 64, pale: true, fieldLineBorder: false, firstFieldX: null }, rows: 325, want: false },
   { name: 'a band whose first border AGREES with the rows is not a red', band: { isStrip: false, height: 64, pale: true, fieldLineBorder: true, firstFieldX: 324 }, rows: 325, want: false },
-  { name: 'a bay with no rows cannot convict a band', band: { isStrip: false, height: 64, pale: true, fieldLineBorder: true, firstFieldX: 166 }, rows: null, want: false },
-  // THE CASE THE FIRST CENSUS NEEDED AND DID NOT HAVE: turns' Band and the Bay primitive's own head
-  // both paint a dark ground, so stripScanlines never forms a run through them.
-  { name: 'a DARK band is never a red however far its border is from the rows - the leg never reads it', band: { isStrip: false, height: 64, pale: false, fieldLineBorder: true, firstFieldX: 166 }, rows: 325, want: false },
+  { name: 'a bay with no rows cannot convict a band', band: { isStrip: false, height: 64, fieldLineBorder: true, firstFieldX: 166 }, rows: null, want: false },
 ];
 
 if (process.argv.includes('--selftest')) {
@@ -141,13 +138,19 @@ const PROBE = `(() => {
   // THE GROUND, COMPOSITED FROM ANCESTORS UNTIL OPAQUE - the same substitution probe-ink.mjs makes,
   // and for the same reason: an element is not painted on the token it was declared against, it is
   // painted on the stack above it. Paleness is then the legs own threshold, mean luminance > 150.
+  // EVERY BACKSLASH IS DOUBLED, and this is the scar probe-ink.mjs documents in its own comment:
+  // this whole block lives inside a template literal, and a template literal eats an unrecognised
+  // escape - so a single-backslash /\\s+/ arrives in the page as /s+/ and a single-backslash
+  // /color\\(srgb/ arrives as an UNBALANCED regex that throws at parse time and takes the whole
+  // probe with it. The first cut of this function did exactly that and all thirteen addresses came
+  // back as JSON Parse errors on undefined, which reads like a page failure and was mine.
   const parseBg = (s) => {
     const t = String(s || '').trim();
     if (!t || t === 'transparent' || t === 'none') return null;
-    let m = t.match(/rgba?\(([^)]+)\)/);
-    if (m) { const p = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+    let m = t.match(/rgba?\\(([^)]+)\\)/);
+    if (m) { const p = m[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);
              return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; }
-    m = t.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+    m = t.match(/color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)(?:\\s*\\/\\s*([\\d.]+))?\\)/);
     if (m) return { r: +m[1] * 255, g: +m[2] * 255, b: +m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
     return null;
   };
@@ -231,7 +234,6 @@ const PROBE = `(() => {
         isStrip: el.classList.contains('myx-strip'),
         height: Math.round(box(el).h),
         ground: (() => { const g = composite(el); return g === null ? null : Math.round((g.r + g.g + g.b) / 3); })(),
-        pale: (() => { const g = composite(el); return g === null ? null : (g.r + g.g + g.b) / 3 > 150; })(),
         fieldLineBorder: bordered.length > 0,
         borderedBoxes: bordered.length,
         firstFieldX: firstBorderX,

@@ -30,6 +30,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.control.api.AuthRoutes
 import splice.control.api.CompactPayloads
+import splice.control.api.CompactionInstructionsRoute
 import splice.control.api.ConfigRoutes
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
@@ -46,6 +47,7 @@ import splice.control.api.SessionsRoutes
 import splice.control.api.StatuslineRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
+import splice.core.compaction.CompactionInstructions
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.launch.McpAccessKey
@@ -100,6 +102,18 @@ public class ControlServer(
      *  construction-time input, so the body is also where it belongs — the same disposition HeadDeps
      *  gave its own derived collaborator. */
     public val events: EventBus = EventBus()
+
+    /** V4-136: how /api/compaction/instructions reaches the daemon's ONE compaction resolver.
+     *
+     *  A SETTABLE PROPERTY, not a constructor parameter — the constructor sits at the width
+     *  ratchet's ceiling and V4-105 is burning it down, so the value arrives as an assignment
+     *  ControlPlane makes right after construction (the same shape [events] took).
+     *
+     *  UNSET IS NOT "NO INSTRUCTIONS CONFIGURED": the route answers a named 5xx, because an empty
+     *  scope list from an unwired daemon would tell an operator that nothing is configured while
+     *  the daemon compacts with rules — a confident false negative, which is the harm the route's
+     *  400-not-404 rule exists to prevent. */
+    public var compaction: CompactionInstructions? = null
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
     private val eventsRoute = EventsRoute(events)
     private val sessionsRoutes = sessions?.let(::SessionsRoutes)
@@ -115,6 +129,10 @@ public class ControlServer(
             clientVersions,
         )
     private val resolver = HeadResolver(heads, payloads)
+
+    /** Reads [compaction] at CALL time through a lambda: ControlPlane assigns the property after
+     *  the server is constructed, so a route that captured the value would capture null forever. */
+    private val compactionRoute = CompactionInstructionsRoute(resolver) { compaction }
     private val jsonBody = JsonBody()
     private val audit = ControlAudit(log)
     private val configRoutes = ConfigRoutes(config, jsonBody, payloads)
@@ -133,7 +151,18 @@ public class ControlServer(
 
     public fun start() {
         mgmtKey.get() // mint eagerly BEFORE the port opens — a dashboard load must not race it
-        val engine = embeddedServer(Netty, port = port, host = "127.0.0.1") {
+        val engine = controlEngine()
+        engine.start(wait = false)
+        server = engine
+        mcpHost?.start()
+    }
+
+    /** The engine and the whole route table it serves. Extracted from [start] (V4-136): the route
+     *  table has grown a row at a time and finally tripped the method-length wall, which was
+     *  measuring the TABLE rather than the startup sequence — two different jobs that never belonged
+     *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
+    private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
+        embeddedServer(Netty, port = port, host = "127.0.0.1") {
             routing {
                 // Unauthenticated liveness probe: the launch shim polls this to tell a running
                 // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
@@ -169,6 +198,9 @@ public class ControlServer(
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
                 // V4-126: additive. Every poll route above is untouched and stays the fallback.
                 get("/api/events") { guarded(call) { eventsRoute.stream(call) } }
+                // V4-136: additive too. ?head=<key> is REQUIRED and an unknown one is a 400 naming
+                // it, never a 404 — the console reads 404 on this path as route-not-built.
+                get("/api/compaction/instructions") { guarded(call) { compactionRoute.instructions(call) } }
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
                 get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
@@ -180,10 +212,6 @@ public class ControlServer(
                 }
             }
         }
-        engine.start(wait = false)
-        server = engine
-        mcpHost?.start()
-    }
 
     @Synchronized
     public fun stop() {

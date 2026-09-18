@@ -15,6 +15,9 @@ valid:
     }
   # dated allowlist: the unauthenticated liveness probe
   - 'get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
+  # dated allowlist (2026-09-18): the web console page — a static bundle; its /api calls are guarded
+  - 'get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
+  - 'get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
   # kotlinx buildJsonObject `put` is not a route registration — the path literal is what separates them
   - 'put("total", summaries.sumOf { (_, summary) -> summary.total })'
   - 'put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it)) } })'
@@ -25,8 +28,10 @@ invalid:
   # the census
   - 'post("/statusline/{head}") { statuslineRoute.statusline(call) }'
   - 'get("/statusline/{head}") { statuslineRoute.statusline(call) }'
-  - 'get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
-  - 'get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
+  # the allowlist is anchored per path: a near-miss of an allowlisted route is still red
+  - 'get("/dashboard/admin") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
+  - 'get("/dash") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
+  - 'get("/healthz") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
   # every verb the rule names
   - 'put("/api/thing") { respond(call, thing()) }'
   - 'patch("/api/thing") { respond(call, thing()) }'

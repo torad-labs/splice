@@ -40,7 +40,7 @@ import splice.core.util.SafeFailureText
 internal const val MASK = "********"
 internal const val TOPOLOGY_UNWIRED = "the topology writer is not wired into this control plane"
 private const val PROVIDERS = "providers"
-private const val HEADERS = "extra_headers"
+private const val EXTRA_HEADERS = "extra_headers"
 private const val TOPOLOGY = "topology"
 
 /** The daemon's topology writer, read per request: ControlPlane assigns it after construction. */
@@ -128,12 +128,12 @@ internal class TopologySecrets {
 
     fun unmasked(tree: JsonObject, stored: JsonObject): JsonObject = headers(tree) { provider, name, value ->
         val kept = (value as? JsonPrimitive)?.takeIf { it.isString && it.content == MASK }?.let {
-            stored[PROVIDERS]?.jsonObject?.get(provider)?.jsonObject?.get(HEADERS)?.jsonObject?.get(name)
+            stored[PROVIDERS]?.jsonObject?.get(provider)?.jsonObject?.get(EXTRA_HEADERS)?.jsonObject?.get(name)
         }
         val unresolved = kept == null && value == JsonPrimitive(MASK)
         if (unresolved) {
             findings += TopologyFinding(
-                "$PROVIDERS.$provider.$HEADERS.$name",
+                "$PROVIDERS.$provider.$EXTRA_HEADERS.$name",
                 "a masked value keeps a stored header, and splice.toml stores none by this name; type its value",
             )
         }
@@ -144,11 +144,11 @@ internal class TopologySecrets {
         val providers = tree[PROVIDERS] as? JsonObject ?: return tree
         val mapped = providers.mapValues { (key, provider) ->
             val table = provider as? JsonObject
-            val headers = table?.get(HEADERS) as? JsonObject
+            val headers = table?.get(EXTRA_HEADERS) as? JsonObject
             if (headers == null) {
                 provider
             } else {
-                JsonObject(table + (HEADERS to JsonObject(headers.mapValues { (name, v) -> value(key, name, v) })))
+                JsonObject(table + (EXTRA_HEADERS to JsonObject(headers.mapValues { (name, v) -> value(key, name, v) })))
             }
         }
         return JsonObject(tree + (PROVIDERS to JsonObject(mapped)))

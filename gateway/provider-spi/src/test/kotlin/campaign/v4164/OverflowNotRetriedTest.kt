@@ -6,6 +6,7 @@
 package campaign.v4164
 
 import clientOver
+import fakeAuth
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import postOnce
+import posted
+import splice.spi.PostContext
+import splice.spi.RetryNotice
 import splice.spi.UpstreamFailed
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -48,6 +52,32 @@ class OverflowNotRetriedTest {
             """your messages resulted in 131072 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}}"""
 
         assertEquals(1, sendsFor(openAi))
+    }
+
+    // V4-167. Mutant: read the overflow text before the status (V4-164). A per-minute token quota's
+    // 429 says "too many tokens", read as an overflow: no retry, no cooldown armed for the account's
+    // other turns, and the client told to compact a conversation that fits.
+    @Test
+    fun `a rate limit that talks about tokens is a rate limit, not an overflow`() = runTest {
+        val notices = mutableListOf<String>()
+        val engine = MockEngine {
+            respond(
+                """{"error":{"message":"Tokens per minute limit exceeded - too many tokens processed.",""" +
+                    """"type":"tokens"}}""",
+                HttpStatusCode.TooManyRequests,
+                headersOf(),
+            )
+        }
+        val ctx = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            onRetry = RetryNotice { notices += it },
+        )
+        assertThrows<Exception> { clientOver(engine).posted(ctx, "{}") { "ok" } }
+
+        assertTrue(notices.isNotEmpty(), "the rate-limit path spoke")
+        assertTrue(notices.none { "context overflow" in it }, "$notices")
     }
 
     // V4-62 is untouched for everything else: a 400 the classifier cannot name still takes the curve.

@@ -9,6 +9,8 @@ import driveEvents
 import ev
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
@@ -30,6 +32,25 @@ class InBandErrorClassifiedTest {
         assertEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
         assertEquals(ErrorType.OVERLOADED, f.type)
         assertTrue(f.message.contains("KV cache is full"), f.message)
+        assertFalse(f.permanent, "a 5xx heals: advertised as retryable")
+    }
+
+    // V4-167. Mutant: never carry the verdict (V4-164). A typed vendor error that identical bytes
+    // reproduce went out as the overloaded_error Claude Code re-sends, up to 300 times.
+    @Test
+    fun `a typed in-band error the same bytes reproduce is not advertised as retryable`() = runTest {
+        val f = failureOf("""{"error":{"message":"Invalid prompt: the prompt was flagged","type":"invalid_prompt"}}""")
+
+        assertTrue(f.permanent)
+    }
+
+    // V4-167. Mutant: any integer code is a status (V4-164). A vendor's own code "1301" read as
+    // HTTP 1301, a 5xx, and was retried whatever it meant.
+    @Test
+    fun `a vendor's own numeric code is its kind, not an HTTP status`() = runTest {
+        val f = failureOf("""{"error":{"code":"1301","message":"the request was rejected"}}""")
+
+        assertNotEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
     }
 
     @Test
@@ -62,5 +83,8 @@ class InBandErrorClassifiedTest {
 
         assertEquals(FailureCause.UPSTREAM_REPORTED, f.cause)
         assertEquals("chat backend: something the classifier has no rule for", f.message)
+        // V4-167. Mutant: carry the verdict for every event. One with no type and no status keeps the
+        // retryable wire V4-164 promised it.
+        assertFalse(f.permanent)
     }
 }

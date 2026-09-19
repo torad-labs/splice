@@ -170,6 +170,8 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
             "synthesize_signatures" to q.synthesizeSignatures,
             "map_thinking_adaptive" to q.mapThinkingAdaptive,
             "strip_sampling_params" to q.stripSamplingParams,
+            "stream_usage" to q.streamUsage,
+            "slot_affinity" to q.slotAffinity,
         ).forEach { (name, value) -> value?.let { put(name, it) } }
         q.toolSurface?.let { put("tool_surface", it.enabled) }
     }

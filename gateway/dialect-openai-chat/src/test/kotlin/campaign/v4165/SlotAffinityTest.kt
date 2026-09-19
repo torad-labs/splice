@@ -70,7 +70,7 @@ class SlotAffinityTest {
     }
 
     @Test
-    fun `until the runtime answers, turns go out unpinned, and the first answer is kept`() {
+    fun `until the runtime answers, turns go out unpinned, and an unreadable count keeps the table`() {
         var answer: Int? = null
         val a = SlotAffinity { answer }
         assertNull(a.lease("conv-a"))
@@ -79,6 +79,22 @@ class SlotAffinityTest {
         val leased = a.lease("conv-a")
         answer = null
         assertEquals(leased?.slot, a.lease("conv-a")?.slot)
+    }
+
+    // V4-166. Mutant: keep the first count forever (V4-165's cache). A server restarted from -np 4
+    // to -np 2 wraps id 3 onto slot 1 (id_slot % n, server-context.cpp:1433), which conv-b holds.
+    @Test
+    fun `a changed slot count rebuilds the table, and an old lease ends on its own table`() {
+        var answer: Int? = 4
+        val a = SlotAffinity { answer }
+        val before = List(4) { a.lease("conv-$it")!! }
+        assertEquals(3, before.last().slot)
+
+        answer = 2
+        val after = List(2) { a.lease("new-$it")!! }
+        assertEquals(listOf(0, 1), after.map { it.slot }, "every id is inside the new count")
+        before.forEach { it.end() } // ending on the old table: no index past 1, no slot freed here
+        assertNull(a.lease("new-2"), "both slots of the new table are still in flight")
     }
 
     // Mutant: key on the session alone. The subagent — same session, different opening — shares

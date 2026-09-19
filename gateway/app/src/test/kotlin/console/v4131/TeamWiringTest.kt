@@ -4,7 +4,7 @@
 //
 // THE CONTROLPLANE PIN IS EXPECTED-RED until the committer applies V4-131's ControlPlane lines (the
 // CONTROLSERVER RECONCILED law: ControlPlane is orchestrator-applied, so this row writes the pin and the
-// commit records red before and green after). It fails on `srv.teams` being null.
+// commit records red before and green after). It fails on `srv.ports.teams` being null.
 package console.v4131
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -84,7 +84,7 @@ class TeamWiringTest {
             ),
         ) { "the control plane did not bind" }
         try {
-            val store = checkNotNull(srv.teams) { "ControlPlane must assign srv.teams" }
+            val store = checkNotNull(srv.ports.teams) { "ControlPlane must assign srv.ports.teams" }
             val slots = checkNotNull(plane.console.slots) { "ControlPlane must give the publisher a SlotInstructions" }
             val team = Team(name = "atlas", slots = listOf(TeamSlot(id = "b1", role = "builder", head = "h")))
             val id = store.upsert(team).id

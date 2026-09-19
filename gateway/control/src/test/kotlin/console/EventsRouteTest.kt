@@ -69,7 +69,7 @@ class EventsRouteTest {
             dashboardHtml = { "<!doctype html>" },
             log = { },
         )
-        control.events = bus
+        control.ports.events = bus
         control.start()
     }
 
@@ -89,7 +89,7 @@ class EventsRouteTest {
     @Test
     fun `a server with no bus assigned answers a named 503, never an empty stream`() = runBlocking {
         awaitPort()
-        control.events = null
+        control.ports.events = null
         try {
             val unwired = withTimeout(TIMEOUT_MS) {
                 client.get("$url/api/events") { header("Authorization", "Bearer $key") }
@@ -98,7 +98,7 @@ class EventsRouteTest {
             val body = unwired.bodyAsText()
             assertTrue("wired no console event bus" in body, "the 503 must name what was not wired: $body")
         } finally {
-            control.events = bus
+            control.ports.events = bus
         }
     }
 

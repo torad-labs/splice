@@ -39,10 +39,8 @@ import splice.control.api.ConfigRoutes
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.DaemonRoutes
-import splice.control.api.DaemonSupervised
 import splice.control.api.DoctorRoute
 import splice.control.api.EconomicsPayloads
-import splice.control.api.EventBus
 import splice.control.api.EventsRoute
 import splice.control.api.HeadResolver
 import splice.control.api.HeadRoutes
@@ -64,14 +62,10 @@ import splice.control.api.TopologySource
 import splice.control.api.UpgradeRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
-import splice.core.activity.ActivityStores
-import splice.core.compaction.CompactionInstructions
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.launch.McpAccessKey
 import splice.core.sessions.SessionRegistry
-import splice.core.teams.TeamStore
-import splice.core.topology.TopologyWriter
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 
@@ -82,7 +76,7 @@ private const val DEFAULT_LOG_TAIL = 200
 private const val DEFAULT_PERF_TAIL = 200
 private const val MAX_TAIL = 2_000
 
-/** V4-134: answered on /api/events until ControlPlane assigns [ControlServer.events]. NOT an empty
+/** V4-134: answered on /api/events until ControlPlane assigns [ConsolePorts.events]. NOT an empty
  *  stream: a stream that opens and stays quiet reads as a daemon with nothing happening, which is a
  *  confident false negative about a daemon serving turns right now. The text names what was not done. */
 private const val EVENTS_UNWIRED = "the daemon wired no console event bus; /api/events cannot stream its events"
@@ -117,53 +111,26 @@ public class ControlServer(
     sessions: SessionRegistry? = null,
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
-    /** v0.4.0 (V4-126, FEATURES.md §6): the console event bus GET /api/events streams from.
-     *
-     *  A SETTABLE PROPERTY, not a constructor parameter: as a parameter it widened this constructor
-     *  17 -> 18, which the constructor-width ratchet reports as WIDENED on a file already recorded as
-     *  debt. ControlPlane assigns it right after construction, the same shape [compaction] takes.
-     *
-     *  NO DEFAULT INSTANCE (V4-134). V4-126 gave this a fresh `EventBus()` so ControlPlane compiled
-     *  unchanged, and that default is exactly how a route ends up streaming a bus nobody publishes
-     *  to: every head reports to the daemon's ONE bus (ControlPlane's ConsoleEventPublisher), so a
-     *  private one here would stream a quiet daemon forever while the heads talked to nobody. Unset,
-     *  the route answers a NAMED 503 instead — the discipline every console port here keeps. */
-    public var events: EventBus? = null
+    /** The nine ports ControlPlane wires after construction — see [ConsolePorts], which carries the
+     *  discipline they share and why they left this file (V4-161). Read at CALL time, never captured. */
+    public val ports: ConsolePorts = ConsolePorts()
 
-    /** V4-136: how /api/compaction/instructions reaches the daemon's ONE compaction resolver.
-     *
-     *  A SETTABLE PROPERTY, not a constructor parameter — the constructor sits at the width
-     *  ratchet's ceiling and V4-105 is burning it down, so the value arrives as an assignment
-     *  ControlPlane makes right after construction (the same shape [events] took).
-     *
-     *  UNSET IS NOT "NO INSTRUCTIONS CONFIGURED": the route answers a named 5xx, because an empty
-     *  scope list from an unwired daemon would tell an operator that nothing is configured while
-     *  the daemon compacts with rules — a confident false negative, which is the harm the route's
-     *  400-not-404 rule exists to prevent. */
-    public var compaction: CompactionInstructions? = null
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
 
-    /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
-     *  after construction like [events]. Null answers the two edges routes with a named 503. */
-    public var activity: ActivityStores? = null
-
-    /** V4-131: the daemon's team store, assigned by ControlPlane after construction like [activity].
-     *  Null answers every team route with a named 503 and leaves the sessions rows' `team` null. */
-    public var teams: TeamStore? = null
     private val sessionsRoutes = sessions?.let {
-        SessionsRoutes(it, heads, config, ActivitySource { activity }, teams = TeamSource { teams })
+        SessionsRoutes(it, heads, config, ActivitySource { ports.activity }, teams = TeamSource { ports.teams })
     }
     private val teamsRoutes = sessionsRoutes?.let { routes ->
         TeamsRoutes(
-            TeamSource { teams },
+            TeamSource { ports.teams },
             heads,
             sessions,
-            ActivitySource { activity },
+            ActivitySource { ports.activity },
             SentTextSource(routes::sentTexts),
         )
     }
     private val projectsRoutes = sessionsRoutes?.let { routes ->
-        ProjectsRoutes(sessions, heads, RepoOf(routes::repoOf), TeamSource { teams })
+        ProjectsRoutes(sessions, heads, RepoOf(routes::repoOf), TeamSource { ports.teams })
     }
     private val payloads =
         ControlPayloads(
@@ -182,37 +149,7 @@ public class ControlServer(
      *  the server is constructed, so a route that captured the value would capture null forever. */
     private val compactionRoute = CompactionInstructionsRoute(resolver)
 
-    /** V4-127: the console's four injected ports, each a SETTABLE PROPERTY for the same reason
-     *  [compaction] is — the constructor sits at the width ratchet's ceiling and V4-105 is burning it
-     *  down, so a new route input arrives as an assignment ControlPlane makes after construction.
-     *
-     *  EVERY ONE OF THEM IS READ AT CALL TIME through a lambda ([modelsRoute], [doctorRoute],
-     *  [upgradeRoute], [daemonRoutes] below), never captured: a route that captured the value at
-     *  construction would capture null forever and answer its unwired 5xx against a daemon that had
-     *  wired it a moment later. That is the same trap [compaction] was written to avoid.
-     *
-     *  NULL MEANS UNWIRED, and every route below answers a NAMED 5xx for it rather than an empty
-     *  payload. This is the one discipline all four share, and it is why they are declared together:
-     *  an absent declared-model roster, doctor report, upgrade status or restart control would each
-     *  render as a confident negative — no tiers declared, nothing wrong, nothing to upgrade, no
-     *  restart coming — every one of them a did-not-run wearing a legitimate answer. */
-    public var declaredHeads: DeclaredHeads? = null
-    public var doctor: DoctorReport? = null
-    public var upgrade: UpgradeStatus? = null
-
-    /** V4-137: whether anything would bring this daemon back after it drains. Assigned beside the
-     *  ports above, and read at CALL time by the routing lambda for the same reason they are.
-     *
-     *  NULL IS NOT "ASSUME SUPERVISED". The restart route REFUSES when this is unwired, because the
-     *  two possible defaults are both wrong in the same direction: assuming supervised turns the
-     *  console's restart button into a stop button on an unsupervised daemon, and assuming the
-     *  opposite would refuse a restart on the host that can actually perform one. */
-    public var supervised: DaemonSupervised? = null
-
-    /** V4-128: the writer over splice.toml, assigned by ControlPlane after construction like [teams] and
-     *  read at call time. Null answers GET and PUT /api/topology with a named 503. */
-    public var topology: TopologyWriter? = null
-    private val topologyRoutes = TopologyRoutes(TopologySource { topology }, topologyStale)
+    private val topologyRoutes = TopologyRoutes(TopologySource { ports.topology }, topologyStale)
 
     private val daemonRoutes = DaemonRoutes()
     private val modelsRoute = ModelsRoute(heads)
@@ -284,7 +221,9 @@ public class ControlServer(
                 get("/api/events") { guarded(call) { streamEvents(call) } }
                 // V4-136: additive too. ?head=<key> is REQUIRED and an unknown one is a 400 naming
                 // it, never a 404 — the console reads 404 on this path as route-not-built.
-                get("/api/compaction/instructions") { guarded(call) { compactionRoute.instructions(call, compaction) } }
+                get("/api/compaction/instructions") {
+                    guarded(call) { compactionRoute.instructions(call, ports.compaction) }
+                }
                 consoleRoutes(this)
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
@@ -365,13 +304,13 @@ public class ControlServer(
         route.get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
         route.get("/api/topology") { guarded(call) { topologyRoutes.read().send(call) } }
         route.put("/api/topology") { guarded(call) { topologyRoutes.write(call.receiveText()).send(call) } }
-        route.get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }
-        route.get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, doctor) } }
-        route.get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, upgrade) } }
+        route.get("/api/models") { guarded(call) { modelsRoute.models(call, ports.declaredHeads) } }
+        route.get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, ports.doctor) } }
+        route.get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, ports.upgrade) } }
         // The same drain POST /api/daemon/shutdown requests, offered as a restart because the host
         // unit brings the daemon back. REFUSED when nothing would, and the refusal takes no drain.
         route.post("/api/daemon/restart") {
-            guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, supervised) }
+            guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.supervised) }
         }
     }
 
@@ -385,7 +324,7 @@ public class ControlServer(
     /** Reads [events] at CALL time, like [compaction]: ControlPlane assigns it after construction, so a
      *  route that captured the value would capture null forever. */
     private suspend fun streamEvents(call: ApplicationCall) {
-        val bus = events
+        val bus = ports.events
         if (bus == null) {
             call.respondText(
                 buildJsonObject { put("error", EVENTS_UNWIRED) }.toString(),

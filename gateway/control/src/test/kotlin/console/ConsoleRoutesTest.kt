@@ -228,7 +228,7 @@ class ConsoleRoutesTest {
     @Test
     fun `an unwired roster is a named failure, never every model with no tier naming it`() = runBlocking {
         awaitPort()
-        control.declaredHeads = null
+        control.ports.declaredHeads = null
         val response = get("/api/models")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         val body = response.bodyAsText()
@@ -243,7 +243,7 @@ class ConsoleRoutesTest {
     @Test
     fun `a head the roster does not name is a named failure, not a head with nothing declared`() = runBlocking {
         awaitPort()
-        control.declaredHeads = DeclaredHeads { mapOf(HEAD_KEY to DeclaredHead("prov", listOf(HeadModel("m1", "fast")))) }
+        control.ports.declaredHeads = DeclaredHeads { mapOf(HEAD_KEY to DeclaredHead("prov", listOf(HeadModel("m1", "fast")))) }
         val response = get("/api/models")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains("bare"), "the failure must NAME the head: ${response.bodyAsText()}")
@@ -252,7 +252,7 @@ class ConsoleRoutesTest {
     @Test
     fun `the join runs both ways, so a declared slot that resolved to nothing is its own row`() = runBlocking {
         awaitPort()
-        control.declaredHeads = DeclaredHeads {
+        control.ports.declaredHeads = DeclaredHeads {
             mapOf(
                 HEAD_KEY to DeclaredHead("prov-a", listOf(HeadModel("m1", "fast"), HeadModel("ghost", "slow"))),
                 "bare" to DeclaredHead("prov-b", emptyList()),
@@ -301,7 +301,7 @@ class ConsoleRoutesTest {
     @Test
     fun `an unwired doctor port answers a named failure, never an empty report`() = runBlocking {
         awaitPort()
-        control.doctor = null
+        control.ports.doctor = null
         val response = get("/api/doctor")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains("not wired on this daemon"), response.bodyAsText())
@@ -315,7 +315,7 @@ class ConsoleRoutesTest {
         // come back, because a second serving layer that reshaped it would be a second redaction
         // policy, and two implementations of redaction disagreeing is worse than none.
         val report = """{"heads":{"claude":{"running":true}},"notes":["a five word note here"]}"""
-        control.doctor = DoctorReport { report }
+        control.ports.doctor = DoctorReport { report }
         val response = get("/api/doctor")
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         assertEquals(report, response.bodyAsText(), "the route serves the port's own bytes")
@@ -324,7 +324,7 @@ class ConsoleRoutesTest {
     @Test
     fun `an unwired upgrade port answers a named failure, never a current-looking status`() = runBlocking {
         awaitPort()
-        control.upgrade = null
+        control.ports.upgrade = null
         val response = get("/api/upgrade")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains("upgrade surface"), response.bodyAsText())
@@ -344,7 +344,7 @@ class ConsoleRoutesTest {
             """"latest_unavailable_reason":"no upgrade check has succeeded on this daemon",""" +
             """"rollback_target":null,"rollback_basis":"measured","rollback_unavailable_reason":null,""" +
             """"checked_at_epoch_millis":null}"""
-        control.upgrade = UpgradeStatus { status }
+        control.ports.upgrade = UpgradeStatus { status }
         val response = get("/api/upgrade")
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         assertEquals(status, response.bodyAsText(), "the route serves the port's own bytes")

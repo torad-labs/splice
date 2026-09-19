@@ -25,7 +25,7 @@ class CompactionWiringPinTest {
     fun `the control plane hands the daemon compaction resolver to the control server`() {
         val source = controlPlaneSource()
         assertTrue(
-            source.contains("srv.compaction = compactionInstructions"),
+            source.contains("srv.ports.compaction = compactionInstructions"),
             "ControlPlane must assign ControlServer.compaction, or /api/compaction/instructions " +
                 "answers its unwired 5xx in production while the daemon compacts with rules",
         )

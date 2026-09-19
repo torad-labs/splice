@@ -245,7 +245,9 @@ class TurnConnEndTest {
     // the banner reads "no detail" again and this cell goes red by name.
     @Test
     fun `a refused connect names the endpoint and the reason, never no detail - V4-164`() = runBlocking {
-        val emitter = emitFor("refused", java.net.ConnectException())
+        // The JDK client's refusal (V4-167, measured): a ConnectException over a ClosedChannelException.
+        val refused = java.net.ConnectException().apply { initCause(java.nio.channels.ClosedChannelException()) }
+        val emitter = emitFor("refused", refused)
 
         assertEquals(ErrorType.OVERLOADED, emitter.errorType, "a refused connect stays the class the client retries")
         assertEquals(

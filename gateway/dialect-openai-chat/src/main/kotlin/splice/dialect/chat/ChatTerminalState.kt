@@ -22,6 +22,9 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     internal var contentFiltered = false
     internal var failure: ClassifiedFailure? = null
 
+    // V4-167: whether the error event's verdict is one a re-send reproduces — see onError.
+    private var failurePermanent = false
+
     // CX-08 (L3): OpenAI carries a model refusal in a DEDICATED `refusal` field on the streamed
     // delta and on the final message — never in `content`. Unread, the one text that explains the
     // turn was discarded: a refusal with no prose fell through to the pipeline's generic
@@ -43,7 +46,12 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
      *  UPSTREAM_REPORTED, so an overflow reached Claude Code as a retried api_error instead of the
      *  "prompt is too long" it compacts on, and a local runtime's KV-pool failure as bare text. */
     internal fun onError(message: String, kind: String, status: Int?) {
-        failure = UpstreamFailureClassifier.classify(FailureSource.SSE, message, status, kind)
+        val classified = UpstreamFailureClassifier.classify(FailureSource.SSE, message, status, kind)
+        failure = classified
+        // V4-167: a verdict the vendor TYPED or gave a status is carried as the classifier scored it,
+        // as ResponsesTerminalDecision has since V4-81, so a deterministic error is not advertised as
+        // retryable. An event with neither keeps the wire V4-164 promised it: retryable, as before.
+        failurePermanent = !classified.transient && (status != null || kind.isNotBlank())
     }
 
     internal fun onFinish(reason: String) {
@@ -86,6 +94,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
                     // recognisable shape still lands on UPSTREAM_REPORTED, from the classifier's
                     // own floor, so an unknown in-band error keeps exactly the wire it had.
                     cause = reported.cause,
+                    permanent = failurePermanent,
                     phase = FailurePhase.MID_OUTPUT,
                 )
             // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is

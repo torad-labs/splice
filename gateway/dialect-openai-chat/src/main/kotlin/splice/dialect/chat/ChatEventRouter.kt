@@ -7,6 +7,7 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.core.wire.HttpStatus
 import splice.spi.WireSink
 
 /** Dispatches one OpenAI chat SSE frame to its owning collaborators. [applyDelta] and
@@ -27,7 +28,9 @@ internal class ChatEventRouter(
             // V4-164: all three fields, not just the text. llama-server puts its HTTP-equivalent
             // status in a NUMERIC `code` and its error kind in `type`; OpenAI puts a kind in `type`
             // and a STRING code beside it — so a numeric code is the status, never the kind.
-            val status = JsonScalars.int(it, "code")
+            // V4-167: an error status only — a vendor's own numeric code ("1301") is a kind, and
+            // read as a status it would be a 5xx, retried whatever it meant.
+            val status = JsonScalars.int(it, "code")?.takeIf { code -> code in HttpStatus.BAD_REQUEST..LAST_STATUS }
             val kind = JsonScalars.str(it, "type") ?: JsonScalars.str(it, "code").takeIf { status == null }
             terminal.onError(JsonScalars.strOrEmpty(it["message"]).ifEmpty { "error" }, kind.orEmpty(), status)
             return
@@ -64,3 +67,7 @@ internal class ChatEventRouter(
         refusal.appendRefusal(terminal.refusalBuf, delta, isDelta = true) // CX-08: the incremental streamed carrier
     }
 }
+
+// why: status codes are three digits (RFC 9110 §15) and 5xx is the last class, so 599 is the highest
+// code an in-band error can mean as a status.
+private const val LAST_STATUS = 599

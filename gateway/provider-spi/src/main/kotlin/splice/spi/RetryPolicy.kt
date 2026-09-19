@@ -119,11 +119,19 @@ internal class RetryRules(private val maxRetries: Int) {
     private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
         nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
-        UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
-            FailureCause.REQUEST_TOO_LARGE ->
-            "is a context overflow (no retry: the same bytes overflow again)"
+        overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"
         else -> null
     }
+
+    /** V4-167: a 4xx other than a rate limit, whose text says overflow. A 429 reading "too many tokens"
+     *  is a per-minute token quota, which heals with time and must reach the cooldown branch; a 5xx is
+     *  the server's own failure, and V4-62 retries it. Classified on the text before either, a TPM 429
+     *  gave up, armed no cooldown, and told the client to compact a conversation that fit. */
+    private fun overflowed(failed: RetryOutcome.Failed): Boolean =
+        failed.status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
+            failed.status != HttpStatus.TOO_MANY_REQUESTS &&
+            UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
+            FailureCause.REQUEST_TOO_LARGE
 
     /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
     private fun statusPlan(

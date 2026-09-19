@@ -42,6 +42,12 @@ public data class ChatQuirks(
     public fun withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
         copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
 
+    /** V4-163: overlay `[providers.*.quirks].stream_usage`, or a caller's own default for a provider
+     *  kind, onto the profile — null keeps this profile's own value (see [emitUsageInStream]), which
+     *  is what keeps every unopted head's request bytes identical. */
+    public fun withStreamUsageToml(streamUsage: Boolean?): ChatQuirks =
+        copy(emitUsageInStream = streamUsage ?: this.emitUsageInStream)
+
     /** Honest markers for content this dialect cannot carry: documents always; images when the
      *  vendor has no vision. An image-only message still yields a marker — silently dropping the
      *  whole message breaks role alternation AND hides the omission from the model. */

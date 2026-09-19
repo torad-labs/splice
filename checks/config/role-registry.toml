@@ -60,6 +60,7 @@ names = [
     "StopControl",
     "StreamStart",
     "Teardown",
+    "TurnEnd",
     "WorkerExited",
     "WsRoundAbort",
 ]
@@ -68,7 +69,8 @@ every one of these is an EVENT or an ACTION with its own lifecycle owner, and no
 from the same place. Notifications the caller only observes: AuthRefreshObserver (a credential \
 refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \
 (a WS frame arrived that the protocol does not allow), StreamStart (the upstream began emitting), \
-PulseTick (the spinner's next frame is due). Actions the caller commands: HaltJvm (exit the \
+PulseTick (the spinner's next frame is due), TurnEnd (a built turn is over, on whatever path — the \
+provider gives back what it held for it, a llama-server slot lease since V4-165). Actions the caller commands: HaltJvm (exit the \
 process), Teardown and StopControl (shut this component / the control plane down), ShutdownDaemon \
 (the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \
 (release the worker's cell), RawSseFlush (push buffered bytes to the client socket), ReanchorSpentHook \

@@ -58,8 +58,8 @@ class TeamsRoutesWiringTest {
             sessions = rig.registry,
         )
         if (wired) {
-            control.teams = rig.store
-            control.activity = rig.stores
+            control.ports.teams = rig.store
+            control.ports.activity = rig.stores
         }
         control.start()
         val client = HttpClient(CIO) { expectSuccess = false }

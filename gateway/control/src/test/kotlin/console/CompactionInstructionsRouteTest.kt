@@ -98,7 +98,7 @@ class CompactionInstructionsRouteTest {
     @Test
     fun `an unwired daemon answers a named failure, never an empty list`() = runBlocking {
         awaitPort()
-        control.compaction = null
+        control.ports.compaction = null
         val response = get(HEAD_KEY)
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         val body = response.bodyAsText()
@@ -112,7 +112,7 @@ class CompactionInstructionsRouteTest {
     @Test
     fun `an unknown head is a 400 naming it, never a 404`() = runBlocking {
         awaitPort()
-        control.compaction = CompactionInstructions(config = CompactionConfig(instructions = "x"), log = { })
+        control.ports.compaction = CompactionInstructions(config = CompactionConfig(instructions = "x"), log = { })
         val response = get("no-such-head")
         assertEquals(
             HttpStatusCode.BadRequest,
@@ -125,7 +125,7 @@ class CompactionInstructionsRouteTest {
     @Test
     fun `a wired daemon reports the scope, the source label and a live length, never the text`() = runBlocking {
         awaitPort()
-        control.compaction = CompactionInstructions(config = CompactionConfig(instructions = "global text"), log = { })
+        control.ports.compaction = CompactionInstructions(config = CompactionConfig(instructions = "global text"), log = { })
         val response = get(HEAD_KEY)
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         val scopes = json.parseToJsonElement(response.bodyAsText()).jsonObject["scopes"]!!.jsonArray

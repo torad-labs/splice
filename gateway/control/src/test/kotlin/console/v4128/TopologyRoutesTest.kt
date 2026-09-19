@@ -106,7 +106,7 @@ class TopologyRoutesTest {
             topologyStale = TopologyStale { true },
         )
         if (wired) {
-            control.topology = TopologyWriter(
+            control.ports.topology = TopologyWriter(
                 file,
                 TopologyParse { text -> texts[text] ?: throw IllegalArgumentException("not a text this test predicted") },
             )

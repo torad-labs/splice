@@ -9,6 +9,7 @@ import splice.spi.SseFrameTooLargeException
 import splice.spi.StreamTornBeforeClient
 import splice.spi.UpstreamAuthMissing
 import splice.spi.UpstreamFailed
+import splice.spi.transport.TransportFailureReason
 import java.io.IOException
 
 /** The per-turn error boundary and the failure-message shaping around it. */
@@ -49,8 +50,10 @@ internal class TurnFailures(
             Result.failure(e)
         }
 
-    fun connectionResetMessage(error: Throwable): String? =
-        if (error is StreamTornBeforeClient) error.cause?.message else error.message
+    /** V4-164: the socket's own account, never Throwable.message — the JDK client's refused connect
+     *  carries a null one, which reached Claude Code as "upstream connection failed (no detail)". */
+    fun connectionResetMessage(error: Throwable): String =
+        TransportFailureReason.of(error, provider.upstreamUrl)
 
     /** G19-consistent per-head hint — every AUTHENTICATION surface uses the SAME provider-threaded
      *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */

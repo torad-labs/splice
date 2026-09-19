@@ -7,6 +7,9 @@ package splice.dialect.chat
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.spi.ClassifiedFailure
+import splice.spi.FailureSource
+import splice.spi.UpstreamFailureClassifier
 
 /** The chat dialect's honesty state machine: the flags that decide whether a turn's terminal is an
  *  honest Failure instead of a clean Success, and the finish_reason classification that feeds them.
@@ -17,7 +20,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     internal var finished = false
     internal var incomplete = false
     internal var contentFiltered = false
-    internal var failure: String? = null
+    internal var failure: ClassifiedFailure? = null
 
     // CX-08 (L3): OpenAI carries a model refusal in a DEDICATED `refusal` field on the streamed
     // delta and on the final message — never in `content`. Unread, the one text that explains the
@@ -34,6 +37,15 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     // growing them without limit.
     internal var runawayGuard: String? = null
 
+    /** The upstream SSE error event, already pulled apart by [ChatEventRouter] (which owns the
+     *  frame-shape knowledge). V4-164: classified by the SAME classifier every other path uses —
+     *  this dialect was the one of three that kept only the text and called every in-band error
+     *  UPSTREAM_REPORTED, so an overflow reached Claude Code as a retried api_error instead of the
+     *  "prompt is too long" it compacts on, and a local runtime's KV-pool failure as bare text. */
+    internal fun onError(message: String, kind: String, status: Int?) {
+        failure = UpstreamFailureClassifier.classify(FailureSource.SSE, message, status, kind)
+    }
+
     internal fun onFinish(reason: String) {
         finished = true
         when (reason) {
@@ -48,6 +60,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
     /** The ranked provider-failure verdict, or null when the turn has none. */
     internal fun providerFailure(): TurnOutcome.Failure? {
         val runaway = runawayGuard
+        val reported = failure
         return when {
             runaway != null -> TurnOutcome.Failure(
                 runaway,
@@ -63,15 +76,16 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
             )
-            failure != null ->
+            reported != null ->
                 TurnOutcome.Failure(
-                    "chat backend: $failure",
+                    "chat backend: ${reported.message}",
                     providerReported = true,
-                    // V4-117: UPSTREAM_REPORTED, derived from the source rather than assumed.
-                    // ChatEventRouter.kt:27 sets this text straight from an SSE event message and
-                    // never calls UpstreamFailureClassifier, so there is no status here to read and
-                    // no classification to inherit — the in-band statusless case by construction.
-                    cause = FailureCause.UPSTREAM_REPORTED,
+                    // V4-164: the classifier's cause, carried through untouched — the passthrough
+                    // dialect's rule (PassthroughTerminalState: "an earlier draft hard-coded
+                    // UPSTREAM_REPORTED here and threw both verdicts away"). An event with no
+                    // recognisable shape still lands on UPSTREAM_REPORTED, from the classifier's
+                    // own floor, so an unknown in-band error keeps exactly the wire it had.
+                    cause = reported.cause,
                     phase = FailurePhase.MID_OUTPUT,
                 )
             // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is

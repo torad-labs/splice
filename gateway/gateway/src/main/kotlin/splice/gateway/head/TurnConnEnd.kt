@@ -57,9 +57,9 @@ internal class TurnConnEnd(
     }
 
     /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
-    suspend fun emitConnReset(drive: TurnDrive, detail: String?) {
+    suspend fun emitConnReset(drive: TurnDrive, detail: String) {
         log(telemetry.errTurn(CONN_RESET_KIND, drive, ": $detail"))
-        val boundedDetail = (detail ?: "no detail").take(ERR_SNIPPET)
+        val boundedDetail = detail.take(ERR_SNIPPET)
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
         telemetry.recordPerf(drive, CONN_RESET_OUTCOME)
         health.local()

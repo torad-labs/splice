@@ -24,7 +24,12 @@ internal class ChatEventRouter(
 
     internal suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         (evt["error"] as? JsonObject)?.let {
-            terminal.failure = JsonScalars.strOrEmpty(it["message"]).ifEmpty { "error" }
+            // V4-164: all three fields, not just the text. llama-server puts its HTTP-equivalent
+            // status in a NUMERIC `code` and its error kind in `type`; OpenAI puts a kind in `type`
+            // and a STRING code beside it — so a numeric code is the status, never the kind.
+            val status = JsonScalars.int(it, "code")
+            val kind = JsonScalars.str(it, "type") ?: JsonScalars.str(it, "code").takeIf { status == null }
+            terminal.onError(JsonScalars.strOrEmpty(it["message"]).ifEmpty { "error" }, kind.orEmpty(), status)
             return
         }
         usage.usage(evt)

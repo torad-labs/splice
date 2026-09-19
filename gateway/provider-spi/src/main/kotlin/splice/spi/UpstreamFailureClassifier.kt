@@ -16,6 +16,7 @@ import splice.core.turn.FailureCause
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
+import splice.spi.llamacpp.LlamaCppErrors
 
 // ClassifiedFailure + FailureSource live in FailureKinds.kt (concentration, 2026-08-19).
 
@@ -91,7 +92,8 @@ public object UpstreamFailureClassifier {
         val extracted = if (source == FailureSource.HTTP) {
             extractHttpError(raw, status)
         } else {
-            ExtractResult.Fields(raw, code.orEmpty())
+            // V4-164: an in-band local-runtime failure is named the same way its HTTP twin is.
+            ExtractResult.Fields(LlamaCppErrors.explain(null, code.orEmpty(), raw), code.orEmpty())
         }
         // V4-117: stamped at the ONE exit rather than at each of the ten construction sites below,
         // because every verdict leaves through here and the status is this function's own argument.
@@ -121,6 +123,9 @@ public object UpstreamFailureClassifier {
             // "The usage limit has been reached" with no hint the ChatGPT Pro quota is six days
             // out (2026-07-26: the reset was 142h away and nothing on the wire said so).
             message += quotaSuffix(err)
+            // V4-164: llama-server's shapes, named — and its context overflow rewritten into the
+            // "prompt is too long" line the overflow rule below (and Claude Code) both key on.
+            message = LlamaCppErrors.explain(err, code, message)
         }
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
             val type = if (status == HttpStatus.BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR

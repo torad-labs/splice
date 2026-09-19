@@ -53,6 +53,8 @@ import splice.core.sessions.HeadOfPid
 import splice.core.sessions.SessionRegistry
 import splice.core.teams.TEAMS_FILE
 import splice.core.teams.TeamStore
+import splice.core.topology.TopologyParse
+import splice.core.topology.TopologyWriter
 import splice.core.util.WallClock
 import splice.gateway.head.HeadEvents
 import splice.gateway.head.HeadLifecycle
@@ -76,6 +78,11 @@ internal object ConsoleWiring {
         // want on a host where systemd does run the daemon, and pinned for the same reason the others
         // are: the compiler cannot see this line either.
         srv.supervised = DrainingRestartAdapter()
+
+        // V4-128: the writer is the ONLY seam that edits splice.toml, and it is built here because
+        // this is the one place that knows the booted file's path. A null path is a daemon booted
+        // without a config file: the route declines rather than writing a file nobody asked for.
+        srv.topology = topology.path?.let { TopologyWriter(it, TopologyParse(TopologyLoader::parse)) }
     }
 
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with

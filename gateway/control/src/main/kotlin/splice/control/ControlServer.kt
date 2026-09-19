@@ -59,6 +59,8 @@ import splice.control.api.SessionsRoutes
 import splice.control.api.StatuslineRoute
 import splice.control.api.TeamSource
 import splice.control.api.TeamsRoutes
+import splice.control.api.TopologyRoutes
+import splice.control.api.TopologySource
 import splice.control.api.UpgradeRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
@@ -69,6 +71,7 @@ import splice.core.config.MgmtKey
 import splice.core.launch.McpAccessKey
 import splice.core.sessions.SessionRegistry
 import splice.core.teams.TeamStore
+import splice.core.topology.TopologyWriter
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 
@@ -205,6 +208,11 @@ public class ControlServer(
      *  console's restart button into a stop button on an unsupervised daemon, and assuming the
      *  opposite would refuse a restart on the host that can actually perform one. */
     public var supervised: DaemonSupervised? = null
+
+    /** V4-128: the writer over splice.toml, assigned by ControlPlane after construction like [teams] and
+     *  read at call time. Null answers GET and PUT /api/topology with a named 503. */
+    public var topology: TopologyWriter? = null
+    private val topologyRoutes = TopologyRoutes(TopologySource { topology }, topologyStale)
 
     private val daemonRoutes = DaemonRoutes()
     private val modelsRoute = ModelsRoute(heads)
@@ -355,6 +363,8 @@ public class ControlServer(
      *  rather than a payload that reads as a confident negative. */
     private fun consoleRoutes(route: Route) {
         route.get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
+        route.get("/api/topology") { guarded(call) { topologyRoutes.read().send(call) } }
+        route.put("/api/topology") { guarded(call) { topologyRoutes.write(call.receiveText()).send(call) } }
         route.get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }
         route.get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, doctor) } }
         route.get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, upgrade) } }

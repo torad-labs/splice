@@ -80,7 +80,9 @@ class McpHostTest : McpHostFixture() {
         // An ended session is 404 whatever version the client still names: reinitialize, not 400.
         assertTrue(host.endSession("fake", s))
         assertEquals(404, host.post("fake", s, MCP_HOST_LIST, protocolVersion = "2025-11-25").status)
-        assertEquals(404, host.post("fake", "unknown", MCP_HOST_LIST, protocolVersion = "1999-01-01").status)
+        // V4-148: an id the host never knew is adopted, and an adopted session takes the version the
+        // client negotiated with the child that ran before — a 400 here is the same break as the 404.
+        assertEquals(200, host.post("fake", "unknown", MCP_HOST_LIST, protocolVersion = "1999-01-01").status)
     }
 
     @Test
@@ -149,10 +151,18 @@ class McpHostTest : McpHostFixture() {
         }
 
     @Test
-    fun `an unknown session is 404 and the initialized notification is 202`(@TempDir dir: Path) = runBlocking {
+    fun `an unknown session is adopted, a notification on one is 404, the initialized one is 202`(
+        @TempDir dir: Path,
+    ) = runBlocking {
         boot(dir)
         val s = init()
-        assertEquals(404, host.post("fake", "nope", MCP_HOST_LIST).status)
+        // V4-148: a REQUEST on an id this host does not know is served by adopting the id, because the
+        // spec's "session not found" is a signal Claude Code ignores; a NOTIFICATION needs no session.
+        assertEquals(200, host.post("fake", "nope", MCP_HOST_LIST).status)
+        assertEquals(
+            404,
+            host.post("fake", "nope-2", """{"jsonrpc":"2.0","method":"notifications/initialized"}""").status,
+        )
         assertEquals(202, host.post("fake", s, """{"jsonrpc":"2.0","method":"notifications/initialized"}""").status)
         assertEquals(400, host.post("fake", s, "not json").status)
         assertEquals(503, host.post("remote", null, MCP_HOST_INIT).status, "an unhosted name cannot initialize")

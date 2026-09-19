@@ -7,11 +7,17 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val STREAM_BUFFER = 256
+
+// why: the ceiling on remembered DELETEd ids (V4-148). One client session ends one id, so this is
+// thousands of Claude Code sessions' worth of memory for a per-id boolean, and a client whose id fell
+// out is one that stopped speaking long enough for the host to forget it.
+private const val MAX_DELETED_IDS = 4096
 
 /** What a client that fell [STREAM_BUFFER] notifications behind must not miss: that the lists it
  *  caches may have changed. The dropped backlog is replaced by these, so a `tools/list_changed`
@@ -20,8 +26,16 @@ private val LIST_INVALIDATIONS = listOf("tools", "prompts", "resources").map { k
     """{"jsonrpc":"2.0","method":"notifications/$kind/list_changed"}"""
 }
 
-/** One client session on one hosted server; the stream channel carries the child's notifications. */
-internal class McpSession(val id: String, val server: String, val initResult: JsonObject) {
+/** One client session on one hosted server; the stream channel carries the child's notifications.
+ *  [adopted] marks a session minted under an id the CLIENT already held (V4-148), never one this host
+ *  issued: its handshake happened after the client last spoke, which is why the version check below
+ *  reads it. */
+internal class McpSession(
+    val id: String,
+    val server: String,
+    val initResult: JsonObject,
+    val adopted: Boolean = false,
+) {
     val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.SUSPEND)
     val openStreams = AtomicInteger()
     private val codec = JsonRpcCodec()
@@ -75,12 +89,25 @@ internal class McpSessions(private val clock: HostClock) {
      *  (review 2026-09-14: cross-session reuse is the point of hosting). */
     private val ended = ConcurrentHashMap<String, Long>()
 
-    /** A session on [server], minted with the child's [initResult]. */
-    fun create(server: String, initResult: JsonObject): McpSession {
-        val session = McpSession(UUID.randomUUID().toString(), server, initResult)
+    // V4-148: ids the client ENDED, so adoption never resurrects one. Bounded, because a daemon runs
+    // for weeks: the eldest fall out first, and an id that old belongs to a client long gone. Reached
+    // under the map's own lock; LinkedHashMap evicts by insertion order.
+    private val deleted = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Boolean>() {
+            override fun removeEldestEntry(eldest: Map.Entry<String, Boolean>): Boolean = size > MAX_DELETED_IDS
+        },
+    )
+
+    /** A session on [server], minted with the child's [initResult]. [id] is the client's own id when
+     *  this is an adoption (V4-148); null mints a fresh one. */
+    fun create(server: String, initResult: JsonObject, id: String? = null): McpSession {
+        val session = McpSession(id ?: UUID.randomUUID().toString(), server, initResult, adopted = id != null)
         touch(session)
-        sessions[session.id] = session
-        return session
+        // putIfAbsent, never put: two concurrent adoptions of one id (a client that retried) must keep
+        // ONE session, or the loser's stream sits in nobody's map holding its child's notifications.
+        val winner = sessions.putIfAbsent(session.id, session)
+        if (winner != null) session.stream.close()
+        return winner ?: session
     }
 
     /** The session when [id] exists AND belongs to [server]; a session never crosses servers. */
@@ -95,9 +122,19 @@ internal class McpSessions(private val clock: HostClock) {
         }
     }
 
+    /** V4-148: may [id] be adopted — an id this host does not know, so one it issued before a restart,
+     *  an idle reap or an eviction, or one a client invented. Refused for an id it still holds, which
+     *  covers both an OVERFLOWED session (that one must reinitialize, by design — the notifications it
+     *  lost cannot be replayed) and a session on another server, and refused for one the client ENDED,
+     *  or DELETE would stop meaning ended. */
+    fun adoptable(id: String?): Boolean = id != null && !sessions.containsKey(id) && !deleted.containsKey(id)
+
+    /** DELETE: the client is done with this session, and its id is remembered as ended (V4-148), so no
+     *  later request adopts it back. */
     fun end(server: String, id: String?): McpSession? {
         val session = get(server, id) ?: return null
         sessions.remove(session.id)
+        deleted[session.id] = true
         session.stream.close()
         ended[server] = clock.millis()
         return session
@@ -114,6 +151,10 @@ internal class McpSessions(private val clock: HostClock) {
         forServer(server).filter { it.overflowed || !it.busy(now, idleMillis) }.forEach { session ->
             sessions.remove(session.id)
             session.stream.close()
+            // V4-148: an OVERFLOWED session must reinitialize — the notifications it missed cannot be
+            // replayed — so its id is remembered as ended here too, or the sweep that forgets it would
+            // hand the next request an adoption instead of the 404 that forces the reinitialize.
+            if (session.overflowed) deleted[session.id] = true
             // Expiration observes old activity; unlike DELETE, it does not start another idle window.
             ended.merge(server, session.lastActivity, ::maxOf)
         }

@@ -2,6 +2,7 @@
 // stream loses the stale backlog, never the fact that its cached lists may have changed.
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.control.mcp.HostClock
@@ -23,6 +24,19 @@ class McpSessionsTest {
             """{"jsonrpc":"2.0","method":"notifications/$it/list_changed"}"""
         }
         assertEquals(invalidations + newest, drained)
+    }
+
+    // V4-148. Mutant: register the adopted session with put instead of putIfAbsent. A client that
+    // retried its request while the first adoption was still handshaking gets two sessions under one
+    // id, and the one the map forgets holds its child's notifications where nobody reads them.
+    @Test
+    fun `adopting one id twice keeps one session, and the loser's stream is closed`() {
+        val first = sessions.create(SERVER, buildJsonObject {}, "held-by-the-client")
+        val second = sessions.create(SERVER, buildJsonObject {}, "held-by-the-client")
+
+        assertSame(first, second)
+        assertSame(first, sessions.get(SERVER, "held-by-the-client"))
+        assertTrue(first.adopted, "minted under the client's own id")
     }
 
     @Test

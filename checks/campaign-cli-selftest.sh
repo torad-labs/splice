@@ -49,6 +49,8 @@ fi
 
 scratch="$(mktemp -d -t campaign-cli-selftest-XXXXXX)"
 trap 'rm -rf "$scratch"' EXIT
+# Nothing in this leg may reach the real fleet journal (~/.torad): every write lands in scratch.
+export TORAD_FLEET_ROOT="$scratch/fleet-root"
 
 declare -A before
 for ledger in "${ledgers[@]}"; do
@@ -104,6 +106,94 @@ for ledger in "${ledgers[@]}"; do
     failed=1
   fi
 done
+
+# 3. `laws` WITH NO PATH IS EVERY CAMPAIGN'S LAWS (V4-143 D2). It is what SessionStart injects into
+# every seat, so it must be the stable, deduplicated union of each ledger's own `laws`, in code-point
+# order of the ledger names — manifest.py's aggregate, byte for byte. Measured before the fix: with
+# no path the CLI printed its USAGE at exit 0, 75 lines that every caller guard passed.
+expected="$(
+  printf '%s\n' "${ledgers[@]}" | LC_ALL=C sort | while IFS= read -r ledger; do
+    "${CLI[@]}" "$ledger" laws
+  done | awk '!seen[$0]++'
+)"
+if ! got="$("${CLI[@]}" laws 2>&1)"; then
+  echo "campaign-cli-selftest: \`manifest.ts laws\` with no path FAILED" >&2
+  printf '%s\n' "$got" | head -5 >&2
+  failed=1
+elif [ -z "$got" ] || printf '%s\n' "$got" | grep -qv '^# LAW'; then
+  echo "campaign-cli-selftest: \`manifest.ts laws\` with no path printed something that is not laws" >&2
+  printf '%s\n' "$got" | grep -v '^# LAW' | head -5 >&2
+  failed=1
+elif [ "$got" != "$expected" ]; then
+  echo "campaign-cli-selftest: \`manifest.ts laws\` with no path is not the ordered union of every ledger's laws" >&2
+  diff <(printf '%s\n' "$expected") <(printf '%s\n' "$got") | head -10 >&2
+  failed=1
+fi
+
+# 4. EVERY OTHER VERB, GIVEN NO LEDGER, REFUSES. A verb that prints usage at exit 0 when its path is
+# missing hands the caller a plausible payload instead of an error, which is how the laws outage
+# above was invisible. The verbs are read from the CLI's own dispatch, so a verb added later is
+# covered without editing this list; the only exceptions are `laws` (the aggregate) and `help`
+# (an explicit request for usage).
+mapfile -t verbs < <(cat dev/campaigns/ledger.ts dev/campaigns/fleet.ts | grep -oE '(case|command ===) "[a-z][a-z-]*"' |
+  sed -E 's/.*"([a-z-]+)"/\1/' | LC_ALL=C sort -u | grep -vxE 'laws|help')
+if [ "${#verbs[@]}" -lt 20 ]; then
+  echo "campaign-cli-selftest: found only ${#verbs[@]} verbs in ledger.ts's dispatch — the census is broken, not the CLI" >&2
+  failed=1
+fi
+for verb in "${verbs[@]}" "${ledgers[0]}"; do
+  if out="$("${CLI[@]}" "$verb" 2>/dev/null)"; then
+    echo "campaign-cli-selftest: \`manifest.ts $verb\` with no ledger (or no command) exited 0 — it must refuse" >&2
+    printf '%s\n' "$out" | head -2 >&2
+    failed=1
+  fi
+done
+
+# 5. THE FLEET JOURNAL IS WRITTEN WITH manifest.py GONE (V4-143 D2). torad's gym builds its trajectory
+# corpus from these lines, and torad's own CLI-AUDIT.md:108 records this migration once shipping with
+# the journal silently dead: the canonical-ledger test went false after the move, every verb wrote the
+# ledger and no event, and the tests never saw it because they ran with manifest.py beside the fixture
+# — the one layout production would not have. So the layout here is the POST-deletion one, built from
+# every dev/campaigns/*.ts and one real ledger and deliberately no manifest.py, and a note must land a
+# line in manifest.py's shape with the seq minted from the tail. The same ledger anywhere else is a
+# scratch copy, and a scratch copy must write nothing.
+layout="$scratch/layout"
+mkdir -p "$layout/dev/campaigns"
+cp dev/campaigns/*.ts "$layout/dev/campaigns/"
+cp "${ledgers[0]}" "$layout/dev/campaigns/"
+git -C "$layout" init -q
+jname="$(basename "${ledgers[0]}")"
+journal="$TORAD_FLEET_ROOT/journal/events.jsonl"
+jid="$(cd "$layout" && "${CLI[@]}" "dev/campaigns/$jname" list --plain 2>/dev/null | awk 'NR == 1 { print $1 }')"
+journal_note() { (cd "$layout" && TORAD_SEAT='' TMUX='' "${CLI[@]}" "$1" note "$jid" "campaign-cli-selftest journal probe" >/dev/null 2>&1); }
+journal_lines() { if [ -f "$journal" ]; then wc -l <"$journal"; else echo 0; fi; }
+if [ -e "$layout/dev/campaigns/manifest.py" ]; then
+  echo "campaign-cli-selftest: the journal arm's layout carries manifest.py — it must prove the post-deletion layout" >&2
+  failed=1
+elif [ -z "$jid" ]; then
+  echo "campaign-cli-selftest: the journal arm found no row in $jname to write through" >&2
+  failed=1
+else
+  journal_note "dev/campaigns/$jname"
+  journal_note "dev/campaigns/$jname"
+  shape='^\{"seq": %d, "ts": "[0-9T:.-]+Z", "episodeLabel": "%s", "kind": "manifest_verb", "verb": "note", "itemId": "%s", "seat": "unknown"\}$'
+  if [ "$(journal_lines)" -ne 2 ] ||
+     ! sed -n 1p "$journal" | grep -qE "$(printf "$shape" 0 "$jid" "$jid")" ||
+     ! sed -n 2p "$journal" | grep -qE "$(printf "$shape" 1 "$jid" "$jid")"; then
+    echo "campaign-cli-selftest: two notes with manifest.py absent did not journal seq 0 and 1 in manifest.py's shape" >&2
+    echo "  the gym's trajectory corpus is built from these lines; got $(journal_lines) line(s):" >&2
+    if [ -f "$journal" ]; then head -3 "$journal" | sed 's/^/    /' >&2; fi
+    failed=1
+  fi
+  mkdir -p "$scratch/elsewhere"
+  cp "$layout/dev/campaigns/$jname" "$scratch/elsewhere/$jname"
+  lines_before="$(journal_lines)"
+  journal_note "$scratch/elsewhere/$jname"
+  if [ "$(journal_lines)" -ne "$lines_before" ]; then
+    echo "campaign-cli-selftest: a note on a ledger outside dev/campaigns wrote the fleet journal — scratch copies must not" >&2
+    failed=1
+  fi
+fi
 
 for ledger in "${ledgers[@]}"; do
   after="$(sha256sum "$ledger" | cut -d' ' -f1)"

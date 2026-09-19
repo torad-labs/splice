@@ -38,11 +38,34 @@ make_root() {
   cat >"$root/dev/campaigns/manifest.ts" <<'STUB'
 // Stub: the canary is testing the LEG, not the CLI. Behaviour is keyed on the ledger's name so a
 // fixture tree can spell each way the CLI could fool the leg.
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 const [ledger = "", verb = "", ...rest] = Bun.argv.slice(2);
 const name = basename(ledger);
 const is = (tag: string): boolean => name.includes(tag);
+// The pathless half is keyed on which ledgers EXIST beside the stub, since no ledger is named.
+const siblings = readdirSync(import.meta.dir).filter((f) => f.endsWith(".toml")).sort();
+const tree = (tag: string): boolean => siblings.some((f) => f.includes(tag));
+const lawsOf = (file: string): string[] =>
+  readFileSync(join(import.meta.dir, file), "utf8").split("\n").filter((line) => line.startsWith("# LAW"));
+if (!ledger.endsWith(".toml") || verb === "") {
+  if (ledger === "laws") {
+    if (tree("laws-usage")) { console.log("usage: stub <ledger.toml> <command> [args]"); process.exit(0); }
+    const seen = new Set<string>();
+    for (const f of siblings) {
+      if (tree("laws-partial") && f.includes("laws-partial")) continue;
+      for (const law of lawsOf(f)) if (!seen.has(law)) { seen.add(law); console.log(law); }
+    }
+    process.exit(0);
+  }
+  if (tree("pathless-ok")) { console.log("usage: stub <ledger.toml> <command> [args]"); process.exit(0); }
+  console.error("stub: no ledger given");
+  process.exit(1);
+}
+if (verb === "laws") {
+  for (const law of lawsOf(name)) console.log(law);
+  process.exit(0);
+}
 if (verb === "selftest") {
   if (is("suite-broken")) { console.error("stub: pretending the CLI suite failed"); process.exit(1); }
   console.log("stub: selftest OK");
@@ -70,13 +93,25 @@ if (verb === "note") {
   }
   appendFileSync(ledger, `# ${text}\n`);
   if (is("twolines")) appendFileSync(ledger, `# ${text}, twice\n`);
+  // The fleet journal, as the real CLI writes it: only for a ledger beside the CLI (post-deletion
+  // layout), in manifest.py's shape, seq minted from the tail.
+  const canonical = dirname(resolve(ledger)) === import.meta.dir;
+  if ((canonical && !tree("journal-dead")) || tree("journal-everywhere")) {
+    const path = join(process.env.TORAD_FLEET_ROOT ?? "", "journal", "events.jsonl");
+    mkdirSync(dirname(path), { recursive: true });
+    const seq = existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).length : 0;
+    const id = rest[0] ?? "";
+    appendFileSync(path, `{"seq": ${seq}, "ts": "${new Date().toISOString()}", "episodeLabel": "${id}", "kind": "manifest_verb", "verb": "note", "itemId": "${id}", "seat": "unknown"}\n`);
+  }
   process.exit(0);
 }
 console.error(`stub: unexpected verb ${verb}`);
 process.exit(2);
 STUB
+  # The leg's verb census reads the real CLI's dispatch; the stub never imports it.
+  cp "$ROOT/dev/campaigns/ledger.ts" "$ROOT/dev/campaigns/fleet.ts" "$root/dev/campaigns/"
   for name in "$@"; do
-    printf '[campaign]\nname = "%s"\n' "$name" >"$root/dev/campaigns/$name.toml"
+    printf '# LAW: a law of %s\n# LAW: a law every fixture shares\n[campaign]\nname = "%s"\n' "$name" "$name" >"$root/dev/campaigns/$name.toml"
   done
   echo "$root"
 }
@@ -145,7 +180,29 @@ arm "a writer that rewrites the file fails the leg" RED "$rewrite_root" "EXACTLY
 norows_root="$(make_root aaa-healthy zzz-norows)"
 arm "a ledger with no row fails the leg by name" RED "$norows_root" "zzz-norows.toml has no row"
 
-# GREEN — the control the nine reds are measured against.
+# RED 10 — `laws` with no ledger answered with the usage text at exit 0: the V4-143 D2 outage,
+# which every caller guard of the day passed.
+usage_root="$(make_root aaa-healthy zzz-laws-usage)"
+arm "a pathless laws that prints usage fails the leg" RED "$usage_root" "printed something that is not laws"
+
+# RED 11 — `laws` with no ledger silently leaving one campaign out. Every line is a law, so only the
+# union check can see it.
+partial_root="$(make_root aaa-healthy zzz-laws-partial)"
+arm "a pathless laws missing a ledger fails the leg" RED "$partial_root" "not the ordered union"
+
+# RED 12 — a verb given no ledger answering at exit 0 instead of refusing.
+pathless_root="$(make_root aaa-healthy zzz-pathless-ok)"
+arm "a verb that accepts no ledger fails the leg" RED "$pathless_root" "it must refuse"
+
+# RED 13 — the fleet journal silently dead once manifest.py is gone: torad's CLI-AUDIT.md:108 scar.
+dead_root="$(make_root aaa-journal-dead zzz-healthy)"
+arm "a CLI that writes no journal line after the deletion fails the leg" RED "$dead_root" "did not journal seq 0 and 1"
+
+# RED 14 — a scratch copy writing the fleet journal: every leg and fixture would pollute the gym's corpus.
+everywhere_root="$(make_root aaa-journal-everywhere zzz-healthy)"
+arm "a CLI that journals a scratch copy fails the leg" RED "$everywhere_root" "journal"
+
+# GREEN — the control the reds are measured against.
 healthy_root="$(make_root aaa-healthy mmm-healthy zzz-healthy)"
 arm "a healthy tree passes" GREEN "$healthy_root" "3 ledger(s) validated, each round-tripped one line, all byte-identical"
 

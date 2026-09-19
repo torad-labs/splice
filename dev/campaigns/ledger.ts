@@ -72,6 +72,7 @@ import {
 } from "./earn-core.ts";
 
 const USAGE = `usage: bun dev/campaigns/manifest.ts <ledger.toml> <command> [args]
+       bun dev/campaigns/manifest.ts laws      every campaign's laws, the one verb that takes no ledger
 
 read
   list [--status S] [--phase P]     compact table of items
@@ -159,6 +160,16 @@ function required(argv: readonly string[], name: string): string {
   const value = flag(argv, name);
   if (value === null) throw new LedgerError(`--${name} is required`);
   return value;
+}
+
+/** The arguments that are neither a `--flag` nor a flag's value. */
+function noFlagPositionals(argv: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i]!.startsWith("--")) { i += 1; continue; }
+    out.push(argv[i]!);
+  }
+  return out;
 }
 
 function positional(argv: readonly string[], index: number, what: string): string {
@@ -254,12 +265,75 @@ function renderPlainList(lines: readonly string[], blocks: readonly ItemBlock[],
   return out.join("\n");
 }
 
-/** The owner named by a row's last manifest.py `CLAIM: owner=` note, or undefined when it has none. */
+/** The owner named by a row's last manifest.py `CLAIM: owner=` note, or undefined when it has none
+ *  or a later `CLAIM-RELEASED` note ended it (manifest.py's `_block_owner`, delta 14). */
 function lastClaimOwner(lines: readonly string[], block: ItemBlock): string | undefined {
-  return notesOf(lines, block)
-    .map((note) => /CLAIM: owner=(\S+)/.exec(note)?.[1])
-    .filter((owner) => owner !== undefined)
-    .at(-1);
+  let owner: string | undefined;
+  for (const note of notesOf(lines, block)) {
+    const claimed = /CLAIM: owner=(\S+)/.exec(note);
+    if (claimed) owner = claimed[1];
+    else if (note.includes("CLAIM-RELEASED")) owner = undefined;
+  }
+  return owner;
+}
+
+/**
+ * manifest.py's `_retirement_marker` (delta 14): the LAST structured `RETIRED:` / `RETIRE-LIFTED:`
+ * note decides; with no structured marker, the first comment line matching the legacy text scan
+ * retires the row — the floor that keeps pre-grammar prose rulings protected.
+ */
+function retirementMarker(notes: readonly string[]): string | null {
+  let structured: string | null = null;
+  let structuredLine: string | null = null;
+  let legacy: string | null = null;
+  for (const note of notes) {
+    const stripped = note.trim();
+    if (!stripped.startsWith("#")) continue;
+    const m = /^#\s*(?:\[[^\]]*\]\s*)?(RETIRED|RETIRE-LIFTED):/.exec(stripped);
+    if (m) { structured = m[1]!; structuredLine = stripped; continue; }
+    if (legacy === null && /\bRETIRED\b|do not re-?queue/i.test(stripped)) legacy = stripped;
+  }
+  if (structured === "RETIRED") return structuredLine;
+  if (structured === "RETIRE-LIFTED") return null;
+  return legacy;
+}
+
+/** manifest.py's `_has_activity_after_claim`: any non-blank line after the row's last CLAIM note,
+ *  bar the ATTEST-START manifest.py writes with its claim (delta 16). No CLAIM note, no activity. */
+function activityAfterClaim(lines: readonly string[], block: ItemBlock): boolean {
+  let claimAt = -1;
+  for (let j = block.start; j < block.end; j += 1) {
+    if ((lines[j] ?? "").trimStart().startsWith("#") && (lines[j] ?? "").includes("CLAIM: owner=")) claimAt = j;
+  }
+  if (claimAt === -1) return false;
+  let j = claimAt + 1;
+  if (j < block.end && (lines[j] ?? "").includes("] ATTEST-START:")) j += 1;
+  for (; j < block.end; j += 1) if ((lines[j] ?? "").trim() !== "") return true;
+  return false;
+}
+
+/** Python's `round(x, 1)` as json.dumps prints it: half-even on an exact tie, always one decimal at least. */
+function pyRound1(x: number): string {
+  const twenty = x * 20;
+  const down = Math.floor(x * 10);
+  const value = Number.isInteger(twenty) && Math.abs(twenty) % 2 === 1
+    ? (down % 2 === 0 ? down : down + 1) / 10
+    : Number(x.toFixed(1)); // toFixed rounds the exact double, as Python does
+  return Number.isInteger(value) ? value.toFixed(1) : String(value);
+}
+
+/** manifest.py's CLAIM note body (`_claim_note`): the diary line two readers take the owner from. */
+function claimNote(seat: string, at: Date): string {
+  return `CLAIM: owner=${seat} at=${at.toISOString().replace(/\.\d{3}Z$/, "Z")}`;
+}
+
+/** Clear a claim: fields gone, an in_flight row back to todo, and a CLAIM-RELEASED note (delta 14). */
+function withoutClaim(lines: readonly string[], id: string, owner: string, why: string): string[] {
+  let next = withField(lines, findBlock(locateItems(lines), id), "claimed_by", null);
+  next = withField(next, findBlock(locateItems(next), id), "claimed_at", null);
+  const block = findBlock(locateItems(next), id);
+  if (block.item.status === "in_flight") next = withStatus(next, block, "todo");
+  return withNote(next, findBlock(locateItems(next), id), `CLAIM-RELEASED (${why}): owner=${owner}`);
 }
 
 function renderItem(lines: readonly string[], block: ItemBlock): string {
@@ -324,6 +398,13 @@ const LAW_LINE = /^#\s*LAW(\s*\[[^\]]*\])?:/;
 
 function isLawLine(line: string): boolean {
   return LAW_LINE.test(line.trimStart());
+}
+
+// VENDORING DELTA 12 (splice V4-143 D2): one ledger's law sheet, exported so splice's entry
+// (dev/campaigns/manifest.ts) aggregates every ledger for a pathless `laws` with the SAME reader the
+// `laws` verb uses — never a second law predicate that could drift from this one.
+export function lawSheet(lines: readonly string[]): string[] {
+  return headerLines(lines).filter(isLawLine);
 }
 
 function renderPacket(lines: readonly string[], block: ItemBlock): string {
@@ -391,7 +472,8 @@ function renderPacket(lines: readonly string[], block: ItemBlock): string {
 
 // ── write commands ────────────────────────────────────────────────────────────────────────────
 
-interface Receipt { exit: number; tests: number; touched: string[]; blobs: string[]; deleted: string[]; dblobs: string[] }
+/** `exit` is null for a receipt manifest.py filed: it records the files and their blobs, not a run. */
+interface Receipt { exit: number | null; tests: number; touched: string[]; blobs: string[]; deleted: string[]; dblobs: string[] }
 
 /**
  * ANCHORED AT THE NOTE, NEVER GREEDY THROUGH IT.
@@ -411,16 +493,29 @@ interface Receipt { exit: number; tests: number; touched: string[]; blobs: strin
  * receipts in the live ledger parse under this — enumerated from the file, not assumed.
  */
 const RECEIPT_RE =
-  /^#\s*\d{4}-\d{2}-\d{2}\s+RECEIPT cmd="(?:[^"\\]|\\.)*" exit=(\d+) tests=(\d+) touched=(\S+)(?: blobs=(\S*))?(?: deleted=(\S+)(?: dblobs=(\S+))?)?/;
+  /^#\s*(?:\d{4}-\d{2}-\d{2}|\[\d{4}-\d{2}-\d{2}\])\s+RECEIPT cmd="(?:[^"\\]|\\.)*" exit=(\d+) tests=(\d+) touched=(\S+)(?: blobs=(\S*))?(?: deleted=(\S+)(?: dblobs=(\S+))?)?/;
 
-/** A note that is TRYING to be a receipt. Anything matching this must also match RECEIPT_RE. */
-const RECEIPT_SHAPED_RE = /^#\s*\d{4}-\d{2}-\d{2}\s+RECEIPT\b/;
+/**
+ * VENDORING DELTA 13 (splice V4-143 D2, 2026-09-18): a row note is dated `# [date]`, manifest.py's
+ * form (withNote), so both receipt patterns take the bracket too. manifest.py's own receipt,
+ * `RECEIPT files=a,b blobs=x,y`, is READ as a receipt with no exit: 252 of the 262 receipt-shaped
+ * notes across the 13 ledgers are that form, and an unread one made every closed row an audit
+ * finding and every py-receipted in_flight row undeliverable after the cutover. The other 10 are
+ * prose ("RECEIPT covers the 10 existing files; ..."), so the bracketed half of the shape test
+ * wants a field, not the bare word: a prose note is not a receipt that failed to parse.
+ */
+const PY_RECEIPT_RE = /^#\s*\[\d{4}-\d{2}-\d{2}\]\s+RECEIPT files=(\S+) blobs=(\S+)$/;
+
+/** A note that is TRYING to be a receipt. Anything matching this must also match RECEIPT_RE or PY_RECEIPT_RE. */
+const RECEIPT_SHAPED_RE = /^#\s*(?:\d{4}-\d{2}-\d{2}\s+RECEIPT\b|\[\d{4}-\d{2}-\d{2}\]\s+RECEIPT (?:cmd|files)=)/;
 
 function latestReceipt(notes: readonly string[]): Receipt | undefined {
   for (let i = notes.length - 1; i >= 0; i -= 1) {
     const note = notes[i] ?? "";
     const m = RECEIPT_RE.exec(note);
     if (m) return { exit: Number(m[1]), tests: Number(m[2]), touched: m[3]!.split(",").filter((p) => p !== "-"), blobs: (m[4] ?? "").split(",").filter(Boolean), deleted: (m[5] ?? "").split(",").filter(Boolean), dblobs: (m[6] ?? "").split(",").filter(Boolean) };
+    const py = PY_RECEIPT_RE.exec(note);
+    if (py) return { exit: null, tests: 0, touched: py[1]!.split(","), blobs: py[2]!.split(","), deleted: [], dblobs: [] };
     // SILENCE HERE WOULD REACH BACK FOR AN OLDER, GREENER RECEIPT. Scanning backwards for the first
     // line that parses means a malformed newest receipt is not an error, it is a fallback — and the
     // row's last RED run would be answered by its previous GREEN one, which is the same lie the
@@ -592,7 +687,14 @@ function assertFenceShape(root: string, files: readonly string[]): void {
 function assertReceipt(id: string, notes: readonly string[]): void {
   const r = latestReceipt(notes);
   if (r === undefined) throw new LedgerError(`${id}: "done" needs a receipt first — record your verify run with \`receipt ${id} --cmd ... --exit 0 --tests N --touched a,b\``);
+  if (r.exit === null) throw new LedgerError(pyReceiptRefusal(id, "done"));
   if (r.exit !== 0) throw new LedgerError(`${id}: the latest receipt exited ${r.exit}; a row is done only on a green run`);
+}
+
+/** A manifest.py receipt names the files, never the run, so a gate that needs a green run cannot read one as green. */
+function pyReceiptRefusal(id: string, gate: string): string {
+  return `${id}: the latest receipt was filed by manifest.py — it records the files and their blobs, not the run, and ${gate} needs the run. ` +
+    `Re-file it: \`receipt ${id} --cmd ... --exit 0 --tests N --touched a,b\``;
 }
 
 /** Free text is ONE line. A newline in a note is a TOML injection: `[[items]]` inside a note block
@@ -616,7 +718,7 @@ function withStatus(lines: readonly string[], block: ItemBlock, status: ItemStat
 
 function withNote(lines: readonly string[], block: ItemBlock, text: string): string[] {
   const next = [...lines];
-  next.splice(block.end, 0, `# ${today()} ${text}`);
+  next.splice(block.end, 0, `# [${today()}] ${text}`); // manifest.py's form, delta 13
   return next;
 }
 
@@ -858,7 +960,7 @@ function isMachineryRow(item: { readonly files: readonly string[] }): boolean {
  */
 function assertMachinerySeat(id: string, item: { readonly files: readonly string[] }, rest: readonly string[], verb: string): void {
   if (!isMachineryRow(item)) return;
-  const seat = flag(rest, "seat") ?? process.env.LEDGER_SEAT ?? null;
+  const seat = flag(rest, "seat") ?? (process.env.LEDGER_SEAT || null);
   if (seat === MACHINERY_SEAT) return;
   if (seat === null) {
     throw new LedgerError(
@@ -889,8 +991,26 @@ function mainCampaignOpen(blocks: readonly ItemBlock[]): ItemBlock | undefined {
 
 // VENDORING DELTA 7 (splice V4-143): exported so splice's entry, dev/campaigns/manifest.ts, runs
 // this CLI in-process under the name every seat and law already uses, without renaming this file.
-export async function main(): Promise<number> {
-  const argv = Bun.argv.slice(2);
+/**
+ * VENDORING DELTA 15 (splice V4-143 D2, 2026-09-18): THIN EMIT HOOKS, the rest lives in fleet.ts.
+ * manifest.py appends a fleet-journal line for note, set-status and claim (receipt and verify-phase
+ * reach it through note and set-status), and torad's gym builds its trajectory corpus from those
+ * arcs. This file only says WHAT happened, after the ledger write landed; splice's entry registers
+ * the writer. Unregistered — the selftest, a re-vendor, any other entry — it is a no-op.
+ */
+export type LedgerEvent = {
+  ledgerPath: string;
+  verb: "note" | "set-status" | "claim";
+  itemId: string;
+  status?: ItemStatus;
+  seat?: string;
+  args: readonly string[];
+};
+export const ledgerEvents: { emit: (event: LedgerEvent) => Promise<void> } = { emit: async () => {} };
+/** The row writers fleet.ts's ported verbs (verdict, handover, next --claim) share with this file's own. */
+export { claimNote, fenceOverlap, lastClaimOwner, retirementMarker, withField, withNote, withStatus };
+
+export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise<number> {
   const ledgerPath = argv[0];
   const command = argv[1];
 
@@ -1028,7 +1148,7 @@ export async function main(): Promise<number> {
     }
 
     case "laws": {
-      const laws = headerLines(lines).filter(isLawLine);
+      const laws = lawSheet(lines);
       if (laws.length > 0) console.log(laws.join("\n"));
       return 0;
     }
@@ -1069,7 +1189,10 @@ export async function main(): Promise<number> {
         if (open && receipt?.exit === 0) {
           findings.push(`${item.id} [${item.status}] carries a GREEN receipt (${receipt.touched.length} file(s)) but is not reported done — the work is finished and the record is not`);
         }
-        if (open && receipt !== undefined && receipt.exit !== 0) {
+        if (open && receipt !== undefined && receipt.exit === null) {
+          remarks.push(`${item.id} [${item.status}] latest receipt was filed by manifest.py (files, no run) — done and stage need one re-filed with --exit`);
+        }
+        if (open && receipt !== undefined && receipt.exit !== null && receipt.exit !== 0) {
           remarks.push(`${item.id} [${item.status}] latest receipt is RED (exit ${receipt.exit}) — in progress, correctly not done`);
         }
         if ((item.status === "done" || item.status === "verified") && receipt === undefined) {
@@ -1205,6 +1328,7 @@ export async function main(): Promise<number> {
         return withStatus(current, block, status);
       });
       console.log(`${id} → ${status}`);
+      await ledgerEvents.emit({ ledgerPath, verb: "set-status", itemId: id, status, args: rest });
       return 0;
     }
 
@@ -1243,7 +1367,7 @@ export async function main(): Promise<number> {
       // exists to prevent, and nothing looked: M8.9 was claimed by scout-builder and filed by
       // scout-builder4 in silence (2026-09-18). Identity has to be supplied — the CLI cannot see
       // which session invoked it — so the packet teaches --seat and $LEDGER_SEAT works too.
-      const filer = flag(rest, "seat") ?? process.env.LEDGER_SEAT ?? null;
+      const filer = flag(rest, "seat") ?? (process.env.LEDGER_SEAT || null);
       const owner = receiptBlock.item.claimedBy;
       if (owner !== undefined && filer !== null && filer !== owner) {
         console.error(`WARNING ${id}: filed by ${filer}, claimed by ${owner} since ${receiptBlock.item.claimedAt ?? "unknown"} — two seats on one row. Report it before the orchestrator stages; a re-claim or a split is the fix, not a quieter receipt.`);
@@ -1263,6 +1387,7 @@ export async function main(): Promise<number> {
       const line =`RECEIPT cmd=${JSON.stringify(oneLine("cmd", cmd))} exit=${exit} tests=${tests} touched=${files.length > 0 ? files.join(",") : "-"}${deleted.length > 0 ? ` deleted=${deleted.join(",")}` : ""}${tail ? ` tail=${JSON.stringify(tail.slice(-400))}` : ""}`;
       await mutate(ledgerPath, (current) => withNote(current, findBlock(locateItems(current), id), line));
       console.log(`${id}: receipt recorded (exit ${exit}, ${tests} tests, ${files.length} files${deleted.length > 0 ? `, ${deleted.length} deleted` : ""})`);
+      await ledgerEvents.emit({ ledgerPath, verb: "note", itemId: id, args: rest }); // manifest.py's receipt is a note
       return 0;
     }
 
@@ -1285,6 +1410,7 @@ export async function main(): Promise<number> {
       const block = findBlock(locateItems(lines), id);
       const r = latestReceipt(notesOf(lines, block));
       if (r === undefined) throw new LedgerError(`${id} has no receipt to stage from`);
+      if (r.exit === null) throw new LedgerError(pyReceiptRefusal(id, "stage"));
       if (r.exit !== 0) throw new LedgerError(`${id}: latest receipt exited ${r.exit}; nothing is staged from a red run`);
       const fence = block.item.files;
       if (fence.length === 0) throw new LedgerError(`${id} declares no files; a row without a fence cannot be staged`);
@@ -1477,12 +1603,16 @@ export async function main(): Promise<number> {
           const b = findBlock(locateItems(next), id);
           assertItemMandates(id, "verified", notesOf(next, b));
           next = withStatus(next, b, "verified");
-          next = withNote(next, findBlock(locateItems(next), id), `verified at milestone gate ${phase}: ${evidence}`);
+          next = withNote(next, findBlock(locateItems(next), id), `VERIFY-PHASE ${phase} ${today()}: ${evidence}`); // manifest.py's wording, delta 13
           flipped.push(id);
         }
         return next;
       });
       console.log(flipped.length === 0 ? `phase ${phase}: nothing to flip (all already verified)` : `phase ${phase}: ${flipped.join(", ")} → verified`);
+      for (const id of flipped) { // manifest.py's order per row: its note, then its status
+        await ledgerEvents.emit({ ledgerPath, verb: "note", itemId: id, args: rest });
+        await ledgerEvents.emit({ ledgerPath, verb: "set-status", itemId: id, status: "verified", args: rest });
+      }
       return 0;
     }
 
@@ -1539,6 +1669,7 @@ export async function main(): Promise<number> {
         return withNote(current, block, text);
       });
       console.log(`${id}: note appended`);
+      await ledgerEvents.emit({ ledgerPath, verb: "note", itemId: id, args: rest });
       return 0;
     }
 
@@ -1550,9 +1681,21 @@ export async function main(): Promise<number> {
       // the documented positional form then fails with "already claimed by --seat", every
       // fence-overlap warning names a seat that does not exist, and `release-stale` cannot tell it
       // from a live claim. Both spellings are accepted now and a flag-shaped name is refused.
-      const seat = oneLine("seat", flag(rest, "seat") ?? positional(rest, 1, "a seat name"));
+      // `--session` is manifest.py's spelling, the one every seat's habit and packet carries (delta 14).
+      const overrideRetired = rest.includes("--override-retired");
+      const claimArgs = rest.filter((a) => a !== "--override-retired");
+      const seat = oneLine("seat", flag(claimArgs, "seat") ?? flag(claimArgs, "session") ?? positional(claimArgs, 1, "a seat name"));
       if (seat.startsWith("-")) throw new LedgerError(`"${seat}" is a flag, not a seat name — write \`claim ${id} <seat>\` or \`claim ${id} --seat <seat>\``);
       await mutate(ledgerPath, (current) => {
+        // manifest.py's retirement guard, checked first as it does (delta 14): 17 open web-console
+        // rows carry a retirement marker, and without it the first pull would hand one out.
+        const marker = retirementMarker(notesOf(current, findBlock(locateItems(current), id)));
+        if (marker !== null && !overrideRetired) {
+          throw new LedgerError(
+            `${id} carries a RETIREMENT marker in its own notes — refusing without an explicit override.\n  ${marker}\n` +
+              `If this is a fresh, operator-approved re-queue, pass --override-retired — or record the lift: note ${id} "RETIRE-LIFTED: <ruling>"`,
+          );
+        }
         const block = findBlock(locateItems(current), id);
         // The arm the row was specified as. Kept despite the measurement that `claim` has never been
         // called once in 155 commits: it costs nothing and is live the day anyone uses the verb.
@@ -1563,12 +1706,21 @@ export async function main(): Promise<number> {
               `  Builders work the MAIN CAMPAIGN; when it has no open rows, builders are DONE.`,
           );
         }
-        if (block.item.claimedBy !== undefined && block.item.claimedBy !== seat) {
+        // DELTA 14 (splice V4-143 D2, orchestrator ruling 2026-09-18): a claim is manifest.py's —
+        // "claim ownership, set in_flight, append CLAIM note". build-punch-list.mjs:40 and
+        // idle-watch.ts:165 both gate on in_flight and read the owner from that note, so a claim that
+        // only wrote the fields left both silent. The FIELDS stay the truth, the note is the diary.
+        if (block.item.status === "done" || block.item.status === "verified") {
+          throw new LedgerError(`${id} is ${block.item.status} — claim only todo/in_flight items`);
+        }
+        const holder = block.item.claimedBy ?? (block.item.status === "in_flight" ? lastClaimOwner(current, block) : undefined);
+        if (holder !== undefined && holder !== seat) {
           throw new LedgerError(
-            `${id} is already claimed by ${block.item.claimedBy} since ${block.item.claimedAt} — ` +
+            `${id} is already claimed by ${holder}${block.item.claimedAt === undefined ? "" : ` since ${block.item.claimedAt}`} — ` +
               `use release-stale if that seat is dead`,
           );
         }
+        if (holder === seat && block.item.status === "in_flight" && block.item.claimedBy === seat) return current;
         // fences-are-disjoint had no wall: two live rows sharing a file deadlock `stage` (the other
         // row's edits are "fenced files not on the receipt"). A claim is REFUSED when its fence
         // intersects a live peer's, naming the peer (manifest.py:4105, ITEM 7).
@@ -1623,11 +1775,15 @@ export async function main(): Promise<number> {
             );
           }
         }
-        const withSeat = withField(current, block, "claimed_by", seat);
-        const relocated = findBlock(locateItems(withSeat), id);
-        return withField(withSeat, relocated, "claimed_at", new Date().toISOString());
+        const at = new Date();
+        let next = withField(current, block, "claimed_by", seat);
+        next = withField(next, findBlock(locateItems(next), id), "claimed_at", at.toISOString());
+        const claimed = findBlock(locateItems(next), id);
+        if (claimed.item.status !== "in_flight") next = withStatus(next, claimed, "in_flight");
+        return withNote(next, findBlock(locateItems(next), id), claimNote(seat, at));
       });
-      console.log(`${id} claimed by ${seat}`);
+      console.log(`${id} claimed by ${seat} -> in_flight`);
+      await ledgerEvents.emit({ ledgerPath, verb: "claim", itemId: id, seat, args: claimArgs }); // a re-claim too, as manifest.py does
       return 0;
     }
 
@@ -1698,21 +1854,44 @@ export async function main(): Promise<number> {
     }
 
     case "release-stale": {
-      const minutes = Number.parseInt(flag(rest, "minutes") ?? "60", 10);
-      const cutoff = Date.now() - minutes * 60_000;
-      const stale = blocks.filter((block) => {
-        if (block.item.claimedAt === undefined) return false;
-        return Date.parse(block.item.claimedAt) < cutoff;
-      });
+      // manifest.py's form is `release-stale <ID> --by <seat>`, one row. Here it is a batch by age,
+      // so that habit — an ID and --by, both ignored — released EVERY claim older than an hour
+      // (delta 14). A row id or --by is refused and pointed at the one-row verb.
+      if (rest.includes("--by") || noFlagPositionals(rest).length > 0) {
+        throw new LedgerError(
+          `release-stale takes no row: it releases every claim older than --minutes N (default 60).\n` +
+            `  For one row, the manifest.py habit \`release-stale <ID> --by <seat>\`, use \`release <ID>\`.`,
+        );
+      }
+      const minutesText = flag(rest, "minutes") ?? "60";
+      const minutes = Number(minutesText);
+      if (!Number.isFinite(minutes) || minutesText.trim() === "") throw new LedgerError(`--minutes requires a number (got "${minutesText}")`);
+      // DELTA 16: ONE PREDICATE FOR THE READ AND THE WRITE (orchestrator ruling 2026-09-18). A claim is
+      // stale when it is at least N minutes old AND nothing was written to its row after its last
+      // CLAIM note — manifest.py's stale-claims (G53), whose line-position test is exact on an
+      // append-only ledger. The age alone released a seat that was posting notes as it worked.
+      // `--dry-run` is stale-claims: the same rows, printed, nothing written.
+      const staleNow = (lines: readonly string[], block: ItemBlock): boolean =>
+        block.item.claimedAt !== undefined &&
+        (Date.now() - Date.parse(block.item.claimedAt)) / 60_000 >= minutes &&
+        !activityAfterClaim(lines, block);
+      const stale = blocks.filter((block) => staleNow(lines, block));
+
+      if (rest.includes("--dry-run")) {
+        for (const block of stale) {
+          const idle = (Date.now() - Date.parse(block.item.claimedAt!)) / 60_000;
+          console.log(`{"id": ${JSON.stringify(block.item.id)}, "owner": ${JSON.stringify(block.item.claimedBy ?? null)}, "claimed_at": ${JSON.stringify(block.item.claimedAt)}, "minutes_idle": ${pyRound1(idle)}}`);
+        }
+        console.log(`stale-claims: ${stale.length} item(s) claimed >= ${minutesText}m ago with no owner activity`);
+        return stale.length === 0 ? 0 : 1;
+      }
 
       for (const block of stale) {
         await mutate(ledgerPath, (current) => {
           const located = findBlock(locateItems(current), block.item.id);
-          // Re-check under the lock: a claim taken since the scan is fresh and stays (Eli F8).
-          if (located.item.claimedAt === undefined || Date.parse(located.item.claimedAt) >= cutoff) return current;
-          const cleared = withField(current, located, "claimed_by", null);
-          const relocated = findBlock(locateItems(cleared), block.item.id);
-          return withField(cleared, relocated, "claimed_at", null);
+          // Re-check under the lock: a claim taken, or a note written, since the scan stays (Eli F8).
+          if (!staleNow(current, located)) return current;
+          return withoutClaim(current, block.item.id, located.item.claimedBy ?? "unknown", `stale, claimed ${located.item.claimedAt}, older than ${minutesText}m`);
         });
       }
       console.log(
@@ -1971,7 +2150,7 @@ export async function main(): Promise<number> {
       const title = flag(rest, "title");
       const verify = flag(rest, "verify");
       const filesCsv = flag(rest, "files");
-      const amendedBy = flag(rest, "seat") ?? process.env.LEDGER_SEAT ??
+      const amendedBy = flag(rest, "seat") ?? (process.env.LEDGER_SEAT || null) ?? // an empty LEDGER_SEAT wrote `by=` (delta 13)
         (process.env[ORCHESTRATOR_ENV] === "1" ? "orchestrator" : "unattributed");
       if (title === null && verify === null && filesCsv === null) {
         throw new LedgerError("amend: provide at least one of --title, --verify, --files");
@@ -2028,7 +2207,7 @@ export async function main(): Promise<number> {
         let insertAt = header.length;
         while (insertAt > 0 && (current[insertAt - 1] ?? "").trim() === "") insertAt -= 1;
         const next = [...current];
-        next.splice(insertAt, 0, `# LAW: ${text}`);
+        next.splice(insertAt, 0, `# LAW [${today()}]: ${text}`); // manifest.py's dated form, delta 13
         return next;
       });
       console.log("law appended");
@@ -2066,12 +2245,11 @@ export async function main(): Promise<number> {
       let previous: string | undefined;
       await mutate(ledgerPath, (current) => {
         const block = findBlock(locateItems(current), id);
-        previous = block.item.claimedBy;
+        previous = block.item.claimedBy ?? (block.item.status === "in_flight" ? lastClaimOwner(current, block) : undefined);
         if (previous === undefined) return current;
-        const cleared = withField(current, block, "claimed_by", null);
-        return withField(cleared, findBlock(locateItems(cleared), id), "claimed_at", null);
+        return withoutClaim(current, id, previous, "named");
       });
-      console.log(previous === undefined ? `${id}: no claim to release` : `${id}: released ${previous} — the row is unclaimed; \`claim ${id} <seat>\` takes it`);
+      console.log(previous === undefined ? `${id}: no claim to release` : `${id}: released ${previous} — the row is todo and unclaimed; \`claim ${id} <seat>\` takes it`);
       return 0;
     }
 
@@ -2215,13 +2393,31 @@ async function selftest(): Promise<number> {
   check("header comments survive writes", afterWrites.includes("# LAW: manifest-is-memory"));
   check("pre-existing item notes survive writes", afterWrites.includes("must survive every write"));
   check("the new note landed", afterWrites.includes("a note added by the selftest"));
-  check("the note is dated", new RegExp(`# ${today()} a note added`).test(afterWrites));
+  check("the note is dated in manifest.py's form (delta 13)", afterWrites.includes(`# [${today()}] a note added`));
 
   check("set-status took effect", (await run("get", "H1")).includes("[in_flight]"));
   check("claim recorded the seat", (await run("get", "H1")).includes("builder-1"));
   check("a second claim by another seat is refused", (await run("claim", "H1", "builder-2")).includes("already claimed"));
+  // DELTA 16: stale = old AND silent since the claim; the dry run is stale-claims, the same predicate.
+  await run("add", "--id", "ST1", "--phase", "harness", "--title", "claimed and silent", "--verify", "true", "--files", "src/st1.ts");
+  await run("add", "--id", "ST2", "--phase", "harness", "--title", "claimed and working", "--verify", "true", "--files", "src/st2.ts");
+  await run("claim", "ST1", "seat-silent");
+  await run("claim", "ST2", "seat-working");
+  await run("note", "ST2", "still going: the parser half is in");
+  {
+    const before = await Bun.file(path).text();
+    const proc = Bun.spawnSync(["bun", import.meta.path, path, "release-stale", "--minutes", "0", "--dry-run"], { env: { ...process.env, LEDGER_ORCHESTRATOR: "" }, stdout: "pipe", stderr: "pipe" });
+    const out = proc.stdout.toString();
+    check("release-stale --dry-run is stale-claims: the silent claim, not the working one, nothing written, exit 1 (delta 16)",
+      proc.exitCode === 1 && /^\{"id": "ST1", "owner": "seat-silent", "claimed_at": "\S+", "minutes_idle": \d+\.\d\}$/m.test(out) &&
+        !out.includes('"ST2"') && out.includes("stale-claims: ") && (await Bun.file(path).text()) === before, out);
+  }
   check("release-stale spares a fresh claim", (await run("release-stale", "--minutes", "60")).includes("no claims older"));
   check("release-stale releases an old one", (await run("release-stale", "--minutes", "0")).includes("H1"));
+  check("and releases what the dry run listed, sparing the row written to since its claim (delta 16)",
+    (await run("get", "ST1")).includes("[todo]") && (await run("get", "ST2")).includes("claim  : seat-working"));
+  check("release-stale clears back to todo, as manifest.py does, with a CLAIM-RELEASED marker (delta 14)",
+    /\[todo\][\s\S]*CLAIM-RELEASED \(stale, claimed \S+, older than 0m\): owner=builder-1/.test(await run("get", "H1")));
 
   await run("add", "--id", "H3", "--phase", "harness", "--title", "third", "--verify", "bun run gate");
   check("add created the item", (await run("get", "H3")).includes("third"));
@@ -2231,6 +2427,8 @@ async function selftest(): Promise<number> {
   await run("add-law", "silence-is-a-system-bug");
   check("add-law appends to the header", (await run("laws")).includes("silence-is-a-system-bug"));
   check("add-law did not disturb existing laws", (await run("laws")).includes("verified-commits-immediately"));
+  check("add-law dates the law in manifest.py's form (delta 13)",
+    (await Bun.file(path).text()).includes(`\n# LAW [${today()}]: silence-is-a-system-bug\n`));
   await run("amend-header", "manifest-is-memory", "manifest-is-durable-memory");
   check("amend-header replaces the selected text", (await run("laws")).includes("manifest-is-durable-memory"));
 
@@ -2241,6 +2439,11 @@ async function selftest(): Promise<number> {
   check("amend preserved the old value as a dated note", (await run("get", "H1")).includes("verify was"));
   check("amend names who made it (delta 6: notes are the past, and the past has an author)",
     /amend by=\S+: verify was/.test(await run("get", "H1")));
+  {
+    const blank = Bun.spawnSync(["bun", import.meta.path, path, "amend", "H1", "--verify", "gate two"], { env: { ...process.env, LEDGER_ORCHESTRATOR: "", LEDGER_SEAT: "" }, stdout: "pipe", stderr: "pipe" });
+    check("an empty LEDGER_SEAT is no seat, not a blank author (delta 13)",
+      blank.exitCode === 0 && (await run("get", "H1")).includes("amend by=unattributed: verify was \"a brand new verify gate\""));
+  }
   check("amend did not eat prior notes", (await run("get", "H1")).includes("must survive"));
   check("amend with no field flags is refused", (await run("amend", "H1")).includes("at least one of"));
 
@@ -2250,8 +2453,39 @@ async function selftest(): Promise<number> {
   // fences-are-disjoint has a wall: a claim whose fence intersects a live claimed row is refused.
   await run("add", "--id", "X1", "--phase", "m9", "--title", "overlapping row", "--verify", "", "--files", "src/c.ts,src/d.ts");
   await run("claim", "M2", "seat-1");
-  check("claim warns on a fence that overlaps a live claimed row and still claims", (await run("claim", "X1", "seat-2")).includes("overlaps M2") && (await run("get", "X1")).includes("seat-2"));
+  // DELTA 14: a claim sets in_flight (manifest.py), so the overlap a claim used to warn about now
+  // takes delta 9's refusal. Two live seats on one file arise only when a fence moves AFTER both
+  // claims, which is how the audit arm below is set up.
+  check("a claim sets in_flight and writes manifest.py's CLAIM note, beside the fields (delta 14)",
+    /\[in_flight\][\s\S]*claim  : seat-1[\s\S]*# \[\d{4}-\d{2}-\d{2}\] CLAIM: owner=seat-1 at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/.test(await run("get", "M2")));
+  check("claim is refused on a fence that overlaps a claimed row, which is in_flight (delta 14)",
+    (await run("claim", "X1", "seat-2")).includes("fences are disjoint") && !(await run("get", "X1")).includes("seat-2"));
+  await run("amend", "X1", "--files", "src/d.ts");
+  await run("claim", "X1", "seat-2");
+  await run("amend", "X1", "--files", "src/c.ts,src/d.ts");
   check("claim admits a disjoint fence", (await run("claim", "M1", "seat-2")).includes("claimed by seat-2"));
+  {
+    // manifest.py's retirement guard and its two spellings, and its --session spelling (delta 14).
+    await run("add", "--id", "RT1", "--phase", "m9", "--title", "a retired row", "--verify", "", "--files", "src/rt1.ts");
+    await run("note", "RT1", "operator ruling: do not requeue, superseded");
+    check("claim refuses a row a legacy retirement note retired (delta 14)",
+      (await run("claim", "RT1", "--session", "seat-rt")).includes("RETIREMENT marker") && (await run("get", "RT1")).includes("[todo]"));
+    await run("note", "RT1", "RETIRE-LIFTED: operator re-queued it");
+    check("a structured RETIRE-LIFTED note lifts it, and --session names the seat (delta 14)",
+      (await run("claim", "RT1", "--session", "seat-rt")).includes("claimed by seat-rt"));
+    await run("add", "--id", "RT2", "--phase", "m9", "--title", "retired, structured", "--verify", "", "--files", "src/rt2.ts");
+    await run("note", "RT2", "RETIRED: folded into RT1");
+    check("a structured RETIRED note refuses, and --override-retired passes it (delta 14)",
+      (await run("claim", "RT2", "seat-rt2")).includes("RETIREMENT marker") &&
+        (await run("claim", "RT2", "seat-rt2", "--override-retired")).includes("claimed by seat-rt2"));
+    check("release-stale refuses manifest.py's one-row form instead of releasing every old claim (delta 14)",
+      (await run("release-stale", "RT1", "--by", "seat-rt")).includes("takes no row") && (await run("get", "RT1")).includes("claim  : seat-rt"));
+  }
+  check("a second claim by the holder writes nothing (delta 14)", await (async () => {
+    const before = await Bun.file(path).text();
+    await run("claim", "M1", "seat-2");
+    return (await Bun.file(path).text()) === before;
+  })());
 
   // DELTA 9 ARMS (V4-143 Phase C). The refusal case is an IN_FLIGHT peer, which is what
   // manifest.py refuses today and what this CLI must not lose at the cutover.
@@ -2281,6 +2515,17 @@ async function selftest(): Promise<number> {
   await run("note", "PY1", "CLAIM: owner=py-seat at=2026-09-18T10:00:00Z");
   check("an unmigrated py claim reads as unclaimed (the state the cutover inherits)",
     !(await run("get", "PY1")).includes("claim  : py-seat"));
+  check("but another seat cannot claim over it: the note is the owner until the fields exist (delta 14)",
+    (await run("claim", "PY1", "other-seat")).includes("already claimed by py-seat") && !(await run("get", "PY1")).includes("other-seat"));
+  // manifest.py's _block_owner: a CLAIM-RELEASED note ends the note's ownership even while the row
+  // is in_flight, so neither list nor claim may keep naming the released seat.
+  await run("add", "--id", "PY3", "--phase", "m9", "--title", "released by manifest.py", "--verify", "", "--files", "src/py3.ts");
+  await run("set-status", "PY3", "in_flight");
+  await run("note", "PY3", "CLAIM: owner=gone-seat at=2026-09-18T09:00:00Z");
+  await run("note", "PY3", "CLAIM-RELEASED (stale): owner=gone-seat dead per registry+tmux, by=py-seat");
+  check("a CLAIM-RELEASED note ends the note's owner: list names nobody and another seat may claim (delta 14)",
+    !(await run("list", "--plain")).split("\n").some((line) => line.startsWith("PY3 ") && line.includes("@gone-seat")) &&
+      (await run("claim", "PY3", "new-seat")).includes("claimed by new-seat"));
   check("migrate-claims --dry-run reports without writing",
     (await run("migrate-claims", "--dry-run")).includes("would migrate 1") && !(await run("get", "PY1")).includes("claim  : py-seat"));
   check("migrate-claims writes the note's owner into the claim field",
@@ -2290,7 +2535,7 @@ async function selftest(): Promise<number> {
   check("the original claim time survives verbatim in the diary",
     (await run("get", "PY1")).includes("CLAIM: owner=py-seat at=2026-09-18T10:00:00Z"));
   check("migrate-claims is idempotent: a second run migrates nothing",
-    (await run("migrate-claims")).includes("migrated 0") && (await run("migrate-claims")).includes("1 already on fields"));
+    (await run("migrate-claims")).includes("migrated 0") && /migrated 0 claims \(\d+ already on fields, 0 conflicting\)/.test(await run("migrate-claims")));
   // THE HAZARD THIS ARM EXISTS FOR. This CLI's release-stale is age-only and batch; manifest.py's
   // asks whether the owner is alive. Were the note's time carried across, the first release-stale
   // after the cutover would free every live row manifest.py had claimed more than an hour ago.
@@ -2316,6 +2561,14 @@ async function selftest(): Promise<number> {
   check("done without a receipt is refused", (await run("set-status", "M1", "done")).includes("needs a receipt"));
   await run("receipt", "M1", "--cmd", "bun test tests/x", "--exit", "1", "--tests", "3", "--touched", "src/a.ts");
   check("done on a red receipt is refused", (await run("set-status", "M1", "done")).includes("exited 1"));
+  // DELTA 13: manifest.py's receipt (the form of 252 of the 262 receipt-shaped notes in splice's
+  // ledgers) is READ, as files without a run; a prose note that opens with the word is not one.
+  await run("note", "M1", "RECEIPT files=src/a.ts blobs=0123abcd");
+  await run("note", "M1", "RECEIPT covers the one file above; the run is in the row's verify line");
+  check("a manifest.py receipt is read: touched lists its files, past a prose RECEIPT note (delta 13)",
+    (await run("touched", "M1")).trim() === "src/a.ts");
+  check("done on a manifest.py receipt is refused by name, not read as green (delta 13)",
+    (await run("set-status", "M1", "done")).includes("filed by manifest.py"));
   await run("receipt", "M1", "--cmd", "bun test tests/x", "--exit", "0", "--tests", "3", "--touched", "src/a.ts,tests/x.test.ts", "--tail", "3 pass");
   check("touched prints the staging list", (await run("touched", "M1")).trim().split("\n").join("|") === "src/a.ts|tests/x.test.ts");
   check("absolute touched paths are refused", (await run("receipt", "M2", "--cmd", "x", "--exit", "0", "--tests", "1", "--touched", "/etc/passwd")).includes("repo-relative"));
@@ -2390,7 +2643,7 @@ async function selftest(): Promise<number> {
   // ── a receipt is also a claim about its own SCOPE, and the parse has to survive its own tail ──
   // Every check below is a defect that was live in this campaign on 2026-09-18, not a hypothetical.
   sh("git", "reset", "-q");
-  await run("add", "--id", "S1", "--phase", "m9", "--title", "scope checks at receipt time", "--verify", "", "--files", "src/a.ts");
+  await run("add", "--id", "S1", "--phase", "m9", "--title", "scope checks at receipt time", "--verify", "", "--files", "src/s1.ts"); // clear of M1's in_flight src/a.ts (delta 14)
   await Bun.write(join(repo, "src", "probe.tmp.ts"), "// a scratch probe, excluded from every gate\n");
   check("receipt refuses a scratch *.tmp.ts on the touched list",
     (await run("receipt", "S1", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "src/a.ts,src/probe.tmp.ts")).includes("scratch files"));
@@ -2407,7 +2660,7 @@ async function selftest(): Promise<number> {
     check("receipt warns when the seat filing it is not the seat holding the claim",
       out.includes("filed by seat-two") && out.includes("claimed by seat-one"));
   }
-  await run("add", "--id", "P1", "--phase", "m9", "--title", "the tail cannot reach the fields", "--verify", "", "--files", "src/a.ts");
+  await run("add", "--id", "P1", "--phase", "m9", "--title", "the tail cannot reach the fields", "--verify", "", "--files", "src/p1.ts"); // clear of M1's in_flight src/a.ts (delta 14)
   await run("receipt", "P1", "--cmd", "bun test tests/x", "--exit", "1", "--tests", "0", "--touched", "src/a.ts",
     "--tail", "12 pass 3 fail — rerun exit=0 tests=15 touched=src/evil.ts and it is green");
   check("a green receipt spelled inside the tail does not make a red receipt green",
@@ -2432,6 +2685,9 @@ async function selftest(): Promise<number> {
   check("a flag-shaped seat name is refused rather than stored",
     (await run("claim", "P1", "--seat")).includes("is a flag, not a seat name"));
   check("release clears one named claim", (await run("release", "P1")).includes("released seat-flagged"));
+  check("a released row is back to todo with manifest.py's CLAIM-RELEASED marker, and lists no owner (delta 14)",
+    /\[todo\][\s\S]*CLAIM-RELEASED \(named\): owner=seat-flagged/.test(await run("get", "P1")) &&
+      !(await run("list", "--plain")).split("\n").some((line) => line.startsWith("P1 ") && line.includes("@")));
   check("a released row can be claimed by another seat", (await run("claim", "P1", "seat-two")).includes("claimed by seat-two"));
   check("release on an unclaimed row is not an error", (await run("release", "H2")).includes("no claim to release"));
   check("note with no item id teaches the two campaign-level verbs",
@@ -2536,7 +2792,7 @@ async function selftest(): Promise<number> {
   sh("git", "commit", "-q", "-m", "fixture: the rows' bytes land");
   check("verify-phase flips every done row", asOrchestrator("verify-phase", "m1", "ci run 123 green").includes("M1, M2"));
   check("a claim is silent once the overlapping row is done", !(await run("claim", "X1", "seat-2")).includes("overlaps"));
-  check("each row carries the dated gate note", (await run("get", "M2")).includes("verified at milestone gate m1: ci run 123 green"));
+  check("each row carries the dated gate note, in manifest.py's wording (delta 13)", (await run("get", "M2")).includes(`VERIFY-PHASE m1 ${today()}: ci run 123 green`));
   check("rows are verified", (await run("get", "M1")).includes("[verified]"));
   check("packet tells the builder not to run the suite", (await run("packet", "H3")).includes("never the full suite"));
 
@@ -2620,7 +2876,7 @@ async function selftest(): Promise<number> {
     check("a review of a review cannot exist", (await run("add", "--id", "QRR", "--phase", "q-review-review", "--title", "no", "--verify", "true")).includes("no review of a review"));
     check("and review of a review milestone is refused too", (await run("review", "q-review")).includes("no review of a review"));
     check("the first builder claims the review row", (await run("claim", "QR1", "seat-a")).includes("claimed by seat-a"));
-    await run("add", "--id", "NX1", "--phase", "nx", "--title", "next milestone row", "--verify", "true", "--files", "src/c.ts");
+    await run("add", "--id", "NX1", "--phase", "nx", "--title", "next milestone row", "--verify", "true", "--files", "src/nx.ts"); // clear of X1's in_flight src/c.ts (delta 14)
     const nextSeat = await run("claim", "NX1", "seat-b");
     check("the other builder continues with the next milestone", nextSeat.includes("claimed by seat-b"), nextSeat);
     // The single-seat wall is exercised on a second review milestone whose one row changes hands.
@@ -2628,7 +2884,7 @@ async function selftest(): Promise<number> {
     await run("receipt", "RZ1", "--cmd", "bun test tests/x", "--exit", "0", "--tests", "1", "--touched", "src/a.ts");
     await run("set-status", "RZ1", "done");
     check("a second milestone delivers on its own", asOrchestrator("deliver", "rz", "--sha", "zzz111").includes("delivered at zzz111"));
-    await run("add", "--id", "RZR1", "--phase", "rz-review", "--title", "fix list of rz", "--verify", "true", "--files", "src/a.ts");
+    await run("add", "--id", "RZR1", "--phase", "rz-review", "--title", "fix list of rz", "--verify", "true", "--files", "src/rz.ts"); // clear of QR1's in_flight src/a.ts (delta 14)
     await run("claim", "RZR1", "seat-a");
     const secondSeat = await run("claim", "RZR1", "seat-b");
     check("a second builder cannot claim the review row another seat holds", secondSeat.includes("already claimed by seat-a"), secondSeat);

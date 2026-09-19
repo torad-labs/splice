@@ -17,12 +17,13 @@ Vendored 2026-09-18 by V4-143 into `dev/campaigns/` from:
 
 | file | source sha256 (12) | vendored sha256 (12) | state |
 |---|---|---|---|
-| `ledger.ts` | `5ad4e6117f50` | see `sha256sum` | deltas 4 to 11 + paths |
+| `ledger.ts` | `5ad4e6117f50` | see `sha256sum` | deltas 4 to 15 + paths |
 | `ledger-core.ts` | `4240cbdf28a8` | see `sha256sum` | deltas 1, 2, 3 |
 | `ledger-earn.ts` | `ac39fa88ea0a` | `ac39fa88ea0a` | untouched |
 | `earn-core.ts` | `8a4d4ad26bdb` | see `sha256sum` | paths only |
 | `review.ts` | `20f5db0a23cd` | see `sha256sum` | paths only |
 | `manifest.ts` | — | — | splice's entry: runs `ledger.ts`'s `main` |
+| `fleet.ts` | — | — | splice-only: the fleet journal and manifest.py's ported verbs |
 
 Not vendored: `idle-watch.ts` (this repo has its own), `hydrate.ts`, the matrix plane, and the source
 repo's hooks. `manifest.py` stays until the cutover (V4-143 phase D) deletes it.
@@ -93,6 +94,78 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     law-check's reader without reading its guard, and is corrected here.) These flags are
     additive and byte-identical to `manifest.py` (see verification). The cutover swaps each caller's argv
     and leaves its parser alone. Two arms; the glyph mutant and the rendered-get mutant fail them.
+
+12. **`lawSheet(lines)`, exported (D2).** One ledger's laws, the exact reader the `laws` verb uses, so
+    splice's entry can aggregate every ledger for a pathless `laws` without a second law predicate that
+    could drift. The pathless POLICY is not vendored code and lives in `manifest.ts`: a first argument
+    ending in `.toml` is a ledger (manifest.py's rule); with none, `laws` prints every
+    `dev/campaigns/*.toml`'s laws in code-point order of the name, each law once, first occurrence
+    kept (manifest.py's aggregate: 251 lines, byte-identical, order included, measured at HEAD
+    679e211f); `help` / `-h` / `--help` alone print usage at exit 0 because usage was asked for; any
+    other verb, and a ledger with no command, exits 1 with the ledgers that exist. Before this, a
+    pathless `laws` printed the USAGE at exit 0, which the SessionStart hook's guard would have
+    injected into every seat as its laws. `checks/campaign-cli-selftest.sh` arms 3 and 4 guard it
+    structurally (no pinned count: the union is recomputed from each ledger's own `laws`, the verbs
+    from this file's dispatch); its canary carries three reds for them.
+13. **Write what `manifest.py` writes (D2 write differential).** The read-only verbs were compared
+    byte for byte and the write verbs only round-tripped, which proves a verb is accepted, not what it
+    writes; `add-law` wrote `# LAW:` beside 58 dated laws. Every write verb was then run by both CLIs on
+    identical copies and the resulting trees diffed (recorded on V4-143). Changed to `manifest.py`'s
+    bytes: a row note is `# [date] text` (9,541 of the 9,568 dated lines in the 13 ledgers when measured); `add-law`
+    writes `# LAW [date]: text`; `verify-phase` writes `VERIFY-PHASE <P> <date>: <evidence>`; an empty
+    `LEDGER_SEAT` is no seat (it wrote `amend by=:`). And `manifest.py`'s own receipt, `RECEIPT
+    files=… blobs=…`, is READ as a receipt with no exit: unread, all 650 closed rows audited as
+    unreceipted, and an in_flight row receipted by `manifest.py` could not be set done. `touched`,
+    `landed` and `audit` use its files; `done` and `stage` refuse it by name, because it records the
+    files and not the run. A prose note opening with the word (10 in the ledgers) is not a receipt.
+    Seven mutants, each red on its arm.
+14. **A claim is `manifest.py`'s claim (orchestrator ruling 2026-09-18).** `claim` sets in_flight and
+    appends `CLAIM: owner=<seat> at=<iso>` beside `claimed_by`/`claimed_at`; the fields are the truth,
+    the note is the diary that `build-punch-list.mjs:40` and `idle-watch.ts:165` read, both gated on
+    in_flight, so fields alone left them printing no owner without an error. `release` and
+    `release-stale` return an in_flight row to todo and write `CLAIM-RELEASED (<why>): owner=…`, and
+    `lastClaimOwner` honours that marker as py's `_block_owner` does. A note-only py claim cannot be
+    claimed over. Also py's, because a seat's habit carries them: the retirement guard (17 open
+    web-console rows carry a marker; `--override-retired` and a `RETIRE-LIFTED:` note pass it), the
+    `--session` spelling, and a refusal of `release-stale <ID> --by <seat>`, which here would have
+    released every claim older than an hour. Delta 9 survives: every live claim is in_flight now, so
+    an overlapping claim takes its refusal. Seven mutants, each red on its arm.
+15. **Thin emit hooks (`ledgerEvents`) and `main(argv)`.** After note, receipt, set-status, claim
+    and verify-phase land, `ledger.ts` reports what happened; it writes nothing itself. `main` takes
+    argv so `fleet.ts` can claim and print a packet in-process. A handful of row writers are exported
+    for `fleet.ts`. Unregistered (the selftest, any other entry) the hook is a no-op.
+16. **`release-stale` and stale-claims share one predicate (orchestrator ruling 2026-09-18).** A
+    claim is stale when it is at least `--minutes` old AND nothing was written to its row after its
+    last CLAIM note (manifest.py's G53 line-position test, bar the ATTEST-START py writes with a
+    claim). Age alone released a seat that was posting notes as it worked. `release-stale --dry-run`
+    is manifest.py's `stale-claims`: the same rows as JSON lines plus its summary, exit 1 when any,
+    nothing written. Its time is `claimed_at`, which delta 10's migration sets at the cutover, so on
+    an unmigrated ledger it will not agree with py's note-time answer — by that ruling. Two mutants.
+
+**`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
+the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the
+shared mkdir lock, seq from the tail, `json.dumps` separators, the canonical-ledger gate, fail-open
+with a stderr line), seat resolution (seatd `alive`, then tmux), claim lineage (`TORAD_SEAT_MODEL`,
+else the session's transcript, plus HEAD), lease declarations, and the verbs `verdict`, `handover`,
+`gym-kpi`, `events`, `next --claim` (alias `next-packet --session`), and the fence instruments
+`fence-check`, `scan-bare-fences` and `fence-uncommitted` (output byte-identical to py on 21 of 22
+queries across the 13 ledgers; the 22nd differs in the error prefix only). The py-only denominator is
+manifest.py's DISPATCH, not its usage text, which omitted a verb: 43 verbs, of which 18 were still
+py-only once verdict, handover, gym-kpi, events and next-packet had landed here, and every one is
+ruled — 4 ported (fence-check, scan-bare-fences, fence-uncommitted, and stale-claims as
+`release-stale --dry-run`), 3 answered by `amend` (edit-fence, edit-title, edit-verify), and 11
+retired: dispatch, set-next, remove, the three backfills, cost (reads another
+product's store), scope-diff (`git diff --stat` answers it), verify-signatures and proof-payload (no
+item in any ledger carries a signature), and seed-episode (`init` births a ledger here). `next --claim` is what
+next-packet was for, not what it did: py's review-debt gate and campaign.next-only candidates made it
+dispatch nothing on either live ledger (63 and 163 done rows; every queued id closed). Candidates are
+the queued todo rows, then every todo row in ledger order; a retired, ineligible or fence-blocked row
+is never offered. Its own selftest runs in a POST-deletion layout. Deliberately not ported: G30's
+`seat~machine-id` owner qualification (0 of 494 CLAIM notes carry one), ATTEST notes, claim pointer
+files (0 `ledger-active-*` in either checkout's `.claude/state`), and the done-time notify poke and
+trace hydration (their scripts, `scripts/notify_orchestrator.py` and `scripts/hydrate-traces.py`, do
+not exist in this repo, so py skips both), and the verbs the orchestrator retired (dispatch, set-next,
+remove, the backfills).
 
 **Paths:** help and usage text now names `bun dev/campaigns/manifest.ts` and `bun dev/campaigns/review.ts`;
 `review.ts` defaults to `dev/campaigns/v0.4.0.toml`; earn artifacts live under `dev/earn-artifacts/`.

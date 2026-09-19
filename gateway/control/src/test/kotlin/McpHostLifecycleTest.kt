@@ -116,9 +116,12 @@ class McpHostLifecycleTest : McpHostFixture() {
         call(active, 1, "echo")
         clock.now += 15.minutes.inWholeMilliseconds
         host.sweep()
-        assertEquals(404, host.post("fake", idle, MCP_HOST_LIST).status)
+        assertEquals(1, status("fake")["sessions"]!!.jsonPrimitive.content.toInt(), "the idle session retired")
         assertEquals(200, host.post("fake", active, MCP_HOST_LIST).status)
-        assertEquals(1, status("fake")["sessions"]!!.jsonPrimitive.content.toInt())
+        // V4-148: the retired id is adopted, not refused — a client whose session was reaped while it
+        // was quiet never learns it happened, which is what holding the process across sessions is for.
+        assertEquals(200, host.post("fake", idle, MCP_HOST_LIST).status)
+        assertEquals(2, status("fake")["sessions"]!!.jsonPrimitive.content.toInt(), "adopted alongside")
     }
 
     @Test
@@ -220,7 +223,9 @@ class McpHostLifecycleTest : McpHostFixture() {
             clock.now += 60.minutes.inWholeMilliseconds
             host.sweep()
             assertFalse(hosted("fake"), "reaped once idle with no stream")
-            assertEquals(404, host.post("fake", a, MCP_HOST_LIST).status)
+            // V4-148: the next request brings the server back under the id the client still holds.
+            assertEquals(200, host.post("fake", a, MCP_HOST_LIST).status)
+            assertTrue(hosted("fake"), "respawned for the adopted session")
         }
 
     @Test
@@ -249,8 +254,11 @@ class McpHostLifecycleTest : McpHostFixture() {
         val b = init("fake2")
         assertFalse(hosted("fake"), "evicted")
         assertTrue(hosted("fake2"))
-        assertEquals(404, host.post("fake", a, MCP_HOST_LIST).status)
         assertTrue(text(call(b, 1, "echo", "n", name = "fake2")).endsWith("echo=n"))
         assertTrue(log.contains("evicted"), log.toString())
+        // V4-148: the evicted server's client is not told to reinitialize either; its next request
+        // adopts its id onto a fresh child, which at capacity evicts the newcomer in turn — exactly
+        // what an explicit initialize would have done, one round trip earlier.
+        assertEquals(200, host.post("fake", a, MCP_HOST_LIST).status)
     }
 }

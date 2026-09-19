@@ -107,7 +107,9 @@ class McpRoutesTest {
         val list = post(LIST_MSG, session)
         assertEquals(HttpStatusCode.OK, list.status)
         assertTrue(list.bodyAsText().contains("\"echo\""), list.bodyAsText())
-        assertEquals(HttpStatusCode.NotFound, post(LIST_MSG, "nope").status)
+        // V4-148: over HTTP too, an id the host does not know is adopted rather than refused; the
+        // DELETEd session below is what still answers 404, because end means ended.
+        assertEquals(HttpStatusCode.OK, post(LIST_MSG, "nope").status)
         val status = client.get("http://127.0.0.1:$port/api/mcp") {
             header("Authorization", "Bearer $key")
         }.bodyAsText()

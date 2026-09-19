@@ -7,6 +7,13 @@
 // reap after idleTimeout with no open notification stream and no request, evict the longest-idle
 // streamless server when a spawn would exceed maxServers, and never replay a tool operation —
 // a crash fails the pending calls in words and the next call respawns.
+//
+// V4-148 (2026-09-19): a session id this host does not know is ADOPTED, not answered with the spec's
+// "session not found". That signal means reinitialize, and Claude Code does not act on it: its tools
+// stop working for the rest of the session while /mcp still shows the server CONNECTED, /mcp reconnect
+// does not recover it, and only a full relaunch does (claude-code #60949, #55970, #59442, #55228).
+// Splice writes the value that triggers it, so the fix is ours: a restart, an idle reap or an eviction
+// is invisible to the client, which keeps the id it already holds.
 package splice.control.mcp
 
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -50,6 +57,7 @@ public class McpHost(
     private val codec = JsonRpcCodec()
     private val sessions = McpSessions(config.clock)
     private val servers = HostedServers(sharing, global, config, launcher, codec, log, sessions)
+    private val minting = SessionMinting(servers, sessions, log)
     private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions)
 
     @Volatile private var sweeper: ScheduledExecutorService? = null
@@ -88,7 +96,7 @@ public class McpHost(
             kind == RpcKind.REQUEST && codec.method(msg) == "initialize" -> initialize(name, msg)
             !protocolAccepted(name, sessionId, protocolVersion) ->
                 bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "unsupported MCP-Protocol-Version '$protocolVersion'")
-            else -> forSession(name, sessionId, msg, kind)
+            else -> forSession(name, sessionId, msg, kind, protocolVersion)
         }
     }
 
@@ -102,7 +110,11 @@ public class McpHost(
      *  its version is wrong. */
     public fun protocolAccepted(name: String, sessionId: String?, protocolVersion: String?): Boolean {
         val session = sessions.get(name, sessionId) ?: return true
-        return protocolVersion == null || session.protocolVersion == protocolVersion
+        // V4-148: an ADOPTED session handshook with the child AFTER the client last spoke, so the
+        // version the client names is the one it negotiated with the child that ran before. Refusing
+        // it would trade this row's 404 for a 400 and leave the client just as broken; the difference
+        // between the two versions is logged where the session is adopted, once, instead.
+        return session.adopted || protocolVersion == null || session.protocolVersion == protocolVersion
     }
 
     /** The session's notification stream for a GET; null when the session is unknown. */
@@ -148,35 +160,21 @@ public class McpHost(
 
     private suspend fun initialize(name: String, msg: JsonObject): McpReply {
         val id = msg.getValue("id")
-        // acquire() reserves the server against eviction until release(); the session is created
-        // inside that window and kept only if the server is still bound and alive when it ends.
-        val server = try {
-            servers.acquire(name)
-        } catch (e: McpHostException) {
-            return bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, e.message.orEmpty())
-        }
-        var session: McpSession? = null
-        var failure = ""
-        // The reservation ends in a finally: a client that cancels mid-handshake (review 4) must not
-        // leave the server marked "starting" forever, or capacity would refuse every newcomer.
-        try {
-            session = sessions.create(name, server.ensureStarted())
-        } catch (e: McpHostException) {
-            failure = e.message.orEmpty()
-        } finally {
-            if (!servers.release(name, server)) {
-                session?.let { sessions.end(name, it.id) }
-                failure = failure.ifEmpty { "hosted MCP server '$name' was replaced while starting" }
-            }
-        }
-        val minted = session?.takeIf { failure.isEmpty() }
-        return minted?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
-            ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, failure)
+        val minted = minting.mint(name, null)
+        return minted.session?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
+            ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, minted.failure)
     }
 
-    private suspend fun forSession(name: String, sessionId: String?, msg: JsonObject, kind: RpcKind): McpReply {
+    private suspend fun forSession(
+        name: String,
+        sessionId: String?,
+        msg: JsonObject,
+        kind: RpcKind,
+        protocolVersion: String? = null,
+    ): McpReply {
         val id = msg["id"] ?: JsonPrimitive(0)
         val session = sessions.get(name, sessionId)
+            ?: minting.adopt(name, sessionId, kind, protocolVersion)
             ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
         sessions.touch(session)
         val server = servers.reserve(name)

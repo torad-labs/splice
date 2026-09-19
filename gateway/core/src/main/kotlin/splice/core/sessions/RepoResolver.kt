@@ -32,18 +32,27 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
 
+// why: resolving a repo root walks the filesystem, and the console re-asks for the same cwd on
+// every poll. 2 s is short enough that a clone or a move shows up within one refresh, and long
+// enough that one poll's worth of rows costs one walk. 64 entries with the JDK's own 0.75 load
+// factor, in a LinkedHashMap in ACCESS order, so the eviction below drops the least recently used.
 private const val REPO_CACHE_TTL_MS = 2_000L
+// why: 64 cwds is more than one operator has open at once, so the eviction below is a safety net
+// rather than a working part of the design.
 private const val REPO_CACHE_MAX_ENTRIES = 64
+
+// why: the JDK's own default load factor, named only because LinkedHashMap's access-order
+// constructor cannot be reached without passing it.
 private const val CACHE_LOAD_FACTOR = 0.75f
 
 /** A pointer file is a single short line; anything larger is not a git pointer and is not read. */
 private const val MAX_POINTER_BYTES = 4_096L
 
-public const val REASON_NOT_ABSOLUTE: String = "the cwd is not an absolute path"
-public const val REASON_MISSING: String = "the cwd does not exist on this host"
-public const val REASON_UNTRUSTED: String =
+internal const val REASON_NOT_ABSOLUTE: String = "the cwd is not an absolute path"
+internal const val REASON_MISSING: String = "the cwd does not exist on this host"
+internal const val REASON_UNTRUSTED: String =
     "the cwd is outside the trusted roots (\$HOME, /tmp, statuslineGitRoots), so it was not probed"
-public const val REASON_NO_REPO: String = "the cwd is not inside a git repository"
+internal const val REASON_NO_REPO: String = "the cwd is not inside a git repository"
 
 /** Where a session groups. [root] is always set: the shared repo when one was found, else the cwd
  *  itself with [reason] saying why. [worktree] is set only for a linked worktree of [root]. */

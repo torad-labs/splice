@@ -238,6 +238,7 @@ dated = "2026-09-17"
 names = [
     "EnvReader",
     "QuotaHeaderRead",
+    "SessionAddress",
 ]
 reason = """EnvReader reads a PROCESS ENVIRONMENT VARIABLE by name; QuotaHeaderRead reads one \
 UPSTREAM RESPONSE HEADER by name. Same shape, and the two sources could not be further apart in \
@@ -246,6 +247,12 @@ rather than global so a caller can pin a hermetic environment — the first CI r
 `splice install` failed on the runner's ambient XDG_CONFIG_HOME — and the kt-no-system-getenv wall \
 keeps every other site off System.getenv. A shared port would put an upstream-controlled string \
 where a config lookup is expected. \
+SessionAddress (V4-131) is a THIRD source with the same shape and no more in common: a session id \
+to the address its peers SendMessage to, answered from the daemon's own registry. Its miss is \
+ordinary — a session the registry does not know yet — where EnvReader's miss means unset and \
+QuotaHeaderRead's means the upstream sent no such header. Three ports whose null means three \
+different things cannot be one port: a caller that merged them would have to ask which of the three \
+it was holding before it could read the answer. \
 DELIBERATELY ABSENT: HeaderLookup (gateway/usage/RateLimitHeaders.kt:22) is QuotaHeaderRead's role \
 in the module above it, and QuotaHeaderRead's own KDoc says so — \"the gateway's own HeaderLookup \
 lives a module above this one, so the header families are decoded against this port\". It is red by \

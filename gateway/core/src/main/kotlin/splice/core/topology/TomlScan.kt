@@ -3,6 +3,8 @@
 // file's header states what the edits are and why the output is verified.
 package splice.core.topology
 
+// why: the length of TOML's triple-quote delimiter, used to step over both ends of a multi-line
+// string. Named because `start + 3` at the open and `at += 3` at the close read as two numbers.
 private const val TRIPLE = 3
 private const val SCALAR_STOPS = "\n\r#"
 private const val BARE_PUNCTUATION = "_-"

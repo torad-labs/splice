@@ -1,3 +1,6 @@
+// NEW: V4-161 — the nine ports ControlPlane wires into ControlServer after construction, moved
+// verbatim out of ControlServer.kt (concentration, 2026-09-18). ControlServer.kt's header states
+// the control plane this serves; the discipline these nine share is stated below.
 package splice.control
 
 import splice.control.api.DaemonSupervised

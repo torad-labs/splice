@@ -5,6 +5,8 @@ package splice.core.teams
 
 import java.util.UUID
 
+// why: 12 hex characters of a random UUID, which is 48 bits — enough that a collision across the
+// teams one daemon holds is not a case worth handling, and short enough to read in a URL.
 private const val ID_HEX_CHARS = 12
 
 internal class TeamRules {

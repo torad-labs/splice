@@ -74,6 +74,8 @@ const EDITABLE_TOPOLOGY = [
   // above did: a daemon key is a red console until someone says what the console does with it.
   // An ordinary boolean quirk the topology forms write, so it is editable like its neighbours.
   'stream_usage',
+  // V4-165 (slot affinity on a llama-server head): an ordinary boolean quirk, editable like stream_usage.
+  'slot_affinity',
   'tool_surface', 'mfjs', 'block_allowlist', 'strip_cache_control', 'synthesize_signatures',
   'map_thinking_adaptive', 'strip_sampling_params', 'reanchor_prefill', 'tool_name_cap',
   'defer_prefixes', 'min_deferred', 'search_limit', 'search_rounds',

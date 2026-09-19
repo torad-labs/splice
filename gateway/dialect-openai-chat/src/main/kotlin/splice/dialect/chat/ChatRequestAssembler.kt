@@ -14,7 +14,7 @@ import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoiceMapping
 
 /** The per-request knob pair threaded to [ChatRequestAssembler.chatRequestObject] (LongParameterList budget). */
-internal data class ChatKnobs(val effort: String?, val cacheKey: String?)
+internal data class ChatKnobs(val effort: String?, val cacheKey: String?, val idSlot: Int? = null)
 
 internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val wire: ChatWireMapper) {
 
@@ -39,6 +39,7 @@ internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val 
                 null
             },
             promptCacheKey = knobs.cacheKey,
+            idSlot = knobs.idSlot,
             streamOptions = if (quirks.emitUsageInStream) {
                 buildJsonObject { put("include_usage", true) }
             } else {

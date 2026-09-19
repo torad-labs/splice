@@ -29,6 +29,9 @@ internal data class ChatRequest(
     /** {"include_usage": true} — without it xAI's chat stream carries NO usage frame at all
      *  (the in_tokens=0 blindness of the 2026-07-18 chat-dialect attempt). */
     @SerialName("stream_options") val streamOptions: JsonObject? = null,
+    /** V4-165: llama-server's slot override — the conversation's own slot (see SlotAffinity). Null
+     *  = omitted, which is every request of every head without slot_affinity. */
+    @SerialName("id_slot") val idSlot: Int? = null,
 )
 
 // explicitNulls=false: null optionals (tools, reasoning_effort, reasoning) are omitted, exactly like

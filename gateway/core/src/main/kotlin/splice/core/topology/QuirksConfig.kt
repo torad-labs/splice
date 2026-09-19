@@ -76,6 +76,12 @@ public data class QuirksConfig(
      *  the session runs into the context wall instead. Set false for a local runtime that refuses
      *  the field, true for a hosted vendor that accepts it. */
     @SerialName("stream_usage") val streamUsage: Boolean? = null,
+    /** openai-chat only, for a llama-server runtime: keep each conversation on one server slot by
+     *  sending id_slot (V4-165). llama-server picks slots by prompt similarity and skips empty ones,
+     *  so a new session sharing the ~30K Claude Code preamble takes an idle conversation's slot and
+     *  that conversation re-prefills from zero. null/false = off (id_slot is llama.cpp's own field;
+     *  other runtimes have no slots to pin). */
+    @SerialName("slot_affinity") val slotAffinity: Boolean? = null,
     /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
      *  ABSENT TABLE = feature off — the nullable-overlay idiom of [reasoningCache] above. */
     @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,

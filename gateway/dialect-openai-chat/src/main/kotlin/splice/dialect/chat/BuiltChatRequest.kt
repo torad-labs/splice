@@ -6,4 +6,6 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnMeta
 
-public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
+/** [lease] is the llama-server slot this request was pinned to (V4-165), or null when unpinned; the
+ *  caller ends it when the turn ends. */
+public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta, val lease: SlotLease? = null)

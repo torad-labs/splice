@@ -35,6 +35,7 @@ package splice.spi
 import io.ktor.client.HttpClient
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
+import splice.spi.transport.TransportFailureReason
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -269,7 +270,7 @@ public class UpstreamClient(
             state.streamReissues += 1
             ctx.onRetry(
                 "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
-                    "${e::class.simpleName} ${e.message.orEmpty().take(ERR_SNIPPET)}",
+                    "${e::class.simpleName} ${TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET)}",
             )
             ctx.markRetry()
             applyTransportBackoff(e, ctx, state.attempt, t0)
@@ -282,8 +283,9 @@ public class UpstreamClient(
         )
         val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
         ctx.onRetry(
+            // V4-167: named like the ending names it — a refused connect's own message is empty.
             "$label ${e::class.simpleName} attempt ${state.attempt + 1}/$maxRetries: " +
-                e.message.orEmpty().take(ERR_SNIPPET),
+                TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
         )
         if (phase == TransportFailurePhase.POST_SEND) ctx.markPostSendRetry()
         ctx.markRetry()

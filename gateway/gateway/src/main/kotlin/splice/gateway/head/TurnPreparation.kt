@@ -20,6 +20,11 @@
 //
 // V4-160 (concentration, 2026-09-18): applySystemPrompt and applySlotPrompt moved verbatim to
 // TurnPrompts.kt; this file still calls them in the same order.
+//
+// V4-165 (concentration, 2026-09-19): building the provider's turn (compaction tail, request hash,
+// prompt layers) moved verbatim to ProviderTurnBuild.kt, which also owns the guard that gives back
+// what a provider's turn holds (BuiltTurn.onEnd) when preparation fails before the drive. A replayed
+// compaction is never driven, so its build's hold ends here.
 package splice.gateway.head
 
 import io.ktor.http.HttpHeaders
@@ -62,7 +67,7 @@ internal class TurnPreparation(
     private val compactClassifier = CompactClassifier()
     private val activityLabel = ActivityLabel()
     private val messageEdges = MessageEdges(deps.seams.events)
-    private val prompts = TurnPrompts(provider, deps)
+    private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
         val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
@@ -110,7 +115,17 @@ internal class TurnPreparation(
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.stores.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val fromProvider = buildProviderTurn(parsed, compactProbe.compact, sessionId, perf)
+        val fromProvider = providerTurns.build(parsed, compactProbe.compact, sessionId, perf)
+        return providerTurns.endingOnFailure(fromProvider) { handedOn(call, parsed, sessionId, perf, fromProvider) }
+    }
+
+    private fun handedOn(
+        call: ApplicationCall,
+        parsed: AnthropicTurnBody,
+        sessionId: String?,
+        perf: TurnPerf,
+        fromProvider: BuiltTurn,
+    ): Preparation {
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
         // session. Stamped here, once, when the provider left it null.
@@ -131,38 +146,9 @@ internal class TurnPreparation(
         // A compaction retry whose bytes match a compaction that outlived its first client is
         // answered from that recording (TurnStreamer records it, LocalResponses replays it).
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
+        // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
+        replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(built, parsed.typed.stream)
-    }
-
-    private fun buildProviderTurn(
-        parsed: AnthropicTurnBody,
-        compact: Boolean,
-        sessionId: String?,
-        perf: TurnPerf,
-    ): BuiltTurn {
-        val effective = deps.compactionTail.resolve(
-            compact,
-            provider.catalog.stripSuffixes(parsed.typed.model),
-            sessionId,
-        )
-        val base = provider.buildTurn(parsed, compact, sessionId)
-        val tailed = effective?.tailText?.let { provider.withCompactionTail(base, it) } ?: base
-        // A dialect that cannot place the tail (no user text to extend) returns the request as it
-        // was: the meta then says so instead of claiming instructions the wire never carried.
-        val applied = effective?.tailText == null || tailed.requestBody != base.requestBody
-        val hash = if (compact) replay.bodyHash(base.requestBody.toString()) else null
-        val withTail = effective?.let { eff ->
-            tailed.copy(
-                meta = tailed.meta.copy(
-                    compactionInstructions = if (applied) eff.text else null,
-                    compactionInstructionsSource = if (applied) eff.source else "${eff.source} (not applied)",
-                    compactionRequestHash = hash,
-                ),
-            )
-        } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
-        // AFTER the tail, so the compaction request hash and its applied check keep reading the
-        // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-        return prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId), sessionId, perf)
     }
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn

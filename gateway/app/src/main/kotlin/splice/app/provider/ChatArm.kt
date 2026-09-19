@@ -12,10 +12,12 @@ import splice.app.TopologyLoader
 import splice.core.auth.Credentials
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
+import splice.dialect.chat.SlotAffinity
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.spi.Provider
 import splice.spi.ProviderTuning
+import splice.spi.local.LlamaServerSlots
 import java.nio.file.Paths
 
 internal class ChatArm(
@@ -65,11 +67,22 @@ internal class ChatArm(
             // (DR-155) — this arm's job is auth selection and provider construction.
             quirks = overlay.chatQuirks(providerCfg, key, label),
             showReasoning = ctx.cfg.showReasoning,
+            affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
         )
         val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }
             ?.let { StaticChatHeaders(provider, it) }
             ?: provider
         return Wired(configured, auth, accounts)
+    }
+
+    /** V4-165: opted in by [providers.<key>.quirks] slot_affinity = true. The slot count comes from the
+     *  runtime, read on the first turn that needs it and again after any read that failed, so a head
+     *  that boots before its server simply sends its first turns unpinned. */
+    private fun slotAffinity(ctx: ProviderBuild, bearer: String?): SlotAffinity? {
+        if (ctx.providerCfg.quirks.slotAffinity != true) return null
+        val http = JdkLocalHttp(probeInputs.headers(ctx.providerCfg, bearer))
+        val slots = LlamaServerSlots(ctx.providerCfg.baseUrl, http)
+        return SlotAffinity(slots::read)
     }
 
     /** v0.4.0 (FEATURES.md §10): a local runtime that is UP and contradicts the row refuses the

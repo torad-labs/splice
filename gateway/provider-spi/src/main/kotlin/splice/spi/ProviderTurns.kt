@@ -19,7 +19,17 @@ public data class BuiltTurn(
     val toolSearch: ToolSearchController? = null,
     /** Gateway-local protocol wrapper for this turn; null preserves the direct round path. */
     val roundInterceptor: RoundInterceptor? = null,
+    /** V4-165: what the provider holds for THIS turn and must hear the end of — a llama-server slot
+     *  lease today. The gateway calls it exactly once, whatever the outcome: on the admission slot's
+     *  release when the turn is driven (a detached compaction drive included), at once when the turn
+     *  is answered from a replay or dies before it is driven. Null = nothing held. */
+    val onEnd: TurnEnd? = null,
 )
+
+/** The end of one built turn, heard by the provider that built it (see [BuiltTurn.onEnd]). */
+public fun interface TurnEnd {
+    public fun ended()
+}
 
 /** Per-turn liveness signals the gateway hands the translator: the watchdog's typed sentinel and
  *  a REAL client-liveness probe (flipped when a downstream write fails — the head owns it; a

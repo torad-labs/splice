@@ -395,3 +395,41 @@ Two consequences, both already paid for:
   detected as pending.
 
 Until this is fixed, no console row may treat `MgmtError.message` as the daemon's words.
+
+### 8.3 The coverage wall reads DAEMON files, and no daemon gate knows it (declared 2026-09-18)
+
+The console's coverage denominator is parsed at test time out of three sources, none of which the
+console owns (`src/shared/coverage/denominator.ts`):
+
+| source | what is parsed | constant |
+|---|---|---|
+| `gateway/core/.../config/Knob.kt` | every enum entry name | `KNOB_SOURCE` |
+| six schema files — `topology/Topology.kt`, `topology/QuirksConfig.kt`, `topology/TopologySchema.kt`, `prompt/HeadSystemPrompt.kt`, `model/TokenCost.kt`, `compaction/CompactionScope.kt` | every `@SerialName` value | `TOPOLOGY_SOURCES` |
+| `.dev/web-console/FEATURES.md` sections 2.1 and 6 | the backticked spans of each route table's FIRST column | `FEATURES_SOURCE` |
+
+Read that list from `denominator.ts`, never from memory: **half of the "topology" sources are not
+in the topology package.** `HeadSystemPrompt.kt`, `TokenCost.kt` and `CompactionScope.kt` live in
+`prompt/`, `model/` and `compaction/`, and a seat editing one of those has no reason to suspect a
+console wall is reading it. (This table said "the six `topology/*.kt` files" in its first draft —
+the right count beside the wrong glob, which would have produced exactly the miss it exists to
+prevent.)
+
+That is deliberate and stays: a denominator the console writes for itself cannot fail for a key
+the console forgot. **The consequence is a one-way cross-plane dependency.** A daemon row that
+adds a `Knob` entry or a `@SerialName` reddens `webui/tests/coverage.test.ts` in the same commit,
+and the daemon row's own verify — gradle, ast-grep, knob-keys-documented, schema-keys-consumed —
+cannot see it. Measured: `f9e19d00` added `ACTIVITY_RETENTION_DAYS` and `ACTIVITY_STORE_HEADS`,
+the wall went red, and every gate that row ran was green.
+
+So: **a row that edits any file in that table runs `cd webui && npx vitest run tests/coverage.test.ts`
+before its receipt.** It needs no build and no browser, it is seconds, and it is the only leg in
+either plane that reads both sides of the seam. The remedy for a red is one line: the new name
+gets a disposition in the page that owns it, or `pending` naming the row that will.
+
+The console half of the same seam: a name is dispositioned by the vocabulary its SOURCE declares
+— knobs by enum entry name, topology by `@SerialName` value — never by the config key the payload
+carries. A page's `coverage.ts` and the tests around it compare against the parsed denominator as
+a SET, never against a count: a count beside a parser is pinned to the day it was written, and it
+goes stale silently on the side that matters (`toHaveLength(45)` stood beside this wall for a day
+while the daemon reported 47, and the test whose title claimed every knob was covered was proving
+it over 45 of them).

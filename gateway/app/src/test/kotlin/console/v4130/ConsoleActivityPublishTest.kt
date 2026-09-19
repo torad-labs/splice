@@ -120,7 +120,7 @@ class ConsoleActivityPublishTest {
         ) { "the control plane did not bind" }
         try {
             assertNotNull(plane.console.stores, "the daemon's publisher must own the stores")
-            assertSame(plane.console.stores, srv.activity, "the routes must read the stores the heads write")
+            assertSame(plane.console.stores, srv.ports.activity, "the routes must read the stores the heads write")
         } finally {
             srv.stop()
             plane.cancelProbes()

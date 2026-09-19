@@ -86,7 +86,7 @@ class DrainingRestartTest {
             log = { },
             shutdownDaemon = { drains.incrementAndGet() },
         )
-        control.supervised = DaemonSupervised { supervised }
+        control.ports.supervised = DaemonSupervised { supervised }
         control.start()
     }
 
@@ -148,7 +148,7 @@ class DrainingRestartTest {
     fun `an unwired supervision probe is refused by NAME, differently from unsupervised`() = runBlocking {
         awaitPort()
         drains.set(0)
-        control.supervised = null
+        control.ports.supervised = null
         val response = post()
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
@@ -157,7 +157,7 @@ class DrainingRestartTest {
             "the failure must NAME the missing wire: ${response.bodyAsText()}",
         )
         assertEquals(0, drains.get(), "an unwired probe must take no drain either")
-        control.supervised = DaemonSupervised { supervised }
+        control.ports.supervised = DaemonSupervised { supervised }
     }
 
     private suspend fun post(): HttpResponse = withTimeout(TIMEOUT_MS) {

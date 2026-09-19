@@ -5,7 +5,7 @@
 //
 // EXPECTED-RED until the committer applies V4-128's ConsoleWiring line (ConsoleWiring is orchestrator-
 // applied under the CONTROLSERVER RECONCILED law, so this row writes the pin and the commit records red
-// before and green after). It fails on `srv.topology` being null.
+// before and green after). It fails on `srv.ports.topology` being null.
 package console.v4128
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -52,7 +52,7 @@ class TopologyWiringTest {
             ),
         ) { "the control plane did not bind" }
         try {
-            val writer = checkNotNull(srv.topology) { "ConsoleWiring must assign srv.topology" }
+            val writer = checkNotNull(srv.ports.topology) { "ConsoleWiring must assign srv.ports.topology" }
             assertEquals(file, writer.path, "the writer edits the file the daemon booted from")
             assertEquals("{\"effort\":\"high\"}", writer.current()["daemon"].toString(), "read by the real loader")
         } finally {

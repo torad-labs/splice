@@ -21,7 +21,7 @@
 //
 // TWO PINS WERE RESPELLED ON 2026-09-18 and the respelling is not a weakening. ControlPlane crossed
 // the constructor-width ratchet at 13 parameters, so its topology digest, path and declaredHeads
-// became one BootedTopology: the assignment is now `srv.declaredHeads = topology.declaredHeads` and
+// became one BootedTopology: the assignment is now `srv.ports.declaredHeads = topology.declaredHeads` and
 // the empty-roster default lives in BootedTopology.kt, so that pin reads that file instead. Both
 // still fail on the harm they were written for — delete the assignment, or make the default null,
 // and they go red. This pin caught the refactor leaving a now-dead `declaredHeads` parameter behind
@@ -45,11 +45,11 @@ class ConsoleWiringPinTest {
     fun `the control plane wires every console read port to the control server`() {
         val source = consoleWiringSource()
         listOf(
-            "srv.declaredHeads = topology.declaredHeads" to
+            "srv.ports.declaredHeads = topology.declaredHeads" to
                 "the models page would group by a provider nobody reported and show no declared tiers",
-            "srv.doctor = DoctorReport(" to
+            "srv.ports.doctor = DoctorReport(" to
                 "/api/doctor would answer its unwired 5xx while the daemon is healthy and reportable",
-            "srv.upgrade = UpgradeStatus(" to
+            "srv.ports.upgrade = UpgradeStatus(" to
                 "/api/upgrade would report MEASURED with nothing newer, which tells an operator they " +
                 "are up to date when nothing ever looked",
         ).forEach { (line, harm) ->
@@ -101,8 +101,8 @@ class ConsoleWiringPinTest {
     @Test
     fun `the control plane wires the draining restart's supervision probe`() {
         assertTrue(
-            consoleWiringSource().contains("srv.supervised = DrainingRestartAdapter()"),
-            "ConsoleWiring must assign `srv.supervised`, or POST /api/daemon/restart refuses forever " +
+            consoleWiringSource().contains("srv.ports.supervised = DrainingRestartAdapter()"),
+            "ConsoleWiring must assign `srv.ports.supervised`, or POST /api/daemon/restart refuses forever " +
                 "on a supervised host — and a refusal is indistinguishable from the guard working",
         )
     }

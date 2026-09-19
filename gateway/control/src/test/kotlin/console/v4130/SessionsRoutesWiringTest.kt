@@ -72,7 +72,7 @@ class SessionsRoutesWiringTest {
             log = { },
             sessions = SessionRegistry(sessionsDir = sessions, headOf = { null }, pidAlive = { true }, clock = { AT }),
         )
-        control.activity = stores
+        control.ports.activity = stores
         control.start()
         val client = HttpClient(CIO) { expectSuccess = false }
         try {

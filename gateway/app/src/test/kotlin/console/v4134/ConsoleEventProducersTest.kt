@@ -80,7 +80,7 @@ class ConsoleEventProducersTest {
             dashboardHtml = { "<!doctype html>" },
             log = { },
         )
-        control.events = publisher.bus
+        control.ports.events = publisher.bus
         control.start()
     }
 

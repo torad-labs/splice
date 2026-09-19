@@ -137,7 +137,7 @@ internal class ControlPlane(
         // would widen ControlServer to 18 and the width ratchet forbids it. The compiler therefore
         // cannot check this line, which is exactly why a pin exists: removing it must fail a test,
         // not just leave the route answering its named 5xx in production.
-        srv.compaction = compactionInstructions
+        srv.ports.compaction = compactionInstructions
         // V4-127/V4-137: the console's four ports, assigned for the same reason [compaction] is and
         // carrying the same hazard. They live in ConsoleWiring.kt (V4-156, concentration); this call
         // is pinned by ConsoleWiringPinTest, because deleting it would unwire all four at once.
@@ -145,11 +145,11 @@ internal class ControlPlane(
         // V4-134: THE SAME bus the heads publish to. ControlServer has no bus of its own and answers
         // /api/events with a named 503 until this line runs; OneEventBusPinTest fails if the route's
         // bus and a head's are ever different instances.
-        srv.events = console.bus
+        srv.ports.events = console.bus
         // V4-130: the SAME stores the heads write through [console], read by the sessions routes.
-        srv.activity = console.stores
+        srv.ports.activity = console.stores
         // V4-131: the SAME team store the heads' slot resolver reads, so an edit applies on the next turn.
-        srv.teams = teams
+        srv.ports.teams = teams
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

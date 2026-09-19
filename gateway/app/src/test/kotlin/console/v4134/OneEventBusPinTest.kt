@@ -6,7 +6,7 @@
 // second bus. That default is gone (an unassigned route answers a named 503), and what is left to
 // pin is that the three production lines which join the two sides stay written:
 //
-//   ControlPlane.start   srv.events = console.bus        the route's bus IS the producers' bus
+//   ControlPlane.start   srv.ports.events = console.bus        the route's bus IS the producers' bus
 //   Daemon               console = controlPlane.console  every head gets THAT publisher
 //   HeadServerFactory    events = console?.forHead(key)  and hands it to the head, keyed
 //
@@ -74,7 +74,7 @@ class OneEventBusPinTest {
         ) { "the control plane did not bind :$port" }
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
-            assertSame(plane.console.bus, srv.events, "the route must stream the producers' bus, not its own")
+            assertSame(plane.console.bus, srv.ports.events, "the route must stream the producers' bus, not its own")
             val frame = firstFrame(client, port, mgmt.get()) {
                 plane.console.forHead("pinned-head").lifecycle(HeadLifecycle.STARTED)
             }

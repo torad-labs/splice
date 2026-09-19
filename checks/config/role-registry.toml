@@ -234,7 +234,7 @@ names = [
 ]
 reason = """Three link operations at three levels, each a seam for a DIFFERENT safety property that only a fault-injecting test can reach. SymlinkOp creates one symbolic link, and is a seam because "the swap's whole safety property — that a failure NEVER destroys the operator's pre-existing file — is only testable on the production path if the create can be made to fail on demand", the ENOSPC/LSM-EPERM case DR-11 was opened for. LinkPointer "repoints one symlink atomically" (UpgradeLayout.point), which is the upgrade ACTIVATION: its failure must leave the previous release live. WrapperClaim is "the one wrapper name-claiming primitive", whose DR-67 property is that a foreign file appearing AFTER the precheck wins and never gets eaten. One shared port would let the claim's refuse-on-conflict semantics be served by the primitive's plain create, which is how an unrelated binary on PATH gets clobbered."""
 
-# ── 2 names, (String) -> String? (ONE MORE IS A DUPLICATE AND IS NOT LISTED) ─────────────────────
+# ── 4 names, (String) -> String? (ONE MORE IS A DUPLICATE AND IS NOT LISTED) ─────────────────────
 [[groups]]
 signature = "(String)->String?"
 dated = "2026-09-17"
@@ -242,6 +242,7 @@ names = [
     "EnvReader",
     "QuotaHeaderRead",
     "SessionAddress",
+    "SliceMemoryCap",
 ]
 reason = """EnvReader reads a PROCESS ENVIRONMENT VARIABLE by name; QuotaHeaderRead reads one \
 UPSTREAM RESPONSE HEADER by name. Same shape, and the two sources could not be further apart in \
@@ -259,7 +260,13 @@ it was holding before it could read the answer. \
 DELIBERATELY ABSENT: HeaderLookup (gateway/usage/RateLimitHeaders.kt:22) is QuotaHeaderRead's role \
 in the module above it, and QuotaHeaderRead's own KDoc says so — \"the gateway's own HeaderLookup \
 lives a module above this one, so the header families are decoded against this port\". It is red by \
-name until the fix row reconciles the two."""
+name until the fix row reconciles the two. \
+SliceMemoryCap (V4-147) is a FOURTH source: a systemd slice name to that slice's memory ceiling, \
+read from the service manager. Its answer is not a lookup result at all but a MEASUREMENT of the \
+box's own configuration, and its null means "systemd could not be asked", which no other member's \
+null means — while its non-null "infinity" is a present value that the caller must treat as absence \
+of a cap, the inverse of every lookup here. Merging it into a config lookup would put a value that \
+decides whether hosted MCP servers are contained where an unset environment variable is expected."""
 
 # ── 2 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

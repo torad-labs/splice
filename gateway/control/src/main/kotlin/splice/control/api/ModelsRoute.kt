@@ -97,7 +97,8 @@ internal class ModelsRoute(private val heads: Map<String, ManagedHead>) {
     /** [declared] is the head's own entry, non-null by the caller's check — its `models` may still be
      *  null, which is the operator having declared no tiers. */
     private fun row(key: String, head: ManagedHead, declared: DeclaredHead): JsonObject = buildJsonObject {
-        val catalog = head.catalog
+        // V4-162: the windows in force NOW — this route reads the window FIELDS, which only live() moves.
+        val catalog = head.catalog?.live()
         put("head", key)
         // §6: the page GROUPS by provider, so it is emitted from the role — the same value
         // ManagedHead could not carry without widening past a recorded ceiling.

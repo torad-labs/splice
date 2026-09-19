@@ -1,7 +1,8 @@
 // NEW: load the topology TOML (~/.config/splice/splice.toml, XDG) into the :core schema, with
 // jar-bundled defaults materialized on first run (mirrors how ensureMgmtKey lazily writes state).
 // ktoml adopted per spike P0-TOML. Loaded ONCE at daemon start — adding a provider/head is an
-// operator action that implies a restart (no hot topology).
+// operator action that implies a restart (no hot topology). V4-162: the context windows are the
+// exception, re-read by TopologyWindows while the daemon runs.
 package splice.app
 
 import com.akuleshov7.ktoml.Toml
@@ -120,7 +121,9 @@ command = "claude-openrouter"
 
     /** JW-04: the parsed topology PLUS the sha-256 of the exact bytes it came from. The digest
      *  rides /health so shim/doctor/dashboard can tell "the file changed since boot" — topology
-     *  stays deliberately non-hot-reloadable; this only makes the required restart visible. */
+     *  stays deliberately non-hot-reloadable; this only makes the required restart visible. The
+     *  one exception is the context windows (V4-162): TopologyWindows re-reads those, and /health
+     *  then publishes the version the daemon RUNS, which a window-only edit moves. */
     public data class LoadedTopology(val topology: Topology, val digest: String)
 
     public fun loadOrMaterializeWithDigest(path: Path): LoadedTopology =
@@ -168,7 +171,9 @@ command = "claude-openrouter"
         now != null && bootDigest.isNotEmpty() && now != bootDigest
     }
 
-    private fun sha256Hex(bytes: ByteArray): String =
+    /** sha-256 of splice.toml bytes, the one spelling of a topology digest: boot, [currentDigest] and
+     *  the live window re-read (V4-162, TopologyWindows) all hash through here. */
+    internal fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     public fun parse(text: String): Topology {

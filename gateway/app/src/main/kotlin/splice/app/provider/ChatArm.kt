@@ -16,7 +16,6 @@ import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.spi.Provider
 import splice.spi.ProviderTuning
-import splice.spi.local.LocalRuntimeProbe
 import java.nio.file.Paths
 
 internal class ChatArm(
@@ -79,32 +78,26 @@ internal class ChatArm(
     private fun refuseContradictedRows(ctx: ProviderBuild, bearer: String?) {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
-        val probe = LocalRuntimeProbe(providerCfg.baseUrl, JdkLocalHttp(probeInputs.headers(providerCfg, bearer)))
-        val runtime = probe.detect()
-        if (runtime == null) {
-            log(
+        when (val found = probeInputs.check(providerCfg, bearer, ctx.catalog)) {
+            LocalRowsCheck.Down -> log(
                 "[$key] local runtime at ${providerCfg.baseUrl} is not answering; " +
                     "the head boots, turns fail until it is up\n",
             )
-            return
+            is LocalRowsCheck.Unlisted -> {
+                val where = "${found.runtime.kind.label} at ${providerCfg.baseUrl}"
+                log("[$key] local runtime $where answered but its model list did not; the head boots, rows unchecked\n")
+            }
+            is LocalRowsCheck.Checked -> {
+                val runtime = found.runtime
+                check(found.refused.isEmpty()) {
+                    "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
+                        found.refused.joinToString("; ") { "'${it.id}': ${it.reason}" } +
+                        " (fix the row, or set local = false on the provider to skip this check)"
+                }
+                val version = runtime.version?.let { " $it" }.orEmpty()
+                log("[$key] local runtime ${runtime.kind.label}$version: ${found.rows.size} row(s) validated\n")
+            }
         }
-        // The HEAD's effective rows, not the provider's: a head context_window override and a picker
-        // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
-        val rows = probeInputs.effectiveRows(ctx.catalog)
-        val listed = probe.models(runtime, rows.keys)
-        if (listed == null) {
-            val where = "${runtime.kind.label} at ${providerCfg.baseUrl}"
-            log("[$key] local runtime $where answered but its model list did not; the head boots, rows unchecked\n")
-            return
-        }
-        val refused = probe.validate(rows, listed, runtime.kind).filterNot { it.ok }
-        check(refused.isEmpty()) {
-            "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
-                refused.joinToString("; ") { "'${it.id}': ${it.reason}" } +
-                " (fix the row, or set local = false on the provider to skip this check)"
-        }
-        val version = runtime.version?.let { " $it" }.orEmpty()
-        log("[$key] local runtime ${runtime.kind.label}$version: ${rows.size} row(s) validated\n")
     }
 }
 

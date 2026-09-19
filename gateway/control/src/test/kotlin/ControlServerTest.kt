@@ -36,6 +36,7 @@ import splice.control.PerfRow
 import splice.control.PerfRowsSource
 import splice.control.PerfRowsWindow
 import splice.control.RateLimitView
+import splice.control.TopologyDigest
 import splice.control.UsageView
 import splice.core.SHIM_VERSION
 import splice.core.auth.AuthDescription
@@ -153,7 +154,7 @@ class ControlServerTest {
                 shutdownRequests.incrementAndGet()
                 shutdownRequested.countDown()
             },
-            topologyDigest = "boot-digest-abc",
+            topologyDigest = TopologyDigest { "boot-digest-abc" },
             configPath = "/tmp/splice.toml",
             topologyStale = { true },
         )

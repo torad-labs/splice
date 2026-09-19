@@ -77,6 +77,17 @@ public class Daemon(
     private val compactionInstructions =
         CompactionInstructions(topology.compaction, topologyDir, log = log)
 
+    /** V4-162: the context windows splice.toml declares, re-read while the daemon runs, and the
+     *  version the control plane publishes as running. Hoisted above [controlPlane], which reports
+     *  it; its catalogs resolve through [buildInputs] at re-read time, after start() built the heads. */
+    private val topologyWindows: TopologyWindows = TopologyWindows(
+        topologyPath,
+        topology,
+        topologyDigest,
+        HeadCatalogs { key, head, provider, legacy -> buildInputs.catalogFor(key, head, provider, legacy) },
+        log,
+    )
+
     private val controlPlane = ControlPlane(
         statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
         // The booted config's identity and what it declared, as one value — three parameters until
@@ -90,6 +101,7 @@ public class Daemon(
             declaredHeads = DeclaredHeads {
                 topology.heads.mapValues { (_, head) -> DeclaredHead(head.provider, head.models) }
             },
+            running = topologyWindows,
         ),
         refreshCall,
         mcpHosting = McpHostingSettings().with(topology.daemon),
@@ -164,10 +176,11 @@ public class Daemon(
         // every sibling the first head's (or the default) port/model/base.
         val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
-            managedHeadFactory.assembleHead(
-                buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = key in legacySolo),
-                controlPort,
-            )
+            val legacy = key in legacySolo
+            val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)
+            // V4-162: attached before assembly, so every holder of the catalog (provider, launch spec,
+            // statusline) reads the windows splice.toml declares NOW.
+            managedHeadFactory.assembleHead(topologyWindows.attach(ctx, legacy), controlPort)
         }
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
@@ -204,6 +217,7 @@ public class Daemon(
             // job that turn does not own — a foreign CancellationException in a live turn.
             headProbes.stop()
             controlPlane.cancelProbes()
+            topologyWindows.close()
         }
     }
 }

@@ -1,6 +1,7 @@
 // NEW: the TOML topology schema (shape proven by spike P0-TOML incl. @SerialName mapping;
 // gateway/spikes/results/ktoml.md). Loaded once at daemon start by :app — adding a
-// provider or head is an operator action and implies a restart (no hot topology).
+// provider or head is an operator action and implies a restart (no hot topology). V4-162: the
+// context windows are the one exception, re-read while the daemon runs (see withoutWindows).
 // 2026-08-16 (HD-M8): the file's top-level functions were relocated without changing any body.
 // The extensions on types THIS file owns became members of those types, so `provider.catalogFor(...)`
 // and `topology.configOverrides()` read exactly as before; the three operator-facing diagnostics
@@ -81,6 +82,15 @@ public data class Topology(
      *  never names the offending [heads.X] entry. Same idiom as [portCollisions]. */
     public fun invalidPortHeads(): Map<String, Int> =
         heads.filterValues { it.port !in validPortRange }.mapValues { it.value.port }
+
+    /** V4-162: this topology with every context window taken out, which is the comparison that
+     *  decides whether an edit to splice.toml needs a restart. Two files that differ only in windows
+     *  (or only in comments, which never reach this type) compare EQUAL here, and the running daemon
+     *  applies their windows live; any other difference is a restart. */
+    public fun withoutWindows(): Topology = copy(
+        providers = providers.mapValues { (_, provider) -> provider.withoutWindows() },
+        heads = heads.mapValues { (_, head) -> head.copy(contextWindow = null) },
+    )
 }
 
 @Serializable
@@ -176,6 +186,16 @@ public data class ProviderConfig(
 
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+
+    /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
+     *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or
+     *  removed from either is a window edit too. */
+    public fun withoutWindows(): ProviderConfig = copy(
+        models = models.map { it.copy(contextWindow = 0) },
+        extraWindows = emptyList(),
+        windowRules = emptyList(),
+        defaultContextWindow = 0,
+    )
 
     /** A catalog is the JOIN of this provider's models with the head's [HeadConfig.discoveryPrefix]
      *  — which is why it lives on the provider and takes the head, and why the two types stay in one

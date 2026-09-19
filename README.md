@@ -164,7 +164,7 @@ These routes are **unofficial**. They reuse each vendor's own CLI OAuth client i
 2. Run `splice install --all` to install the wrapper commands.
 3. Sign in with `claudex login`, `claude-grok login`, `claude-kimi login` or `claude-muse login`, then launch that same command without `login`.
 
-If the daemon is already running, finish pending work before a full `splice restart` to load topology changes. A head restart alone does not reload TOML. splice keeps its own credentials; you don't need to share the vendor CLI's credential file. See [credential locations](#credential-locations).
+If the daemon is already running, finish pending work before a full `splice restart` to load topology changes; a `context_window` edit needs none (see [Long-session reliability](#long-session-reliability)). A head restart alone does not reload TOML. splice keeps its own credentials; you don't need to share the vendor CLI's credential file. See [credential locations](#credential-locations).
 
 ### Native Claude
 
@@ -373,7 +373,7 @@ Four scripts can be paused at once, each in its own worker JVM. A paused script 
 
 If a completed script's history can no longer be placed (the record aged out, the session switched model, the conversation moved underneath a running script), splice sends the client's own history upstream instead, where the script's client calls are ordinary tool calls, and logs one `[code-mode]` line for the head. The conversation continues; only that script's batching is lost from the model's view.
 
-Every head using that provider shares the setting. Topology is read only when the daemon boots: finish ongoing work, edit TOML, then run `splice restart` for a **full daemon restart**. A head restart alone does not reload TOML. Finish code-mode work before toggling or restarting: pending JavaScript execution cannot survive a daemon restart, and splice never reruns the lost source automatically.
+Every head using that provider shares the setting, and it is read only when the daemon boots: finish ongoing work, edit TOML, then run `splice restart` for a **full daemon restart**. A head restart alone does not reload TOML. Finish code-mode work before toggling or restarting: pending JavaScript execution cannot survive a daemon restart, and splice never reruns the lost source automatically.
 
 A single tool result larger than the runner's 64 KiB text frame is truncated at admission behind a `[truncated N chars]` marker and the turn completes. In a bounded real-Astra test on synthetic tasks, guidance improved batching without reducing graded correctness. That is not a guarantee of better output or less redundant investigation on arbitrary projects.
 
@@ -412,6 +412,8 @@ Each wrapper is an `argv[0]` symlink to the shared launch shim `bin/splice-launc
 Compaction uses the session's own model and reasoning effort and preserves its request shape. A stable prompt-cache key and unchanged prefixes support cache reuse, but the actual cache result depends on the backend and workload. Opaque reasoning replay is a separate, default-off trade-off described [below](#the-cache-replay-experiment).
 
 A client disconnect during compaction detaches that client rather than cancelling the upstream work. A byte-identical retry can follow the running turn or receive its recorded result without starting a second upstream turn. This is compaction recovery, not a promise to replay arbitrary tool executions. Stopping a head ends compactions still running on it.
+
+A `context_window` edit in `splice.toml` needs no restart. The running daemon re-reads the windows (a model's `context_window`, `extra_windows`, `window_rules`, `default_context_window` and a head's `context_window`) when the file changes. Running sessions compact at the new window through usage scaling, and the next launch plants it. A local runtime is asked about a new window first and a window it refuses is not applied; a file that does not parse keeps the windows in force. The daemon log names what moved, or why nothing did. Every other key is still read only at boot, and `splice doctor` reports the file stale until `splice restart`.
 
 During upstream silences, splice sends SSE keepalives so Claude Code can distinguish an open stream from a stalled connection. Optional progress messages identify themselves as splice-authored status, never model reasoning. Failed or truncated streams remain failures rather than being presented as finished answers.
 

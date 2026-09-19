@@ -15,6 +15,7 @@ import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
+import splice.dialect.chat.ID_SLOT_FIELD
 import splice.dialect.chat.SlotAffinity
 import splice.spi.BuiltTurn
 import splice.spi.Provider
@@ -42,8 +43,14 @@ public class OpenAiChatProvider(
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
         val built = builder.build(body.typed, upstreamModel, body.typed.model, compact, sessionId)
-        // The slot is held until the gateway says the turn is over (BuiltTurn.onEnd).
-        return BuiltTurn(built.req, built.meta, onEnd = built.lease?.let { lease -> TurnEnd(lease::end) })
+        // The slot is held until the gateway says the turn is over (BuiltTurn.onEnd); the slot id
+        // routes the turn and is no part of what it asks (BuiltTurn.routingFields).
+        return BuiltTurn(
+            built.req,
+            built.meta,
+            onEnd = built.lease?.let { lease -> TurnEnd(lease::end) },
+            routingFields = setOf(ID_SLOT_FIELD),
+        )
     }
 
     override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =

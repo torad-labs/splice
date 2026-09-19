@@ -152,4 +152,4 @@ internal class TransportFailures {
         Cancellables.runCatchingCancellable(block)
 }
 
-private const val MAX_CAUSE_DEPTH = 8
+internal const val MAX_CAUSE_DEPTH = 8

@@ -7,6 +7,7 @@
 // file answers the other question — what the operator is told — from the same cause chain.
 package splice.spi.transport
 
+import splice.spi.MAX_CAUSE_DEPTH
 import splice.spi.StreamTornBeforeClient
 import java.io.EOFException
 import java.io.IOException
@@ -78,7 +79,11 @@ public object TransportFailureReason {
     }
 
     private const val JDK_NO_RESPONSE = "HTTP/1.1 header parser received no bytes"
-    private const val MAX_CAUSE_DEPTH = 8
+
+    // why: a URL with no explicit port means the scheme's registered default (RFC 9110 §4.2.1/4.2.2),
+    // and the message names the port the client actually dialled.
     private const val HTTP_PORT = 80
+
+    // why: the registered https default (RFC 9110 §4.2.2), for the same reason as HTTP_PORT.
     private const val HTTPS_PORT = 443
 }

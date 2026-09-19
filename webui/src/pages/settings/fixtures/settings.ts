@@ -25,6 +25,10 @@ const EFFECTIVE = {
   mcpMaxServers: 32, mcpRequestTimeoutMs: 1800000, mcpInitializeTimeoutMs: 60000,
   maxRequestBytes: 8388608, requestReadTimeoutMs: 30000, materializationPermits: 16,
   statuslineGitRoots: '',
+  // Arrived with the per-head activity stores (f9e19d00). The values are Knob.kt's own defaults —
+  // 90 days, every head — and both are restart-required, which the derived list below gets right
+  // without an edit here.
+  activityRetentionDays: 90, activityStoreHeads: '*',
 };
 
 export const fixtureConfig: ConfigPayload = {

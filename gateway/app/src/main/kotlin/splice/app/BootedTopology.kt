@@ -36,4 +36,15 @@ internal data class BootedTopology(
     /** V4-127: the provider key and declared model list for every head, for the whole daemon at
      *  once. Built by Daemon, which is the only holder of the Topology. */
     val declaredHeads: DeclaredHeads = DeclaredHeads { emptyMap() },
+    /** V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). Null =
+     *  nothing re-reads the file, so the booted [digest] is the running one and any change is stale. */
+    val running: RunningTopology? = null,
 )
+
+/** V4-162: which splice.toml version the daemon runs, and whether the file has moved past it in a way
+ *  only a restart applies — what /health publishes as topologyDigest and topologyStale. */
+internal interface RunningTopology {
+    fun digest(): String
+
+    fun stale(): Boolean
+}

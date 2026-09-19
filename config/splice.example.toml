@@ -2,6 +2,8 @@
 #
 # Copy to ~/.config/splice/splice.toml for the comprehensive example. `splice init` writes the
 # zero-config OpenRouter API-key starter instead. Adding a provider/head requires a daemon restart.
+# Context windows are the exception: the running daemon re-reads a context_window edit (model rows,
+# extra_windows, window_rules, default_context_window, a head's context_window) with no restart.
 #
 # The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
 # Kimi, or Muse subscription. They are unofficial: they reuse each vendor CLI's public OAuth client
@@ -102,7 +104,7 @@ zstd_request_body = true
 # tool turns retain the ordinary path; a single tool result over 64 KiB is truncated at admission
 # behind a "[truncated N chars]" marker. Child JVMs bound workers/time/heap and deny guest host/I/O
 # access; Graal community is not an OS-hardened same-user attacker sandbox.
-# This setting is shared by every head using providers.codex. Topology is boot-only: finish ongoing
+# This setting is shared by every head using providers.codex and read only at boot: finish ongoing
 # work before editing, then run `splice restart` for a FULL daemon restart. A head restart alone does
 # not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
 # reruns the lost JavaScript source automatically.

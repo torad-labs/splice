@@ -11,6 +11,9 @@ import splice.core.model.ModelCatalog
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.spi.local.LocalRowVerdict
+import splice.spi.local.LocalRuntime
+import splice.spi.local.LocalRuntimeProbe
 import java.nio.file.Paths
 
 internal class LocalProbeInputs {
@@ -34,4 +37,34 @@ internal class LocalProbeInputs {
             catalog.extraWindows.map { catalog.stripSuffixes(it.id) to it.contextWindow }
         return rows.groupBy({ it.first }, { it.second }).mapValues { (_, windows) -> windows.max() }
     }
+
+    /** Ask the runtime behind [provider] about [catalog]'s rows. ONE sequence for the boot refusal
+     *  (ChatArm) and for a window edited while the daemon runs (V4-162, TopologyWindows), so the two
+     *  cannot come to disagree about what the runtime allows. Blocking network: never on a request
+     *  thread. */
+    fun check(provider: ProviderConfig, bearer: String?, catalog: ModelCatalog): LocalRowsCheck {
+        val probe = LocalRuntimeProbe(provider.baseUrl, JdkLocalHttp(headers(provider, bearer)))
+        val runtime = probe.detect() ?: return LocalRowsCheck.Down
+        // The HEAD's effective rows, not the provider's: a head context_window override and a picker
+        // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
+        val rows = effectiveRows(catalog)
+        val listed = probe.models(runtime, rows.keys) ?: return LocalRowsCheck.Unlisted(runtime)
+        return LocalRowsCheck.Checked(runtime, rows, probe.validate(rows, listed, runtime.kind).filterNot { it.ok })
+    }
+}
+
+/** What asking a local runtime about a head's rows found ([LocalProbeInputs.check]). */
+internal sealed class LocalRowsCheck {
+    /** Nothing answers at the base URL. Boot proceeds as it always has (per-turn errors say why). */
+    data object Down : LocalRowsCheck()
+
+    /** The runtime answered and its model list did not, so the rows stay unchecked. */
+    data class Unlisted(val runtime: LocalRuntime) : LocalRowsCheck()
+
+    /** The runtime's verdict on every row; [refused] is empty when it accepts them all. */
+    data class Checked(
+        val runtime: LocalRuntime,
+        val rows: Map<String, Long>,
+        val refused: List<LocalRowVerdict>,
+    ) : LocalRowsCheck()
 }

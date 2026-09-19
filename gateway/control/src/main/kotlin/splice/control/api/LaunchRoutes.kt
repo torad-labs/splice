@@ -56,11 +56,14 @@ internal class LaunchRoutes(
             return
         }
         val request = receiveLaunchRequest(call)
+        // V4-162: the windows are read per LAUNCH too — splice.toml's context_window is live and the
+        // spec is boot-frozen, so a launch after an edit is planted with the edited window.
+        val launched = managed.catalog?.let(spec::withWindows) ?: spec
         val recipe = launchResponse.withAuthWarning(
             managed,
-            spec,
+            launched,
             launchService.launch(
-                spec,
+                launched,
                 request.extraArgs,
                 request.dangerouslySkipPermissions,
                 // DR-81: key presence is read per LAUNCH — the spec is boot-frozen, and a stale

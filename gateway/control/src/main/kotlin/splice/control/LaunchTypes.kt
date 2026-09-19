@@ -3,9 +3,14 @@
 // (concentration, 2026-08-19). Same-package FQCNs are unchanged.
 package splice.control
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.TokenCaptureSpec
+import splice.core.model.ModelCatalog
+import splice.core.util.JsonScalars
 import java.nio.file.Path
 
 /** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
@@ -71,7 +76,24 @@ public data class LaunchSpec(
      * shut the only door that can heal a 401.
      */
     val forwardClientAuth: Boolean = false,
-)
+) {
+    /** V4-162: this boot-assembled spec with the windows splice.toml declares NOW, read per launch
+     *  (the DR-81 shape: the spec is frozen at boot, a live fact is not). The env plants the pinned
+     *  row's window, so a session launched after an edit starts on the edited window and rides raw;
+     *  each picker row in the model-options cache takes its row's window, so .claude.json never
+     *  disagrees with the env (Claude Code 2.1.276 drops that field, so there it is informational). */
+    public fun withWindows(catalog: ModelCatalog): LaunchSpec {
+        val windows = catalog.live().models.associate { it.id to it.contextWindow }
+        val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map { withWindow(it, windows) }) }
+        return copy(contextWindow = catalog.clientLaunchWindow, modelOptionsCache = options ?: modelOptionsCache)
+    }
+
+    private fun withWindow(row: JsonElement, windows: Map<String, Long>): JsonElement {
+        val option = row as? JsonObject ?: return row
+        val window = JsonScalars.str(option, "value")?.let(windows::get) ?: return row
+        return JsonObject(option + ("context_window" to JsonPrimitive(window)))
+    }
+}
 
 public data class LaunchRecipe(
     val env: Map<String, String>,

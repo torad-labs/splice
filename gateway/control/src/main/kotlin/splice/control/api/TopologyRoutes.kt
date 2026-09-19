@@ -1,7 +1,7 @@
 // NEW: V4-128, FEATURES.md 4.7 and 6 — the topology routes, splice.toml read and written as data:
 //
 //   GET /api/topology   {path, topology, stale}
-//   PUT /api/topology   body {topology}  ->  {ok, backup_path?, findings, restart_required: true}
+//   PUT /api/topology   body {topology}  ->  {ok, backup_path?, findings, restart_required}
 //
 // THE TOPOLOGY IS THE FILE ON DISK, parsed now, not the one this daemon booted with: the console edits
 // the file, and `stale` (the same probe /health reports as topologyStale) says whether the running
@@ -11,7 +11,8 @@
 // A REFUSAL IS AN ANSWER, NOT AN ERROR. A body that is not {topology: {...}} is a 400. A topology that
 // does not decode, fails a check, or cannot be written faithfully answers 200 with ok false and
 // findings, which the console renders beside the editor, and splice.toml is byte-identical after it.
-// restart_required is always true: the topology is boot-only, so no write reaches running sessions.
+// restart_required is false only for a write that changed nothing but context windows: the running
+// daemon re-reads those (V4-162, TopologyWindows) and every other key is boot-only.
 //
 // SECRETS ARE NEVER READ BACK. Every `extra_headers` value is served as [MASK], since a header can
 // carry a key and nothing here can tell which does. On PUT the mask means "keep the stored value";
@@ -71,23 +72,35 @@ internal class TopologyRoutes(private val source: TopologySource, private val st
         val requested = Cancellables.runCatchingCancellable { json.parseToJsonElement(body).jsonObject[TOPOLOGY] }
             .getOrNull() as? JsonObject
             ?: return error(HttpStatusCode.BadRequest, "the body must be {\"topology\": {...}}")
-        val result = Cancellables.runCatchingCancellable { attempt(writer, requested) }.getOrElse { failure ->
-            refused(TopologyFinding("splice.toml", SafeFailureText.render(failure)))
+        val attempt = Cancellables.runCatchingCancellable { attempt(writer, requested) }.getOrElse { failure ->
+            Attempt(refused(TopologyFinding("splice.toml", SafeFailureText.render(failure))))
         }
-        return JsonReply(HttpStatusCode.OK, outcome(result).toString())
+        return JsonReply(HttpStatusCode.OK, outcome(attempt).toString())
     }
+
+    /** What a PUT did, and whether the running daemon needs a restart to serve it (V4-162). */
+    private data class Attempt(val result: TopologyWriteResult, val restartRequired: Boolean = true)
 
     /** Decode the MASKED request first, so a decoder message can only ever quote the mask; then put
      *  the stored secrets back, decode again, and write. */
-    private fun attempt(writer: TopologyWriter, requested: JsonObject): TopologyWriteResult {
+    private fun attempt(writer: TopologyWriter, requested: JsonObject): Attempt {
         decode(requested).exceptionOrNull()?.let { failure ->
             // SAFE-RENDER-EXEMPT[2026-09-18]: the decoded input is the request body with every extra_headers value masked, so the decoder's text quotes the operator's own request and the mask, never a stored secret or file bytes; only its first line is kept.
-            return refused(TopologyFinding(TOPOLOGY, failure.message.orEmpty().lineSequence().first()))
+            return Attempt(refused(TopologyFinding(TOPOLOGY, failure.message.orEmpty().lineSequence().first())))
         }
         val secrets = TopologySecrets()
-        val unmasked = secrets.unmasked(requested, writer.current())
-        if (secrets.findings.isNotEmpty()) return TopologyWriteResult.Refused(secrets.findings)
-        return writer.write(decode(unmasked).getOrThrow())
+        val stored = writer.current()
+        val unmasked = secrets.unmasked(requested, stored)
+        if (secrets.findings.isNotEmpty()) return Attempt(TopologyWriteResult.Refused(secrets.findings))
+        val topology = decode(unmasked).getOrThrow()
+        // V4-162: the running daemon re-reads context windows, so a write that moved nothing else
+        // needs no restart. Compared the way the writer diffs: the file as it stood against what is
+        // written, both holding their real secrets. A file that no longer decodes says restart.
+        val restart = decode(stored).fold(
+            onSuccess = { before -> before.withoutWindows() != topology.withoutWindows() },
+            onFailure = { true },
+        )
+        return Attempt(writer.write(topology), restart)
     }
 
     private fun decode(tree: JsonObject): Result<Topology> =
@@ -95,7 +108,8 @@ internal class TopologyRoutes(private val source: TopologySource, private val st
 
     private fun refused(finding: TopologyFinding): TopologyWriteResult = TopologyWriteResult.Refused(listOf(finding))
 
-    private fun outcome(result: TopologyWriteResult): JsonObject = buildJsonObject {
+    private fun outcome(attempt: Attempt): JsonObject = buildJsonObject {
+        val result = attempt.result
         put("ok", result is TopologyWriteResult.Written)
         (result as? TopologyWriteResult.Written)?.backup?.let { put("backup_path", it.toString()) }
         val findings = (result as? TopologyWriteResult.Refused)?.findings.orEmpty()
@@ -112,7 +126,7 @@ internal class TopologyRoutes(private val source: TopologySource, private val st
                 }
             },
         )
-        put("restart_required", true)
+        put("restart_required", attempt.restartRequired)
     }
 
     private fun error(status: HttpStatusCode, message: String): JsonReply =

@@ -3,6 +3,17 @@
 ## Unreleased
 
 ### Added
+- **A `context_window` edit needs no restart.** The running daemon re-reads the windows in
+  `splice.toml` (a model's `context_window`, `extra_windows`, `window_rules`,
+  `default_context_window`, a head's `context_window`) when the file changes, so running sessions
+  compact at the new window through usage scaling, the next launch plants it as
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and the console's models page shows it. A local runtime is
+  asked about a new window the way boot asks it, off the request path, and a window it refuses is
+  not applied; a file that does not parse, or a head it no longer declares, keeps the windows in
+  force. Each outcome is one daemon.log line. `/health`'s `topologyDigest` now names the version the
+  daemon runs: a window-only or comment-only edit leaves `splice doctor` with nothing to restart
+  for, any other edit still reads stale until `splice restart`, and `PUT /api/topology` answers
+  `restart_required: false` for a write that moved only windows.
 - **Per-head system prompt.** `system_prompt` (or `system_prompt_file`) under `[heads.<key>]` gives
   a head standing instructions that ride on **every** turn, at that dialect's own system seam —
   anthropic-passthrough, openai-chat and openai-responses each place it the way their wire expects.

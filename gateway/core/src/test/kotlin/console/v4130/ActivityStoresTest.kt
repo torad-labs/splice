@@ -53,7 +53,12 @@ class ActivityStoresTest {
 
     @Test
     fun `labels and upstream rows are kept per session, only for the heads the switch names`() {
-        val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "claudex, codex", clock = WallClock { DAY_ONE })
+        val stores = ActivityStores(
+            dir,
+            retentionDays = 90,
+            storeHeads = "claudex, codex",
+            clock = WallClock { DAY_ONE },
+        )
         stores.activity.label("s-1", "claudex", "Reading splice.toml", DAY_ONE)
         stores.activity.upstream("s-1", "codex", DAY_ONE + 1)
         stores.activity.label("s-1", "grok", "Running git status", DAY_ONE + 2)

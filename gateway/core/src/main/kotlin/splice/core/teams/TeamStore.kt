@@ -49,12 +49,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
-import java.util.UUID
 
 /** The state-dir file the teams live in. */
 public const val TEAMS_FILE: String = "teams.json"
-
-private const val ID_HEX_CHARS = 12
 
 @Serializable
 public data class TeamSlot(
@@ -120,6 +117,7 @@ public class TeamStore(
     }
     private var cached: List<Team> = emptyList()
     private var cachedStamp: Long? = null
+    private val rules = TeamRules()
 
     /** Every team, archived included, in the order they were created. */
     @Synchronized
@@ -160,18 +158,20 @@ public class TeamStore(
      *  composer never unbinds a live session. */
     @Synchronized
     public fun upsert(team: Team): Team {
-        validate(team)
+        rules.validate(team)
         val all = writable()
         val previous = all.firstOrNull { it.id == team.id && team.id.isNotEmpty() }
         val now = clock()
         val saved = team.copy(
-            id = previous?.id ?: team.id.ifEmpty { mintId() },
+            id = previous?.id ?: team.id.ifEmpty { rules.mintId() },
             archived = previous?.archived ?: team.archived,
             idempotencyKey = previous?.idempotencyKey ?: team.idempotencyKey,
             createFingerprint = previous?.createFingerprint ?: team.createFingerprint,
             createdAt = previous?.createdAt ?: now,
             updatedAt = now,
-            slots = team.slots.map { slot -> carried(slot, previous?.slots?.firstOrNull { it.id == slot.id }, now) },
+            slots = team.slots.map { slot ->
+                rules.carried(slot, previous?.slots?.firstOrNull { it.id == slot.id }, now)
+            },
         )
         write(if (previous == null) all + saved else all.map { if (it.id == saved.id) saved else it })
         return saved
@@ -184,7 +184,7 @@ public class TeamStore(
         if (unknown.isNotEmpty()) throw TeamRefusal("no such slot in ${team.id}: ${unknown.sorted().joinToString()}")
         team.copy(
             slots = team.slots.map { slot ->
-                if (slot.id in bindings) remembered(slot.copy(session = bindings[slot.id])) else slot
+                if (slot.id in bindings) rules.remembered(slot.copy(session = bindings[slot.id])) else slot
             },
         )
     }
@@ -214,37 +214,6 @@ public class TeamStore(
         val saved = edit(team).copy(updatedAt = clock())
         write(all.map { if (it.id == teamId) saved else it })
         return saved
-    }
-
-    private fun carried(slot: TeamSlot, before: TeamSlot?, now: Long): TeamSlot {
-        val instructionsMoved = before != null && before.instructions != slot.instructions
-        return remembered(
-            slot.copy(
-                session = slot.session ?: before?.session,
-                instructionsUpdatedAt = if (instructionsMoved) now else stampOf(before, slot),
-                sessionsHistory = before?.sessionsHistory ?: slot.sessionsHistory,
-            ),
-        )
-    }
-
-    private fun stampOf(before: TeamSlot?, slot: TeamSlot): Long? =
-        before?.instructionsUpdatedAt ?: slot.instructionsUpdatedAt
-
-    /** The slot with its current session appended to its history, once. */
-    private fun remembered(slot: TeamSlot): TeamSlot {
-        val session = slot.session
-        if (session == null || session in slot.sessionsHistory) return slot
-        return slot.copy(sessionsHistory = slot.sessionsHistory + session)
-    }
-
-    private fun mintId(): String = "team-" + UUID.randomUUID().toString().replace("-", "").take(ID_HEX_CHARS)
-
-    private fun validate(team: Team) {
-        if (team.name.isBlank()) throw TeamRefusal("a team needs a name")
-        val ids = team.slots.map { it.id }
-        if (ids.any { it.isBlank() }) throw TeamRefusal("every slot needs an id")
-        if (ids.toSet().size != ids.size) throw TeamRefusal("slot ids repeat in ${team.name}")
-        if (team.slots.any { it.head.isBlank() }) throw TeamRefusal("every slot needs a head")
     }
 
     /** The current teams, or a refusal when the file exists and does not parse (see the header). */

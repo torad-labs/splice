@@ -70,7 +70,14 @@ class TranscriptReaderTest {
             listOf(
                 TranscriptMessage(0, TranscriptRole.USER, TS_MS, "read the config"),
                 TranscriptMessage(1, TranscriptRole.ASSISTANT, TS_MS, "Reading it now."),
-                TranscriptMessage(2, TranscriptRole.ASSISTANT, TS_MS, """{"file_path":"/w/splice.toml"}""", "Read", false),
+                TranscriptMessage(
+                    2,
+                    TranscriptRole.ASSISTANT,
+                    TS_MS,
+                    """{"file_path":"/w/splice.toml"}""",
+                    "Read",
+                    false,
+                ),
                 TranscriptMessage(3, TranscriptRole.TOOL, TS_MS, "api_key = [redacted]", "Read", true),
                 TranscriptMessage(4, TranscriptRole.SYSTEM, null, "<command-name>/model</command-name>"),
                 TranscriptMessage(5, TranscriptRole.SYSTEM, null, "API error: overloaded_error"),
@@ -121,14 +128,17 @@ class TranscriptReaderTest {
         val linked = Files.createDirectories(home.resolve(".claude-linked"))
         Files.createSymbolicLink(linked.resolve("projects"), vanilla.resolve("projects"))
         val page = found(TranscriptReader { listOf(linked, vanilla) }.page(ID, null, null, 1))
-        assertEquals(linked.resolve("projects").resolve(file.parent.fileName).resolve(file.fileName).toString(), page.path)
+        val named = linked.resolve("projects").resolve(file.parent.fileName).resolve(file.fileName)
+        assertEquals(named.toString(), page.path)
     }
 
     @Test
     fun `a miss names every projects dir searched, and a bad id or cursor is refused`() {
         val reader = TranscriptReader { listOf(home.resolve(".claude"), home.resolve(".claude-x")) }
         assertEquals(
-            TranscriptLookup.Missing(listOf(home.resolve(".claude/projects").toString(), home.resolve(".claude-x/projects").toString())),
+            TranscriptLookup.Missing(
+                listOf(home.resolve(".claude/projects").toString(), home.resolve(".claude-x/projects").toString()),
+            ),
             reader.page(ID, null, null, 1),
         )
         assertTrue(reader.page("../etc", null, null, 1) is TranscriptLookup.Refused)

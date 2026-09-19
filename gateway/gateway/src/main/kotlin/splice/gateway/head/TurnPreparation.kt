@@ -17,6 +17,9 @@
 // head's own layers, in APPEND mode whatever the head's system_prompt_mode, resolved per turn so an
 // edit applies on the next turn. The turn whose slot text changed is marked in its perf row
 // (SLOT_PROMPT_CHANGED): it is the one cold-cache turn an edit costs.
+//
+// V4-160 (concentration, 2026-09-18): applySystemPrompt and applySlotPrompt moved verbatim to
+// TurnPrompts.kt; this file still calls them in the same order.
 package splice.gateway.head
 
 import io.ktor.http.HttpHeaders
@@ -24,8 +27,6 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.prompt.SLOT_PROMPT_CHANGED
-import splice.core.prompt.SystemPromptMode
 import splice.core.wire.AnthropicRequest
 import splice.gateway.compact.CompactClassifier
 import splice.gateway.wire.FrameRecording
@@ -61,6 +62,7 @@ internal class TurnPreparation(
     private val compactClassifier = CompactClassifier()
     private val activityLabel = ActivityLabel()
     private val messageEdges = MessageEdges(deps.seams.events)
+    private val prompts = TurnPrompts(provider, deps)
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
         val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
@@ -160,54 +162,7 @@ internal class TurnPreparation(
         } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
         // AFTER the tail, so the compaction request hash and its applied check keep reading the
         // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-        return applySlotPrompt(applySystemPrompt(withTail, sessionId), sessionId, perf)
-    }
-
-    /** V4-131: the session's team-slot text, after the head's layers (see the header). Same honesty
-     *  rule as the layers: a dialect that could not place it leaves the body alone and the meta says
-     *  "(not applied)" rather than claiming text the wire never carried. */
-    private fun applySlotPrompt(turn: BuiltTurn, sessionId: String?, perf: TurnPerf): BuiltTurn {
-        val slots = deps.seams.slotInstructions
-        if (slots == null || sessionId == null) return turn
-        val prompt = slots.forSession(sessionId)
-        if (slots.changed(sessionId, prompt)) perf.setCount(SLOT_PROMPT_CHANGED, 1L)
-        if (prompt == null) return turn
-        val next = provider.withSystemPrompt(turn, prompt.text, SystemPromptMode.APPEND)
-        val placed = next.requestBody != turn.requestBody
-        val joined = listOfNotNull(turn.meta.systemPrompt, prompt.text).joinToString("\n\n")
-        val text = if (placed) joined else turn.meta.systemPrompt
-        val label = if (placed) prompt.source else "${prompt.source} (not applied)"
-        val source = listOfNotNull(turn.meta.systemPromptSource, label).joinToString("+")
-        return next.copy(meta = next.meta.copy(systemPrompt = text, systemPromptSource = source))
-    }
-
-    /** The standing prompt layers ride on EVERY turn (not only compact ones), at the dialect's seam,
-     *  one layer after another in the order [splice.core.prompt.SystemPromptLayers] resolved them.
-     *  Same honesty rule as the compaction tail above: a dialect that could not place a layer
-     *  returns the request as it was, and the meta then says so for that layer instead of claiming
-     *  text the wire never carried. The session lookup runs only when a project is configured, so a
-     *  topology without projects does no extra work and sends V4-36's bytes. */
-    private fun applySystemPrompt(turn: BuiltTurn, sessionId: String?): BuiltTurn {
-        val layers = deps.policy.systemPrompt
-        val cwd = if (layers.hasProjects) deps.seams.sessionProject(sessionId) else null
-        val resolved = layers.resolve(cwd)
-        if (resolved.isEmpty()) return turn
-        val placed = BooleanArray(resolved.size)
-        val prompted = resolved.foldIndexed(turn) { index, current, layer ->
-            val next = provider.withSystemPrompt(current, layer.text, layer.mode)
-            placed[index] = next.requestBody != current.requestBody
-            next
-        }
-        val applied = resolved.filterIndexed { index, _ -> placed[index] }
-        val source = resolved.withIndex().joinToString("+") { (index, layer) ->
-            if (placed[index]) layer.source else "${layer.source} (not applied)"
-        }
-        return prompted.copy(
-            meta = prompted.meta.copy(
-                systemPrompt = applied.takeIf { it.isNotEmpty() }?.joinToString("\n\n") { it.text },
-                systemPromptSource = source,
-            ),
-        )
+        return prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId), sessionId, perf)
     }
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn

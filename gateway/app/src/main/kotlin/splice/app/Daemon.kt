@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
 import splice.app.head.HeadProbes
+import splice.app.head.HeadPromptInputs
 import splice.app.head.HeadServerFactory
 import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
@@ -129,12 +130,10 @@ public class Daemon(
             log,
             compactionTail,
             clientVersions,
-            topologyDir,
-            topology.projects,
+            HeadPromptInputs(topologyDir, topology.projects, sessionProject),
             // V4-134: the control plane's publisher, so every head reports to the bus the console
             // route streams from. Pinned by OneEventBusPinTest.
             console = controlPlane.console,
-            sessionProject = sessionProject,
         )
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths,

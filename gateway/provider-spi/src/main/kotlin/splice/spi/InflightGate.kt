@@ -19,6 +19,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
@@ -192,6 +193,7 @@ public class InflightGate(
     ) {
         private val released = AtomicBoolean(false)
         private val lastTouch = AtomicLong(clock())
+        private val onRelease = ConcurrentLinkedQueue<TurnEnd>()
 
         public fun touch() {
             lastTouch.set(clock())
@@ -200,7 +202,24 @@ public class InflightGate(
         public fun idleForMs(): Long = clock() - lastTouch.get()
 
         public fun release() {
-            if (released.compareAndSet(false, true)) gate.release()
+            if (released.compareAndSet(false, true)) {
+                gate.release()
+                drainOnRelease()
+            }
+        }
+
+        /** V4-165: [end] runs once, when this slot is released — or now, if it already was. The
+         *  slot is the one object whose release already means "this turn is over" on every path
+         *  (a detached compaction drive takes it along), so a turn's end is heard here rather than
+         *  re-derived at each exit. A registration racing the release still runs exactly once: each
+         *  entry is polled off the queue by whichever drain reaches it first. */
+        public fun onRelease(end: TurnEnd) {
+            onRelease.add(end)
+            if (released.get()) drainOnRelease()
+        }
+
+        private fun drainOnRelease() {
+            generateSequence { onRelease.poll() }.forEach { it.ended() }
         }
     }
 }

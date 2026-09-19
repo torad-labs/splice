@@ -219,12 +219,11 @@ context_window = 256000
 # Studio all answer the field; a runtime that refuses it takes quirks = { stream_usage = false },
 # and a hosted vendor known to accept it takes stream_usage = true (off there by default, because
 # strict vendors 400 on unrecognized stream_options members).
-# A local head also ASKS FOR TOKEN COUNTS: usage frames are opt-in on this dialect
-# (stream_options.include_usage), and a head that never asks reports zero tokens per turn, so Claude
-# Code never auto-compacts and the session hits the context wall. llama.cpp, Ollama, vLLM and LM
-# Studio all answer the field; a runtime that refuses it takes quirks = { stream_usage = false },
-# and a hosted vendor known to accept it takes stream_usage = true (off there by default, because
-# strict vendors 400 on unrecognized stream_options members).
+# A llama-server head can also KEEP EACH CONVERSATION ON ONE SLOT: quirks = { slot_affinity = true }.
+# llama-server picks slots by prompt similarity and skips empty ones, so a new session sharing Claude
+# Code's ~30K preamble takes an idle conversation's slot, and that conversation re-prefills from
+# zero. With the quirk, splice sends id_slot per conversation (session + opening messages), reads the
+# slot count from the server's /props, and sends a turn unpinned whenever no slot is free.
 # [providers.ollama]
 # dialect = "openai-chat"
 # base_url = "http://localhost:11434/v1"   # LM Studio: http://localhost:1234/v1, vLLM: :8000/v1

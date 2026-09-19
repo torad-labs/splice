@@ -93,7 +93,13 @@ internal class HeadAdmission(
                 if (!prepared.recording.isComplete) admitted.slot.release()
                 driver.replay(call, prepared)
             }
-            is Preparation.Ready -> serveReady(call, prepared, admitted)
+            is Preparation.Ready -> {
+                // V4-165: the turn ends when its admission slot is released — here on a refusal or
+                // an attached drive, inside TurnStreamer for a detached one. One registration
+                // covers every exit, because the slot already has to be released on each of them.
+                prepared.built.onEnd?.let(admitted.slot::onRelease)
+                serveReady(call, prepared, admitted)
+            }
         }
     }
 

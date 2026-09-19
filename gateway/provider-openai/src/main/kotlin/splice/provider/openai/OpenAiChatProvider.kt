@@ -15,30 +15,35 @@ import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
+import splice.dialect.chat.SlotAffinity
 import splice.spi.BuiltTurn
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
 import splice.spi.StreamTranslator
+import splice.spi.TurnEnd
 import splice.spi.TurnSignals
 
 public class OpenAiChatProvider(
     private val tuning: ProviderTuning,
     private val quirks: ChatQuirks,
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
+    /** V4-165: set only for a provider with slot_affinity (a llama-server runtime). */
+    affinity: SlotAffinity? = null,
 ) : Provider, ProviderIdentity by tuning {
 
     override val upstreamUrl: String = "${tuning.baseUrl}/chat/completions"
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
 
-    private val builder = ChatRequestBuilder(quirks, showReasoning)
+    private val builder = ChatRequestBuilder(quirks, showReasoning, affinity)
     private val compactionTail = ChatCompactionTail()
     private val systemPrompt = ChatSystemPrompt()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
         val built = builder.build(body.typed, upstreamModel, body.typed.model, compact, sessionId)
-        return BuiltTurn(built.req, built.meta)
+        // The slot is held until the gateway says the turn is over (BuiltTurn.onEnd).
+        return BuiltTurn(built.req, built.meta, onEnd = built.lease?.let { lease -> TurnEnd(lease::end) })
     }
 
     override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =

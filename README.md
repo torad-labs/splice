@@ -315,7 +315,11 @@ that is down boots as before and fails per turn. `splice doctor --live` adds one
 request with one tool per listed model, so tool calling and streaming are proven before a session
 depends on them. Status and doctor label these heads `local runtime` and never imply subscription
 or quota state. Set `local = false` on a provider to opt out of the loopback rule, `local = true`
-to force it elsewhere. See [`checks/local-models/README.md`](checks/local-models/README.md) for
+to force it elsewhere. A local head also asks its runtime for token counts, which is what makes
+Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
+field takes `quirks = { stream_usage = false }`. A local head also asks its runtime for token counts, which is what makes
+Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
+field takes `quirks = { stream_usage = false }`. See [`checks/local-models/README.md`](checks/local-models/README.md) for
 what each runtime reports and how it was tested.
 
 ### Shared MCP hosting

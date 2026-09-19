@@ -69,6 +69,13 @@ public data class QuirksConfig(
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */
     @SerialName("reasoning_effort") val reasoningEffort: Boolean? = null,
+    /** openai-chat only: send stream_options.include_usage, so the stream ends with a usage frame.
+     *  null keeps the provider's own default — ON for a LOCAL runtime (V4-163) and for grok-oauth,
+     *  OFF for every other vendor, whose tolerance for extra fields is unknown. Without the frame a
+     *  head reports zero tokens per turn, Claude Code never reaches its auto-compact threshold, and
+     *  the session runs into the context wall instead. Set false for a local runtime that refuses
+     *  the field, true for a hosted vendor that accepts it. */
+    @SerialName("stream_usage") val streamUsage: Boolean? = null,
     /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
      *  ABSENT TABLE = feature off — the nullable-overlay idiom of [reasoningCache] above. */
     @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,

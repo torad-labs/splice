@@ -75,7 +75,7 @@ const quirks: SchemaNode = {
     // being ignored in silence — which is exactly why it must stay in this key set.
     compact_effort: {},
     tool_choice: {}, reasoning_cache: {}, parallel_tool_calls: {}, websocket: {}, code_mode: {},
-    zstd_request_body: {}, reasoning_effort: {}, mfjs: {}, block_allowlist: {},
+    zstd_request_body: {}, reasoning_effort: {}, stream_usage: {}, mfjs: {}, block_allowlist: {},
     strip_cache_control: {}, synthesize_signatures: {}, map_thinking_adaptive: {},
     strip_sampling_params: {}, reanchor_prefill: {},
     tool_surface: {

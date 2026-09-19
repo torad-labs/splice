@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- **Local heads report their token usage, so Claude Code auto-compacts.** Token counts are
+  opt-in on the OpenAI-compatible chat dialect (`stream_options.include_usage`), and splice asked
+  only on grok — so every other head on that dialect reported zero tokens per turn, Claude Code's
+  context meter never moved, and a session ran into the context wall instead of compacting. A
+  provider that is local (a loopback `base_url`, or `local = true`) now asks by default; hosted
+  vendors are unchanged, because strict ones reject unrecognized `stream_options` members. The new
+  `[providers.<key>.quirks] stream_usage` overrides it either way, for a local runtime that refuses
+  the field or a hosted vendor known to accept it.
 - **A `context_window` edit needs no restart.** The running daemon re-reads the windows in
   `splice.toml` (a model's `context_window`, `extra_windows`, `window_rules`,
   `default_context_window`, a head's `context_window`) when the file changes, so running sessions

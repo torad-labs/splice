@@ -71,6 +71,7 @@ internal class TurnDriver(
             SseRoundConsume(provider, zeroEvent, telemetry, TearAwareEvents(provider, deps.log)),
             RetryNotice { log("[${provider.key}] $it\n") },
         ),
+        provider.upstreamUrl,
     )
     private val ending = TurnEnding(
         log,

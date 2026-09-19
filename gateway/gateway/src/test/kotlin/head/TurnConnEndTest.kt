@@ -184,15 +184,19 @@ class TurnConnEndTest {
     }
 
     /** Drives the oversized-event arm with [contentFrames] frames already counted for the turn. */
-    private fun emitOversized(tag: String, contentFrames: Long): ConnEndRecordingTerminal {
+    private fun emitOversized(tag: String, contentFrames: Long): ConnEndRecordingTerminal =
+        emitFor(tag, SseFrameTooLargeException("data", 1), contentFrames)
+
+    /** Drives [failure] through the surface with [contentFrames] frames already counted for the turn. */
+    private fun emitFor(tag: String, failure: Throwable, contentFrames: Long = 0): ConnEndRecordingTerminal {
         val rig = Rig(tag)
         return runBlocking {
             val drive = rig.drive()
             try {
                 // The SAME counter production reads: ClientChannel adds to it per content frame.
                 drive.perf.add(PerfKeys.CONTENT_FRAMES_OUT, contentFrames)
-                val owned = rig.connEnd.tryEmit(drive, SseFrameTooLargeException("data", 1))
-                assertEquals(true, owned, "TurnConnEnd owns the oversized-event class")
+                val owned = rig.connEnd.tryEmit(drive, failure)
+                assertEquals(true, owned, "TurnConnEnd owns this failure class")
             } finally {
                 drive.slot.release()
                 AsyncFileIo.drain() // perf rows append asynchronously; drain before the dir is swept
@@ -233,5 +237,21 @@ class TurnConnEndTest {
         assertEquals(pre.errorType, post.errorType, "this surface no longer forks on content")
         assertEquals(pre.errorPermanent, post.errorPermanent, "nor on permanence")
         assertEquals("upstream sent an oversized streaming event — retry", post.errorMessage)
+    }
+
+    // V4-164, the operator's banner verbatim: "bonsai: upstream connection failed (no detail) —
+    // retry". The JDK client's refused connect is a ConnectException with a NULL message, and this
+    // surface printed Throwable.message. Mutant: connectionResetMessage back to error.message —
+    // the banner reads "no detail" again and this cell goes red by name.
+    @Test
+    fun `a refused connect names the endpoint and the reason, never no detail - V4-164`() = runBlocking {
+        val emitter = emitFor("refused", java.net.ConnectException())
+
+        assertEquals(ErrorType.OVERLOADED, emitter.errorType, "a refused connect stays the class the client retries")
+        assertEquals(
+            "codex: upstream connection failed (connection refused by 127.0.0.1:1 — nothing is listening there; " +
+                "the server is down or still starting) — retry",
+            emitter.errorMessage,
+        )
     }
 }

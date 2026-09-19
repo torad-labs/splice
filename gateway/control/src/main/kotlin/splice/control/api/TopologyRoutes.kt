@@ -148,7 +148,8 @@ internal class TopologySecrets {
             if (headers == null) {
                 provider
             } else {
-                JsonObject(table + (EXTRA_HEADERS to JsonObject(headers.mapValues { (name, v) -> value(key, name, v) })))
+                val mapped = headers.mapValues { (name, v) -> value(key, name, v) }
+                JsonObject(table + (EXTRA_HEADERS to JsonObject(mapped)))
             }
         }
         return JsonObject(tree + (PROVIDERS to JsonObject(mapped)))

@@ -4,8 +4,15 @@ package splice.core.sessions
 
 import java.nio.file.Path
 
+// why: the two transcript record keys this package reads. They live here rather than in either
+// reader because V4-160 split one file into several and each half would otherwise carry its own
+// copy — which is exactly what the const-single-source wall caught on 2026-09-18.
+internal const val MESSAGE = "message"
+internal const val CONTENT = "content"
+
 // why: a transcript page the console renders without pagination controls.
 public const val DEFAULT_TRANSCRIPT_PAGE: Int = 100
+
 // why: the ceiling a caller may ask for. It exists so one request cannot ask the daemon to read
 // and hold an entire multi-thousand-turn transcript.
 public const val MAX_TRANSCRIPT_PAGE: Int = 500

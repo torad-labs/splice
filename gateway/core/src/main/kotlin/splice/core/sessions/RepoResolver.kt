@@ -34,9 +34,9 @@ import java.nio.file.Paths
 
 // why: resolving a repo root walks the filesystem, and the console re-asks for the same cwd on
 // every poll. 2 s is short enough that a clone or a move shows up within one refresh, and long
-// enough that one poll's worth of rows costs one walk. 64 entries with the JDK's own 0.75 load
-// factor, in a LinkedHashMap in ACCESS order, so the eviction below drops the least recently used.
+// enough that one poll's worth of rows costs one walk.
 private const val REPO_CACHE_TTL_MS = 2_000L
+
 // why: 64 cwds is more than one operator has open at once, so the eviction below is a safety net
 // rather than a working part of the design.
 private const val REPO_CACHE_MAX_ENTRIES = 64

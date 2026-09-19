@@ -49,7 +49,7 @@ import java.util.HexFormat
 // why: 12 hex characters of the file's SHA-256, carried as the write's precondition token. Long
 // enough that two concurrent edits cannot collide by accident, short enough to pass in a header.
 private const val HASH_PREFIX = 12
-private const val FILE_PATH = "splice.toml"
+private const val TOPOLOGY_FILE = "splice.toml"
 private const val UNEXPRESSIBLE = "the writer cannot express this edit; nothing was written"
 
 /** splice.toml text to the topology it declares — TopologyLoader.parse in production, the loader the
@@ -93,7 +93,7 @@ public class TopologyWriter(
         val existing = Files.readString(path)
         val held = Cancellables.runCatchingCancellable { tree(parse(existing)) }.getOrElse { failure ->
             val why = SafeFailureText.render(failure)
-            return refused("$FILE_PATH on disk does not parse, so it cannot be edited: $why")
+            return refused("$TOPOLOGY_FILE on disk does not parse, so it cannot be edited: $why")
         }
         val wanted = tree(requested)
         return land(existing, TomlPatch(existing, wanted).compose(held), wanted)
@@ -115,7 +115,7 @@ public class TopologyWriter(
 
     private fun commit(existing: String, composed: String): TopologyWriteResult {
         if (Files.readString(path) != existing) {
-            return refused("$FILE_PATH changed while this write was prepared; nothing was written, read it again")
+            return refused("$TOPOLOGY_FILE changed while this write was prepared; nothing was written, read it again")
         }
         val bytes = existing.toByteArray()
         val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)).take(HASH_PREFIX)
@@ -128,7 +128,7 @@ public class TopologyWriter(
     }
 
     private fun refused(message: String): TopologyWriteResult =
-        TopologyWriteResult.Refused(listOf(TopologyFinding(FILE_PATH, message)))
+        TopologyWriteResult.Refused(listOf(TopologyFinding(TOPOLOGY_FILE, message)))
 }
 
 /** The checks the loader does not make at decode time but the daemon would trip on at boot. */

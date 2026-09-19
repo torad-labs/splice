@@ -11,9 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
-private const val MESSAGE = "message"
 private const val UNTYPED = "untyped"
-private const val CONTENT = "content"
 
 /** Folds records into conversation messages for one page. [accept] answers false when the page is
  *  full AND the record starts a new message, so the record is left for the next page. */

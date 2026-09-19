@@ -11,14 +11,21 @@ import type { Provenance } from '@shared/ui';
 /**
  * What every topology field box prints as its provenance.
  *
- * The FieldBox vocabulary (CONTRACTS.md section 2) names the six CONFIG layers, weakest first:
- * enum default, `[defaults]`, `[heads.<key>.overrides]`, state file, env, PATCH. A topology key's
- * source is none of those — it is the file — and 'defaults table' is the only name in the closed
- * set that means "the TOML file". It is printed BESIDE a row that names `splice.toml` outright, so
- * the operator reads the file name and not the shorthand; the gap is recorded on the M2-05 ledger
- * note for the orchestrator to close with a real name if the shorthand is not good enough.
+ * A topology leaf has ONE source: the file at `TopologyPayload.path`. The closed `Provenance` set
+ * names it outright — `'splice.toml'` — so this is the accurate label, not a stand-in. It read
+ * `'defaults table'` until 2026-09-18 on the reasoning that no name in the set meant "the TOML
+ * file"; that was true when it was written and stopped being true when `5feab71d` (M2-10) added
+ * `'splice.toml'` to the set. A justification pinned in prose outlived the fact it rested on, and
+ * the label under it became a confident wrong answer where it had been an honest shorthand.
+ *
+ * A CONSTANT is the right shape, not a per-key map: the function is constant. The six-layer
+ * vocabulary belongs to CONFIG KNOBS, and per-key knob provenance is already rendered from real
+ * data on the fleet and knob-form surfaces out of `GET /api/config`. Topology leaves are not in
+ * that key space — `TopologyKnobLayer.configOverrides()` projects a few `[daemon]`/`[defaults]`
+ * fields INTO the knob layer, so the direction is topology to config, and `providers.*` and
+ * `heads.*` leaves have no config key to join against.
  */
-export const TOPOLOGY_PROVENANCE: Provenance = 'defaults table';
+export const TOPOLOGY_PROVENANCE: Provenance = 'splice.toml';
 
 /** One finding from the pure validator, or from the daemon's structured writer. */
 export interface TopologyFinding {

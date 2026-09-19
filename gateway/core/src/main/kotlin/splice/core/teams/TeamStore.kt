@@ -96,7 +96,7 @@ public data class Team(
 private data class TeamsDocument(val teams: List<Team> = emptyList())
 
 /** One change to one team, applied under the store's lock. */
-public fun interface TeamEdit {
+internal fun interface TeamEdit {
     public operator fun invoke(team: Team): Team
 }
 

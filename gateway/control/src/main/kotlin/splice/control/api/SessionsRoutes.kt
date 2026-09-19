@@ -50,13 +50,13 @@ internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; go
     "stale = alive but no registry update inside the stale window"
 
 /** A status and a JSON body, for routes that answer more than 200. */
-public data class JsonReply(val status: HttpStatusCode, val body: String) {
+internal data class JsonReply(val status: HttpStatusCode, val body: String) {
     public suspend fun send(call: ApplicationCall) {
         call.respondText(body, ContentType.Application.Json, status)
     }
 }
 
-public class SessionsRoutes(
+internal class SessionsRoutes(
     private val registry: SessionRegistry,
     private val heads: Map<String, ManagedHead> = emptyMap(),
     private val config: ConfigService? = null,

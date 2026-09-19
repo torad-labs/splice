@@ -135,7 +135,11 @@ class ConsoleActivityPublishTest {
             "Daemon must build SessionProject over the head trees, or headless head sessions never resolve",
         )
         assertTrue(
-            daemon.contains("sessionProject = sessionProject,"),
+            // V4-160 folded HeadServerFactory's configDir, projects and sessionProject into one
+            // HeadPromptInputs — all three feed only the prompt layers. The pin follows the value,
+            // not the spelling: what must not regress is that the SessionProject built above reaches
+            // the factory, whose default reads the vanilla tree only.
+            daemon.contains("HeadPromptInputs(topologyDir, topology.projects, sessionProject)"),
             "Daemon must hand that SessionProject to HeadServerFactory, whose default reads the vanilla tree only",
         )
     }

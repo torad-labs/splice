@@ -58,11 +58,13 @@
 // line. It stops as soon as every wanted id is found. An id it does not find is REPORTED missing with
 // the path it read: a lookup that silently answered fewer ids than it was asked for would read as a
 // complete chat.
+//
+// 2026-09-18 (V4-160, concentration): the public types moved to TranscriptTypes.kt, the page assembly
+// to TranscriptAssembly.kt and the redaction to TranscriptRedaction.kt; same package, same behaviour.
 package splice.core.sessions
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -74,13 +76,6 @@ import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 
-public const val DEFAULT_TRANSCRIPT_PAGE: Int = 100
-public const val MAX_TRANSCRIPT_PAGE: Int = 500
-
-/** The skipped-record kinds the page publishes as their own counts, apart from the per-kind map. */
-public const val SKIPPED_UNPARSEABLE: String = "unparseable"
-public const val SKIPPED_SIDECHAIN: String = "sidechain"
-
 /** Bytes one page may read before it stops, whatever it found: a run of skipped records must not
  *  turn one page into a full-file read. */
 private const val MAX_PAGE_BYTES = 16L shl 20
@@ -88,60 +83,11 @@ private const val MAX_PAGE_BYTES = 16L shl 20
 /** One line this long is not a conversation record; it is read past, not kept, and counted. */
 private const val MAX_LINE_BYTES = 32 shl 20
 
-/** Text kept per message. A tool result can be megabytes; the text says where it was cut. */
-private const val MAX_TEXT_CHARS = 64 shl 10
-
 private const val BAD_ID = "not a session id"
 private const val SEND_MESSAGE = "SendMessage"
 private const val BAD_CURSOR = "not a cursor this daemon minted"
-
-public enum class TranscriptRole { USER, ASSISTANT, SYSTEM, TOOL }
-
-public data class TranscriptMessage(
-    val index: Long,
-    val role: TranscriptRole,
-    val ts: Long?,
-    val text: String,
-    val tool: String? = null,
-    /** True on a tool RESULT, false on the call; null on everything else. */
-    val result: Boolean? = null,
-)
-
-public data class TranscriptPage(
-    val sessionId: String,
-    val path: String,
-    val messages: List<TranscriptMessage>,
-    val next: String?,
-    /** Records this page read past, by kind, [SKIPPED_UNPARSEABLE] and [SKIPPED_SIDECHAIN] included. */
-    val skipped: Map<String, Int>,
-)
-
-public sealed class TranscriptLookup {
-    public data class Found(val page: TranscriptPage) : TranscriptLookup()
-
-    /** No root holds a transcript for this session id; [searched] names every projects dir tried. */
-    public data class Missing(val searched: List<String>) : TranscriptLookup()
-
-    /** The request itself cannot be served: a malformed id or cursor. */
-    public data class Refused(val reason: String) : TranscriptLookup()
-}
-
-/** The config roots to search for [head]'s session, in priority order. Supplied by the caller, who
- *  knows the heads. */
-public fun interface TranscriptTrees {
-    public operator fun invoke(head: String?): List<Path>
-}
-
-/** What [TranscriptReader.sentTexts] found. [path] is the transcript read, or null when no root held
- *  one, and then [searched] names every projects dir tried. [texts] maps each found tool_use id to its
- *  SendMessage `message`, redacted and clipped like a page's text; [missing] is every wanted id the
- *  file did not hold. */
-public data class SentTexts(
-    val path: String?,
-    val texts: Map<String, String>,
-    val missing: Set<String>,
-    val searched: List<String> = emptyList(),
-)
+private const val PROJECTS = "projects"
+private const val MESSAGE = "message"
 
 public class TranscriptReader(private val trees: TranscriptTrees) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -155,7 +101,7 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
         }
         val roots = trees(head)
         val file = locate(roots, sessionId)
-            ?: return TranscriptLookup.Missing(roots.map { it.resolve("projects").toString() })
+            ?: return TranscriptLookup.Missing(roots.map { it.resolve(PROJECTS).toString() })
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
 
@@ -164,31 +110,37 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
     public fun sentTexts(sessionId: String, head: String?, ids: Set<String>): SentTexts {
         val roots = trees(head)
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
-        if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve("projects").toString() })
+        if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(PROJECTS).toString() })
         val found = HashMap<String, String>()
         Files.newInputStream(file).use { raw ->
             val input = BufferedInputStream(raw)
             while (found.size < ids.size) {
                 val line = nextLine(input) ?: break
-                val text = line.bytes?.toString(Charsets.UTF_8) ?: continue
-                if (ids.none { it !in found && text.contains(it) }) continue
-                val record = parse(line.bytes) ?: continue
-                sends(record, ids).forEach { (id, sent) -> found.putIfAbsent(id, redaction.shown(sent)) }
+                collect(line, ids, found)
             }
         }
         return SentTexts(file.toString(), found, ids - found.keys)
     }
 
+    /** One line's wanted sends into [found]. The line is parsed only when its bytes name an id that is
+     *  not found yet, so the pass costs a byte scan, not a parse per line. */
+    private fun collect(line: Line, ids: Set<String>, found: MutableMap<String, String>) {
+        val text = line.text() ?: return
+        if (ids.none { it !in found && text.contains(it) }) return
+        val record = parse(checkNotNull(line.bytes)) ?: return
+        sends(record, ids).forEach { (id, sent) -> found.putIfAbsent(id, redaction.shown(sent)) }
+    }
+
     /** The wanted SendMessage calls of one assistant record, id to message. A `message` that is not
      *  a string (a structured request) is shown as its JSON. */
     private fun sends(record: JsonObject, ids: Set<String>): List<Pair<String, String>> {
-        val message = record["message"] as? JsonObject
+        val message = record[MESSAGE] as? JsonObject
         val blocks = (message?.get("content") as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
         return blocks
             .filter { JsonScalars.str(it, "type") == "tool_use" && JsonScalars.str(it, "name") == SEND_MESSAGE }
             .mapNotNull { block -> JsonScalars.str(block, "id")?.takeIf { it in ids }?.let { it to block } }
             .map { (id, block) ->
-                val sent = (block["input"] as? JsonObject)?.get("message")
+                val sent = (block["input"] as? JsonObject)?.get(MESSAGE)
                 id to ((sent as? JsonPrimitive)?.takeIf { it.isString }?.content ?: sent?.toString().orEmpty())
             }
     }
@@ -198,7 +150,7 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
     private fun locate(roots: List<Path>, sessionId: String): Path? {
         val walked = HashSet<Path>()
         return roots.asSequence()
-            .map { it.resolve("projects") }
+            .map { it.resolve(PROJECTS) }
             .filter { walked.add(realPath(it)) }
             .flatMap { projectDirs(it).asSequence() }
             .map { it.resolve("$sessionId.jsonl") }
@@ -214,6 +166,8 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
         // ast-grep-ignore: kt-no-silent-result-collapse -- a projects dir that does not exist has no real path; its absolute name keys it, and walking it finds nothing
         Cancellables.runCatchingCancellable { dir.toRealPath() }.getOrDefault(dir.toAbsolutePath().normalize())
 
+    /** Lines from [start] until the page is full, the byte budget is spent or the file ends; a line the
+     *  assembly declines (it starts the next page's first message) is left unread for that page. */
     private fun read(file: Path, sessionId: String, start: Position, limit: Int): TranscriptPage {
         val assembly = PageAssembly(start.index, limit, redaction)
         val size = Files.size(file)
@@ -222,11 +176,11 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
         Files.newInputStream(file).use { raw ->
             val input = BufferedInputStream(raw)
             input.skipNBytes(from)
-            while (offset - from < MAX_PAGE_BYTES) {
-                val line = nextLine(input) ?: break
-                val record = line.bytes?.let(::parse)
-                if (!assembly.accept(record)) break
-                offset += line.length
+            var more = true
+            while (more && offset - from < MAX_PAGE_BYTES) {
+                val taken = nextLine(input)?.takeIf { assembly.accept(it.bytes?.let(::parse)) }
+                more = taken != null
+                offset += taken?.length ?: 0L
             }
         }
         val messages = assembly.finish()
@@ -274,167 +228,8 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
 
     private data class Position(val offset: Long, val index: Long)
 
-    private class Line(val bytes: ByteArray?, val length: Long)
-}
-
-/** Folds records into conversation messages for one page. [accept] answers false when the page is
- *  full AND the record starts a new message, so the record is left for the next page. */
-private class PageAssembly(firstIndex: Long, private val limit: Int, private val redaction: TranscriptRedaction) {
-    var nextIndex: Long = firstIndex
-        private set
-    val skipped: MutableMap<String, Int> = sortedMapOf()
-    private val messages = mutableListOf<TranscriptMessage>()
-    private val toolNames = HashMap<String, String>()
-    private var pending: PendingAssistant? = null
-
-    /** [record] is null for a line that did not parse. */
-    fun accept(record: JsonObject?): Boolean {
-        val messageId = (record?.get("message") as? JsonObject)?.let { JsonScalars.str(it, "id") }
-        val continues = pending != null && messageId != null && messageId == pending?.id
-        val full = messages.size + (if (pending != null) 1 else 0) >= limit
-        if (!continues && full) return false
-        if (!continues) flush()
-        return when {
-            record == null -> count(SKIPPED_UNPARSEABLE)
-            record["isSidechain"] == JsonPrimitive(true) -> count(SKIPPED_SIDECHAIN)
-            record["isApiErrorMessage"] == JsonPrimitive(true) -> apiError(record)
-            else -> conversation(record, messageId)
-        }
+    private class Line(val bytes: ByteArray?, val length: Long) {
+        /** The line as text, or null when it was read past for its length. */
+        fun text(): String? = bytes?.toString(Charsets.UTF_8)
     }
-
-    fun finish(): List<TranscriptMessage> {
-        flush()
-        return messages
-    }
-
-    private fun conversation(record: JsonObject, messageId: String?): Boolean {
-        val type = JsonScalars.str(record, "type") ?: "untyped"
-        val message = record["message"] as? JsonObject
-        val ts = timestamp(record)
-        return when {
-            type == "assistant" && message != null -> assistant(message, messageId, ts)
-            type == "user" && message != null -> user(record, message, ts)
-            type == "system" -> system(record, ts)
-            else -> count(type)
-        }
-    }
-
-    private fun assistant(message: JsonObject, messageId: String?, ts: Long?): Boolean {
-        val into = pending?.takeIf { it.id == messageId } ?: PendingAssistant(messageId, ts).also { pending = it }
-        for (block in blocks(message)) {
-            when (JsonScalars.str(block, "type")) {
-                "text" -> JsonScalars.str(block, "text")?.let(into.texts::add)
-                "tool_use" -> {
-                    val name = JsonScalars.str(block, "name") ?: "tool"
-                    JsonScalars.str(block, "id")?.let { toolNames[it] = name }
-                    into.calls += name to (block["input"]?.toString() ?: "{}")
-                }
-                // Thinking is the model's working, not its output; the conversation shows what it said.
-                else -> Unit
-            }
-        }
-        return true
-    }
-
-    private fun user(record: JsonObject, message: JsonObject, ts: Long?): Boolean {
-        val meta = record["isMeta"] == JsonPrimitive(true) || record["isCompactSummary"] == JsonPrimitive(true)
-        val speaker = if (meta) TranscriptRole.SYSTEM else TranscriptRole.USER
-        val content = message["content"]
-        if (content is JsonPrimitive && content.isString) {
-            emit(speaker, ts, content.content)
-            return true
-        }
-        for (block in blocks(message)) {
-            when (JsonScalars.str(block, "type")) {
-                "tool_result" -> {
-                    val name = JsonScalars.str(block, "tool_use_id")?.let(toolNames::get)
-                    emit(TranscriptRole.TOOL, ts, resultText(block["content"]), tool = name, result = true)
-                }
-                "text" -> JsonScalars.str(block, "text")?.let { emit(speaker, ts, it) }
-                else -> count("user:${JsonScalars.str(block, "type") ?: "block"}")
-            }
-        }
-        return true
-    }
-
-    private fun system(record: JsonObject, ts: Long?): Boolean {
-        val text = (record["content"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        if (text.isNullOrBlank()) return count("system:${JsonScalars.str(record, "subtype") ?: "untyped"}")
-        emit(TranscriptRole.SYSTEM, ts, text)
-        return true
-    }
-
-    private fun apiError(record: JsonObject): Boolean {
-        val message = record["message"] as? JsonObject
-        val text = message?.let { blocks(it).mapNotNull { b -> JsonScalars.str(b, "text") }.joinToString("\n") }
-            ?.takeIf { it.isNotBlank() }
-            ?: JsonScalars.str(record, "error")
-            ?: "the client recorded an API error with no text"
-        emit(TranscriptRole.SYSTEM, timestamp(record), "API error: $text")
-        return true
-    }
-
-    private fun flush() {
-        val done = pending ?: return
-        pending = null
-        if (done.texts.isNotEmpty()) emit(TranscriptRole.ASSISTANT, done.ts, done.texts.joinToString("\n\n"))
-        for ((name, input) in done.calls) emit(TranscriptRole.ASSISTANT, done.ts, input, tool = name, result = false)
-    }
-
-    private fun emit(role: TranscriptRole, ts: Long?, text: String, tool: String? = null, result: Boolean? = null) {
-        messages += TranscriptMessage(nextIndex, role, ts, redaction.shown(text), tool, result)
-        nextIndex += 1
-    }
-
-    private fun count(kind: String): Boolean {
-        skipped[kind] = (skipped[kind] ?: 0) + 1
-        return true
-    }
-
-    private fun blocks(message: JsonObject): List<JsonObject> =
-        (message["content"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
-
-    private fun resultText(content: JsonElement?): String = when (content) {
-        is JsonPrimitive -> content.content
-        is JsonArray -> content.mapNotNull { (it as? JsonObject)?.let { b -> JsonScalars.str(b, "text") } }.joinToString("\n")
-        else -> ""
-    }
-
-    private fun timestamp(record: JsonObject): Long? = JsonScalars.str(record, "timestamp")?.let { raw ->
-        // ast-grep-ignore: kt-no-silent-result-collapse -- ts is optional in the contract; a record whose timestamp does not parse simply carries none
-        Cancellables.runCatchingCancellable { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
-    }
-
-    private class PendingAssistant(val id: String?, val ts: Long?) {
-        val texts = mutableListOf<String>()
-        val calls = mutableListOf<Pair<String, String>>()
-    }
-}
-
-/** Credential shapes only (the doctor report's set, DoctorRedaction): this is the operator's own
- *  conversation, so paths, ids and addresses stay readable and only secrets are masked. */
-private class TranscriptRedaction {
-    private val jwt = Regex("eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}")
-    private val bearer = Regex("(?i)\\bbearer\\s+[A-Za-z0-9._~+/=-]{8,}")
-    private val keyValue = Regex(
-        "(?i)\\b([a-z0-9_-]*(?:api_?key|token|secret|password|passwd|cookie|credential|authorization)" +
-            "[a-z0-9_-]*)(\"?\\s*[=:]\\s*\"?)[^\\s\"',}]{8,}",
-    )
-    private val providerKey = Regex("\\b(sk|xai|gsk|xoxb|ghp|github_pat)[-_][A-Za-z0-9_-]{16,}")
-
-    /** [value] as a page shows it: clipped to MAX_TEXT_CHARS, then redacted. */
-    fun shown(value: String): String = text(clip(value))
-
-    private fun clip(text: String): String =
-        if (text.length <= MAX_TEXT_CHARS) {
-            text
-        } else {
-            text.take(MAX_TEXT_CHARS) + "\n… [cut: ${text.length - MAX_TEXT_CHARS} more characters]"
-        }
-
-    fun text(value: String): String = value
-        .replace(jwt, "[redacted jwt]")
-        .replace(bearer, "Bearer [redacted]")
-        .replace(keyValue) { "${it.groupValues[1]}${it.groupValues[2]}[redacted]" }
-        .replace(providerKey, "[redacted key]")
 }

@@ -32,19 +32,12 @@ internal class HeadServerFactory(
     private val log: LogSink,
     private val compactionTail: CompactionTail = CompactionTail(),
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
-    /** The topology's directory: a relative `system_prompt_file` under [splice.core.topology.HeadConfig]
-     *  resolves against it, the same rule `[compaction] file =` follows (V4-36). */
-    private val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
-    /** V4-124: the topology's `[projects."ROOT"]` tables. Every head gets its own layers from them. */
-    private val projects: Map<String, ProjectConfig> = emptyMap(),
+    /** What every head's system-prompt layers resolve from (V4-160, see [HeadPromptInputs]). */
+    private val prompts: HeadPromptInputs = HeadPromptInputs(),
     /** V4-134: the daemon's ONE console publisher, which every head reports through. Null only for
      *  a factory built outside the daemon (tests); Daemon passes ControlPlane's, pinned by
      *  OneEventBusPinTest, because a head built without it would serve turns the console never hears. */
     private val console: ConsoleEventPublisher? = null,
-    /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a
-     *  project is configured, and it keeps its own cache. Daemon passes the one built over every
-     *  head's projects tree (V4-130); the default reads the vanilla tree only. */
-    private val sessionProject: SessionProject = SessionProject(),
 ) {
     private val upstreamFactory = UpstreamFactory()
 
@@ -89,8 +82,8 @@ internal class HeadServerFactory(
                     // system_prompt_file or a relative project root becomes a load-time config
                     // error rather than a prompt that silently never rides.
                     systemPrompt = SystemPromptLayers(
-                        head = ctx.head.systemPromptFor(key, configDir),
-                        projects = projects,
+                        head = ctx.head.systemPromptFor(key, prompts.configDir),
+                        projects = prompts.projects,
                         headKey = key,
                     ),
                     forwardClientAuth = forwardClientAuth,
@@ -119,7 +112,7 @@ internal class HeadServerFactory(
     private fun seams(key: String): HeadDeps.HeadSeams = HeadDeps.HeadSeams(
         requestMaterializationGate = requestMaterializationGate,
         clientVersions = clientVersions,
-        sessionProject = SessionProjectLookup { sessionProject.projectFor(it) },
+        sessionProject = SessionProjectLookup { prompts.sessionProject.projectFor(it) },
         events = console?.forHead(key) ?: NoHeadEvents,
         slotInstructions = console?.slots,
     )
@@ -131,3 +124,18 @@ internal class HeadServerFactory(
         return (m[Knob.MATERIALIZATION_PERMITS.key] as Long).toInt()
     }
 }
+
+/** What a head's system-prompt layers resolve from, one bundle because the three are read together
+ *  and only for the layers. V4-160 took them out of [HeadServerFactory]'s constructor, which reached
+ *  seven subsystems (constructor-width allows six); the defaults are the ones it had. */
+internal data class HeadPromptInputs(
+    /** The topology's directory: a relative `system_prompt_file` under [splice.core.topology.HeadConfig]
+     *  resolves against it, the same rule `[compaction] file =` follows (V4-36). */
+    val configDir: Path = Paths.get(System.getProperty("user.home"), ".config", "splice"),
+    /** V4-124: the topology's `[projects."ROOT"]` tables. Every head gets its own layers from them. */
+    val projects: Map<String, ProjectConfig> = emptyMap(),
+    /** One session-to-cwd resolver for every head's prompt layers. It is consulted only when a
+     *  project is configured, and it keeps its own cache. Daemon passes the one built over every
+     *  head's projects tree (V4-130); the default reads the vanilla tree only. */
+    val sessionProject: SessionProject = SessionProject(),
+)

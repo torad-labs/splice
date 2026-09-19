@@ -25,6 +25,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.McpAccessKey
 import splice.core.launch.McpSharing
+import splice.core.prompt.SlotInstructions
 import splice.core.sessions.HeadOfPid
 import splice.core.sessions.ProcessEnvironment
 import splice.core.sessions.SessionRegistry
@@ -66,10 +67,16 @@ internal class ControlPlane(
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
     internal val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)
 
+    /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */
+    internal val teams = ConsoleWiring.teamStore(statePaths)
+
     /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held
      *  here, like [probeScope], because both sides of it hang off this class: Daemon hands [console]
      *  to HeadServerFactory before any head exists, and [start] hands its bus to the ControlServer. */
-    internal val console = ConsoleEventPublisher(ConsoleWiring.activityStores(statePaths, config))
+    internal val console = ConsoleEventPublisher(
+        ConsoleWiring.activityStores(statePaths, config),
+        slots = SlotInstructions(teams, ConsoleWiring.sessionAddress(statePaths)),
+    )
 
     internal fun cancelProbes() {
         probeScope.cancel()
@@ -141,6 +148,8 @@ internal class ControlPlane(
         srv.events = console.bus
         // V4-130: the SAME stores the heads write through [console], read by the sessions routes.
         srv.activity = console.stores
+        // V4-131: the SAME team store the heads' slot resolver reads, so an edit applies on the next turn.
+        srv.teams = teams
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes

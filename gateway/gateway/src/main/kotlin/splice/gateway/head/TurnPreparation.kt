@@ -12,6 +12,11 @@
 // V4-130: every parsed request is also where the console's session facts are observed, because this
 // is the one place that holds the typed request and the session header together: SendMessage edges
 // (MessageEdges), the locally answered activity label, and a near-miss label query sent upstream.
+//
+// V4-131: a session bound to a team slot gets the slot's text (SlotInstructions) appended after the
+// head's own layers, in APPEND mode whatever the head's system_prompt_mode, resolved per turn so an
+// edit applies on the next turn. The turn whose slot text changed is marked in its perf row
+// (SLOT_PROMPT_CHANGED): it is the one cold-cache turn an edit costs.
 package splice.gateway.head
 
 import io.ktor.http.HttpHeaders
@@ -19,6 +24,8 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.prompt.SLOT_PROMPT_CHANGED
+import splice.core.prompt.SystemPromptMode
 import splice.core.wire.AnthropicRequest
 import splice.gateway.compact.CompactClassifier
 import splice.gateway.wire.FrameRecording
@@ -101,7 +108,7 @@ internal class TurnPreparation(
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.stores.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val fromProvider = buildProviderTurn(parsed, compactProbe.compact, sessionId)
+        val fromProvider = buildProviderTurn(parsed, compactProbe.compact, sessionId, perf)
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
         // session. Stamped here, once, when the provider left it null.
@@ -129,6 +136,7 @@ internal class TurnPreparation(
         parsed: AnthropicTurnBody,
         compact: Boolean,
         sessionId: String?,
+        perf: TurnPerf,
     ): BuiltTurn {
         val effective = deps.compactionTail.resolve(
             compact,
@@ -152,7 +160,25 @@ internal class TurnPreparation(
         } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
         // AFTER the tail, so the compaction request hash and its applied check keep reading the
         // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-        return applySystemPrompt(withTail, sessionId)
+        return applySlotPrompt(applySystemPrompt(withTail, sessionId), sessionId, perf)
+    }
+
+    /** V4-131: the session's team-slot text, after the head's layers (see the header). Same honesty
+     *  rule as the layers: a dialect that could not place it leaves the body alone and the meta says
+     *  "(not applied)" rather than claiming text the wire never carried. */
+    private fun applySlotPrompt(turn: BuiltTurn, sessionId: String?, perf: TurnPerf): BuiltTurn {
+        val slots = deps.seams.slotInstructions
+        if (slots == null || sessionId == null) return turn
+        val prompt = slots.forSession(sessionId)
+        if (slots.changed(sessionId, prompt)) perf.setCount(SLOT_PROMPT_CHANGED, 1L)
+        if (prompt == null) return turn
+        val next = provider.withSystemPrompt(turn, prompt.text, SystemPromptMode.APPEND)
+        val placed = next.requestBody != turn.requestBody
+        val joined = listOfNotNull(turn.meta.systemPrompt, prompt.text).joinToString("\n\n")
+        val text = if (placed) joined else turn.meta.systemPrompt
+        val label = if (placed) prompt.source else "${prompt.source} (not applied)"
+        val source = listOfNotNull(turn.meta.systemPromptSource, label).joinToString("+")
+        return next.copy(meta = next.meta.copy(systemPrompt = text, systemPromptSource = source))
     }
 
     /** The standing prompt layers ride on EVERY turn (not only compact ones), at the dialect's seam,

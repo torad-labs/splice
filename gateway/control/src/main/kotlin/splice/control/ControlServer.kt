@@ -20,12 +20,14 @@ import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -50,8 +52,13 @@ import splice.control.api.McpRoutes
 import splice.control.api.ModelsRoute
 import splice.control.api.PerfPayloads
 import splice.control.api.PerfRoutes
+import splice.control.api.ProjectsRoutes
+import splice.control.api.RepoOf
+import splice.control.api.SentTextSource
 import splice.control.api.SessionsRoutes
 import splice.control.api.StatuslineRoute
+import splice.control.api.TeamSource
+import splice.control.api.TeamsRoutes
 import splice.control.api.UpgradeRoute
 import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
@@ -61,6 +68,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.launch.McpAccessKey
 import splice.core.sessions.SessionRegistry
+import splice.core.teams.TeamStore
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 
@@ -135,7 +143,25 @@ public class ControlServer(
     /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
      *  after construction like [events]. Null answers the two edges routes with a named 503. */
     public var activity: ActivityStores? = null
-    private val sessionsRoutes = sessions?.let { SessionsRoutes(it, heads, config, ActivitySource { activity }) }
+
+    /** V4-131: the daemon's team store, assigned by ControlPlane after construction like [activity].
+     *  Null answers every team route with a named 503 and leaves the sessions rows' `team` null. */
+    public var teams: TeamStore? = null
+    private val sessionsRoutes = sessions?.let {
+        SessionsRoutes(it, heads, config, ActivitySource { activity }, teams = TeamSource { teams })
+    }
+    private val teamsRoutes = sessionsRoutes?.let { routes ->
+        TeamsRoutes(
+            TeamSource { teams },
+            heads,
+            sessions,
+            ActivitySource { activity },
+            SentTextSource(routes::sentTexts),
+        )
+    }
+    private val projectsRoutes = sessionsRoutes?.let { routes ->
+        ProjectsRoutes(sessions, heads, RepoOf(routes::repoOf), TeamSource { teams })
+    }
     private val payloads =
         ControlPayloads(
             heads,
@@ -264,6 +290,55 @@ public class ControlServer(
             }
         }
 
+    /** v0.4.0 /api/sessions, V4-130's three session reads beside it, and V4-131's team and project
+     *  routes, which read the same registry. Registered only when a session registry is wired, as
+     *  /api/sessions always was. */
+    private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
+        route.get("/api/sessions") { guarded(call) { respond(call, routes.sessionsJson()) } }
+        route.get("/api/sessions/edges") { guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
+        route.get("/api/sessions/{id}/edges") {
+            guarded(call) { routes.edgeRoutes.edges(call.parameters["id"].orEmpty()).send(call) }
+        }
+        route.get("/api/sessions/{id}/transcript") {
+            guarded(call) {
+                val id = call.parameters["id"].orEmpty()
+                val query = call.request.queryParameters
+                routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull()).send(call)
+            }
+        }
+        teamsRoutes?.let { teamRoutes(route, it) }
+        projectsRoutes?.let { projects ->
+            route.get("/api/projects") { guarded(call) { projects.list().send(call) } }
+            route.get("/api/projects/{id}") { guarded(call) { projects.project(id(call)).send(call) } }
+            route.get("/api/projects/{id}/files") { guarded(call) { projects.files(id(call)).send(call) } }
+        }
+    }
+
+    /** V4-131 (FEATURES.md 6.1): the SPLIT team reads and the team writes. There is deliberately no
+     *  GET /api/teams/{id}; the board composes from these and /api/sessions. */
+    private fun teamRoutes(route: Route, teams: TeamsRoutes) {
+        route.get("/api/teams") { guarded(call) { teams.list().send(call) } }
+        route.put("/api/teams") {
+            guarded(call) { teams.create(call.receiveText(), call.request.headers["Idempotency-Key"]).send(call) }
+        }
+        route.put("/api/teams/{id}") { guarded(call) { teams.replace(id(call), call.receiveText()).send(call) } }
+        route.put("/api/teams/{id}/sessions") { guarded(call) { teams.bind(id(call), call.receiveText()).send(call) } }
+        route.put("/api/teams/{id}/slots/{slot}/instructions") {
+            guarded(call) { teams.instruct(id(call), call.parameters["slot"].orEmpty(), call.receiveText()).send(call) }
+        }
+        route.post("/api/teams/{id}/archive") { guarded(call) { teams.archive(id(call)).send(call) } }
+        route.get("/api/teams/{id}/edges") { guarded(call) { teams.reads.edges(id(call)).send(call) } }
+        route.get("/api/teams/{id}/chat") {
+            guarded(call) { teams.reads.chat(id(call), call.request.queryParameters["day"]).send(call) }
+        }
+        route.get("/api/teams/{id}/activity") {
+            guarded(call) { teams.reads.activity(id(call), call.request.queryParameters["day"]).send(call) }
+        }
+        route.get("/api/teams/{id}/economics") { guarded(call) { teams.economics(id(call)).send(call) } }
+    }
+
+    private fun id(call: ApplicationCall): String = call.parameters["id"].orEmpty()
+
     /** The console's routes, split out of [controlEngine] for the same reason that function was split
      *  out of start(): the table outgrew the 50-line wall a row at a time, and the wall was measuring
      *  the TABLE rather than any one job. A second level of the same split is not indirection for its
@@ -278,23 +353,6 @@ public class ControlServer(
      *  ?head= is REQUIRED where the resource is per-head and a bad one is a 400 NAMING it, never a
      *  404, which the console reads as route-not-built; and every unwired port answers a named 5xx
      *  rather than a payload that reads as a confident negative. */
-    /** v0.4.0 /api/sessions, and V4-130's three session reads beside it. Registered only when a session
-     *  registry is wired, as /api/sessions always was. */
-    private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
-        route.get("/api/sessions") { guarded(call) { respond(call, routes.sessionsJson()) } }
-        route.get("/api/sessions/edges") { guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
-        route.get("/api/sessions/{id}/edges") {
-            guarded(call) { routes.edgeRoutes.edges(call.parameters["id"].orEmpty()).send(call) }
-        }
-        route.get("/api/sessions/{id}/transcript") {
-            guarded(call) {
-                val id = call.parameters["id"].orEmpty()
-                val query = call.request.queryParameters
-                routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull()).send(call)
-            }
-        }
-    }
-
     private fun consoleRoutes(route: Route) {
         route.get("/api/perf/turns") { guarded(call) { perfRoutes.turns(call) } }
         route.get("/api/models") { guarded(call) { modelsRoute.models(call, declaredHeads) } }

@@ -49,6 +49,15 @@
 //
 // REDACTED. Credential shapes (bearer and JWT tokens, key=value secrets, provider keys) are masked in
 // every text. Paths and ids are kept: this is the operator's own conversation, shown to them.
+//
+// V4-131: SENT TEXTS, for a team's chat (GET /api/teams/{id}/chat). The message edge store holds who
+// wrote to whom and the call's tool_use id, never the text (MessageEdges); the text is read here, on
+// demand, from the SENDER's transcript, found by the same locate the page uses so the tree order and
+// the realpath dedupe have one copy. One forward pass over the file, and a line is parsed only when
+// its bytes contain a wanted id that is not found yet, so the pass costs a byte scan, not a parse per
+// line. It stops as soon as every wanted id is found. An id it does not find is REPORTED missing with
+// the path it read: a lookup that silently answered fewer ids than it was asked for would read as a
+// complete chat.
 package splice.core.sessions
 
 import kotlinx.serialization.json.Json
@@ -83,6 +92,7 @@ private const val MAX_LINE_BYTES = 32 shl 20
 private const val MAX_TEXT_CHARS = 64 shl 10
 
 private const val BAD_ID = "not a session id"
+private const val SEND_MESSAGE = "SendMessage"
 private const val BAD_CURSOR = "not a cursor this daemon minted"
 
 public enum class TranscriptRole { USER, ASSISTANT, SYSTEM, TOOL }
@@ -122,6 +132,17 @@ public fun interface TranscriptTrees {
     public operator fun invoke(head: String?): List<Path>
 }
 
+/** What [TranscriptReader.sentTexts] found. [path] is the transcript read, or null when no root held
+ *  one, and then [searched] names every projects dir tried. [texts] maps each found tool_use id to its
+ *  SendMessage `message`, redacted and clipped like a page's text; [missing] is every wanted id the
+ *  file did not hold. */
+public data class SentTexts(
+    val path: String?,
+    val texts: Map<String, String>,
+    val missing: Set<String>,
+    val searched: List<String> = emptyList(),
+)
+
 public class TranscriptReader(private val trees: TranscriptTrees) {
     private val json = Json { ignoreUnknownKeys = true }
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
@@ -136,6 +157,40 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
         val file = locate(roots, sessionId)
             ?: return TranscriptLookup.Missing(roots.map { it.resolve("projects").toString() })
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
+    }
+
+    /** The `message` of every SendMessage call in [sessionId]'s transcript whose tool_use id is in
+     *  [ids] (see the header). A malformed session id finds nothing and reports every id missing. */
+    public fun sentTexts(sessionId: String, head: String?, ids: Set<String>): SentTexts {
+        val roots = trees(head)
+        val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
+        if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve("projects").toString() })
+        val found = HashMap<String, String>()
+        Files.newInputStream(file).use { raw ->
+            val input = BufferedInputStream(raw)
+            while (found.size < ids.size) {
+                val line = nextLine(input) ?: break
+                val text = line.bytes?.toString(Charsets.UTF_8) ?: continue
+                if (ids.none { it !in found && text.contains(it) }) continue
+                val record = parse(line.bytes) ?: continue
+                sends(record, ids).forEach { (id, sent) -> found.putIfAbsent(id, redaction.shown(sent)) }
+            }
+        }
+        return SentTexts(file.toString(), found, ids - found.keys)
+    }
+
+    /** The wanted SendMessage calls of one assistant record, id to message. A `message` that is not
+     *  a string (a structured request) is shown as its JSON. */
+    private fun sends(record: JsonObject, ids: Set<String>): List<Pair<String, String>> {
+        val message = record["message"] as? JsonObject
+        val blocks = (message?.get("content") as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+        return blocks
+            .filter { JsonScalars.str(it, "type") == "tool_use" && JsonScalars.str(it, "name") == SEND_MESSAGE }
+            .mapNotNull { block -> JsonScalars.str(block, "id")?.takeIf { it in ids }?.let { it to block } }
+            .map { (id, block) ->
+                val sent = (block["input"] as? JsonObject)?.get("message")
+                id to ((sent as? JsonPrimitive)?.takeIf { it.isString }?.content ?: sent?.toString().orEmpty())
+            }
     }
 
     /** The first candidate in root order. Each projects dir is walked once, however many root names
@@ -327,7 +382,7 @@ private class PageAssembly(firstIndex: Long, private val limit: Int, private val
     }
 
     private fun emit(role: TranscriptRole, ts: Long?, text: String, tool: String? = null, result: Boolean? = null) {
-        messages += TranscriptMessage(nextIndex, role, ts, redaction.text(clip(text)), tool, result)
+        messages += TranscriptMessage(nextIndex, role, ts, redaction.shown(text), tool, result)
         nextIndex += 1
     }
 
@@ -350,13 +405,6 @@ private class PageAssembly(firstIndex: Long, private val limit: Int, private val
         Cancellables.runCatchingCancellable { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
     }
 
-    private fun clip(text: String): String =
-        if (text.length <= MAX_TEXT_CHARS) {
-            text
-        } else {
-            text.take(MAX_TEXT_CHARS) + "\n… [cut: ${text.length - MAX_TEXT_CHARS} more characters]"
-        }
-
     private class PendingAssistant(val id: String?, val ts: Long?) {
         val texts = mutableListOf<String>()
         val calls = mutableListOf<Pair<String, String>>()
@@ -373,6 +421,16 @@ private class TranscriptRedaction {
             "[a-z0-9_-]*)(\"?\\s*[=:]\\s*\"?)[^\\s\"',}]{8,}",
     )
     private val providerKey = Regex("\\b(sk|xai|gsk|xoxb|ghp|github_pat)[-_][A-Za-z0-9_-]{16,}")
+
+    /** [value] as a page shows it: clipped to MAX_TEXT_CHARS, then redacted. */
+    fun shown(value: String): String = text(clip(value))
+
+    private fun clip(text: String): String =
+        if (text.length <= MAX_TEXT_CHARS) {
+            text
+        } else {
+            text.take(MAX_TEXT_CHARS) + "\n… [cut: ${text.length - MAX_TEXT_CHARS} more characters]"
+        }
 
     fun text(value: String): String = value
         .replace(jwt, "[redacted jwt]")

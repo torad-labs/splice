@@ -39,6 +39,8 @@ const ATOMIC_WRITE = "SecureFile.writeAtomic0600(";
 export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
   "gateway/gateway/src/main/kotlin/splice/gateway/usage/EconomicsStore.kt":
     "2026-09-17 V4-75 hourly token-economics rollup persist; never a credential",
+  "gateway/core/src/main/kotlin/splice/core/teams/TeamStore.kt":
+    "2026-09-18 V4-131 teams.json persist and its .bak sibling; team rows and slot text, never a credential",
   "gateway/app/src/main/kotlin/splice/app/LoginIo.kt":
     "2026-09-15 shared login credential write used by every vendor flow",
   "gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountWrites.kt":

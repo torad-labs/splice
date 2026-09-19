@@ -68,6 +68,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.core.launch.Keys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import java.io.BufferedInputStream
@@ -86,8 +87,6 @@ private const val MAX_LINE_BYTES = 32 shl 20
 private const val BAD_ID = "not a session id"
 private const val SEND_MESSAGE = "SendMessage"
 private const val BAD_CURSOR = "not a cursor this daemon minted"
-private const val PROJECTS = "projects"
-private const val MESSAGE = "message"
 
 public class TranscriptReader(private val trees: TranscriptTrees) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -101,7 +100,7 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
         }
         val roots = trees(head)
         val file = locate(roots, sessionId)
-            ?: return TranscriptLookup.Missing(roots.map { it.resolve(PROJECTS).toString() })
+            ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
 
@@ -110,7 +109,7 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
     public fun sentTexts(sessionId: String, head: String?, ids: Set<String>): SentTexts {
         val roots = trees(head)
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
-        if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(PROJECTS).toString() })
+        if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(Keys.PROJECTS).toString() })
         val found = HashMap<String, String>()
         Files.newInputStream(file).use { raw ->
             val input = BufferedInputStream(raw)
@@ -150,7 +149,7 @@ public class TranscriptReader(private val trees: TranscriptTrees) {
     private fun locate(roots: List<Path>, sessionId: String): Path? {
         val walked = HashSet<Path>()
         return roots.asSequence()
-            .map { it.resolve(PROJECTS) }
+            .map { it.resolve(Keys.PROJECTS) }
             .filter { walked.add(realPath(it)) }
             .flatMap { projectDirs(it).asSequence() }
             .map { it.resolve("$sessionId.jsonl") }

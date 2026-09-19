@@ -37,6 +37,12 @@ const EDITABLE_KNOBS = [
   'AUTH_CACHE_MS', 'DEBUG', 'CONTEXT_WINDOW_OVERRIDE', 'GROK_AUTH_PATH', 'CONTROL_PORT',
   'USAGE_WARN_PCT', 'USAGE_WARN_TOKENS_5H', 'MAX_REQUEST_BYTES', 'REQUEST_READ_TIMEOUT_MS',
   'MATERIALIZATION_PERMITS', 'STATUSLINE_GIT_ROOTS',
+  // Arrived with the per-head activity stores (f9e19d00), after this manifest was written at 45
+  // names, and the wall went red on its next run — which is the wall working: the denominator is
+  // parsed from Knob.kt, so the daemon growing a key is a red console until someone says what the
+  // console does with it. Both are ordinary PATCH-able knobs; their restart-required flag reaches
+  // the page from `restart_required_keys`, never from here.
+  'ACTIVITY_RETENTION_DAYS', 'ACTIVITY_STORE_HEADS',
 ] as const;
 
 /** FEATURES 4.11: "The four host knobs, read-only with the reason." They shape one McpHost read

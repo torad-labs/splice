@@ -6,6 +6,10 @@
 //
 // CONTRACTS.md section 4: a .ts test holds no JSX (TS1161), so elements are built with
 // createElement and asserted on the markup react-dom/server returns.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
@@ -17,6 +21,10 @@ import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
 import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, setAtPath, toToml, valueAtPath } from '../src/pages/settings/model';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
+import { KNOB_SOURCE, TOPOLOGY_SOURCES, parseKnobNames, parseSerialNames } from '../src/shared/coverage/denominator';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const readSource = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
 
 const h = createElement;
 const render = (element: Parameters<typeof renderToStaticMarkup>[0]): string => renderToStaticMarkup(element);
@@ -34,8 +42,11 @@ const rack = render(h(KnobRack, { dispositions: knobs, pending: [], busyKey: nul
 
 describe('settings: the knob form', () => {
   test('every knob the daemon reports appears in the markup', () => {
-    expect(knobs).toHaveLength(45);
-    expect(rack.split('data-knob="').length - 1).toBe(45);
+    // The FIXTURE is compared to Knob.kt, not to a number: this test's claim is about what the
+    // daemon reports, so a fixture that lags the daemon must fail HERE rather than quietly prove
+    // the claim over a stale sample. It read 45 while the daemon had 47 (f9e19d00) and passed.
+    expect(knobs).toHaveLength(parseKnobNames(readSource(KNOB_SOURCE)).length);
+    expect(rack.split('data-knob="').length - 1).toBe(knobs.length);
     for (const knob of knobs) {
       expect(rack).toContain(`data-knob="${knob.key}"`);
     }
@@ -60,16 +71,16 @@ describe('settings: the knob form', () => {
   test('hot and restart-only knobs print different words', () => {
     const live = knobs.filter((knob) => knob.hot).map((knob) => knob.key);
     expect(live).toEqual(['maxInflight', 'maxQueued', 'statuslineGitRoots']);
-    expect(rack.split('applies live').length - 1).toBe(3);
-    expect(rack.split('restart to apply').length - 1).toBe(42);
+    expect(rack.split('applies live').length - 1).toBe(live.length);
+    expect(rack.split('restart to apply').length - 1).toBe(knobs.length - live.length);
     for (const key of live) expect(rowOf(rack, key)).toContain('applies live');
     expect(rowOf(rack, 'port')).toContain('restart to apply');
   });
 
   test('the live view shows the hot knobs and nothing else', () => {
     expect(knobsForView(knobs, DEFAULT_VIEWS[1])).toHaveLength(3);
-    expect(knobsForView(knobs, DEFAULT_VIEWS[2])).toHaveLength(42);
-    expect(knobsForView(knobs, DEFAULT_VIEWS[0])).toHaveLength(45);
+    expect(knobsForView(knobs, DEFAULT_VIEWS[2])).toHaveLength(knobs.length - 3);
+    expect(knobsForView(knobs, DEFAULT_VIEWS[0])).toHaveLength(knobs.length);
   });
 });
 
@@ -213,8 +224,16 @@ describe('settings: the coverage manifest', () => {
   test('the page dispositions every knob and topology key it owns', () => {
     const knobsDeclared = dispositions.filter((entry) => entry.kind === 'knob');
     const topologyDeclared = dispositions.filter((entry) => entry.kind === 'topology');
-    expect(knobsDeclared).toHaveLength(45);
-    expect(topologyDeclared).toHaveLength(58);
+    // The expectation is the PARSED denominator, not a number. These read 45 and 58 until
+    // 2026-09-18, and when the daemon grew two activity knobs (f9e19d00) the pin did not catch
+    // the gap — it WAS the gap, failing on arithmetic beside a wall built precisely so no count
+    // is hand-held. A set also catches the other direction, which a length cannot: a name
+    // declared here that the source never declared is how this manifest once carried 60 topology
+    // keys for a 58-key source, found by hand-diffing at the time.
+    const knobNames = new Set(parseKnobNames(readSource(KNOB_SOURCE)));
+    const topologyNames = new Set(TOPOLOGY_SOURCES.flatMap((file) => parseSerialNames(readSource(file))));
+    expect(new Set(knobsDeclared.map((entry) => entry.name))).toEqual(knobNames);
+    expect(new Set(topologyDeclared.map((entry) => entry.name))).toEqual(topologyNames);
     expect(new Set(dispositions.map((entry) => entry.name)).size).toBe(dispositions.length);
 
     // The eight names the two FEATURES sections call read-only, and no others.
@@ -231,6 +250,6 @@ describe('settings: the coverage manifest', () => {
     // The console's form is keyed by the config key; the manifest by the enum entry name, so the
     // two are compared through the fixture's own keys rather than by string equality.
     expect(declared.has('PORT')).toBe(true);
-    expect(Object.keys(fixtureConfig.effective)).toHaveLength(45);
+    expect(Object.keys(fixtureConfig.effective)).toHaveLength(knobs.length);
   });
 });

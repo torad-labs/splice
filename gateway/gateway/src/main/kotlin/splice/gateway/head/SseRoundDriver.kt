@@ -14,11 +14,13 @@ import splice.core.turn.TurnOutcome
 import splice.spi.ClientFrameEmitted
 import splice.spi.StreamTornBeforeClient
 import splice.spi.WireSink
+import splice.spi.transport.TransportFailureReason
 import java.io.IOException
 
 internal class SseRoundDriver(
     private val wsDriver: WsRoundDriver,
     private val ssePost: SseRoundPost,
+    private val upstreamUrl: String,
 ) {
     /** One upstream round driven into [sink]: POST → watchdog/pinger → translator → zero-event
      *  classify. The non-fold path and every fold round share this; the caller's [FinishTurn] runs
@@ -116,8 +118,8 @@ internal class SseRoundDriver(
         val streamRead = drive.perfCounter(PerfKeys.SSE_BYTES_IN) > bytesInBase
         if (contentEmitted || !streamRead) return null
         // The same detail TurnConnEnd would have printed, so the ending a declined continuation
-        // still reaches names the same failure.
-        val detail = (e as? StreamTornBeforeClient)?.cause?.message ?: e.message ?: NO_TEAR_DETAIL
+        // still reaches names the same failure (V4-164: one describer for both).
+        val detail = TransportFailureReason.of(e, upstreamUrl)
         return TurnOutcome.Failure(
             "upstream connection failed ($detail) — retry",
             // Locally synthesized: the upstream reported nothing, the socket did (G20 health split).
@@ -140,5 +142,3 @@ internal class SseRoundDriver(
         )
     }
 }
-
-private const val NO_TEAR_DETAIL = "no detail"

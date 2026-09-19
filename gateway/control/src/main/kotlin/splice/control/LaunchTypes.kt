@@ -3,14 +3,28 @@
 // (concentration, 2026-08-19). Same-package FQCNs are unchanged.
 package splice.control
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.TokenCaptureSpec
+import splice.core.model.ModelCatalog
+import splice.core.util.JsonScalars
 import java.nio.file.Path
+
+/** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
+ *  OTHER head's. They are ONE fact — which trees this head can adopt a named session out of — so they
+ *  travel as one value, which also keeps [LaunchSpec] inside the constructor-width ratchet
+ *  (checks/constructor-width.ts) instead of widening it one field at a time. */
+public data class HeadTrees(
+    val own: Path,
+    val siblings: List<Path> = emptyList(),
+)
 
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(
-    val configDir: Path,
+    val trees: HeadTrees,
     val pinnedModel: String,
     val availableModelIds: List<String>,
     val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
@@ -47,6 +61,9 @@ public data class LaunchSpec(
     /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
      *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
     val loginOutcomeFile: String = "",
+    /** The head's topology key ("codex"): `splice login <key>` and `<wrapper> login` name the same
+     *  sign-in, and the /login hook must find it under either spelling (review 2026-09-14). */
+    val headKey: String = "",
     val policy: ClaudePolicy,
     val port: Int,
     /** Per-install local gateway credential; shared with the head's inbound verifier. */
@@ -59,7 +76,24 @@ public data class LaunchSpec(
      * shut the only door that can heal a 401.
      */
     val forwardClientAuth: Boolean = false,
-)
+) {
+    /** V4-162: this boot-assembled spec with the windows splice.toml declares NOW, read per launch
+     *  (the DR-81 shape: the spec is frozen at boot, a live fact is not). The env plants the pinned
+     *  row's window, so a session launched after an edit starts on the edited window and rides raw;
+     *  each picker row in the model-options cache takes its row's window, so .claude.json never
+     *  disagrees with the env (Claude Code 2.1.276 drops that field, so there it is informational). */
+    public fun withWindows(catalog: ModelCatalog): LaunchSpec {
+        val windows = catalog.live().models.associate { it.id to it.contextWindow }
+        val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map { withWindow(it, windows) }) }
+        return copy(contextWindow = catalog.clientLaunchWindow, modelOptionsCache = options ?: modelOptionsCache)
+    }
+
+    private fun withWindow(row: JsonElement, windows: Map<String, Long>): JsonElement {
+        val option = row as? JsonObject ?: return row
+        val window = JsonScalars.str(option, "value")?.let(windows::get) ?: return row
+        return JsonObject(option + ("context_window" to JsonPrimitive(window)))
+    }
+}
 
 public data class LaunchRecipe(
     val env: Map<String, String>,

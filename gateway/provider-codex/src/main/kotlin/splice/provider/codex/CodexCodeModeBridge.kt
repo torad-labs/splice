@@ -72,11 +72,19 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
         turn: Turn,
         initialOuter: GatewayCustomCall? = null,
         disableParallel: Boolean,
-    ): RoundInterceptor = RoundInterceptor { bodyJson, sink, post ->
-        controller.run(CodeModeRunInput(turn, initialOuter, disableParallel, bodyJson, sink, post))
+    ): RoundInterceptor {
+        val admitted = turn.copy(toolResults = turn.toolResults.map(validation::admit))
+        return RoundInterceptor { bodyJson, sink, post ->
+            controller.run(CodeModeRunInput(admitted, initialOuter, disableParallel, bodyJson, sink, post))
+        }
     }
 
     public fun injectTool(request: JsonObject): JsonObject = wire.injectTool(request)
 
-    public fun onHeadStop(): Unit = registry.onHeadStop()
+    public fun onHeadStop() {
+        registry.onHeadStop()
+        // The runtime owns child JVM worker processes; a head stop is the one production path that
+        // releases them, so its close() is called here and nowhere else (autocloseable-closed).
+        config.runtime.close()
+    }
 }

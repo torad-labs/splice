@@ -13,10 +13,12 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.control.FailedHeads
 import splice.control.ManagedHead
+import splice.control.TopologyDigest
 import splice.control.TopologyStale
 import splice.control.TurnPathStalled
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.version.ClientVersionTracker
 
 private const val KEY = "key"
 private const val LABEL = "label"
@@ -27,10 +29,11 @@ internal class ControlPayloads(
     private val heads: Map<String, ManagedHead>,
     private val failedHeads: FailedHeads,
     private val configuredHeads: Int,
-    private val topologyDigest: String = "",
+    private val topologyDigest: TopologyDigest = TopologyDigest { "" },
     private val configPath: String = "",
     private val topologyStale: TopologyStale = TopologyStale { false },
     private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
 
     fun controlHealthJson(): String = buildJsonObject {
@@ -63,6 +66,7 @@ internal class ControlPayloads(
         }
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
+        clientVersions.aggregateWarning()?.let { put("clientVersionWarning", it) }
         // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.
         put(HEADS, configuredHeads)
         // Launch shims wait for readyHeads + failedHeads == heads before POSTing /launch (post
@@ -73,8 +77,9 @@ internal class ControlPayloads(
         put("failedHeads", failedHeads())
         // JW-04: the booted config identity — an edited splice.toml used to be silently inert
         // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
-        // recomputed per request and fails OPEN on an unreadable file.
-        put("topologyDigest", topologyDigest)
+        // recomputed per request and fails OPEN on an unreadable file. V4-162: the digest is the
+        // version the daemon RUNS, which a window-only edit moves, so it is read per request too.
+        put("topologyDigest", topologyDigest())
         put("configPath", configPath)
         put("topologyStale", topologyStale())
     }.toString()

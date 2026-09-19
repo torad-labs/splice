@@ -333,4 +333,97 @@ class SseEmitterTest {
         e.rawDelta(WireBlockIndex(raw.value + 1), buildJsonObject { put("type", "citations_delta") })
         assertEquals(1, frames.count { it.startsWith(deltaEvent) }, "a rawDelta to a non-open block is a no-op")
     }
+
+    // V4-81: THE PRE-CONTENT WIRE-TYPE RULE, PINNED WHERE IT NOW RUNS.
+    //
+    // The rule used to be restated at four failure surfaces (TurnKnownEnd, TurnEnding, TurnConnEnd,
+    // TurnPipeline); a fifth ending could be added without it, and TurnFinish had to snapshot perf
+    // on every turn just to feed it. It lives here now, at the one place an error frame can be
+    // written, so these cells are the seam's own proof rather than a policy mirrored from it. The
+    // rule's TABLE (which types remap, which are exempt) is pinned next door in TurnKnownEndTest;
+    // what these cells add is that the emitter actually CONSULTS the table, on the frame it writes.
+    //
+    // MUTATION PROOF (recorded in the ledger): replace `PreContentWireType.of(type, contentReached(),
+    // permanent)` at SseEmitter.emitError with the bare `type` and the two relabel cells below go
+    // red BY NAME while the exempt cell stays green — so this pins the RULE's application, not the
+    // constant OVERLOADED. The lambda being a FUNCTION is separately load-bearing: make it a
+    // snapshot at construction and the "content arrives first" cell goes red.
+    private fun errorTypeIn(frames: List<String>): String =
+        frames.single { it.startsWith("event: error") }
+
+    @Test
+    fun `the pre-content rule is applied at the frame - a pre-content api_error is wired as overloaded`() =
+        runTest {
+            val frames = mutableListOf<String>()
+            val e = emitters.create(
+                write = { frames.add(it) },
+                model = "claude-codex--gpt-5.6-sol",
+                usagePayload = { buildJsonObject { } },
+                messageId = "msg_fixed",
+                contentReached = { false },
+            )
+            e.emitError(ErrorType.API_ERROR, "upstream: broke")
+
+            assertTrue(
+                errorTypeIn(frames).contains("\"type\":\"${ErrorType.OVERLOADED.wireName}\""),
+                "nothing was read yet, so the wire type is the one Claude Code retries: $frames",
+            )
+            assertTrue(errorTypeIn(frames).contains("upstream: broke"), "the words are not the type")
+        }
+
+    @Test
+    fun `the rule reads content LIVE - content arriving after construction closes the remap`() = runTest {
+        // The emitter is built before the first byte, so the answer has to be a question asked at
+        // the failure, not an answer recorded at the open. This is the cell that fails if the
+        // lambda is collapsed into a Boolean.
+        val frames = mutableListOf<String>()
+        var reached = false
+        val e = emitters.create(
+            write = { frames.add(it) },
+            model = "claude-codex--gpt-5.6-sol",
+            usagePayload = { buildJsonObject { } },
+            messageId = "msg_fixed",
+            contentReached = { reached },
+        )
+        e.openText()
+        reached = true
+        e.emitError(ErrorType.API_ERROR, "upstream: broke after content")
+
+        assertTrue(
+            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
+            "content already reached the client, so the type rides through: $frames",
+        )
+    }
+
+    @Test
+    fun `a permanent failure keeps its real type and is never advertised as transient`() = runTest {
+        val frames = mutableListOf<String>()
+        val e = emitters.create(
+            write = { frames.add(it) },
+            model = "claude-codex--gpt-5.6-sol",
+            usagePayload = { buildJsonObject { } },
+            messageId = "msg_fixed",
+            contentReached = { false },
+        )
+        e.emitError(ErrorType.API_ERROR, "upstream: model refused", permanent = true)
+
+        assertTrue(
+            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
+            "a retry reproduces this verdict exactly, so it is not sold as retryable: $frames",
+        )
+    }
+
+    @Test
+    fun `a caller that cannot prove nothing was written takes the inert default`() = runTest {
+        // SseEmitterFactory.create defaults contentReached to true: the local answer and the
+        // compaction replay have no counter, and a path that cannot PROVE the client has read
+        // nothing must not be handed a relabel it cannot justify. Its types stay as they were.
+        val (frames, e) = collector()
+        e.emitError(ErrorType.API_ERROR, "local answer failed")
+
+        assertTrue(
+            errorTypeIn(frames).contains("\"type\":\"${ErrorType.API_ERROR.wireName}\""),
+            "the default is inert, not optimistic: $frames",
+        )
+    }
 }

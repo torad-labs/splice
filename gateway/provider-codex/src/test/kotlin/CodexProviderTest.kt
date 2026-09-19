@@ -109,9 +109,13 @@ class CodexProviderTest {
         assertEquals("s1", built.extraHeaders["session-id"])
         assertEquals("model=${built.meta.upstreamModel}", built.extraHeaders["x-codex-routing-hint"])
         assertTrue(built.extraHeaders.containsKey("thread-id"), built.extraHeaders.toString())
+        assertEquals("true", built.extraHeaders["x-openai-internal-codex-responses-lite"])
         // Same session, a compaction: the same three values (the WS connection key must not churn).
+        // Lite is a property of the model, so the compaction carries the same header or the
+        // session's prompt-cache prefix splits.
         val compact = codex.buildTurn(deferrableTurnBody(), compact = true, sessionId = "s1")
         assertEquals(built.extraHeaders["thread-id"], compact.extraHeaders["thread-id"])
+        assertEquals("true", compact.extraHeaders["x-openai-internal-codex-responses-lite"])
     }
 
     @Test
@@ -123,6 +127,20 @@ class CodexProviderTest {
         )
 
         assertEquals("", built.requestBody.getValue("instructions").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `codex production profile sends sequential_cutoff summary delivery`() {
+        val built = provider(accountIdHeader = false).buildTurn(
+            deferrableTurnBody(),
+            compact = false,
+            sessionId = "s1",
+        )
+        assertEquals(
+            "sequential_cutoff",
+            built.requestBody["stream_options"]?.jsonObject
+                ?.get("reasoning_summary_delivery")?.jsonPrimitive?.content,
+        )
     }
 
     @Test

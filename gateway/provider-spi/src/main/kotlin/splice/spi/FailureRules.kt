@@ -10,21 +10,30 @@
 // shared predicate that is easy to find is harder to re-implement.
 package splice.spi
 
+import splice.core.wire.HttpStatus
+
 public class FailureRules {
     /** Does this upstream failure warrant the single-flight token refresh? */
     internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
-        status == UNAUTHORIZED || (status == FORBIDDEN && authBodyRe.containsMatchIn(body))
+        status == HttpStatus.UNAUTHORIZED || (status == HttpStatus.FORBIDDEN && isAuthFailureBody(body))
+
+    /** 403-body classifier (grok 2026-07-18): plan/permission 403s must not look like auth. */
+    public fun isAuthFailureBody(body: String): Boolean = authBodyRe.containsMatchIn(body)
+
+    /** V4-73: 402 Payment Required is a quota exhaustion for EVERY provider — deepseek answers
+     *  Insufficient Balance as 402, and a spent account is not a malformed request. A vendor-neutral
+     *  HTTP fact, which is why it lives here and not on the auth port: the port is where a VENDOR's
+     *  own spelling goes, this is the protocol's. */
+    public fun isQuotaExhaustionStatus(status: Int): Boolean = status == HttpStatus.PAYMENT_REQUIRED
 
     /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. PUBLIC because the
      *  RC-4 amend gate must key off the SAME predicate as this GIVE_UP classification (review
      *  2026-07-24: a narrower literal match on the amend side let any wording drift skip the
      *  recovery and land straight in give-up). */
     public fun isEncryptedContentError(status: Int, body: String): Boolean =
-        status in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX && body.contains("encrypted_content", ignoreCase = true)
+        status in HttpStatus.BAD_REQUEST..CLIENT_ERROR_MAX &&
+            body.contains("encrypted_content", ignoreCase = true)
 }
-
-private const val UNAUTHORIZED = 401
-private const val FORBIDDEN = 403
 
 // xAI reports an expired/revoked OAuth token as 403 `unauthenticated:bad-credentials`,
 // NOT 401 (grok-dead-head incident, 2026-07-18: refresh never fired, the head 403'd every
@@ -38,5 +47,5 @@ private val authBodyRe = Regex(
     RegexOption.IGNORE_CASE,
 )
 
-private const val CLIENT_ERROR_MIN = 400
+// 499 stays local: nothing answers with it, it is only the top of the 4xx window tested above.
 private const val CLIENT_ERROR_MAX = 499

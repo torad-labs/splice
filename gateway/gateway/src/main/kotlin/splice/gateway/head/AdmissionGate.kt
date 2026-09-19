@@ -10,7 +10,6 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
-import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.SseSpuriousWakeupException
@@ -32,12 +31,16 @@ internal class AdmissionGate(
     }
 
     suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? {
-        val slot = try {
-            gate.acquire()
-        } catch (_: GatewayAtCapacityException) {
-            log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
-            responses.respondAtCapacity(call, "gateway at capacity")
-            return null
+        // V4-114: the gate ANSWERS with a value now, so this refusal is a compiler-checked `when`
+        // branch rather than a `catch` on a name — the 529 on the wire is unchanged, and the
+        // window-closed refusal ten lines below has always been spelled as a returned null.
+        val slot = when (val admission = gate.acquire()) {
+            is InflightGate.Admission.Acquired -> admission.slot
+            InflightGate.Admission.AtCapacity -> {
+                log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
+                responses.respondAtCapacity(call, "gateway at capacity")
+                return null
+            }
         }
         // A waiter promoted from the InflightGate queue AFTER stopLocked closed the window must not
         // start an upstream turn the engine stop will kill — bouncing it here (release + 529) lets
@@ -60,13 +63,13 @@ internal class AdmissionGate(
         block: MaterializedRequest<T>,
     ): T? = try {
         if (fastFail) {
-            val leased = deps.requestMaterializationGate.tryWithLease(block)
+            val leased = deps.seams.requestMaterializationGate.tryWithLease(block)
             if (leased == null) {
                 responses.respondAtCapacity(call, "gateway busy — retry")
             }
             leased
         } else {
-            deps.requestMaterializationGate.withLease(block)
+            deps.seams.requestMaterializationGate.withLease(block)
         }
     } catch (tooLarge: RequestBodyTooLarge) {
         responses.respondTooLarge(call, tooLarge.limit)

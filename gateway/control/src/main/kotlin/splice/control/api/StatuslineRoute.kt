@@ -16,14 +16,24 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import splice.control.HeadPerfSkipSource
+import splice.control.HeadSessionPerfSource
+import splice.control.ManagedHead
+import splice.control.SessionCost
+import splice.control.SessionCostSource
 import splice.control.StatuslineRenderer
 import splice.core.config.ConfigService
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.version.ClientVersionTracker
+import splice.core.wire.HttpStatus
 import java.io.ByteArrayOutputStream
 
 private const val MAX_STATUSLINE_BYTES = 64 * 1024
 private const val STATUSLINE_READ_BUFFER_BYTES = 8 * 1024
 private const val STATUSLINE_READ_TIMEOUT_MS = 2_000L
-private const val CONTENT_TOO_LARGE_STATUS = 413
 
 // A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups means
 // the client is broken — end the read honestly rather than pin a core. Mirrors SseReader's bound
@@ -33,8 +43,10 @@ private const val MAX_STATUSLINE_SPURIOUS_WAKEUPS = 1024
 internal class StatuslineRoute(
     private val resolver: HeadResolver,
     private val config: ConfigService,
+    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
 ) {
     private val renderers = RendererCache()
+    private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun statusline(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
@@ -56,11 +68,36 @@ internal class StatuslineRoute(
                 roots,
                 catalog = managed.catalog,
                 clientWindows = managed.clientWindows,
+                accountPool = managed.accountPool,
+                sessionCost = sessionCostOf(managed),
+                // V4-45: the same checked-cast bridge sessionCostOf uses below, and captured the
+                // same way — the SOURCE, never a count, so the cached renderer reads it live.
+                perfSkips = managed.perf as? HeadPerfSkipSource,
             )
         }
-        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
-        call.respondText(line, ContentType.Text.Plain)
+        val sessionId = sessionId(stdin)
+        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h, sessionId)
+        val warning = clientVersions.statuslineWarning(sessionId)
+        call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }
+
+    /** V4-37: the per-session cost, when this head can price one at all.
+     *
+     *  `perf` is typed [splice.control.HeadPerfSource] and the session-aware reader is its SIBLING
+     *  interface, so this bridge is a checked cast. A head whose perf source cannot answer per
+     *  session — every test double, and any future sink that keeps no session column — renders the
+     *  client's own number, exactly as today. The head-level rate override is null here because the
+     *  TOML field that populates it is stage two (HeadConfig, V4-36's file). */
+    private fun sessionCostOf(managed: ManagedHead): SessionCostSource? =
+        (managed.perf as? HeadSessionPerfSource)?.let { perf -> SessionCost(perf, managed.catalog) }
+
+    // A statusline payload splice did not author and cannot answer to: a missing session id is the
+    // absence of an OPTIONAL field, not a failure, and the render path has no sink — it degrades to
+    // the no-session view.
+    // ast-grep-ignore: kt-no-silent-result-collapse -- a missing optional session id is absence, not a failure
+    private fun sessionId(stdin: String): String? = Cancellables.runCatchingCancellable {
+        JsonScalars.str(json.parseToJsonElement(stdin).jsonObject, "session_id")
+    }.getOrNull()
 
     /**
      * The posted body, or null once the failure has ALREADY been answered on [call].
@@ -75,7 +112,7 @@ internal class StatuslineRoute(
             call.respondText(
                 "statusline body exceeds $MAX_STATUSLINE_BYTES bytes",
                 ContentType.Text.Plain,
-                HttpStatusCode(CONTENT_TOO_LARGE_STATUS, "Content Too Large"),
+                HttpStatusCode(HttpStatus.CONTENT_TOO_LARGE, "Content Too Large"),
             )
             null
         } catch (_: TimeoutCancellationException) {
@@ -144,32 +181,3 @@ private class StatuslineBodyTooLarge : RuntimeException()
  *  would mean a new module edge for one exception. Deliberately NOT reported as a clean read: a torn
  *  body must never render a statusline as though the client had sent one. */
 private class StatuslineReadTorn : RuntimeException()
-
-/** Builds the renderer for a head whose cached one no longer matches — the miss branch of
- *  [RendererCache.get], named for that role rather than its `() -> StatuslineRenderer` shape. */
-internal fun interface BuildRenderer {
-    operator fun invoke(): StatuslineRenderer
-}
-
-/** Per-head renderer cache for the statusline route. A cached renderer is reused while the inputs
- *  captured at its construction still hold; a change rebuilds it. Thread-safe: ticks for many
- *  heads land concurrently on Ktor dispatcher threads. */
-internal class RendererCache {
-    // Label is part of the match (DR-22a): the renderer captures it at construction, so a
-    // roots-only check rendered a runtime-renamed head's stale label for the daemon's life.
-    private class Entry(val roots: List<String>, val label: String, val renderer: StatuslineRenderer) {
-        fun matches(roots: List<String>, label: String): Boolean = this.roots == roots && this.label == label
-    }
-
-    private val entries = HashMap<String, Entry>()
-
-    fun get(key: String, label: String, roots: List<String>, create: BuildRenderer): StatuslineRenderer =
-        synchronized(entries) {
-            val cached = entries[key]
-            if (cached != null && cached.matches(roots, label)) {
-                cached.renderer
-            } else {
-                create().also { entries[key] = Entry(roots.toList(), label, it) }
-            }
-        }
-}

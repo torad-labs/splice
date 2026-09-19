@@ -3,8 +3,12 @@
 package splice.app
 
 import splice.control.CompactView
+import splice.control.EconomicsRow
 import splice.control.HeadCompactSource
+import splice.control.HeadEconomicsSource
+import splice.control.HeadPerfSkipSource
 import splice.control.HeadPerfSource
+import splice.control.HeadSessionPerfSource
 import splice.control.HeadUsageSource
 import splice.control.QuotaView
 import splice.control.QuotaWindowView
@@ -13,6 +17,7 @@ import splice.control.UsageView
 import splice.core.usage.QuotaSnapshot
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 
@@ -43,6 +48,40 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
     }
 }
 
-public class PerfStatsSource(private val stats: PerfStats) : HeadPerfSource {
+/** The hourly quota rollup, projected onto the control plane's row type. A straight field-for-field
+ *  copy on purpose: [EconomicsRow] is :control's own vocabulary and :control may not see :gateway,
+ *  so the translation belongs here, in the composition root, and nowhere else. */
+public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEconomicsSource {
+    override fun buckets(): List<EconomicsRow> = store.read().map {
+        EconomicsRow(
+            hour = it.hour,
+            turns = it.turns,
+            inTokens = it.inTokens,
+            cachedTokens = it.cachedTokens,
+            cacheWriteTokens = it.cacheWriteTokens,
+            outTokens = it.outTokens,
+            reqBytes = it.reqBytes,
+            upstreamBytes = it.upstreamBytes,
+            toolsEager = it.toolsEager,
+            toolsDeferred = it.toolsDeferred,
+            deferralTurns = it.deferralTurns,
+            rateLimited = it.rateLimited,
+        )
+    }
+}
+
+public class PerfStatsSource(private val stats: PerfStats) :
+    HeadPerfSource,
+    HeadSessionPerfSource,
+    HeadPerfSkipSource {
     override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
+
+    /** V4-37: the same rows narrowed to one session — what the statusline's cost segment sums. */
+    override fun tailNumericFor(sessionId: String): List<Map<String, Long>> =
+        stats.tailNumericFor(sessionId)
+
+    /** V4-45: how many rows that same reader had to DROP. Delegated live rather than snapshotted —
+     *  the statusline renderer is cached per head and built once, so a captured number would freeze
+     *  at whatever the count was when the head started (zero) and never say anything again. */
+    override fun skippedRowCount(): Long = stats.skippedRowCount()
 }

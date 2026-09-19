@@ -1,0 +1,139 @@
+/* The projects page: the repos bay beside a detail column that swells open, the
+   same geometry as the sessions page. Tokens only (CONTRACTS.md section 1). */
+
+.myx-px {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  /* ---- THE PAGE OCCUPIES ITS ROOM (M1-39) ------------------------------------
+     The page is the top of one chain: `.myx-console` is a 100vh grid, `.myx-console-page` is a
+     stretched grid item and therefore HAS a definite height, and everything between here and the
+     bay was authored to its content -- so the chain offered a height and nothing passed it down.
+     Measured on this page at 3840 (fixture=list): the bay's ground stopped at row 1338 of 2160,
+     62 percent of the frame, with the bottom 38 percent flat floor. On the comp a bay is a rack
+     that occupies the height it is given -- bay-claude is y138..947, 79 percent of the frame, and
+     its slot rules continue BELOW the last strip at a 31-32px pitch.
+     min-height rather than height, so a page whose content is taller than the room still grows and
+     the room scrolls, which is what `.myx-console-page { overflow: auto }` is for. */
+  min-height: 100%;
+}
+
+.myx-px-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-px-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-5);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+/* A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-119, mirroring M1-116's mechanism rather than
+   choosing a fourth repair - three pages carrying three repairs of one defect is worse than the
+   defect). The track collapses to literal 0 at rest, but `gap` was still var(--space-4), and gap is
+   paid BETWEEN a 1fr track and a 0 track like any other pair, so the rack was 12px narrower than
+   the board on every rest render. Measured at 1536 dark before this: board 1366, bays 1354,
+   columnGap 12.0004px, tracks "1353.77px 0px". The gutter is the OPEN column's, so it moves with
+   the column and the transition carries both. */
+.myx-px-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-4);
+  /* `align-items: start` was the stop in the chain: it sized both columns to their content, so
+     the row was as tall as the shortest thing in it and the bays below had nothing to grow into.
+     Stretch is the grid's own default and it is what passes the room's height down; `flex: 1 1
+     auto` takes it from the page, which is the flex column above. min-height 0 so a tall detail
+     column cannot push the bays past the room instead of scrolling inside it. */
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+.myx-px-board-open {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-px-board { transition: none; }
+}
+
+.myx-px-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+/* ---- THE FIELDS GROW TO FILL THE STRIP, AND THE STRIP FILLS THE BAY (M1-39) ----
+   A strip is `width: max-content` (ui.css) and that carries B6's ruling in its own comment: B6
+   CUT the strip to its content precisely to remove bare paper -- 128px on fleet, 398px on
+   accounts, 807px on doctor. So this is deliberately NOT "make the strip wider": filling the
+   container without also growing the cells restores exactly the slab B6 removed, which is why
+   neither half was safe alone.
+   Both halves together are a different object. Measured on this page at 3840: strip paper ran
+   x416..2998 inside a bay ground running to x3770 -- a 772px tail, 21 percent of the bay width,
+   on every strip. The ch width stops being a fixed box and becomes each cell's SHARE: the cells
+   keep their declared ch as their basis and the leftover ch is distributed across them, so the
+   column grid is still the declared one and only the slack moves. That is the whole difference
+   between bare paper and a full row. */
+.myx-px-bays .myx-strip { width: 100%; }
+.myx-px-bays .myx-sfield {
+  /* declared ch stays the basis; the slack is shared */
+  flex: 1 1 auto;
+}
+
+.myx-px-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.myx-px-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.myx-px-detail-name {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  color: var(--ink-strong);
+  word-break: break-all;
+}
+
+.myx-px-open,
+.myx-px-close {
+  padding: var(--space-1) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.myx-px-open:hover,
+.myx-px-close:hover { border-color: var(--strip-ink); }
+.myx-px-open:focus-visible,
+.myx-px-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* ONE breakpoint for every page body (m1 design review B13): the detail column drops beneath the
+   bay below 1120px, the width at which the rail, a bay and a detail column stop fitting side by
+   side. The bays scroll their racks (review B7), so a narrow bay scrolls instead of cutting the
+   tail off a strip, and the brief's own topology — one detail column, the opened strip swelling
+   into it on the right — holds at every width above this floor. The rule belongs in the shell, in
+   one place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  .myx-px-board-open { grid-template-columns: minmax(0, 1fr); }
+}

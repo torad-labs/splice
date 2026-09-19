@@ -1,10 +1,12 @@
 // PORT-OF: the end-to-end message tests from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — a real
-// HeadServer (CodexProvider + mock ChatGPT upstream) exercised over HTTP: SSE wire frames for
+// HeadServer (TestResponsesProvider + mock ChatGPT upstream) exercised over HTTP: SSE wire frames for
 // streamed turns, /health + /v1/models shapes, the honest-failure paths, count_tokens NOT
 // burning a turn, promote-to-text + mirror on a compact-shaped answer. This is the P3-HEAD gate
 // that arms the idle/prefill/refresh scenarios the reader+machine suite deferred.
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -15,8 +17,12 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -34,14 +40,9 @@ import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
-import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
@@ -86,7 +87,7 @@ class HeadServerIntegrationTest {
     @BeforeAll
     fun setUp() = runTest {
         tmp = Files.createTempDirectory("head-it")
-        val provider = CodexProvider(
+        val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -105,16 +106,15 @@ class HeadServerIntegrationTest {
         head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = { synchronized(logs) { logs.add(it) } }),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = { synchronized(logs) { logs.add(it) } },
-                maxRequestBytes = 1_024,
+                policy = HeadDeps.HeadPolicy(maxRequestBytes = 1_024),
+            ).copy(
+                // The shadow classifier's own log rides the SAME sink the assertions read, so it
+                // cannot come from the fixture's silent default.
+                stores = headStores(tmp).copy(shadow = ShadowClassifier(log = { synchronized(logs) { logs.add(it) } })),
             ),
         )
         head.start()
@@ -146,14 +146,20 @@ class HeadServerIntegrationTest {
     // and 5s was not enough for a starved runner: gate run 33608202738 (2026-09-02) saw the line
     // arrive AFTER the wait while the whole module suite ran alongside. 30s buys nothing on the
     // pass path and stops a slow box from reading as a missing line.
-    private fun awaitLog(from: Int, timeoutMs: Long = 30_000, match: (String) -> Boolean): String? {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            synchronized(logs) { logs.drop(from).lastOrNull(match) }?.let { return it }
-            if (System.currentTimeMillis() >= deadline) return null
-            Thread.sleep(20)
+    // A deadline poll, the rule's sanctioned shape: the perf line is written on a server thread
+    // after the response, with no signal to await. Run on IO so the wait is real time even from
+    // inside runTest, and the test scheduler's thread is never blocked by it.
+    private suspend fun awaitLog(from: Int, timeoutMs: Long = 30_000, match: (String) -> Boolean): String? =
+        withContext(Dispatchers.IO) {
+            val pollMs = 20L
+            val deadline = System.currentTimeMillis() + timeoutMs
+            var found = synchronized(logs) { logs.drop(from).lastOrNull(match) }
+            while (found == null && System.currentTimeMillis() < deadline) {
+                delay(pollMs)
+                found = synchronized(logs) { logs.drop(from).lastOrNull(match) }
+            }
+            found
         }
-    }
 
     @Test
     fun `health carries version and port`() = runTest {
@@ -228,7 +234,7 @@ class HeadServerIntegrationTest {
     // every dialect contract suite, this whole suite and the provider-spi transport suites stayed
     // GREEN. This arm reads the request the mock DECODED off the socket
     // (MockChatGptUpstream.upstreamBodies — zstd-inflated, exactly what the ChatGPT backend would
-    // parse) and compares the WHOLE body to the canonical production bytes of a "basic" codex turn.
+    // parse) and compares the WHOLE body to the canonical bytes of a basic TestResponsesProvider turn.
     // Pinned as literal bytes on purpose: the closed ResponsesRequest DTO makes field order =
     // declaration order, so a reordered field, a dropped `stream:true`, or a Chat-only knob leaking
     // in all go RED here. Update the pin only after reading the diff.
@@ -249,16 +255,13 @@ class HeadServerIntegrationTest {
             .joinToString("") { "%02x".format(it) }.take(CACHE_KEY_HEX)
         val expected = """
             |{"model":"gpt-5.6-sol",
-            |"input":[{"role":"developer","content":"You are a test. SCENARIO:basic"},{"role":"user","content":"go"}],
+            |"input":[{"role":"user","content":"go"}],
             |"store":false,
             |"stream":true,
             |"include":["reasoning.encrypted_content"],
             |"prompt_cache_key":"$cacheKey",
-            |"instructions":"",
-            |"parallel_tool_calls":false,
-            |"reasoning":{"effort":"high","summary":"detailed","context":"all_turns"},
-            |"text":{"verbosity":"low"},
-            |"client_metadata":{"client":"splice","thread_id":"$cacheKey"},
+            |"instructions":"You are a test. SCENARIO:basic",
+            |"reasoning":{"effort":"high","summary":"detailed"},
             |"stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}
         """.trimMargin().lines().joinToString("")
         assertEquals(expected, body)
@@ -280,6 +283,12 @@ class HeadServerIntegrationTest {
     @Test
     fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
         val before = logs.size
+        val jsonl = tmp.resolve("perf.jsonl")
+        val beforeRows = if (Files.exists(jsonl)) {
+            Files.readString(jsonl).trim().lines().count { it.isNotBlank() }
+        } else {
+            0
+        }
         messages("basic")
         val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
         assertTrue(perfLine != null, "expected a perf line in the log, got: $logs")
@@ -290,10 +299,13 @@ class HeadServerIntegrationTest {
         for (field in expectedFields) {
             assertTrue(perfLine!!.contains(field), "perf line missing $field: $perfLine")
         }
-        val rows = Files.readString(tmp.resolve("perf.jsonl")).trim().lines()
-        assertTrue(rows.isNotEmpty(), "expected at least one perf JSONL row")
-        val last = rows.last()
-        assertTrue(last.contains("\"outcome\":\"ok\"") && last.contains("\"total\":"), "bad row: $last")
+        val rows = Files.readString(jsonl).trim().lines().filter { it.isNotBlank() }
+        val mine = rows.drop(beforeRows)
+        assertTrue(mine.isNotEmpty(), "expected a new perf JSONL row after this turn")
+        assertTrue(
+            mine.any { it.contains("\"outcome\":\"ok\"") && it.contains("\"total\":") },
+            "bad rows from this turn: $mine",
+        )
     }
 
     @Test
@@ -415,12 +427,23 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `a 4xx wearing the overload code keeps its deterministic verdict and is not retried`() = runTest {
+    fun `a 4xx wearing the overload code keeps its invalid_request verdict through every retry`() = runTest {
+        // V4-62 REVERSED THE COUNT THIS TEST USED TO PIN, and that is a policy change rather than
+        // assertion-editing: "a 4xx must not be retried" WAS the old law, and this scenario —
+        // overload_403, a 403 that really was an overload — is the evidence the new law rests on.
+        //
+        // THE VERDICT IS THE HALF THAT SURVIVES, and it is the more useful invariant. A retried 403
+        // that came back reclassified as overloaded_error on the second pass would be exactly the
+        // drift nobody would notice; retrying makes that harder, not easier, because the same body
+        // now passes through the classifier more than once.
         val sse = messages("overload_403")
         assertTrue(sse.contains("event: error"), sse)
         assertTrue(sse.contains("invalid_request_error"), sse)
         assertFalse(sse.contains("overloaded_error"), sse)
-        assertEquals(1, mock.upstreamBodies.count { it.first == "overload_403" }, "a 4xx must not be retried")
+        assertTrue(
+            mock.upstreamBodies.count { it.first == "overload_403" } > 1,
+            "V4-62 retries every upstream failure status, so a 4xx is no longer terminal",
+        )
     }
 
     @Test

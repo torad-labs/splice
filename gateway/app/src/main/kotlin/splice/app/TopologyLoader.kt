@@ -1,7 +1,8 @@
 // NEW: load the topology TOML (~/.config/splice/splice.toml, XDG) into the :core schema, with
 // jar-bundled defaults materialized on first run (mirrors how ensureMgmtKey lazily writes state).
 // ktoml adopted per spike P0-TOML. Loaded ONCE at daemon start — adding a provider/head is an
-// operator action that implies a restart (no hot topology).
+// operator action that implies a restart (no hot topology). V4-162: the context windows are the
+// exception, re-read by TopologyWindows while the daemon runs.
 package splice.app
 
 import com.akuleshov7.ktoml.Toml
@@ -52,15 +53,57 @@ base_url = "https://openrouter.ai/api/v1"
 auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 
 [[providers.openrouter.models]]
+id = "anthropic/claude-sonnet-5"
+label = "Claude Sonnet 5"
+context_window = 1000000
+[[providers.openrouter.models]]
+id = "anthropic/claude-opus-5"
+label = "Claude Opus 5"
+context_window = 1000000
+[[providers.openrouter.models]]
+id = "z-ai/glm-5.3-flash"
+label = "GLM 5.3 Flash"
+context_window = 1310720
+[[providers.openrouter.models]]
+id = "openai/gpt-5.6-sol"
+label = "GPT-5.6 Sol"
+context_window = 1050000
+[[providers.openrouter.models]]
+id = "openai/gpt-5.6-luna"
+label = "GPT-5.6 Luna"
+context_window = 1050000
+[[providers.openrouter.models]]
+id = "google/gemini-3.8-flash"
+label = "Gemini 3.8 Flash"
+context_window = 1048576
+[[providers.openrouter.models]]
+id = "deepseek/deepseek-v4-flash-0731"
+label = "DeepSeek V4 Flash 0731"
+context_window = 1310720
+[[providers.openrouter.models]]
+id = "z-ai/glm-5.3"
+label = "GLM 5.3"
+context_window = 1310720
+[[providers.openrouter.models]]
+id = "meta-llama/llama-4-maverick"
+label = "Llama 4 Maverick"
+context_window = 1048576
+[[providers.openrouter.models]]
 id = "anthropic/claude-haiku-4.5"
-label = "Claude Haiku"
+label = "Claude Haiku 4.5"
 context_window = 200000
 
 [heads.openrouter]
 provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
-pinned_model = "anthropic/claude-haiku-4.5"
+pinned_model = "anthropic/claude-sonnet-5"
+models = [
+  { id = "anthropic/claude-sonnet-5", slot = "sonnet" },
+  { id = "anthropic/claude-opus-5", slot = "opus" },
+  { id = "z-ai/glm-5.3-flash", slot = "haiku" },
+  { id = "openai/gpt-5.6-sol", slot = "fable" },
+]
 
 [heads.openrouter.claude]
 command = "claude-openrouter"
@@ -78,7 +121,9 @@ command = "claude-openrouter"
 
     /** JW-04: the parsed topology PLUS the sha-256 of the exact bytes it came from. The digest
      *  rides /health so shim/doctor/dashboard can tell "the file changed since boot" — topology
-     *  stays deliberately non-hot-reloadable; this only makes the required restart visible. */
+     *  stays deliberately non-hot-reloadable; this only makes the required restart visible. The
+     *  one exception is the context windows (V4-162): TopologyWindows re-reads those, and /health
+     *  then publishes the version the daemon RUNS, which a window-only edit moves. */
     public data class LoadedTopology(val topology: Topology, val digest: String)
 
     public fun loadOrMaterializeWithDigest(path: Path): LoadedTopology =
@@ -114,6 +159,7 @@ command = "claude-openrouter"
     /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an
      *  unreadable file must degrade the staleness signal, never break /health or a launch). */
     public fun currentDigest(path: Path): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): fail-open by design (see the doc above): an unreadable or absent splice.toml must degrade the staleness signal, never break /health or a launch, so null IS the whole reading.
         Cancellables.runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
 
     /** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
@@ -125,7 +171,9 @@ command = "claude-openrouter"
         now != null && bootDigest.isNotEmpty() && now != bootDigest
     }
 
-    private fun sha256Hex(bytes: ByteArray): String =
+    /** sha-256 of splice.toml bytes, the one spelling of a topology digest: boot, [currentDigest] and
+     *  the live window re-read (V4-162, TopologyWindows) all hash through here. */
+    internal fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     public fun parse(text: String): Topology {

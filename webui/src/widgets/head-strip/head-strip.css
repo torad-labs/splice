@@ -1,0 +1,8 @@
+/* The head strip's own layout. The paper, the holder edge, the field boxes and the state gestures
+   are the shared primitives' (shared/ui/ui.css); nothing here re-colours them. Radius 0, tokens
+   only. */
+
+.myx-hstrip-scroll {
+  overflow-x: auto;
+}
+

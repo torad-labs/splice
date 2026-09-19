@@ -1,0 +1,52 @@
+/* The conversation column: turn strips with their bodies under them. Tokens
+   only (CONTRACTS.md section 1); no radius, no shadow. */
+
+.myx-cv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-cv-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.myx-cv-turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* A turn body is text, not a figure: the figure face would set every line as a
+   value. It scrolls inside the column rather than stretching it. */
+.myx-cv-text {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 34vh;
+  overflow: auto;
+  background: var(--scope);
+  color: var(--scope-ink);
+  border: var(--hair) solid var(--scope-grid);
+  /* CODE: a turn body is a transcript block. */
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.myx-cv-more {
+  align-self: flex-start;
+  padding: var(--space-2) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.myx-cv-more:hover { border-color: var(--strip-ink); }
+.myx-cv-more:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

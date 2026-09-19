@@ -63,6 +63,16 @@ public class ConfigService(
     private val persistLock = Any()
     private val runtimeLayer = LinkedHashMap<String, Any?>()
 
+    init {
+        // V4-109: say it ONCE, at construction, for every key the TOML layers asked for and did not
+        // get. Logged here rather than at each read because the merge runs per request — a line per
+        // read would bury the daemon log in a config mistake that never changes. The doctor repeats
+        // the same facts as a named row, so an operator who never reads the log still sees them.
+        coerceRejects().forEach { (where, why) ->
+            log("[config] ignoring $where — $why; the knob keeps its default\n")
+        }
+    }
+
     private data class FileCache(
         val path: Path,
         val modified: FileTime,
@@ -81,14 +91,14 @@ public class ConfigService(
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },
-        headOverrides = coerceAll(headOverrides),
+        headOverrides = coerceAll(headOverrides).accepted,
         file = fileLayer(),
         env = envLayer(),
         runtime = synchronized(runtimeLock) { runtimeLayer.toMap() },
         // JW-06: [heads.<key>.overrides] folds into mergedRaw but was invisible here — the
         // dashboard's provenance feature was silently wrong for exactly the heads that were
         // tuned. Heads with no overrides are absent (the webui renders only what differs).
-        perHead = perHeadOverrides.filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v) },
+        perHead = perHeadOverrides.filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v).accepted },
     )
 
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
@@ -123,10 +133,10 @@ public class ConfigService(
     private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
         val merged = LinkedHashMap<String, Any?>()
         Knob.entries.forEach { merged[it.key] = it.default }
-        coerceAll(headOverrides).forEach { (k, v) -> merged[k] = v }
+        coerceAll(headOverrides).accepted.forEach { (k, v) -> merged[k] = v }
         // Sits directly above the global TOML layer: more specific TOML wins over less specific,
         // while state/env/PATCH keep their existing authority over BOTH (unchanged precedence).
-        headKey?.let { key -> perHeadOverrides[key]?.let { coerceAll(it) } }
+        headKey?.let { key -> perHeadOverrides[key]?.let { coerceAll(it).accepted } }
             ?.forEach { (k, v) -> merged[k] = v }
         fileLayer().forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
@@ -134,11 +144,37 @@ public class ConfigService(
         return merged
     }
 
-    private fun coerceAll(raw: Map<String, String>): Map<String, Any?> =
-        raw.entries.mapNotNull { (k, v) ->
-            val knob = knobsByKey[k] ?: return@mapNotNull null
-            coercion.coerce(knob, v)?.let { k to it }
-        }.toMap()
+    /** Every key the TOML layers asked for and did not get, keyed by where the operator WROTE it:
+     *  a global key as itself, a per-head one as `heads.<head>.<key>`. The doctor renders these as
+     *  named rows, and the constructor renders them once into the log — the two surfaces the
+     *  operator actually looks at, from the one computation. */
+    public fun coerceRejects(): Map<String, String> {
+        val rejects = LinkedHashMap<String, String>()
+        coerceAll(headOverrides).rejected.forEach { (key, why) -> rejects[key] = why }
+        perHeadOverrides.forEach { (head, raw) ->
+            coerceAll(raw).rejected.forEach { (key, why) -> rejects["heads.$head.$key"] = why }
+        }
+        return rejects
+    }
+
+    private fun coerceAll(raw: Map<String, String>): CoercedLayer {
+        val accepted = LinkedHashMap<String, Any?>()
+        val rejected = LinkedHashMap<String, String>()
+        for ((key, value) in raw) {
+            val knob = knobsByKey[key]
+            if (knob == null) {
+                rejected[key] = UNKNOWN_KEY
+                continue
+            }
+            val coerced = coercion.coerce(knob, value)
+            if (coerced == null) {
+                rejected[key] = "not a valid ${knob.kind.name.lowercase()}"
+            } else {
+                accepted[key] = coerced
+            }
+        }
+        return CoercedLayer(accepted, rejected)
+    }
 
     // Best-effort by design (port fidelity): a broken/absent state file yields {} — the daemon
     // must never crash on config reads. But a PRESENT file being discarded is logged, latched per
@@ -305,3 +341,14 @@ public class ConfigService(
 // Filesystem mtime granularity is 1s on many platforms; a same-second edit landing at an
 // identical byte count is otherwise indistinguishable from an unchanged file (CONF-3).
 private const val MTIME_RESOLUTION_WINDOW_MS = 2_000L
+
+/** V4-109: what one raw TOML layer asked for and what it actually got. [accepted] is what merges;
+ *  [rejected] maps the key the operator WROTE to why it was dropped, which is the half that used to
+ *  vanish — a mistyped key or an uncoercible value was discarded in silence, so the knob kept its
+ *  default and nothing anywhere said the operator's line had not been read. */
+private data class CoercedLayer(
+    val accepted: Map<String, Any?>,
+    val rejected: Map<String, String>,
+)
+
+private const val UNKNOWN_KEY: String = "unknown key"

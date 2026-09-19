@@ -9,6 +9,8 @@
 //   failure AFTER a frame           -> stay on the WS path; re-serving would duplicate output
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -34,9 +36,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
 import mock.RecordingSink2
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -47,31 +51,32 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.head.TurnDrive
+import splice.gateway.head.WsRoundDrive
 import splice.gateway.head.WsRoundDriver
 import splice.gateway.head.WsRoundInputs
+import splice.gateway.head.WsRoundResult
 import splice.gateway.head.ZeroEventClassifier
-import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.round.RunnerSignals
 import splice.gateway.usage.OutputClamp
-import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
-import splice.provider.codex.CodexProvider
 import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
@@ -196,7 +201,7 @@ private class RecordingTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String) = Unit
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
     override fun abandon() = Unit
 }
 
@@ -231,15 +236,15 @@ private class ThrowingStartTerminal(
 
     override suspend fun ensureStarted(): Unit = throw failure
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String) = Unit
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
     override fun abandon() = Unit
 }
 
-/** A real codex provider with ONE member swapped. Interface delegation, not subclassing:
- *  CodexProvider is final and wsRunner is a final override, and delegating keeps every other
- *  behaviour (buildTurn, the stream translator, the SSE path) genuinely real. */
+/** A real responses provider with ONE member swapped. Interface delegation, not subclassing:
+ *  TestResponsesProvider is final and wsRunner is a final override, and delegating keeps every
+ *  other behaviour (buildTurn, the stream translator, the SSE path) genuinely real. */
 private class ScriptedWsProvider(
-    private val inner: CodexProvider,
+    private val inner: TestResponsesProvider,
     private val runner: WsRoundRunner,
 ) : Provider by inner {
     override val wsRunner: WsRoundRunner get() = runner
@@ -266,7 +271,7 @@ class WsRoundDriverTest {
     private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
     private fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
-        CodexProvider(
+        TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -292,17 +297,12 @@ class WsRoundDriverTest {
     private fun head(port: Int, runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = provider(runner),
         listenPort = port,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-            inferenceToken = "test-inference-token",
-            gate = InflightGate({ 0 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
-            usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
-            perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
             log = log,
-            requestMaterializationGate = RequestMaterializationGate(2),
-        ),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(2)),
+        ).copy(stores = headStores(tmp, suffix = "-$port")),
     )
 
     private suspend fun coldFlowInputs(
@@ -310,7 +310,7 @@ class WsRoundDriverTest {
         scope: CoroutineScope,
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ): WsRoundInputs {
-        val slot = InflightGate(LiveLimit { 1 }).acquire()
+        val slot = InflightGate(LiveLimit { 1 }).admittedSlot()
         val drive = TurnDrive(
             requestBody = buildJsonObject { },
             meta = TurnMeta(
@@ -416,6 +416,34 @@ class WsRoundDriverTest {
         }
     }
 
+    /** V4-114 PIN. The pre-content fallback is a VALUE on [WsRoundDrive.drive]'s return type now,
+     *  not a thrown `splice.spi.WsRoundNeedsSse`: this test cannot compile against the old shape
+     *  (drive returned TurnOutcome and threw). It pins the two facts the throw carried that the
+     *  fallback depends on — the failure detail the log line is built from, and that the round is
+     *  reported by NEITHER roundEnded arm and never marks STREAM_END, because a round about to be
+     *  re-served over SSE must not commit its chaining state (WsRoundDriver owns the bypass). */
+    @Test
+    fun `a failure terminal before any client frame leaves drive as a NeedsSse value`() = runTest {
+        val runner = ScriptedRunner(emptyList())
+        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val drive = WsRoundDrive(provider(runner), ZeroEventClassifier { _, outcome, _, _ -> outcome })
+        val failed = ev(
+            """{"type":"response.failed","response":{"id":"r1",""" +
+                """"error":{"code":"server_error","message":"boom"}}}""",
+        )
+
+        val result = drive.drive(inputs, runner, flowOf(failed))
+
+        assertEquals(WsRoundResult.NeedsSse("response.failed server_error boom"), result)
+        assertEquals(0, runner.endedOk, "a round re-served over SSE is not a clean terminal")
+        assertEquals(0, runner.endedNotOk, "and drive must not report it at all — the driver owns the bypass")
+        assertNull(
+            inputs.drive.perf.snapshot().marks[PerfKeys.STREAM_END],
+            "STREAM_END belongs to a round that actually streamed",
+        )
+        inputs.drive.slot.release()
+    }
+
     /** FAILURE BEFORE ANY CLIENT FRAME -> the round is abandoned and SSE serves the turn, so the
      *  upstream POST happens and the client sees the normal answer. Without this the failure is
      *  delivered raw over the WebSocket, skipping retry / 401 refresh / 429 cooldown entirely. */
@@ -431,6 +459,7 @@ class WsRoundDriverTest {
             assertEquals(1, runner.attempts, "the overlay was tried")
             assertEquals(1, runner.bypassed, "and it reported the bypass so the chain is cleared")
             assertEquals(0, runner.endedOk, "a failure terminal is NOT a clean round")
+            assertEquals(0, runner.endedNotOk, "the bypass is reported by roundBypassed, never roundEnded - V4-114")
             assertTrue(mock.upstreamBodies.size > before, "the SSE upstream must have served the turn")
             assertTrue(sse.contains("event: message_stop"), "the client sees a normal completed turn")
         } finally {
@@ -683,7 +712,11 @@ class WsRoundDriverTest {
             provider(runner),
             log = {},
             classifyZeroEvent = ZeroEventClassifier { _, _, _, _ ->
-                TurnOutcome.Failure(ErrorType.API_ERROR, "the classifier reclassified this round as failed")
+                TurnOutcome.Failure(
+                    "the classifier reclassified this round as failed",
+                    cause = FailureCause.UPSTREAM_REPORTED,
+                    phase = FailurePhase.MID_OUTPUT,
+                )
             },
         )
 

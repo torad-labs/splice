@@ -22,6 +22,10 @@ gateway/build-logic/.kotlin/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/
+# per-tool agent configs and release-media workspaces that live beside the repo, never in it
+.agents/
+.codex/
+dev/media/
 
 # #924 Phase 1: live contract receipts are per-run artifacts, not source
 checks/e2e/receipts/
@@ -60,3 +64,8 @@ credentials.json
 # transient operator wall grant (/grant) — never committed
 .claude/state/walls-grant.json
 .claude/tmp/
+
+# gradle-slot.sh lock + holder (checks/gradle-slot.sh)
+gateway/.gradle-slot.lock*
+# buildgate's per-project lock (hostshield build-reaper.sh:60) — a machine artifact, never source
+gateway/.hostshield-build.lock

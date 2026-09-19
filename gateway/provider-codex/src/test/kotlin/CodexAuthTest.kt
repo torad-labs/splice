@@ -158,9 +158,11 @@ class CodexAuthTest {
         val first = auth.credentials() as Credentials.Bearer
         assertEquals("tok-1", first.token)
         assertEquals("acct-1", first.accountId)
-        // external rewrite with a new mtime -> re-read even within TTL
-        Thread.sleep(5)
+        // external rewrite with a new mtime -> re-read even within TTL. The mtime is STEPPED, not
+        // waited for: a coarse-grained filesystem can stamp both writes identically.
+        val before = Files.getLastModifiedTime(path).toMillis()
         path.writeText("""{"tokens":{"access_token":"tok-2"}}""")
+        Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
         assertEquals("tok-2", (auth.credentials() as Credentials.Bearer).token)
     }
 
@@ -220,9 +222,10 @@ class CodexAuthTest {
             Files.createDirectories(path.parent)
             path.writeText("""{"tokens":{"access_token":"token-A","refresh_token":"R1","account_id":"acct-1"}}""")
             assertEquals("token-A", (auth.credentials() as Credentials.Bearer).token) // cache holds A
-            // a concurrent process rotates the file to token B.
-            Thread.sleep(5)
+            // a concurrent process rotates the file to token B (mtime stepped, never waited for).
+            val before = Files.getLastModifiedTime(path).toMillis()
             path.writeText("""{"tokens":{"access_token":"token-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
             val beforeContent = path.readText()
             val served = auth.refresh() as Credentials.Bearer
             assertEquals("token-B", served.token) // adopts B, no POST
@@ -479,8 +482,10 @@ class CodexAuthTest {
         path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
         assertNull(auth.refresh())
         assertEquals(1, calls.get())
-        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        val before = Files.getLastModifiedTime(path).toMillis()
         path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"fresh-refresh"}}""") // re-login
+        // the mtime is STEPPED rather than waited for, so a coarse-grained filesystem still advances it
+        Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
         granted = true
         assertEquals("rotated-access", (auth.refresh() as Credentials.Bearer).token)
         assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it
@@ -690,5 +695,77 @@ class CodexAuthIdentityTest {
             latch.isLatched(identity(auth)),
             "an untouched credential must keep suppressing, or the lockout fix becomes a refresh storm",
         )
+    }
+}
+
+class CodexAccountMetadataTest {
+    @Test
+    fun `JWT account label claims exclude email`() {
+        val oauth = CodexOAuth()
+        val token = jwt(
+            """{"email":"private@example.com","https://api.openai.com/auth":{
+                "chatgpt_account_id":"acct-1234","chatgpt_plan_type":"plus"}}""",
+        )
+
+        assertEquals("acct-1234", oauth.accountIdFromToken(token))
+        assertEquals("plus", oauth.planTypeFromToken(token))
+        assertNull(oauth.planTypeFromToken("garbage"))
+    }
+
+    @Test
+    fun `access token metadata does not change the legacy account header`() {
+        val oauth = CodexOAuth()
+        val access = jwt(
+            """{"https://api.openai.com/auth":{"chatgpt_account_id":"access-account"}}""",
+        )
+
+        val auth = oauth.authJsonFromTokens(
+            idToken = null,
+            accessToken = access,
+            refreshToken = "refresh",
+            apiKey = null,
+            nowIso = "2026-09-13T00:00:00Z",
+        )
+
+        assertFalse("account_id" in auth["tokens"]!!.jsonObject)
+        assertEquals("access-account", oauth.accountIdFromToken(access), "auto labels may still derive the safe hash")
+    }
+
+    @Test
+    fun `refresh preserves labeled metadata and never decorates the legacy primary`(@TempDir tmp: Path) = runTest {
+        for (labeled in listOf(false, true)) {
+            val file = tmp.resolve("auth-$labeled.json")
+            val metadata = if (labeled) {
+                ""","splice_auth_kind":"chatgpt-oauth","splice_account_label":"backup""""
+            } else {
+                ""
+            }
+            Files.writeString(
+                file,
+                """{"tokens":{"access_token":"old","refresh_token":"refresh",
+                    "account_id":"acct"},"last_refresh":"old"$metadata}""",
+            )
+            val auth = CodexAuthProvider(
+                authPath = file,
+                authCacheMs = 60_000L,
+                refreshCall = {
+                    RefreshAttempt.Granted(RefreshedTokens("new", "rotated", idToken = null))
+                },
+            )
+
+            auth.refresh()
+
+            val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(Files.readString(file)).jsonObject
+            val tokens = onDisk["tokens"]!!.jsonObject
+            if (labeled) {
+                assertEquals("chatgpt-oauth", onDisk["splice_auth_kind"]?.jsonPrimitive?.content)
+                assertEquals("backup", onDisk["splice_account_label"]?.jsonPrimitive?.content)
+                assertFalse("splice_auth_kind" in tokens)
+                assertFalse("splice_account_label" in tokens)
+            } else {
+                assertFalse("splice_auth_kind" in onDisk)
+                assertFalse("splice_account_label" in onDisk)
+            }
+        }
     }
 }

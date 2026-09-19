@@ -12,6 +12,10 @@ internal enum class CodeModeResultMode { RESUME, INTERRUPT }
 internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig) {
     fun fitsOutput(value: String): Boolean = value.length <= config.maxOutputChars && CodeModeLimits.fitsText(value)
 
+    /** A client result enters bounded: an oversized output is truncated with the marker, never rejected. */
+    fun admit(result: CodeModeResult): CodeModeResult =
+        result.copy(output = CodeModeLimits.boundedText(result.output, config.maxOutputChars))
+
     fun outer(call: GatewayCustomCall): String? = when {
         call.name != CODE_MODE_TOOL_NAME -> "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
         call.callId.isBlank() -> "splice_exec call is missing call_id"

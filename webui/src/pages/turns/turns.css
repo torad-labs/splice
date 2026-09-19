@@ -1,0 +1,125 @@
+/* The turns page: three bays beside a detail column that swells open, the same geometry as the
+   sessions and projects pages. Tokens only (CONTRACTS.md section 1). */
+
+.myx-tn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.myx-tn-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-tn-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-5);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+/* A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-119, mirroring M1-116's mechanism rather than
+   choosing a fourth repair). The track collapses to literal 0 at rest, but `gap` was still
+   var(--space-4), and gap is paid BETWEEN a 1fr track and a 0 track like any other pair - so the
+   rack was 12px narrower than the board on every rest render. Measured at 1536 dark before this:
+   board 1366, bays 1354, columnGap 12.0004px, tracks "1353.77px 0px". The gutter is the OPEN
+   column's, so it moves with the column: column-gap 0 at rest, var(--space-4) when open, and the
+   transition carries both so the room is taken rather than snapped. */
+.myx-tn-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-4);
+  align-items: start;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+.myx-tn-board-open {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-tn-board { transition: none; }
+}
+
+.myx-tn-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* The landed rack: a fixed viewport so the virtualizer has one, scrolling both ways because the
+   turn's field grid is wider than the room and a strip never wraps. */
+.myx-tn-scroll {
+  height: 52vh;
+  overflow: auto;
+  border-top: var(--hair) solid var(--hairline-strong);
+  border-bottom: var(--hair) solid var(--hairline-strong);
+}
+.myx-tn-inner { position: relative; width: 100%; }
+
+.myx-tn-item { position: absolute; inset-inline: 0; top: 0; }
+
+/* The band between groups: the name of what follows, and its count. */
+.myx-tn-band {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--room-deep);
+}
+.myx-tn-band-count {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute);
+}
+
+.myx-tn-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.myx-tn-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.myx-tn-detail-name {
+  font-family: var(--font-figure);
+  font-size: var(--text-3);
+  color: var(--ink-strong);
+}
+
+.myx-tn-close {
+  padding: var(--space-1) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.myx-tn-close:hover { border-color: var(--strip-ink); }
+.myx-tn-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* ONE breakpoint for every page body (m1 design review B13): the detail column drops beneath the
+   bay below 1120px, the width at which the rail, a bay and a detail column stop fitting side by
+   side. The bays scroll their racks (review B7), so a narrow bay scrolls instead of cutting the
+   tail off a strip, and the brief's own topology — one detail column, the opened strip swelling
+   into it on the right — holds at every width above this floor. The rule belongs in the shell, in
+   one place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  .myx-tn-board-open { grid-template-columns: minmax(0, 1fr); }
+}

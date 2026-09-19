@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.RateLimitState
 import splice.core.util.WallClock
 
@@ -19,18 +20,21 @@ import splice.core.util.WallClock
  * Absent headers are the ordinary case — most upstreams send no rate-limit family at all, and the
  * whole persist is a no-op without a limit.
  */
-public fun interface HeaderLookup {
-    public operator fun invoke(name: String): String?
-}
+// V4-101 FINISHED WHAT V4-122 STARTED HERE: the typealias is gone and every call site names
+// [QuotaHeaderRead] directly. V4-122 reconciled the second declaration onto the core one and kept an
+// alias so the call sites compiled; an alias is still a second spelling, and the row that collapses
+// duplicate ROLES does not stop at making two names agree — it leaves one. The rationale is not
+// dropped with the name: it lives in QuotaHeaderRead's own KDoc, which already recorded that this
+// gateway-side shape was the same (String) -> String? role living a module away.
 
-/** Ratelimit header codec: HeaderLookup in, [PendingRateLimit] or a parsed [RateLimitState] out. */
-public class RateLimitHeaders(private val clock: WallClock) {
+/** Ratelimit header codec: [QuotaHeaderRead] in, [PendingRateLimit] or a parsed [RateLimitState] out. */
+internal class RateLimitHeaders(private val clock: WallClock) {
     private val usageJson = UsageJson()
 
     /** Parses x-ratelimit-limit-tokens / -remaining-tokens / -reset-tokens into a pending payload
      *  paired with its already-parsed state (see [PendingRateLimit]); null without a limit.
      *  `internal`, not `public`: it returns the internal [PendingRateLimit]. */
-    internal fun pendingFrom(header: HeaderLookup): PendingRateLimit? {
+    internal fun pendingFrom(header: QuotaHeaderRead): PendingRateLimit? {
         val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return null
         val remaining = header("x-ratelimit-remaining-tokens")?.toLongOrNull()
         val reset = header("x-ratelimit-reset-tokens")?.takeIf { it.isNotEmpty() }

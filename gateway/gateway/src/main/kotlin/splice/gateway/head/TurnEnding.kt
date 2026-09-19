@@ -6,6 +6,8 @@
 // TurnConnEnd; auth/upstream-HTTP endings live in TurnKnownEnd (concentration, 2026-08-19).
 package splice.gateway.head
 
+import io.ktor.http.URLParserException
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 
@@ -39,9 +41,33 @@ internal class TurnEnding(
                 // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow
                 // after sealing, and the turn must not vanish from the perf JSONL and G20
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
-                telemetry.recordPerf(drive, "error:unexpected")
+                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire)
                 health.local() // internal gateway bug (e.g. bad base_url parse)
-                drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error — retry")
+                // V4-81, NARROWED BY THE ORCHESTRATOR'S RULING. This arm catches EVERY non-Error
+                // RuntimeException at the turn boundary, and the operator law (V4-62) is retry on
+                // any error — a generic internal bug is exactly the class where a transient fault
+                // must come back on its own, so the arm stays RETRYABLE (pre-content that means the
+                // emitter wires it as overloaded_error, the pre-V4-81 behaviour).
+                //
+                // The ONE exception is the config-parse case, and it is named as a single concrete
+                // type rather than guessed at by base class: io.ktor.http.URLParserException is what
+                // an unparseable or invalid base_url produces, it is a property of STATIC
+                // CONFIGURATION rather than of any response, and the same broken config throws it
+                // identically on every re-send. That one keeps api_error and ends the session on the
+                // honest verdict instead of spending 300 re-sends at six upstream attempts each.
+                //
+                // WHY THE SET IS THIS NARROW, deliberately: the alternative — treating every
+                // IllegalStateException or every parse-shaped failure as permanent — is the base-class
+                // test this arm's own comment above rejects, and it would make a genuinely transient
+                // fault non-retryable. If some other config failure reaches this arm as a different
+                // type it stays RETRYABLE, which is the pre-V4-81 behaviour and never worse than it;
+                // widening the set is a deliberate act that needs its own named entry here.
+                val permanent = e is URLParserException
+                drive.emitter.emitError(
+                    ErrorType.API_ERROR,
+                    "splice: internal gateway error — retry",
+                    permanent = permanent,
+                )
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked
         }

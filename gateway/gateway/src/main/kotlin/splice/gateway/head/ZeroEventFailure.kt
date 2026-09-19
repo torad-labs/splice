@@ -4,6 +4,7 @@ package splice.gateway.head
 
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.spi.FailureSource
 import splice.spi.Provider
@@ -53,6 +54,10 @@ internal class ZeroEventFailure(
         // classified from a body the provider actually sent — a provider-reported failure (G20).
         // copy() preserves the (empty) partial: a full-constructor rebuild would silently drop
         // the field on any future broadening of this path (code-review 2026-07-24).
-        return outcome.copy(type = classified.type, message = message, providerReported = true)
+        // V4-117: the cause is adopted from the classifier rather than the type being overwritten.
+        // This line used to be the boundary's SECOND author of the wire type; now the classifier
+        // names the cause (it is the one holding the code, the status and the body) and the derived
+        // type follows from it plus the phase, so the failure and the wire cannot disagree.
+        return outcome.copy(cause = classified.cause, message = message, providerReported = true)
     }
 }

@@ -1,0 +1,474 @@
+[
+ {
+  "page": "logs",
+  "routes": [
+   "/api/heads"
+  ],
+  "available": 94,
+  "printed": 29,
+  "headroom": 65,
+  "headroomFields": [
+   "account",
+   "at",
+   "attempts",
+   "auth_ms",
+   "buckets",
+   "build",
+   "bytes_out",
+   "cache_cold",
+   "cache_hit_ratio",
+   "cache_write_tokens",
+   "cached_tokens",
+   "clamped",
+   "compact",
+   "content_frames_out",
+   "count",
+   "coverage_known",
+   "covers_ms",
+   "empty",
+   "events_in",
+   "failure_share",
+   "failure_shares",
+   "finish",
+   "first_byte",
+   "first_delta",
+   "first_frame",
+   "frames_skipped",
+   "from",
+   "gate",
+   "headers",
+   "heads",
+   "in_tokens",
+   "inflight",
+   "io_drops_in_window",
+   "landed",
+   "model",
+   "note",
+   "out_tokens",
+   "outcome",
+   "outcomes",
+   "parse",
+   "peak_inflight",
+   "phase",
+   "read_error",
+   "reanchors",
+   "recv",
+   "refresh_ms",
+   "rows",
+   "session",
+   "skipped_lines",
+   "sse_bytes_in",
+   "stages",
+   "stall_ms",
+   "stream_end",
+   "time_before_first_byte_ms",
+   "time_streaming_ms",
+   "to",
+   "total",
+   "total_ms",
+   "ts",
+   "turns",
+   "unattributed",
+   "undated",
+   "usage_ms",
+   "window",
+   "write_ms"
+  ],
+  "pending": [
+   "V4-127",
+   "V4-133"
+  ]
+ },
+ {
+  "page": "turns",
+  "routes": [
+   "/api/heads",
+   "/api/sessions"
+  ],
+  "available": 117,
+  "printed": 55,
+  "headroom": 62,
+  "headroomFields": [
+   "address",
+   "at",
+   "auth_ms",
+   "availability",
+   "buckets",
+   "build",
+   "by",
+   "bytes_out",
+   "cache_cold",
+   "cause",
+   "clamped",
+   "cocked",
+   "content_frames_out",
+   "coverage_known",
+   "covers_ms",
+   "cwd",
+   "direction",
+   "edge",
+   "edges",
+   "events_in",
+   "failure_shares",
+   "finish",
+   "first_delta",
+   "first_frame",
+   "frames_skipped",
+   "from",
+   "gate",
+   "gone",
+   "headers",
+   "live",
+   "note",
+   "outcomes",
+   "pid",
+   "read_error",
+   "reanchors",
+   "reason",
+   "recv",
+   "refresh_ms",
+   "repo",
+   "root",
+   "session_id",
+   "sessions",
+   "skipped_lines",
+   "sse_bytes_in",
+   "stages",
+   "stale",
+   "stall_ms",
+   "started_at",
+   "status",
+   "status_updated_at",
+   "stream_end",
+   "struck",
+   "team",
+   "time_streaming_ms",
+   "to",
+   "unattributed",
+   "undated",
+   "updated_at",
+   "usage_ms",
+   "version",
+   "worktree",
+   "write_ms"
+  ],
+  "pending": [
+   "V4-127",
+   "V4-133",
+   "V4-130"
+  ]
+ },
+ {
+  "page": "fleet",
+  "routes": [
+   "/api/accounts",
+   "/api/models",
+   "/api/topology"
+  ],
+  "available": 77,
+  "printed": 18,
+  "headroom": 59,
+  "headroomFields": [
+   "accounts",
+   "array",
+   "at_epoch_millis",
+   "auth_excluded_until_epoch_millis",
+   "auth_exclusion_reason",
+   "available",
+   "backup_path",
+   "browser_url",
+   "cache_read",
+   "cache_write",
+   "cause",
+   "context_window",
+   "context_window_source",
+   "credential_present",
+   "default_context_window",
+   "description",
+   "discovery_prefix",
+   "each",
+   "expires_at_epoch_millis",
+   "extra_windows",
+   "findings",
+   "flow",
+   "from",
+   "input",
+   "keys",
+   "kind",
+   "label_new",
+   "last_switch",
+   "level",
+   "login_id",
+   "models",
+   "note",
+   "ok",
+   "open",
+   "output",
+   "path",
+   "pinned",
+   "pinned_model",
+   "plan",
+   "prefix",
+   "primary",
+   "rates",
+   "reason",
+   "reset",
+   "reset_epoch_seconds",
+   "restart_required",
+   "rule",
+   "seconds",
+   "selected",
+   "sessions",
+   "slot",
+   "stale",
+   "state",
+   "to",
+   "used_percent",
+   "user_code",
+   "verification_uri",
+   "window_rules",
+   "windows"
+  ],
+  "pending": [
+   "V4-132",
+   "V4-127",
+   "V4-128"
+  ]
+ },
+ {
+  "page": "sessions",
+  "routes": [
+   "/api/projects",
+   "/api/sessions"
+  ],
+  "available": 62,
+  "printed": 38,
+  "headroom": 24,
+  "headroomFields": [
+   "buckets",
+   "by",
+   "complete",
+   "cost_today_usd",
+   "day_start",
+   "end",
+   "gone",
+   "last_activity",
+   "live",
+   "live_sessions",
+   "next",
+   "note",
+   "projects",
+   "reason",
+   "reset",
+   "root",
+   "stale",
+   "status",
+   "status_updated_at",
+   "teams",
+   "total",
+   "turns_today",
+   "version",
+   "worktree"
+  ],
+  "pending": [
+   "V4-131",
+   "V4-130"
+  ]
+ },
+ {
+  "page": "accounts",
+  "routes": [
+   "/api/accounts"
+  ],
+  "available": 40,
+  "printed": 22,
+  "headroom": 18,
+  "headroomFields": [
+   "at_epoch_millis",
+   "auth_excluded_until_epoch_millis",
+   "auth_exclusion_reason",
+   "available",
+   "credential_present",
+   "expires_at_epoch_millis",
+   "from",
+   "label_new",
+   "last_switch",
+   "login_id",
+   "ok",
+   "primary",
+   "reason",
+   "restart_required",
+   "selected",
+   "sessions",
+   "state",
+   "to"
+  ],
+  "pending": [
+   "V4-132"
+  ]
+ },
+ {
+  "page": "doctor",
+  "routes": [
+   "/api/doctor",
+   "/api/upgrade"
+  ],
+  "available": 26,
+  "printed": 9,
+  "headroom": 17,
+  "headroomFields": [
+   "accounts",
+   "cause",
+   "claude_code",
+   "cocked",
+   "edge",
+   "generated_at",
+   "jvm",
+   "label",
+   "logs",
+   "logs_dropped_in_tail",
+   "logs_error",
+   "os",
+   "perf",
+   "schema_version",
+   "splice",
+   "struck",
+   "topology"
+  ],
+  "pending": [
+   "V4-127"
+  ]
+ },
+ {
+  "page": "usage",
+  "routes": [
+   "/api/alerts",
+   "/api/alerts/test",
+   "/api/budgets",
+   "/api/models"
+  ],
+  "available": 33,
+  "printed": 21,
+  "headroom": 12,
+  "headroomFields": [
+   "budgets",
+   "cache_read",
+   "cache_write",
+   "default_context_window",
+   "description",
+   "discovery_prefix",
+   "extra_windows",
+   "pinned_model",
+   "prefix",
+   "provider",
+   "webhook_url",
+   "window_rules"
+  ],
+  "pending": [
+   "V4-133",
+   "V4-127"
+  ]
+ },
+ {
+  "page": "settings",
+  "routes": [
+   "/api/claude-head",
+   "/api/claude-head/unwrap",
+   "/api/claude-head/wrap",
+   "/api/topology"
+  ],
+  "available": 28,
+  "printed": 20,
+  "headroom": 8,
+  "headroomFields": [
+   "array",
+   "auth_kind",
+   "each",
+   "findings",
+   "from",
+   "open",
+   "restart_required",
+   "to"
+  ],
+  "pending": [
+   "V4-129",
+   "V4-128"
+  ]
+ },
+ {
+  "page": "mcp",
+  "routes": [
+   "/api/mcp"
+  ],
+  "available": 22,
+  "printed": 16,
+  "headroom": 6,
+  "headroomFields": [
+   "from",
+   "last_activity",
+   "last_error",
+   "session_ids",
+   "started_at",
+   "to"
+  ],
+  "pending": []
+ },
+ {
+  "page": "models",
+  "routes": [
+   "/api/models"
+  ],
+  "available": 23,
+  "printed": 19,
+  "headroom": 4,
+  "headroomFields": [
+   "cache_write",
+   "discovery_prefix",
+   "pinned_model",
+   "prefix"
+  ],
+  "pending": [
+   "V4-127"
+  ]
+ },
+ {
+  "page": "teams",
+  "routes": [
+   "/api/teams"
+  ],
+  "available": 35,
+  "printed": 33,
+  "headroom": 2,
+  "headroomFields": [
+   "created_epoch_millis",
+   "updated_epoch_millis"
+  ],
+  "pending": [
+   "V4-131"
+  ]
+ },
+ {
+  "page": "projects",
+  "routes": [
+   "/api/projects"
+  ],
+  "available": 16,
+  "printed": 15,
+  "headroom": 1,
+  "headroomFields": [
+   "day_start"
+  ],
+  "pending": [
+   "V4-131"
+  ]
+ },
+ {
+  "page": "compaction",
+  "routes": [],
+  "available": 0,
+  "printed": 0,
+  "headroom": 0,
+  "headroomFields": [],
+  "pending": []
+ }
+]

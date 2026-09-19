@@ -13,8 +13,9 @@ public class Cli {
     public fun runCli(args: Array<String>): Int {
         val command = parser.parse(args) ?: run {
             System.err.println(
-                "usage: splice [setup|status|restart|dashboard|login <head>|key <set|list|unset>|" +
-                    "logs [--head <key>] [--tail N] [--follow]|install|uninstall|init|doctor|daemon|version]",
+                "usage: splice [setup|add <profile>|upgrade|status|sessions|perf|restart|dashboard|" +
+                    "login <head> [--label <name>]|key <set|list|unset>|logs [--head <key>] [--tail N] [--follow]|" +
+                    "install|uninstall|init|doctor [--json [--with-logs] [--out FILE]]|daemon|version]",
             )
             return 2
         }
@@ -29,9 +30,21 @@ public class Cli {
      *  the topology-load failure surface: IO (file read), SerializationException (ktoml decode
      *  extends it, kotlinx json too), IllegalArgumentException (preflight/validation requires).
      *  Cancellation is untouched — not in the set. Inline with a `block` parameter, the
-     *  sanctioned higher-order shape. */
+     *  sanctioned higher-order shape.
+     *
+     *  Review 2026-09-17 (5): AddRefused was outside the set, so `splice add-model` refusing an
+     *  unparseable or unrecognised roster printed a raw JVM stack trace at the operator. It is a
+     *  REFUSAL, not a breakage: its own sentence is the whole explanation, so it renders verbatim
+     *  rather than through SafeFailureText, which would withhold it. */
     internal inline fun guarded(block: () -> Int): Int = try {
         block()
+    } catch (refused: AddRefused) {
+        // SAFE-RENDER-EXEMPT[2026-09-17]: an AddRefused message is a sentence splice composed for
+        // the operator, never upstream or file bytes; the one refusal built around a caught
+        // throwable renders that cause through SafeFailureText before constructing this message
+        // (AddModels.kt refuseUnparseable). The exemption ends the day one embeds a raw cause.
+        System.err.println("splice: ${refused.message}")
+        1
     } catch (broken: java.io.IOException) {
         renderFailure(broken)
     } catch (broken: kotlinx.serialization.SerializationException) {

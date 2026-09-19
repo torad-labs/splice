@@ -43,7 +43,16 @@ export function bindUnauthorized(fn: UnauthorizedListener): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** A 401 seen outside request<T> (the events stream reads its own response) lands the same lock. */
+export function noteUnauthorized(): void {
+  locked = true;
+  onUnauthorized?.();
+}
+
+// Exported for entity api segments (entities/*/api), which own their routes and payload types
+// locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
+// `control` below keeps the routes that predate the console rebuild.
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (locked) throw new MgmtError(401, 'management key required');
   const res = await fetch(path, {
     ...init,
@@ -64,6 +73,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new MgmtError(res.status, message);
   }
   return body as T;
+}
+
+// A route the daemon does not serve yet: the store carries the v0.4.0 row that will serve it
+// and the page prints the honest empty naming it (CONTRACTS.md sections 4 and 8). Shared here
+// so every entity maps the same daemon answers to the same shape (hoisted from M2-D1's slices).
+export interface PendingRoute {
+  pending: string;
+}
+
+/** 404, or the daemon naming an unknown route, means "not built yet" for a route that is still
+ *  a v0.4.0 row; any other failure is a real error the store must show as one. */
+export function pendingOf(err: unknown, row: string): PendingRoute | null {
+  if (!(err instanceof MgmtError)) return null;
+  if (err.status === 404 || /unknown route|no such route/i.test(err.message)) return { pending: row };
+  return null;
 }
 
 // ── payload types ────────────────────────────────────────────────────────────
@@ -247,6 +271,44 @@ export interface LogsPayload {
   note?: string;
 }
 
+/** One hour of a head's token economics. SUMS ONLY — the daemon deliberately ships no ratios,
+ * so every rate on screen is derived here and stays recomputable when the window changes. */
+export interface EconomicsBucket {
+  hour: number;
+  turns: number;
+  in_tokens: number;
+  cached_tokens: number;
+  /** V4-86: the cache-WRITE half of in_tokens, disjoint from cached_tokens (the read half). Its
+   * own field because it bills at the vendor's cache_write rate, not the input rate — and because
+   * netting it into either of the other two would make a read and a write indistinguishable here.
+   * Absent on a bucket the daemon loaded from a pre-V4-86 economics file, where it reads as 0. */
+  cache_write_tokens: number;
+  out_tokens: number;
+  req_bytes: number;
+  upstream_req_bytes: number;
+  tools_eager: number;
+  tools_deferred: number;
+  /** Turns that REPORTED a tool partition. 0 on a dialect that cannot defer — which the ledger
+   * must render as "n/a", never as a deferral rate of zero. */
+  deferral_turns: number;
+  rate_limited: number;
+}
+
+export interface HeadEconomics {
+  key: string;
+  label: string;
+  /** The provider's own x-ratelimit-limit-tokens, or null where it sends none. A null ceiling
+   * renders as "no ceiling known" — never as a guess. */
+  ceiling_tokens: number | null;
+  buckets: EconomicsBucket[];
+}
+
+export interface EconomicsPayload {
+  retention_hours: number;
+  generated_at: number;
+  heads: HeadEconomics[];
+}
+
 // ── endpoints ────────────────────────────────────────────────────────────────
 
 export const control = {
@@ -263,6 +325,7 @@ export const control = {
   auth: () => request<AuthPayload>('/api/auth'),
   refreshAuth: (head: string) => request<AuthActionResult>(`/api/auth/${head}/refresh`, { method: 'POST' }),
   compact: () => request<CompactPayload>('/api/compact'),
+  economics: () => request<EconomicsPayload>('/api/economics'),
   logs: (head: string, tail: number) => request<LogsPayload>(`/api/logs/${head}?tail=${tail}`),
 };
 

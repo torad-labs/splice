@@ -6,6 +6,7 @@
 // turn — and the gate slot travelling with the detached drive, not with the dead call.
 package head
 
+import campaign.v4105.headDeps
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -18,6 +19,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -33,13 +35,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -70,7 +66,7 @@ class HeadServerCompactionReplayTest {
     fun setUp() = runBlocking {
         val tmp = Files.createTempDirectory("head-compaction-replay")
         head = HeadServer(
-            provider = CodexProvider(
+            provider = TestResponsesProvider(
                 tuning = ProviderTuning(
                     key = "codex",
                     label = "claudex",
@@ -91,14 +87,10 @@ class HeadServerCompactionReplayTest {
                 configSummary = "detailed",
             ),
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 600_000, totalTimeoutMs = 900_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
                 gate = gate,
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = { lines += it },
             ),
         )
@@ -135,11 +127,14 @@ class HeadServerCompactionReplayTest {
         return socket
     }
 
+    // A deadline poll, the rule's sanctioned shape: log lines, gate and mock state change server-side
+    // (a detached drive outlives its call), and none of them offers a signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 50L
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            delay(50)
+            delay(pollMs)
         }
         return cond()
     }
@@ -179,6 +174,11 @@ class HeadServerCompactionReplayTest {
     @Test
     fun `a compaction whose client hangs up finishes detached and its answer is replayed to the retry`() = runBlocking {
         mock.resetHold()
+        // V4-139: every wait below reads only lines logged AFTER this mark. The in-flight follower
+        // test runs first in this class and logs both fragments; unmarked, the detach wait passed on
+        // ITS line, the hold was released before this compaction had detached, the turn finished
+        // attached with nothing recorded, and the retry went upstream (4 bodies, not 3).
+        val mark = lines.size
         val upstreamBefore = mock.upstreamBodies.size
         val socket = openCompaction()
         assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
@@ -187,12 +187,12 @@ class HeadServerCompactionReplayTest {
         // Either detach path may notice the FIN first (Ktor cancelling the call, or the keepalive
         // pinger's failed write, a real race in this run: review of PR 137); both log the shared
         // DETACHED_NOTE, which is the fact under test. The slot assertion below holds for both.
-        assertTrue(waitFor(20_000) { logged("compaction continues detached") }, lines.joinToString())
+        assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
         assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: nothing here has finished")
         assertEquals(1, gate.snapshot().inflight, "the slot travels with the detached drive, not the dead call")
 
         mock.releaseHold()
-        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry") }, lines.joinToString())
+        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
         assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
         val upstreamAfterFirst = mock.upstreamBodies.size
 
@@ -204,7 +204,7 @@ class HeadServerCompactionReplayTest {
         )
         assertTrue(sse.contains("event: message_stop"), "the recorded answer must be whole: $sse")
         assertEquals(upstreamAfterFirst, mock.upstreamBodies.size, "the retry must not start a second upstream turn")
-        assertTrue(logged("replaying its answer, no upstream turn"), lines.joinToString())
+        assertTrue(logged("replaying its answer, no upstream turn", mark), lines.drop(mark).joinToString())
     }
 
     /** Review of PR 137: a retry that arrives while the compaction is still driving follows the live

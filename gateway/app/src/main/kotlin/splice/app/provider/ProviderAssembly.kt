@@ -7,12 +7,12 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
-import splice.app.KimiRefresh
 import splice.app.TokenUrlRefreshCall
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
+import splice.core.topology.DialectWires
 import splice.core.util.LogSink
 
 /**
@@ -25,23 +25,17 @@ internal class ProviderAssembly(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
+    private val museArm: MusePassthroughArm = MusePassthroughArm(log, probeScope),
+    private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
 ) {
     private val grokRefresh = GrokRefresh()
-    private val kimiRefresh = KimiRefresh()
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
-    private val kimiOAuth = KimiOAuth(probeScope, log, kimiRefresh)
-    private val passthroughArm = PassthroughArm(statePaths, passthroughAssembly, kimiOAuth)
+    private val passthroughArm = PassthroughArm(passthroughAssembly)
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh)
     private val apiKeyResponsesArm = ApiKeyResponsesArm()
-    private val responsesArm = ResponsesArm(
-        statePaths,
-        probeScope,
-        log,
-        refreshCall,
-        grokResponsesArm,
-        apiKeyResponsesArm,
-    )
+    private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)
+    private val responsesArm = ResponsesArm(grokResponsesArm, apiKeyResponsesArm, codexResponsesArm)
 
     // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
     // (responses or chat + grok-oauth), openai-platform (responses+api-key, hash cache key),
@@ -49,13 +43,19 @@ internal class ProviderAssembly(
     internal fun buildProvider(ctx: ProviderBuild): Wired {
         requireCompatibleAuth(ctx)
         val label = ctx.head.claude.command ?: ctx.key
+        if (ctx.providerCfg.auth.kind == MUSE_OAUTH) return museArm.museOauthProvider(ctx, label)
+        if (ctx.providerCfg.auth.kind == KIMI_OAUTH) return kimiArm.kimiOauthProvider(ctx, label)
         return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesArm.responsesProvider(ctx, label)
             Dialect.OPENAI_CHAT -> chatArm.chatProvider(ctx, label)
-            // anthropic-passthrough: Kimi owns its Moonshot quirks and identity under OAuth or
-            // API-key auth; every other compatible API-key vendor starts neutral and declares its
-            // own wire facts in TOML.
-            Dialect.ANTHROPIC_PASSTHROUGH -> passthroughArm.passthroughProvider(ctx, label)
+            // anthropic-passthrough: provider id kimi (not client) is the Moonshot api-key path.
+            // CLIENT stays on PassthroughArm so a kimi-named client head does not grow X-Msh headers.
+            Dialect.ANTHROPIC_PASSTHROUGH ->
+                if (ctx.head.provider == "kimi" && ctx.providerCfg.auth.kind != CLIENT) {
+                    kimiArm.kimiApiKeyProvider(ctx, label)
+                } else {
+                    passthroughArm.passthroughProvider(ctx, label)
+                }
         }
     }
 
@@ -68,7 +68,7 @@ internal class ProviderAssembly(
         val provider = ctx.head.provider
         require(isCompatible(kind, dialect, provider)) {
             "head '${ctx.key}' has incompatible auth kind '${kind.wire}' " +
-                "for provider '$provider' and dialect '${dialectWire(dialect)}'"
+                "for provider '$provider' and dialect '${DialectWires.name(dialect)}'"
         }
     }
 
@@ -76,12 +76,7 @@ internal class ProviderAssembly(
         AuthKind.ChatgptOAuth -> dialect == Dialect.OPENAI_RESPONSES
         AuthKind.GrokOAuth -> dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.OPENAI_CHAT
         AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
+        AuthKind.MuseOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "muse"
         AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
-    }
-
-    private fun dialectWire(dialect: Dialect): String = when (dialect) {
-        Dialect.OPENAI_RESPONSES -> "openai-responses"
-        Dialect.OPENAI_CHAT -> "openai-chat"
-        Dialect.ANTHROPIC_PASSTHROUGH -> "anthropic-passthrough"
     }
 }

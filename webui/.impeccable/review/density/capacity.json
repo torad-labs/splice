@@ -1,0 +1,662 @@
+[
+ {
+  "addr": "fleet",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 723,
+    "w": 1366,
+    "top": 123,
+    "rows": 7,
+    "pitch": 96,
+    "capacity": 7
+   }
+  ],
+  "strips": 7,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 723,
+   "w": 1366,
+   "top": 123,
+   "rows": 7,
+   "pitch": 96,
+   "capacity": 7
+  },
+  "totCap": 7,
+  "totRows": 7
+ },
+ {
+  "addr": "turns",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 428,
+    "w": 1366,
+    "top": 118,
+    "rows": 4,
+    "pitch": 96,
+    "capacity": 4
+   },
+   {
+    "cls": "myx-bay",
+    "h": 332,
+    "w": 1366,
+    "top": 562,
+    "rows": 3,
+    "pitch": 96,
+    "capacity": 3
+   },
+   {
+    "cls": "myx-bay",
+    "h": 715,
+    "w": 1366,
+    "top": 911,
+    "rows": 7,
+    "pitch": 96,
+    "capacity": 7
+   },
+   {
+    "cls": "myx-bay",
+    "h": 332,
+    "w": 1366,
+    "top": 1642,
+    "rows": 3,
+    "pitch": 96,
+    "capacity": 3
+   },
+   {
+    "cls": "myx-bay",
+    "h": 564,
+    "w": 1366,
+    "top": 1990,
+    "rows": 6,
+    "pitch": 64,
+    "capacity": 8
+   }
+  ],
+  "strips": 23,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 564,
+   "w": 1366,
+   "top": 1990,
+   "rows": 6,
+   "pitch": 64,
+   "capacity": 8
+  },
+  "totCap": 25,
+  "totRows": 23
+ },
+ {
+  "addr": "sessions",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 289,
+    "w": 1366,
+    "top": 118,
+    "rows": 2,
+    "pitch": 96,
+    "capacity": 3
+   },
+   {
+    "cls": "myx-bay",
+    "h": 289,
+    "w": 1366,
+    "top": 423,
+    "rows": 2,
+    "pitch": 96,
+    "capacity": 3
+   },
+   {
+    "cls": "myx-bay",
+    "h": 193,
+    "w": 1366,
+    "top": 728,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 3
+   }
+  ],
+  "strips": 5,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 193,
+   "w": 1366,
+   "top": 728,
+   "rows": 1,
+   "pitch": 64,
+   "capacity": 3
+  },
+  "totCap": 9,
+  "totRows": 5
+ },
+ {
+  "addr": "teams",
+  "bays": [
+   {
+    "cls": "myx-bay myx-board-bay myx-board-",
+    "h": 736,
+    "w": 430,
+    "top": 131,
+    "rows": 3,
+    "pitch": 90,
+    "capacity": 8
+   },
+   {
+    "cls": "myx-bay myx-board-bay myx-board-",
+    "h": 736,
+    "w": 422,
+    "top": 131,
+    "rows": 3,
+    "pitch": 90,
+    "capacity": 8
+   },
+   {
+    "cls": "myx-bay myx-board-bay myx-board-",
+    "h": 391,
+    "w": 476,
+    "top": 131,
+    "rows": 3,
+    "pitch": 96,
+    "capacity": 4
+   },
+   {
+    "cls": "myx-bay myx-board-bay myx-board-",
+    "h": 345,
+    "w": 476,
+    "top": 522,
+    "rows": 5,
+    "pitch": 35,
+    "capacity": 9
+   }
+  ],
+  "strips": 17,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay myx-board-bay myx-board-",
+   "h": 736,
+   "w": 430,
+   "top": 131,
+   "rows": 3,
+   "pitch": 90,
+   "capacity": 8
+  },
+  "totCap": 29,
+  "totRows": 14
+ },
+ {
+  "addr": "projects",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 803,
+    "w": 1366,
+    "top": 118,
+    "rows": 4,
+    "pitch": 96,
+    "capacity": 8
+   }
+  ],
+  "strips": 4,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 803,
+   "w": 1366,
+   "top": 118,
+   "rows": 4,
+   "pitch": 96,
+   "capacity": 8
+  },
+  "totCap": 8,
+  "totRows": 4
+ },
+ {
+  "addr": "accounts",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 236,
+    "w": 1366,
+    "top": 154,
+    "rows": 2,
+    "pitch": 96,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 1366,
+    "top": 402,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 1366,
+    "top": 555,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 1366,
+    "top": 707,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 236,
+    "w": 1366,
+    "top": 860,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 3
+   }
+  ],
+  "strips": 6,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 236,
+   "w": 1366,
+   "top": 860,
+   "rows": 1,
+   "pitch": 64,
+   "capacity": 3
+  },
+  "totCap": 11,
+  "totRows": 6
+ },
+ {
+  "addr": "usage",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 332,
+    "w": 1318,
+    "top": 216,
+    "rows": 3,
+    "pitch": 96,
+    "capacity": 3
+   }
+  ],
+  "strips": 3,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 332,
+   "w": 1318,
+   "top": 216,
+   "rows": 3,
+   "pitch": 96,
+   "capacity": 3
+  },
+  "totCap": 3,
+  "totRows": 3
+ },
+ {
+  "addr": "settings",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 1121,
+    "w": 1318,
+    "top": 298,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 439,
+    "w": 1318,
+    "top": 1633,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 307,
+    "w": 1318,
+    "top": 2080,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 439,
+    "w": 1318,
+    "top": 2395,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 176,
+    "w": 1318,
+    "top": 2842,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 834,
+    "w": 1318,
+    "top": 3026,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 703,
+    "w": 1318,
+    "top": 3869,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   },
+   {
+    "cls": "myx-bay",
+    "h": 448,
+    "w": 1318,
+    "top": 4641,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   }
+  ],
+  "strips": 0,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 1121,
+   "w": 1318,
+   "top": 298,
+   "rows": 0,
+   "pitch": 0,
+   "capacity": 0
+  },
+  "totCap": 0,
+  "totRows": 0
+ },
+ {
+  "addr": "models",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 524,
+    "w": 1318,
+    "top": 174,
+    "rows": 5,
+    "pitch": 96,
+    "capacity": 5
+   },
+   {
+    "cls": "myx-bay",
+    "h": 428,
+    "w": 1318,
+    "top": 714,
+    "rows": 4,
+    "pitch": 96,
+    "capacity": 4
+   },
+   {
+    "cls": "myx-bay",
+    "h": 428,
+    "w": 1318,
+    "top": 1158,
+    "rows": 4,
+    "pitch": 96,
+    "capacity": 4
+   }
+  ],
+  "strips": 13,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 524,
+   "w": 1318,
+   "top": 174,
+   "rows": 5,
+   "pitch": 96,
+   "capacity": 5
+  },
+  "totCap": 13,
+  "totRows": 13
+ },
+ {
+  "addr": "logs",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 783,
+    "w": 1366,
+    "top": 135,
+    "rows": 15,
+    "pitch": 64,
+    "capacity": 12
+   },
+   {
+    "cls": "myx-bay",
+    "h": 140,
+    "w": 1366,
+    "top": 930,
+    "rows": 0,
+    "pitch": 0,
+    "capacity": 0
+   }
+  ],
+  "strips": 15,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 140,
+   "w": 1366,
+   "top": 930,
+   "rows": 0,
+   "pitch": 0,
+   "capacity": 0
+  },
+  "totCap": 12,
+  "totRows": 15
+ },
+ {
+  "addr": "compaction",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 715,
+    "w": 1318,
+    "top": 219,
+    "rows": 7,
+    "pitch": 96,
+    "capacity": 7
+   },
+   {
+    "cls": "myx-bay",
+    "h": 620,
+    "w": 1318,
+    "top": 950,
+    "rows": 6,
+    "pitch": 96,
+    "capacity": 6
+   }
+  ],
+  "strips": 13,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 715,
+   "w": 1318,
+   "top": 219,
+   "rows": 7,
+   "pitch": 96,
+   "capacity": 7
+  },
+  "totCap": 13,
+  "totRows": 13
+ },
+ {
+  "addr": "mcp",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 1003,
+    "w": 1002,
+    "top": 123,
+    "rows": 10,
+    "pitch": 96,
+    "capacity": 10
+   }
+  ],
+  "strips": 10,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 1003,
+   "w": 1002,
+   "top": 123,
+   "rows": 10,
+   "pitch": 96,
+   "capacity": 10
+  },
+  "totCap": 10,
+  "totRows": 10
+ },
+ {
+  "addr": "doctor",
+  "bays": [
+   {
+    "cls": "myx-bay",
+    "h": 236,
+    "w": 970,
+    "top": 123,
+    "rows": 2,
+    "pitch": 96,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 236,
+    "w": 970,
+    "top": 371,
+    "rows": 2,
+    "pitch": 96,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 970,
+    "top": 620,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 970,
+    "top": 772,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 970,
+    "top": 925,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 236,
+    "w": 970,
+    "top": 1078,
+    "rows": 2,
+    "pitch": 96,
+    "capacity": 2
+   },
+   {
+    "cls": "myx-bay",
+    "h": 141,
+    "w": 970,
+    "top": 1326,
+    "rows": 1,
+    "pitch": 64,
+    "capacity": 2
+   }
+  ],
+  "strips": 11,
+  "frame": [
+   1536,
+   937
+  ],
+  "worst": {
+   "cls": "myx-bay",
+   "h": 141,
+   "w": 970,
+   "top": 620,
+   "rows": 1,
+   "pitch": 64,
+   "capacity": 2
+  },
+  "totCap": 14,
+  "totRows": 10
+ }
+]

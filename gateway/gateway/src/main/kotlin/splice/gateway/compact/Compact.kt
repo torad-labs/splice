@@ -26,12 +26,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** Primary summarizer marker (kept for the canary test + shadow key). */
-public const val COMPACT_MARKER: String = "tasked with summarizing conversations"
+internal const val COMPACT_MARKER: String = "tasked with summarizing conversations"
 
 /** Every verbatim summarizer instruction Claude Code 2.1.207 emits (binary-traced).
  *  On drift: add the new verbatim sentence here + a fixture. The values are the ported contract;
  *  the identifier is camelCase per Kotlin convention (only the singular `const` stays UPPER_SNAKE). */
-public val compactMarkers: List<String> = listOf(
+internal val compactMarkers: List<String> = listOf(
     "tasked with summarizing conversations",
     "your task is to create a detailed summary of this conversation",
     "your task is to create a detailed summary of the conversation",
@@ -63,6 +63,11 @@ public class CompactStats(
 ) {
 
     private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    // V4-151: a skipped row is said ONCE per instance — PerfStats.noteSkippedRow's trade. readTail
+    // already drops the partial head and the trailing tear, so a line that still fails to parse is
+    // corruption, and the totals below are LOW by it.
+    private val skippedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -101,7 +106,12 @@ public class CompactStats(
         // exists() pre-gate blanked the drift instrument silently through a denied parent).
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
+                    .onFailure {
+                        if (skippedLogged.compareAndSet(false, true)) {
+                            log("[compact] $file has unreadable rows — stats totals are LOW by those rows\n")
+                        }
+                    }.getOrNull()
             }
         }.onSuccess {
             // ANY healthy read — an empty or all-skipped tail included — closes the unreadable

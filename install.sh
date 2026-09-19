@@ -354,6 +354,50 @@ if [ ! -L "$BIN_DIR/splice" ] || [ ! -e "$BIN_DIR/splice" ]; then
   echo "splice: install failed — $BIN_DIR/splice missing or dangling" >&2
   exit 1
 fi
+# 4b. Keep a PRISTINE copy of this release under releases/<version>/ for `splice upgrade`: it is
+#     what rollback repoints at, and what the upgrade compares the live launch shim against so a
+#     local edit (the hostshield launcher patch lands AFTER this script) is kept rather than
+#     overwritten. Best effort: an install never fails for want of its own archive copy.
+JAR_VERSION="${JAR_VERSION_OUTPUT#splice }"
+RELEASE_DIR="${SHARE_DIR}/releases/${JAR_VERSION}"
+CURRENT_LINK="${SHARE_DIR}/releases/current"
+# The release that was current becomes `previous`, so the first `splice upgrade --rollback` after
+# an install.sh run has somewhere to go instead of skipping a version (review 2026-09-14).
+# `ln -sfn` into a REAL directory named previous succeeds by linking inside it, so the link is
+# read back: a pointer that did not land is said, and the archive stays best effort (review 2026-09-14).
+link_previous() {
+  ln -sfn "$1" "${SHARE_DIR}/releases/previous" || true
+  if [ "$(readlink "${SHARE_DIR}/releases/previous" 2>/dev/null)" != "$1" ]; then
+    echo "splice: warning: ${SHARE_DIR}/releases/previous is not a link to $1 (something else is in its way);" \
+      "splice upgrade --rollback has no target until it is removed" >&2
+    return 1
+  fi
+}
+if [ -L "$CURRENT_LINK" ] && [ "$(readlink "$CURRENT_LINK")" != "$JAR_VERSION" ]; then
+  link_previous "$(readlink "$CURRENT_LINK")" || true
+elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
+  # A flat install (before 0.4.0) is being replaced: its jar and shim are still in hand as the
+  # backups, so record them under their version and make them `previous` — otherwise the first
+  # install.sh run that introduces releases/ leaves nothing to roll back to (review 2026-09-14).
+  OLD_VERSION="$(java -jar "$JAR_BACKUP" version 2>/dev/null | sed -n 's/^splice //p' | head -1)"
+  if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" != "$JAR_VERSION" ] &&
+    printf '%s' "$OLD_VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-+][0-9A-Za-z.-]+)?$'; then
+    OLD_DIR="${SHARE_DIR}/releases/${OLD_VERSION}"
+    if mkdir -p "$OLD_DIR" && cp -p "$JAR_BACKUP" "$OLD_DIR/splice.jar" &&
+      { [ "$HAD_SHIM" != 1 ] || cp -p "$SHIM_BACKUP" "$OLD_DIR/splice-launch"; } &&
+      link_previous "$OLD_VERSION"; then
+      echo "splice: previous release $OLD_VERSION kept at $OLD_DIR (splice upgrade --rollback target)"
+    fi
+  fi
+fi
+if mkdir -p "$RELEASE_DIR" &&
+  cp -p "$JAR_DST" "$RELEASE_DIR/splice.jar" &&
+  cp -p "$SHIM_DST" "$RELEASE_DIR/splice-launch" &&
+  ln -sfn "$JAR_VERSION" "$CURRENT_LINK"; then
+  echo "splice: release copy kept at $RELEASE_DIR (splice upgrade --rollback target)"
+else
+  echo "splice: WARNING — could not keep a release copy under $RELEASE_DIR; splice upgrade will record the live copy" >&2
+fi
 rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 
 echo

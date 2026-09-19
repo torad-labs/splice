@@ -4,13 +4,14 @@
 package splice.app
 
 import com.sun.net.httpserver.HttpExchange
+import splice.core.wire.HttpStatus
 
 internal class OAuthCallbackPage {
 
     fun respond(ex: HttpExchange, ok: Boolean, head: String, error: String?) {
         val bytes = callbackPage(ok, head, error).toByteArray()
         ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
-        ex.sendResponseHeaders(if (ok) HTTP_OK else HTTP_BAD_REQUEST, bytes.size.toLong())
+        ex.sendResponseHeaders(if (ok) HTTP_OK else HttpStatus.BAD_REQUEST, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }
 
@@ -97,5 +98,5 @@ internal class OAuthCallbackPage {
 
 // File-scope on purpose: const val is illegal inside a class without a companion
 // (Kotlin style law — no companion objects in main sources).
+// HTTP_OK stays local: HttpStatus declares no 2xx constant, and the wall is silent on 200.
 private const val HTTP_OK = 200
-private const val HTTP_BAD_REQUEST = 400

@@ -1,0 +1,343 @@
+// WALLS for the accounts and settings data layer. These are the numbers and sentences that decide
+// whether an operator keeps working or hunts a browser login for an account with room, so the two
+// that carry the most risk are pinned directly rather than eyeballed on a page:
+//
+//   - `a missing window is not an empty one`. A provider that reports no usage for a window has
+//     said nothing; reading that as 0 puts the account nobody can trust at the top of a headroom
+//     sort and hides the one that is nearly spent.
+//   - `the next-target mark follows the daemon's real order`. Primary, then the session's sticky
+//     account, then lowest seven-day used (AccountPool.kt:101-112). A mark computed from a
+//     plausible-looking sort instead lands on a strip the daemon will not actually take, which is
+//     worse than no mark at all: it is a confident wrong answer about what happens next.
+//
+// The pending-route cases are asserted through the REAL fetch path with a stubbed transport, not
+// through the predicate alone: a predicate that returns the right value while the store writes
+// something else is exactly the bug this is here to catch.
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import type { ConfigPayload } from '../src/shared/api';
+import { pendingOf } from '../src/shared/api';
+import {
+  NOT_REPORTED,
+  SELECTOR_ORDER_TEXT,
+  accountsStore,
+  fetchAccounts,
+  nearestOverall,
+  nearestWindow,
+  nextTarget,
+  sevenDayUsed,
+  windowLengthText,
+  windowUsedText,
+} from '../src/entities/account';
+import type { AccountRow, AccountWindow } from '../src/entities/account';
+import { dispositionText, knobDispositions, provenanceOf } from '../src/entities/config';
+import { validateTopology } from '../src/entities/topology';
+
+const HOUR_5 = 18000;
+const DAY_7 = 604800;
+const DAY_30 = 2592000;
+
+function account(over: Partial<AccountRow> = {}): AccountRow {
+  return {
+    kind: 'chatgpt-oauth',
+    label: 'acct-a',
+    primary: false,
+    selected: false,
+    available: true,
+    credential_present: true,
+    windows: [],
+    heads: ['claudex'],
+    ...over,
+  };
+}
+
+function window5h(used: number | null): AccountWindow {
+  return { seconds: HOUR_5, used_percent: used, reset_epoch_seconds: 1_800_000_000 };
+}
+
+function window7d(used: number | null): AccountWindow {
+  return { seconds: DAY_7, used_percent: used, reset_epoch_seconds: null };
+}
+
+describe('nearest window', () => {
+  test('picks the highest reported used percent', () => {
+    const a = account({ windows: [window5h(12), window7d(74)] });
+    expect(nearestWindow(a)?.used_percent).toBe(74);
+  });
+
+  test('a window the provider does not report is NOT a candidate, never a zero', () => {
+    const a = account({ windows: [window5h(null), window7d(74)] });
+    expect(nearestWindow(a)?.used_percent).toBe(74);
+    expect(windowUsedText(window5h(null))).toBe(NOT_REPORTED);
+    expect(windowUsedText(window5h(null))).not.toBe('0%');
+  });
+
+  test('an account reporting nothing has no nearest window at all', () => {
+    const a = account({ windows: [window5h(null)] });
+    expect(nearestWindow(a)).toBeNull();
+    expect(nearestOverall([a])).toBeNull();
+  });
+
+  test('a tie goes to the shorter window, which resets first', () => {
+    const a = account({ windows: [window7d(50), window5h(50)] });
+    expect(nearestWindow(a)?.seconds).toBe(HOUR_5);
+  });
+
+  test('overall takes the nearest across accounts, ignoring the ones that report nothing', () => {
+    const quiet = account({ label: 'quiet', windows: [window5h(null)] });
+    const spent = account({ label: 'spent', windows: [window5h(91)] });
+    const mild = account({ label: 'mild', windows: [window5h(20)] });
+    expect(nearestOverall([quiet, mild, spent])?.account.label).toBe('spent');
+  });
+});
+
+describe('window labels come from the reported length', () => {
+  test('5h, 7d and Grok 30d', () => {
+    expect(windowLengthText(HOUR_5)).toBe('5h');
+    expect(windowLengthText(DAY_7)).toBe('7d');
+    expect(windowLengthText(DAY_30)).toBe('30d');
+  });
+
+  test('nothing is ever labelled weekly by position', () => {
+    // Grok reports a 30-day period; a console that called the second window "weekly" would be
+    // naming a length no provider sent (FEATURES 2.6, GrokQuotaProbe.kt:41-52).
+    expect(windowLengthText(DAY_30)).not.toContain('w');
+  });
+});
+
+describe('the selector order', () => {
+  test('is printed as the sentence the daemon implements', () => {
+    expect(SELECTOR_ORDER_TEXT).toBe('primary then sticky then lowest 7-day used');
+  });
+
+  test('primary if available wins over a lower-used account', () => {
+    const primary = account({ label: 'primary', primary: true, windows: [window7d(90)] });
+    const roomy = account({ label: 'roomy', windows: [window7d(5)] });
+    expect(nextTarget([primary, roomy])).toEqual({ label: 'primary', rule: 'primary' });
+  });
+
+  test('an unavailable primary does not win', () => {
+    const primary = account({ label: 'primary', primary: true, available: false });
+    const other = account({ label: 'other', windows: [window7d(5)] });
+    expect(nextTarget([primary, other])?.label).toBe('other');
+  });
+
+  test('sticky is the second rule, and only when the primary is out', () => {
+    const sticky = account({ label: 'sticky', windows: [window7d(80)] });
+    const roomy = account({ label: 'roomy', windows: [window7d(5)] });
+    expect(nextTarget([sticky, roomy], 'sticky')).toEqual({ label: 'sticky', rule: 'sticky' });
+  });
+
+  test('otherwise the lowest seven-day used', () => {
+    const heavy = account({ label: 'heavy', windows: [window7d(80)] });
+    const roomy = account({ label: 'roomy', windows: [window7d(5)] });
+    expect(nextTarget([heavy, roomy])).toEqual({ label: 'roomy', rule: 'lowest 7-day used' });
+  });
+
+  test('an account with no seven-day snapshot sorts as zero used, as the daemon does', () => {
+    const fresh = account({ label: 'fresh', windows: [] });
+    expect(sevenDayUsed(fresh)).toBe(0);
+    const used = account({ label: 'used', windows: [window7d(40)] });
+    expect(nextTarget([used, fresh])?.label).toBe('fresh');
+  });
+
+  test('a window present but unreported also sorts as zero, never as unavailable', () => {
+    expect(sevenDayUsed(account({ windows: [window7d(null)] }))).toBe(0);
+  });
+
+  test('an entirely unavailable pool has no next target, and says so with null', () => {
+    expect(nextTarget([account({ available: false })])).toBeNull();
+  });
+});
+
+describe('pending routes resolve in the store, not in a mock', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('a 404 on /api/accounts lands as { pending: V4-132 }', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: false, status: 404, json: async () => ({ error: { message: 'unknown route' } }),
+    }));
+    await fetchAccounts();
+    expect(accountsStore.get().data).toEqual({ pending: 'V4-132' });
+    expect(accountsStore.get().error).toBeNull();
+  });
+
+  test('a named unknown route resolves the same way', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: false, status: 400, json: async () => ({ error: { message: 'no such route /api/accounts' } }),
+    }));
+    await fetchAccounts();
+    expect(accountsStore.get().data).toEqual({ pending: 'V4-132' });
+  });
+
+  test('a 500 is a real error and is NOT dressed up as pending', async () => {
+    // Establish a known-good state first, so this asserts the store's real behaviour rather than
+    // whatever the previous test happened to leave behind.
+    vi.stubGlobal('fetch', async () => ({
+      ok: true, status: 200, json: async () => ({ accounts: [account({ label: 'real' })] }),
+    }));
+    await fetchAccounts();
+
+    vi.stubGlobal('fetch', async () => ({
+      ok: false, status: 500, json: async () => ({ error: { message: 'boom' } }),
+    }));
+    await fetchAccounts();
+
+    expect(accountsStore.get().error).toBe('boom');
+    // The last good data stays visible (the store's documented no-skeleton-flash rule), and it is
+    // NOT a pending marker: a broken daemon must never read as "this route was never built".
+    expect(accountsStore.get().data).toEqual({ accounts: [account({ label: 'real' })] });
+  });
+
+  test('a plain Error is not a transport failure and never reads as pending', () => {
+    expect(pendingOf(new Error('unknown route'), 'V4-132')).toBeNull();
+  });
+
+  test('a successful read leaves no pending marker behind', async () => {
+    vi.stubGlobal('fetch', async () => ({
+      ok: true, status: 200, json: async () => ({ accounts: [account({ label: 'real' })] }),
+    }));
+    await fetchAccounts();
+    expect(accountsStore.get().data).toEqual({ accounts: [account({ label: 'real' })] });
+  });
+});
+
+describe('the topology validator', () => {
+  // The documented shape (FEATURES.md 2.3), one of every construct it has to walk: a plain table,
+  // a table of typed keys, a table keyed by free names, an array of tables, a nested sub-table and
+  // a bag whose child keys are deliberately not schema.
+  const EXAMPLE = {
+    daemon: { control_port: 3096, show_reasoning: 'text', mcp_hosting: true, mcp_hosting_exclude: ['x'] },
+    claude: { share: { settings: true, mcps: false }, isolate: { projects: true }, config_dir: '~/.config/splice/claude' },
+    compaction: {
+      instructions: 'Keep every file path verbatim.',
+      model: [{ model: 'gpt-6-astra', file: '~/compaction.md' }],
+      project: [{ path: '/home/me/app', model: 'gpt-6-astra', instructions: 'Summarize the plan first.' }],
+    },
+    defaults: { maxInflight: '4', effort: 'high', statuslineGitRoots: 'a,b' },
+    providers: {
+      codex: {
+        dialect: 'openai-responses',
+        base_url: 'https://chatgpt.com/backend-api/codex',
+        auth: { kind: 'chatgpt-oauth' },
+        quirks: {
+          store: false,
+          account_id_header: true,
+          tool_surface: { enabled: true, defer: ['LSP'], search_limit: 8 },
+        },
+        extra_headers: { 'x-anything': 'a bag, not a schema' },
+        models: [{ id: 'gpt-6-astra', label: 'Astra', context_window: 400000 }],
+        rates: { 'gpt-6-astra': { input: 1.25, cache_read: 0.125, output: 10 } },
+      },
+    },
+    heads: {
+      claudex: {
+        provider: 'codex',
+        port: 3100,
+        discovery_prefix: 'claudex-',
+        models: [{ id: 'gpt-6-astra', slot: 'opus' }],
+        overrides: { effort: 'max' },
+        claude: { command: 'claude', share: { settings: true } },
+        system_prompt: 'you are',
+        system_prompt_mode: 'append',
+        rates: { 'gpt-6-astra': { input: 1.25, output: 10 } },
+      },
+    },
+  };
+
+  test('accepts the documented example', () => {
+    expect(validateTopology(EXAMPLE)).toEqual([]);
+  });
+
+  test('rejects an unknown key and names its path', () => {
+    expect(validateTopology({ daemon: { control_port: 3096, wibble: true } }))
+      .toEqual([{ path: 'daemon.wibble', message: 'unknown key' }]);
+  });
+
+  test('reaches into quirks, a nested sub-table', () => {
+    expect(validateTopology({ providers: { codex: { quirks: { nope: 1 } } } }))
+      .toEqual([{ path: 'providers.codex.quirks.nope', message: 'unknown key' }]);
+  });
+
+  test('reaches into an array of tables, which is where much of a real topology lives', () => {
+    expect(validateTopology({ providers: { codex: { models: [{ id: 'x', typo: 1 }] } } }))
+      .toEqual([{ path: 'providers.codex.models[0].typo', message: 'unknown key' }]);
+  });
+
+  test('rejects a misspelled share key, the one failure the daemon reports as silence', () => {
+    expect(validateTopology({ claude: { share: { skils: true } } }))
+      .toEqual([{ path: 'claude.share.skils', message: 'unknown key' }]);
+  });
+
+  test('rejects an unknown top-level table', () => {
+    expect(validateTopology({ daemons: {} }))
+      .toEqual([{ path: 'daemons', message: 'unknown key' }]);
+  });
+
+  test('an unknown knob under [defaults] is still an unknown key', () => {
+    expect(validateTopology({ defaults: { maxInflight: '4', wibble: true } }))
+      .toEqual([{ path: 'defaults.wibble', message: 'unknown key' }]);
+  });
+
+  test('a bag is not key-checked, so a legal extra header stays legal', () => {
+    expect(validateTopology({ providers: { codex: { extra_headers: { 'x-anything': '1' } } } })).toEqual([]);
+  });
+
+  test('never throws on a shape it does not expect', () => {
+    expect(validateTopology(null)).toEqual([]);
+    expect(validateTopology('not a topology')).toEqual([]);
+    expect(validateTopology({ providers: 'a string where a table belongs' })).toEqual([]);
+  });
+});
+
+describe('knob provenance and the restart verdict', () => {
+  const payload: ConfigPayload = {
+    effective: { maxInflight: 4, effort: 'high', mirrorReasoning: false },
+    layers: {
+      defaults: { maxInflight: 2, effort: 'high', mirrorReasoning: false },
+      toml: { effort: 'high' },
+      perHead: { claudex: { maxInflight: 4 } },
+      file: {},
+      env: { mirrorReasoning: false },
+      runtime: {},
+    },
+    restart_required_keys: ['effort'],
+    source: 'test',
+  };
+
+  function disposition(key: string) {
+    const found = knobDispositions(payload).find((knob) => knob.key === key);
+    if (found === undefined) throw new Error(`no disposition for ${key}`);
+    return found;
+  }
+
+  test('the strongest layer that carries the key wins', () => {
+    expect(provenanceOf('effort', payload)).toBe('defaults table'); // a layer above the default
+    expect(provenanceOf('mirrorReasoning', payload)).toBe('env');
+  });
+
+  test('a key no layer carries has no provenance, rather than a confident default', () => {
+    expect(provenanceOf('wibble', payload)).toBeNull();
+  });
+
+  test('a head override is only reachable when the view was fetched for that head', () => {
+    // The same knob and the same payload. With no head, or with another head, the per-head layer
+    // is not this view's, so the value on screen cannot have come from there — the global default
+    // is what it is. Only asking for the overriding head reaches the strongest layer.
+    expect(provenanceOf('maxInflight', payload)).toBe('default');
+    expect(provenanceOf('maxInflight', payload, 'someone-else')).toBe('default');
+    expect(provenanceOf('maxInflight', payload, 'claudex')).toBe('head override');
+  });
+
+  test('hot comes from restart_required_keys, never from a hand list', () => {
+    expect(disposition('maxInflight').hot).toBe(true);
+    expect(disposition('effort').hot).toBe(false);
+    expect(dispositionText(disposition('maxInflight').hot)).toBe('applies live');
+    expect(dispositionText(disposition('effort').hot)).toBe('restart to apply');
+  });
+
+  test('every effective knob is dispositioned, not just the ones a page happens to list', () => {
+    expect(knobDispositions(payload).map((knob) => knob.key)).toEqual([
+      'effort', 'maxInflight', 'mirrorReasoning',
+    ]);
+  });
+});

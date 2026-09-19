@@ -1,0 +1,838 @@
+
+fleet  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
+  bay.label-centre         comp 45.45%            got 49.44%       delta +3.99   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 8.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+turns  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 49.60%       delta +4.14   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label                                                         absent  (this address does not render the role)
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+sessions  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 46.71%       delta +1.26   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label                                                         absent  (this address does not render the role)
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+teams  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.70%        delta -0.00   ok
+  strip.h                  comp 6.50%             got 6.15%        delta -0.35   ok
+  bay.label-centre         comp 45.45%            got 47.13%       delta +1.68   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 0.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 0.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 0.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 0.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 0.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 600 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 10.00px                    comp n/a  (rendered Archivo 600 14px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 10.00px                    comp n/a  (rendered Archivo 600 14px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+projects  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 47.04%       delta +1.58   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label                                                         absent  (this address does not render the role)
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+accounts  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
+  bay.label-centre         comp 45.45%            got 37.71%       delta -7.74   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 8.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+usage  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 49.59%       delta +4.13   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+settings  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got n/a                        FAIL
+  strip.h                  comp 6.50%             got n/a                        FAIL
+  bay.label-centre         comp 45.45%            got 49.33%       delta +3.88   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got n/a                        comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got n/a                        comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got n/a                        FAIL  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got n/a                        FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label                                                         absent  (this address does not render the role)
+  text.strip.field-value                                                         absent  (this address does not render the role)
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+models  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 49.41%       delta +3.96   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label                                                         absent  (this address does not render the role)
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+logs  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
+  bay.label-centre         comp 45.45%            got 49.35%       delta +3.90   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 8.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+compaction  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
+  bay.label-centre         comp 45.45%            got 49.45%       delta +3.99   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 8.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+mcp  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 6.23%        delta -0.27   ok
+  bay.label-centre         comp 45.45%            got 49.12%       delta +3.66   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got 8.00%                      comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got 8.00px                     comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 1.00%                      ok  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+doctor  (1536x1024)
+  rail.x                   comp 0.00%             got 0.00%        delta +0.00   ok
+  rail.w                   comp 9.00%             got 9.00%        delta -0.00   ok
+  rail.column.x            comp 1.20%             got 1.19%        delta -0.01   ok
+  rail.column.y            comp 6.50%             got 6.70%        delta +0.20   ok
+  rail.column.w            comp 7.00%             got 6.95%        delta -0.05   ok
+  rail.plate.x             comp n/a               got 1.45%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.w             comp n/a               got 5.17%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (80px plates in a 107.5px column))
+  rail.plate.h             comp n/a               got 2.78%                      comp n/a  (spec.json has no plate region; rail.css cites the crop (29px on this column))
+  rail.plates              comp 13                got 13           delta +0.00   ok  (spec.json rail-labels: "thirteen page labels as small plates")
+  rule.h                   comp 5.80%             got 5.80%        delta -0.00   ok
+  rule.wordmark.x          comp 0.50%             got 0.50%        delta -0.00   ok
+  rule.clocks.x            comp 10.00%            got 10.00%       delta -0.00   ok
+  rule.health.x            comp 30.00%            got 30.00%       delta -0.00   ok
+  rule.window.x            comp 41.00%            got 59.77%       delta +18.77  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  rule.none.x              comp 72.00%            got 90.68%       delta +18.68  FAIL  (flows in .myx-rule-signals (rule.css); the comp fixes the x)
+  strip.inset-x            comp 0.70%             got 0.78%        delta +0.08   ok
+  strip.h                  comp 6.50%             got 4.10%        delta -2.40   FAIL
+  bay.label-centre         comp 45.45%            got 49.44%       delta +3.99   FAIL  (comp bays put the plate at 45.0% and 47.0% of the rack width)
+  bay.rail-top             comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:151), a plain bay on itself (ui.css:362))
+  bay.rail-bottom          comp n/a               got 1.00%                      comp n/a  (comp carries no rail width; the board draws rails on its slots (board.css:152), a plain bay on itself (ui.css:363))
+  field.pad-start          comp n/a               got 8.00%                      comp n/a  (comp carries no field region; the CSS cites the crop (label ink 216, divider 229, value ink 241))
+  field.pad-end            comp n/a               got 8.00%                      comp n/a  (comp carries no field region; measured for the reviewer)
+  field.label-pad-start    comp n/a               got n/a                        comp n/a  (the inset a composition may move onto the label instead of the box)
+  field.label-ink-start    comp n/a               got n/a                        comp n/a  (where the label ink starts inside the box, in px: the number a reviewer reads against the crop)
+  field.divider            comp n/a               got 1.00%                      ok  (the comp cell carries a vertical divider; the world declares --hair (1px))
+  field.label-rule         comp n/a               got 0.00%                      FAIL  (the comp cell carries the rule at row y=229; the world declares --hair (1px))
+  text.wordmark.cap        comp 15.90px           got 17.00px      delta +1.10   FAIL  (rendered Archivo 500 23px)
+  text.wordmark.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.wordmark.scale      comp 1                 got 1                          ok
+  text.clocks.cap          comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.clocks.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.clocks.scale        comp 1                 got 1                          ok
+  text.health.cap          comp 12.40px           got 11.00px      delta -1.40   FAIL  (rendered Archivo 400 16px)
+  text.health.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.health.scale        comp 1                 got 1                          ok
+  text.window.cap          comp 11.70px           got 14.00px      delta +2.30   FAIL  (rendered Archivo 400 20px)
+  text.window.family       comp Archivo or JetBrains Mono got Archivo                    ok
+  text.window.scale        comp 1                 got 1                          ok
+  text.none.cap            comp 12.00px           got 14.00px      delta +2.00   FAIL  (rendered Archivo 400 20px)
+  text.none.family         comp Archivo or JetBrains Mono got Archivo                    ok
+  text.none.scale          comp 1                 got 1                          ok
+  text.bay.label.cap       comp 10.90px           got 9.00px       delta -1.90   FAIL  (rendered Archivo 400 12px)
+  text.bay.label.family    comp Archivo or JetBrains Mono got Archivo                    ok
+  text.bay.label.scale     comp 1                 got 1                          ok
+  text.strip.field-label.cap comp n/a               got 9.00px                     comp n/a  (rendered Archivo 400 12px, scale 1)
+  text.strip.field-label.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-label.scale comp 1                 got 1                          ok
+  text.strip.field-value.cap comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.strip.field-value.family comp Archivo or JetBrains Mono got Archivo                    ok
+  text.strip.field-value.scale comp 1                 got 1                          ok
+  text.rail.tab.cap        comp n/a               got 11.00px                    comp n/a  (rendered Archivo 400 16px, scale 1)
+  text.rail.tab.family     comp Archivo or JetBrains Mono got Archivo                    ok
+  text.rail.tab.scale      comp 1                 got 1                          ok
+
+13 addresses, 677 rows, 495 compared against the comp, 133 outside tolerance
+FAIL fleet rule.window.x
+FAIL fleet rule.none.x
+FAIL fleet bay.label-centre
+FAIL fleet text.wordmark.cap
+FAIL fleet text.clocks.cap
+FAIL fleet text.health.cap
+FAIL fleet text.window.cap
+FAIL fleet text.none.cap
+FAIL fleet text.bay.label.cap
+FAIL turns rule.window.x
+FAIL turns rule.none.x
+FAIL turns strip.h
+FAIL turns bay.label-centre
+FAIL turns field.label-rule
+FAIL turns text.wordmark.cap
+FAIL turns text.clocks.cap
+FAIL turns text.health.cap
+FAIL turns text.window.cap
+FAIL turns text.none.cap
+FAIL turns text.bay.label.cap
+FAIL sessions rule.window.x
+FAIL sessions rule.none.x
+FAIL sessions strip.h
+FAIL sessions bay.label-centre
+FAIL sessions field.label-rule
+FAIL sessions text.wordmark.cap
+FAIL sessions text.clocks.cap
+FAIL sessions text.health.cap
+FAIL sessions text.window.cap
+FAIL sessions text.none.cap
+FAIL sessions text.bay.label.cap
+FAIL teams rule.window.x
+FAIL teams rule.none.x
+FAIL teams bay.label-centre
+FAIL teams text.wordmark.cap
+FAIL teams text.clocks.cap
+FAIL teams text.health.cap
+FAIL teams text.window.cap
+FAIL teams text.none.cap
+FAIL teams text.bay.label.cap
+FAIL projects rule.window.x
+FAIL projects rule.none.x
+FAIL projects strip.h
+FAIL projects bay.label-centre
+FAIL projects field.label-rule
+FAIL projects text.wordmark.cap
+FAIL projects text.clocks.cap
+FAIL projects text.health.cap
+FAIL projects text.window.cap
+FAIL projects text.none.cap
+FAIL projects text.bay.label.cap
+FAIL accounts rule.window.x
+FAIL accounts rule.none.x
+FAIL accounts bay.label-centre
+FAIL accounts text.wordmark.cap
+FAIL accounts text.clocks.cap
+FAIL accounts text.health.cap
+FAIL accounts text.window.cap
+FAIL accounts text.none.cap
+FAIL accounts text.bay.label.cap
+FAIL usage rule.window.x
+FAIL usage rule.none.x
+FAIL usage strip.h
+FAIL usage bay.label-centre
+FAIL usage field.label-rule
+FAIL usage text.wordmark.cap
+FAIL usage text.clocks.cap
+FAIL usage text.health.cap
+FAIL usage text.window.cap
+FAIL usage text.none.cap
+FAIL usage text.bay.label.cap
+FAIL settings rule.window.x
+FAIL settings rule.none.x
+FAIL settings strip.inset-x
+FAIL settings strip.h
+FAIL settings bay.label-centre
+FAIL settings field.divider
+FAIL settings field.label-rule
+FAIL settings text.wordmark.cap
+FAIL settings text.clocks.cap
+FAIL settings text.health.cap
+FAIL settings text.window.cap
+FAIL settings text.none.cap
+FAIL settings text.bay.label.cap
+FAIL models rule.window.x
+FAIL models rule.none.x
+FAIL models strip.h
+FAIL models bay.label-centre
+FAIL models field.label-rule
+FAIL models text.wordmark.cap
+FAIL models text.clocks.cap
+FAIL models text.health.cap
+FAIL models text.window.cap
+FAIL models text.none.cap
+FAIL models text.bay.label.cap
+FAIL logs rule.window.x
+FAIL logs rule.none.x
+FAIL logs bay.label-centre
+FAIL logs text.wordmark.cap
+FAIL logs text.clocks.cap
+FAIL logs text.health.cap
+FAIL logs text.window.cap
+FAIL logs text.none.cap
+FAIL logs text.bay.label.cap
+FAIL compaction rule.window.x
+FAIL compaction rule.none.x
+FAIL compaction bay.label-centre
+FAIL compaction text.wordmark.cap
+FAIL compaction text.clocks.cap
+FAIL compaction text.health.cap
+FAIL compaction text.window.cap
+FAIL compaction text.none.cap
+FAIL compaction text.bay.label.cap
+FAIL mcp rule.window.x
+FAIL mcp rule.none.x
+FAIL mcp bay.label-centre
+FAIL mcp text.wordmark.cap
+FAIL mcp text.clocks.cap
+FAIL mcp text.health.cap
+FAIL mcp text.window.cap
+FAIL mcp text.none.cap
+FAIL mcp text.bay.label.cap
+FAIL doctor rule.window.x
+FAIL doctor rule.none.x
+FAIL doctor strip.h
+FAIL doctor bay.label-centre
+FAIL doctor field.label-rule
+FAIL doctor text.wordmark.cap
+FAIL doctor text.clocks.cap
+FAIL doctor text.health.cap
+FAIL doctor text.window.cap
+FAIL doctor text.none.cap
+FAIL doctor text.bay.label.cap

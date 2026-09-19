@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
@@ -31,10 +33,14 @@ private fun previousBody(): JsonObject = Json.parseToJsonElement(
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"}],"store":false,"stream":true}""",
 ).jsonObject
 
+// V4-117: this helper varies the CAUSE, not the type. The controller decides on the failure's type
+// (`type !in RETRYABLE`), and the type is DERIVED from (cause, phase) — so a cause is the only way
+// to state the case. The default maps to the same OVERLOADED this helper defaulted to, and callers
+// that passed API_ERROR or RATE_LIMIT map to causes deriving those types exactly.
 private fun failureWith(
-    type: ErrorType = ErrorType.OVERLOADED,
+    cause: FailureCause = FailureCause.UPSTREAM_STALLED,
     partial: TurnOutcome.PartialRound? = TurnOutcome.PartialRound(bodyText = "The fix is to"),
-) = TurnOutcome.Failure(type, "boom", partial = partial)
+) = TurnOutcome.Failure("boom", cause = cause, phase = FailurePhase.MID_OUTPUT, partial = partial)
 
 private val controller = ResponsesReanchorController(
     decodeReasoningEnvelope = { env ->
@@ -106,13 +112,22 @@ class ResponsesReanchorControllerTest {
     }
 
     @Test
-    fun `non-retryable failure types refuse continuation`() {
-        for (type in listOf(ErrorType.INVALID_REQUEST, ErrorType.AUTHENTICATION, ErrorType.PERMISSION)) {
+    fun `non-retryable failure causes refuse continuation`() {
+        // V4-117: the loop is over CAUSES now, because the type is derived and a cause is the only
+        // thing a caller can state. PERMISSION is deliberately gone from this list: no cause derives
+        // it — the classifier never produced one either — so keeping it would have pinned a wire type
+        // that nothing in the tree can construct, which is the opposite of a wall.
+        val refused = listOf(
+            FailureCause.UPSTREAM_STATUS_4XX,
+            FailureCause.AUTH_MISSING,
+            FailureCause.REQUEST_TOO_LARGE,
+        )
+        for (cause in refused) {
             assertNull(
                 controller.continuationForFailure(
-                    ReanchorRound(previousBody(), failureWith(type = type), 0),
+                    ReanchorRound(previousBody(), failureWith(cause = cause), 0),
                 ),
-                "type $type must not continue",
+                "cause $cause must not continue",
             )
         }
     }
@@ -138,9 +153,36 @@ class ResponsesReanchorControllerTest {
     @Test
     fun `an api_error failure is retryable too`() {
         val next = controller.continuationForFailure(
-            ReanchorRound(previousBody(), failureWith(type = ErrorType.API_ERROR), 0),
+            ReanchorRound(previousBody(), failureWith(cause = FailureCause.UPSTREAM_REPORTED), 0),
         )
         assertNotNull(next)
+    }
+
+    @Test
+    fun `a mid-stream rate limit continues, because the re-POST is where a real 429 becomes readable`() {
+        // V4-58, the Responses twin of V4-57 — premise re-proven on THIS dialect, not ported. A rate
+        // limit met after the first frame arrives as an SSE rate_limit_error inside a 200, and the
+        // client's recovery trigger is HTTP status 429, so a turn that dead-ends here has no
+        // automatic recovery. Continuing is enough on its own: the re-POST is a fresh request through
+        // the shared round post, and a provider still limiting answers it with a genuine pre-stream
+        // 429 carrying Retry-After, which the pre-stream path already owns. No pushback is invented
+        // here, because a mid-stream SSE frame never carried one, and no cooldown is armed by it —
+        // every arm site is status-gated and this dialect references the cooldown nowhere in code.
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(cause = FailureCause.VENDOR_RATE_LIMITED), 0),
+        )
+        assertNotNull(next, "a mid-stream rate limit must earn a continuation on this dialect too")
+    }
+
+    @Test
+    fun `a rate limit past the attempt budget still stops`() {
+        // Pinned from both sides like the budget itself: RATE_LIMIT continues on the same terms as
+        // OVERLOADED, so the ceiling that bounds OVERLOADED bounds it too — never a blind re-POST loop.
+        assertNull(
+            controller.continuationForFailure(
+                ReanchorRound(previousBody(), failureWith(cause = FailureCause.VENDOR_RATE_LIMITED), 5),
+            ),
+        )
     }
 
     @Test

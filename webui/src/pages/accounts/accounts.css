@@ -1,0 +1,131 @@
+/* The accounts page layout. A rack column and a detail column, the same composition the comp
+   shows: the bay holds the strips, the opened one's actions sit beside it. Below a wide desktop
+   the detail drops under the bays, because the second monitor comes first but a laptop is still
+   a machine this runs on. Radius 0, tokens only. */
+
+.myx-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-accounts-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-accounts-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+/* THE RACK TAKES THE WHOLE WIDTH UNTIL SOMETHING IS OPENED (M2-24, the console's last resting
+   detail column; the mechanism is M1-116's and M1-119's, copied rather than re-derived). Measured
+   at rest before this: a 384x92 column inside a 408x784 dead region -- 20.3% of the frame, third
+   worst in the console, against the comp's own 11.2%. The second track is 0 at rest, the -open
+   class carries both the wide track AND its gutter, and the transition covers both so the swell is
+   ONE movement rather than a width that grows while a gap snaps. A zero track that still costs a
+   gap is not zero, which is why column-gap moves with the track; row-gap stays unconditional
+   because below 1120px the open body is one column and the aside wraps to a second ROW. */
+.myx-accounts-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-4);
+  align-items: start;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+.myx-accounts-body-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-accounts-body { transition: none; }
+}
+
+/* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
+   width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
+   was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —
+   a nine-field strip needs about 1206px of value width, so beside a detail column the rack lost
+   its tail. The bays scroll now (m1 design review B7, `.myx-bay-rows { overflow-x: auto }`), which
+   is what removes that constraint: a narrow bay scrolls its rack instead of cutting it, so the
+   brief's own topology — one detail column, the opened strip swelling into it on the right — holds
+   at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
+   place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  /* Only the OPEN class, mirroring the other five: at rest the second track is already 0, so a
+     1fr-plus-0 body is the full width here too. */
+  .myx-accounts-body-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+.myx-accounts-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. Measured before this: the widest strip left 1011 px of bare bay to its right. */
+.myx-accounts-bays .myx-strip { width: 100%; }
+/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
+   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
+   every row shape has the same cell count -- it does not, so the primitive now sets
+   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
+   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
+   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
+   changes it, and watches nothing happen. Verified dead on this page by DOM probe
+   before removal -- see the M1-93 note for the counts. */
+
+/* The rack scrolls rather than reflowing: the field grid is fixed-width in ch and a strip that
+   wrapped would stop reading as a row of the same rack. */
+.myx-accounts-bays > * { overflow-x: auto; }
+
+.myx-accounts-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The selector's own order, printed beside the rack's label rather than hidden in a tooltip: the
+   mark on a strip is only meaningful if the rule that produced it is on the screen. */
+.myx-accounts-order {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  /* D7 (M1-52): this annotation is printed on the rack's PLATE, so it takes a paper ink, not the
+     room's. --ink-mute measured 1.40:1 on --plate in dark. --strip-ink-mute is the right family and
+     measures 3.63:1 on --plate in dark against a 4.5 bar, so M1-77 cut a mute MEASURED against
+     this plane: --plate-ink-mute at 5.17:1. THE
+     WORLD HAS NO MUTE THAT CLEARS AA ON THE PLATE IN DARK. That is a token gap, not a borrowing,
+     it is identical to .myx-bay-count's, and tokens.css is not this row's to edit - it is routed
+     to M1-53, which owns the plate. The borrowing is fixed here; the residual is named there. */
+  color: var(--plate-ink-mute);
+}
+
+/* ---- THIS RACK IS A FIXED TABLE, NOT A FLUID ONE (M1-107) --------------------
+   The page carries two kinds of table and until now the markup did not say so. The data racks
+   (account-strip) hold many fields and fill the room they are given, so their cells share the
+   slack and their first track renders at its declared 16ch with none left over. The login strip
+   is four fields -- head, provider, account, note, 76ch -- and its rack had room to spare, so
+   its first cell rendered 34px wider than the data racks' and the first-field edge spanned
+   34px across the page's scanlines.
+   THE DECLARATION IS THE POINT AND THE flex-grow IS ITS CONSEQUENCE, the same shape as M1-92's
+   data-span: a screenshot carries consequences, never intent, so the DOM has to say what the
+   pixels cannot. "This is a fixed table" is that sentence about a rack rather than a cell, and
+   it is spelled in the class name so the leg can read it rather than infer it from widths it
+   would have to guess at.
+   THE CONSEQUENCE, named rather than discovered: a fixed rack does NOT fill its bay, so the
+   remainder shows past its last cell. That is B6's bare paper arriving deliberately -- B6 cut
+   the strip to its content to remove exactly this, and here it is the honest result of a strip
+   that is a table rather than a row -- and it is the trade the ruling took over inventing
+   fields to fill a grid or hard-coding widths to today's room. */
+.myx-strip-fixed .myx-sfield { flex-grow: 0; }

@@ -10,13 +10,20 @@
 #
 # Usage: checks/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--keep] [--no-build]
 #   --keep       keep the artifacts scratch dir and print its path
-#   --no-build   reuse the image if it exists (skips docker build)
-# Env: SPLICE_E2E_CLAUDE_VERSION — Claude Code version baked into the image (default: the host's
-#      `claude --version`, else latest). NOT CLAUDE_CODE_VERSION: Claude Code exports that one to
-#      its own child shells as "X.Y.Z (Claude Code)", which is not an npm tag.
+#   --no-build   reuse the image if it exists (skips docker build); the in-image version check still
+#                fails if that image does not match Versions.kt's tested Claude Code pin.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+TESTED_CLAUDE_CODE="$(python3 - "$ROOT/gateway/core/src/main/kotlin/splice/core/Versions.kt" <<'EOF'
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+match = re.search(r'public const val TESTED_CLAUDE_CODE: String = "([0-9]+(?:\.[0-9]+)+)"', text)
+if not match:
+    raise SystemExit("run.sh: TESTED_CLAUDE_CODE is missing or malformed")
+print(match.group(1))
+EOF
+)"
 IMAGE="splice-e2e-fresh:local"
 RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1
 while [ $# -gt 0 ]; do
@@ -76,12 +83,8 @@ if [ "$BUILD" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   # "unprivileged" user root). Refuse early with the reason instead of a bare useradd failure.
   HOST_UID="$(id -u)"
   [ "$HOST_UID" != 0 ] || { echo "run.sh: run as a non-root user (the image's tester account needs a non-zero uid)" >&2; exit 2; }
-  # grep exits 1 on no match and pipefail would abort the script here; an empty version is a
-  # legitimate outcome (no claude on PATH, nothing exported) that falls back to the Dockerfile pin.
-  CC_VERSION="$(printf '%s' "${SPLICE_E2E_CLAUDE_VERSION:-$(claude --version 2>/dev/null || true)}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-  [ -n "$CC_VERSION" ] || echo "run.sh: no Claude Code version discovered on this host; building with the Dockerfile's pinned default" >&2
-  echo "run.sh: building $IMAGE (Claude Code ${CC_VERSION:-<Dockerfile default>})"
-  docker build -q ${CC_VERSION:+--build-arg "CLAUDE_CODE_VERSION=$CC_VERSION"} --build-arg "UID=$HOST_UID" \
+  echo "run.sh: building $IMAGE (Claude Code $TESTED_CLAUDE_CODE)"
+  docker build -q --build-arg "CLAUDE_CODE_VERSION=$TESTED_CLAUDE_CODE" --build-arg "UID=$HOST_UID" \
     -t "$IMAGE" "$ROOT/checks/e2e/docker" >/dev/null
 fi
 
@@ -91,11 +94,13 @@ chmod 0777 "$RUN_OUT"
 echo "run.sh: running inside.sh with --network none"
 set +e
 docker run --rm --network none \
+  -e "SPLICE_TESTED_CLAUDE_CODE=$TESTED_CLAUDE_CODE" \
   -v "$ART:/artifacts:ro" -v "$ROOT:/repo:ro" -v "$RUN_OUT:/out" \
   "$IMAGE" bash /repo/checks/e2e/docker/inside.sh
 RC=$?
 set -e
 if [ -f "$RUN_OUT/receipt.json" ]; then
+  bun "$ROOT/checks/e2e/docker/receipt-selftest.ts" "$RUN_OUT/receipt.json" || RC=1
   cp "$RUN_OUT/receipt.json" "$OUT/docker-$STAMP.json"
   mkdir -p "$OUT/docker-$STAMP" && cp -r "$RUN_OUT"/. "$OUT/docker-$STAMP/"
   echo "run.sh: receipt $OUT/docker-$STAMP.json (steps + daemon.log in $OUT/docker-$STAMP/)"

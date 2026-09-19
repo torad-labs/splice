@@ -1,0 +1,262 @@
+/**
+ * M1-52: the D7 sweep, enumerated FROM THE SOURCE.
+ *
+ * The denominator is every `color:` declaration in webui/src/(star)(star).css, not the pairs that
+ * happened to render in a capture. probe-ink.mjs measures what it finds rendered, so a rule on a
+ * page nobody captured is invisible to it -- and both known D7 instances were found by eye.
+ *
+ * Ported from sweep-d7.py (M1-78, 2026-09-18). The repo runs no Python: a .py fails loudly once
+ * the interpreter is gone, but the prose that teaches it goes stale in silence and keeps teaching,
+ * which is the drift the rule exists to stop. .mjs rather than .ts because probe-ink.mjs sits
+ * beside it and all sixteen instruments in dev/web-console are .mjs -- one idiom per directory.
+ *
+ * PROVEN against the Python's own output on this tree before the Python was deleted: all 187
+ * rows identical, 38 files, 73 UNRESOLVED / 67 RENDERED / 30 SAME-RULE / 17 NOT-AN-INK-ROLE.
+ * Two things changed on purpose and both make the artifact a function of the tree alone --
+ * files are walked in sorted order (rglob's was the filesystem's) and evidence entries are
+ * sorted (the Python iterated a set, whose order is hash order).
+ *
+ * Note d7-dispositions.json is NOT this script's output: it is the dispositioned form M1-52
+ * derived downstream, carrying `disposition`, `worst` and `grounds`. Do not diff against it.
+ *
+ * RUN IT WITH BUN. bun and node exit 0 on this file and produce byte-identical output, so the
+ * extension is not what the no-python rule is about -- what the repo RUNS and what it TEACHES
+ * the next session is, and the invoker's census grades the caller rather than the suffix.
+ *
+ * Usage: bun webui/.impeccable/review/ink/sweep-d7.mjs <out.json>
+ *        bun webui/.impeccable/review/ink/sweep-d7.mjs --check <known.json>
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { treeState, describeTree } from './tree-state.mjs';
+
+const ROOT = '.';
+const SRC = [];
+(function walk(d) {
+  for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+    const p = path.join(d, e.name);
+    if (e.isDirectory()) walk(p);
+    else if (e.name.endsWith('.css')) SRC.push(p);
+  }
+})(path.join(ROOT, 'webui/src'));
+SRC.sort();
+
+// ---------- token values per theme, from tokens.css's two blocks ----------
+const tok = fs.readFileSync(path.join(ROOT, 'webui/src/shared/tokens.css'), 'utf8').split('\n');
+const block = (a, b) => {
+  const d = {};
+  for (const l of tok.slice(a - 1, b)) {
+    const m = /^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/.exec(l);
+    if (m) d[m[1]] = m[2].trim();
+  }
+  return d;
+};
+const BASE = block(30, 152);
+const DARK = { ...BASE, ...block(161, 263) };
+const LIGHT = { ...BASE, ...block(276, 397) };
+const THEMES = { dark: DARK, light: LIGHT };
+
+function resolve(tv, name, depth = 0) {
+  const v = tv[name];
+  if (v === undefined || depth > 6) return null;
+  const m = /var\((--[a-z0-9-]+)/.exec(v);
+  return m ? resolve(tv, m[1], depth + 1) : v;
+}
+
+function rgba(s) {
+  if (s === null || s === undefined) return null;
+  s = s.trim();
+  let m = /^#([0-9a-fA-F]{6})$/.exec(s);
+  if (m) {
+    const h = m[1];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1.0];
+  }
+  m = /rgba?\(([^)]+)\)/.exec(s);
+  if (m) {
+    const p = m[1].trim().split(/[\s,/]+/).filter((x) => x !== '').map(Number);
+    return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1.0];
+  }
+  return null;
+}
+
+const over = (f, b) => [
+  f[3] * f[0] + (1 - f[3]) * b[0],
+  f[3] * f[1] + (1 - f[3]) * b[1],
+  f[3] * f[2] + (1 - f[3]) * b[2],
+  1.0,
+];
+
+function lum(c) {
+  const f = (u) => { u /= 255.0; return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
+
+function ratio(a, b) {
+  const x = lum(a), y = lum(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+// ---------- plane families ----------
+const FAM = {};
+for (const t of ['--ink', '--ink-mute', '--ink-strong', '--ink-body']) FAM[t] = 'ROOM-INK';
+for (const t of ['--strip-ink', '--strip-ink-mute']) FAM[t] = 'PAPER-INK';
+for (const t of ['--scope-ink']) FAM[t] = 'SCOPE-INK';
+for (const t of ['--room', '--room-deep', '--bay']) FAM[t] = 'ROOM';
+for (const t of ['--strip', '--strip-field']) FAM[t] = 'PAPER';
+for (const t of ['--plate']) FAM[t] = 'PLATE';
+for (const t of ['--scope']) FAM[t] = 'SCOPE';
+for (const t of ['--ghost', '--ghost-paper', '--ghost-rule', '--ghost-ink']) FAM[t] = 'GHOST';
+const INK_OK = { 'ROOM-INK': new Set(['ROOM']), 'PAPER-INK': new Set(['PAPER', 'PLATE']), 'SCOPE-INK': new Set(['SCOPE']) };
+
+// ---------- parse rules ----------
+const rules = [];
+for (const p of SRC) {
+  let txt = fs.readFileSync(p, 'utf8');
+  // Blank a comment to newlines so every later line number stays where the file puts it.
+  txt = txt.replace(/\/\*[\s\S]*?\*\//g, (m) => '\n'.repeat((m.match(/\n/g) || []).length));
+  for (const m of txt.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sel = m[1].trim(), body = m[2];
+    const line = (txt.slice(0, m.index).match(/\n/g) || []).length + 1;
+    if (sel.startsWith('@') || sel.startsWith(':root')) continue;
+    const c = /(?:^|[^-\w])color\s*:\s*var\((--[a-z0-9-]+)/.exec(body);
+    const b = /background(?:-color)?\s*:\s*(?:[^;]*?)var\((--[a-z0-9-]+)/.exec(body);
+    if (!c) continue;
+    rules.push({ file: p, line, sel, ink: c[1], bg: b ? b[1] : null });
+  }
+}
+
+// ---------- measured grounds, from the M1-47 run ----------
+// The Python also built a per-class `meas` table and never read it; dropped rather than ported.
+// Only the ancestry table is consulted, and it is the one that mattered: resolving INHERITED
+// colours took UNRESOLVED 106 to 73 and surfaced D7's instance 7, because a rule whose colour its
+// children inherit parents no text node of its own.
+const ANC = { dark: new Map(), light: new Map() };
+const mp = path.join(ROOT, 'webui/.impeccable/review/ink/ink-measurements.json');
+if (fs.existsSync(mp)) {
+  for (const r of JSON.parse(fs.readFileSync(mp, 'utf8'))) {
+    // `r.anc || fallback` is the port's one real trap: Python's `or` treats an EMPTY LIST as
+    // falsy and falls back to the class list, JS treats [] as truthy and would drop the row's
+    // classes entirely. It cost two rows their ancestry counts (11 collapsed to 1) and nothing
+    // about the output looked wrong -- the kinds, the totals and 185 of 187 rows were identical.
+    const anc = (r.anc && r.anc.length) ? r.anc : String(r.cls).split(/\s+/).filter(Boolean);
+    for (const c of new Set(anc)) {
+      const k = `${c}\x00${r.ink}\x00${r.ground}\x00${r.ratio}`;
+      const cur = ANC[r.theme].get(k);
+      if (cur) cur.n += 1;
+      else ANC[r.theme].set(k, { cls: c, ink: r.ink, gnd: r.ground, rt: r.ratio, n: 1 });
+    }
+  }
+}
+
+const classesOf = (sel) => [...sel.matchAll(/\.([A-Za-z][\w-]*)/g)].map((m) => m[1]);
+const hex2 = (n) => Math.round(n).toString(16).toUpperCase().padStart(2, '0');
+
+console.log(`DENOMINATOR: ${rules.length} \`color: var(--token)\` rules across ${SRC.length} CSS files\n`);
+
+const rows = [];
+for (const r of rules) {
+  const ikf = FAM[r.ink];
+  if (ikf === undefined || !(ikf in INK_OK)) {
+    rows.push({ ...r, kind: 'NOT-AN-INK-ROLE', ground: r.bg, ev: 'token is not a text-ink role' });
+    continue;
+  }
+  if (r.bg) {
+    const gf = FAM[r.bg] ?? 'OTHER';
+    const ok = INK_OK[ikf].has(gf);
+    const ev = {};
+    for (const [th, tv] of Object.entries(THEMES)) {
+      let ci = rgba(resolve(tv, r.ink));
+      const cg = rgba(resolve(tv, r.bg));
+      if (ci && cg) {
+        if (ci[3] < 1) ci = over(ci, cg);
+        ev[th] = Math.round(ratio(ci, cg) * 100) / 100;
+      }
+    }
+    rows.push({ ...r, kind: 'SAME-RULE', ground: r.bg, okfam: ok, ev });
+    continue;
+  }
+  // No ground in the rule: fall back to what rendered, by the node's own class OR BY ANCESTRY.
+  const want = {};
+  for (const [th, tv] of Object.entries(THEMES)) {
+    const c = rgba(resolve(tv, r.ink));
+    if (c) want[th] = `#${hex2(c[0])}${hex2(c[1])}${hex2(c[2])}`;
+  }
+  const seen = {};
+  const selClasses = new Set(classesOf(r.sel));
+  for (const th of ['dark', 'light']) {
+    for (const e of ANC[th].values()) {
+      if (selClasses.has(e.cls) && (!(th in want) || e.ink.toUpperCase() === want[th])) {
+        (seen[th] ??= []).push([e.gnd, e.rt, e.n]);
+      }
+    }
+  }
+  // Canonical order. The Python iterated a `set`, whose order is hash order, so two runs could
+  // emit the same evidence in different sequences and a diff of the artifact would light up on
+  // nothing. Sorting here makes the output a function of the tree alone.
+  for (const th of Object.keys(seen)) {
+    seen[th].sort((x, y) => String(x[0]).localeCompare(String(y[0])) || x[1] - y[1] || x[2] - y[2]);
+  }
+  rows.push({ ...r, kind: Object.keys(seen).length ? 'RENDERED' : 'UNRESOLVED', ground: null, ev: seen });
+}
+
+// ---------------------------------------------------------------- THE TREE STAMP (M1-104)
+//
+// THIS SWEEP RE-DERIVES ITS DENOMINATOR FROM SOURCE ON EVERY RUN, which is the correct design and
+// the reason M1-52's disposition could be trusted at all. But a denominator derived from a MOVING
+// TREE is not a denominator, it is a reading - and nothing in this file's output used to say which
+// tree it read. Measured on 2026-09-18: two runs minutes apart returned 189 rules / 73 unresolved
+// and then 186 / 70, because a live seat was editing CSS. BOTH WERE CORRECT. They described
+// different trees and neither said so, and the damage was already real: M1-80's disposition record
+// is 73 rules as 39/33/1, three of those rules were gone from the source, and several committed
+// rows restate "187" or "73" as though the number were a property of the console rather than of an
+// afternoon. That is law 24 in the small - a denominator quoted from a list rather than re-derived
+// from the source, staying plausible while the source moves under it.
+//
+// SO THE OUTPUT IS STAMPED, and the stamp says only what was looked at. It does NOT pin the
+// denominator and it does NOT refuse a dirty tree: a campaign in flight is dirty by construction,
+// the sweep must keep working, and a sweep that refused would be worse than the problem it was
+// guarding. A reader who wants to know whether a record still applies compares its stamp to the
+// tree in front of them; the file cannot do that for them, but it can stop them guessing.
+//
+// WHAT IT CANNOT SEE, stated rather than implied: git records changes to TRACKED files, so a .css
+// file that is untracked shows as untracked, and a change made and then committed between two runs
+// is invisible except as a different HEAD. The stamp is evidence, not proof. The stamp itself lives
+// in ONE place - ./tree-state.mjs - because census-light.mjs measures under the same tree and two
+// copies of a measurement drift while both keep printing good numbers.
+const tree = treeState(['webui/src']);
+const args = process.argv.slice(2);
+const counts = new Map();
+for (const x of rows) counts.set(x.kind, (counts.get(x.kind) ?? 0) + 1);
+console.log(`TREE: ${describeTree(tree)}`);
+for (const [k, n] of [...counts].sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(16)} ${n}`);
+
+// THE STAMP IS OUTSIDE THE ROWS ON PURPOSE. Inside them it would be compared row-by-row by
+// `--check`, which would then fail on a re-run over an identical tree merely because a dirty-file
+// list moved - a check that fails for the wrong reason is the thing this directory keeps digging
+// out. `--check` grades the RULES, and the stamp describes the tree they were read from.
+const text = JSON.stringify({ tree, rows }, null, 1);
+if (args[0] === '--check') {
+  // A port is proven against the artifact the original wrote, never against its own rerun.
+  const known = JSON.parse(fs.readFileSync(args[1], 'utf8'));
+  // An older artifact is a bare array; read it rather than refusing it, so a stamp added today
+  // does not invalidate yesterday's proof.
+  const a = Array.isArray(known) ? known : known.rows;
+  const b = rows;
+  if (!Array.isArray(a)) { console.error(`\nFAIL ${args[1]} carries no rows array`); process.exit(1); }
+  // A FAILURE SAYS WHICH TREES WERE COMPARED, because the commonest reason this fails is not a
+  // regression in the sweep - it is two readings of two different trees. Without the stamps the
+  // reader sees "181 against 186" and has to guess whether the sweep broke or the console moved,
+  // and those call for opposite responses.
+  const mine = `this run: ${describeTree(tree)}`;
+  const theirs = Array.isArray(known) ? 'the known artifact carries no tree stamp: it predates M1-104' : `the known artifact: ${describeTree(known.tree)}`;
+  if (a.length !== b.length) { console.error(`\nFAIL rows ${b.length} against known ${a.length}\n  ${theirs}\n  ${mine}`); process.exit(1); }
+  const diffs = [];
+  for (let i = 0; i < a.length; i += 1) {
+    if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) diffs.push(`${i} ${a[i].file}:${a[i].line} ${a[i].sel}`);
+  }
+  if (diffs.length) { console.error(`\nFAIL ${diffs.length} row(s) differ:\n  ${diffs.slice(0, 8).join('\n  ')}\n  ${theirs}\n  ${mine}`); process.exit(1); }
+  console.log(`\nreproduces all ${a.length} rows of ${args[1]}`
+    + (Array.isArray(known) ? ' (that artifact carries no tree stamp: it predates M1-104)' : ` (stamped HEAD ${known.tree.head}, ${known.tree.dirty ? 'dirty' : 'clean'})`));
+} else {
+  fs.writeFileSync(args[0], text);
+}

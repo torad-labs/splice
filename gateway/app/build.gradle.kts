@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))
     implementation(project(":provider-kimi"))
+    implementation(project(":provider-muse"))
     implementation(project(":provider-openai"))
     implementation(project(":gateway"))
     implementation(project(":control"))
@@ -39,6 +40,8 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":gateway")))
+    testImplementation(testFixtures(project(":dialect-openai-responses")))
+    testImplementation(testFixtures(project(":dialect-anthropic-passthrough")))
 }
 
 application {

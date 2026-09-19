@@ -7,12 +7,11 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
 import splice.control.LaunchResponse
 import splice.control.LaunchService
 import splice.control.ManagedHead
 import splice.core.topology.TopologyMessages
+import splice.core.util.JsonScalars
 
 private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean)
 
@@ -57,11 +56,14 @@ internal class LaunchRoutes(
             return
         }
         val request = receiveLaunchRequest(call)
+        // V4-162: the windows are read per LAUNCH too — splice.toml's context_window is live and the
+        // spec is boot-frozen, so a launch after an edit is planted with the edited window.
+        val launched = managed.catalog?.let(spec::withWindows) ?: spec
         val recipe = launchResponse.withAuthWarning(
             managed,
-            spec,
+            launched,
             launchService.launch(
-                spec,
+                launched,
                 request.extraArgs,
                 request.dangerouslySkipPermissions,
                 // DR-81: key presence is read per LAUNCH — the spec is boot-frozen, and a stale
@@ -78,9 +80,9 @@ internal class LaunchRoutes(
         val body = jsonBody.parse(call)
         // Safe by default: the caller must explicitly opt in with {"dangerouslySkipPermissions":"true"}
         // to get the flag; a missing key, malformed body, or any other value stays safe.
-        val dangerouslySkipPermissions = body?.get("dangerouslySkipPermissions")?.jsonPrimitive?.content == "true"
+        val dangerouslySkipPermissions = JsonScalars.str(body, "dangerouslySkipPermissions") == "true"
         val extraArgs = (body?.get("args") as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+            ?.mapNotNull { JsonScalars.str(it) } ?: emptyList()
         return LaunchRequest(extraArgs, dangerouslySkipPermissions)
     }
 }

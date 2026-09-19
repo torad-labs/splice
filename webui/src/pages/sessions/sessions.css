@@ -1,0 +1,162 @@
+/* The sessions page: a rack of bays beside a detail column that swells open.
+   Tokens only (CONTRACTS.md section 1); radius 0, no shadow, no glow. */
+
+.myx-sx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+
+/* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44). The board stretches instead of
+   starting at the top, the rack area takes the height that is left, and the bay takes the rack
+   area's height - so the ruled floor runs to the bottom of the frame the way the comp's does
+   (bay-claude is y138..947 of a 1024 frame, and its slot rules continue below the last strip).
+   min-height and not height: a page taller than its room still grows and the room scrolls. */
+  min-height: 100%;
+}
+.myx-sx-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-sx-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-5);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+/* The daemon's own sentence about what this registry never shows. Explanation
+   is on demand, never inline (the brief's copy rule). */
+.myx-sx-note {
+  margin: var(--space-2) var(--space-0) var(--space-0);
+  padding: var(--space-3);
+  max-width: 62ch;
+  background: var(--room-deep);
+  border: var(--hair) solid var(--hairline);
+  color: var(--ink-mute);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+}
+
+/* The board: the bays, and the detail column at zero width until a strip is
+   opened. The swell is the one motion, --dur-2.
+
+   A ZERO TRACK THAT STILL COSTS A GAP IS NOT ZERO (M1-116, measured at 1536 dark). `gap` applies
+   BETWEEN a 1fr track and a 0 track, so the collapsed column was charging the frame a --space-4 it
+   did not use: this rack read 1353.8px at rest against fleet's 1365.8 on the same frame, and the
+   12.0px difference was the whole of it. The column-gap belongs to the OPEN state, like the track
+   it separates, and it transitions with that track so the swell stays ONE movement rather than a
+   width that grows while a gap snaps. row-gap stays unconditional: below 1120px the open board is
+   a single column and the aside wraps to a second ROW, where the row gap is the one that matters.
+
+   AND THE TRANSITION HOLDS STILL UNDER REDUCE. The collapse idiom shipped without that guard on
+   all three pages carrying it; fleet's unmount idiom had one, so converting fleet to collapse
+   without this rule would have traded a dead column for a regression nobody asked for. */
+.myx-sx-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-4);
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+.myx-sx-board-open {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-sx-board { transition: none; }
+}
+
+.myx-sx-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The bays share the rack area's height rather than stacking at their content height: this page
+   holds three groups, and the comp's rack is one column that reaches the floor. */
+.myx-sx-bays > .myx-bay {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. That is the whole difference between bare paper and a full row. */
+.myx-sx-bays .myx-strip { width: 100%; }
+/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
+   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
+   every row shape has the same cell count -- it does not, so the primitive now sets
+   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
+   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
+   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
+   changes it, and watches nothing happen. Verified dead on this page by DOM probe
+   before removal -- see the M1-93 note for the counts. */
+
+.myx-sx-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.myx-sx-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.myx-sx-detail-name {
+  font-family: var(--font-figure);
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+}
+
+/* The two controls this page owns. A printed plate, like every other control in
+   the world: pale ground, black ink, a hairline that darkens on hover. */
+.myx-sx-open,
+.myx-sx-close {
+  padding: var(--space-1) var(--space-3);
+  background: var(--strip);
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.myx-sx-open:hover,
+.myx-sx-close:hover { border-color: var(--strip-ink); }
+.myx-sx-open:focus-visible,
+.myx-sx-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+.myx-sx-window {
+  display: flex;
+  gap: var(--space-5);
+  align-items: baseline;
+}
+/* ONE breakpoint for every page body (m1 design review B13): the detail column drops beneath the
+   bay below 1120px, the width at which the rail, a bay and a detail column stop fitting side by
+   side. The bays scroll their racks (review B7), so a narrow bay scrolls instead of cutting the
+   tail off a strip, and the brief's own topology — one detail column, the opened strip swelling
+   into it on the right — holds at every width above this floor. The rule belongs in the shell, in
+   one place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  .myx-sx-board-open { grid-template-columns: minmax(0, 1fr); }
+}

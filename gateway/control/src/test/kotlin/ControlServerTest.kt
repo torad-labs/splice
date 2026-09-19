@@ -32,7 +32,11 @@ import splice.control.HeadUsageSource
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
+import splice.control.PerfRow
+import splice.control.PerfRowsSource
+import splice.control.PerfRowsWindow
 import splice.control.RateLimitView
+import splice.control.TopologyDigest
 import splice.control.UsageView
 import splice.core.SHIM_VERSION
 import splice.core.auth.AuthDescription
@@ -43,8 +47,9 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.net.ServerSocket
-import java.net.Socket
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 private class FakeHead(
@@ -79,6 +84,17 @@ class ControlServerTest {
     private val json = Json { ignoreUnknownKeys = true }
     private val head = FakeHead("codex", 3099)
     private val shutdownRequests = AtomicInteger()
+    private val shutdownRequested = CountDownLatch(1)
+
+    // Two rows one and two hours old, the files reaching back nine days: /api/perf/summary input.
+    private val perfNow = System.currentTimeMillis()
+    private val perfRows = listOf(
+        PerfRow(perfNow - 2 * HOUR_MS, "error:upstream-failed", mapOf("total" to 300L)),
+        PerfRow(perfNow - HOUR_MS / 2, "ok", mapOf("first_byte" to 100L, "stream_end" to 400L, "total" to 500L)),
+    )
+    private val fakePerfRows = PerfRowsSource { since ->
+        PerfRowsWindow(perfRows.filter { it.ts >= since }, oldestHeldTs = perfNow - 9 * DAY_MS)
+    }
 
     private val fakePerf = splice.control.HeadPerfSource { n ->
         listOf(
@@ -114,6 +130,7 @@ class ControlServerTest {
             warnPct = 80,
             warnTokens5h = 0,
             perf = fakePerf,
+            perfRows = fakePerfRows,
         )
         val launchSpec = launchSpecFixture(tmp, mgmt.get())
         control = ControlServer(
@@ -133,17 +150,19 @@ class ControlServerTest {
             launchService = LaunchService(
                 splice.core.launch.ClaudeConfigMaterializer(tmp),
             ),
-            shutdownDaemon = { shutdownRequests.incrementAndGet() },
-            topologyDigest = "boot-digest-abc",
+            shutdownDaemon = {
+                shutdownRequests.incrementAndGet()
+                shutdownRequested.countDown()
+            },
+            topologyDigest = TopologyDigest { "boot-digest-abc" },
             configPath = "/tmp/splice.toml",
             topologyStale = { true },
         )
         control.start()
-        awaitListening(port)
     }
 
     private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
-        configDir = tmp.resolve(".claude-codex-test"),
+        trees = splice.control.HeadTrees(tmp.resolve(".claude-codex-test")),
         pinnedModel = "gpt-5.6-sol",
         availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
         modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
@@ -222,7 +241,6 @@ class ControlServerTest {
         )
         degraded.start()
         try {
-            awaitListening(degradedPort)
             val body = json.parseToJsonElement(
                 client.get("http://127.0.0.1:$degradedPort/health").bodyAsText(),
             ).jsonObject
@@ -285,6 +303,27 @@ class ControlServerTest {
     }
 
     @Test
+    fun `perf summary serves the requested window per head with per-tag failure shares`() = runTest {
+        val week = json.parseToJsonElement(authed("/api/perf/summary?window=7d")).jsonObject
+        assertEquals("7d", week["window"]?.jsonPrimitive?.content)
+        val codex = week["heads"]!!.jsonArray.first().jsonObject
+        assertEquals("codex", codex["key"]?.jsonPrimitive?.content)
+        assertEquals("2", codex["count"]?.jsonPrimitive?.content)
+        assertEquals("false", codex["clamped"]?.jsonPrimitive?.content, "the files reach past the window")
+        assertEquals("0.5", codex["failure_shares"]!!.jsonObject["error:upstream-failed"]?.jsonPrimitive?.content)
+        assertEquals("100", codex["time_before_first_byte_ms"]!!.jsonObject["p50"]?.jsonPrimitive?.content)
+        val hour = json.parseToJsonElement(authed("/api/perf/summary?window=1h")).jsonObject
+        assertEquals("1", hour["heads"]!!.jsonArray.first().jsonObject["count"]?.jsonPrimitive?.content)
+        val absent = json.parseToJsonElement(authed("/api/perf/summary")).jsonObject
+        assertEquals("24h", absent["window"]?.jsonPrimitive?.content, "no window means the default")
+        val unknown = client.get("http://127.0.0.1:$port/api/perf/summary?window=2h") {
+            header("Authorization", "Bearer $key")
+        }
+        assertEquals(HttpStatusCode.BadRequest, unknown.status, "an unknown window is refused, as the CLI refuses it")
+        assertTrue(unknown.bodyAsText().contains("2h"), unknown.bodyAsText())
+    }
+
+    @Test
     fun `head lifecycle - stop then start flips running`() = runTest {
         val stopped = client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
             header("Authorization", "Bearer $key")
@@ -306,13 +345,15 @@ class ControlServerTest {
             header("Authorization", "Bearer $key")
         }
         assertEquals(HttpStatusCode.Accepted, accepted.status)
-        // POLLED, NOT READ INSTANTLY — and the reason is this test's own subject. The handler ACKS
+        // AWAITED, NOT READ INSTANTLY — and the reason is this test's own subject. The handler ACKS
         // FIRST and calls shutdownDaemon() afterwards (ControlServer.kt:110-115); that ordering is
         // what the test exists to pin, and it is exactly why the client can observe 202 before the
         // server has reached the call. Reading the counter on the next line therefore races the
         // very window being asserted. Caught in CI 2026-07-30 (0/10 locally — a load-dependent
-        // window looks like that). Same discipline as awaitOne below: poll with a bound.
-        awaitCount(shutdownRequests, 1, "shutdown request after a 202")
+        // window looks like that). The callback counts a latch down, so the wait is on the call
+        // itself, bounded (V4-139; it was a 5 ms poll of the counter).
+        assertTrue(shutdownRequested.await(10, TimeUnit.SECONDS), "no shutdown request after a 202")
+        assertEquals(1, shutdownRequests.get(), "exactly one shutdown request after a 202")
     }
 
     @Test
@@ -466,12 +507,17 @@ class ControlServerTest {
         val body = client.post("http://127.0.0.1:$port/launch/codex") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
-            setBody("""{"args":["-c"]}""")
+            // V4-113: the null rides in the same request on purpose — JsonNull IS a JsonPrimitive
+            // whose content is the literal string "null", so the old `(it as? JsonPrimitive)?.content`
+            // chain handed a null argument to the launched client as a live word. This is
+            // CLIENT-supplied JSON becoming a process argv, the shape the wall's header names.
+            setBody("""{"args":["-c",null]}""")
         }.bodyAsText()
         val obj = json.parseToJsonElement(body).jsonObject
         val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertFalse(argv.contains("--dangerously-skip-permissions"))
         assertTrue(argv.contains("-c"))
+        assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
         assertFalse(obj.containsKey("warning"))
     }
 
@@ -492,8 +538,9 @@ class ControlServerTest {
     }
 
     @Test
-    fun `statusline renders the model from stdin json, no bearer needed`() = runTest {
+    fun `statusline renders the model from stdin json`() = runTest {
         val line = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
             setBody(
                 """{"model":{"display_name":"Codex 5.6 Sol"},"current_usage":{"input_tokens":100,"context_window":272000}}""",
@@ -505,6 +552,7 @@ class ControlServerTest {
     @Test
     fun `statusline rejects oversized input before rendering`() = runTest {
         val response = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
             setBody("x".repeat(70_000))
         }
@@ -513,28 +561,13 @@ class ControlServerTest {
 }
 
 // OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
-// collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.
+// collide at bind time on busy hosts; ports are OS-assigned. No readiness poll: ControlServer.start
+// returns routed and bound (Ktor's default SEQUENTIAL startup runs the modules before
+// NettyApplicationEngine's bind(...).sync(); V4-139).
+private const val HOUR_MS = 3_600_000L
+private const val DAY_MS = 24 * HOUR_MS
+
 private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
-
-private fun awaitListening(vararg ports: Int) {
-    for (p in ports) awaitOne(p)
-}
-
-private fun awaitCount(counter: AtomicInteger, expected: Int, what: String) {
-    val deadline = System.currentTimeMillis() + 10_000
-    while (counter.get() != expected) {
-        check(System.currentTimeMillis() < deadline) { "$what: expected $expected, still ${counter.get()}" }
-        Thread.sleep(5)
-    }
-}
-
-private fun awaitOne(port: Int) {
-    val deadline = System.currentTimeMillis() + 10_000
-    while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
-        check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
-        Thread.sleep(50)
-    }
-}
 
 // JW-06 lives in its own class: ControlServerTest sits at detekt's LargeClass ceiling.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -568,7 +601,6 @@ class ControlServerPerHeadConfigTest {
         )
         server.start()
         try {
-            awaitListening(perHeadPort)
             val bearer = mgmt.get()
             suspend fun getConfig(path: String) = json.parseToJsonElement(
                 client.get("http://127.0.0.1:$perHeadPort$path") {

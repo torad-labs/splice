@@ -24,7 +24,14 @@ import splice.core.head.HeadHealth
 import splice.spi.Provider
 
 // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
-private const val STOP_DRAIN_NS = 5_000_000_000L // 5s
+//
+// V4-74: 45s, and the reason is a MEASURED turn length rather than a round number — the operator's
+// deepseek turns run 7 to 16s, so the old 5s drain could not outlive even a short one and every
+// restart cut the turn mid-stream, which Claude Code does NOT retry after content (it prints
+// "API Error: Connection lost mid-response"). This is the INNERMOST budget of a five-link ladder;
+// see Main.kt's STOP_DEADLINE_MS comment for the whole chain, and DaemonStopBudgetTest for the
+// ordering that keeps each link below the next.
+private const val STOP_DRAIN_NS = 45_000_000_000L // 45s: above a 16s deepseek turn, inside the ladder
 private const val STOP_DRAIN_POLL_MS = 50L
 
 public class HeadServer(
@@ -41,15 +48,15 @@ public class HeadServer(
     private val window = AdmissionWindow()
     private val responses = AdmissionResponses()
     private val clientAuth = ClientAuth(deps, responses)
-    private val bodyReader = RequestBodyReader(deps)
+    private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()
     private val admissionGate = AdmissionGate(provider, deps, window, responses)
-    private val diagnostics = HeadDiagnostics(provider, listenPort, deps, driver)
+    private val diagnostics = HeadDiagnostics(provider, listenPort, deps.gate, driver)
     private val admission = HeadAdmission(
         deps,
         clientAuth,
         admissionGate,
-        AdmissionTelemetry(deps.gate, deps.clock),
+        AdmissionTelemetry(deps.gate, deps.seams.clock),
         TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth, compactionReplay),
         responses,
         driver,
@@ -63,7 +70,7 @@ public class HeadServer(
         bodyParse,
         responses,
     )
-    private val engine = HeadEngine(provider, listenPort, deps, diagnostics, clientAuth, admission, countTokens)
+    private val engine = HeadEngine(provider, listenPort, deps.log, diagnostics, clientAuth, admission, countTokens)
 
     private val lifecycle = Mutex()
 
@@ -88,11 +95,12 @@ public class HeadServer(
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
-        // NF-01: the 429 cooldown lives on the long-lived UpstreamClient too — restart must be a
-        // real escape hatch from an armed horizon, not a no-op the operator discovers mid-outage.
-        deps.upstream.clearRateLimitCooldown()
+        // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
+        // turns bypass the client-owned legacy cooldown, so reset every account instead.
+        deps.quotaBundle.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
+        deps.seams.events.lifecycle(HeadLifecycle.STARTED)
     }
 
     private suspend fun stopLocked() {
@@ -100,20 +108,28 @@ public class HeadServer(
         // so clients get honest terminals (driveSealingCancellation's cancellation seal) before
         // Netty tears the engine. Bounded wait — never block restart forever.
         window.close()
+        // V4-134: reported only when there was something running to drain, so a stop of a head
+        // that never started does not tell the console it went down.
+        val wasRunning = engine.isRunning
+        if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.DRAINING)
         val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
         var inflight = gate.snapshot().inflight
         while (inflight > 0 && System.nanoTime() < deadlineNs) {
-            deps.waiter.wait(STOP_DRAIN_POLL_MS)
+            deps.seams.waiter.wait(STOP_DRAIN_POLL_MS)
             inflight = gate.snapshot().inflight
         }
         if (inflight > 0) {
             log("[${provider.key}] stop: draining timed out with inflight=$inflight — forcing engine stop\n")
         }
-        engine.stop()
-        // A detached compaction (TurnStreamer) has no head to record for once the engine is down;
-        // the driver is reused by startLocked, so this ends compactions, never their scope.
+        // A detached compaction OUTLIVES ITS CLIENT (TurnStreamer): its handed-off slot travels with
+        // the drive, and the drain budget above belongs to that feature — a detached compaction that
+        // finishes inside the budget releases its slot and keeps its recording for the retry. End
+        // only what is STILL driving once the budget is spent.
         driver.stopDetached()
+        engine.stop()
         provider.onHeadStop()
-        deps.usageStore.flushNow()
+        deps.stores.usageStore.flushNow()
+        deps.stores.economicsStore?.flushNow()
+        if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.STOPPED)
     }
 }

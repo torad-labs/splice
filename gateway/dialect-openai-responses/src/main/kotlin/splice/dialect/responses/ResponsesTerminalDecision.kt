@@ -4,7 +4,8 @@
 // landing has nowhere to accrete except here.
 package splice.dialect.responses
 
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
@@ -24,25 +25,43 @@ internal class ResponsesTerminalDecision(
         // NF-06: a tripped runaway valve outranks everything — the buffers were truncated, so
         // neither a late terminal nor a provider error can describe this turn honestly.
         providerFailure = runawayGuard?.let {
-            TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+            TurnOutcome.Failure(
+                it,
+                providerReported = false,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
+            )
         } ?: state.toolArgsInvalid?.let {
             // CX-01: the backend sent a terminal, but a tool call's arguments are corrupt —
             // provider-reported (the backend produced the bytes) so it retries, never a clean
             // Success that dispatches garbage.
             TurnOutcome.Failure(
-                ErrorType.API_ERROR,
-                "ChatGPT backend: $it in tool call — retry",
+                "upstream: $it in tool call — retry",
                 providerReported = true,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
             )
         } ?: state.upstreamFailure?.let {
             // Parsed from a response.failed/error event the backend actually sent (G20 provenance).
             // Only an explicitly transient verdict carries re-anchor state: an unknown/policy error
             // must not re-POST the identical full context merely because API_ERROR is a wide bucket.
             TurnOutcome.Failure(
-                it.type,
-                "ChatGPT backend: ${it.message}",
+                "upstream: ${it.message}",
                 providerReported = true,
                 partial = if (it.transient) payload.partialOrNull(state) else null,
+                // V4-81: the classifier's own verdict, reaching the outcome at last. It gated
+                // `partial` before this and nothing else, so a non-transient API_ERROR still went
+                // out labelled retryable and the client re-sent it — see PreContentWireType.
+                permanent = !it.transient,
+                // V4-117: the classifier's OWN cause, since it is the one holding the status, the
+                // vendor code and the body text. An earlier draft of this line re-derived the cause
+                // here from `it.status` alone — and that was WRONG in a way two tests caught: on the
+                // streaming path there is usually no status at all, so a rate limit or an overflow
+                // detected from the TEXT collapsed to UPSTREAM_REPORTED and the failure went out as
+                // API_ERROR instead of RATE_LIMIT / INVALID_REQUEST. The status is one input to the
+                // classifier, not a substitute for its verdict.
+                cause = it.cause,
+                phase = FailurePhase.MID_OUTPUT,
             )
         } ?: refusalFailure(state) ?: contentFilterFailure(state),
         finished = state.finalResponse != null,
@@ -64,9 +83,22 @@ internal class ResponsesTerminalDecision(
     private fun refusalFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
         state.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
             TurnOutcome.Failure(
-                ErrorType.API_ERROR,
-                "ChatGPT backend: model refused — $it",
+                // V4-81: permanent, and this is the site the row names — the comment above already
+                // says a refusal is deterministic, and `permanent` is that sentence made load-
+                // bearing. Without it the pre-content rule relabelled the refusal overloaded_error
+                // and the client re-sent the identical bytes up to 300 times for the same refusal.
+                "upstream: model refused — $it",
                 providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
+                // V4-122 item 11: the sentence above was load-bearing and the ARGUMENT HAD BEEN
+                // LOST — the comment survived while the call passed only providerReported, so
+                // `permanent` defaulted false and the pre-content rule relabelled the refusal
+                // overloaded_error. That is the documented 300-identical-resend defect, live again.
+                // Decided from the BEHAVIOUR, not the comment: a refusal is deterministic, so a
+                // retry re-sends the identical bytes for the identical verdict and the client
+                // cannot fix it by retrying. Its siblings at :49 and :95 pass it; this one did not.
+                permanent = true,
+                cause = FailureCause.MODEL_REFUSED,
+                phase = FailurePhase.TERMINAL,
             )
         }
 
@@ -78,9 +110,14 @@ internal class ResponsesTerminalDecision(
     private fun contentFilterFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
         if (state.contentFiltered) {
             TurnOutcome.Failure(
-                ErrorType.API_ERROR,
-                "ChatGPT backend: generation stopped by content filter",
+                "upstream: generation stopped by content filter",
                 providerReported = true,
+                // V4-81: permanent, for the reason the comment above already gives — the identical
+                // prompt is filtered identically, so a retry buys the same censored turn at full
+                // price.
+                permanent = true,
+                cause = FailureCause.CONTENT_FILTERED,
+                phase = FailurePhase.TERMINAL,
             )
         } else {
             null
@@ -91,9 +128,10 @@ internal class ResponsesTerminalDecision(
             TurnOutcome.ClientAbandoned()
         } else {
             TurnOutcome.Failure(
-                ErrorType.OVERLOADED,
-                "claudex: upstream stream ended without response.completed (truncated); retry",
+                "splice: upstream stream ended without response.completed (truncated); retry",
                 partial = payload.partialOrNull(state),
+                cause = FailureCause.UPSTREAM_TRUNCATED,
+                phase = FailurePhase.MID_OUTPUT,
             )
         }
 
@@ -117,12 +155,16 @@ internal class ResponsesTerminalDecision(
                 "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
         }
         return TurnOutcome.Failure(
-            ErrorType.OVERLOADED,
-            "claudex: upstream stream stalled ($why) — aborted; retry",
+            "splice: upstream stream stalled ($why) — aborted; retry",
             partial = when (fired) {
                 is WatchdogFired.Idle -> payload.partialOrNull(state)
                 is WatchdogFired.TotalCap -> null
             },
+            cause = FailureCause.UPSTREAM_STALLED,
+            // MID_OUTPUT, not CONNECT/FIRST_BYTE: a watchdog fires DURING a stream, and the one
+            // fact that could narrow it further — whether a client frame actually went out — is the
+            // boundary's, which corrects this with copy(phase = ...) rather than being guessed here.
+            phase = FailurePhase.MID_OUTPUT,
         )
     }
 }

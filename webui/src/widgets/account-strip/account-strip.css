@@ -1,0 +1,14 @@
+/* The account strip's own layout. The strip's paper, edge, field boxes and states are the
+   shared primitives' (shared/ui/ui.css); nothing here re-colours them. Radius 0, tokens only. */
+
+.myx-astrip-fields {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* The rack scrolls rather than reflowing: the field grid is fixed-width in ch, and a strip that
+   wrapped would stop reading as a row of the same rack. */
+.myx-astrip-scroll {
+  overflow-x: auto;
+}

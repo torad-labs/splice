@@ -8,26 +8,16 @@
 package splice.gateway.wire
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.wire.ErrorEnvelope
+import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val OK_STATUS = 200
-private const val DEFAULT_ERROR_STATUS = 502
-private const val STATUS_INVALID = 400
-private const val STATUS_AUTH = 401
-private const val STATUS_PERMISSION = 403
-private const val STATUS_NOT_FOUND = 404
-private const val STATUS_RATE_LIMIT = 429
-private const val STATUS_OVERLOADED = 529
 
-private const val FIELD_TYPE = "type"
-private const val FIELD_ERROR = "error"
-
-public class CollectingTerminal(
+internal class CollectingTerminal(
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
     private val messageId: String = MessageIds().generateMessageId(),
@@ -42,7 +32,7 @@ public class CollectingTerminal(
     override val hasEnded: Boolean get() = ended.get()
 
     private var body: JsonObject? = null
-    private var status = DEFAULT_ERROR_STATUS
+    private var status = HttpStatus.BAD_GATEWAY
     private var degraded: String? = null
 
     // DR-87: the emit-time Success->error rewrites below were invisible to the caller — StreamFinish
@@ -54,7 +44,7 @@ public class CollectingTerminal(
      *  only a torn drive that somehow emitted neither. */
     public fun responseBody(): JsonObject = body ?: errorEnvelope(
         ErrorType.API_ERROR.wireName,
-        "claudex: gateway produced no response — retry",
+        "splice: gateway produced no response — retry",
     )
 
     public fun httpStatus(): Int = status
@@ -105,7 +95,7 @@ public class CollectingTerminal(
             degraded = "buffered_capacity"
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
-                "claudex: response exceeded max buffered size — aborting",
+                "splice: response exceeded max buffered size — aborting",
                 usagePayload(usage),
             )
             status = statusFor(ErrorType.API_ERROR)
@@ -124,7 +114,7 @@ public class CollectingTerminal(
             degraded = "malformed_tool_input"
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
-                "claudex: malformed tool_use input from upstream — retry",
+                "splice: malformed tool_use input from upstream — retry",
                 usagePayload(usage),
             )
             status = statusFor(ErrorType.API_ERROR)
@@ -143,7 +133,15 @@ public class CollectingTerminal(
         status = OK_STATUS
     }
 
-    override suspend fun emitError(type: ErrorType, message: String) {
+    /** V4-81: [permanent] is accepted and DELIBERATELY UNUSED here — the pre-content wire-type
+     *  rule is a streaming rule and does not apply to a buffered response. On `stream:false` the
+     *  client has read nothing yet by construction, but the response it is about to read is a
+     *  single HTTP status, not an in-band SSE event: there is no retryable event to relabel, and
+     *  the status IS the information (429 rate_limit_error, 502 api_error). Applying the rule here
+     *  would ship a genuine 429 as a 529 with rate-limit headers attached and turn every buffered
+     *  api_error into a lie about an overload that did not happen. The signature carries the
+     *  parameter only because the interface does. */
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         if (!ended.compareAndSet(false, true)) return
         body = errorEnvelope(type.wireName, message)
         status = statusFor(type)
@@ -156,28 +154,21 @@ public class CollectingTerminal(
     // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()
     // fallback has none to give) — only the malformed-tool-use path in emitTerminal has a real
     // turn usage in scope, so it is the only caller that passes one.
+    // V4-102: the shape lives in core now (splice.core.wire.ErrorEnvelope), because provider-spi
+    // cannot import :gateway and its own fail-fast body is the same envelope. Kept as a named
+    // delegate so the three call sites above read unchanged.
     private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
-        buildJsonObject {
-            put(FIELD_TYPE, FIELD_ERROR)
-            put(
-                FIELD_ERROR,
-                buildJsonObject {
-                    put(FIELD_TYPE, type)
-                    put("message", message)
-                },
-            )
-            usage?.let { put("usage", it) }
-        }
+        ErrorEnvelope.of(type, message, usage)
 
     // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
     // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.
     private fun statusFor(type: ErrorType): Int = when (type) {
-        ErrorType.INVALID_REQUEST -> STATUS_INVALID
-        ErrorType.AUTHENTICATION -> STATUS_AUTH
-        ErrorType.PERMISSION -> STATUS_PERMISSION
-        ErrorType.NOT_FOUND -> STATUS_NOT_FOUND
-        ErrorType.RATE_LIMIT -> STATUS_RATE_LIMIT
-        ErrorType.OVERLOADED -> STATUS_OVERLOADED
-        ErrorType.API_ERROR -> DEFAULT_ERROR_STATUS
+        ErrorType.INVALID_REQUEST -> HttpStatus.BAD_REQUEST
+        ErrorType.AUTHENTICATION -> HttpStatus.UNAUTHORIZED
+        ErrorType.PERMISSION -> HttpStatus.FORBIDDEN
+        ErrorType.NOT_FOUND -> HttpStatus.NOT_FOUND
+        ErrorType.RATE_LIMIT -> HttpStatus.TOO_MANY_REQUESTS
+        ErrorType.OVERLOADED -> HttpStatus.OVERLOADED
+        ErrorType.API_ERROR -> HttpStatus.BAD_GATEWAY
     }
 }

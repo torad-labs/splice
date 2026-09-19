@@ -8,6 +8,23 @@
 // TWO MORE OUTCOMES (2026-09-05), both "this head answers without an upstream turn": Local — the
 // activity side query Claude Code sends every 30 s (ActivityLabel), and Replay — a compaction retry
 // whose bytes match a compaction that outlived its first client (CompactionReplay).
+//
+// V4-130: every parsed request is also where the console's session facts are observed, because this
+// is the one place that holds the typed request and the session header together: SendMessage edges
+// (MessageEdges), the locally answered activity label, and a near-miss label query sent upstream.
+//
+// V4-131: a session bound to a team slot gets the slot's text (SlotInstructions) appended after the
+// head's own layers, in APPEND mode whatever the head's system_prompt_mode, resolved per turn so an
+// edit applies on the next turn. The turn whose slot text changed is marked in its perf row
+// (SLOT_PROMPT_CHANGED): it is the one cold-cache turn an edit costs.
+//
+// V4-160 (concentration, 2026-09-18): applySystemPrompt and applySlotPrompt moved verbatim to
+// TurnPrompts.kt; this file still calls them in the same order.
+//
+// V4-165 (concentration, 2026-09-19): building the provider's turn (compaction tail, request hash,
+// prompt layers) moved verbatim to ProviderTurnBuild.kt, which also owns the guard that gives back
+// what a provider's turn holds (BuiltTurn.onEnd) when preparation fails before the drive. A replayed
+// compaction is never driven, so its build's hold ends here.
 package splice.gateway.head
 
 import io.ktor.http.HttpHeaders
@@ -49,9 +66,13 @@ internal class TurnPreparation(
 ) {
     private val compactClassifier = CompactClassifier()
     private val activityLabel = ActivityLabel()
+    private val messageEdges = MessageEdges(deps.seams.events)
+    private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
-        val body = bodyReader.receiveBodyBounded(call, deps.maxRequestBytes)
+        val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
+        deps.seams.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
+        val body = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)
@@ -60,9 +81,15 @@ internal class TurnPreparation(
         if (!provider.catalog.contains(parsed.typed.model)) {
             return Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
         }
-        val sessionId = call.request.headers[SESSION_HEADER]
+        messageEdges.observe(sessionId, parsed.typed)
         val label = activityLabel.labelFor(parsed.typed)
+        if (label == null) nearMissLabelQuery(parsed.typed, sessionId)
         return if (label != null) local(label, parsed.typed, sessionId, perf) else build(call, parsed, sessionId, perf)
+    }
+
+    /** A reworded activity side query rides upstream as an ordinary turn; the console counts it. */
+    private fun nearMissLabelQuery(request: AnthropicRequest, sessionId: String?) {
+        if (activityLabel.looksLikeSideQuery(request)) deps.seams.events.labelQueryUpstream(sessionId)
     }
 
     // The activity side query never reaches a model: see ActivityLabel for the measurement.
@@ -74,6 +101,7 @@ internal class TurnPreparation(
     ): Preparation.Local {
         perf.mark(PerfKeys.PARSE)
         deps.log("[${provider.key}] activity label answered locally: \"$label\" (${who(sessionId)}no upstream turn)\n")
+        deps.seams.events.activityLabel(sessionId, label)
         return Preparation.Local(label, request.model, sessionId, request.stream)
     }
 
@@ -85,9 +113,19 @@ internal class TurnPreparation(
     ): Preparation {
         // One scan of system + last-user text: classification and shadow instrumentation share it.
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
-        deps.shadow.record(parsed.typed, compactProbe)
+        deps.stores.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val fromProvider = provider.buildTurn(parsed, compactProbe.compact, sessionId)
+        val fromProvider = providerTurns.build(parsed, compactProbe.compact, sessionId, perf)
+        return providerTurns.endingOnFailure(fromProvider) { handedOn(call, parsed, sessionId, perf, fromProvider) }
+    }
+
+    private fun handedOn(
+        call: ApplicationCall,
+        parsed: AnthropicTurnBody,
+        sessionId: String?,
+        perf: TurnPerf,
+        fromProvider: BuiltTurn,
+    ): Preparation {
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
         // session. Stamped here, once, when the provider left it null.
@@ -99,7 +137,7 @@ internal class TurnPreparation(
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.
-        val built = if (deps.forwardClientAuth) {
+        val built = if (deps.policy.forwardClientAuth) {
             prepared.copy(extraHeaders = prepared.extraHeaders + clientAuth.forwardedClientHeaders(call))
         } else {
             prepared
@@ -108,6 +146,8 @@ internal class TurnPreparation(
         // A compaction retry whose bytes match a compaction that outlived its first client is
         // answered from that recording (TurnStreamer records it, LocalResponses replays it).
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
+        // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
+        replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(built, parsed.typed.stream)
     }
 
@@ -124,7 +164,7 @@ internal class TurnPreparation(
     }
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
-        val key = replay.key(built.meta.sessionId, built.requestBody.toString()) ?: return null
+        val key = replay.key(built.meta, built.requestBody.toString()) ?: return null
         val recording = replay.lookup(key) ?: return null
         val state = if (recording.isComplete) "finished" else "still running"
         deps.log(
@@ -146,8 +186,11 @@ internal class TurnPreparation(
         return Preparation.Rejected("invalid request body")
     }
 
-    private fun who(sessionId: String?): String = sessionId?.let { "session ${it.take(TAG_CHARS)}, " } ?: ""
+    // V4-100: SESSION_TAG_CHARS is the ONE session-tag width (declared in TurnDrive.kt, same
+    // package). This file's own `TAG_CHARS = 8` was the same number under a second name, so the log
+    // line here and the one TurnTelemetry writes could disagree about how much of a session id is
+    // enough to identify it — a reader comparing the two would see two different tags for one turn.
+    private fun who(sessionId: String?): String = sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}, " } ?: ""
 }
 
 private const val SESSION_HEADER = "x-claude-code-session-id"
-private const val TAG_CHARS = 8

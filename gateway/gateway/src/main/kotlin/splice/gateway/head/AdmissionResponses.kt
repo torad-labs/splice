@@ -7,33 +7,33 @@
 package splice.gateway.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.header
 import io.ktor.server.response.respondText
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import splice.core.wire.ErrorEnvelope
+import splice.core.wire.HttpStatus
+import splice.spi.AccountResetText
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-// Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its own const
-// to avoid a cross-module const import and satisfy detekt MagicNumber).
-private const val GATEWAY_CAPACITY_STATUS = 529
-private const val CONTENT_TOO_LARGE_STATUS = 413
 private const val INVALID_REQUEST_ERROR = "invalid_request_error"
 
 /** The admission plane's response shapes: one owner for all five wire terminals a request can meet
  *  before a turn exists (400, 401, 408, 413, 529). No instance state; pure response shaping. */
 internal class AdmissionResponses {
+    private val retryAfterFormat = DateTimeFormatter.ofPattern("EEE, dd MMM uuuu HH:mm:ss 'GMT'", Locale.US)
+        .withZone(ZoneOffset.UTC)
+
     // Relocated from a HeadServer member so respondAtCapacity shares one body builder; pure JSON
     // shaping with no instance state (review 2026-07-22 round 3).
-    private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
-        put("type", "error")
-        put(
-            "error",
-            buildJsonObject {
-                put("type", type)
-                put("message", message)
-            },
-        )
-    }.toString()
+    // V4-102: the shape lives in core (splice.core.wire.ErrorEnvelope) so provider-spi can build the
+    // same envelope — it cannot import :gateway. Kept as a named delegate so the six admission
+    // callers read unchanged; the local builder is gone, which is what the wall actually asks for.
+    private fun errorBodyJson(type: String, message: String): String =
+        ErrorEnvelope.of(type, message).toString()
 
     /** The 529 capacity terminal built once: every admission path must answer IDENTICALLY because
      *  client retry logic keys on the shape (three hand-built copies drifted; review 2026-07-22
@@ -42,7 +42,7 @@ internal class AdmissionResponses {
         call.respondText(
             errorBodyJson("overloaded_error", message),
             ContentType.Application.Json,
-            HttpStatusCode(GATEWAY_CAPACITY_STATUS, "Gateway At Capacity"),
+            HttpStatusCode(HttpStatus.OVERLOADED, "Gateway At Capacity"),
         )
     }
 
@@ -55,11 +55,23 @@ internal class AdmissionResponses {
         )
     }
 
+    suspend fun respondRateLimited(call: ApplicationCall, message: String, resetEpochSeconds: Long?) {
+        resetEpochSeconds?.let { call.response.header(HttpHeaders.RetryAfter, retryAfterDate(it)) }
+        call.respondText(
+            errorBodyJson("rate_limit_error", message),
+            ContentType.Application.Json,
+            HttpStatusCode(HttpStatus.TOO_MANY_REQUESTS, "Rate Limited"),
+        )
+    }
+
+    private fun retryAfterDate(resetEpochSeconds: Long): String =
+        retryAfterFormat.format(AccountResetText.normalizedInstant(resetEpochSeconds))
+
     suspend fun respondTooLarge(call: ApplicationCall, limit: Int) {
         call.respondText(
             errorBodyJson(INVALID_REQUEST_ERROR, "request body exceeds $limit bytes"),
             ContentType.Application.Json,
-            HttpStatusCode(CONTENT_TOO_LARGE_STATUS, "Content Too Large"),
+            HttpStatusCode(HttpStatus.CONTENT_TOO_LARGE, "Content Too Large"),
         )
     }
 

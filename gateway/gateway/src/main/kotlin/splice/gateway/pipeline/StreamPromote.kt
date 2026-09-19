@@ -3,6 +3,7 @@
 // terminal emit.
 package splice.gateway.pipeline
 
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.turn.ModelTextPicker
 import splice.core.turn.TurnMeta
@@ -12,7 +13,7 @@ import splice.gateway.wire.TurnTerminal
 
 /** What the promote step decided: [endedTag] when the turn ended here (an error terminal was
  *  emitted), else null and the turn flows on to mirror+terminal, tagged [cleanTag] for the log. */
-internal data class PromoteVerdict(val endedTag: String?, val cleanTag: String = "ok")
+internal data class PromoteVerdict(val endedTag: String?, val cleanTag: String = OutcomeTag.OK.wire)
 
 internal class StreamPromote(
     private val compact: StreamCompact,
@@ -40,26 +41,30 @@ internal class StreamPromote(
                         "source=${picked.source} chars=${picked.text.length}\n",
                 )
                 emitter.addTextBlock(picked.text)
-                if (meta.compact) compact.record(picked.source, elapsedMs, chars = picked.text.length)
+                if (meta.compact) compact.record(meta, picked.source, elapsedMs, chars = picked.text.length)
                 PromoteVerdict(null)
             }
             meta.compact -> {
                 // An empty compact is an ERROR, not an empty success (Claude Code would store a
                 // blank summary and lose the thread). Never invent locally.
-                compact.record("empty_model", elapsedMs, error = "api_error")
+                compact.record(meta, OutcomeTag.EMPTY_MODEL.wire, elapsedMs, error = "api_error")
                 log("[gateway] empty-turn shape compact=true ${outcome.outputShape}\n")
+                // V4-42 (operator law, 2026-09-17: retry on every error, never stall): OVERLOADED,
+                // the same retryable wire type as the empty_model branch below. A compaction that
+                // ends terminally leaves the session growing until it dies, which is the stall
+                // this ending exists to prevent; the client's backoff bounds the re-sends.
                 emitter.emitError(
-                    ErrorType.API_ERROR,
-                    "claudex: compact returned no content from model — retry (upstream ${outcome.outputShape})",
+                    ErrorType.OVERLOADED,
+                    "splice: compact returned no content from model — retry (upstream ${outcome.outputShape})",
                 )
-                PromoteVerdict("empty_compact")
+                PromoteVerdict(OutcomeTag.EMPTY_COMPACT.wire)
             }
             outcome.messageClosed -> {
                 // The model closed a message with nothing in it: a finished answer, not a failure
                 // (codex ends the turn here). Ending clean is what stops the client retrying the
                 // same request a dozen times; the line keeps the shape so the class stays greppable.
                 log("[gateway] empty-message turn compact=false ${outcome.outputShape} — ending clean\n")
-                PromoteVerdict(null, cleanTag = "empty_message")
+                PromoteVerdict(null, cleanTag = OutcomeTag.EMPTY_MESSAGE.wire)
             }
             honesty.nothingReachesTheClient(outcome, meta) -> {
                 // Name what the backend actually sent: a reasoning-only round, an item type this
@@ -67,11 +72,19 @@ internal class StreamPromote(
                 // the old line made them one grep-proof sentence (Astra, 2026-09-05: eleven identical
                 // client retries of one turn, each burning 258k input tokens, with no way to tell).
                 log("[gateway] empty-turn shape compact=false ${outcome.outputShape}\n")
+                // V4-42: OVERLOADED, not API_ERROR. Zero content means NOTHING has reached the
+                // client, so the turn is indistinguishable from a transient overload and there is
+                // no client-visible work to lose — but the type decides whether the client recovers.
+                // Before content, Claude Code re-sends an api_error IDENTICALLY until it gives up
+                // (the 2.1.x behaviour recorded on TurnOutcome.Failure.deterministic: 87 and 47
+                // identical turns on 2026-09-07), which reproduces the same empty turn instead of
+                // recovering from it; overloaded_error is retried on a backoff. The WORDS are
+                // unchanged, including the upstream shape, because they are the diagnosis.
                 emitter.emitError(
-                    ErrorType.API_ERROR,
-                    "claudex: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
+                    ErrorType.OVERLOADED,
+                    "splice: model returned no content (empty response) — retry (upstream ${outcome.outputShape})",
                 )
-                PromoteVerdict("empty_model")
+                PromoteVerdict(OutcomeTag.EMPTY_MODEL.wire)
             }
             else -> PromoteVerdict(null)
         }
@@ -85,9 +98,9 @@ internal class StreamPromote(
     private fun recordCompactShape(meta: TurnMeta, emittedText: Boolean, bodyText: String, elapsedMs: Long) {
         if (!meta.compact) return
         if (emittedText) {
-            compact.record("model_text", elapsedMs, chars = bodyText.length)
+            compact.record(meta, "model_text", elapsedMs, chars = bodyText.length)
         } else {
-            compact.record("tooled_no_text", elapsedMs)
+            compact.record(meta, "tooled_no_text", elapsedMs)
         }
     }
 }

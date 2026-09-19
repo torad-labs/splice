@@ -46,6 +46,7 @@ internal class UsageRingFile(
     // the entry exists) logs too. (This read is cold-start only — guarded by UsageRing.ringLoaded —
     // so the line cannot firehose; the per-event WRITE side keeps its streak latch below.)
     internal fun readEntriesFromDisk(): List<JsonObject> {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- a failed size reads 0, and the read below throws the same error, logged by its getOrElse at UsageRingFile.kt:57
         val size = Cancellables.runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
         if (size > MAX_USAGE_FILE_BYTES) {
             log("[usage] $usageFile is ${size}B > ${MAX_USAGE_FILE_BYTES}B cap — treating as empty, 5h window reset\n")

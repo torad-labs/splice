@@ -33,6 +33,9 @@
 package splice.spi
 
 import io.ktor.client.HttpClient
+import splice.core.util.ERR_SNIPPET
+import splice.core.util.ElapsedClock
+import splice.spi.transport.TransportFailureReason
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -49,12 +52,26 @@ public class UpstreamClient(
     // wire a recording waiter and the 200/400/800ms schedule becomes an assertion on a list instead
     // of 1.4 seconds of real sleeping.
     waiter: Waiter = ProcessWaiter(),
-    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(waiter),
-    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter),
+    // V4-110 retry-curve knobs: the generic bounded curve's base/cap/jitter. V4-100: the defaults
+    // READ UpstreamTransport's public curve constants rather than this file's own copies of them, so
+    // the ceiling this class budgets against and the schedule `backoff` actually sleeps cannot drift.
+    // Read from the head config by the factory; the defaults here are for direct construction (tests,
+    // embedders). Known errors keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the
+    // bounded floor everything unpredicted falls on.
+    private val backoffBaseMs: Long = BACKOFF_BASE_MS,
+    private val backoffCapMs: Long = MAX_BACKOFF_MS,
+    private val backoffJitterPct: Int = JITTER_PCT,
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
+        waiter,
+        baseMs = backoffBaseMs,
+        capMs = backoffCapMs,
+        jitterPct = backoffJitterPct,
+    ),
+    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter, jitterPct = backoffJitterPct),
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
-    private val clock: ElapsedNow = ProcessElapsedNow(),
+    private val clock: ElapsedClock = ProcessElapsedNow(),
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
@@ -63,7 +80,7 @@ public class UpstreamClient(
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody)
     private val cooldown = RateLimitCooldown(clock)
-    private val retryRules = RetryRules(maxRetries, cooldown)
+    private val retryRules = RetryRules(maxRetries)
     private val reissueRules = ReissueRules()
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
@@ -75,6 +92,12 @@ public class UpstreamClient(
     /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
      *  WHY a head is failing fast (NF-10/JW-11 read this). */
     public val rateLimitedForMs: Long get() = cooldown.remainingMs()
+
+    /** V4-50: how long the PROVIDER says it stays limited (0 when unknown) — the operator's real
+     *  deadline, which is a different number from [rateLimitedForMs]. That one is splice's own
+     *  follower-protection horizon, clamped to MAX_RATE_LIMIT_COOLDOWN_MS; this one is the reset the
+     *  429 body actually named, and it is the only one worth telling a client to come back at. */
+    public val providerResetForMs: Long get() = cooldown.providerUnavailableForMs()
 
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries
@@ -88,19 +111,23 @@ public class UpstreamClient(
         ctx: PostContext,
         bodyJson: String,
         block: UpstreamHandler<T>,
-    ): T {
+    ): UpstreamPost<T> {
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         var body = request.body(bodyJson)
         val state = RetryState()
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
-                is LoopStep.Done -> return step.value
+                is LoopStep.Done -> return UpstreamPost.Delivered(step.value)
                 is LoopStep.Amend -> body = request.body(step.bodyJson)
                 LoopStep.Continue -> Unit
+                // V4-114: the one refusal this loop DECIDES rather than suffers, so it rides the
+                // return type instead of a thrown UpstreamTurnWaitExhausted the caller had to know
+                // to catch by name. giveUp below still throws: that is the upstream's failure.
+                LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return retryRules.giveUp(state.lastErr)
+        return retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -137,6 +164,10 @@ public class UpstreamClient(
         data class Done<T>(val value: T) : LoopStep<T>()
         data class Amend(val bodyJson: String) : LoopStep<Nothing>()
         data object Continue : LoopStep<Nothing>()
+
+        /** The whole-turn wait budget was already gone: no attempt was made and no upstream
+         *  response exists to classify. [post] lifts this to [UpstreamPost.TurnWaitExhausted]. */
+        data object TurnWaitExhausted : LoopStep<Nothing>()
     }
 
     /** One retry-loop iteration: a deadline check, the request attempt, and the retry/backoff
@@ -156,9 +187,16 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         }
-        cooldown.failFastIfArmed(ctx.onRetry)
+        if (turnWaitExhausted(ctx)) {
+            ctx.onRetry(
+                "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
+            )
+            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
+            return LoopStep.TurnWaitExhausted
+        }
+        activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
         val creds = ctx.requireAuth()
         ctx.markAttempt()
         var streamHandedOff = false
@@ -166,14 +204,19 @@ public class UpstreamClient(
         // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
         // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
         // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
+        // V4-66: "a TRANSPORT error" means every failure this seam can carry, not only the six
+        // types the classifier names — a bare IOException from the JDK parser used to escape
+        // with attempts=1 and end a turn a retry would have completed.
         val attempted = try {
             transportFailures.catchCancellable {
                 request.execute(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport
-            // failure like any other for the decision below — catchCancellable's I/O-only
-            // catch list can't see a RuntimeException, so it is folded in here.
+            // failure like any other for the decision below. The fold is REQUIRED, and the catch
+            // list is why: catchCancellable captures IOException, SerializationException and
+            // IllegalArgumentException, and StreamTornBeforeClient is none of the three (plain
+            // RuntimeException, UpstreamErrors.kt:23), so nothing else would see it.
             Result.failure(e)
         }
         val transportError = attempted.exceptionOrNull()
@@ -181,19 +224,32 @@ public class UpstreamClient(
             return onTransportError(transportError, ctx, streamHandedOff, state, t0)
         }
         val outcome = attempted.getOrThrow()
-        if (outcome is RetryOutcome.Done) return LoopStep.Done(outcome.value)
-        check(outcome is RetryOutcome.Failed) // sealed: Done or Failed, and Done returned above
-        state.lastErr = outcome
-        // RC-4: a one-shot content amendment outranks the normal retry plan — a deterministic
-        // 400 (stale encrypted reasoning) would otherwise GIVE_UP; the amended body gets exactly
-        // one immediate resend, then normal classification owns whatever happens next.
-        return state.amendStep(ctx, outcome, body.json) ?: planStep(ctx, outcome, state, t0)
+        // RetryOutcome is SEALED, so this is an exhaustive match rather than a guard plus a
+        // check() — and folding the two arms into one `when` keeps the function inside detekt's
+        // ReturnCount budget of 3 (the transport guard above spends one of them). Behaviour is
+        // unchanged: only the Done arm skips `lastErr`, exactly as the early return did.
+        return when (outcome) {
+            is RetryOutcome.Done -> LoopStep.Done(outcome.value)
+            is RetryOutcome.Failed -> {
+                state.lastErr = outcome
+                // RC-4: a one-shot content amendment outranks the normal retry plan — a
+                // deterministic 400 (stale encrypted reasoning) would otherwise GIVE_UP; the
+                // amended body gets exactly one immediate resend, then normal classification owns
+                // whatever happens next.
+                state.amendStep(ctx, outcome, body.json) ?: planStep(ctx, outcome, state, t0)
+            }
+        }
     }
 
     /** The transport-error half of one attempt (split so [runAttempt] stays under the complexity
      *  ceiling — same reasoning as planRetry/statusPlan). G5: a stream torn BEFORE the client saw a
      *  byte re-issues on its own small budget (does NOT consume `attempt`); otherwise the pre-G5
-     *  rule holds — retry on the backoff budget only before handoff, else rethrow. */
+     *  rule holds — retry on the backoff budget only before handoff, else rethrow.
+     *
+     *  V4-66: the RETHROW below is now decided by the two give-up gates alone, never by the
+     *  failure's class — see TransportFailures.rethrowUnlessRetryableTransport. An unclassified
+     *  throwable takes the POST_SEND branch, so it gets the possible-duplicate label and the
+     *  double-burn marker rather than an early exit. */
     private suspend fun onTransportError(
         e: Throwable,
         ctx: PostContext,
@@ -214,10 +270,10 @@ public class UpstreamClient(
             state.streamReissues += 1
             ctx.onRetry(
                 "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
-                    "${e::class.simpleName} ${e.message.orEmpty().take(ERR_SNIPPET)}",
+                    "${e::class.simpleName} ${TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET)}",
             )
             ctx.markRetry()
-            ctx.timedBackoff { transportFailures.backoffTransportError(e, state.attempt, dnsBackoff, backoff) }
+            applyTransportBackoff(e, ctx, state.attempt, t0)
             return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
         }
         val phase = transportFailures.rethrowUnlessRetryableTransport(
@@ -227,12 +283,13 @@ public class UpstreamClient(
         )
         val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
         ctx.onRetry(
+            // V4-167: named like the ending names it — a refused connect's own message is empty.
             "$label ${e::class.simpleName} attempt ${state.attempt + 1}/$maxRetries: " +
-                e.message.orEmpty().take(ERR_SNIPPET),
+                TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
         )
         if (phase == TransportFailurePhase.POST_SEND) ctx.markPostSendRetry()
         ctx.markRetry()
-        ctx.timedBackoff { transportFailures.backoffTransportError(e, state.attempt, dnsBackoff, backoff) }
+        applyTransportBackoff(e, ctx, state.attempt, t0)
         state.attempt += 1
         return LoopStep.Continue
     }
@@ -251,15 +308,61 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         }
+        val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
+        if (!backoffFits(ctx, t0, plannedDelayMs)) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
     }
 
+    /** Both transport paths budget the curve before sleeping and preserve the original failure. */
+    private suspend fun applyTransportBackoff(e: Throwable, ctx: PostContext, attempt: Int, t0: Long) {
+        val plannedDelayMs = if (transportFailures.isDnsFailureTransport(e)) {
+            retryBackoffCeilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS)
+        } else {
+            retryBackoffCeilingMs(attempt)
+        }
+        if (!backoffFits(ctx, t0, plannedDelayMs)) throw e
+        ctx.timedBackoff { transportFailures.backoffTransportError(e, attempt, dnsBackoff, backoff) }
+    }
+
+    private fun backoffFits(ctx: PostContext, t0: Long, plannedDelayMs: Long): Boolean {
+        val remainingMs = remainingBudgetMs(ctx, t0)
+        val fits = plannedDelayMs < remainingMs
+        if (!fits) {
+            ctx.onRetry(
+                "upstream backoff up to ${plannedDelayMs}ms does not fit the remaining ${remainingMs}ms budget",
+            )
+        }
+        return fits
+    }
+
     /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
     private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
+
+    private fun turnWaitExhausted(ctx: PostContext): Boolean =
+        ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) == 0L
+
+    private fun remainingBudgetMs(ctx: PostContext, t0: Long): Long {
+        val postRemainingMs = (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
+        val turnRemainingMs = ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) ?: postRemainingMs
+        return minOf(postRemainingMs, turnRemainingMs)
+    }
+
+    /** Conservative ceiling of the shipped generic or DNS jittered curve. */
+    private fun retryBackoffCeilingMs(
+        attempt: Int,
+        baseMs: Long = backoffBaseMs,
+        maxMs: Long = backoffCapMs,
+    ): Long {
+        var currentMs = baseMs
+        repeat(attempt.coerceAtLeast(0)) {
+            currentMs = if (currentMs > maxMs / 2) maxMs else currentMs * 2
+        }
+        return currentMs * (100 + backoffJitterPct) / 100
+    }
 
     /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
     private suspend fun <T> planStep(
@@ -268,16 +371,44 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<T> {
-        val plan = retryRules.planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
+        val plan = retryRules.planRetry(
+            ctx,
+            outcome,
+            state.attempt,
+            state.refreshedOnce,
+            RateLimitTurn(
+                cooldown = activeCooldown(ctx),
+                pooledAccount = ctx.rateLimitCooldown != null,
+            ),
+        )
         state.refreshedOnce = plan.refreshedOnce
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr)
+            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt)
         }
     }
+
+    private fun activeCooldown(ctx: PostContext): RateLimitCooldown = ctx.rateLimitCooldown ?: cooldown
 }
 
-// The width of an upstream error quoted into a retry notice. Read here and by RetryPolicy.kt's
-// give-up / attempt notices, which quote the same failure text.
-internal const val ERR_SNIPPET = 160
+/**
+ * What [UpstreamClient.post] answers: the handler's value, or the one refusal the loop DECIDES.
+ *
+ * V4-114 (kt-no-exception-as-outcome): the exhausted turn-wait budget used to arrive as a thrown
+ * `UpstreamTurnWaitExhausted`, which every `catch (e: Exception)` and `runCatching` on the turn
+ * path saw as indistinguishable from a broken invariant, and which no signature announced. It is a
+ * VALUE the one caller (SseRoundPost) hands to the translator, so the compiler now checks that the
+ * caller handled it. Every OTHER ending of [UpstreamClient.post] stays an exception, because every
+ * other one is a failure rather than a decision: the upstream host's HTTP refusal after retries
+ * (UpstreamFailed), a missing local credential (UpstreamAuthMissing), a torn transport
+ * (StreamTornBeforeClient) — see the dated dispositions in UpstreamErrors.kt.
+ */
+public sealed class UpstreamPost<out T> {
+    /** The upstream answered and [value] is what the caller's handler made of it. */
+    public data class Delivered<T>(public val value: T) : UpstreamPost<T>()
+
+    /** The whole-turn wait budget expired BEFORE a request went out, so there is no HTTP response
+     *  to classify and nothing was sent. The caller owns the terminal. */
+    public data object TurnWaitExhausted : UpstreamPost<Nothing>()
+}

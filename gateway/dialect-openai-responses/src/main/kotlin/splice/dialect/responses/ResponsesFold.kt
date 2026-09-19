@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.config.Knob
 import splice.spi.FoldController
 import splice.spi.FoldRound
 
@@ -22,18 +23,21 @@ public data class FoldConfig(
     /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
      *  operator-tunable default lives in Knob.FOLD_REASONING_MODELS. */
     val models: Set<String>,
-    val maxContinue: Int = FOLD_DEFAULT_MAX_CONTINUE,
+    /** V4-100: READS Knob.FOLD_MAX_CONTINUE instead of restating its default. The knob is the
+     *  operator-facing source of this number (foldMaxContinue, CLAUDEX_FOLD_MAX_CONTINUE), so a
+     *  file-local `3` was a second declaration of it — the KNOB-SHADOW const-single-source exists to
+     *  catch, and the one that goes wrong silently: the operator sets 5, the config layer carries 5,
+     *  and this default keeps answering 3 for every direct construction. */
+    val maxContinue: Int = (Knob.FOLD_MAX_CONTINUE.default as Long).toInt(),
     val markerText: String = DEFAULT_MARKER_TEXT,
-    val maxTierN: Int = DEFAULT_MAX_TIER_N,
+    /** V4-100: READS Knob.FOLD_MAX_TIER, same reason as [maxContinue]. */
+    val maxTierN: Int = (Knob.FOLD_MAX_TIER.default as Long).toInt(),
 )
 
-// The FoldConfig defaults, at file scope because Kotlin main sources carry no `companion` blocks.
-// Same values and visibility as the companion members; a consumer only drops the `FoldConfig.`
-// prefix. FOLD_ prefix on the first (review 2026-08-28, PR 99): losing the companion put it one
-// autocomplete away from ResponsesReanchorController's private DEFAULT_MAX_CONTINUATIONS in the
-// same package, governing an unrelated policy (re-anchor retries, not fold continuations).
-public const val FOLD_DEFAULT_MAX_CONTINUE: Int = 3
-public const val DEFAULT_MAX_TIER_N: Int = 6
+// The one FoldConfig default still at file scope, because Kotlin main sources carry no `companion`
+// blocks and a consumer only drops the `FoldConfig.` prefix. The two NUMERIC defaults that used to
+// sit here are GONE (V4-100): each restated a Knob default, so FoldConfig reads the knobs instead
+// and there is no second number left to drift from the operator-facing one.
 public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
 
 /**

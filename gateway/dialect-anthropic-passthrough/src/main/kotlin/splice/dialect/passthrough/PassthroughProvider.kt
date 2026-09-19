@@ -15,12 +15,14 @@ package splice.dialect.passthrough
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.spi.BuiltTurn
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
+import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 
@@ -47,7 +49,13 @@ public class PassthroughProvider(
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 
-    private val builder = PassthroughRequestBuilder(quirks, configEffort)
+    // V4-32: one instance per head. The builder shortens into it, every stream translator this
+    // provider makes restores out of it, so a name rewritten on the way out is recoverable on
+    // the way back for the life of the head. Off (cap 0) for every head but Muse.
+    private val toolNames = ToolNameShortener(quirks.toolNameCap)
+    private val builder = PassthroughRequestBuilder(quirks, configEffort, names = toolNames)
+    private val compactionTail = PassthroughCompactionTail()
+    private val systemPrompt = PassthroughSystemPrompt()
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -60,6 +68,12 @@ public class PassthroughProvider(
         return BuiltTurn(built.req, built.meta)
     }
 
+    override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
+        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
+
+    override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
+        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
+
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         PassthroughStreamTranslator(
             PassthroughTurnContext(
@@ -69,7 +83,16 @@ public class PassthroughProvider(
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
             ),
             quirks,
+            names = toolNames,
         )
+
+    /** The third retry layer, finally wired for this dialect. Until 2026-09-16 this returned the
+     *  SPI default (null = surface the failure), so a stream that truncated mid-answer ended the
+     *  turn at attempts=1 — the connect-phase and G5 budgets cannot see a 2xx that EOFs early, and
+     *  this was the only layer that could. Stateless and cheap, so it is constructed per call
+     *  rather than held. */
+    override fun reanchorController(meta: TurnMeta): ReanchorController =
+        PassthroughReanchorController(prefill = quirks.reanchorPrefill)
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put(ACCEPT, SSE_CONTENT_TYPE) // dialect invariant: this upstream streams SSE

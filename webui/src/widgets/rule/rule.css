@@ -1,0 +1,238 @@
+/* The fixed rule, bound to the measured top-rule region and the five cells
+   inside it (.impeccable/build/scaffold/layout.css): the rule is the full-width
+   band across the top of the frame, and the wordmark, clocks, health, nearest
+   window and no-window cells sit at their measured x and width. The measured y
+   (1.2%) and height (3.4%) are held as percentages OF THE BAND, which is where
+   they are read from. */
+
+/* THE BAND IS FOUR DIVIDERS AND TWO END CAPS (M1-36, E-7). The comp does not hold its
+   top chrome together with spacing; it holds it with structure. Six vertical rules turn
+   one 1536px span into five named cells, and that is what stops the gaps between the
+   readouts from reading as voids - the same move the bay makes, where a container that
+   reads as a container keeps its interior from reading as emptiness.
+
+   Measured on team-board-a.png, all six at y5..58 of the 59px band (8.5% down, running to
+   the band's own bottom hairline) and one to three pixels wide:
+
+     cap-left   x  6   0.39%      d3   x 620   40.36%
+     d1         x139   9.05%      d4   x1106   72.01%
+     d2         x452  29.43%      cap-right x1529  99.54%
+
+   Those six x land on the five cells this sheet already positions: the cap opens the
+   wordmark (0.5%), d1 closes it (0.5+8.5=9.0), d2 closes the clocks (10+19=29.0), d3
+   closes health (30+10=40.0), d4 opens the tail (72.0), and the right cap closes it
+   (72+27=99.0). So the dividers are drawn at the comp's own numbers rather than at the
+   cells', and the two agree to within half a point everywhere except the right cap.
+
+   THEY ARE A BACKGROUND, NOT SIX NODES: the rules are one ornament of the band the way
+   the rail plate's two dots are one ornament of the plate, they carry no state and no
+   word, and a cell's own border cannot draw them - the cells are 58.6% of the band tall
+   and these run 91.5%.
+
+   The ink is --hairline-strong and not --hairline: over --room that token resolves to
+   (61,62,61) against the comp's own measured (61,64,58), (67,65,61), (62,61,59),
+   (82,80,76), (52,52,50) and (65,64,61) - a median of 63.5. --hairline at .10 resolves
+   to (34,36,35), a third of the presence the comp draws, which is why the band has read
+   as an undivided span. */
+.myx-rule {
+  position: relative;
+  background-color: var(--room);
+  background-image:
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong)),
+    linear-gradient(var(--hairline-strong), var(--hairline-strong));
+  background-repeat: no-repeat;
+  background-size: var(--hair) 91.5%;
+  background-position:
+    0.39% 100%, 9.05% 100%, 29.43% 100%, 40.36% 100%, 72.01% 100%, 99.54% 100%;
+  border-bottom: var(--hair) solid var(--hairline);
+}
+
+.myx-rule-cell {
+  position: absolute;
+  top: 20.7%;
+  height: 58.6%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.myx-rule-wordmark {
+  left: 0.5%;
+  width: 8.5%;
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink-strong);
+}
+
+.myx-rule-clocks {
+  left: 10%;
+  width: 19%;
+  /* FIGURE: the clocks are the comp's own printed line. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.myx-rule-clock-word {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+/* HEALTH TAKES A SIZE (M1-64). It had no font-size at all, so it inherited the root's 16px while the
+   comp measures its cap at 12.4 -- and the contract names 18 for it. There is no 18 rung in the
+   ladder any more (M1-59 moved the 18 to 17 to create the rung the readouts need and nothing put one
+   back), so it is bound to the 17 rung, which is the closest rung to its comp size and lands its cap
+   at 12.6 against the comp's 12.4. That +0.2 is the one residual in this row that is NOT the face's
+   ~7 percent, and it is named here rather than hidden: health is the role whose rung does not exist. */
+.myx-rule-health { left: 30%; width: 10%; font-size: var(--text-4); }
+/* ...AND THE SIZE HAS TO REACH THE WORDS (M3-04). The only text health prints is its holder edge's
+   label, and `.myx-edge-label` sets its own --text-1 (ui.css), so the --text-4 above sized an empty
+   box: the hero gate read the cap at 9.3px against the comp's 12.4, 54 times. Inheriting here puts
+   the rule's size on the word; the live reading on the final frame no longer fires. */
+.myx-rule-health .myx-edge-label { font-size: inherit; }
+
+.myx-rule-window {
+  left: 41%;
+  width: 30%;
+  /* FIGURE: the nearest-window readout is the comp's own printed line. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-4);
+  color: var(--ink);
+  overflow: hidden;
+}
+.myx-rule-window .myx-rule-word,
+.myx-rule-none .myx-rule-word {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+.myx-rule-reset {
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+/* An absence is printed, not implied: no window is not zero. */
+.myx-rule-absent {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+}
+
+.myx-rule-none {
+  left: 72%;
+  width: 27%;
+  /* FIGURE: the rule's "heads report none" readout is the comp's own printed line. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-4);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+/* THE TAIL OF THE NO-WINDOW SLOT, where the band's measurements leave room and nothing else does.
+   The comp measures five cells: wordmark 0.5-9, clocks 10-29, health 30-40, window 41-71, none
+   72-99. Two signals the comp never had are printed here (M2-09's pending restart, M3-00's live
+   connection), and the band has no spare width to reserve for them: at the type sizes the sheet
+   carries today the connection signal measures 157.8 px, the health cell's whole slot is 154 px,
+   and the window cell's content already runs 344.3 px of its 460.8 px slot. The one place the
+   comp's own numbers leave free is the tail of the no-window slot, whose content measures 127.8 px
+   of 414.7 px — so the count and the two signals share that slot, `space-between` keeps the count
+   at the measured 72% where the comp puts it, and the signal sits 8.4 points clear of it.
+   WHAT THIS REPLACED, and it was a real defect rather than a preference: the window and none cells
+   were FLOWED in one row from 41% to the right edge, which kept every signal visible but moved two
+   MEASURED cells by +18.77 and +18.68 points of the frame on all thirteen addresses (M1-28's punch
+   list, the second and third worst constants in the milestone). Measured before this change:
+   window x 59.77%, none x 90.68%, against the comp's 41.00 and 72.00. After: delta 0.00 on both,
+   and rule.h, wordmark.x, clocks.x and health.x unchanged at delta 0.00 as well. */
+.myx-rule-tail {
+  position: absolute;
+  left: 72%;
+  width: 27%;
+  top: 20.7%;
+  height: 58.6%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Laid out by the row above, not by a measured x: the cells keep their printed shape and give up
+   only the absolute positioning. `width:auto` matters — the cells carry a percentage width for
+   their measured slots, and inside this row that basis resolves against the row and would clip. */
+.myx-rule-tail > .myx-rule-cell {
+  position: static;
+  top: auto;
+  height: auto;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* NO INK ON THE CELL (M2R-01). This rule declared `color: var(--ink-mute)` for the whole cell. It
+   was written for the AGE beside the state word, but every piece of that age already declares its
+   own ink -- `.myx-rule-absent` above, and Figure's value, unit and basis in ui.css -- so the one
+   child that ever inherited it was the holder edge's STATE WORD, and only once that label began
+   taking its ground's ink: `reconnecting` dropped from 11.03:1 to 6.93:1 in the dark room. That
+   word is the colorblind fallback and the only thing telling a quiet daemon from a dead stream
+   (index.tsx), so it prints in the room's full ink. The pending cell shares the rule and the
+   reasoning: `restart pending` is an attention word, and its count is a Figure with its own ink. */
+.myx-rule-connection,
+.myx-rule-pending {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* ---------- THE PHONE (M3-03): THE RULE STACKS ----------
+   The five measured cells are shares of a 1536 band, and at 390 they overprint each other: the
+   clocks ran into health, and health into the window line. Below 720 the band is a small grid in
+   the rule's own reading order: the wordmark holds the left, the clocks sit OVER health beside it,
+   and the window line and the tail each take a full row. The six dividers are drawn at the comp's
+   x and would cut through words in this arrangement, so the band draws none; one hairline sets the
+   readouts under the wordmark apart from the clock block above them. */
+@media (max-width: 720px) {
+  .myx-rule {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'mark clocks'
+      'mark health'
+      'window window'
+      'tail tail';
+    align-items: center;
+    column-gap: var(--space-5);
+    row-gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background-image: none;
+  }
+  .myx-rule .myx-rule-cell,
+  .myx-rule-tail {
+    position: static;
+    top: auto;
+    left: auto;
+    width: auto;
+    height: auto;
+  }
+  .myx-rule-wordmark { grid-area: mark; }
+  .myx-rule-clocks { grid-area: clocks; }
+  .myx-rule-health { grid-area: health; }
+  .myx-rule-window {
+    grid-area: window;
+    border-top: var(--hair) solid var(--hairline);
+    padding-top: var(--space-2);
+    text-overflow: ellipsis;
+  }
+  .myx-rule-tail { grid-area: tail; }
+}

@@ -1,0 +1,45 @@
+/* Compaction: the law line and the feed. Tokens only for spacing and type. */
+.myx-compaction .myx-strip { width: 100%; }
+/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
+   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
+   every row shape has the same cell count -- it does not, so the primitive now sets
+   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
+   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
+   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
+   changes it, and watches nothing happen. Verified dead on this page by DOM probe
+   before removal -- see the M1-93 note for the counts. */
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The racks on this page are the
+   compact feed's, so the scope is this page's own root rather than a bays container of ours.
+   Measured before this: the widest strip left 489px of bare bay to its right. */
+.myx-compaction {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-compaction-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6) 0;
+}
+
+.myx-compaction-title {
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+/* The law is a paragraph, and the world allows exactly two: an honest empty and a
+   Doctor fix. This is neither, so it is set as a printed note rather than prose —
+   one line, muted, beside the machinery it explains. */
+.myx-compaction-law {
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  margin: 0;
+  padding: 0 var(--space-6);
+  /* The world carries no measure token; the craft floor's body measure is 65-75ch, so the
+     one paragraph on this page is capped in the unit the measure is actually expressed in. */
+  max-width: 66ch;
+}

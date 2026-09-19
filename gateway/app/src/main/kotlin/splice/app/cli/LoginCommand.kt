@@ -1,7 +1,7 @@
 // NEW: `splice login <head>` — resolves the head's provider from the topology and runs the right
 // OAuth browser flow (codex = ChatGPT, grok = xAI SuperGrok). Both write their CLI-compatible
 // auth.json (~/.codex/auth.json, ~/.grok/auth.json), so a subsequent `claudex` / `claude-grok`
-// launch is authenticated. Vendor spec builders live in LoginCodex/LoginGrok/LoginKimi
+// launch is authenticated. Vendor spec builders live in LoginCodex/LoginGrok/LoginKimi/LoginMuse
 // (concentration HIGH, 2026-08-19). :app is wall-exempt for println.
 package splice.app.cli
 
@@ -10,10 +10,13 @@ import splice.app.LoginIo
 import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
+import splice.app.auth.OAuthAccountRefused
+import splice.app.auth.OAuthLoginAccount
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
+import splice.core.util.SafeFailureText
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -25,9 +28,10 @@ internal class LoginCommand {
     private val codex = LoginCodex()
     private val grok = LoginGrok()
     private val kimi = LoginKimi()
+    private val muse = LoginMuse()
     private val loginIo = LoginIo()
 
-    internal suspend fun login(headArg: String?): Boolean {
+    internal suspend fun login(headArg: String?, label: String? = null): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
         val headKey = resolveHeadKey(headArg, topology) ?: return false
         val providerKey = topology.heads[headKey]?.provider
@@ -36,10 +40,10 @@ internal class LoginCommand {
             println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
             return false
         }
-        val ok = runLoginFlow(headKey, provider, topology)
-        if (!ok) println("splice: login for '$headKey' did not complete.")
-        loginIo.writeLoginOutcome(headKey, ok)
-        return ok
+        val result = runLoginAttempt(headKey, provider, topology, label)
+        if (!result.ok) println("splice: login for '$headKey' did not complete.")
+        loginIo.writeLoginOutcome(headKey, result.ok, result.account)
+        return result.ok
     }
 
     // kimi uses the RFC 8628 device flow (no loopback); codex/grok use the browser-loopback flow;
@@ -49,16 +53,46 @@ internal class LoginCommand {
         headKey: String,
         provider: ProviderConfig,
         topology: Topology,
-    ): Boolean =
+        label: String? = null,
+    ): Boolean = runLoginAttempt(headKey, provider, topology, label).ok
+
+    private suspend fun runLoginAttempt(
+        headKey: String,
+        provider: ProviderConfig,
+        topology: Topology,
+        label: String?,
+    ): LoginResult = try {
         when (provider.auth.kind) {
-            "kimi-oauth" -> DeviceLoginFlow.run(
-                kimi.spec(headKey, oauthAuthPath(provider)),
-            )
+            "kimi-oauth" -> {
+                val spec = kimi.spec(headKey, oauthAuthPath(provider), label)
+                LoginResult(DeviceLoginFlow.run(spec), spec.account)
+            }
+            "muse-oauth" -> {
+                val spec = muse.spec(headKey, oauthAuthPath(provider), label)
+                LoginResult(DeviceLoginFlow.run(spec), spec.account)
+            }
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
-            "api-key" -> loginIo.apiKeyLogin(headKey, provider)
-            else -> specFor(headKey, topology)?.let { OAuthLoginFlow.run(it) } ?: false
+            "api-key" -> if (label == null) {
+                LoginResult(loginIo.apiKeyLogin(headKey, provider))
+            } else {
+                println("splice: --label is only supported for OAuth heads")
+                LoginResult(false)
+            }
+            else -> {
+                val spec = specFor(headKey, topology, label)
+                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow.run(spec), spec.account)
+            }
         }
+    } catch (e: OAuthAccountRefused) {
+        println("splice: ${e.reason}")
+        LoginResult(false)
+    } catch (e: IllegalArgumentException) {
+        println("splice: ${SafeFailureText.render(e)}")
+        LoginResult(false)
+    }
+
+    private data class LoginResult(val ok: Boolean, val account: OAuthLoginAccount? = null)
 
     private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
         if (headArg != null) {
@@ -87,7 +121,7 @@ internal class LoginCommand {
         }
     }
 
-    private fun specFor(headKey: String, topology: Topology): LoginSpec? {
+    private fun specFor(headKey: String, topology: Topology, label: String?): LoginSpec? {
         val head = topology.heads[headKey]
         val provider = head?.let { topology.providers[it.provider] }
         if (head == null || provider == null) {
@@ -95,8 +129,8 @@ internal class LoginCommand {
             return null
         }
         return when (provider.auth.kind) {
-            "chatgpt-oauth" -> codex.spec(headKey, oauthAuthPath(provider))
-            "grok-oauth" -> grok.spec(headKey, oauthAuthPath(provider))
+            "chatgpt-oauth" -> codex.spec(headKey, oauthAuthPath(provider), label)
+            "grok-oauth" -> grok.spec(headKey, oauthAuthPath(provider), label)
             else -> {
                 println("splice: head '$headKey' uses ${provider.auth.kind} auth — no browser login for that kind.")
                 null

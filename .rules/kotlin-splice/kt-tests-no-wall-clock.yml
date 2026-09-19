@@ -1,0 +1,229 @@
+# THE LAW. A test must not wait on the WALL CLOCK. A sleep is a bet that the machine will finish
+# something within N milliseconds, and the bet is re-placed on every CI runner, every loaded
+# laptop, every cold page cache. It fails in both directions and both are expensive: too short and
+# the test is flaky, so the suite trains its readers to re-run instead of read; too long and the
+# suite costs minutes it never needed. Neither failure says what it means, because the assertion
+# that fires is never "the timing was wrong" — it is the downstream one about frames or slots.
+#
+# The compliant forms, in the order you should reach for them:
+#   1. `runTest { … }` — kotlinx's virtual time. `delay(900)` inside it advances a clock nobody has
+#      to wait for, so the test is BOTH deterministic and instant. Already exempt below by
+#      construction: a numeric `delay` inside `runTest` is not matched.
+#   2. An injected clock or waiter. The production seam already exists in this repo —
+#      `ElapsedClock`, `WallClock`, `AccountNow`, `RemainingTurnWait` — so a test can drive time
+#      instead of experiencing it.
+#   3. Poll a CONDITION with a deadline, not a duration: `awaitUntil(deadline) { predicate() }`.
+#      Still real time, but it fails by naming the predicate that never became true, and it takes
+#      as long as the work takes rather than as long as the guess.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 9). `HeadServerStopDrainTest.kt:155` is
+# `delay(6_500)` — six and a half seconds of real time, once, to observe a drain window. It is the
+# ladder's own mutation proof, so the number is load-bearing and the test is correct about WHAT it
+# checks; it just pays for it in wall clock, and 33 files in this tree have made the same trade.
+#
+# PROMOTED 2026-09-17 (V4-96) from `.rules/kotlin/ast-grep/rules/tests-no-thread-sleep.yaml`, the
+# torad-toolkit Android/Compose pack vendored 2026-07-16 and wired to NOTHING — the HD-11 scar that
+# checks/rule-routing.sh now guards. The dormant file is UNTOUCHED, by the row's instruction and by
+# that wall's dated UNROUTED_ALLOWLIST entry, which exists so a dormant matcher can be red/green
+# pinned before it graduates; this is the graduation, and the pin lives in the ROOT
+# .rules/rule-tests where `ast-grep test` actually reads it. Two things changed at promotion:
+#   - WIDENED from `Thread.sleep(…)` to also cover `delay(<numeric literal>)` outside `runTest`.
+#     The source rule's own message said "Use runTest virtual time", and then matched only the
+#     blocking form — so a test that replaced `Thread.sleep(100)` with `delay(100)` outside runTest
+#     satisfied the rule while waiting exactly as long. 35 of this tree's 104 findings are that
+#     shape, i.e. a third of the census was invisible to the rule as inherited.
+#   - SCOPED from `**/test/**` + `**/*Test.kt` to this repo's real source sets. `**/*Test.kt`
+#     would have matched a MAIN-source file named `…Test.kt`, and `**/test/**` matched nothing
+#     under `src/testFixtures/`, where MockChatGptUpstream's seven sleeps live.
+#
+# THE CENSUS (measured 2026-09-17, gateway/*/src/test + src/testFixtures): 104 sites across 33
+# files — 69 `Thread.sleep`, 35 numeric `delay` outside `runTest`.
+#
+# THE ROW'S CENSUS WAS FIVE SITES, AND THAT IS A PREMISE CORRECTION (campaign law 7). The audit row
+# named HeadServerStopDrainTest.kt:155, FrameRecordingTest.kt:36/:38/:61 and
+# MockChatGptUpstream.kt:187, and asked for a per-site dated allowlist. The matcher finds 104 in 33
+# files, which changes what "allowlist the census" can mean: a 104-entry per-site list is neither
+# writable nor reviewable, and leaving 104 reds would put the gate leg permanently red against code
+# nobody has been asked to change yet. So the allowlist below is per FILE, dated, grouped by the
+# five reasons the tree actually gives, with the site count per file. The wall therefore lands GREEN
+# and fires on the next file that introduces wall-clock waiting; the fix row burns the list down one
+# file at a time, and deleting a line re-arms the wall for that file immediately.
+#
+# TWO WEAKNESSES OF FILE GRANULARITY, stated rather than discovered later. A NEW sleep added to an
+# already-listed file is invisible; and a STALE entry — a file converted but left in the list — is
+# silently tolerated, which is the "absence wearing a label" shape the completeness law names.
+# Both need a per-file COUNT ratchet (the checks/concentration.py shape) rather than an ast-grep
+# `ignores:`, which is a python wall and outside this row's fence. Named here as the follow-up; the
+# fix row's burn-down removes the need for it. Both properties were MEASURED at landing rather than
+# assumed: with `ignores:` removed the matcher reports 104 sites in 33 files, the list is exactly
+# those 33 files with no stale entry and none missing, and the per-file counts in the ALLOWLIST
+# above sum to 104 — so today's green is the exemptions working, not a matcher that cannot fire.
+#
+# BURNED DOWN 2026-09-18 (V4-139), 30 files to 6, 92 sites to 26. What the burn-down learned, and
+# it is a sharper rule than "replace the sleep":
+#   - A wait that guessed at an event WHICH HAD ALREADY HAPPENED is DELETED, not converted. Twelve
+#     700 ms Netty warm-ups and six private readiness polls went this way: Ktor's default startup
+#     mode is SEQUENTIAL, so EmbeddedServer.start runs the modules (routing) and only then
+#     NettyApplicationEngine.start, which binds with bind(...).sync() before it returns. A server
+#     that has returned from start is routed AND bound, so every poll for its port was waiting for
+#     the past. Read from the 3.5.2 bytecode, not measured: N green runs cannot prove a race absent.
+#   - A wait for something that WILL happen becomes that thing's own event: a WatchService creation
+#     event, ProcessHandle.onExit, a latch the callback counts down, a log line the sink completes a
+#     deferred on, a barrier every concurrent stop must reach, the ticks the test itself sends.
+#   - A wait that PROVES A NEGATIVE cannot become an event, because nothing signals that a thing did
+#     not happen. A bounded window is the only honest instrument, and it stays — the four files
+#     below whose entries say so are that, not unfinished work.
+#   - Respelling is not converting. Thread.sleep(50) inside a blocking deadline poll rewritten as
+#     delay(POLL_MS) under runBlocking waits exactly as long; it only changes what the scanner sees.
+#     Refused, twice, and both sites are listed below with that reason instead.
+#   - KNOWN HOLE, named rather than fixed (lint policy is frozen mid-campaign): this rule matches
+#     `Thread.sleep(…)` as a CALL, so a method REFERENCE walks past it. MockChatGptUpstream's
+#     `pacer: (Long) -> Unit = Thread::sleep` is exactly that shape and is invisible here. Filed as
+#     a followup on V4-139; widening the matcher is a wall change and belongs to its own row.
+#
+# ALLOWLIST — by file, dated, with the reason each file gives. Delete a line when its file is
+# converted; do not add one without a reason.
+#
+#   2026-09-18 · A PROOF OF ABSENCE, WHICH HAS NO EVENT. The assertion is that something did NOT
+#   happen — no detached login was spawned, no pending sign-in was signalled, a disarmed watchdog
+#   never fired. Nothing signals a non-event, so the instrument is a bounded window and the number
+#   in it is the size of the window, not a guess about machine speed. LoginHookScriptSafetyTest's
+#   ninth site is the pause inside LoginProcesses.visible, the bounded poll that REPLACED seven
+#   fixed 500 ms readiness sleeps: it waits for the spawned process's argv to become what the hook's
+#   scan reads, and this file is plain JUnit with no coroutine to suspend.
+#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                   (9)
+#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (1)
+#
+#   2026-09-18 · A READINESS POLL WITH NO EVENT TO AWAIT, IN BLOCKING CODE. Nothing signals that a
+#   port has started listening, so awaitListening polls a connect attempt against a deadline — the
+#   law's own third compliant form. Its 38 callers across 26 files are blocking @BeforeAll setups,
+#   so the suspend spelling would need a runBlocking that is a new ROOT coroutine: it inherits no
+#   cancellation and waits exactly as long. UPSTREAM FIX, not a respelling: most of those 38 calls
+#   follow a start() that has already bound (see the SEQUENTIAL note above) and can simply go.
+#     gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt                     (1)
+#
+#   2026-09-18 · A DELIBERATELY PACED TEST DOUBLE. The tearing upstream must deliver its first
+#   frames in a SEPARATE TCP read before it cuts the stream mid-chunk; TCP offers no "the peer has
+#   read it" signal, so the pause is the fixture, not a bet. Its perf-row read and its
+#   proof-of-absence (no continuation round was POSTed) are the other two shapes above.
+#     gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt          (9)
+#
+#   2026-09-18 · MEASUREMENT EXPERIMENTS, NOT CI TESTS. The spikes module disables its tests unless
+#   -PrunSpikes is passed (spikes/build.gradle.kts), and its header says spikes are experiments with
+#   receipts. Wall-clock behaviour IS their subject: a 50 ms drip server, fd counts after a
+#   keep-alive settle, SSE arrival timings.
+#     gateway/spikes/src/test/kotlin/PoolCancelSpike.kt                           (5)
+#     gateway/spikes/src/test/kotlin/SseFlushSpike.kt                             (1)
+#
+# SUPERSEDED — the 2026-09-17 census, kept for its reasons, burned down by V4-139:
+#
+#   2026-09-17 · ENGINE WARM-UP AND PORT REUSE. `Thread.sleep(700) // Netty warmup` between tests
+#   that bind and rebind the same port. Waiting on the OS to release a listening socket; the honest
+#   fix is a bind-retry loop with a deadline, not a duration.
+#     gateway/gateway/src/test/kotlin/head/HeadServerCapacityTest.kt              (6)
+#     gateway/gateway/src/test/kotlin/head/HeadServerReviewTest.kt                (7)
+#     gateway/gateway/src/test/kotlin/head/HeadServerLoadTest.kt                  (2)
+#     gateway/gateway/src/test/kotlin/head/RateLimitRefusalClientContractTest.kt  (1)
+#     gateway/gateway/src/test/kotlin/head/RetryAlwaysArmedTest.kt                (1)
+#     gateway/spikes/src/test/kotlin/SseFlushSpike.kt                             (1)
+#
+#   2026-09-17 · WAITING ON A REAL SUBPROCESS OR THE FILESYSTEM. A child process, a file appearing,
+#   or an mtime that must actually advance on a coarse-grained filesystem ("guarantee the mtime
+#   actually advances" is the literal comment in three of these). Genuinely outside the JVM's
+#   control; the fix is to poll the CONDITION with a deadline, which several of these already half
+#   do (`while (!Files.exists(ready)) delay(10)`).
+#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                  (16)
+#     gateway/control/src/test/kotlin/McpHostLifecycleTest.kt                     (4)
+#     gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt                     (3)
+#     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
+#     gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt   (1)
+#     gateway/core/src/test/kotlin/AsyncFileIoTest.kt                             (1)
+#     gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt                    (2)
+#     gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt                  (1)
+#
+#   2026-09-17 · A DELIBERATELY SLOW TEST DOUBLE. The mock upstream's whole job is to be slow on the
+#   wire — that is what a watchdog test exercises. The fix is for the mock to take an injected
+#   pacer so the test drives the stall instead of sleeping through it.
+#     gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt         (7)
+#     gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt                     (1)
+#
+#   2026-09-17 · TIMEOUT AND WATCHDOG LADDERS MEASURED AGAINST REAL ELAPSED TIME. These assert on
+#   the production code's OWN clock behaviour (stream-idle tiers, first-byte timeout, the stop
+#   deadline, the drain window), so the number in the sleep is the thing under test. The fix is the
+#   injected clock — `ElapsedClock`/`RemainingTurnWait` already exist as seams — not a shorter
+#   sleep. HeadServerStopDrainTest.kt:155's `delay(6_500)` is the audit's named site and the
+#   single most expensive one in the suite.
+#     gateway/provider-spi/src/test/kotlin/WatchdogTest.kt                       (11)
+#     gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt          (9)
+#     gateway/gateway/src/test/kotlin/head/HeadServerStopDrainTest.kt             (3)
+#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (4)
+#     gateway/gateway/src/test/kotlin/head/HeadServerHeartbeatTest.kt             (2)
+#     gateway/spikes/src/test/kotlin/PoolCancelSpike.kt                           (5)
+#
+#   2026-09-17 · WAITING FOR A CONCURRENT PEER TO REACH A POINT. A second coroutine or client is
+#   expected to have drained a frame, parked on the next one, or recorded a row. Each is a
+#   rendezvous spelled as a duration; the fix is a latch or an awaited signal.
+#     gateway/gateway/src/test/kotlin/FrameRecordingTest.kt                       (3)
+#     gateway/gateway/src/test/kotlin/head/HeadServerCollectDisconnectTest.kt     (1)
+#     gateway/gateway/src/test/kotlin/head/HeadServerCompactionReplayTest.kt      (1)
+#     gateway/gateway/src/test/kotlin/head/HeadServerFoldTest.kt                  (1)
+#     gateway/gateway/src/test/kotlin/head/HeadServerIntegrationTest.kt           (1)
+#     gateway/control/src/test/kotlin/ControlServerTest.kt                        (2)
+#     gateway/control/src/test/kotlin/ControlServerGateTest.kt                    (1)
+#     gateway/control/src/test/kotlin/ClientVersionSurfaceTest.kt                 (1)
+#     gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt         (1)
+#     gateway/control/src/test/kotlin/McpRoutesTest.kt                            (1)
+#     gateway/control/src/test/kotlin/McpHostTest.kt                              (1)
+id: kt-tests-no-wall-clock
+language: kotlin
+severity: error
+message: "A test must not wait on the wall clock. Use runTest virtual time (delay inside runTest is exempt), an injected clock/waiter (ElapsedClock, RemainingTurnWait), or poll a condition with a DEADLINE — never sleep for a duration."
+note: >
+  Thread.sleep always blocks real time, inside runTest or not, so it is red everywhere. A numeric
+  `delay(n)` is exempt INSIDE `runTest { }`, where kotlinx advances a virtual clock and the wait
+  costs nothing; outside it, it waits exactly as long as the sleep it replaced. `delay(10.seconds)`
+  and `delay(SOME_CONST)` are not matched — this rule flags the numeric literal, which is the
+  spelling a guessed timing wears. A file in today's census carries a dated entry in this rule's
+  header and a glob in `ignores:`; converting the file means deleting the glob, which re-arms the
+  wall for it.
+files:
+  - gateway/*/src/test/**/*.kt
+  - gateway/*/src/testFixtures/**/*.kt
+# The dated census — see the ALLOWLIST section of this header for the reason behind every line.
+ignores:
+  # a proof of absence, which has no event
+  - gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt
+  - gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt
+  # a readiness poll with no event to await, in blocking code
+  - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt
+  # a deliberately paced test double
+  - gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt
+  # measurement experiments, not CI tests (disabled without -PrunSpikes)
+  - gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
+  - gateway/spikes/src/test/kotlin/SseFlushSpike.kt
+rule:
+  any:
+    # Thread.sleep blocks a real thread whatever encloses it — no runTest exemption, by design.
+    - pattern: Thread.sleep($$$A)
+    - pattern: java.lang.Thread.sleep($$$A)
+    # a NUMERIC delay outside runTest. The literal test is structural, not a regex: the numeric
+    # literal must be the value_argument's DIRECT child, so `delay(10.seconds)` (a
+    # navigation_expression whose first child happens to be `10`) and `delay(STALL_MS)` are not
+    # matched. Measured against all four spellings in the rule-test.
+    - all:
+        - any:
+            - pattern: delay($N)
+            - pattern: kotlinx.coroutines.delay($N)
+        - has:
+            stopBy: end
+            kind: value_argument
+            has:
+              any:
+                - kind: integer_literal
+                - kind: long_literal
+        - not:
+            inside:
+              stopBy: end
+              any:
+                - pattern: runTest { $$$T }
+                - pattern: runTest($$$RA) { $$$T }

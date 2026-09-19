@@ -1,0 +1,178 @@
+/* The fleet page: the rack and the detail column, the same composition the accounts page uses so
+   the two read as one console. Radius 0, tokens only, motion left to the primitives. */
+
+.myx-fleet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 100%;
+}
+
+.myx-fleet-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-fleet-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+/* AT REST THE RACK TAKES THE WHOLE FRAME; THE COLUMN ARRIVES WITH ITS CONTENT (M1-102, measured).
+   The detail column was 384 of 1536 - 25.0% of the frame - in the state EVERYBODY ARRIVES IN,
+   because no head is open until one is clicked, and what it carried was a 185.5x63.4 card: 3.5%
+   of the column, 0.7% of the frame. The cost of that was not abstract. This rack's own field grid
+   declares 1200px of columns (measured: provider 134, head 163, port 67, dialect 106, model 106,
+   account 106, in flight 67, window 269, last turn 182) and the bay had 969.8px, so `window` was
+   cut 126px past the bay edge and `last turn` sat 308px past it, ENTIRELY INVISIBLE - two columns
+   of real data paid for by one column of nothing. With the resting column gone the rack gets
+   1353.8px, its own grid fits with about 98px to spare, and it stops scrolling at rest too.
+   AND THE COMP OF RECORD AGREES: team-board-a is three equal racks edge to edge with no resting
+   detail column anywhere in the frame. This is not a new idea, it is the comp's own rest state. */
+.myx-fleet-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-4);
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+
+/* The open state, and ONLY the open state, declares the 24rem track and the gap that separates it.
+   The column is a track when there is a head in it and a ZERO track when there is not -- and a
+   zero track that still costs a gap is not zero, which is why column-gap moves with it. */
+.myx-fleet-body-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  column-gap: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-fleet-body { transition: none; }
+}
+
+/* THE BAY FILLS ITS ROOM (M1-39's rule, carried here by M1-44): the body stretches instead of
+   starting at the top and the rack area takes what is left. Measured before this: the deepest bay
+   stopped at 2043 of a 2160 frame. */
+.myx-fleet-bays { flex: 1 1 auto; min-height: 0; }
+.myx-fleet-bays > .myx-bay { flex: 1 1 auto; min-height: 0; }
+
+/* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
+   width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
+   was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —
+   a nine-field strip needs about 1206px of value width, so beside a detail column the rack lost
+   its tail. The bays scroll now (m1 design review B7, `.myx-bay-rows { overflow-x: auto }`), which
+   is what removes that constraint: a narrow bay scrolls its rack instead of cutting it, so the
+   brief's own topology — one detail column, the opened strip swelling into it on the right — holds
+   at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
+   place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  /* Only the OPEN class, mirroring sessions: at rest the second track is already 0, so a 1fr-plus-0
+     board is the full width here too, and collapsing it to a single track would leave the narrow
+     layout with no track to transition. */
+  .myx-fleet-body-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+.myx-fleet-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The rack scrolls rather than reflowing: the field grid is fixed-width in ch and a strip that
+   wrapped would stop reading as a row of the same rack. */
+.myx-fleet-bays > * { overflow-x: auto; }
+
+.myx-fleet-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* THE SWELL IS THE TRACK, NOT A KEYFRAME (M1-116 rules collapse over unmount). M1-102 mirrored
+   `myx-cfeed-swell` here because an UNMOUNTED column has nothing to animate FROM: it must mount and
+   then fade its content up, which is the fragile version of the gesture and pops if the mount lands
+   a frame late. A transition on grid-template-columns IS CONTRACTS.md section 6's swell -- "a strip
+   opening into its detail column, --dur-2" -- in one declaration, and the operator sees the room
+   being taken rather than the layout snapping. The keyframes that stood here are gone with the
+   idiom that needed them; turns, sessions and projects have never carried them. */
+
+.myx-fleet-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.myx-fleet-detail-name {
+  font-family: var(--font-label);
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+}
+
+.myx-fleet-detail-port {
+  font-family: var(--font-figure);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-fleet-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--hairline);
+  border-radius: 0;
+}
+
+.myx-fleet-section-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+.myx-fleet-life {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-fleet-btn {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: transparent;
+  border: var(--hair) solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.myx-fleet-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-fleet-btn:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
+.myx-fleet-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Armed reads visibly more urgent than resting, so a scan cannot mistake it for the idle control. */
+.myx-fleet-btn-armed { border-color: var(--edge-red); color: var(--edge-red); }
+
+.myx-fleet-warn {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--edge-red);
+}
+
+.myx-fleet-note {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}

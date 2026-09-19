@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.app.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 
@@ -17,8 +18,8 @@ import splice.core.SHIM_VERSION
 public sealed class Command {
     public abstract fun run(): Int
 
-    public data object Doctor : Command() {
-        override fun run(): Int = outcomeExitCode(DoctorCommand().doctor())
+    public data class Doctor(val args: List<String> = emptyList()) : Command() {
+        override fun run(): Int = outcomeExitCode(DoctorCommand().doctor(args))
     }
     public data object Version : Command() {
         override fun run(): Int = success { println("splice $GATEWAY_VERSION") }
@@ -31,12 +32,30 @@ public sealed class Command {
     public data class Uninstall(val target: String?) : Command() {
         override fun run(): Int = outcomeExitCode(InstallCommand().uninstall(target))
     }
-    public data class Login(val head: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head) })
+
+    /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind. */
+    public data class Login(val head: String?, val label: String? = null) : Command() {
+        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head, label) })
     }
     public data object Setup : Command() {
         override fun run(): Int = outcomeExitCode(runBlocking { SetupCommand().setup() })
     }
+
+    /** v0.4.0 (FEATURES.md §1): `splice add <profile> [...]` — a second provider without editing TOML. */
+    public data class Add(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(runBlocking { AddCommand().add(args) })
+    }
+
+    /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
+    public data class AddModel(val args: List<String> = emptyList()) : Command() {
+        override fun run(): Int = outcomeExitCode(AddModelVerb().add(TopologyLoader.configPath()))
+    }
+
+    /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */
+    public data class Upgrade(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(UpgradeCommand().upgrade(args))
+    }
+
     public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
     public data object Restart : Command() { override fun run(): Int = outcomeExitCode(RestartCommand().restart()) }
     public data object Dashboard : Command() {
@@ -47,6 +66,12 @@ public sealed class Command {
     }
     public data class Logs(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(LogsCommand().logs(args))
+    }
+    public data object Sessions : Command() {
+        override fun run(): Int = outcomeExitCode(SessionsCommand().sessions())
+    }
+    public data class Perf(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(PerfCommand().perf(args))
     }
 
     /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`

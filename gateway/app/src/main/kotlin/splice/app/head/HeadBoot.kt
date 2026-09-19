@@ -50,9 +50,13 @@ internal class HeadBoot {
             boundary.runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
                 .onSuccess { heads[key] = it }
                 .onFailure {
-                    failed[key] = boundary.reason(it)
-                    // SAFE-RENDER-EXEMPT[2026-09-01]: supersedes the 2026-08-31 wording, whose CLOSED-SET clause argued the wrong way — kotlinx SerializationException extends IllegalArgumentException, so a parser excerpt is squarely INSIDE what runCatchingDaemonBoundary catches. What actually holds is the second clause: assembly only WIRES objects from already-parsed topology and opens no credential file (auth-provider inits wire cancellation only; ApiKeyAuthProvider reads lazily and swallows), so no parser runs inside this boundary. Routing it withheld the rejected auth/dialect tuple that AuthDialectCompatibilityBootTest pins as the operator's only diagnosis of a failed head
-                    log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
+                    // SAFE-RENDER-EXEMPT[2026-09-13]: assembly discovers pooled credential files,
+                    // but OAuthAccountFiles wraps parser failures in an authored outer message and
+                    // never quotes parsed metadata values. Other assembly refusals retain the
+                    // auth/dialect tuple AuthDialectCompatibilityBootTest pins for diagnosis.
+                    val reason = boundary.reason(it)
+                    failed[key] = reason
+                    log("[$key][boot] SKIPPED (build failed): $reason\n")
                 }
         }
         // IO-006: heads above that alias to the same legacy usage file (deliberate migration

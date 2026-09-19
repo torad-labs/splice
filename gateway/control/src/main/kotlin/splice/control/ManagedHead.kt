@@ -35,6 +35,34 @@ public interface HeadCompactSource {
 
 public data class CompactView(val total: Int, val byOutcome: Map<String, Int>, val tail: List<Map<String, String>>)
 
+/** Reads the head's hourly token-economics rollup (file truth, oldest first). Separate from
+ *  [HeadPerfSource] on purpose: perf answers "where did the latency go" from a bounded TAIL,
+ *  economics answers "what has this cost against the plan" and needs SUMS over a week — a figure
+ *  no percentile over the last few hundred turns can reconstruct. */
+public fun interface HeadEconomicsSource {
+    public fun buckets(): List<EconomicsRow>
+}
+
+/** One hour of a head's economics on the control-plane side. Sums only; every ratio the dashboard
+ *  shows is derived at render time from these. [deferralTurns] is the denominator for the tool
+ *  averages and is 0 on a head whose dialect cannot defer — which the UI renders as "n/a". */
+public data class EconomicsRow(
+    val hour: Long,
+    val turns: Long,
+    val inTokens: Long,
+    val cachedTokens: Long,
+    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens]. Its own sum
+     *  because it bills at the vendor's cache_write rate and not at the input rate. */
+    val cacheWriteTokens: Long,
+    val outTokens: Long,
+    val reqBytes: Long,
+    val upstreamBytes: Long,
+    val toolsEager: Long,
+    val toolsDeferred: Long,
+    val deferralTurns: Long,
+    val rateLimited: Long,
+)
+
 /** Reads the head's log tail (file truth). */
 public interface HeadLogSource {
     public fun tail(lines: Int): String
@@ -57,6 +85,10 @@ public data class ManagedHead(
     val launchSpec: LaunchSpec? = null,
     /** Per-turn perf telemetry rows for /api/perf; null = head has no perf sink wired. */
     val perf: HeadPerfSource? = null,
+    /** v0.4.0 (FEATURES.md §3): the same rows with outcome tags, for the windowed summary. */
+    val perfRows: PerfRowsSource? = null,
+    /** Hourly quota rollup for /api/economics; null = head has no economics sink wired. */
+    val economics: HeadEconomicsSource? = null,
     /** DR-81: "does this head hold a working api key RIGHT NOW" — read per /launch, never frozen
      *  into [launchSpec] (the spec is assembled once at boot; `splice key set` promises live
      *  pickup, and a boot-frozen gate left the paste-your-key capture hook armed against a
@@ -67,10 +99,26 @@ public data class ManagedHead(
      *  Claude Code pipes to /statusline carries client units on a scaled row. The catalog is what
      *  turns them back into the row's declared window and its label. Null = render the blob as is. */
     val catalog: ModelCatalog? = null,
+    // V4-127: the head's DECLARED model list (`HeadConfig.models`) and its provider key are
+    // deliberately NOT fields here. Both were added first, and the constructor-width ratchet refused
+    // the change: ManagedHead is already a recorded offender at 17 parameters and this grew it to 19
+    // with a fourth subsystem, which the gate reads as WIDENED — "a recorded offender is DEBT, not
+    // permission to keep adding parameters". Re-baselining would be the bypass that gate exists to
+    // stop, so the two facts arrive through DeclaredModels instead: one injected role, assigned on
+    // ControlServer after construction (the shape V4-136 gave `compaction`). A per-route input does
+    // not belong on a whole-head record anyway.
+    //
+    // The route genuinely needs the declared list (a declared slot that resolved to NOTHING must
+    // still be its own row, and only the declared list knows it was declared), so this is a move,
+    // not a deletion.
     /** Where the statusline route records each session's real window (`session_id` +
      *  `context_window_size` from the blob) so the head scales that session's counts against it.
      *  Null = a head that never learns (tests). */
     val clientWindows: ClientWindows? = null,
+    /** Head-local OAuth account selections and quotas, projected without credential material. */
+    val accountPool: HeadAccountPoolSource? = null,
+    /** Per-account masked descriptions; never passed to the unauthenticated statusline. */
+    val accountAuth: HeadAccountAuthSource? = null,
 )
 
 /** The launch-time key-presence read [ManagedHead.keyPresence] carries (role-named ctor seam). */

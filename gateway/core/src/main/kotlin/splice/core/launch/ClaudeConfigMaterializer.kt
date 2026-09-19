@@ -5,7 +5,12 @@
 //   - SHARED items symlink into ~/.claude/<item>; a real file where a symlink belongs is replaced,
 //     but a real DIRECTORY the operator made is NEVER deleted (one exception: sessions/ is
 //     machine-generated, so SessionRegistryLink migrates its entries into the global registry and
-//     replaces the dir with the link — cross-head session visibility);
+//     replaces the dir with the link — cross-head session VISIBILITY, the one dispositioned escape
+//     from head isolation, and it is Claude Code's peer registry rather than head configuration);
+//   - projects/ is NOT a shared item (V4-115, 2026-09-17): a head's transcripts are head-private by
+//     the operator ruling, so ProjectsLink guarantees a REAL projects dir inside each head and
+//     un-links one an earlier launch pointed elsewhere. Cross-head resume is an explicit COPY made
+//     at launch time (ResumeAcrossHeads), never a shared tree;
 //   - settings.json is ALWAYS a real merged file (never a symlink through which we'd clobber the
 //     operator's global): global settings + availableModels allowlist + enforceAvailableModels +
 //     preserved model choice (when still allowed) + the statusline command. A pre-existing symlink
@@ -47,20 +52,17 @@ import kotlin.io.path.isSymbolicLink
 // ClaudeConfigKeys.kt (concentration, 2026-08-19); the strict/tolerant JSON state reads live in
 // JsonStateReads.kt (concentration, 2026-09-05). Same-package FQCNs are unchanged.
 
-/** Creates one symbolic link. A seam because the swap's whole safety property — that a failure
- *  NEVER destroys the operator's pre-existing file — is only testable on the production path if the
- *  create can be made to fail on demand (no temp filesystem denies createSymbolicLink), and that
- *  failure is exactly the ENOSPC/LSM-EPERM case DR-11 was opened for. Public because it is a
- *  default param of a public constructor and the no-secondary-constructor law leaves one init
- *  path: an internal type here would trip "public constructor exposes internal parameter type". */
-public fun interface SymlinkOp {
-    public operator fun invoke(link: Path, target: Path)
-}
-
 public class ClaudeConfigMaterializer(
     private val home: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
     private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
+    /** v0.4.0 shared MCP hosting: rewrites the inherited `mcpServers` so eligible stdio servers
+     *  point at the daemon's host instead of spawning per session. Null = today's behaviour. */
+    private val mcpRewrite: McpRewrite? = null,
+    /** The child-process half of the hook exec-probe, implemented in :app (V4-103). Null skips the
+     *  exec-probe — a test materializer omits it; the daemon wires the real one so a noexec config
+     *  dir still fails the capture-hook launch. */
+    private val hookExec: HookExec? = null,
 ) {
 
     private val json = Json {
@@ -68,7 +70,11 @@ public class ClaudeConfigMaterializer(
         prettyPrint = true
     }
     private val sessionRegistry = SessionRegistryLink()
+    private val projectsLink = ProjectsLink()
     private val jsonReads = JsonStateReads(json, log)
+    private val hookExecProbe: HookExecProbe? = hookExec?.let { exec ->
+        HookExecProbe { dir, chmod -> HookScriptFiles.probeExecutability(dir, chmod, exec) }
+    }
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
     public fun materialize(spec: MaterializeSpec): MaterializeResult {
@@ -98,9 +104,16 @@ public class ClaudeConfigMaterializer(
                 viaBrowser = spec.signInViaBrowser,
                 tokenCapture = spec.tokenCapture,
                 loginOutcomeFile = spec.loginOutcomeFile,
+                headKey = spec.headKey,
+                execProbe = hookExecProbe,
             ),
             if (spec.advertiseKeySetup && spec.tokenCapture != null) {
-                LoginInterception.keySetupAdvertiser(spec.configDir, spec.tokenCapture, spec.loginCommand)
+                LoginInterception.keySetupAdvertiser(
+                    spec.configDir,
+                    spec.tokenCapture,
+                    spec.loginCommand,
+                    execProbe = hookExecProbe,
+                )
             } else {
                 emptyMap()
             },
@@ -161,12 +174,16 @@ public class ClaudeConfigMaterializer(
     }
 
     // settings is merged (not linked); mcps arrive via .claude.json. Everything else that the
-    // policy shares is symlinked from the operator's global dir.
+    // policy shares is symlinked from the operator's global dir. projects is not decided by the
+    // policy at all — see the call below and ProjectsLink's header.
     private fun linkShared(configDir: Path, policy: ClaudePolicy) {
+        // Head-private transcripts (V4-115): guaranteed real for EVERY head, whatever its policy
+        // says. The migration must run even for a head whose splice.toml still names `projects` in
+        // share — that spelling is inert now, and a policy must not be able to resurrect the link.
+        projectsLink.ensurePrivateOrLog(configDir.resolve(Keys.PROJECTS), log)
         // settings is merged (not linked) and mcps arrive via .claude.json, so both are skipped here.
         for (item in sharedLinkItems) {
-            val linkable = item != Keys.SETTINGS && item != Keys.MCPS && shares(policy, item)
-            if (!linkable) continue
+            if (item in MERGED_ITEMS || !shares(policy, item)) continue
             if (item == Keys.SESSIONS) {
                 // The peer registry migrates rather than links: see SessionRegistryLink's header.
                 // link() logs its own declines; this catches what it THROWS mid-flight (DR-39).
@@ -348,7 +365,7 @@ public class ClaudeConfigMaterializer(
             val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { shareMcp }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size
-                put(Keys.MCP_SERVERS, globalMcp)
+                put(Keys.MCP_SERVERS, mcpRewrite?.invoke(globalMcp) ?: globalMcp)
             }
             for (k in portKeys) {
                 // Read once into a local: the map is looked up twice in the old shape and the
@@ -378,3 +395,8 @@ public class ClaudeConfigMaterializer(
 // FILE SCOPE ON PURPOSE: one immutable empty object shared by every read path, as the companion's
 // single instance already was — a per-instance field would allocate one per materializer.
 private val EMPTY_JSON = JsonObject(emptyMap())
+
+// The two shared items linkShared never links: settings is merged into a real file and mcps arrive
+// via .claude.json. A set rather than two `!=` legs so the loop stays under its complexity budget
+// now that it dispatches two generated-vs-linked shapes (sessions, everything else).
+private val MERGED_ITEMS = setOf(Keys.SETTINGS, Keys.MCPS)

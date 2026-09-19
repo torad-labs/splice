@@ -55,12 +55,20 @@ internal class CodexCodeModeTurnBuilder(private val bridge: CodexCodeModeBridge?
         .filterIsInstance<ToolResultBlock>()
         .filter { it.toolUseId.startsWith(CODE_MODE_CLIENT_ID_PREFIX) }
         .map { block ->
-            require(block.content.all { it is TextBlock }) {
-                "code-mode tool result '${block.toolUseId}' contains unsupported non-text content"
-            }
             CodeModeResult(
                 id = block.toolUseId,
-                output = block.content.joinToString("") { (it as TextBlock).text },
+                // V4-114: the refusal NARROWS instead of asserting. `require(part is TextBlock)`
+                // smart-casts, so the text read is checked by the compiler; the previous shape
+                // tested every part in one `all {}` and then re-asserted each with `as TextBlock`,
+                // two statements that had to agree with nothing holding them together — and a new
+                // ContentBlock subtype would have arrived as a ClassCastException on the turn path.
+                // Same refusal, same type (IllegalArgumentException), same message.
+                output = block.content.joinToString("") { part ->
+                    require(part is TextBlock) {
+                        "code-mode tool result '${block.toolUseId}' contains unsupported non-text content"
+                    }
+                    part.text
+                },
                 isError = block.isError == true,
             )
         }

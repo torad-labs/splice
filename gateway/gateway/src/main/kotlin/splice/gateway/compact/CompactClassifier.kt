@@ -20,7 +20,7 @@ public data class CompactProbe(
 
 /** The compaction classifier: the marker scan and the two text extractors it reads. Stateless;
  *  collaborators hold one (`private val compact = CompactClassifier()`). */
-public class CompactClassifier {
+internal class CompactClassifier {
     public fun systemText(body: AnthropicRequest): String = body.system.orEmpty()
 
     /**
@@ -46,7 +46,7 @@ public class CompactClassifier {
             .orEmpty()
 
     /** Marker in the system prompt OR the LAST user message — never the whole transcript. */
-    public fun markerPresent(body: AnthropicRequest): Boolean = classifyCompact(body).hasMarker
+    fun markerPresent(body: AnthropicRequest): Boolean = classifyCompact(body).hasMarker
 
     /**
      * Detect Claude Code's /compact summarization call (auto + manual). Positive marker only.

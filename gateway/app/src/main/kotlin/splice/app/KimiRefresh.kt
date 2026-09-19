@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiRefreshedTokens
 
@@ -96,7 +97,8 @@ public class KimiRefresh {
             scope = JsonScalars.str(obj, "scope").orEmpty(),
             tokenType = JsonScalars.str(obj, "token_type") ?: "Bearer",
         )
-    }.getOrNull()
+    }.onFailure { System.err.println("[kimi] refresh body did not parse: ${SafeFailureText.render(it)}") }
+        .getOrNull()
 }
 
 // JsonNull IS a JsonPrimitive whose content is "null"; treat an explicit null as absent.

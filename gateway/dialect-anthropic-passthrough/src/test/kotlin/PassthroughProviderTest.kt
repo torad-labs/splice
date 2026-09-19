@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,10 +20,12 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
+import splice.dialect.passthrough.PassthroughReanchorController
 import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -69,7 +72,7 @@ class PassthroughProviderTest {
     fun `upstream url is the Anthropic Messages path on the configured base`() {
         assertEquals(
             "https://api.kimi.com/coding/v1/messages",
-            provider(PassthroughQuirksDefaults().kimi("kimi")).upstreamUrl,
+            provider(KimiProfileFixture().kimi("kimi")).upstreamUrl,
         )
     }
 
@@ -77,7 +80,7 @@ class PassthroughProviderTest {
     @Test
     fun `kimi's header set is reproduced from declared data alone`() {
         val headers = provider(
-            quirks = PassthroughQuirksDefaults().kimi("kimi"),
+            quirks = KimiProfileFixture().kimi("kimi"),
             staticHeaders = mapOf("anthropic-version" to "2023-06-01", "User-Agent" to "KimiCLI/1.5"),
             identityHeaders = { mapOf("X-Msh-Device-Id" to "dev-1", "X-Msh-Platform" to "linux") },
         ).extraHeaders(creds)
@@ -112,7 +115,7 @@ class PassthroughProviderTest {
 
     @Test
     fun `the wrapped picker id is stripped to the upstream model`() {
-        val built = provider(PassthroughQuirksDefaults().kimi("kimi")).buildTurn(
+        val built = provider(KimiProfileFixture().kimi("kimi")).buildTurn(
             AnthropicParse.parseAnthropicBody(
                 """{"model":"claude-kimi--k3[1m]","messages":[{"role":"user","content":"hi"}]}""",
             ),
@@ -158,7 +161,7 @@ class PassthroughProviderTest {
     fun `quirks reach the builder — kimi deforms where a neutral head does not`() {
         val body = """{"model":"m","messages":[{"role":"user","content":[
             {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}"""
-        val kimiReq = provider(PassthroughQuirksDefaults().kimi("kimi"))
+        val kimiReq = provider(KimiProfileFixture().kimi("kimi"))
             .buildTurn(AnthropicParse.parseAnthropicBody(body), compact = false, sessionId = null).requestBody
         val neutralReq = provider(PassthroughQuirks(providerTag = "claude-splice"))
             .buildTurn(AnthropicParse.parseAnthropicBody(body), compact = false, sessionId = null).requestBody
@@ -169,8 +172,36 @@ class PassthroughProviderTest {
 
     @Test
     fun `reasoning display is off so the text mirror never double-renders thinking`() = runTest {
-        val p = provider(PassthroughQuirksDefaults().kimi("kimi"))
+        val p = provider(KimiProfileFixture().kimi("kimi"))
         assertEquals(ReasoningDisplay.OFF, p.showReasoning)
         assertFalse(p.replayReasoning)
+    }
+
+    @Test
+    fun `re-anchoring is actually wired, so the third retry layer is not dead code`() {
+        // WHY THIS GUARD EXISTS. Provider.reanchorController returns null by DEFAULT ("surface the
+        // failure, pre-reanchor behaviour") and this dialect silently inherited that default, which
+        // IS the outage: a stream that EOFs without message_stop is a 2xx whose handler returns a
+        // Failure, so neither the connect-phase budget nor the G5 reissue budget can see it, and the
+        // controller was the only layer that could. Every behaviour test in
+        // PassthroughReanchorTest.kt passes whether or not the override below exists, so without
+        // this assertion the whole layer can be unwired again in perfect silence.
+        // assertInstanceOf rather than assertNotNull on purpose: an override repointed at some OTHER
+        // controller keeps the layer present while no longer being this dialect's, which is the same
+        // silence one step along.
+        val controller = provider(KimiProfileFixture().kimi("kimi")).reanchorController(
+            TurnMeta(
+                compact = false,
+                showReasoning = ReasoningDisplay.OFF,
+                stream = true,
+                originalModel = "k3[1m]",
+                upstreamModel = "k3",
+                clientMaxTokens = null,
+                effort = "max",
+                summary = null,
+                budgetTokens = null,
+            ),
+        )
+        assertInstanceOf(PassthroughReanchorController::class.java, controller)
     }
 }

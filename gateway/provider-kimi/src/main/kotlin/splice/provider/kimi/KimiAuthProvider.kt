@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.CredentialJson
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
@@ -29,13 +30,16 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import splice.spi.AccountCredentialIdentitySource
+import splice.spi.AccountCredentialIdentitySource.CredentialEvidence
+import splice.spi.AccountCredentialIdentitySource.CredentialFileEvidenceReader
+import splice.spi.AccountCredentialIdentitySource.CredentialPresence
 import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
 
 private const val LOG_TAG = "kimi-auth"
-private const val DEFAULT_CACHE_MS = 30_000L
 
 // proactive-refresh floor: never let a token get within 5 minutes of expiry.
 private const val MIN_PROACTIVE_S = 300L
@@ -45,7 +49,7 @@ private const val HARD_FLOOR_S = 60L
 
 public class KimiAuthProvider(
     private val authPath: Path,
-    private val authCacheMs: Long = DEFAULT_CACHE_MS,
+    private val authCacheMs: Long,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns the classified attempt. */
     private val refreshCall: RefreshCall<KimiRefreshedTokens>,
@@ -57,7 +61,7 @@ public class KimiAuthProvider(
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
-) : RefreshableAuthProvider {
+) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
@@ -179,6 +183,13 @@ public class KimiAuthProvider(
 
     override suspend fun describe(): AuthDescription =
         store.describe(oauth.kimiAuthIdentityOrNull(authPath, log), invalidGrantLatch)
+
+    override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
+
+    override fun credentialPresence(): CredentialPresence = credentialEvidence().presence
+
+    override fun credentialEvidence(): CredentialEvidence =
+        CredentialFileEvidenceReader.read(authPath)
 
     // Atomic 0600 credential write — routes to the shared primitive, mirroring the private member
     // CodexAuthProvider/GrokAuthProvider already carry.

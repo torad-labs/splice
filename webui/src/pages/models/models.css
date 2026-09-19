@@ -1,0 +1,144 @@
+/* Models: the racks and the opened model's rate card. Tokens only for spacing
+   and type; radius 0; no shadow or glow. */
+.myx-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+}
+
+.myx-models-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-models-title {
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+
+/* THE RACK TAKES THE WHOLE WIDTH UNTIL A MODEL IS OPENED (M1-112, from M1-109's measurement and
+   M1-102's remedy on fleet). The resting detail column measured a 432x784 dead region at 21.5% of
+   the frame against the comp's own 11.2% bar -- a fifth of the page reserved for a response to a
+   click nobody has made. The comp settles it rather than my preference: team-board-a's right third
+   is a POPULATED BAY, not a placeholder, so a resting detail column departs from the comp and
+   removing it returns to it. */
+.myx-models-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-5);
+  align-items: start;
+  min-width: 0;
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+
+/* The open state, and ONLY the open state, declares the 24rem track and the gap that separates it.
+   The column is a track when there is a model in it and a ZERO track when there is not -- and a
+   zero track that still costs a gap is not zero, which is why column-gap moves with it. */
+.myx-models-body-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  column-gap: var(--space-5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-models-body { transition: none; }
+}
+
+.myx-models-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+/* THE COLUMN SCROLLS ITS STRIPS, because the brief says the strips do not shrink (M1-121).
+   MEASURED at 1536 dark: this column is 384px and holds a 631px strip that ended at x=1743 on a
+   1536 frame with overflow-x visible -- 247.3px past the column's own edge and about 207px of it
+   off the frame entirely, painted where nothing can reach it. fleet and sessions measure 0px past
+   their edges, so this was models alone.
+
+   WHY NOT NARROW THE FIELD GRID, which is the only remedy that would have made this READABLE
+   rather than merely reachable -- ruled out by measuring the labels rather than counting their
+   characters. Both strips carry FOUR cells and all four matter (input/cache read/cache write/
+   output is not a rate card with one removed; head/default/extra/rules is not a window card).
+   After the 53px holder edge this column leaves 331px, so four cells get 82.8px each. The widest
+   label ink plus the cell's own 16px padding needs 93px in the rates strip ("cache write", 77px)
+   and 112px in the window strip ("default window", 96px). Four cells therefore need 425px and
+   501px against 331px available. NARROWING w DOES NOT MAKE THIS READABLE, it moves the clipping
+   out of the strip's right edge and into every label. And no column this console ships is wide
+   enough either: sessions' minmax(320px, 36%) measures 491.7px and turns' 40% is about 503px,
+   both short of the window strip's 501px once its edge is counted.
+
+   SO IT SCROLLS, which is not a fourth idiom but the brief's own sentence, quoted in ui.css:731 --
+   "strips keep fixed field widths in ch units and scroll inside their bay" -- and the reason
+   .myx-sfield carries flex: 0 0 auto at ui.css:393, whose comment says a ch count must never
+   shrink and the bay should scroll instead. This is that rule applied to the box that actually
+   holds these strips. overflow-y is hidden for the same reason .myx-bay-rows hides it: a
+   horizontal scrollport must not grow a vertical one. */
+.myx-models-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* THE SWELL IS THE TRACK, NOT A KEYFRAME (M1-116 rules collapse over unmount). M1-112 mirrored
+   `myx-cfeed-swell` here because an UNMOUNTED column has nothing to animate FROM: it must mount and
+   then fade its content up, which pops if the mount lands a frame late. A transition on
+   grid-template-columns IS CONTRACTS.md section 6's swell -- "a strip opening into its detail
+   column, --dur-2" -- in one declaration. The keyframes that stood here are gone with the idiom
+   that needed them; turns, sessions and projects have never carried them. */
+
+.myx-models-sub {
+  font-size: var(--text-4);
+  color: var(--ink-strong);
+  margin: 0;
+  font-family: var(--font-figure);
+}
+
+.myx-models-note {
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  margin: 0;
+}
+/* ONE breakpoint for every page body (m1 design review B13): the detail column drops beneath the
+   bay below 1120px, the width at which the rail, a bay and a detail column stop fitting side by
+   side. The bays scroll their racks (review B7), so a narrow bay scrolls instead of cutting the
+   tail off a strip, and the brief's own topology — one detail column, the opened strip swelling
+   into it on the right — holds at every width above this floor. The rule belongs in the shell, in
+   one place, for every page row; until it is hoisted there it is repeated here with this note. */
+@media (max-width: 1120px) {
+  /* Only the OPEN class, mirroring sessions: at rest the second track is already 0, so a 1fr-plus-0
+     board is the full width here too. */
+  .myx-models-body-open { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* THE RACK'S COLUMN NAMES, ONCE (m1 design review B9, wired by M2-33). components.tsx has always
+   said the bay head prints these and the strips carry values only; the names row is what makes
+   that true. It sits over cells that are `flex: 0 0 auto` with an inline flex-grow of their own
+   ch, so the name takes the same basis and the same growth (both arrive inline from ColumnNames)
+   or it drifts off its column. Here it does not shrink and it clips rather than wrapping, because
+   a wrapped name would make the head taller than the rows it labels. */
+.myx-models-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, which this page never received), AND ON THIS PAGE IT IS
+   A PRECONDITION FOR THE NAMES ROW RATHER THAN A TIDINESS. Measured at 1536 dark: every strip in
+   all three bays rendered 948px inside a 1293.8px rack, leaving 345.8px of bare bay to the right
+   of every row -- the slab M1-39 named. The names row does NOT leave it, because .myx-bay-fields
+   is a flex box at the bay's full width, so the six names spread across 1293.8px while their
+   values bunched into 948: the last name sat 301.9px right of the column it names, and the third
+   118.7px. A names row over columns it does not sit on is worse than no names row. With the rule
+   the worst disagreement across all three bays is 1px, and the bare band is gone.
+   Tried in the page before it was written, which is how the 301.9px was found at all. */
+.myx-models .myx-strip { width: 100%; }

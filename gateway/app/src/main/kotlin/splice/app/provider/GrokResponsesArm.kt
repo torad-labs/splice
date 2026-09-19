@@ -6,10 +6,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.GrokRefresh
 import splice.app.TopologyLoader
-import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
 import splice.spi.ProviderTuning
@@ -21,6 +18,7 @@ internal class GrokResponsesArm(
     private val grokRefresh: GrokRefresh,
 ) {
     private val quirksOverlay = QuirksOverlay()
+    private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
 
     // grok via the SuperGrok/X-Premium+ browser OAuth (~/.grok/auth.json, Bearer + refresh) — the
     // same Responses dialect + grok quirks, only the auth differs from the api-key path.
@@ -31,15 +29,11 @@ internal class GrokResponsesArm(
         val catalog = ctx.catalog
         val watchdog = ctx.watchdog
         val cfg = ctx.cfg
-        val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
-        val auth = GrokAuthProvider(
-            authPath = Paths.get(TopologyLoader.expandHome(cfg.grokAuthPath)),
-            authCacheMs = cfg.authCacheMs,
-            refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
-            prefetchScope = probeScope,
-            // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
-            log = HeadScopedLogs.headScopedLog(key, log),
+        val primaryPath = Paths.get(
+            TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.grokAuthPath),
         )
+        val accounts = grokAccounts.accounts(ctx, primaryPath)
+        val auth = WiredAccounts.providerAccount(accounts).auth
         return Wired(
             GrokProvider(
                 tuning = ProviderTuning(
@@ -59,6 +53,7 @@ internal class GrokResponsesArm(
                 quirks = quirksOverlay.responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),
             ),
             auth,
+            accounts,
         )
     }
 }

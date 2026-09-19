@@ -1,0 +1,73 @@
+/* The scope charts. One ink stepped through four opacities: the holder-edge colours
+   mean attention and are not available as series colours, so a stack is told apart
+   by value and named by the legend beside it. Tokens only for spacing and type. */
+.myx-schart {
+  display: block;
+  width: 100%;
+  height: calc(var(--space-8) * 2);
+  background: var(--scope);
+}
+
+/* A hairline of the ground between stacked segments, so two adjacent steps of the
+   same ink read as two segments and not as one longer one. */
+.myx-schart-seg {
+  shape-rendering: crispEdges;
+  stroke: var(--scope);
+  stroke-width: 0.5;
+}
+
+.myx-schart-fresh { fill: var(--scope-ink); }
+.myx-schart-cached { fill: var(--scope-ink); opacity: 0.62; }
+.myx-schart-write { fill: var(--scope-ink); opacity: 0.38; }
+.myx-schart-out { fill: var(--scope-ink); opacity: 0.2; }
+.myx-schart-upstream { fill: var(--scope-ink); }
+.myx-schart-request { fill: var(--scope-ink); opacity: 0.45; }
+.myx-schart-eager { fill: var(--scope-ink); }
+.myx-schart-deferred { fill: var(--scope-ink); opacity: 0.4; }
+.myx-schart-limited { fill: var(--scope-ink); }
+
+.myx-schart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.myx-schart-key {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.myx-swatch {
+  width: var(--space-4);
+  height: var(--space-3);
+  background: var(--scope-ink);
+  flex: none;
+}
+
+.myx-swatch-cached { opacity: 0.62; }
+.myx-swatch-write { opacity: 0.38; }
+.myx-swatch-out { opacity: 0.2; }
+.myx-swatch-request { opacity: 0.45; }
+.myx-swatch-deferred { opacity: 0.4; }
+
+.myx-schart-figure {
+  /* FIGURE: the chart's figure line, tabular so columns line up. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-5);
+  color: var(--scope-ink);
+  margin: 0;
+  padding: var(--space-3) 0;
+}
+
+.myx-schart-note,
+.myx-schart-empty {
+  font-size: var(--text-1);
+  color: var(--scope-ink);
+  opacity: 0.72;
+  margin: 0;
+  padding: var(--space-3) 0;
+}

@@ -9,6 +9,7 @@ package splice.app.cli
 
 import splice.app.DaemonBoundary
 import splice.app.DaemonProbe
+import splice.core.wire.HttpStatus
 
 /** Stopping the daemon: ask over the control plane, then escalate through OS signals until every
  *  port it owned is free. Constructed by the `restart` verb (Kotlin style law, 2026-08-15: main
@@ -26,7 +27,7 @@ internal class DaemonStop {
         // the old fire-and-forget silently swallowed, then escalated as if the daemon were merely
         // slow (observed twice on 2026-08-11). statusOf does not gate on 2xx the way request() does.
         when (val status = ControlPlaneClient.statusOf("http://127.0.0.1:$port/api/daemon/shutdown", "POST", key)) {
-            HTTP_UNAUTHORIZED, HTTP_FORBIDDEN -> println(
+            HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN -> println(
                 "splice: shutdown request REJECTED — the mgmt key on disk does not match the " +
                     "running daemon's. Escalating to OS signals (scoped to the daemon on :$port).",
             )
@@ -42,7 +43,16 @@ internal class DaemonStop {
         // sole success signal — BS-4), and every kill is SCOPED to the process actually holding the
         // TARGET control port (F2): a bare cmdline match would SIGKILL every splice daemon on the
         // box, production and a mid-run oracle daemon included. SIGTERM engages the daemon's own
-        // 8s cooperative stop + 10s halt(0) floor, so the SIGTERM rung waits past that floor.
+        // 55s cooperative stop + 57s halt(0) floor, so the SIGTERM rung waits past that floor.
+        //
+        // V4-74: SAY WHY IT IS QUIET. The daemon now drains in-flight turns for up to 45s before it
+        // stops, so a restart can sit here for the better part of a minute by design — and a silent
+        // minute is exactly what reads as a hang and invites the operator's SIGKILL. Printed BEFORE
+        // the first rung, once, so the wait is never unexplained.
+        println(
+            "splice: waiting up to ${GRACEFUL_POLLS * POLL_INTERVAL_MS / 1000}s for in-flight turns " +
+                "to finish before the daemon stops (a held turn is the feature, not a hang).",
+        )
         if (pollStopped(port, headPorts, GRACEFUL_POLLS)) return true
         escalate(port, "SIGTERM", "ignored the shutdown request") { it.destroy() }
         if (pollStopped(port, headPorts, SIGTERM_POLLS)) return true
@@ -93,16 +103,21 @@ internal class DaemonStop {
             headPorts.none { AdminSupport.controlPortBound(it) }
 }
 
-// 11s: the daemon's cooperative cap is STOP_DEADLINE_MS (8s) and its halt(0) floor sits at
-// STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS (10s). At 32 polls this rung expired at EXACTLY 8s,
-// so a daemon using its full budget was SIGTERM'd mid drain()/lock.close() tail — re-entering
+// 60s: the daemon's cooperative cap is STOP_DEADLINE_MS (55s) and its halt(0) floor sits at
+// STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS (57s). At 32 polls this rung once expired at EXACTLY
+// 8s, so a daemon using its full budget was SIGTERM'd mid drain()/lock.close() tail — re-entering
 // shutdown() and arming a second watchdog that can halt the very drain it was waiting on.
 // Waiting past the floor means the cooperative path wins whenever it is going to win at all.
-private const val GRACEFUL_POLLS = 44
-private const val SIGTERM_POLLS = 48 // 12s: past the 10s halt(0) floor the SIGTERM hook guarantees
+//
+// V4-74: the rung grew with the whole ladder because the daemon now DRAINS IN-FLIGHT TURNS for up
+// to 45s — a restart that holds for a live turn is the feature, and this poll is what lets the
+// operator's `splice restart` sit through it instead of escalating to SIGTERM at 11s.
+internal const val GRACEFUL_POLLS = 240
+internal const val SIGTERM_POLLS = 248 // 62s: past the 57s halt(0) floor the SIGTERM hook guarantees
 private const val SIGKILL_POLLS = 12 // 3s: kernel teardown + port release
+
+// HTTP_OK and HTTP_LAST_SUCCESS stay local: HttpStatus declares no 2xx constant, and the wall is
+// silent on them. The two ERROR statuses below are gone — they read HttpStatus now.
 private const val HTTP_OK = 200
 private const val HTTP_LAST_SUCCESS = 299
-private const val HTTP_UNAUTHORIZED = 401
-private const val HTTP_FORBIDDEN = 403
 private const val POLL_INTERVAL_MS = 250L

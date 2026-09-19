@@ -9,6 +9,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -60,6 +61,18 @@ public interface Provider : ProviderIdentity {
     public val replayReasoning: Boolean
 
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
+
+    /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves
+     *  current behavior for a provider whose dialect has not opted into the 0.4.0 capability. */
+    public fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
+
+    /** Place the head's standing system prompt at this dialect's system seam, on EVERY turn.
+     *  [mode] is APPEND (the default: the client's own system field survives byte-identically and
+     *  the prompt rides beside it) or REPLACE (that field is substituted). The unchanged default
+     *  preserves current behavior for a provider whose dialect has not opted into the capability —
+     *  and TurnPreparation then reports the prompt as NOT APPLIED rather than claiming text the
+     *  wire never carried. */
+    public fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn = turn
 
     public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 

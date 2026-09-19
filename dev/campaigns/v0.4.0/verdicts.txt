@@ -1,0 +1,83 @@
+mcpB1 CONFIRMED
+mcpB2 CONFIRMED
+mcpB3 CONFIRMED
+mcpB4 CONFIRMED
+mcpB5 CONFIRMED
+mcpB6 CONFIRMED line=34
+accB1 CONFIRMED
+accB2 CONFIRMED
+accB3 REFUTED
+accB4 CONFIRMED
+accB6 REFUTED
+simp1 CONFIRMED
+eff4 CONFIRMED
+cliB5 CONFIRMED
+cliB6 REFUTED
+accA6 CONFIRMED
+cliB4 CONFIRMED (documented-intentional, flagged as unresolved in V4-02 review)
+accA3 CONFIRMED (fail-closed, test-pinned AccountRestartTest:167-197)
+accA2 CONFIRMED
+mcpC5 PLAUSIBLE (weak; needs pre-Nov-2025 Claude Code SDK)
+turnA3 CONFIRMED
+turnA4 CONFIRMED (root cause: replay key hashes session-resolved tail, not client bytes)
+accC4 CONFIRMED
+turnA1 CONFIRMED (live-verified on Ollama 0.30.5)
+turnA2 CONFIRMED (documented in README:283-292; refusal text never names local=false)
+accC6 CONFIRMED (window <=20s for 429; up to 120s for 408/5xx UP-001)
+cliB2 CONFIRMED (statusline only; /api/usage half REFUTED)
+accC5 CONFIRMED
+mcpC4 REFUTED (no HttpRequestLifecycle plugin -> client abort does not cancel handler)
+mcpA1 CONFIRMED (8 of every 64 crashes respawn immediately; ~49 min to first hit)
+accA4 CONFIRMED (120s re-probe intentional per v4.0.0.toml:367; pool cost unpriced; low-medium)
+turnA5 CONFIRMED (passthrough only; chat/responses cannot produce the no-op)
+cliB1 CONFIRMED (reproduced on HEAD jar; needs present-but-unparseable cacerts; rare)
+mcpA6 CONFIRMED
+accB5 PLAUSIBLE (documented design V4-11; residual: marker lost when script throws)
+eff5 CONFIRMED (perf only; 248KB file, 10 entries)
+mcpC6 CONFIRMED
+eff6 CONFIRMED (low: ~200B/entry, bounded in practice)
+eff2 CONFIRMED (selector thread until GC, not lifetime)
+turnA6 CONFIRMED (one row per compaction; disk rotates at 64MiB; harm = HUD 256KiB window)
+mcpA4 REFUTED (no HttpRequestLifecycle; slot needed for notifications/cancelled remap)
+mcpA3 CONFIRMED (operator edit only; rebind has no drain; 503 lasts until head relaunch)
+alt5 REFUTED (spliceDirs appended from InstallPaths(env); side note: DoctorProbeWrite.kt:43 bare DoctorRedaction(home))
+eff1 CONFIRMED (explicit-operator path only; remedy = per-generation cache)
+alt1 CONFIRMED (pre-existing on main for responses; diff extends chat only)
+reuse5 CONFIRMED (UpgradeWrapper.replace is a fourth bare copy)
+mcpC2 CONFIRMED (Claude Code 2.1.257 never calls terminateSession; leak lasts until server unbind)
+alt3 CONFIRMED (crash+resume from another checkout -> stale cwd cached forever)
+reuse4 CONFIRMED (ConfigService xref loose; mode change to 0600 acceptable)
+reuse6 CONFIRMED (cleanup; only foreign listener triggers; aside: line 78 getValue("heads") NoSuchElement uncaught)
+simp4 CONFIRMED (latent; deviceId() has no production caller)
+alt2 REFUTED (ledger R1 NEVER-BELOW-STATUS-QUO decision, test-pinned)
+simp2 CONFIRMED
+reuse3 CONFIRMED (future drift only; copies identical today)
+mcpA5 REFUTED (Claude Code 2.1.257 re-initializes on 404 per spec; verified in bundle)
+simp3 CONFIRMED
+simp5 PLAUSIBLE (guard tested; cost is readability/fail-fast ordering only)
+reuse1 PLAUSIBLE (helper is DaemonProbe.request, not DaemonLock; not drop-in: 400ms + null on non-2xx)
+alt4 CONFIRMED
+reuse2 CONFIRMED (low; corrected mechanism: prompt =~ vs pgrep prefilter)
+alt6 CONFIRMED (drift risk = header recipe; account rule guarded by Wired.kt:39 require)
+eff3 PLAUSIBLE (tradeoff: drops ctx annotation; typical cost sub-second)
+simp6 CONFIRMED
+cliC4 CONFIRMED
+cliC5 CONFIRMED (Cli.guarded catches IOException: one-line exit 1, not stack trace)
+cliC3 CONFIRMED
+cliC6 CONFIRMED (cosmetic; macOS/hostshield sub-claims refuted)
+cliC1 CONFIRMED line=24 (this box is in exactly that state)
+cliC2 CONFIRMED (flat: false failure exit 1; symlink layout / rollback: respawns OLD release, false success)
+turnC3 CONFIRMED (file= text frozen at boot; staleProbe hashes only splice.toml; /api/compact shows stale text as effective; no doc says restart)
+cliA2 CONFIRMED (supervised = unit file ExecStart names jar, true for loaded-but-inactive unit; squatter keeps old jar; unit JVM exits 0 PEER_SERVING -> false "daemon restarted")
+cliA4 CONFIRMED (--to v0.3.x: old jar ignores --json, runs full text doctor with side effects, refused with false "doctor did not run")
+cliA3 CONFIRMED (pidDomain/procStart ignored; reusedPid one-sided and false when startedAt absent; host pid collision -> LIVE + foreign /proc environ read)
+turnB4 CONFIRMED (hook kills any uid java -jar JAR login <wrapper> incl. a terminal --label login mid-consent, then spawns the PRIMARY login; main hook never signalled)
+turnC2 PLAUSIBLE (matcher keys on wrapper word only + argv>=5; key-spelled or bare splice login invisible; needs key != command OAuth head, absent from shipped/live topology)
+turnC4 CONFIRMED (api-key heads: unparsed refusal only emitted under viaBrowser, so hit=unparsed falls into the bare-login block with the API-key lead text; untested)
+cliA1 CONFIRMED (EVENT_HEADS 'turn (compact=|...)' consumes compact=, bare 'false' ends the pair run: every turn line emitted as dangling 'turn compact=' with no pairs; untested shape)
+cliA6 PLAUSIBLE (keyValue needs [=:] right after the key; quoted-JSON key with sub-40 non-prefixed value survives; reachable only via claudeVersion()/local runtime model ids; SafeFailureText and switch-reason sinks refuted)
+turnC1 CONFIRMED (ClientVersionObservationTest:76 + ClientVersionSurfaceTest:66 hardcode 'splice 0.3.2'; the 0.4.0 bump reds both; CONTRIBUTING bump list omits tests)
+turnB1 CONFIRMED (pooled 429 with Retry-After <=15s arms horizon == sleep floor and returns BACKOFF; jitter dominated; wave re-posts together; main GIVE_UP invariant deleted; N x maxRetries)
+turnB2 CONFIRMED (respondRateLimited bare 429, no Retry-After though earliestResetEpochSeconds in hand; SDK retries 0.5-8s, each retry a perf row + 2 log lines)
+turnB3 CONFIRMED (AllAccountsExhausted never touches HeadHealthCounters; /api/heads and doctor say 0 errors on a head refusing 100%; main bumped provider() on every rate-limited turn)
+turnB5 PLAUSIBLE (turnWaitExhausted at attempt 0 of a continuation round: status-less UpstreamFailed classifies api_error non-transient with raw JSON, vs watchdog OVERLOADED; pinned by RateLimitCooldownTest:364)

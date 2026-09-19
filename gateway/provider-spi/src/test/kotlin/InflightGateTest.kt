@@ -2,7 +2,8 @@
 // FIFO order, 0 = unlimited, hot-resize takes effect for queued waiters, cancel-while-queued
 // frees the spot (Node had no such path), release idempotence, snapshot shape.
 // G21: the queue itself is boundable via maxQueued (0 = unlimited, default-preserving) —
-// overflow rejects synchronously with GatewayAtCapacityException, never silently enqueues.
+// overflow answers InflightGate.Admission.AtCapacity synchronously (V4-114: it used to throw
+// GatewayAtCapacityException), never silently enqueues.
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -13,8 +14,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import org.junit.jupiter.api.assertThrows
-import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
 
 class InflightGateTest {
@@ -24,9 +23,9 @@ class InflightGateTest {
         var limit = 1
         val gate = InflightGate({ limit })
         val order = mutableListOf<Int>()
-        val first = gate.acquire()
-        val a = launch { gate.acquire().also { order.add(2) }.release() }
-        val b = launch { gate.acquire().also { order.add(3) }.release() }
+        val first = gate.admittedSlot()
+        val a = launch { gate.admittedSlot().also { order.add(2) }.release() }
+        val b = launch { gate.admittedSlot().also { order.add(3) }.release() }
         yield()
         order.add(1)
         assertEquals(InflightGate.Snapshot(1, 2, 1), gate.snapshot())
@@ -49,13 +48,13 @@ class InflightGateTest {
     fun `raising the limit admits the parked waiter, not the newcomer - DR-147`() = runTest {
         var limit = 1
         val gate = InflightGate({ limit })
-        val holder = gate.acquire() // holds the only slot
-        val parked = async { gate.acquire() }
+        val holder = gate.admittedSlot() // holds the only slot
+        val parked = async { gate.admittedSlot() }
         yield()
         assertEquals(InflightGate.Snapshot(1, 1, 1), gate.snapshot())
 
         limit = 2 // the operator's relief PATCH
-        val newcomer = async { gate.acquire() }
+        val newcomer = async { gate.admittedSlot() }
         yield() // the newcomer runs acquire() and drains
         yield() // the drained waiter's continuation is delivered
 
@@ -73,7 +72,7 @@ class InflightGateTest {
     @Test
     fun `zero means unlimited`() = runTest {
         val gate = InflightGate({ 0 })
-        val slots = (1..20).map { async { gate.acquire() } }.map { it.await() }
+        val slots = (1..20).map { async { gate.admittedSlot() } }.map { it.await() }
         assertEquals(20, gate.snapshot().inflight)
         slots.forEach { it.release() }
     }
@@ -81,13 +80,15 @@ class InflightGateTest {
     @Test
     fun `queue overflow rejects beyond maxQueued`() = runTest {
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
-        val holder = gate.acquire()
-        val queued = launch { gate.acquire() }
+        val holder = gate.admittedSlot()
+        val queued = launch { gate.admittedSlot() }
         yield()
         assertEquals(1, gate.snapshot().queued)
 
-        val thrown = assertThrows<GatewayAtCapacityException> { gate.acquire() }
-        assertEquals("gateway at capacity", thrown.message)
+        // V4-114 PIN: the overflow refusal is a VALUE on acquire()'s return type. This line does
+        // not compile against the old shape (acquire returned Slot and threw), and an `Acquired`
+        // here would fail the assertEquals rather than escaping as an untyped exception.
+        assertEquals(InflightGate.Admission.AtCapacity, gate.acquire())
         assertEquals(1, gate.snapshot().queued) // the rejected caller never entered the queue
         assertEquals(1, gate.snapshot().inflight)
 
@@ -98,8 +99,8 @@ class InflightGateTest {
     @Test
     fun `default maxQueued is unlimited`() = runTest {
         val gate = InflightGate({ 1 }) // maxQueued not supplied
-        val holder = gate.acquire()
-        val waiters = (1..50).map { launch { gate.acquire() } }
+        val holder = gate.admittedSlot()
+        val waiters = (1..50).map { launch { gate.admittedSlot() } }
         yield()
         assertEquals(50, gate.snapshot().queued)
         waiters.forEach { it.cancel() }
@@ -111,18 +112,18 @@ class InflightGateTest {
     fun `hot-resize applies to maxQueued too`() = runTest {
         var queuedLimit = 1
         val gate = InflightGate(maxInflight = { 1 }, maxQueued = { queuedLimit })
-        val holder = gate.acquire()
-        val firstQueued = launch { gate.acquire() }
+        val holder = gate.admittedSlot()
+        val firstQueued = launch { gate.admittedSlot() }
         yield()
         assertEquals(1, gate.snapshot().queued)
 
-        // rejected under the old limit
-        assertThrows<GatewayAtCapacityException> { gate.acquire() }
+        // rejected under the old limit — V4-114: as a value, not a throw
+        assertEquals(InflightGate.Admission.AtCapacity, gate.acquire())
 
         // operator raises the limit before the next acquire — now admitted into the QUEUE
         // (not necessarily into inflight, which is still bounded at 1)
         queuedLimit = 2
-        val secondQueued = launch { gate.acquire() }
+        val secondQueued = launch { gate.admittedSlot() }
         yield()
         assertEquals(2, gate.snapshot().queued)
 
@@ -135,11 +136,11 @@ class InflightGateTest {
     fun `hot resize admits queued waiters on next release`() = runTest {
         var limit = 1
         val gate = InflightGate({ limit })
-        val first = gate.acquire()
+        val first = gate.admittedSlot()
         var admitted = 0
         val waiters = (1..3).map {
             launch {
-                gate.acquire()
+                gate.admittedSlot()
                 admitted++
             }
         }
@@ -154,15 +155,15 @@ class InflightGateTest {
     @Test
     fun `cancel while queued frees the spot`() = runTest {
         val gate = InflightGate({ 1 })
-        val holder = gate.acquire()
-        val doomed = launch { gate.acquire() }
+        val holder = gate.admittedSlot()
+        val doomed = launch { gate.admittedSlot() }
         yield()
         assertEquals(1, gate.snapshot().queued)
         doomed.cancelAndJoin()
         assertEquals(0, gate.snapshot().queued)
         holder.release()
         // next acquire proceeds immediately — the cancelled waiter never held the slot
-        gate.acquire().release()
+        gate.admittedSlot().release()
     }
 
     @Test
@@ -175,8 +176,8 @@ class InflightGateTest {
         kotlinx.coroutines.runBlocking {
             repeat(RACE_ITERATIONS) {
                 val gate = InflightGate({ 1 })
-                val holder = gate.acquire()
-                val waiter = launch(kotlinx.coroutines.Dispatchers.Default) { gate.acquire().release() }
+                val holder = gate.admittedSlot()
+                val waiter = launch(kotlinx.coroutines.Dispatchers.Default) { gate.admittedSlot().release() }
                 // let the waiter reach the queue
                 while (gate.snapshot().queued == 0 && waiter.isActive) yield()
                 val releaser = launch(kotlinx.coroutines.Dispatchers.Default) { holder.release() }
@@ -189,7 +190,7 @@ class InflightGateTest {
                 // generous on purpose: a leaked permit is PERMANENT, so any finite wait catches it,
                 // whereas a tight bound produced false failures under host/CI load (scheduler
                 // starvation of the racing Default-dispatcher coroutines), NOT leaks.
-                kotlinx.coroutines.withTimeout(REACQUIRE_LIVENESS_MS) { gate.acquire().release() }
+                kotlinx.coroutines.withTimeout(REACQUIRE_LIVENESS_MS) { gate.admittedSlot().release() }
                 assertEquals(0, gate.snapshot().inflight, "leaked at iteration $it")
             }
         }
@@ -198,18 +199,18 @@ class InflightGateTest {
     @Test
     fun `release is idempotent`() = runTest {
         val gate = InflightGate({ 1 })
-        val slot = gate.acquire()
+        val slot = gate.admittedSlot()
         slot.release()
         slot.release()
         assertEquals(0, gate.snapshot().inflight)
-        gate.acquire().release()
+        gate.admittedSlot().release()
     }
 
     @Test
     fun `slot idle clock ticks and touch resets`() = runTest {
         var now = 1000L
         val gate = InflightGate({ 1 }, clock = { now })
-        val slot = gate.acquire()
+        val slot = gate.admittedSlot()
         now = 1500
         assertEquals(500, slot.idleForMs())
         slot.touch()

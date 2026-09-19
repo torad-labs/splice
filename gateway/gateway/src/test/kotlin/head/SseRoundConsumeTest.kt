@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
 import mock.RecordingSink2
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -54,7 +55,6 @@ import splice.gateway.usage.OutputClamp
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
-import splice.provider.codex.CodexProvider
 import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
@@ -81,7 +81,7 @@ private class NoopTerminal : TurnTerminal, WireSink by RecordingSink2() {
 
     override suspend fun ensureStarted() = Unit
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String) = Unit
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
     override fun abandon() = Unit
 }
 
@@ -103,7 +103,7 @@ class SseRoundConsumeTest {
         mock.stop()
     }
 
-    private fun provider(): Provider = CodexProvider(
+    private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",
@@ -141,7 +141,7 @@ class SseRoundConsumeTest {
         ),
         emitter = NoopTerminal(),
         watchdog = TurnWatchdog(budget),
-        slot = InflightGate(LiveLimit { 1 }).acquire(),
+        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(tmp.resolve("compact-dr90.jsonl")),
             log = {},
@@ -219,8 +219,21 @@ class SseRoundConsumeTest {
     // Dispatchers.Default deliberately: the watchdog poller is a SIBLING coroutine that must sample
     // while the SSE read is parked, and the default single-threaded runBlocking event loop cannot
     // run both — the poller's own delay never resumes, so no budget can ever fire in that rig.
+    //
+    // V4-125 MOVED THIS ARM'S REAPER, AND THE DR-7 INVARIANT IS WHY IT STILL EXISTS. Until V4-125 the
+    // pre-content silence was reaped by the 1s first-output TIER, and this arm asserted that the reap
+    // arrived as an outcome rather than a transport tear. The tier is a probe now: a live path is
+    // HELD, so the tier no longer reaps anything here and the case had to move to the wall that does
+    // — the whole-turn cap, which is armed below exactly as TurnDriveFactory arms it in production.
+    // The invariant is untouched, because TearAwareEvents.reissuable gates on `watchdog.fired == null`
+    // and is therefore blind to WHICH sentinel fired: a TotalCap blocks the reissue exactly as an Idle
+    // did. DR-7 predates this row and this arm still proves it.
+    //
+    // The arm got STRONGER rather than merely moved: it now also pins the new behaviour, because
+    // asserting the sentinel is TotalCap and NOT Idle is precisely the claim that the idle tier
+    // probed, held, and left the turn alone.
     @Test
-    fun `a pre-content idle reap is an outcome, not a transport tear - DR-7`() = runBlocking(Dispatchers.Default) {
+    fun `a pre-content idle holds at the tier and the cap ends it - DR-7`() = runBlocking(Dispatchers.Default) {
         val provider = provider()
         val consume = SseRoundConsume(
             provider,
@@ -237,13 +250,19 @@ class SseRoundConsumeTest {
         // already flipped the tier. The budgets are far apart so the arm names the tier: a 1s
         // first-output cap must reap this well inside the 6s mock stall, and a 20s streamIdle would
         // let the mock hang up first (no Idle sentinel at all).
-        val drive = drive(WatchdogBudget(1.seconds, 20.seconds, 30.seconds))
+        // totalCap 3s: the WALL this arm moved to. It is deliberately well ABOVE the 1s first-output
+        // tier so the probe gets its hold in first — a cap that fired at the same instant the tier
+        // did would race the hold assertion below and flake. Both still land inside the mock's 6s
+        // stall and the 4s deadline, which is what keeps the deadline naming the wall rather than
+        // just asserting that something eventually happened.
+        val drive = drive(WatchdogBudget(1.seconds, 20.seconds, 3.seconds))
+        val turnJob = Job()
         val inputs = WsRoundInputs(
             drive = drive,
             bodyJson = "{}",
             sink = RecordingSink2(),
             scope = this,
-            turnJob = Job(),
+            turnJob = turnJob,
             // A STUB, and named as one: SseRoundDriver wires this to CONTENT_FRAMES_OUT. A constant
             // false happens to agree with the real probe here (response.created emits no client
             // frame), so this arm exercises the reissue gate's pre-content branch without observing
@@ -252,6 +271,10 @@ class SseRoundConsumeTest {
             frameEmittedThisRound = ClientFrameEmitted { false },
             eventsBase = 0,
         )
+        // Armed exactly as the turn drive arms it in production: the whole-turn wall targets the TURN
+        // job, and this round is parented to it, so the cap's cancel reaches the body channel through
+        // roundJob's completion handler — the same path a real total-cap ending takes.
+        drive.watchdog.launchTotalCap(this, turnJob)
         try {
             // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is the
             // regression, and it would fail this test by propagating rather than by an assertEquals.
@@ -269,18 +292,20 @@ class SseRoundConsumeTest {
                 val tookMs = System.currentTimeMillis() - t0
                 assertTrue(outcome is TurnOutcome.Failure, "a reaped round must report an outcome: $outcome")
                 val fired = drive.watchdog.fired
-                assertTrue(fired is WatchdogFired.Idle, "expected an Idle reap: $fired")
-                // Names the TIER directly instead of inferring it from a pass: the ack is not a
-                // client frame, so a correct watchdog reports sawClientFrame=false and judged this
-                // against firstByteTimeout (the first-output cap), not streamIdle.
+                // V4-125, the NEW claim: the sentinel is the wall and never an idle tier. Asserting
+                // NOT-Idle here is exactly the statement that the 1s first-output tier probed this
+                // silence, found the path alive, and left the turn alone.
                 assertTrue(
-                    (fired as? WatchdogFired.Idle)?.sawClientFrame == false,
-                    "a handshake is not output — the stall is judged on the first-output cap, not streamIdle: $fired",
+                    fired is WatchdogFired.TotalCap,
+                    "only the whole-turn wall may end a turn now — an idle tier holds, never reaps: $fired",
+                )
+                assertTrue(
+                    drive.watchdog.held != null,
+                    "the idle tier must have HELD and recorded it: ${drive.watchdog.held}",
                 )
                 assertTrue(
                     tookMs < REAP_DEADLINE_MS,
-                    "reaped by the 1s first-output cap, not by the 20s streamIdle tier or the mock hanging up " +
-                        "($tookMs ms)",
+                    "ended by the 3s whole-turn cap, not by the mock hanging up at 6s ($tookMs ms)",
                 )
             }
         } finally {
@@ -290,7 +315,8 @@ class SseRoundConsumeTest {
     }
 }
 
-// The mock stalls for 6s, and the arm's streamIdle tier is 20s. A reap driven by the 1s FIRST-OUTPUT
-// cap must land far inside both — which is what makes this deadline name the tier rather than just
-// asserting that something eventually happened.
+// The mock stalls for 6s, and the arm's streamIdle tier is 20s. An ending driven by the 3s WHOLE-TURN
+// cap must land far inside both — which is what makes this deadline name the WALL rather than just
+// asserting that something eventually happened. Since V4-125 the 1s first-output tier cannot be the
+// one that ends it: a live path is held, not reaped.
 private const val REAP_DEADLINE_MS = 4_000L

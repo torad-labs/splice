@@ -23,7 +23,6 @@ import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.WallClock
-import java.net.URI
 
 internal fun interface QuotaProbe {
     suspend fun probe(): QuotaSnapshot?
@@ -33,24 +32,16 @@ internal class QuotaProbes(
     private val client: HttpClient,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val parsers = QuotaParsers()
-
-    fun forHead(ctx: ProviderBuild, auth: AuthProvider): QuotaProbe? {
+    fun forHead(ctx: ProviderBuild, auth: AuthProvider, usageFields: UsageFields?): QuotaProbe? {
         val base = ctx.providerCfg.baseUrl
         return when (ctx.providerCfg.auth.kind) {
-            "chatgpt-oauth" -> probe(codexUsageUrl(base), auth) { obj, now -> parsers.codex(obj, now) }
-            "kimi-oauth" -> probe(base.trimEnd('/') + "/v1/usages", auth) { obj, now -> parsers.kimi(obj, now) }
-            "grok-oauth" -> probe(GROK_BILLING_URL, auth) { obj, now -> parsers.grok(obj, now) }
+            "chatgpt-oauth" -> CodexQuotaProbe(client, base, auth, clock)
+            "kimi-oauth" -> KimiQuotaProbe(client, base, auth, clock)
+            "grok-oauth" -> GrokQuotaProbe(client, auth, clock)
+            "muse-oauth" -> usageFields?.let { MuseMintProbe(it, MuseQuotaParser(), clock) }
             else -> null
         }
     }
-
-    private fun probe(url: String, auth: AuthProvider, parse: QuotaParse): QuotaProbe =
-        BearerGetProbe(client, url, auth, parse, clock)
-
-    /** `https://chatgpt.com/backend-api/codex` -> `https://chatgpt.com/backend-api/wham/usage`; the
-     *  same shape on a mock origin, which is how the fresh-machine e2e serves it. */
-    private fun codexUsageUrl(base: String): String = URI(base).resolve("/backend-api/wham/usage").toString()
 }
 
 /** Parses one usage body into a snapshot; a role-named seam so the three parsers share one GET. */
@@ -64,24 +55,32 @@ internal class BearerGetProbe(
     private val auth: AuthProvider,
     private val parse: QuotaParse,
     private val clock: WallClock,
+    private val extraHeaders: Map<String, String> = emptyMap(),
 ) : QuotaProbe {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun probe(): QuotaSnapshot? {
-        val creds = auth.credentials() as? Credentials.Bearer ?: return null
+        val creds = auth.credentials() ?: return null
+        val authHeaders = credentialHeaders(creds) ?: return null
         val resp = client.get(url) {
-            header("Authorization", "Bearer ${creds.token}")
-            header("Accept", "application/json")
-            creds.accountId?.let { header("ChatGPT-Account-Id", it) }
-            header("x-grok-client-mode", "cli")
-            header("x-grok-client-version", GROK_CLIENT_VERSION)
-            header("X-XAI-Token-Auth", "xai-grok-cli")
+            authHeaders.forEach { (name, value) -> header(name, value) }
+            extraHeaders.forEach { (name, value) -> header(name, value) }
+            if (creds is Credentials.Bearer) {
+                creds.accountId?.let { header("ChatGPT-Account-Id", it) }
+            }
         }
-        if (resp.status.value != HTTP_OK) return null
-        return parse.parse(json.parseToJsonElement(resp.bodyAsText()).jsonObject, clock())
+        return if (resp.status.value != HTTP_OK) {
+            null
+        } else {
+            parse.parse(json.parseToJsonElement(resp.bodyAsText()).jsonObject, clock())
+        }
+    }
+
+    private fun credentialHeaders(creds: Credentials): Map<String, String>? = when (creds) {
+        is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
+        is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
+        Credentials.ClientForwarded -> null
     }
 }
 
 private const val HTTP_OK = 200
-private const val GROK_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
-private const val GROK_CLIENT_VERSION = "0.2.93"

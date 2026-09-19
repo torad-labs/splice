@@ -6,8 +6,11 @@ package splice.app.cli
 
 import splice.app.DaemonProbe
 import splice.app.TopologyLoader
+import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
@@ -17,22 +20,28 @@ internal class RestartCommand {
     // DaemonStop (the symmetric counterpart of DaemonLaunch), which this verb drives.
     private val daemonStop = DaemonStop()
 
-    internal fun restart(): Boolean {
+    /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
+     *  upgrade just activated (the old CLI running `splice upgrade` is not the version coming up). */
+    internal fun restart(expectedVersion: String = GATEWAY_VERSION): Boolean {
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
-        val topology = runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull()
+        // Silence here re-opened F3: a null topology made headPorts empty, `none {}` went vacuously
+        // true, and the stop check silently degraded to control-port-only — the exact defect this
+        // range closed. Say it out loud, and name the failure; the live enumeration below usually
+        // covers for it anyway.
+        val topology = Cancellables
+            .runCatchingCancellable { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }
+            .onFailure { failure ->
+                println(
+                    "splice: could not read ${TopologyLoader.configPath()} " +
+                        "(${SafeFailureText.render(failure)}) — " +
+                        "falling back to the running daemon for head ports",
+                )
+            }
+            .getOrNull()
         val port = AdminSupport.controlPort(topology)
-        if (topology == null) {
-            // Silence here re-opened F3: a null topology made headPorts empty, `none {}` went vacuously
-            // true, and the stop check silently degraded to control-port-only — the exact defect this
-            // range closed. Say it out loud; the live enumeration below usually covers for it anyway.
-            println(
-                "splice: could not read ${TopologyLoader.configPath()} — " +
-                    "falling back to the running daemon for head ports",
-            )
-        }
         if (!stopIfRunning(port, topology?.heads?.values?.map { it.port } ?: emptyList())) return false
-        val started = AdminSupport.ensureDaemon(port)
+        val started = AdminSupport.ensureDaemon(port, expectedVersion)
         if (started) println("splice: daemon restarted with this shell's environment")
         return started
     }
@@ -89,40 +98,13 @@ internal class RestartCommand {
         return StopScope(ports, degraded = ports.isEmpty())
     }
 
-    // The daemon reads api-key env vars from ITS OWN environment. A key exported after the daemon
-    // booted is present in this shell but invisible upstream — the single most confusing first-run
-    // trap, so doctor names it explicitly. Lives here because this verb IS the fix (FIX_RESTART).
-    // When the daemon is UP but the daemon-side comparison can't run (no mgmt-key, or /api/auth
-    // unreachable), the flagship check would silently vanish exactly when the daemon is busiest —
-    // so emit an explicit WARN instead of empty. A STOPPED daemon is a plain skip (no noise).
+    /** The doctor's split-brain check lives beside this verb because this verb IS its fix (FIX_RESTART);
+     *  its logic sits in [SplitBrainChecks] (concentration split, review 2026-09-14). */
     internal fun splitBrainChecks(
         heads: List<DoctorHeadAuth>,
         snapshot: DaemonSnapshot,
         envReader: EnvReader,
-    ): List<DoctorCheck> {
-        if (!snapshot.running) return emptyList()
-        // DR-174: "no mgmt-key" was also this check's word for a key it simply could not read, so
-        // the flagship split-brain diagnosis blamed a missing file on a box where one exists.
-        val read = AdminSupport.readMgmtKey(envReader)
-        val key = (read as? MgmtKeyRead.Present)?.key
-        val daemonSees = key?.let { DaemonProbe.authPresence(snapshot.port, it) }
-        if (daemonSees == null) {
-            val reason = when {
-                read is MgmtKeyRead.Unreadable -> "mgmt-key unreadable (${read.reason}) — fix its permissions"
-                key == null -> "no mgmt-key"
-                else -> "daemon /api/auth unreachable"
-            }
-            return listOf(DoctorCheck("daemon-auth", CheckStatus.WARN, "daemon-side auth check skipped: $reason"))
-        }
-        return heads.filter { it.present && it.envVar != null && daemonSees[it.key] == false }.map { auth ->
-            DoctorCheck(
-                auth.key,
-                CheckStatus.FAIL,
-                "${auth.envVar} is set in this shell but the daemon started without it",
-                FIX_RESTART,
-            )
-        }
-    }
+    ): List<DoctorCheck> = SplitBrainChecks().checks(heads, snapshot, envReader)
 }
 
 /** Which ports a stop must see FREED, and whether that list can be trusted.

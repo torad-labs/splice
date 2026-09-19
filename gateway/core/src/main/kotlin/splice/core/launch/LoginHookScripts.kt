@@ -18,6 +18,9 @@ import kotlinx.serialization.json.putJsonObject
 // that JSON encodes verbatim, so the split lands where it was placed.
 private const val RECEIPT_SLOT = "@@SPLICE_RECEIPT_MSG@@"
 
+/** Characters that mean something in a POSIX ERE (pgrep -f): escaped when a head name lands in one. */
+private val ERE_META = Regex("[^A-Za-z0-9_-]")
+
 /** Everything the /login hook needs for ONE head — a parameter object because these six always
  *  travel together and describe a single thing: how this head signs in. */
 internal data class LoginHookSpec(
@@ -30,13 +33,16 @@ internal data class LoginHookSpec(
     /** True when this head can capture a bare token pasted into the prompt box. Decides the whole
      *  shape of /login for an api-key head — see [LoginHookScripts.loginHookScript]. */
     val canCapturePaste: Boolean,
+    /** The head's topology key: a sign-in started as `splice login <key>` must be found too. */
+    val headKey: String = "",
 )
 
 internal object LoginHookScripts {
 
     // ── generated-script safety (review 2026-08-28, PR 99) ────────────────────────────────────
-    // Every value spliced below is OPERATOR-AUTHORED — signInLabel is API_KEY_LABELS[provider] ?:
-    // provider, loginCommand is "${claude.command ?: key} login", envVar is auth.env — and it lands
+    // Every value spliced below is OPERATOR-AUTHORED — signInLabel is AuthKind.signInLabel or the
+    // ApiKeyProviderRegistry row label (else the provider id), loginCommand is
+    // "${claude.command ?: key} login", envVar is auth.env — and it lands
     // in a bash script LoginInterception chmods 0700 as a UserPromptSubmit hook, which bash parses
     // on every prompt for that head. Not a privilege boundary (the operator's daemon already runs as
     // their uid), but robustness in an artifact nobody ever opens: an apostrophe used to end the
@@ -84,9 +90,10 @@ internal object LoginHookScripts {
     fun loginCommandMd(signInLabel: String, sentinel: String): String =
         """
         |---
-        |description: Sign in to $signInLabel for this splice head
+        |description: Sign in to $signInLabel for this splice head (add --label NAME for another account)
+        |argument-hint: "[--label NAME]"
         |---
-        |$sentinel
+        |$sentinel ${'$'}ARGUMENTS
         """.trimMargin() + "\n"
 
     // WHY THREE WORDINGS (2026-08-01): the api-key branch used to promise "a masked terminal
@@ -95,11 +102,19 @@ internal object LoginHookScripts {
     // pipe-instead hint into /dev/null and exited — the promised prompt could never appear and
     // the user was left waiting on nothing. Verified by running it. An api-key head that CAN
     // capture a paste is therefore told the path that actually works, and nothing is spawned.
+    /** V4-13: the browser branch used to be one sentence whatever happened. A second /login while a
+     *  sign-in was still waiting on its loopback callback (up to 300 s) spawned a login that died on
+     *  the bind, unseen, while the hook kept promising a browser. Now the pending one is cancelled
+     *  first and the reason says so, so /login always means "start over, in the browser". */
+    private fun restartedText(hook: LoginHookSpec): String =
+        "A previous ${hook.signInLabel} sign-in was still waiting and was cancelled. " + leadText(hook)
+
     private fun leadText(hook: LoginHookSpec): String =
         when {
             hook.viaBrowser ->
                 "Opening your browser to sign in to ${hook.signInLabel} — finish there, then continue. " +
-                    "If it did not open, run: ${hook.loginCommand}"
+                    "If it did not open, run: ${hook.loginCommand}. To sign in another account: " +
+                    "/login --label NAME"
             hook.canCapturePaste ->
                 "Paste your ${hook.signInLabel} API key as your next message. splice stores it to " +
                     "~/.config/splice/keys.toml (0600) and BLOCKS it before it reaches the model, " +
@@ -161,20 +176,156 @@ internal object LoginHookScripts {
             appendLine("  msg=\"$d{msg//$d'\\t'/ }\"")
             appendLine("  if [ -n \"${d}msg\" ]; then")
             appendLine("    " + receiptEcho(hook.signInLabel, "\"${d}msg\""))
-            appendLine("    exit 0")
+            appendLine(EXIT)
             appendLine("  fi")
             appendLine("fi")
-            appendLine("case \"${d}input\" in")
-            appendLine("  *${hook.sentinel}*|*'\"prompt\":\"/login\"'*|*'\"prompt\": \"/login\"'*)")
-            // Only the browser flow is spawned. A detached api-key login has no TTY and cannot prompt.
-            // loginCommand is deliberately NOT quoted: it IS a command line ("claudex login"), and
-            // quoting it into one word would break the spawn this branch exists for.
-            if (hook.viaBrowser) appendLine("    nohup ${hook.loginCommand} >/dev/null 2>&1 &")
-            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(lead))}")
-            appendLine("    ;;")
-            appendLine("esac")
+            // /login exactly, /login followed by whitespace (a trailing space is a common keystroke)
+            // and /login with arguments all mean /login; /loginx does not. The expanded command body
+            // carries the sentinel plus the arguments, so both forms reach the same branch. The
+            // arguments are read from the TOP-LEVEL prompt field only: the parse is anchored at the
+            // object start over scalar pairs, so a nested object carrying its own prompt key is never
+            // read. A readable top-level prompt that is not /login is an ordinary prompt, whatever
+            // else the input carries. An input whose prompt this parse cannot read, yet carries the
+            // sentinel or a /login prompt somewhere, is refused with a message, never treated as a
+            // bare login (that would sign the primary in again).
+            append(loginBranch(hook, lead))
+        }
+
+    /** The /login branch: decode the top-level prompt, then the browser block or the api-key text,
+     *  then exit. The scan runs only when the raw input mentions /login or the sentinel at all. */
+    private fun loginBranch(hook: LoginHookSpec, lead: String): String =
+        buildString {
+            val d = "$"
+            val sentinel = shellSingleQuote(hook.sentinel)
+            val verb = "(/login|${hook.sentinel.replace(ERE_META) { "\\" + it.value }})"
+            // /login exactly, /login followed by whitespace (a trailing space is a common keystroke)
+            // and /login with arguments all mean /login; /loginx does not. The expanded command body
+            // carries the sentinel plus the arguments, so both forms reach the same branch. Only the
+            // DECODED top-level prompt is read: a nested prompt key is data, field order and JSON
+            // escapes do not matter, and a readable prompt that is not /login is an ordinary prompt.
+            // An input that mentions /login or the sentinel yet has no top-level prompt string is
+            // refused with a message, never treated as a bare login (that would sign the primary in).
+            appendLine("[[ ${d}input == *\"/login\"* || ${d}input == *$sentinel* ]] || exit 0")
+            // The scanner walks the input byte by byte in bash. A /login command line is a few hundred
+            // bytes with the hook's own fields; a large paste that merely mentions /login is an
+            // ordinary prompt and is never scanned (bounded latency under the 15 s hook budget).
+            appendLine("[ \"$d{#input}\" -le $MAX_SCAN_BYTES ] || exit 0")
+            append(LoginHookJson.scanner())
+            appendLine("hit='' args='' prompt=''")
+            appendLine("if json_prompt; then")
+            appendLine("  if [ \"${d}prompt\" = /login ] || [ \"${d}prompt\" = $sentinel ]; then hit=1")
+            appendLine("  elif [[ ${d}prompt =~ ^$verb[[:space:]] ]]; then")
+            appendLine("    hit=1 args=\"$d{prompt:$d{#BASH_REMATCH[1]}}\"")
+            appendLine("  fi")
+            appendLine(ELSE_TOP)
+            appendLine("  hit=unparsed")
+            appendLine("fi")
+            // Every head: an api-key head answered an unreadable input with its paste/terminal lead
+            // text, contradicting the contract above (review 2026-09-14).
+            appendLine("if [ \"${d}hit\" = unparsed ]; then")
+            appendLine("  printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.UNPARSED)))}")
+            appendLine("  exit 0")
+            appendLine("fi")
+            appendLine("if [ -n \"${d}hit\" ]; then")
+            if (hook.viaBrowser) {
+                append(browserSpawn(hook))
+            } else {
+                appendLine("  printf '%s' ${shellSingleQuote(blockDecision(lead))}")
+            }
+            appendLine("fi")
             appendLine("exit 0")
         }
+
+    private const val ELSE = "  else"
+    private const val EXIT = "    exit 0"
+    private const val MAX_SCAN_BYTES = 16384
+    private const val ELSE_TOP = "else"
+    private const val NO_ARGS = "^[[:space:]]*$"
+
+    /** The arguments /login accepts, on the DECODED prompt: nothing, or --label NAME in the CLI's
+     *  own label shape (AccountSelection: lowercase letters and digits, dot, dash, underscore, 48 at
+     *  most). Anything else is refused HERE with the reason, and nothing is started: a bare login
+     *  would sign the PRIMARY account in again and overwrite its credential. */
+    private const val LABEL_ARGS = "^[[:space:]]+--label([[:space:]]+|=)([a-z0-9][a-z0-9._-]{0,47})[[:space:]]*$"
+    private const val LABEL_GROUP = 2
+
+    private enum class Refusal { BAD_ARGS, UNPARSED, STUCK, NO_COMMAND, DIED, FOREIGN }
+
+    /** The ways the browser branch declines to start a login, each saying what to do instead. */
+    private fun refusalText(hook: LoginHookSpec, why: Refusal): String =
+        when (why) {
+            Refusal.NO_COMMAND ->
+                "The ${hook.signInLabel} login command (${hook.loginCommand.substringBefore(' ')}) is not on " +
+                    "this session's PATH, so nothing was started and a sign-in still waiting was left " +
+                    "alone. Run ${hook.loginCommand} from a terminal where it resolves."
+            Refusal.DIED ->
+                "${hook.loginCommand} exited as soon as it started, so no browser will open. Start it in a " +
+                    "terminal to read why."
+            Refusal.BAD_ARGS ->
+                "/login takes no arguments other than --label NAME (lowercase letters and digits, dot, " +
+                    "dash, underscore; 48 characters at most). Nothing was started; the " +
+                    "${hook.signInLabel} sign-in is unchanged."
+            Refusal.UNPARSED ->
+                "/login was seen but this hook input carries no prompt string to read it from. Nothing " +
+                    "was started; run ${hook.loginCommand} in a terminal."
+            Refusal.STUCK ->
+                "A previous ${hook.signInLabel} sign-in is still waiting and could not be cancelled. " +
+                    "Finish it in the browser, or wait for it to time out, then /login again."
+            Refusal.FOREIGN ->
+                "A ${hook.signInLabel} sign-in started outside this session (${hook.loginCommand} in a " +
+                    "terminal) is still waiting for its browser callback. Finish it there, or stop it, " +
+                    "then /login again. Nothing was started."
+        }
+
+    /** The browser branch: an optional --label NAME rides through to the login command (checked
+     *  here against the CLI's label shape; anything else is refused and nothing is spawned), a
+     *  sign-in still waiting for its callback is cancelled first ([LoginHookPending]), and the
+     *  reason names which of these happened. loginCommand is deliberately NOT quoted: it IS a
+     *  command line ("claudex login"); its first word is the head the pending sign-in is matched by.
+     *  Only a sign-in THIS hook started (marked ${LoginHookPending.ORIGIN_MARKER} in its environment)
+     *  is ever cancelled: one the user started in a terminal is named and left alone (review
+     *  2026-09-14: the hook killed a labeled terminal sign-in mid-consent and started the primary). */
+    private fun browserSpawn(hook: LoginHookSpec): String {
+        val d = "$"
+        val stuck = "printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.STUCK)))}"
+        val foreign = "printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.FOREIGN)))}"
+        return buildString {
+            appendLine("  label='' nre=${shellSingleQuote(NO_ARGS)} lre=${shellSingleQuote(LABEL_ARGS)}")
+            appendLine("  if [[ ${d}args =~ ${d}nre ]]; then :")
+            appendLine("  elif [[ ${d}args =~ ${d}lre ]]; then label=\"$d{BASH_REMATCH[$LABEL_GROUP]}\"")
+            appendLine(ELSE)
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.BAD_ARGS)))}")
+            appendLine(EXIT)
+            appendLine("  fi")
+            // The replacement is proven resolvable BEFORE the pending sign-in is cancelled, and proven
+            // to survive its first moment after: a hook that killed a working sign-in and then failed
+            // to start another, silently, was worse than the bind failure it replaced (review 2026-09-14).
+            val wrapper = shellSingleQuote(hook.loginCommand.substringBefore(' '))
+            appendLine("  if ! command -v $wrapper >/dev/null 2>&1; then")
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.NO_COMMAND)))}")
+            appendLine(EXIT)
+            appendLine("  fi")
+            val words = listOf(hook.loginCommand.substringBefore(' '), hook.headKey)
+            append(LoginHookPending.cancelBlock(words, stuck, foreign))
+            val origin = LoginHookPending.ORIGIN_MARKER
+            appendLine("  if [ -n \"${d}label\" ]; then")
+            appendLine("    $origin nohup ${hook.loginCommand} --label \"${d}label\" >/dev/null 2>&1 &")
+            appendLine(ELSE)
+            appendLine("    $origin nohup ${hook.loginCommand} >/dev/null 2>&1 &")
+            appendLine("  fi")
+            appendLine("  spawned=$d!")
+            appendLine("  sleep 0.3")
+            appendLine("  if ! kill -0 \"${d}spawned\" 2>/dev/null && ! wait \"${d}spawned\"; then")
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.DIED)))}")
+            appendLine(EXIT)
+            appendLine("  fi")
+            appendLine("  if [ -n \"${d}restarted\" ]; then")
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(restartedText(hook)))}")
+            appendLine(ELSE)
+            appendLine("    printf '%s' ${shellSingleQuote(blockDecision(leadText(hook)))}")
+            appendLine("  fi")
+        }
+    }
 
     // The capture regex is quote-anchored: the token must be the ENTIRE prompt string in the hook
     // JSON, so a token quoted inside prose never matches (discussing a key is safe).

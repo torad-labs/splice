@@ -25,6 +25,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.wire.ErrorEnvelope
 import splice.spi.WireSink
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,13 +34,20 @@ import java.util.concurrent.atomic.AtomicReference
 private const val TYPE = "type"
 private const val MESSAGE = "message"
 
-public class SseEmitter internal constructor(
+internal class SseEmitter(
     private val frames: SseFrameWriter,
     private val start: MessageStart,
     private val blocks: WireBlockWriter,
     /** The keepalive pinger's own writers — see [ProgressWire] for why they are not the turn's. */
     private val progress: ProgressWire,
     private val usagePayload: UsagePayloadBuilder,
+    /** V4-81: has ANY content reached this client on THIS turn? Read only by [emitError], where it
+     *  decides whether a failure type may still be relabelled as retryable — see
+     *  [PreContentWireType]. It is a function, not a boolean, because the answer changes during the
+     *  turn and the emitter is built before the first byte; the streaming caller points it at the
+     *  channel's own CONTENT_FRAMES_OUT counter, so the emitter's answer and the wire's accounting
+     *  cannot disagree. */
+    private val contentReached: ContentReached,
 ) : TurnTerminal, WireSink by blocks {
 
     // Sole-terminal state machine: OPEN → ENDING (claim) → ENDED (frames succeeded, or abandon).
@@ -173,21 +181,25 @@ public class SseEmitter internal constructor(
         }
     }
 
-    /** The ONLY failure ending — an SSE error event lets Claude Code retry honestly. */
-    override suspend fun emitError(type: ErrorType, message: String) {
+    /** The ONLY failure ending — an SSE error event lets Claude Code retry honestly.
+     *
+     *  V4-81: THE PRE-CONTENT WIRE-TYPE RULE IS APPLIED HERE, and this is the whole of it — one
+     *  call, at the one place that owns both the frame and the question it turns on. Moving it
+     *  here is what makes it unskippable: there is no other way to write an error frame, so a new
+     *  ending cannot forget it, and the collect path never arrives because it has its own terminal
+     *  ([CollectingTerminal]) whose envelope keeps the failure's REAL status — a buffered 429 stays
+     *  429 and a buffered api_error stays 502, which is the shape its callers already assert. */
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+        val wireType = PreContentWireType.of(type, contentReached(), permanent)
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return
         var cancelled = false
         try {
             closeProgress()
+            // V4-102: the envelope is built once in core so this frame, the non-stream JSON body,
+            // the admission 4xx/5xx bodies and provider-spi's own fail-fast body cannot drift apart.
             frames.frame(
                 "error",
-                buildJsonObject {
-                    put(TYPE, "error")
-                    putJsonObject("error") {
-                        put(TYPE, type.wireName)
-                        put(MESSAGE, message)
-                    }
-                },
+                ErrorEnvelope.of(wireType.wireName, message),
             )
         } catch (e: CancellationException) {
             // Cancelled before the frame went out — release so a later seal can still retry.
@@ -211,7 +223,7 @@ public class SseEmitter internal constructor(
      *  nested class (not a static namespace, not top-level) so both [SseEmitter] and
      *  [CollectingTerminal] each hold one, and it constructs freely (non-inner) even though
      *  SseEmitter's own constructor is internal. Held-not-copied, per its callers. */
-    public class TerminalEnvelope {
+    class TerminalEnvelope {
         /** Non-stream terminal message (translateResponse envelope) — built HERE because the
          *  stop_reason derivation and its literals are walled to this file (L3). The envelope
          *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
@@ -232,6 +244,61 @@ public class SseEmitter internal constructor(
             hasToolUse -> "tool_use"
             incomplete -> "max_tokens"
             else -> "end_turn"
+        }
+    }
+}
+
+/** V4-78, re-sited by V4-81: THE PRE-CONTENT WIRE-TYPE RULE, as a value rather than a branch
+ *  buried in a handler. It lived in the head's failure surfaces until V4-81 moved it to the one
+ *  place an error frame can be written ([SseEmitter.emitError]); it sits beside that class so the
+ *  rule and its only caller are one file, and so no caller has to remember to consult it.
+ *
+ *  Claude Code 2.1.257 retries an IN-BAND error event only when its body carries overloaded_error
+ *  (a real 429/529 is retried by STATUS, and neither is ours to send once the 200 is committed).
+ *  So before any content has reached the client, a failure whose type the client would treat as
+ *  terminal — RATE_LIMIT, and API_ERROR — is wired as OVERLOADED instead. Nothing the client has
+ *  read is at stake at that point, and the turn is indistinguishable from a transient overload.
+ *
+ *  THE OPERATOR LAW THIS IMPLEMENTS — "always a retry armed" — IS ABOUT FAILURES A RETRY CAN HEAL.
+ *  A [permanent] failure is not one of those: the identical bytes produce the identical verdict, so
+ *  a retry is not a heal but a bill. RetryPolicy arms a cooldown only for RATE_LIMITED, so with
+ *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure costs up to 300 client re-sends at
+ *  six upstream attempts each. A permanent failure therefore KEEPS ITS REAL TYPE and the client
+ *  ends the session on the honest verdict instead of grinding.
+ *
+ *  THE BOUNDS, all four deliberate: after content the type is left ALONE (the client finalizes
+ *  whatever it holds, and relabelling would misdescribe what it is reading); [permanent] failures
+ *  are never remapped (see above); INVALID_REQUEST and AUTHENTICATION are never remapped (splice is
+ *  telling the client something only the operator can change); and only the WIRE TYPE moves — the
+ *  message still comes from FailurePresenter and telemetry still records the REAL type. */
+/** Has any content frame reached the client this turn — the one fact the pre-content rule turns on.
+ *  Named for its role at the seam (wall kt-no-lambda-seam); the emitter asks it per error frame. */
+internal fun interface ContentReached {
+    public operator fun invoke(): Boolean
+}
+
+internal object PreContentWireType {
+    fun of(type: ErrorType, contentReachedClient: Boolean, permanent: Boolean = false): ErrorType {
+        // 1. The client is already finalizing what it holds — a relabel would misdescribe it. Written
+        //    as the leading guard so every branch below reads as "nothing has been read yet".
+        if (contentReachedClient) return type
+        return when {
+            // 2. A RATE LIMIT IS ALWAYS RETRYABLE IN BAND, however the classifier scored it. This arm
+            //    is not an exception to the permanence rule; it is the observation that a quota window
+            //    is a condition that CHANGES WITH TIME, which is the one thing a permanent failure
+            //    cannot be. Load-bearing twice over: V4-71's whole fix is that the first persistent
+            //    429 reaches the client as something it re-sends, and the cooldown that re-send meets
+            //    is what makes the retry cheap. MEASURED 2026-09-17: ClassifiedFailure for a 429 (and
+            //    the 403 spend-limit of V4-73) carries transient = FALSE, so a permanence test
+            //    written as "!transient" would have silently reverted V4-71 on every rate-limited
+            //    turn — which is exactly what the first draft of this row's plumbing did.
+            type == ErrorType.RATE_LIMIT -> ErrorType.OVERLOADED
+            // 3. An api_error is retryable in band UNLESS a retry reproduces it exactly — see above.
+            type == ErrorType.API_ERROR && !permanent -> ErrorType.OVERLOADED
+            // 4. Everything else keeps its type: INVALID_REQUEST and AUTHENTICATION because a retry
+            //    of identical bytes cannot change what only the operator can, and OVERLOADED /
+            //    PERMISSION because the client's reading of them is already the one we want.
+            else -> type
         }
     }
 }

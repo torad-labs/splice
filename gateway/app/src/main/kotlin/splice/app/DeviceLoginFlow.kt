@@ -1,10 +1,11 @@
-// NEW: RFC 8628 device-authorization login (kimi / Moonshot) — the no-loopback counterpart to
-// OAuthLoginFlow. POST device_authorization → print the user_code + verification URL, open the
-// browser → poll the token endpoint until the user approves. State machine per the verified kimi
-// contract: authorization_pending keeps polling; slow_down bumps the interval PERMANENTLY (+5s);
-// expired_token restarts the WHOLE flow (bounded to 2 restarts); access_denied / >=500 abort; the
-// device_authorization expires_in is the overall deadline. Credentials persist through the shared
-// atomic-0600 writeCredentialFile. :app is wall-exempt for println + a bounded runBlocking bridge.
+// NEW: RFC 8628 device-authorization login — the no-loopback counterpart to OAuthLoginFlow.
+// Vendor-neutral: LoginKimi / LoginMuse supply DeviceLoginSpec. POST device_authorization → print
+// the user_code + verification URL, open the browser → poll the token endpoint until the user
+// approves. State machine per the verified kimi contract: authorization_pending keeps polling;
+// slow_down bumps the interval PERMANENTLY (+5s); expired_token restarts the WHOLE flow (bounded
+// to 2 restarts); access_denied / >=500 abort; the device_authorization expires_in is the overall
+// deadline. Credentials persist through the shared atomic-0600 writeCredentialFile. :app is
+// wall-exempt for println + a bounded runBlocking bridge.
 package splice.app
 
 import io.ktor.client.HttpClient
@@ -16,8 +17,7 @@ import io.ktor.http.isSuccess
 import splice.core.auth.CredentialExpiry
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import splice.provider.kimi.KimiDeviceAuthorization
-import splice.provider.kimi.KimiOAuth
+import splice.core.wire.HttpStatus
 import splice.spi.ProcessWaiter
 import splice.spi.Waiter
 
@@ -25,8 +25,6 @@ import splice.spi.Waiter
 
 public object DeviceLoginFlow {
 
-    private val loginIo = LoginIo()
-    private val kimiOAuth = KimiOAuth()
     private val authClients = AuthHttpClientFactory()
 
     private const val MAX_EXPIRED_RESTARTS = 2
@@ -39,7 +37,6 @@ public object DeviceLoginFlow {
     // CredentialExpiry does (unrepresentable → the synthetic 4h ceiling, never an instant expiry) and
     // the interval is capped in seconds before it is multiplied; both are no-ops for RFC 8628 values.
     private const val MAX_POLL_INTERVAL_S = 3600L
-    private const val HTTP_SERVER_ERROR_FLOOR = 500
 
     private enum class Outcome { SUCCESS, ABORT, EXPIRED }
 
@@ -54,10 +51,20 @@ public object DeviceLoginFlow {
      *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
      *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
      *  constructor; the default is the production behaviour, and LoginCommand passes nothing. */
-    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean {
+    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean =
+        run(spec, waiter, LoginIo())
+
+    /** Per-call I/O keeps tests off the real browser without mutating the shared flow object. */
+    internal suspend fun run(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Boolean = try {
+        runAttempts(spec, waiter, loginIo)
+    } finally {
+        spec.account?.releaseReservation()
+    }
+
+    private suspend fun runAttempts(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Boolean {
         var restarts = 0
         while (true) {
-            when (attempt(spec, waiter)) {
+            when (attempt(spec, waiter, loginIo)) {
                 Outcome.SUCCESS -> return true
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
@@ -71,13 +78,13 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter): Outcome {
+    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Outcome {
         val client = authClients.create()
         return try {
-            Cancellables.runCatchingCancellable {
-                val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT
-                announce(spec, auth)
-                poll(client, spec, auth, waiter)
+            Cancellables.runCatchingBestEffort {
+                val auth = requestDeviceAuth(client, spec, loginIo) ?: return@runCatchingBestEffort Outcome.ABORT
+                announce(spec, auth, loginIo)
+                poll(client, spec, auth, waiter, loginIo)
             }.getOrElse { e ->
                 println("splice: login error: ${SafeFailureText.render(e)}")
                 Outcome.ABORT
@@ -87,20 +94,24 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun requestDeviceAuth(client: HttpClient, spec: DeviceLoginSpec): KimiDeviceAuthorization? {
+    private suspend fun requestDeviceAuth(
+        client: HttpClient,
+        spec: DeviceLoginSpec,
+        loginIo: LoginIo,
+    ): DeviceAuthorization? {
         val resp = client.post(spec.deviceAuthUrl) {
             loginIo.formHeaders(this, spec.identityHeaders)
-            setBody(kimiOAuth.kimiDeviceAuthorizationForm(spec.clientId))
+            setBody(spec.deviceAuthForm(spec.clientId))
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
             println("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return null
         }
-        return kimiOAuth.parseKimiDeviceAuthorization(body)
+        return spec.parseDeviceAuth(body)
     }
 
-    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization) {
+    private fun announce(spec: DeviceLoginSpec, auth: DeviceAuthorization, loginIo: LoginIo) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
         println("")
         println("  splice: sign in to ${spec.head} — enter this code in your browser:")
@@ -115,15 +126,20 @@ public object DeviceLoginFlow {
     private suspend fun poll(
         client: HttpClient,
         spec: DeviceLoginSpec,
-        auth: KimiDeviceAuthorization,
+        auth: DeviceAuthorization,
         waiter: Waiter,
+        loginIo: LoginIo,
     ): Outcome {
         var intervalS = auth.intervalS
         val deadline = CredentialExpiry.expiryFromNowMs(System.currentTimeMillis(), auth.expiresInS)
         while (System.currentTimeMillis() < deadline) {
             waiter.wait(intervalS.coerceIn(0L, MAX_POLL_INTERVAL_S) * MS_PER_S)
-            val resp = Cancellables.runCatchingCancellable { postToken(client, spec, auth.deviceCode) }.getOrNull()
-            val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS)
+            val resp = Cancellables.runCatchingBestEffort {
+                postToken(client, spec, auth.deviceCode, loginIo)
+            }.onFailure {
+                println("splice: login poll did not reach the token endpoint — ${SafeFailureText.render(it)}")
+            }.getOrNull()
+            val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS, loginIo)
             when (step) {
                 is PollStep.Stop -> return step.outcome
                 is PollStep.Wait -> intervalS = step.intervalS
@@ -133,19 +149,31 @@ public object DeviceLoginFlow {
     }
 
     // authorization_pending keeps the interval; slow_down bumps it permanently; the rest are terminal.
-    private suspend fun classifyPoll(resp: HttpResponse, spec: DeviceLoginSpec, intervalS: Long): PollStep {
+    private suspend fun classifyPoll(
+        resp: HttpResponse,
+        spec: DeviceLoginSpec,
+        intervalS: Long,
+        loginIo: LoginIo,
+    ): PollStep {
         val body = resp.bodyAsText()
-        if (resp.status.isSuccess()) {
-            // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
-            // body with no access token ended the poll as a SUCCESS over an empty credential.
-            val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body))
-            return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
-        }
-        if (resp.status.value >= HTTP_SERVER_ERROR_FLOOR) {
+        if (resp.status.isSuccess()) return persistPollSuccess(spec, body, loginIo)
+        if (resp.status.value >= HttpStatus.INTERNAL_SERVER_ERROR) {
             println("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return PollStep.Stop(Outcome.ABORT)
         }
-        return when (loginIo.errorCode(body)) {
+        return classifyPollError(body, intervalS, loginIo)
+    }
+
+    private suspend fun persistPollSuccess(spec: DeviceLoginSpec, body: String, loginIo: LoginIo): PollStep {
+        // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
+        // body with no access token ended the poll as a SUCCESS over an empty credential.
+        val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body), spec.account)
+        if (signedIn) runAfterPersist(spec)
+        return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
+    }
+
+    private fun classifyPollError(body: String, intervalS: Long, loginIo: LoginIo): PollStep =
+        when (loginIo.errorCode(body)) {
             "authorization_pending" -> PollStep.Wait(intervalS)
             "slow_down" -> PollStep.Wait(intervalS + SLOW_DOWN_INCREMENT_S)
             "expired_token" -> PollStep.Stop(Outcome.EXPIRED)
@@ -158,11 +186,22 @@ public object DeviceLoginFlow {
                 PollStep.Stop(Outcome.ABORT)
             }
         }
+
+    // One dispatch: a failed finalizer prints and leaves the just-written credential in place.
+    private suspend fun runAfterPersist(spec: DeviceLoginSpec) {
+        Cancellables.runCatchingBestEffort { spec.afterPersist(spec.authPath, spec.account) }.onFailure { e ->
+            println("splice: post-login step failed: ${SafeFailureText.render(e)}")
+        }
     }
 
-    private suspend fun postToken(client: HttpClient, spec: DeviceLoginSpec, deviceCode: String): HttpResponse =
+    private suspend fun postToken(
+        client: HttpClient,
+        spec: DeviceLoginSpec,
+        deviceCode: String,
+        loginIo: LoginIo,
+    ): HttpResponse =
         client.post(spec.tokenUrl) {
             loginIo.formHeaders(this, spec.identityHeaders)
-            setBody(kimiOAuth.kimiTokenPollForm(deviceCode, spec.clientId))
+            setBody(spec.tokenPollForm(deviceCode, spec.clientId))
         }
 }

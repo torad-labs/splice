@@ -45,6 +45,15 @@ public object PerfKeys {
     public const val IN_TOKENS: String = "in_tokens"
     public const val CACHED_TOKENS: String = "cached_tokens"
 
+    /** V4-85: prompt-cache WRITE tokens (cache_creation_input_tokens). A DISJOINT part of
+     *  [IN_TOKENS], exactly as [CACHED_TOKENS] is — the row's `in_tokens` contains both — so the
+     *  cache-MISS bucket is `in_tokens - cached_tokens - cache_write_tokens`. This key exists
+     *  because a cache write bills at its own premium rate: without it SessionCost could only see
+     *  the write folded inside `in_tokens` and charged it as a miss, leaving a head's declared
+     *  cache_write rate as arithmetic over a permanently-zero operand. Written on every turn (0 on
+     *  dialects whose wire reports no such bucket), the same way [CACHED_TOKENS] is. */
+    public const val CACHE_WRITE_TOKENS: String = "cache_write_tokens"
+
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 
@@ -66,6 +75,22 @@ public object PerfKeys {
      *  prior attempt. Diagnostics were label-only ("transport-possible-duplicate" in the retry
      *  log); this makes the double-issue rate countable in the perf row, not only greppable. */
     public const val POST_SEND_RETRIES: String = "post_send_retries"
+
+    /** V4-116: mid-stream re-anchors this turn SPENT — the proxy resumed the turn from its own
+     *  salvage after a stall or a tear. A COUNT, not a flag, because the question the next incident
+     *  asks is "how many times did splice try before giving up", and the ending message reports the
+     *  same number. Zero/absent on a turn that never re-anchored, which is the expected-delta
+     *  instrument: a deploy where this stays 0 on a head that stalls is a false landing. */
+    public const val REANCHORS: String = "reanchors"
+
+    /** V4-116: the upstream SILENCE that triggered each re-anchor, summed in ms — the watchdog's own
+     *  `idleMs` at the moment it fired, so the row answers "silent how long" without archaeology
+     *  through the journal. Paired with [REANCHORS] on purpose: neither number is interpretable
+     *  alone (one POST after 9 minutes of silence and five POSTs after 20 seconds each are opposite
+     *  diagnoses), and a stall judged by the mid-output stall tier reports a value at that tier, not
+     *  the 300s streamIdle an operator would otherwise assume. A SUM like every other duration
+     *  counter here ([BACKOFF_MS], [REFRESH_MS]); a turn with two stalls reports both. */
+    public const val STALL_MS: String = "stall_ms"
 
     /** Mark keys in pipeline order — the aggregation and the log line render in THIS order. */
     public val markOrder: List<String> = listOf(

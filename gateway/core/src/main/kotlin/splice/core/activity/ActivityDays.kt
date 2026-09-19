@@ -1,0 +1,114 @@
+// NEW: V4-130, FEATURES.md 6 "Storage for the new stores" — one append-only JSONL file per UTC day,
+// `<prefix>-YYYY-MM-DD.jsonl` under the state dir's `activity/` directory, the shape the contract
+// chose over SQLite: no dependency, no native library, files the operator can read and delete by hand.
+//
+// WRITES go through JsonlSink (per-row fsync, torn-append heal, the cross-process lock) on the
+// AsyncFileIo lane, because the callers sit on the turn path and must return at once. The lane is
+// best-effort by contract (a full lane drops the row and counts it), which is the right degrade for
+// metadata about a turn that has already been served.
+//
+// DAY_MAX_BYTES IS CHOSEN AGAINST THE ROTATE, per the contract: JsonlSink rolls ONE generation away when
+// a file would pass its maxBytes, and a rolled day is a day lost. The busiest store is the activity
+// label store at about one row per session per 30 s: 100 sessions for 24 h is 288,000 rows, about
+// 45 MB at ~150 bytes a row. 512 MB is over ten times that, so a day is never rolled away short of a
+// runaway writer, which the rotate then bounds.
+//
+// UTC DAYS, so a file's name does not depend on the daemon host's timezone or move under a DST change.
+//
+// RETENTION deletes whole day files older than the activityRetentionDays knob (default 90), swept on
+// the first write of each new day, WITH JsonlSink's two siblings of that file: its cross-process
+// `.lock` and a rolled `.1` generation. Leaving them would leak one lock file per store per day
+// forever. Reads ignore files older than the window too, so an unswept file never re-enters a view.
+package splice.core.activity
+
+import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
+import splice.core.util.JsonlSink
+import splice.core.util.WallClock
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.util.concurrent.atomic.AtomicReference
+
+/** The state-dir subdirectory every activity store writes under. */
+public const val ACTIVITY_DIRECTORY: String = "activity"
+
+// why: 512 MiB, chosen against JsonlSink's rotate rather than against disk — the file header
+// above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
+private const val DAY_MAX_BYTES = 512L shl 20
+
+/** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
+private val DAY_SIBLINGS = listOf("", ".lock", ".1")
+
+public class ActivityDays(
+    private val dir: Path,
+    private val prefix: String,
+    private val retentionDays: Int,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
+    private val sweptFor = AtomicReference<LocalDate?>(null)
+    private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl")
+
+    /** Queues [line] for today's file. Returns at once; never throws. */
+    public fun append(line: String) {
+        val today = day(clock())
+        val file = dir.resolve("$prefix-$today.jsonl")
+        AsyncFileIo.submit {
+            // ast-grep-ignore: kt-no-silent-result-collapse -- a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed append must not surface on the turn that produced it
+            Cancellables.runCatchingCancellable {
+                Files.createDirectories(dir)
+                JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
+                if (sweptFor.getAndSet(today) != today) sweep(today)
+            }
+        }
+    }
+
+    /** Every line of every retained day, oldest day first. A day file is small (see DAY_MAX_BYTES's
+     *  arithmetic for the busiest store), and a file that cannot be read is skipped, not fatal. */
+    public fun lines(): Sequence<String> {
+        val oldest = oldestKept(day(clock()))
+        return days().filter { (date, _) -> !date.isBefore(oldest) }
+            .asSequence()
+            .flatMap { (_, file) -> readLines(file).asSequence() }
+    }
+
+    /** Deletes day files older than the retention window, relative to [today]. */
+    public fun sweep(today: LocalDate = day(clock())) {
+        val oldest = oldestKept(today)
+        for ((date, file) in days()) {
+            // ast-grep-ignore: kt-no-silent-result-collapse -- a file that cannot be deleted now is retried on the next day's sweep, and reads already ignore it
+            if (date.isBefore(oldest)) deleteDay(file)
+        }
+    }
+
+    /** The day file and the siblings JsonlSink writes beside it. */
+    private fun deleteDay(file: Path) {
+        for (suffix in DAY_SIBLINGS) {
+            // ast-grep-ignore: kt-no-silent-result-collapse -- a file that cannot be deleted now is retried on the next day's sweep, and reads already ignore it
+            Cancellables.runCatchingCancellable { Files.deleteIfExists(file.resolveSibling("${file.fileName}$suffix")) }
+        }
+    }
+
+    /** Today counts as one of the retained days, so a window of N keeps today and the N-1 before. */
+    private fun oldestKept(today: LocalDate): LocalDate = today.minusDays(retentionDays.toLong() - 1)
+
+    private fun days(): List<Pair<LocalDate, Path>> =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- no directory yet means no rows yet, which is the empty answer
+        Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.toList() } }
+            .getOrDefault(emptyList())
+            .mapNotNull { file -> dateOf(file)?.let { it to file } }
+            .sortedBy { it.first }
+
+    private fun dateOf(file: Path): LocalDate? = namePattern.matchEntire(file.fileName.toString())
+        ?.groupValues?.get(1)
+        // ast-grep-ignore: kt-no-silent-result-collapse -- a name that matches the pattern but is not a calendar date is not one of this store's files
+        ?.let { Cancellables.runCatchingCancellable { LocalDate.parse(it) }.getOrNull() }
+
+    private fun readLines(file: Path): List<String> =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable day file is left out of the view rather than failing the whole read; the file is still on disk for the operator
+        Cancellables.runCatchingCancellable { Files.readAllLines(file) }.getOrDefault(emptyList())
+
+    private fun day(epochMs: Long): LocalDate = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate()
+}

@@ -99,7 +99,7 @@ internal class ResponsesEventReducer(
         val stringError = JsonScalars.strOrEmpty((evt[KEY_RESPONSE] as? JsonObject)?.get(KEY_ERROR) ?: evt[KEY_ERROR])
         val message = JsonScalars.strOrEmpty(e["message"])
             .ifEmpty { stringError }
-            .ifEmpty { "ChatGPT backend reported failure" }
+            .ifEmpty { "upstream reported failure" }
         state.upstreamFailure = UpstreamFailureClassifier.classify(
             FailureSource.SSE,
             "$code $message",

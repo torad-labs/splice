@@ -53,7 +53,9 @@ internal class UninstallCommand(
         val attempt = Cancellables.runCatchingCancellable {
             TopologyLoader.parse(Files.readString(configPath))
         }
-        val topology = attempt.getOrNull()
+        // The failure is NOT dropped here: [attempt] itself is handed to allTargets below, which
+        // refuses --all on an unreadable topology rather than silently shrinking it (DR-101).
+        val topology = attempt.getOrElse { null }
         if (headArg == null || headArg == "--all") return allTargets(attempt, configPath)
         if (topology == null) return listOf(headArg)
         return heads.resolveSpecificHead(topology, headArg)?.let { key ->

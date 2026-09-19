@@ -25,6 +25,7 @@ internal class PassthroughBlockRegistry(
     private val ctx: PassthroughTurnContext,
     private val quirks: PassthroughQuirks,
     private val prose: PassthroughProseChannels,
+    private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
     private val blocks = HashMap<Int, Block>()
@@ -32,6 +33,12 @@ internal class PassthroughBlockRegistry(
     // NF-06: tool JSON bypasses the prose buffers, so retain its aggregate size as a count only.
     private var toolArgsCharCount = 0L
     internal val openBlockCount: Int get() = blocks.size
+
+    /** A tool_use block still OPEN when the stream died. Partial argument JSON already reached the
+     *  wire, so the block is corrupt and no continuation can splice onto it — the one tear a
+     *  re-anchor must refuse rather than append to (TurnOutcome.PartialRound.toolTearOpen). Read
+     *  AFTER the flow ends, when whatever remains in [blocks] is exactly what never got its stop. */
+    internal val toolTearOpen: Boolean get() = blocks.values.any { it.kind == Kind.TOOL }
     internal val bufferedToolArgsChars: Int get() = minOf(Int.MAX_VALUE.toLong(), toolArgsCharCount).toInt()
     internal var hasToolUse = false
 
@@ -69,7 +76,12 @@ internal class PassthroughBlockRegistry(
                 hasToolUse = true
                 Block(
                     Kind.TOOL,
-                    sink.openTool(JsonScalars.strOrEmpty(cb?.get("id")), JsonScalars.strOrEmpty(cb?.get("name"))),
+                    // V4-32: put the operator's own tool name back. The model answers with the name it was
+                    // GIVEN; Claude Code dispatches on the name it SENT. Unshortened names pass through.
+                    sink.openTool(
+                        JsonScalars.strOrEmpty(cb?.get("id")),
+                        names.restore(JsonScalars.strOrEmpty(cb?.get("name"))),
+                    ),
                 )
             }
             // DR-118: encrypted reasoning must SURVIVE the proxy — Claude Code replays assistant
@@ -153,7 +165,7 @@ internal class PassthroughBlockRegistry(
         val wire = block.wire ?: return // ignored block: swallow
         when (JsonScalars.strOrEmpty(delta["type"])) {
             "text_delta" -> prose.textDelta(wire, JsonScalars.strOrEmpty(delta["text"]), sink)
-            "thinking_delta" -> prose.thinkingDelta(wire, JsonScalars.strOrEmpty(delta["thinking"]), sink)
+            "thinking_delta" -> onThinkingDelta(block, wire, delta, sink)
             "input_json_delta" -> {
                 val partialJson = JsonScalars.strOrEmpty(delta["partial_json"])
                 sink.inputJsonDelta(wire, partialJson)
@@ -167,6 +179,18 @@ internal class PassthroughBlockRegistry(
             }
             else -> Unit
         }
+    }
+
+    /** V4-157 (empty-delta-latch family, the same one DR-75/CX-09/DR-122 belong to): did THIS block
+     *  actually receive thinking? Forward FIRST and latch after — [onSignatureDelta]'s order, and
+     *  the reason the statement order the translator goldens pin does not move, since the latch
+     *  writes no bytes. A method rather than a `when` branch because inlining it pushed [applyDelta]
+     *  to detekt's cyclomatic ceiling, and the sibling latch below had already shown where a latch
+     *  belongs in this file. */
+    private suspend fun onThinkingDelta(block: Block, wire: WireBlockIndex, delta: JsonObject, sink: WireSink) {
+        val thinking = JsonScalars.strOrEmpty(delta["thinking"])
+        prose.thinkingDelta(wire, thinking, sink)
+        if (thinking.isNotBlank()) block.receivedThinkingText = true
     }
 
     /** DR-122 (empty-delta-latch family; DR-75/CX-09 fixed text/thinking): an EMPTY signature
@@ -192,8 +216,20 @@ internal class PassthroughBlockRegistry(
      *  — a SECOND close path is precisely how the exactly-once signature contract becomes twice. */
     private suspend fun retire(block: Block, sink: WireSink) {
         val wire = block.wire ?: return // ignored block: nothing was opened
-        val unsignedThinking = block.kind == Kind.THINKING && !block.signatureSeen
-        if (quirks.synthesizeSignatures && unsignedThinking) {
+        // V4-157: [Block.receivedThinkingText] is the third term, and it is what stops splice
+        // MINTING the shape PassthroughMessageScrubber has to filter. A provider may open a thinking
+        // block and close it having sent nothing (the Kimi behaviour CX-09 records), and synthesis
+        // used to stamp that empty block exactly like a full one — so Claude Code kept it (a
+        // signature is what makes it keep a thinking block), replayed it next turn, and an upstream
+        // that enforces "each thinking block must contain thinking" rejects the whole request.
+        // Leaving an EMPTY block unsigned is the behaviour we want anyway: Claude Code discards it,
+        // which is the right end for a block with nothing in it. This narrows WHICH blocks get a
+        // synthetic signature and changes nothing about WHEN synthesis is enabled — the
+        // [PassthroughQuirks.synthesizeSignatures] distinction (required for Kimi, wrong for an
+        // upstream that signs and verifies) is untouched, and the gate below still reads it first.
+        val thinkingWorthSigning =
+            block.kind == Kind.THINKING && block.receivedThinkingText && !block.signatureSeen
+        if (quirks.synthesizeSignatures && thinkingWorthSigning) {
             // Synthesize EXACTLY ONE signature so Claude Code keeps the thinking block. Quirk-gated:
             // an upstream that SIGNS and VERIFIES must never receive this back — a block truncated
             // before its signature would otherwise persist a forged one into the transcript.

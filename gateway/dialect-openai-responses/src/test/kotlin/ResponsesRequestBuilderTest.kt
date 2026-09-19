@@ -17,7 +17,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
-import splice.dialect.responses.EffortLadder
+import splice.dialect.responses.GrokEffortFixture
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
@@ -27,11 +27,18 @@ import splice.dialect.responses.ToolDeferralPolicy
 
 private val stableIds = ResponsesStableIds()
 
-private val CODEX = ResponsesQuirks(providerTag = "claudex", emitEmptyLiteInstructions = true)
+private val CODEX = ResponsesQuirks(
+    providerTag = "claudex",
+    emitEmptyLiteInstructions = true,
+    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+    summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),
+    effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
+)
+private val OPENAI = ResponsesQuirks(providerTag = "openai")
 private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
     cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
-    effortLadder = EffortLadder.GROK,
+    effortVocabulary = GrokEffortFixture(),
     supportsSummary = true,
     summaryRejectModelRegex = null,
     emitToolChoice = true,
@@ -263,6 +270,16 @@ class ResponsesRequestBuilderTest {
             options = opts(model = "gpt-5.4-mini"),
         )
         assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `google gemini-2_5-pro keeps effort max on an OpenAI-shaped profile`() {
+        val req = build(
+            """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}""",
+            quirks = OPENAI,
+            options = opts(model = "google/gemini-2.5-pro"),
+        )
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
     }
 
     // CACHE LAW (2026-07-20, made total 2026-09-05): compaction MUST run on the session's own

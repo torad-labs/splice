@@ -1,0 +1,339 @@
+// The doctor page: every check as a strip, every remedy copyable, and the playground behind a
+// Reveal.
+//
+// Two rules this page enforces rather than hopes for. The report is GATED on redaction: the payload
+// is walked for credential shapes before anything renders, and a payload that still carries one is
+// refused rather than shown, because a console that painted a leaked token into a strip would be
+// the leak. And the playground never stores a body: its request and response live in one reducer's
+// state, are dropped the moment a new run starts, and touch no store and no storage.
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router';
+import { checkFix, fetchUpgrade, isRedacted, leaksIn, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import type { DoctorCheck } from '@entities/doctor';
+import { fetchHeads, useHeads } from '@entities/heads';
+import { useViews, ViewTabs } from '@features/views';
+import type { View } from '@features/views';
+import { Bay, Empty, FieldBox, HolderEdge, Reveal, Strip, StripField } from '@shared/ui';
+import { Blank, Fault } from '@shared/controls';
+import { EMPTIES, attentionCount, canSend, groupChecks, playgroundNext, reportFacts, statusEdge, wantsAttention, IDLE_PLAYGROUND } from './model';
+import type { PlaygroundEvent } from './model';
+import { fixtureDoctor } from './fixtures/doctor';
+import { fixtureName } from './model';
+import { dispositions } from './coverage';
+import { S } from './strings';
+import './doctor.css';
+
+export { dispositions };
+
+const PAGE_ID = 'doctor';
+const POLL_MS = 60000;
+/** The check's id and its remedy. The widths are ch, so the two racks below stay a grid at every
+ *  breakpoint; a rack that does not fit its column scrolls (`.myx-bay-rows`) rather than clipping. */
+const WIDE = 22;
+const NARROW = 10;
+/** The report's own facts: the field's own name, and its value. Sized to the longest of each the
+ *  payload can carry -- `schema_version` at 14 and `2026-09-18T07:45:00Z` at 20. */
+const FACT_KEY = 16;
+const FACT_VALUE = 22;
+
+export const DEFAULT_VIEWS: readonly View[] = [
+  { id: 'attention-first', name: 'attention first', layout: 'bay', filter: {}, sort: { field: 'status', dir: 'desc' }, group: 'section', fields: [] },
+  { id: 'by-section', name: 'by section', layout: 'bay', filter: {}, sort: null, group: 'section', fields: [] },
+];
+
+/** A copy affordance that admits when the clipboard is unavailable instead of silently doing
+ *  nothing: a console served over plain http has no navigator.clipboard. */
+function CopyFix({ command }: { command: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="myx-doc-btn"
+      onClick={() => {
+        void navigator.clipboard?.writeText(command).then(() => setDone(true), () => setDone(false));
+      }}
+    >
+      {done ? S.copied : S.copy}
+    </button>
+  );
+}
+
+export function CheckStrip({ check, selected, onOpen }: { check: DoctorCheck; selected: boolean; onOpen: () => void }) {
+  const fix = checkFix(check);
+  return (
+    <Strip
+      edge={statusEdge(check.status)}
+      edgeLabel={check.status}
+      cocked={wantsAttention(check.status)}
+      selected={selected}
+      onOpen={onOpen}
+      ariaLabel={check.id}
+    >
+      {/* NO PER-CELL LABEL: the rack prints its column names once (B9), and this is the rack B9
+          measured on ("doctor.png: three x fourteen"). The stack is what made every check two
+          lines of type in a 64px row where one line of 16px fits. */}
+      <StripField w={WIDE} value={check.id} mono={false} />
+      {/* No status field: the holder edge above prints the identical word on every strip (m1
+          design review B10). A check with nothing to fix prints the absence glyph in the fix
+          cell; the sentence `no fix offered` is what the opened check's note says, which is where
+          a Doctor fix's paragraph belongs. */}
+      <StripField w={WIDE} value={fix ?? S.absent} mono={false} />
+    </Strip>
+  );
+}
+
+/** The report's own facts, one row each: the payload's field name beside its value. A HOMOGENEOUS
+ *  rack, so its column names print once on the bay and no cell carries a label (B9). */
+function FactStrip({ field, value }: { field: string; value: string }) {
+  return (
+    <Strip edge="grey" edgeLabel="" ariaLabel={field}>
+      <StripField w={FACT_KEY} value={field} mono={false} />
+      <StripField w={FACT_VALUE} value={value} mono={false} />
+    </Strip>
+  );
+}
+
+/** A rack's column names, once, at the same ch widths as the cells they name.
+ *
+ *  THE GROWTH IS THE HALF THAT IS EASY TO MISS, and the names were 71px and 44px off their own
+ *  columns before it was added. `strip-field.tsx` sets `flexGrow` to the field's OWN ch so the
+ *  cells share their rack's slack in proportion to their declared widths (M1-73), which means a
+ *  cell is never its declared width -- so a name row fixed at `w ch` drifts away from the column
+ *  under it, and drifts further the more slack the rack has. The name takes the same growth for
+ *  the same reason. Measured at 1536, after: the checks rack's names sit 1px from their cells. */
+function ColumnNames({ columns }: { columns: readonly { w: number; label: string }[] }) {
+  return (
+    <>
+      {columns.map((column) => (
+        <span
+          key={column.label}
+          className="myx-doc-col"
+          style={{ width: `${column.w}ch`, flexGrow: column.w }}
+        >
+          {column.label}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** The playground. A Reveal panel, not a page: the rail has thirteen addresses and no room for a
+ *  fourteenth, and a prompt sent once is not a destination. */
+function Playground({ heads }: { heads: readonly string[] }) {
+  const [state, dispatch] = useState(IDLE_PLAYGROUND);
+  const send = (event: PlaygroundEvent) => dispatch((current) => playgroundNext(current, event));
+
+  if (state.step === 'pending') {
+    return <Empty text={EMPTIES.playground.text} source={`row ${state.note ?? 'V4-133'}`} />;
+  }
+
+  return (
+    <Reveal label={S.playground}>
+      <div className="myx-doc-section">
+        <div className="myx-doc-row">
+          <FieldBox
+            label={S.head}
+            value={state.head}
+            provenance="state file"
+            hot
+            onChange={(value) => send({ kind: 'head', value })}
+          />
+        </div>
+        <p className="myx-doc-note">
+          {heads.length === 0 ? 'no heads loaded' : heads.join(' ')}
+        </p>
+        <FieldBox
+          label={S.prompt}
+          value={state.prompt}
+          provenance="state file"
+          hot
+          onChange={(value) => send({ kind: 'prompt', value })}
+        />
+        <div className="myx-doc-row">
+          <button type="button" className="myx-doc-btn" disabled={!canSend(state)} onClick={() => send({ kind: 'send' })}>
+            {S.send}
+          </button>
+          <button type="button" className="myx-doc-btn" onClick={() => send({ kind: 'reset' })}>{S.clear}</button>
+        </div>
+        {/* The bodies are printed from THIS component's state and written nowhere: no store, no
+            storage, no history. A second send drops them at the only moment a run begins. */}
+        {state.response === null ? null : (
+          <>
+            <p className="myx-doc-note">{S.request}</p>
+            <pre className="myx-doc-fix">{JSON.stringify(state.request, null, 2)}</pre>
+            <p className="myx-doc-note">{S.response}</p>
+            <pre className="myx-doc-fix">{JSON.stringify(state.response, null, 2)}</pre>
+          </>
+        )}
+        {state.note === null || state.step !== 'failed' ? null : (
+          <p className="myx-doc-note" role="alert">{state.note}</p>
+        )}
+      </div>
+    </Reveal>
+  );
+}
+
+export function DoctorPage() {
+  const views = useViews(PAGE_ID, DEFAULT_VIEWS);
+  const active = views.active;
+  const doctor = useDoctor((state) => state);
+  const upgrade = useUpgrade((state) => state);
+  const heads = useHeads((state) => state.data);
+
+  useEffect(() => {
+    const stops = [startDoctorPolling(POLL_MS)];
+    void fetchUpgrade();
+    void fetchHeads();
+    return () => stops.forEach((stop) => stop());
+  }, []);
+
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+
+  const { search } = useLocation();
+  const fixture = fixtureName(search, import.meta.env.DEV);
+  const report = fixtureDoctor(fixture);
+  const payload = report ?? (doctor.data !== null && 'checks' in doctor.data ? doctor.data : null);
+  const pending = report === null && doctor.data !== null && 'pending' in doctor.data ? doctor.data.pending : null;
+
+  // The redaction gate, computed once per payload. A leak is reported as a COUNT and a PATH set,
+  // never the value: a leak reporter that echoed the match would be the leak.
+  const leaks = useMemo(() => (payload === null ? [] : leaksIn(payload)), [payload]);
+  const clean = payload === null ? true : isRedacted(payload);
+
+  const checks = payload?.checks ?? [];
+  const groups = groupChecks(checks, active);
+  const opened = checks.find((check) => check.id === openKey) ?? null;
+  const fixes = checks.filter((check) => checkFix(check) !== null);
+  const upgradePayload = upgrade.data !== null && 'installed' in upgrade.data ? upgrade.data : null;
+  const headsKeys = (heads ?? []).map((head) => head.key);
+
+  return (
+    <div
+      className="myx-doc"
+      {...(import.meta.env.DEV && report !== null && fixture !== null ? { 'data-sample': fixture } : {})}
+    >
+      <header className="myx-doc-head">
+        <h1 className="myx-doc-title">{S.title}</h1>
+        <ViewTabs pageId={PAGE_ID} defaults={DEFAULT_VIEWS} />
+      </header>
+
+      {doctor.error === null ? null : <Fault message={doctor.error} />}
+
+      {pending !== null ? <Empty text={EMPTIES.noReport.text} source={`row ${pending}`} /> : null}
+      {payload === null && pending === null ? <Blank strips={4} /> : null}
+
+      {/* The gate. A payload that still carries a credential shape is refused, by path, and never
+          rendered: the strips below would be the leak. */}
+      {clean ? null : (
+        <Empty text="report refused, leaks found" source={leaks.map((leak) => `${leak.kind} at ${leak.where}`).join('; ')} />
+      )}
+
+      <div className="myx-doc-body">
+        {/* ---- M2-22: TWO COLUMNS, ONE TABLE, AND THE FACTS THE PAGE WAS ALREADY SERVED --------
+            WHAT WAS HERE: one column of seven section bays. Each was a plate, a column-name row,
+            rails and 32px of padding top and bottom -- measured 141px of chrome for a bay holding
+            ONE check -- and the seven of them stacked to a 1344px body in a 1024px frame, so six
+            of the ten checks were in frame and the rest were below the fold. That is the shape
+            splice-design named on accounts the same night: "60px of band above each group header
+            to show one data row, five times".
+            WHAT IS HERE: the checks are ONE table with its column names printed once, and the
+            report's own facts -- which the page was served and printed NOWHERE -- are a second
+            table beside it.
+            THE SECTION IS NOT LOST WITH THE BAYS. A check id IS "<section>/<name>", so the section
+            is printed in the first cell of every row, and `groupChecks` still decides the ORDER --
+            worst section first under `attention first`, alphabetical under `by section` -- which is
+            what both views' `group: 'section'` meant. The plates were the sections' only other job.
+            THE DETAIL COLUMN IS UNTOUCHED: it carries real content at rest (M1-112) and this row
+            says so; nothing below the grid changed. */}
+        <div className="myx-doc-bays">
+          {payload === null || !clean ? null : checks.length === 0 ? (
+            <Empty text={EMPTIES.noChecks.text} source={EMPTIES.noChecks.source} />
+          ) : (
+            <>
+              <Bay
+                className="myx-doc-checks"
+                label={S.checks}
+                count={checks.length}
+                fields={<ColumnNames columns={[{ w: WIDE, label: S.check }, { w: WIDE, label: S.fix }]} />}
+              >
+                {groups.flatMap((group) => group.checks).map((check) => (
+                  <CheckStrip
+                    key={check.id}
+                    check={check}
+                    selected={openKey === check.id}
+                    onOpen={() => toggle(check.id)}
+                  />
+                ))}
+              </Bay>
+
+              <Bay
+                className="myx-doc-report"
+                label={S.report}
+                count={reportFacts(payload).length}
+                fields={<ColumnNames columns={[{ w: FACT_KEY, label: S.field }, { w: FACT_VALUE, label: S.value }]} />}
+              >
+                {reportFacts(payload).map((fact) => (
+                  <FactStrip key={fact.field} field={fact.field} value={fact.value} />
+                ))}
+              </Bay>
+            </>
+          )}
+        </div>
+
+        <aside className="myx-doc-detail" aria-label={S.detail}>
+          {/* Rendered whether or not the report itself has landed: these three empties name rows
+              the operator is waiting on, and hiding them behind the report hid them entirely. */}
+          <section className="myx-doc-section">
+            <h2 className="myx-doc-section-title">{S.version}</h2>
+            <div className="myx-doc-row">
+              <Strip
+                edge={upgradePayload === null ? 'grey' : upgradeVerdict(upgradePayload) === 'behind' ? 'amber' : 'green'}
+                edgeLabel={upgradePayload === null ? S.absent : upgradeVerdict(upgradePayload)}
+                ariaLabel={S.upgrade}
+              >
+                <StripField w={NARROW} label={S.installed} value={payload?.splice.version ?? S.absent} />
+                <StripField w={NARROW} label={S.latest} value={upgradePayload?.latest ?? S.absent} />
+                <StripField w={NARROW} label={S.rollback} value={upgradePayload === null ? S.absent : String(upgradePayload.rollback_available)} mono={false} />
+              </Strip>
+            </div>
+            <p className="myx-doc-note">{`claude code ${payload?.claude_code.version ?? S.absent}`}</p>
+            <p className="myx-doc-note">{`${attentionCount(checks)} need attention`}</p>
+            <Empty text={EMPTIES.upgrade.text} source={EMPTIES.upgrade.source} />
+            <Empty text={EMPTIES.restart.text} source={EMPTIES.restart.source} />
+            <Empty text={EMPTIES.capture.text} source={EMPTIES.capture.source} />
+          </section>
+
+          <section className="myx-doc-section">
+            <h2 className="myx-doc-section-title">{S.fix}</h2>
+            {fixes.length === 0 ? (
+              <p className="myx-doc-note">{S.noFix}</p>
+            ) : (
+              fixes.map((check) => (
+                <div key={check.id} className="myx-doc-row">
+                  <span className="myx-doc-note">{check.id}</span>
+                  <code className="myx-doc-fix">{checkFix(check)}</code>
+                  <CopyFix command={checkFix(check) ?? ''} />
+                </div>
+              ))
+            )}
+          </section>
+
+          {opened === null ? null : (
+            <section className="myx-doc-section">
+              <div className="myx-doc-row">
+                <HolderEdge state={statusEdge(opened.status)} label={opened.status} />
+                <span className="myx-doc-note">{opened.id}</span>
+              </div>
+              <p className="myx-doc-note">{opened.detail}</p>
+            </section>
+          )}
+
+          <Playground heads={headsKeys} />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+export default DoctorPage;

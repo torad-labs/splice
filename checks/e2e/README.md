@@ -1,7 +1,7 @@
 # Head e2e checks
 
 Full-stack end-to-end tests over **every configured head** (`claudex`, `claude-grok`,
-`claude-kimi`, `openrouter`, …). Heads are discovered from the running daemon (`/api/heads`), so a
+`claude-kimi`, `claude-muse`, `openrouter`, …). Heads are discovered from the running daemon (`/api/heads`), so a
 head added to `~/.config/splice/splice.toml` is exercised here with zero harness edits. Discovery
 is the only roster — the harness keeps no hardcoded list of heads it expects to exist.
 
@@ -29,7 +29,7 @@ The harness cold-starts the daemon if it is down (same recipe as the CLI).
 
 ## Tiers
 
-**Tier 1 — wire probe** (`stream_probe.py`): opens a real streaming turn straight at the head port
+**Tier 1 — wire probe** (`stream_probe.ts`): opens a real streaming turn straight at the head port
 and validates the Anthropic SSE contract *as a client experiences it* — event ordering,
 `content_block` start/delta/stop pairing by index, exactly one `message_start`, `message_stop`
 last with nothing after, no `error` frame — plus that deltas arrive **incrementally** (a proxy that
@@ -37,7 +37,7 @@ buffers the whole reply into one flush fails even if the bytes are correct), plu
 TTFB, first-delta, total, and max inter-event gap. Also a `count_tokens` sanity call.
 
 **Tier 2 — tmux TUI drive**: launches the head's real Claude Code wrapper (`claudex`,
-`claude-grok`, `claude-kimi`, …) inside an isolated tmux server (`-L splice-e2e`), auto-answers
+`claude-grok`, `claude-kimi`, `claude-muse`, …) inside an isolated tmux server (`-L splice-e2e`), auto-answers
 first-run prompts, sends two live prompts, asserts the answers render, then runs an oracle over
 the head's perf JSONL (`~/.claude-codex/state/<head>-perf.jsonl`) for the drive window. A head
 that is not logged in is reported SKIP, never FAIL.
@@ -98,7 +98,7 @@ HOME, run with `--network none`. Inside, `checks/e2e/docker/inside.sh` brings up
 upstreams (the migration oracle's vendored ChatGPT-backend mock for `openai-responses`, a
 minimal `openai-chat` mock), writes a two-head topology, installs from artifacts through the
 real `install.sh` (checksum → `init` → `install --all` → `doctor`), cold-starts the daemon, drives
-`stream_probe.py` and `count_tokens` through every head, runs the **real** Claude Code wrapper
+`stream_probe.ts` and `count_tokens` through every head, runs the **real** Claude Code wrapper
 (`claudex -p …`, `claude-mockchat -p …`) against the head, then `restart` / `logs` / `status` /
 `uninstall`. No vendor, no quota, no network: every byte the daemon or the wrapper moves goes to
 the in-container mocks or the step fails.
@@ -112,8 +112,9 @@ bash checks/e2e/docker/run.sh --no-build               # reuse the image
 
 Each run writes `checks/e2e/receipts/docker-<stamp>.json` (per-step verdict, seconds, evidence)
 and exits non-zero on any failed step; a failed step never stops the run, so later steps stay
-evidence. The image pins Claude Code to the host's `claude --version` (override with
-`SPLICE_E2E_CLAUDE_VERSION`). Run it before `npm run promote`: a release that has not passed here has
+evidence. The image pins Claude Code to `TESTED_CLAUDE_CODE` in
+`gateway/core/src/main/kotlin/splice/core/Versions.kt` (the version the release is proven against;
+bump it there, never in the script). Run it before `npm run promote`: a release that has not passed here has
 not been installed anywhere.
 
 ## Debugging a failure

@@ -8,12 +8,14 @@ import splice.app.SignInPlanner
 import splice.app.TopologyLoader
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
+import splice.control.HeadTrees
 import splice.control.LaunchSpec
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.Topology
+import java.nio.file.Path
 import java.nio.file.Paths
 
 /** How much longer than the daemon's whole-turn cap Claude Code waits before giving up on a
@@ -45,10 +47,17 @@ internal class LaunchSpecFactory(
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
-        val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
+        val configDir = configDirOf(key, head.claude.configDir)
         val signIn = signInPlanner.signInPlan(providerCfg, head, key)
+        // V4-115: the other heads' config dirs, so a launch naming one session id (`-r ID`) can adopt
+        // it across heads. Derived from the topology, never from a directory listing of $HOME: a head
+        // this daemon does not serve is not a head it may read transcripts from.
+        val siblingTrees = topology.heads.entries
+            .filter { (otherKey, _) -> otherKey != key }
+            .map { (otherKey, other) -> configDirOf(otherKey, other.claude.configDir) }
+            .filter { it != configDir }
         return LaunchSpec(
-            configDir = configDir,
+            trees = HeadTrees(configDir, siblingTrees),
             // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
             // strip its credentials, plant the gateway bearer, or disable /login (campaign claude-head).
             // Derived from the CREDENTIAL, never from the declared `auth.kind` string.
@@ -72,7 +81,8 @@ internal class LaunchSpecFactory(
             // second hand-maintained number): the proxy's wall is the one that names the verdict.
             apiTimeoutMs = ctx.watchdog.totalCap.inWholeMilliseconds + CLIENT_TIMEOUT_GRACE_MS,
             modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
-            statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
+            statuslineCommand = "curl -sS -H \"Authorization: Bearer ${mgmtKey.get()}\" " +
+                "--data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
             // materialized /login command + UserPromptSubmit hook route the user here. api-key
             // heads additionally capture a bare pasted token, and advertise the flow at session
@@ -88,10 +98,24 @@ internal class LaunchSpecFactory(
             // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
             // key), or a detached sign-in reports into a file nothing reads.
             loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),
+            headKey = key,
             advertiseKeySetup = signIn.tokenCapture != null,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
             inferenceToken = mgmtKey.get(),
         )
     }
+
+    /** V4-130: each served head's CLAUDE_CONFIG_DIR/projects in topology order, for SessionProject's
+     *  headless fallback, which searches them before its own vanilla default. Derived from the topology
+     *  like [launchSpecFor]'s sibling trees, never from a listing of $HOME. Symlinked heads repeat the
+     *  vanilla tree; SessionProject walks each real path once. */
+    internal fun headProjectsTrees(): List<Path> =
+        topology.heads.map { (key, head) -> configDirOf(key, head.claude.configDir).resolve("projects") }
+
+    /** One head's CLAUDE_CONFIG_DIR: the declared path, else this tree's `~/.claude-<key>` default.
+     *  The kt-state-paths-single-source ignore on this file covers the one literal, and keeping it in
+     *  ONE member is what stops a second spelling appearing when a second caller needs it. */
+    private fun configDirOf(headKey: String, declared: String?): Path =
+        Paths.get(TopologyLoader.expandHome(declared ?: "~/.claude-$headKey"))
 }

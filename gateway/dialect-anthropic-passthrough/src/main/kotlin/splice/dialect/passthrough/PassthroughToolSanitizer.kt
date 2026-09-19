@@ -9,13 +9,16 @@ package splice.dialect.passthrough
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
 
 internal class PassthroughToolSanitizer(
     private val quirks: PassthroughQuirks,
     private val cache: PassthroughCacheControl,
+    private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
     /** Tool keys this head drops outright — fixed by the quirks, so computed once. */
@@ -33,16 +36,23 @@ internal class PassthroughToolSanitizer(
 
     private fun sanitizeTool(tool: JsonObject): JsonObject = buildJsonObject {
         for ((key, value) in tool) {
-            when {
-                key in droppedToolKeys -> Unit
-                key == INPUT_SCHEMA && quirks.mfjsSanitize ->
-                    put(INPUT_SCHEMA, MfjsSanitizer.sanitize(value as? JsonObject ?: EMPTY_OBJECT))
-                else -> put(key, cache.stripCacheControl(value))
-            }
+            if (key in droppedToolKeys) continue
+            put(key, sanitizedValue(key, value))
         }
         // Kimi 400s a tool with no description; inventing one on a faithful passthrough would be
         // splice putting words in the client's request, so it rides with the schema shaping.
         if (quirks.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
+    }
+
+    /** Split from [sanitizeTool] so the per-key decision does not push the loop over detekt's
+     *  cyclomatic threshold — the V4-32 name rewrite was the branch that tipped it. */
+    private fun sanitizedValue(key: String, value: JsonElement): JsonElement = when {
+        key == INPUT_SCHEMA && quirks.mfjsSanitize ->
+            MfjsSanitizer.sanitize(value as? JsonObject ?: EMPTY_OBJECT)
+        // V4-32: the declaration the upstream validates. Shortened here, restored on the
+        // response side by PassthroughBlockRegistry; see ToolNameShortener.
+        key == NAME -> JsonPrimitive(names.shorten(JsonScalars.strOrEmpty(value)))
+        else -> cache.stripCacheControl(value)
     }
 }
 

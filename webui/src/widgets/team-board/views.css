@@ -1,0 +1,317 @@
+/* THE OTHER TWO VIEWS, bound to the boxes measured off their own comps.
+
+   BY ROLE (team-board-b). A column scan over the comp's two strip-free bands (y300-410 and
+   y810-920; the bands agree, vertical deviation under 4px) finds the bay uprights at x138-148 /
+   455-466, 474-485 / 814-825 and 833-845 / 1036-1046, gutters of 7px, and the right column
+   starting at x1053. All six posts run y123 to y983. Over the board's own box (x138.24-1536 wide
+   1397.76, y59.4-1024 high 964.6) that is: rack left 0%, top (123-59.4)/964.6 = 6.593%, height
+   861/964.6 = 89.260%, right edge (1046-138.24)/1397.76 = 64.944%; aside left
+   (1053-138.24)/1397.76 = 65.444% and right edge 1521 -> width 33.482%.
+
+   TIMELINE (team-board-c). The same scan finds one gutter and three member columns between
+   x136 and x1179, ruled at 196-197, 517-518 and 837-838, and a right column x1190-1521; the rack
+   runs y115.5 to y999.5. Gutter share (197-138.24)/1040.76 = 5.646% of the rack, which is the
+   4.204fr the component's track list writes against the rack's own width.
+
+   The strips inside both racks are LAID OUT, not placed: the comp's own rows are what the grid
+   draws, and a row that does not fit scrolls rather than being clipped (M2-26 measured VOID at
+   zero on all thirteen addresses, and this sheet keeps it there). */
+
+/* ---- the strip that wraps ------------------------------------------------------------------
+   board.css makes every strip on the board an absolutely positioned box whose cells clip and
+   ellipsis, which is right for the hero's traced columns and wrong here: these views place their
+   strips in grid cells, and their fields must keep max(header, value) and BREAK rather than cut.
+   Written at (0,3,0) so it beats board.css's (0,2,0) wherever the two sheets land in the cascade. */
+.myx-board.myx-board-role .myx-wrap-strip,
+.myx-board.myx-board-tl .myx-wrap-strip {
+  position: relative;
+  width: 100%;
+}
+.myx-board.myx-board-role .myx-wrap-strip .myx-strip-fields,
+.myx-board.myx-board-tl .myx-wrap-strip .myx-strip-fields {
+  flex-wrap: wrap;
+}
+/* FLEX-BASIS, NOT WIDTH OR MIN-WIDTH, and both alternatives were measured wrong before this one
+   stood. StripField writes its ch count inline (`width: 0ch` for these fields), and an inline
+   width cannot be overridden from a sheet -- so the first attempt was `min-width: min(max-content,
+   100%)`, which is INVALID CSS: a math function may not take an intrinsic keyword, so the whole
+   declaration was dropped, the fields kept their 0ch, and every value wrapped one character per
+   line (measured in the 1536x1024 dark capture of the by-role view: the lead strip rendered as a
+   column of single letters). `flex-basis` is the property that beats an inline width for flex
+   sizing without needing to override it: the field is laid out at max-content, capped at the bay,
+   where its value wraps as prose. */
+.myx-board.myx-board-role .myx-wrap-strip .myx-sfield,
+.myx-board.myx-board-tl .myx-wrap-strip .myx-sfield {
+  flex: 0 0 auto;
+  flex-basis: max-content;
+  max-width: 100%;
+  padding-inline-end: var(--space-2);
+}
+.myx-board.myx-board-role .myx-wrap-strip .myx-sfield-value,
+.myx-board.myx-board-tl .myx-wrap-strip .myx-sfield-value {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ---- by role -------------------------------------------------------------------------------- */
+.myx-board-role .myx-role-rack {
+  position: absolute;
+  left: 0;
+  top: 6.593%;
+  width: 64.944%;
+  height: 89.260%;
+  display: grid;
+  column-gap: 0.5cqw;
+  overflow-y: auto;
+}
+/* The rack's first row is the bay's own title plate, which the bay draws at its top: without a
+   height of its own the row collapsed to nothing and the first strip covered the plate (measured
+   in the first capture, where the builder bay's plate was half behind its session strip). */
+.myx-board-role .myx-role-rack { grid-auto-rows: minmax(0, auto); }
+/* The strips sit at the top of their row, so two bays' strips in one row share a top edge the way
+   the comp's do; the bays behind them fill the row. */
+.myx-board-role .myx-role-cell { align-self: start; }
+/* The bay is the rack behind its column: it spans every row, and the strips sit on it. */
+.myx-board-role .myx-role-bay {
+  align-self: stretch;
+  z-index: 0;
+  min-height: 0;
+  padding-block: var(--space-3);
+}
+.myx-board-role .myx-role-bay .myx-bay-rows { flex: 1; }
+/* The note sits on its own ground: the bay's ribbing runs behind it, and a rib crossing a line of
+   text reads as a strike-through (it did, in the first capture). */
+.myx-board-role .myx-role-open {
+  margin: var(--space-4) var(--space-3) 0;
+  padding: var(--space-2);
+  background: var(--room-deep);
+  font-family: var(--font-label);
+  font-size: 1.4514cqh;
+  color: var(--ink-mute);
+  text-align: center;
+}
+.myx-board-role .myx-role-cell {
+  z-index: 1;
+  padding-inline: var(--space-2);
+  min-width: 0;
+}
+/* A hand-off runs from its sender's bay to its recipient's, over the gutter between them: that
+   crossing IS the message, and it is why these rows take a row of their own. */
+.myx-board-role .myx-role-cross .myx-strip { position: relative; width: 100%; }
+.myx-board-role .myx-role-cross .myx-sfield { min-width: 0; }
+.myx-board-role .myx-role-rule {
+  position: relative;
+  z-index: 1;
+  height: 4cqh;
+  border-top: var(--hair) solid var(--hairline-strong);
+}
+/* The first and last marks sit INSIDE the rule rather than centred on its ends, where half of
+   `13:30` and half of `now` fell off the rack in the first capture. */
+.myx-board-role .myx-role-rule .myx-role-mark:first-child { transform: none; }
+.myx-board-role .myx-role-rule .myx-role-mark:last-child { transform: translateX(-100%); }
+.myx-board-role .myx-role-mark {
+  position: absolute;
+  top: var(--space-1);
+  transform: translateX(-50%);
+  padding-inline: var(--space-1);
+  background: var(--room);
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.2439cqh;
+  color: var(--ink-mute);
+}
+
+/* ---- the right column, shared by both views ------------------------------------------------- */
+.myx-board .myx-board-aside {
+  position: absolute;
+  top: 6.593%;
+  height: 89.260%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-inline: var(--space-2);
+  overflow-y: auto;
+}
+.myx-board-role .myx-role-aside { left: 65.444%; width: 33.482%; }
+.myx-board-tl .myx-tl-aside { left: 75.282%; width: 23.645%; gap: var(--space-3); }
+.myx-board-tl .myx-tl-aside .myx-board-card-row dt,
+.myx-board-tl .myx-tl-aside .myx-board-card-row dd {
+  padding: var(--space-1) var(--space-2);
+  font-size: 1.2439cqh;
+}
+.myx-board-tl .myx-tl-slots { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.myx-board .myx-board-card {
+  display: flex;
+  align-items: stretch;
+  background: var(--strip);
+  color: var(--strip-ink);
+}
+.myx-board .myx-board-card > .myx-edge .myx-edge-label { display: none; }
+.myx-board .myx-board-card > .myx-edge .myx-edge-mark { width: var(--space-2); inset-block: 0; }
+.myx-board .myx-board-card-rows {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+.myx-board .myx-board-card-row { display: contents; }
+.myx-board .myx-board-card-row dt,
+.myx-board .myx-board-card-row dd {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--hair) solid var(--strip-field-line);
+  font-family: var(--font-label);
+  font-size: 1.4514cqh;
+  overflow-wrap: anywhere;
+}
+.myx-board .myx-board-card-row dt { color: var(--strip-ink-mute); }
+.myx-board .myx-board-card-row:last-child dt,
+.myx-board .myx-board-card-row:last-child dd { border-bottom: 0; }
+
+.myx-board .myx-board-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.myx-board .myx-board-panel-title,
+.myx-board .myx-tl-slots > .myx-board-panel-title {
+  margin: 0;
+  font-family: var(--font-label);
+  font-weight: 400;
+  font-size: 1.4514cqh;
+  color: var(--ink);
+}
+.myx-board .myx-board-panel-note {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: 1.2439cqh;
+  color: var(--ink-mute);
+}
+.myx-board .myx-board-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--strip);
+  color: var(--strip-ink);
+  font-family: var(--font-label);
+  font-size: 1.4514cqh;
+}
+.myx-board .myx-board-table th,
+.myx-board .myx-board-table td {
+  padding: var(--space-1) var(--space-2);
+  border: var(--hair) solid var(--strip-field-line);
+  text-align: right;
+  font-weight: 400;
+}
+.myx-board .myx-board-table th[scope='row'],
+.myx-board .myx-board-table thead th:first-child { text-align: left; }
+.myx-board .myx-board-table-total th,
+.myx-board .myx-board-table-total td { font-weight: 600; }
+
+.myx-board .myx-board-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.myx-board .myx-board-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content 55%;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-label);
+  font-size: 1.2439cqh;
+  color: var(--ink);
+}
+.myx-board .myx-board-bar-track {
+  height: 1.4cqh;
+  background: var(--scope);
+  border: var(--hair) solid var(--hairline);
+}
+/* The comp's bars are hatched rather than filled: a measurement, not a block of colour. */
+.myx-board .myx-board-bar-fill {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 4px);
+}
+
+.myx-board .myx-turns-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: end;
+  gap: var(--space-1);
+  height: 100%;
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.2439cqh;
+  color: var(--scope-ink);
+}
+.myx-board .myx-turns-chart svg { grid-column: 2; grid-row: 1; width: 100%; height: 100%; }
+.myx-board .myx-turns-line { fill: none; stroke: var(--scope-ink); stroke-width: 1px; }
+.myx-board .myx-turns-top { grid-column: 1; grid-row: 1; align-self: start; }
+.myx-board .myx-turns-zero { grid-column: 1; grid-row: 1; align-self: end; }
+.myx-board .myx-turns-from { grid-column: 2; grid-row: 2; }
+.myx-board .myx-turns-to { grid-column: 3; grid-row: 2; }
+
+/* ---- the timeline ---------------------------------------------------------------------------- */
+.myx-board-tl .myx-tl-rack {
+  position: absolute;
+  left: 0;
+  top: 5.816%;
+  width: 74.459%;
+  height: 91.644%;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2) 0.5cqw;
+  padding-inline-end: var(--space-2);
+  overflow-y: auto;
+}
+.myx-board-tl .myx-tl-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--plate);
+  color: var(--strip-ink);
+  font-family: var(--font-label);
+  text-align: center;
+}
+.myx-board-tl .myx-tl-head-name { font-size: 1.4514cqh; }
+.myx-board-tl .myx-tl-head-sub { font-size: 1.2439cqh; color: var(--plate-ink-mute); }
+.myx-board-tl .myx-tl-mark {
+  align-self: center;
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.2439cqh;
+  color: var(--ink-mute);
+}
+.myx-board-tl .myx-tl-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+/* A figure on paper takes the paper's ink: the console's figure colour is the room's, and these
+   tables and cards are printed on a strip. */
+.myx-board .myx-board-table .myx-fig-value,
+.myx-board .myx-board-table .myx-fig-unit { color: var(--strip-ink); }
+.myx-board .myx-board-bar-figure .myx-fig-value { color: var(--ink); }
+
+/* The rack's own floor, so an empty cell is a slot of the rack rather than a hole in it. */
+.myx-board-tl .myx-tl-rack::before {
+  content: '';
+  grid-column: 2 / -1;
+  grid-row: 1 / -1;
+  background: var(--bay-slot);
+  z-index: 0;
+}
+.myx-board-tl .myx-tl-cell,
+.myx-board-tl .myx-tl-mark,
+.myx-board-tl .myx-tl-head { z-index: 1; }

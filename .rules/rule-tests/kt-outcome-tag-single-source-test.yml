@@ -1,0 +1,57 @@
+# V4-90 (ARCH-AUDIT 2026-09-17): the red/green pins for kt-outcome-tag-single-source.
+#
+# Every `valid` case is a shape that MUST stay silent, and each one exists because getting it wrong
+# is what would make the wall unusable rather than merely imperfect:
+#   - the compliant form (a NAMED tag from OutcomeTag) is the whole point;
+#   - `put("ok", true)` is a JSON field name in a health ack, live in four control/gateway files —
+#     firing on it would red correct code, and the usual fix for that is to drop "ok" from the
+#     vocabulary, i.e. to delete the wall's most load-bearing tag;
+#   - a tag-shaped word that is not a tag (`"okay"`, `"errors"`) must not be swept up by a loose
+#     regex, which is why the exact-tag branch is fully anchored and the prefix branch requires the
+#     colon.
+# Every `invalid` case is a shape the rule must still catch WITH a nearby `put(` — the carve-out is
+# positional, so a tag in VALUE position, or in any other call, is caught. Widening the carve-out
+# from `nthChild: 1` to the whole call turns the first three invalid cases green, which is how this
+# file proves the narrowness is real and not an unchecked claim.
+id: kt-outcome-tag-single-source
+valid:
+  # THE COMPLIANT FORM — a named tag and a named prefix builder, the shape V4-102 lands.
+  - 'telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT)'
+  - 'telemetry.recordPerf(drive, OutcomeTag.error("cancelled"))'
+  - 'return if (outcome.connReset) OutcomeTag.CONN_RESET else OutcomeTag.failure(outcome.type.wireName)'
+  - 'if (outcome is TurnOutcome.Success && outcomeTag != OutcomeTag.OK) { health.local() }'
+  # THE CARVE-OUT, live in HeadDiagnostics/AuthRoutes/ControlPayloads: `ok` as a JSON FIELD NAME.
+  - 'put("ok", true)'
+  - 'put("ok", stalledHeads.isEmpty())'
+  - 'fun okJson(): String = buildJsonObject { put("ok", true) }.toString()'
+  # The carve-out reaches putJsonObject/add in first position too, for the same reason.
+  - 'putJsonObject("error") { put("detail", d) }'
+  - 'add("ok")'
+  # Tag-SHAPED words that are not tags: the exact branch is anchored and the prefix branch needs
+  # the colon, so none of these may fire.
+  - 'val s = "okay"'
+  - 'val s = "not ok"'
+  - 'val s = "errors"'
+  - 'val s = "failures"'
+  - 'val s = "error"'
+invalid:
+  # The census shapes, one per family.
+  - 'telemetry.recordPerf(drive, "client_abort")'
+  - 'telemetry.recordPerf(drive, "error:cancelled")'
+  - 'val outcome = "error:all-accounts-exhausted"'
+  # A templated prefix family — one string_literal node carrying an interpolation.
+  - 'return if (outcome.connReset) CONN_RESET_OUTCOME else "failure:${outcome.type.wireName}"'
+  # The COMPARISON, not a write: the same literal doing the same load-bearing work in reverse.
+  - 'if (outcome is TurnOutcome.Success && outcomeTag != "ok") { health.local() }'
+  # A default parameter value — StreamPromote's PromoteVerdict, the least visible copy of all.
+  - 'internal data class PromoteVerdict(val endedTag: String?, val cleanTag: String = "ok")'
+  # The reader's own fourth copy of the word, in another module.
+  - 'private const val OK = "ok"'
+  # THE CARVE-OUT PROOF. The same tag in the SECOND argument of a `put(` is still a tag; a
+  # carve-out spelled "anywhere inside a put call" would let these three through.
+  - 'put("count", "ok")'
+  - 'put(FIELD_OUTCOME, "client_abort")'
+  - 'putJsonObject("row") { put("outcome", "error:unexpected") }'
+  # ...and in a call that merely LOOKS like a writer.
+  - 'append("ok")'
+  - 'record(meta, "empty_model", elapsedMs, error = "api_error")'

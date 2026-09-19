@@ -4,25 +4,36 @@
 // consumers. Every member kept its identical name and argument list.
 package splice.dialect.responses
 
+import splice.spi.EffortVocabulary
+
 /** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
 public data class ResponsesQuirks(
     val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
     val store: Boolean = false,
     val cacheKeyStrategy: CacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
-    val effortLadder: EffortLadder = EffortLadder.CODEX,
+    val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
     val supportsSummary: Boolean = true,
-    val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
-    /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
-    val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
+    /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
+     *  on its own quirks — a dialect default would hide summary on every id that merely
+     *  contains the fragment (V4-29). */
+    val summaryRejectModelRegex: Regex? = null,
+    /** Null omits the clamp. A vendor whose models 400 on effort=max sets the pattern on
+     *  its own quirks — a dialect default of mini matched google/gemini-2.5-pro (V4-29). */
+    val effortMaxRejectModelRegex: Regex? = null,
     /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
      *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
      *  Lite turns (compaction included): instructions ride as a developer input item (top-level field
      *  omitted), tools ride as an additional_tools input item (top-level field omitted),
      *  parallel_tool_calls defaults to false (splice omitting it left the backend default parallel ON
      *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
-     *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
-     *  backend (direct probe 2026-07-19: 200, correct tool call). */
-    val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+     *  and the lite header named by [responsesLiteHeader] rides. Shape accepted by the live
+     *  backend (direct probe 2026-07-19: 200, correct tool call). Null (the default) means this
+     *  provider does not speak responses-lite; only the provider that owns the ChatGPT marker
+     *  sets both the regex and the header name. */
+    val responsesLiteModelRegex: Regex? = null,
+    /** Header name emitted on lite turns when [responsesLiteModelRegex] matches. Null omits it.
+     *  Travels with the regex so a third-party endpoint cannot inherit a ChatGPT-internal marker. */
+    val responsesLiteHeader: String? = null,
     /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
      *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
     val emitEmptyLiteInstructions: Boolean = false,
@@ -32,10 +43,17 @@ public data class ResponsesQuirks(
      *  not proven task-efficiency parity. JavaScript callback batching is a separate mechanism;
      *  the client's explicit parallel-disable choice still wins over this knob. */
     val liteParallelToolCalls: Boolean = false,
-    /** codex parity: `text.verbosity` on lite turns. codex-cli 0.145.0 sends "low"; null omits. */
-    val liteTextVerbosity: String? = "low",
-    /** codex parity: send a client_metadata block identifying SPLICE (never codex). Off = omitted. */
-    val sendClientMetadata: Boolean = true,
+    /** Null omits `text.verbosity` on lite turns. A vendor-measured value (codex-cli 0.145.0
+     *  sends "low") belongs on that vendor's profile — a dialect default would ride to every
+     *  backend that later opts into the lite pair (V4-31). */
+    val liteTextVerbosity: String? = null,
+    /** Off omits the client_metadata block. On sends client=splice plus optional session_id
+     *  and thread_id — no token, no install id, no operator identity. A backend can correlate
+     *  turns of one splice session and knows it is talking to splice rather than Codex.
+     *  That is honest identification, not impersonation, and not a user-privacy leak. The
+     *  measured on-value belongs on the vendor profile that wants it (V4-31). Boolean, not
+     *  Boolean?: false is the omit (`!quirks.sendClientMetadata` in ResponsesClientHints). */
+    val sendClientMetadata: Boolean = false,
     /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
      *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
      *  until an operator opts in, and with it off no WebSocket is ever constructed. */
@@ -144,5 +162,3 @@ public data class ResponsesQuirks(
 }
 
 public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, OFF }
-
-public enum class EffortLadder { CODEX, GROK }

@@ -14,6 +14,7 @@ package splice.dialect.responses
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.spi.ReanchorController
@@ -99,7 +100,10 @@ public class ResponsesReanchorController(
 // thing — it says the first retry usually works, not that abandoning after the second is right,
 // and it counts only rounds that were re-anchor ELIGIBLE at all. Turn recovery and its cooldown
 // backoff are unchanged; this widens only how many times they may run.
-private const val DEFAULT_MAX_CONTINUATIONS: Int = 5
+//
+// V4-122: the budget itself is splice.core.turn.DEFAULT_MAX_CONTINUATIONS now. This dialect's
+// twin declared the same 5, and both re-anchor against the same client budget, so one of them
+// owning the number meant a change in one head silently diverged from the other.
 
 private const val MARKER_TEXT: String =
     "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
@@ -107,4 +111,14 @@ private const val MARKER_TEXT: String =
         "restate reasoning you have already given."
 
 // FILE SCOPE ON PURPOSE: one shared immutable set, read per failure classification.
-private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR)
+//
+// V4-58 adds RATE_LIMIT, the Responses twin of V4-57 — and the premise was RE-PROVEN here rather
+// than ported, because this dialect reaches its terminal differently. Both facts hold. (1) A
+// mid-stream SSE error arms NO cooldown: every arm site is status-gated (RetryPolicy.kt:50 and
+// :161, RateLimitCooldown.kt:288) and an SSE frame carries no status, so this dialect references
+// the cooldown nowhere outside a comment. (2) The re-POST is a FRESH request through the shared
+// round post, so a provider still limiting answers it with a genuine pre-stream 429 carrying
+// Retry-After — the one place a pushback is machine-readable, already owned by the pre-stream path
+// (V4-48's short wait, and an honest 429 past the ceiling). Continuability alone therefore buys the
+// recovery, and no pushback is invented at this layer.
+private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR, ErrorType.RATE_LIMIT)

@@ -2,29 +2,41 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.SignInPlanner
 import splice.app.TokenUrlRefreshCall
+import splice.app.auth.OAuthAccountFiles
+import splice.core.GATEWAY_VERSION
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.parse.AnthropicParse
 import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
+import splice.core.topology.DialectWires
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
+import splice.provider.muse.MuseKeyMintCall
+import splice.provider.muse.MuseMintAttempt
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.provider.openai.OpenAiResponsesProvider
@@ -38,6 +50,7 @@ class ProviderAssemblyCompatibilityTest {
         AuthKind.ChatgptOAuth to setOf(Dialect.OPENAI_RESPONSES),
         AuthKind.GrokOAuth to setOf(Dialect.OPENAI_RESPONSES, Dialect.OPENAI_CHAT),
         AuthKind.KimiOAuth to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
+        AuthKind.MuseOAuth to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
         AuthKind.Client to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
     )
 
@@ -55,7 +68,7 @@ class ProviderAssemblyCompatibilityTest {
                 if (dialect in allowedDialects) {
                     assertDoesNotThrow(
                         { fixture.assembly.buildProvider(ctx) },
-                        "${kind.wire} must remain supported on ${dialectWire(dialect)}",
+                        "${kind.wire} must remain supported on ${DialectWires.name(dialect)}",
                     )
                     accepted += 1
                 } else {
@@ -65,33 +78,34 @@ class ProviderAssemblyCompatibilityTest {
                     val message = error.message.orEmpty()
                     assertTrue(message.contains(ctx.key), message)
                     assertTrue(message.contains(kind.wire), message)
-                    assertTrue(message.contains(dialectWire(dialect)), message)
+                    assertTrue(message.contains(DialectWires.name(dialect)), message)
                     rejected += 1
                 }
             }
         }
 
-        assertEquals(5, accepted)
-        assertEquals(7, rejected)
+        assertEquals(6, accepted)
+        assertEquals(9, rejected)
     }
 
     @Test
-    fun `kimi oauth requires the kimi provider id`(@TempDir tmp: Path) = runTest {
+    fun `vendor-bound OAuth requires its own provider id`(@TempDir tmp: Path) = runTest {
         val fixture = Fixture(tmp, backgroundScope)
-        val ctx = fixture.context(
-            kind = AuthKind.KimiOAuth.wire,
-            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
-            provider = "not-kimi",
-        )
-
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            fixture.assembly.buildProvider(ctx)
+        for (kind in listOf(AuthKind.KimiOAuth, AuthKind.MuseOAuth)) {
+            val ctx = fixture.context(
+                kind = kind.wire,
+                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+                provider = "not-the-vendor",
+            )
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                fixture.assembly.buildProvider(ctx)
+            }
+            val message = error.message.orEmpty()
+            assertTrue(message.contains(ctx.key), message)
+            assertTrue(message.contains(kind.wire), message)
+            assertTrue(message.contains(ctx.head.provider), message)
+            assertTrue(message.contains(DialectWires.name(ctx.providerCfg.dialect)), message)
         }
-        val message = error.message.orEmpty()
-        assertTrue(message.contains(ctx.key), message)
-        assertTrue(message.contains(AuthKind.KimiOAuth.wire), message)
-        assertTrue(message.contains(ctx.head.provider), message)
-        assertTrue(message.contains(dialectWire(ctx.providerCfg.dialect)), message)
     }
 
     @Test
@@ -108,9 +122,27 @@ class ProviderAssemblyCompatibilityTest {
                     Dialect.OPENAI_CHAT -> wired.provider is OpenAiChatProvider
                     Dialect.ANTHROPIC_PASSTHROUGH -> wired.provider is PassthroughProvider
                 }
-                assertTrue(correctDialectProvider, "$kind must stay on ${dialectWire(dialect)}")
+                assertTrue(correctDialectProvider, "$kind must stay on ${DialectWires.name(dialect)}")
             }
         }
+    }
+
+    @Test
+    fun `chat assembly carries static headers into turn headers`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val ctx = fixture.context("api-key", Dialect.OPENAI_CHAT)
+        val wired = fixture.assembly.buildProvider(
+            ctx.copy(
+                providerCfg = ctx.providerCfg.copy(
+                    extraHeaders = mapOf("X-Tenant" to "tenant-a", "authorization" to "wrong"),
+                ),
+            ),
+        )
+
+        val headers = wired.provider.extraHeaders(Credentials.ApiKey("secret"))
+        assertEquals("tenant-a", headers["X-Tenant"])
+        assertEquals("text/event-stream", headers["Accept"])
+        assertFalse(headers.keys.any { it.equals("Authorization", ignoreCase = true) })
     }
 
     @Test
@@ -131,6 +163,110 @@ class ProviderAssemblyCompatibilityTest {
             val credentials = wired.auth.credentials() as? Credentials.Bearer
             assertEquals(Credentials.Bearer("synthetic-$name", name), credentials)
         }
+    }
+
+    @Test
+    fun `ChatGPT assembly discovers legacy primary and labeled accounts`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val primaryFile = tmp.resolve("auth.json")
+        Files.writeString(
+            primaryFile,
+            """{"tokens":{"access_token":"synthetic-primary","account_id":"primary-id"}}""",
+        )
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.ChatgptOAuth,
+            primaryFile,
+            "backup",
+            Json.parseToJsonElement(
+                """{"tokens":{"access_token":"synthetic-backup","account_id":"backup-id"}}""",
+            ).jsonObject,
+        )
+        val ctx = fixture.context(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES)
+        val wired = fixture.assembly.buildProvider(
+            ctx.copy(
+                providerCfg = ctx.providerCfg.copy(
+                    auth = ctx.providerCfg.auth.copy(file = primaryFile.toString()),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("primary", "backup"), wired.accounts.map(WiredAccount::label))
+        assertEquals(wired.accounts.single(WiredAccount::primary).auth, wired.auth)
+        assertEquals(
+            Credentials.Bearer("synthetic-backup", "backup-id"),
+            wired.accounts.single { it.label == "backup" }.auth.credentials(),
+        )
+    }
+
+    @Test
+    fun `Muse pool serves each persisted key with Meta headers and no mint on reads`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val primary = tmp.resolve("auth.json")
+        val primaryJson = """{"access_token":"account-primary","api_key":"key-primary"}"""
+        val backupJson = """{"access_token":"account-backup","api_key":"key-backup"}"""
+        Files.writeString(primary, primaryJson)
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.MuseOAuth,
+            primary,
+            "backup",
+            Json.parseToJsonElement(backupJson).jsonObject,
+        )
+        val ctx = fixture.context(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH)
+        repeat(2) {
+            val wired = fixture.assembly.buildProvider(ctx)
+            assertEquals(listOf("primary", "backup"), wired.accounts.map(WiredAccount::label))
+            assertEquals(wired.accounts.single(WiredAccount::primary).auth, wired.auth)
+            for (account in wired.accounts) {
+                val credentials = requireNotNull(account.auth.credentials())
+                assertEquals(Credentials.Bearer("key-${account.label}"), credentials)
+                val headers = requireNotNull(account.extraHeaders).invoke(credentials)
+                assertEquals(mapOf("Accept" to "text/event-stream", "User-Agent" to "splice/$GATEWAY_VERSION"), headers)
+            }
+            val headers = wired.provider.extraHeaders(requireNotNull(wired.auth.credentials()))
+            assertNull(headers["x-api-version"])
+            assertEquals(mapOf("Accept" to "text/event-stream", "User-Agent" to "splice/$GATEWAY_VERSION"), headers)
+            assertEquals(2, wired.accounts.map { it.quotaFile }.toSet().size)
+        }
+        assertEquals(0, fixture.museMintCalls)
+    }
+
+    @Test
+    fun `Muse strips model tier suffixes but preserves Anthropic caching content`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val ctx = fixture.context(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH)
+        val wired = fixture.assembly.buildProvider(
+            ctx.copy(providerCfg = ctx.providerCfg.copy(baseUrl = "https://api.meta.ai")),
+        )
+        assertEquals("https://api.meta.ai/v1/messages", wired.provider.upstreamUrl)
+        for (model in listOf("muse-spark-1.3", "muse-spark-1.2")) {
+            val body = AnthropicParse.parseAnthropicBody(
+                """{"model":"$model[1m]","messages":[{"role":"user","content":[
+                    {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}""",
+            )
+            val built = wired.provider.buildTurn(body, compact = false, sessionId = null)
+            assertEquals(model, built.requestBody["model"]?.jsonPrimitive?.content)
+            val message = built.requestBody.getValue("messages").jsonArray.first().jsonObject
+            val block = message.getValue("content").jsonArray.first().jsonObject
+            assertTrue("cache_control" in block)
+        }
+        assertEquals(0, fixture.museMintCalls)
+    }
+
+    @Test
+    fun `Muse with missing primary selects a readable backup without minting`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.MuseOAuth,
+            tmp.resolve("auth.json"),
+            "backup",
+            Json.parseToJsonElement("""{"access_token":"account-backup","api_key":"key-backup"}""").jsonObject,
+        )
+        val wired = fixture.assembly.buildProvider(
+            fixture.context(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH),
+        )
+        assertFalse(wired.accounts.single(WiredAccount::primary).credentialPresent)
+        assertEquals(Credentials.Bearer("key-backup"), wired.auth.credentials())
+        assertEquals(0, fixture.museMintCalls)
     }
 
     @Test
@@ -178,11 +314,46 @@ class ProviderAssemblyCompatibilityTest {
     }
 
     @Test
+    fun `code mode defaults on for ChatGPT responses only and explicit false still wins`() {
+        fun enabled(kind: String, dialect: Dialect, codeMode: Boolean?) = ProviderConfig(
+            dialect = dialect,
+            baseUrl = "https://example.invalid",
+            auth = AuthConfig(kind = kind),
+            quirks = QuirksConfig(codeMode = codeMode),
+        ).codeModeEnabled
+
+        assertTrue(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = null))
+        assertTrue(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = true))
+        assertFalse(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = false))
+        assertFalse(enabled(AuthKind.ChatgptOAuth.wire, Dialect.OPENAI_CHAT, codeMode = null))
+        assertFalse(enabled(AuthKind.GrokOAuth.wire, Dialect.OPENAI_RESPONSES, codeMode = null))
+        assertFalse(enabled("api-key", Dialect.OPENAI_RESPONSES, codeMode = null))
+        assertFalse(enabled(AuthKind.KimiOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH, codeMode = null))
+        assertFalse(enabled(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH, codeMode = null))
+    }
+
+    @Test
+    fun `kimi-named api-key carries X-Msh and kimi-named client does not`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val apiKey = fixture.assembly.buildProvider(
+            fixture.context("api-key", Dialect.ANTHROPIC_PASSTHROUGH, provider = "kimi"),
+        )
+        val apiKeyHeaders = apiKey.provider.extraHeaders(Credentials.ApiKey("secret"))
+        assertEquals("splice", apiKeyHeaders["X-Msh-Platform"])
+        val client = fixture.assembly.buildProvider(
+            fixture.context(AuthKind.Client.wire, Dialect.ANTHROPIC_PASSTHROUGH, provider = "kimi"),
+        )
+        val clientHeaders = client.provider.extraHeaders(Credentials.ApiKey("secret"))
+        assertFalse(clientHeaders.containsKey("X-Msh-Platform"))
+    }
+
+    @Test
     fun `code mode rejects non ChatGPT responses at construction`() {
         val unsupported = listOf(
             "ChatGPT wrong dialect" to (AuthKind.ChatgptOAuth.wire to Dialect.OPENAI_CHAT),
             "Grok" to (AuthKind.GrokOAuth.wire to Dialect.OPENAI_RESPONSES),
             "Kimi" to (AuthKind.KimiOAuth.wire to Dialect.ANTHROPIC_PASSTHROUGH),
+            "Muse" to (AuthKind.MuseOAuth.wire to Dialect.ANTHROPIC_PASSTHROUGH),
             "Claude client" to (AuthKind.Client.wire to Dialect.ANTHROPIC_PASSTHROUGH),
             "api-key" to ("api-key" to Dialect.OPENAI_RESPONSES),
             "local" to ("local" to Dialect.OPENAI_RESPONSES),
@@ -226,17 +397,30 @@ class ProviderAssemblyCompatibilityTest {
             headOverrides = mapOf("codexAuthPath" to tmp.resolve("missing-auth.json").toString()),
             envReader = { null },
         )
+        var museMintCalls = 0
         val assembly = ProviderAssembly(
             statePaths = statePaths,
             probeScope = scope,
             log = {},
             refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
+            museArm = MusePassthroughArm(
+                log = {},
+                probeScope = scope,
+                mintCall = MuseKeyMintCall { _, _ ->
+                    museMintCalls += 1
+                    MuseMintAttempt.Denied("test-denied")
+                },
+            ),
         )
 
         fun context(
             kind: String,
             dialect: Dialect,
-            provider: String = if (kind == AuthKind.KimiOAuth.wire) "kimi" else "provider",
+            provider: String = when (kind) {
+                AuthKind.KimiOAuth.wire -> "kimi"
+                AuthKind.MuseOAuth.wire -> "muse"
+                else -> "provider"
+            },
         ): ProviderBuild {
             val key = "head-${kind.replace('-', '_')}-${dialect.name.lowercase()}"
             return ProviderBuild(
@@ -262,11 +446,5 @@ class ProviderAssemblyCompatibilityTest {
                 loginCommand = "test login",
             )
         }
-    }
-
-    private fun dialectWire(dialect: Dialect): String = when (dialect) {
-        Dialect.OPENAI_RESPONSES -> "openai-responses"
-        Dialect.OPENAI_CHAT -> "openai-chat"
-        Dialect.ANTHROPIC_PASSTHROUGH -> "anthropic-passthrough"
     }
 }

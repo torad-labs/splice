@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -32,7 +33,11 @@ private fun meta(compact: Boolean) = TurnMeta(
     budgetTokens = null,
 )
 
-private val stalled = TurnOutcome.Failure(ErrorType.OVERLOADED, "claudex: upstream stream stalled — aborted; retry")
+private val stalled = TurnOutcome.Failure(
+    "splice: upstream stream stalled — aborted; retry",
+    cause = FailureCause.UPSTREAM_STALLED,
+    phase = FailurePhase.MID_OUTPUT,
+)
 
 class TurnLineWatchdogVerdictTest {
 

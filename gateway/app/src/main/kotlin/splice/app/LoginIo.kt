@@ -10,6 +10,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.app.auth.OAuthAccountFiles
+import splice.app.auth.OAuthLoginAccount
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
@@ -25,15 +27,48 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
-/** The shared login I/O primitives, held as a collaborator by each flow (Kotlin style law,
- *  2026-08-15): a helper used by several types is a small named class they construct, not a pair
- *  of free functions. */
-internal class LoginIo {
+/** Set by the shared Gradle test task. Its presence means "you are inside the suite", and the
+ *  system browser refuses rather than opening a window on the operator's desktop. A system PROPERTY
+ *  rather than an env var: `System.getenv` is walled to core/config (kt-no-system-getenv), and a
+ *  guard that exists only for the test JVM has no business on the layered config path anyway. */
+private const val NO_SYSTEM_BROWSER = "splice.noSystemBrowser"
 
-    private val loginJson = Json { ignoreUnknownKeys = true }
+/** What [SystemBrowserOpener.host] reports when the authorize URL does not parse — the classification the
+ *  parse failure is routed into, since the URL itself carries the PKCE challenge and never gets printed. */
+private const val UNKNOWN_HOST = "unknown"
 
-    /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
-    internal fun openBrowser(url: String): Boolean = Cancellables.runCatchingCancellable {
+/** Opens a login URL; tests record the request without starting an operating-system process. */
+internal fun interface BrowserOpener {
+    fun open(url: String): Boolean
+}
+
+private class SystemBrowserOpener : BrowserOpener {
+
+    /** WALL (2026-09-16). A TEST must never launch the operator's browser. SetupCommandTest
+     *  constructed SetupCommand without overriding its loginHead seam, so the wizard ran a REAL
+     *  grok OAuth login on every `:app:test`: it opened accounts.x.ai in the operator's Chrome,
+     *  bound the loopback callback port, and then blocked in awaitCode for a code that could never
+     *  arrive. For a full day that read as the DAEMON re-prompting for sign-in — the operator saw a
+     *  login page appear again and again with no turn behind it — and it was the build all along.
+     *  The guard is set by the shared Gradle test task, so any future test reaching this path fails
+     *  loudly and names itself instead of opening a window on someone's desktop. */
+    override fun open(url: String): Boolean {
+        if (System.getProperty(NO_SYSTEM_BROWSER) != null) {
+            error(
+                "a test reached the real system browser (host=${host(url)}); inject a BrowserOpener " +
+                    "fake, or override the flow's login seam (SetupCommand.loginHead)",
+            )
+        }
+        return launch(url)
+    }
+
+    /** Host only — an authorize URL carries the PKCE challenge and state, which never belong in a
+     *  failure message or a log. */
+    private fun host(url: String): String =
+        Cancellables.runCatchingCancellable { java.net.URI.create(url).host }
+            .fold(onSuccess = { it ?: UNKNOWN_HOST }, onFailure = { UNKNOWN_HOST })
+
+    private fun launch(url: String): Boolean = Cancellables.runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)
@@ -43,7 +78,19 @@ internal class LoginIo {
         ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         true
-    }.getOrDefault(false)
+    }.onFailure { println("splice: could not open a browser (${SafeFailureText.render(it)})") }
+        .getOrDefault(false)
+}
+
+/** The shared login I/O primitives, held as a collaborator by each flow (Kotlin style law,
+ *  2026-08-15): a helper used by several types is a small named class they construct, not a pair
+ *  of free functions. */
+internal class LoginIo(private val browser: BrowserOpener = SystemBrowserOpener()) {
+
+    private val loginJson = Json { ignoreUnknownKeys = true }
+
+    /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
+    internal fun openBrowser(url: String): Boolean = browser.open(url)
 
     // Write credentials atomically at 0600 — routes to the shared primitive. This file held the
     // canonical copy SecureFile was lifted from; delegating keeps a single source of truth.
@@ -68,17 +115,55 @@ internal class LoginIo {
      *  Fail-closed on an unparseable body too: a credential file whose token we cannot read is not
      *  one to call a successful login. Nothing is written on refusal — the previous credential, if
      *  any, is left intact rather than replaced by a worthless one. */
-    internal fun persistIfSignedIn(path: Path, authJson: String): Boolean {
-        val token = Cancellables.runCatchingCancellable {
-            (loginJson.parseToJsonElement(authJson) as? JsonObject)?.let { accessTokenOf(it) }
+    internal fun persistIfSignedIn(
+        path: Path,
+        authJson: String,
+        account: OAuthLoginAccount? = null,
+    ): Boolean {
+        val parsed = Cancellables.runCatchingCancellable {
+            loginJson.parseToJsonElement(authJson) as? JsonObject
+        }.onFailure {
+            println("splice: token endpoint body did not parse (${SafeFailureText.render(it)})")
         }.getOrNull()
+        val token = parsed?.let(::accessTokenOf)
         if (token.isNullOrBlank()) {
             println("splice: token endpoint returned no access token — NOT signed in, nothing written")
             return false
         }
-        writeCredentialFile(path, authJson)
-        println("splice: signed in — credentials written to $path")
+        val target = Cancellables.runCatchingCancellable {
+            if (account == null || account.primary) {
+                writeCredentialFile(path, authJson)
+                path
+            } else {
+                persistLabeled(path, account, parsed)
+            }
+        }.getOrElse { failure ->
+            println("splice: credential persistence error: ${SafeFailureText.render(failure)}")
+            null
+        } ?: return false
+        println("splice: signed in — credentials written to $target")
         return true
+    }
+
+    private fun persistLabeled(path: Path, account: OAuthLoginAccount, parsed: JsonObject): Path? {
+        val label = account.resolvedLabel(parsed)
+        if (label.isNullOrBlank()) {
+            println("splice: token endpoint returned no stable account id — NOT signed in, nothing written")
+            return null
+        }
+        val files = OAuthAccountFiles(loginJson)
+        val target = if (!account.tokenDerivedLabel) {
+            files.writeLabeled(account.kind, path, label, parsed)
+        } else {
+            val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
+            written.retainedQuota?.let { quota ->
+                println("splice: retained quota in ${quota.fileName} — saved credentials as ${written.file.fileName}")
+            }
+            written.file
+        }
+        account.recordPersistedLabel(target.fileName.toString().removeSuffix(".json"))
+        account.releaseReservation()
+        return target
     }
 
     /** DR-172 gap (2026-09-01): the codex and grok login specs hand this the ON-DISK shape their
@@ -98,6 +183,7 @@ internal class LoginIo {
         identityHeaders.forEach { (k, v) -> request.header(k, v) }
     }
 
+    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): provider error bodies are frequently not JSON (HTML, plain prose), so 'no error code' is the normal reading; the caller already prints the status and the sanitized body.
     internal fun errorCode(body: String): String = Cancellables.runCatchingCancellable {
         (loginJson.parseToJsonElement(body) as? JsonObject)?.let { obj ->
             (obj["error"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
@@ -108,16 +194,18 @@ internal class LoginIo {
 
     /** THE RECEIPT (2026-08-01). /login runs detached, so stdout is lost; one line on disk is
      *  the only channel the head's /login hook can read back. Written for both outcomes. */
-    internal fun writeLoginOutcome(headKey: String, ok: Boolean) {
-        LoginOutcomeFile.write(
-            StatePaths().stateDir,
-            headKey,
-            if (ok) {
-                "signed in — this session is using the new credentials."
-            } else {
-                "sign-in did not complete. Run `$headKey login` in a terminal to see why."
-            },
-        )
+    internal fun writeLoginOutcome(headKey: String, ok: Boolean, account: OAuthLoginAccount? = null) {
+        val persistedLabel = if (ok) account?.persistedLabel() else null
+        LoginOutcomeFile.write(StatePaths().stateDir, headKey, outcomeText(headKey, ok, persistedLabel))
+    }
+
+    /** A labeled account is discovered when the head is assembled (ManagedHeadFactory), so it is on
+     *  disk now and in the pool after the next restart: the receipt says that, never "using". */
+    internal fun outcomeText(headKey: String, ok: Boolean, label: String?): String = when {
+        ok && label != null ->
+            "signed in as '$label' — saved beside the primary; it joins this head's pool after `splice restart`."
+        ok -> "signed in — this session is using the new credentials."
+        else -> "sign-in did not complete. Run `$headKey login` in a terminal to see why."
     }
 
     // Masked read into ~/.config/splice/keys.toml — the key never hits shell history, ps, or a
@@ -136,7 +224,7 @@ internal class LoginIo {
             else -> console.readPassword("$headKey API key ($envVar): ")?.let { String(it).trim() }
         }
         if (value != null && value.isEmpty()) println("splice: empty key — nothing stored.")
-        return !value.isNullOrEmpty() && runCatching {
+        return !value.isNullOrEmpty() && Cancellables.runCatchingCancellable {
             val store = KeyStore(KeyStorePath.defaultPath())
             store.write(envVar, value)
             println("$envVar stored to ${store.path} (0600) — live daemons pick it up on the next request.")
@@ -185,4 +273,9 @@ internal class LoginIo {
         Files.isSymbolicLink(InstallPaths(envReader = envReader).binDir.resolve(command))
 }
 
-private const val ERR_BODY_CAP = 300
+// V4-122: ONE error-body truncation width for the login flow, read by both files that render one
+// (this one and OAuthLoginFlow). Two widths would make the SAME upstream error read differently
+// depending on which path surfaced it, which is the whole reason the checker held the name as a
+// scar. Internal rather than private so the sibling in this package reads this declaration instead
+// of keeping its own copy.
+internal const val ERR_BODY_CAP = 300

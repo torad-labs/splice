@@ -6,6 +6,7 @@
 // because spawnDaemon and the launch shim must agree on the flag set.
 package splice.app.cli
 
+import splice.core.GATEWAY_VERSION
 import java.nio.file.Path
 
 internal class DaemonLaunch {
@@ -49,27 +50,32 @@ internal class DaemonLaunch {
      *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. */
     internal fun controlPortBound(port: Int): Boolean = health.controlPortBound(port)
 
-    /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
-    internal fun ensureDaemon(port: Int): Boolean {
-        if (health.daemonUp(port)) return true
+    /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers with
+     *  [expectedVersion] (this CLI's own, or the one an upgrade just activated). */
+    internal fun ensureDaemon(port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean {
+        if (health.daemonUp(port, expectedVersion)) return true
         val jar = spawn.startableJar(port) ?: return false
         println("splice: starting the daemon…")
-        val up = spawn.spawnDaemon(daemonLaunchArgv(jar, spawn.logsDir())) && waitUntilUp(port)
+        val up = spawn.spawnDaemon(daemonLaunchArgv(jar, spawn.logsDir())) && waitUntilUp(port, expectedVersion)
         // JW-01: when the daemon never answers, the reason is in the boot log — print it here
         // instead of leaving "starting the daemon…" as the last line the operator ever sees.
         if (!up) spawn.printBootLogTail()
         return up
     }
 
-    /** Poll until the daemon answers on [port], or the startup budget runs out. */
-    private fun waitUntilUp(port: Int): Boolean {
+    /** Poll until the daemon answers on [port] with [expectedVersion], or the startup budget runs out. */
+    private fun waitUntilUp(port: Int, expectedVersion: String): Boolean {
         repeat(STARTUP_POLLS) {
-            if (health.daemonUp(port)) return true
+            if (health.daemonUp(port, expectedVersion)) return true
             Thread.sleep(POLL_INTERVAL_MS)
         }
-        return health.daemonUp(port)
+        return health.daemonUp(port, expectedVersion)
     }
 }
 
-private const val STARTUP_POLLS = 60
+// V4-74: 62s = the old daemon's halt floor (57s) plus a 5s margin, because a restart now waits for
+// the outgoing daemon to DRAIN ITS IN-FLIGHT TURNS (up to 45s) before it releases the lock. This
+// budget must stay above DaemonLockWait's LOCK_WAIT_POLLS for the same reason that derived it from
+// the floor: a spawner that gave up first would report a failure for a restart that was working.
+internal const val STARTUP_POLLS = 248
 private const val POLL_INTERVAL_MS = 250L

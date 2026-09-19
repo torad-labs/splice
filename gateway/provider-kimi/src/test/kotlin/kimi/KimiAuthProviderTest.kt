@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -17,16 +19,19 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshCall
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -43,6 +48,7 @@ class KimiAuthProviderTest {
     fun `plan-tier 401 vetoes credential refresh`() {
         val auth = KimiAuthProvider(
             authPath = Files.createTempDirectory("kimi-plan-tier").resolve("auth.json"),
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.InvalidGrant("unused") },
         )
         assertTrue(
@@ -77,6 +83,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, access = "the-access", expiresAtS = Long.MAX_VALUE / 2)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { 1000L },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
@@ -93,6 +100,7 @@ class KimiAuthProviderTest {
         val dir = Files.createTempDirectory("kimi-missing")
         val auth = KimiAuthProvider(
             authPath = dir.resolve("nope.json"),
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
         assertNull(auth.credentials())
@@ -102,7 +110,8 @@ class KimiAuthProviderTest {
     fun `describe is masked kimi-oauth with device login`() = runTest {
         val dir = Files.createTempDirectory("kimi-desc")
         val file = authFile(dir, expiresAtS = Long.MAX_VALUE / 2)
-        val desc = KimiAuthProvider(authPath = file, refreshCall = { RefreshAttempt.Denied("test-denied") }).describe()
+        val denied = RefreshCall<KimiRefreshedTokens> { RefreshAttempt.Denied("test-denied") }
+        val desc = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = denied).describe()
         assertTrue(desc.present)
         assertEquals("kimi-oauth", desc.kind)
         assertEquals("device", desc.fields["login"])
@@ -121,6 +130,7 @@ class KimiAuthProviderTest {
         val calls = AtomicInteger(0)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = {
                 calls.incrementAndGet()
@@ -141,6 +151,7 @@ class KimiAuthProviderTest {
         val calls = AtomicInteger(0)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = {
                 calls.incrementAndGet()
@@ -160,6 +171,8 @@ class KimiAuthProviderTest {
         assertEquals("rotated-access", onDisk["access_token"]?.jsonPrimitive?.content)
         assertEquals("rotated-refresh", onDisk["refresh_token"]?.jsonPrimitive?.content)
         assertEquals("${nowS + 3600}", onDisk["expires_at"]?.jsonPrimitive?.content)
+        assertFalse("splice_auth_kind" in onDisk)
+        assertFalse("splice_account_label" in onDisk)
     }
 
     // G17 two-tier: in the proactive window with a prefetch scope, the REQUEST never waits — the
@@ -177,6 +190,7 @@ class KimiAuthProviderTest {
         try {
             val auth = KimiAuthProvider(
                 authPath = file,
+                authCacheMs = 30_000L,
                 clock = { nowMs },
                 refreshCall = {
                     calls.incrementAndGet()
@@ -192,11 +206,9 @@ class KimiAuthProviderTest {
             )
             // request path: current token, no waiting on the exchange
             assertEquals("current", (auth.credentials() as Credentials.ApiKey).key)
-            // background: poll real time for the rotation to land on disk
-            val deadline = System.nanoTime() + 5_000_000_000L
-            while (!Files.readString(file).contains("rotated-access") && System.nanoTime() < deadline) {
-                Thread.sleep(10)
-            }
+            // background: the rotation is a child of the prefetch scope, so joining that scope's
+            // children IS the rotation landing — an event, not a poll of real time.
+            prefetch.coroutineContext.job.children.toList().joinAll()
             assertEquals(1, calls.get())
             val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
             assertEquals("rotated-access", onDisk["access_token"]?.jsonPrimitive?.content)
@@ -215,6 +227,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, access = "current", expiresAtS = nowS + 30, expiresInS = 1000)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = {
                 RefreshAttempt.Granted(
@@ -238,6 +251,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, expiresAtS = nowS - 10, expiresInS = 1000)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
@@ -253,6 +267,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, access = "still-valid", expiresAtS = nowS + 400, expiresInS = 1000)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
@@ -272,6 +287,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, access = "still-valid", expiresAtS = nowS + 400, expiresInS = 1000)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = {
                 RefreshAttempt.Granted(
@@ -307,6 +323,7 @@ class KimiAuthProviderTest {
         val calls = AtomicInteger(0)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { nowMs },
             refreshCall = {
                 calls.incrementAndGet()
@@ -335,7 +352,7 @@ class KimiAuthProviderTest {
         val nowS = nowMs / 1000
         val file = authFile(dir, access = "acc", refresh = "R1", expiresAtS = nowS - 10, expiresInS = 1000)
         val seen = mutableListOf<String>()
-        val auth = KimiAuthProvider(authPath = file, clock = { nowMs }, refreshCall = { token ->
+        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { nowMs }, refreshCall = { token ->
             seen.add(token)
             if (token == "R1") {
                 // another process's rotation lands on disk between our read and the POST.
@@ -366,7 +383,7 @@ class KimiAuthProviderTest {
         val nowS = nowMs / 1000
         val file = authFile(dir, access = "acc", refresh = "R1", expiresAtS = nowS - 10, expiresInS = 1000)
         val calls = AtomicInteger(0)
-        val auth = KimiAuthProvider(authPath = file, clock = { nowMs }, refreshCall = {
+        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { nowMs }, refreshCall = {
             val n = calls.incrementAndGet()
             Files.writeString(
                 file,
@@ -385,6 +402,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, expiresAtS = 0L)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.Granted(KimiRefreshedTokens("a", "r", 3600)) },
         )
         auth.refresh()
@@ -403,6 +421,7 @@ class KimiAuthProviderTest {
         val proceed = CompletableDeferred<Unit>()
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             refreshCall = {
                 calls.incrementAndGet()
                 proceed.await()
@@ -426,7 +445,7 @@ class KimiAuthProviderTest {
         val dir = Files.createTempDirectory("kimi-latch")
         val file = authFile(dir, refresh = "dead-refresh", expiresAtS = 0L)
         val calls = AtomicInteger()
-        val auth = KimiAuthProvider(authPath = file, refreshCall = {
+        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = {
             calls.incrementAndGet()
             RefreshAttempt.InvalidGrant("dead")
         })
@@ -444,7 +463,7 @@ class KimiAuthProviderTest {
         val file = authFile(dir, refresh = "dead-refresh", expiresAtS = 0L)
         val calls = AtomicInteger()
         var granted = false
-        val auth = KimiAuthProvider(authPath = file, refreshCall = {
+        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = {
             calls.incrementAndGet()
             if (granted) {
                 RefreshAttempt.Granted(KimiRefreshedTokens("rotated-access", "rotated-refresh", expiresIn = 3600))
@@ -454,8 +473,10 @@ class KimiAuthProviderTest {
         })
         assertNull(auth.refresh())
         assertEquals(1, calls.get())
-        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        val before = Files.getLastModifiedTime(file).toMillis()
         authFile(dir, access = "kimi-access", refresh = "fresh-refresh", expiresAtS = 0L) // re-login rewrites the file
+        // the mtime is STEPPED rather than waited for, so a coarse-grained filesystem still advances it
+        Files.setLastModifiedTime(file, FileTime.fromMillis(before + 1_000))
         granted = true
         assertEquals("rotated-access", (auth.refresh() as Credentials.ApiKey).key)
         assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it
@@ -466,7 +487,8 @@ class KimiAuthProviderTest {
     fun `describe surfaces refresh_latched after a confirmed invalid_grant`() = runTest {
         val dir = Files.createTempDirectory("kimi-latch-desc")
         val file = authFile(dir, refresh = "dead-refresh", expiresAtS = 0L)
-        val auth = KimiAuthProvider(authPath = file, refreshCall = { RefreshAttempt.InvalidGrant("dead") })
+        val dead = RefreshCall<KimiRefreshedTokens> { RefreshAttempt.InvalidGrant("dead") }
+        val auth = KimiAuthProvider(authPath = file, authCacheMs = 30_000L, refreshCall = dead)
         assertNull(auth.describe().fields["refresh_latched"])
         assertNull(auth.refresh())
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
@@ -490,6 +512,7 @@ class KimiRereadFailureTest {
         val log = mutableListOf<String>()
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             refreshCall = {
                 Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("---------"))
                 RefreshAttempt.InvalidGrant("dead")
@@ -516,6 +539,7 @@ class KimiRereadFailureTest {
         val log = mutableListOf<String>()
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
             log = splice.core.util.LogSink { log += it },
         )
@@ -547,6 +571,7 @@ class KimiSynthesizedExpiryTest {
         val calls = AtomicInteger(0)
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { mtime + 1_000 },
             refreshCall = {
                 calls.incrementAndGet()
@@ -571,10 +596,12 @@ class KimiSynthesizedExpiryTest {
             file,
             """{"access_token":"old-access","refresh_token":"old-refresh","expires_at":1,
                 "scope":"coding","token_type":"Bearer","expires_in":3600,
-                "device_id":"dev-123","vendor_future_field":{"nested":true}}""",
+                "device_id":"dev-123","vendor_future_field":{"nested":true},
+                "splice_auth_kind":"kimi-oauth","splice_account_label":"backup"}""",
         )
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { 1_000_000L },
             refreshCall = {
                 RefreshAttempt.Granted(
@@ -594,6 +621,8 @@ class KimiSynthesizedExpiryTest {
         assertEquals("new-refresh", onDisk["refresh_token"]!!.jsonPrimitive.content)
         assertEquals("dev-123", onDisk["device_id"]!!.jsonPrimitive.content, "foreign key must survive")
         assertTrue("vendor_future_field" in onDisk, "unknown vendor field must survive: $onDisk")
+        assertEquals("kimi-oauth", onDisk["splice_auth_kind"]!!.jsonPrimitive.content)
+        assertEquals("backup", onDisk["splice_account_label"]!!.jsonPrimitive.content)
         assertEquals("7200", onDisk["expires_in"]!!.jsonPrimitive.content, "rotation fields must replace")
     }
 
@@ -610,6 +639,7 @@ class KimiSynthesizedExpiryTest {
         val drLog = mutableListOf<String>()
         val auth = KimiAuthProvider(
             authPath = authPath,
+            authCacheMs = 30_000L,
             refreshCall = { RefreshAttempt.InvalidGrant("must-not-be-reached") },
             log = splice.core.util.LogSink { drLog += it },
         )
@@ -649,6 +679,7 @@ class KimiPersistMergeDiagnosticsTest {
         val log = mutableListOf<String>()
         val auth = KimiAuthProvider(
             authPath = file,
+            authCacheMs = 30_000L,
             clock = { 5_000_000L },
             refreshCall = {
                 Files.writeString(file, """{"access_token":"$sentinel""")

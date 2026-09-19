@@ -4,7 +4,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.spi.CodeModeResult
@@ -20,7 +21,15 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val failed = first.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
                 posts++
-                if (posts == 1) outerOutcome() else TurnOutcome.Failure(ErrorType.API_ERROR, "down")
+                if (posts == 1) {
+                    outerOutcome()
+                } else {
+                    TurnOutcome.Failure(
+                        "down",
+                        cause = FailureCause.CODE_MODE_PROTOCOL,
+                        phase = FailurePhase.MID_OUTPUT,
+                    )
+                }
             }
         assertTrue(failed is TurnOutcome.Failure)
 
@@ -56,7 +65,11 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                 when (posts) {
                     1 -> outerOutcome("outer-1")
                     2 -> outerOutcome("outer-2")
-                    else -> TurnOutcome.Failure(ErrorType.API_ERROR, "down")
+                    else -> TurnOutcome.Failure(
+                        "down",
+                        cause = FailureCause.CODE_MODE_PROTOCOL,
+                        phase = FailurePhase.MID_OUTPUT,
+                    )
                 }
             }
         assertTrue(failed is TurnOutcome.Failure)

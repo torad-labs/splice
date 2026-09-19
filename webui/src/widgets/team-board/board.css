@@ -1,0 +1,781 @@
+/* THE BOARD, bound to the measured comp.
+
+   Every box below is a region of webui/.impeccable/build/scaffold/layout.css,
+   measured in percent of the comp frame (1536x1024). This page is drawn inside
+   the shell, whose rail takes the frame's left 9% and whose rule takes its top
+   5.8%, so each number appears twice in the comment beside it: the frame
+   percentage the comp measured, and the page-relative percentage this sheet
+   actually places it with (left = (x-9)/0.91, top = (y-5.8)/0.942). Only the
+   footer escapes that, because the comp draws it across the rail's own edge.
+
+   The strip's type is the comp's: labels at the smallest rung, values one step
+   up, and the field grid is a ch grid so the columns line up strip to strip
+   the way the comp's do. */
+
+.myx-board {
+  /* The comp draws two creams, not one: its session strips measure #dfd7c5 and its label
+     plates and footer a step darker at #c2b59f. The second IS a token -- `--plate`, sampled
+     (195,182,160) in M1-13 -- and this local derivation stood in for it because nothing read
+     the token. It is derived again here only to be deleted: 190 against the comp's measured
+     178-188, where the token lands at 183, dead centre. */
+  position: relative;
+  /* cancel the page's own padding: the comp's boxes are measured from the frame */
+  margin: calc(-1 * var(--space-5));
+  height: calc(100% + var(--space-5) * 2);
+  min-height: calc(100% + var(--space-5) * 2);
+  overflow: hidden;
+}
+
+/* THE BOARD'S STRIPS KEEP THEIR TRACED WIDTH (M1-97). `.myx-board-strip` declares the comp's own
+   91.071% at specificity (0,1,0), and ui.css's `.myx-strip { width: max-content }` - added by M1-12
+   for a RACK, where a strip is as long as its fields and the bay scrolls - is also (0,1,0). So the
+   winner was whichever sheet loaded last, and the board's strips grew to fit their nowrap cells
+   instead of the column the comp traced: measured at 1536 with the hero fixture, the chat message
+   cell reached x=1706 against a 1536 frame, 170px past the edge with no gutter, and the message
+   could not wrap because the strip had widened to fit it on one line. max-content is right for a
+   rack and wrong for a composition: the board does not scroll, it PLACES. This rule is deliberately
+   (0,2,0) so the traced width wins wherever the sheets land in the cascade. */
+/* THE BOARD'S CELLS SHRINK AND ITS MESSAGE WRAPS (M1-97), which is what the comp shows and what the
+   DOM said was missing. Measured at 1536 on the hero: the chat message strip reached x=1579 and a
+   field cell x=1706 against a 1536 frame - 170px past the edge with no gutter - and the message
+   could not wrap because its value cell computes white-space: nowrap. Two rules, both scoped to the
+   board: a racked strip is as wide as its fields and its bay scrolls (ui.css, M1-12, right for a
+   RACK), while the board PLACES its strips into traced columns and has nowhere to scroll, so its
+   cells take the width they are given and its message cell wraps inside the card. The comp sets the
+   same message on three lines inside its cell.
+   NOTE the first attempt at this was `.myx-board .myx-board-strip { width: 91.071% }` and it moved
+   NOTHING: the offending elements carry `.myx-board-msg`, not `.myx-board-strip`, so the selector
+   matched no element at all and the measurement was identical before and after. That is the shape
+   M1-52 measured on `head-key` (1.07 to 1.06) and the reason this fix was re-measured rather than
+   assumed. */
+.myx-board .myx-sfield { flex: 0 1 auto; min-width: 0; }
+.myx-board .myx-sfield-value { overflow: hidden; text-overflow: ellipsis; }
+.myx-board-msg .myx-sfield-value { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+
+/* --- the strip's type and grid --- */
+.myx-board .myx-strip {
+  position: absolute;
+  border-radius: 0;
+}
+.myx-board .myx-strip > .myx-edge { padding-inline-start: var(--space-4); }
+/* The board's strips carry no edge label -- the value beside the mark already
+   says what the row is (design review B10) -- so the column's fixed 6ch budget
+   for one would just push the comp's grid 42px to the right. */
+.myx-board .myx-strip > .myx-edge .myx-edge-label { display: none; }
+.myx-board .myx-strip > .myx-edge .myx-edge-mark { inset-block: 0; width: var(--space-4); }
+/* The comp's lettering is condensed, and the face now says so: Archivo's wdth
+   axis (62-125, declared in shared/fonts.css) is set to 62 on the board's cells
+   rather than a transform squeezing them. Measured on the comp: its strip type
+   advances 4.7-5.0px per character against a 12-15px ink height, which is 0.34em
+   -- a width no uncondensed face reaches and which a scaleX can only fake by
+   rendering glyphs smaller than the size every check downstream reads. At
+   --text-2 on the axis's floor, "gs-backend-claude" measures 85.9px against the
+   comp's 84. */
+.myx-board .myx-sfield {
+  /* The comp's strip is a single plate: its cells are told apart by the rules
+     between them, not by a second fill. */
+  background: var(--strip);
+  overflow: hidden;
+  /* THE SIZE COMES FROM THE PRIMITIVE (M1-85). This plate carried --text-2 and the value rule below
+     repeated it, which was the whole of the two-rung finding: ui.css binds .myx-sfield-value at
+     --text-3, and exactly one page in the tree overrode it down. THE OVERRIDE WAS WRONG AND THE
+     PAGE THAT NEVER OVERRODE WAS RIGHT -- see the value rule below for the measurement that settles
+     it. Removing it here is what lets the primitive's rung reach this page. */
+  font-variation-settings: 'wdth' 62;
+  /* The comp's grid starts at its own left edge, so the inset lives in the
+     strip's edge column and the fields take none.
+     TRUE OF THE FIRST CELL ONLY (M3-04): the edge column sits left of cell one, but the comp insets
+     every INTERIOR cell too -- about 8px from its rule at native resolution -- and the build printed
+     them flush, 0 to 1px, seven of seven. The head strips take their inline inset from the
+     `.myx-board-strip .myx-sfield` rule beside the type sizes below; this rule keeps the vertical.
+     Its labels sit at y13 and its
+     rule at y24, which is where the label's line box ends at this size.
+     THE TRADE IS STILL HERE AND THE REASON HAS CHANGED (M1-71). This said the
+     comp sets its strips smaller than the ladder's floor and the floor wins.
+     THE COMPARISON THAT STOOD HERE WAS APPLES TO ORANGES and is corrected by
+     M1-85: it set the comp's 11-12 row ink BAND against --text-2's 9.66px CAP,
+     which are different quantities - a band is a measured run of ink rows and a
+     cap is one glyph's height - so the two numbers could not be compared and the
+     step they seemed to show was an artefact of the unit. The conclusion
+     survives on the plate's own geometry, which the paragraph below gives;
+     this sentence is struck so the next reader does not quote the unit error. What actually decides it is the plate's own
+     geometry: the columns are the comp's fixed percentages, so a value that
+     does not fit runs out of its column rather than the page reflowing.
+     Measured at 1536 on the hero: 10 of 99 value cells clip
+     (`~/.../grailseeker-b…`, `gs-backend-builder`, `building GS-41 don…`,
+     `claude-deepseek`) and the LABELS no longer do -- 4 of 79 before M1-64,
+     0 of 79 after. */
+  /* The comp's label row is 4px deep, not 12: its rule sits 19px below the
+     plate's top (lead-strip-2 measures it at row 19 of a plate that starts at
+     0), and the label's line box ends where that rule is. */
+  padding: var(--space-2) 0 0;
+  /* the comp's rules between cells are the same ink as the rule under the label
+     row: it prints one weight of rule on the whole strip */
+  border-inline-end: var(--hair) solid var(--strip-ink-mute);
+}
+.myx-board .myx-sfield-label {
+  display: block;
+  /* THE WEIGHT WENT BACK TO THE PRIMITIVE (M1-90), and the declaration was REMOVED rather than
+     restated here: two rules binding one role is the defect this campaign has fixed three times
+     tonight, and a redundant agreement is the same shape as a silent override -- it is the line the
+     next seat edits when they want the two to disagree again. M1-64 removed the SIZE from this rule
+     and described the remainder as "what is genuinely the board's (weight, the pinned line box, the
+     rule's ink)"; the line box and the rule ink are geometric facts about the comp's plate and stay,
+     while the weight is a type choice no row had measured. The comp's own labels measure the LIGHTEST
+     text on its strips -- 18.2 percent ink density against 26.7 and 31.1 for the two regions the comp
+     records as regular -- and the cost of either weight is zero across 784 labels on ten pages.
+     ui.css carries both readings and this disagreement in full. */
+  /* THE SIZE BELONGS TO THE PRIMITIVE, AND THIS RULE WAS TAKING IT (M1-64). This carried
+     `font-size: var(--text-2)`. At (0,2,0) it beat ui.css's binding at (0,1,0), so binding the
+     primitive moved nothing on the board and the label still rendered at 14px -- cap 10 where the
+     comp's own plate measures 6 to 8. Read off the comp's pixels, region by region: lead-strip's
+     label ink spans plate rows 13..18 (6) against its value's rows 38..48 (11); lead-strip-2's
+     spans rows 7..14 (8) against rows 33..44 (12). The board's two live truncations, `context l…`
+     and `scratchp…`, are this rule's size with no room to fit it. */
+  /* THE LINE BOX IS PINNED AS A LENGTH, NOT AS A RATIO OF THE SIZE. It was `1.05`, which put the
+     rule at 4 + 14.7 = 18.7 -- right, but only by accident of the label being 14px: at 1.05 the
+     shrunken label would print its rule at plate row 13, six rows above where the comp prints it.
+     lead-strip-2 measures the rule at plate rows 19-20 (a full-width band with paper on neither
+     side), and the plate's own top padding is --space-2, so the line box is that offset less the
+     padding. Pinned this way, the size and the geometry move independently. */
+  line-height: calc(var(--space-5) - var(--hair));
+  /* the comp's rule under the label row measures #5e5d50, which is the mute
+     ink, not the light field line the primitive defaults to */
+  border-bottom: var(--hair) solid var(--strip-ink-mute);
+}
+/* The board's values are set in the same condensed face as its labels, with
+   tabular figures so the columns still line up strip to strip. This is a
+   MEASURED deviation, not a workaround, and M1-15 re-derived it rather than
+   assuming it: on team-board-a.png the comp's figures advance 4.67px at
+   --text-1 (0.389em) across seventeen strings of five strips, mono-tight
+   (pstdev 0.27), and every monospace obtainable at or above the type floor is
+   wider than that -- JetBrains Mono 7.20px (+54%), Martian Mono 7.20px at its
+   wdth floor of 75 (+54%), Recursive 7.20px at MONO 1 (+54%), Iosevka 6.02px
+   (+29%), and Iosevka Narrow's published 0.4375em would still be +12% and is
+   not published as a webfont. Archivo at wdth 62 reaches 52.9px on the comp's
+   48px sample, +10%, so it is the closest face that exists. */
+/* THE ROLE'S RUNG IS --text-3, MEASURED AGAINST THE COMP'S OWN PLATE (M1-85), and this rule used to
+   push it down to --text-2 while fleet left the primitive alone. Which of the two was right is a
+   measurement, not a preference:
+
+   THE COMP'S VALUE INK, read off team-board-a's lead strip row by row: its value text spans plate
+   rows 37..48 -- twelve rows from the ascender top to the baseline -- with descenders reaching row
+   52, against a structural baseline of 20 dark pixels per row from the cells' own box borders. Its
+   digit cells (turns, 5h 74%, 14:01) read eleven rows, which is the CAP class. TWELVE ROWS IN THE
+   ASCENDER CLASS AND ELEVEN IN THE CAP CLASS ARE ONE SIZE, because Archivo's ascender is 0.73em and
+   its cap is 0.69em: 12/0.73 = 16.4px and 11/0.69 = 15.9px. Two glyph classes, one answer, and it
+   sits between --text-3 (16) and --text-4 (17), far nearer --text-3.
+
+   OURS AT EACH RUNG, same classes: --text-2 gives an ascender of 10.22px (10.22/0.73 = 14) and a
+   cap of 9.66 -- ONE AND A HALF ROWS SHORT of the comp's twelve. --text-3 gives 11.84, within a
+   fifth of a row of it. That is the inversion this row was cut on, confirmed: the page with no comp
+   was reading the comp correctly and the comp's own page was the one overriding it away.
+
+   THE COST, measured before the change rather than after: the strip's value cells clip 10 of 99 at
+   --text-2 and 10 of 99 at --text-3 -- the same ten cells, no new one starting to clip -- while the
+   total overflow across all 99 goes from 75px to 85px and the worst single cell from 15px to 17px.
+   The columns have the slack; the gain is the comp's own size. */
+.myx-board .myx-sfield-value {
+  font-family: var(--font-label);
+  font-variant-numeric: tabular-nums;
+  /* THE WEIGHT IS THE PRIMITIVE'S (M1-89). This carried 600 while ui.css bound none, so the role was
+     bold on this page and regular everywhere else; the comp's own strips measure at or below its
+     recorded regular weight, and dropping to 400 halves the cells this page clips. See ui.css for
+     both readings. */
+  padding-block-start: var(--space-3);
+}
+
+/* --- team header: region team-header (frame x10 y6.2 w88.5 h5) --- */
+.myx-board-header {
+  left: 1.099%;
+  top: 0.425%;
+  width: 97.253%;
+  /* ---- THE PLATE IS THE COMP'S PLATE, NOT ITS REGION (M1-51) -----------------
+     This was the REGION box: 5.308 percent of .myx-board's 965px is 51.2px, and the comp's
+     header plate measures 35px (y64 outline to y98 outline) inside a 51.2px region. The racked
+     strips do not have this defect because board.css already converted them to their plate
+     extents ("the comp's plates are 90-94% of the region they were measured into"); the header
+     was the one member left at its region.
+     Derived and expressed relative, per the row: the comp's 35px is 3.418 percent of the COMP
+     FRAME, and .myx-board is 94.24 percent of that frame, so the same plate is 3.627 percent of
+     the board. A percentage of the board and not a px value, because a px height would be the
+     one object in this world that stops following the frame (M1-26 moved the ladder into rem).
+     MEASURED AND NOT SHIPPED, with the numbers, because the arithmetic says why. Four variants
+     were rendered and scored on this page (team-header region detail):
+       height 5.308% (box 51.2px, 4.999% of frame)                                    -> 0.3776
+       height 3.627% (35px, the comp's plate) ALONE                                   -> 0.0710
+       + the field's gap and top pad cut so the rows sit 4px higher                   -> 0.0339
+       (value line box also cut to 1.15, earlier)                                     -> clipped
+     BOTH HALVES LAND TOGETHER OR NEITHER DOES, and neither works, so neither ships. The crop
+     is what decides it: at the comp's 35px plate this build's label row collapses to 10px and
+     the two rows crush into each other. THE ARITHMETIC: the comp fits a 19px label row and a
+     13px value row into 35px; this build needs 15.7px and 21px for the same two rows at
+     --text-2, which is 36.7px of rows before any padding at all. The comp's header is 35px
+     because THE COMP'S HEADER TYPE IS SMALLER THAN THE RACKED STRIPS' -- visibly so in the
+     region crop -- and this build sets both at --text-2. So the plate cannot be reached from
+     a height or a padding declaration; it needs the header's own type rung, which is out of
+     every fence in this campaign. Reported with the four scores rather than forced.
+     THE SHIPPED VALUE IS THE REGION BOX AND THAT IS STILL A DEFECT -- it is tracked, not
+     fixed here. */
+  height: 5.308%;
+}
+/* ---- E-8 · THE GREEN BAR IS DELETED (M1-24) --------------------------------
+   Measured on the team header (y 66-111, x 159-1510): the comp has ZERO green pixels where
+   the build paints 498 at `#548630`, a full-height bar at the strip's leading edge, and it
+   is the most saturated object in the hero. The world's own claim is the reason it goes: a
+   holder edge means ATTENTION STATE and always carries a text label, and a header has no
+   state -- `edgeLabel=""` on this very strip is the build admitting it. A bar with no state
+   is either meaningless colour or a false claim of one, and both are worse than nothing.
+   Green holder edges stay exactly where the comp puts them, on the data rows inside the
+   bays, where a row HAS a state.
+   THE COLUMN STAYS. What is deleted is the mark, not the 16px edge column: the header's
+   fields have to stay on the same grid as the strips under them, and every strip in the
+   bay reserves that column. The comp agrees -- its header's paper runs to x 159 and its
+   first field starts past the same inset.
+   What the comp puts there instead is E-5's two pins: one at x 164.5 and one at x 1504.5,
+   both centred at y 75.5, against a strip whose paper starts at x 159 and y 66. The leading
+   one is ui.css's, uncovered now that the mark draws nothing; the trailing one is this rule. */
+/* ---- THE HEADER'S HEIGHT: ATTEMPTED, MEASURED, AND PUT BACK (M1-43) ---------
+   Three variants were rendered and scored on the comp-of-record page, and the instrument and the
+   geometry disagree -- which the orchestrator asked to be written down rather than resolved
+   silently. The comp's header PLATE is 35px (y64 outline to y98 outline) = 3.418 percent of
+   frame. The build's box is 5.308 percent of .myx-board = 51.2px = 4.999 percent, i.e. the
+   REGION box rather than the plate, and that is a real defect of exactly the class board.css
+   already fixed for the racked strips ("the comp's plates are 90-94% of the region they were
+   measured into").
+   MEASURED, on teams, region detail for team-header:
+     height 5.308% (box 51.2px, 4.999% of frame) -> detail 0.3776   <- the shipped state
+     height removed, header rows tightened to the comp's proportions (35.7px, 3.485%) -> 0.0710
+       after the value's line box was restored to the face's own 1.5 (42.7px, 4.169%) -> 0.1757
+   SO THE SHORTER BOX SCORES WORSE, and the reason is visible in the region crop once you open
+   it: the comp's team-header region is 51px tall and carries its plate at the TOP of it, so what
+   the region compares is not the plate's height but WHERE THE TWO TEXT ROWS FALL. At 51.2px this
+   build puts its value row at y89-110 against the comp's y88-97 -- the tops line up, which is
+   what the detail score is reading -- and at 42.7px the value row moves up to y83-104 and the
+   region loses 20 points. Two wrongs aligning, and shrinking the box breaks the alignment.
+   WHAT I BELIEVE, and why: THE COMP IS RIGHT AND THE INSTRUMENT IS READING THE WRONG THING.
+   A 35px plate is what the comp draws and 51.2px is a region box; that the shorter plate scores
+   worse is a statement about where a row lands inside a fixed region, not about the plate's
+   height. But the fix is therefore NOT "shrink the header" -- it is that the header's rows have
+   to sit where the comp puts them inside a plate of the comp's height, which is a padding and
+   face question (.myx-sfield's gap, the value's 21px line box against the comp's 13px value row)
+   and not a height declaration. That is a row of its own and it should not be forced into this
+   one: three variants have been measured, the honest state is the one that scores, and a fourth
+   guess at 04:00 is not more likely to land than at noon. */
+/* ---- THE HEADER'S TWO ROWS SIT WHERE THE COMP PUTS THEM (M1-51) -------------
+   The comp spends, across its 35px plate: 2px above the label, the label row to its rule at
+   y86, then 1px of rule, and the value's row top at y88 -- 24px from the plate's top to the
+   value's row, and 34px to the plate's bottom.
+   The build spent 28px from the plate's top to the value's row, so with the plate cut to the
+   comp's height the rows would sit 4px low and the value's ink would fall outside it. These two
+   declarations are that 4px: .myx-sfield's own gap (ui.css:398, var(--space-2)) is air between
+   two rows that already have a rule dividing them, and the field's top pad is a rung below the
+   rack's. Both are board.css-scoped on purpose -- the racked strips keep the gap and the pad
+   that make their own two rows read, and the header is a tighter member, which is why the same
+   two rows are 63px in a racked strip and 35px here. */
+/* ---- THE HEADER'S TWO ROWS: ATTEMPTED AND WITHDRAWN (M1-51) -----------------
+   These two declarations were the second half of the pair above: .myx-sfield's gap (ui.css:398)
+   is air between two rows that already have a rule dividing them, and the field's top pad is a
+   rung below the rack's. Cut that 4px with the plate at the comp's 35px and the label row
+   collapses to 10px and the rows crush together -- measured, 0.0339, and visible in the crop.
+   Withdrawn with the height it was paired to; the racked strips keep the gap and the pad that
+   make their own two rows read. */
+.myx-board-header > .myx-edge .myx-edge-mark { background: none; }
+.myx-board-header::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  inset-block-start: var(--space-2);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--strip-ink);
+  pointer-events: none;
+}
+
+/* --- the head bays: regions bay-claude and bay-deepseek --- */
+.myx-board-bay {
+  position: absolute;
+  border: none;
+}
+/* TWO KINDS OF QUANTITY, AND ONLY ONE OF THEM IS TYPOGRAPHIC (M1-105, the orchestrator's ruling).
+   A bay's box is COMPOSITIONAL - it is the room the rack is given and it fits the board it sits in -
+   so it stays a fraction of the board and always fits, at any aspect.
+   A strip's pitch, a plate's height, a field row are TYPOGRAPHIC - line-height plus padding - and
+   they must scale with the root, because a strip that does not grow with its own text is the
+   distortion this row measured.
+   THE FIRST CONVERSION HERE WAS THE WRONG LAYER: the bay boxes were moved to rem, which gave the
+   strips 2.500 for free (they are percentages OF the bay) while making the bays 2022.56px inside a
+   2011.5px board. That is recorded rather than hidden because it is the exact shape of the error -
+   the right number obtained one layer up from where it belongs, with a contradiction as the receipt.
+   The typographic values live in the widget's inline per-row plate heights, not in this file, so
+   converting THEM is the step this row still owes and it needs a fence that reaches
+   widgets/team-board/index.tsx. The boxes below are the compositional set, unchanged.
+   (History, struck: these were briefly top 4.93125rem / height 50.5625rem.) */
+/* OLD HEADER, KEPT FOR THE RECORD: THE BOARD'S VERTICAL GEOMETRY IS rem, ITS HORIZONTAL IS PERCENT. These four boxes were
+   percentages of the board, and the board's height is 100vh minus the rule band - a vh quantity
+   minus a vw one - so every strip traced inside them inherited the HEIGHT law: measured, the strip
+   went 63 -> 131.4px from 1536 to 3840, a ratio of 2.085, where the root font size in the same
+   frames went 16.0005 -> 40.0013, a ratio of 2.500. Same element, same token, two laws, and the
+   board was the only address that disagreed.
+   THE CONVERSION IS A TRANSCRIPTION, not a re-derivation: the comp frame's root is 16px, so a traced
+   comp PIXEL is a rem value at the comp frame - the board at the comp is 964.6px tall, so 8.174% is
+   78.9px and 4.93125rem, and 83.864% is 809px and 50.5625rem. No judgement per value.
+   WIDTH AND LEFT STAY PERCENTAGES on purpose: the board's width already tracks the frame, which is
+   the same axis the root tracks, so the horizontal geometry was obeying the right law all along. The
+   vertical was obeying the box's. All four boxes convert together rather than one at a time because
+   a half-converted board has two contradictory vertical laws inside it, which is the defect rather
+   than a step towards fixing it. */
+/* THE BOARD'S TYPE FOLLOWS THE BOARD, NOT THE ROOT (M1-105). Measured before this rule: the root
+   font size went 16.0005 -> 40.0013 (2.500) while the board's plates went 63 -> 131.4 (2.085), so the
+   type and its container obeyed different laws inside one object and the plates CROWDED as the frame
+   widened - 16px of type in a 63px strip is 25.4 percent fill at the comp, and 40px in 131.4px is
+   30.4 percent at 3840. The board is a COMPOSITION THAT FITS ITS SLOT: everything placed in it scales
+   by the board's own factor, so the type must too.
+   THE CONVERSION: the board's box is 964.6px at the comp frame, so one percent of its height is
+   9.646px and 16px is 1.6587 percent - hence cqh, the container-query height unit, on the
+   DESCENDANTS. NOT on `.myx-board` itself: a container cannot query itself, so a cqh font-size there
+   would resolve against some outer container or silently fall back, which in a tree with no other
+   query container is a wrong number rather than an error. Checked before writing: `container-type`
+   and `container-name` appear ZERO times in webui/src, so this board is the only query container and
+   every cqh below resolves against it.
+   THE TRADE, recorded rather than discovered later: type in cqh does not respond to the browser's
+   base-font-size setting or to text-only zoom. Page zoom still works. For a comp-faithful hero
+   composition that is defensible - the board is a poster and its proportions are the approved
+   artifact - while the rest of the console stays in rem and stays adjustable. */
+.myx-board { container-type: size; }
+/* 16px, 14px and 12px at the comp frame, as a share of the board's own height. */
+.myx-board .myx-sfield-value { font-size: 1.6587cqh; }
+/* THE PLATE'S LETTERING IS 12.8px (M3-04). M1-64 raised the bay label from --text-1 to --text-3 on
+   "the contract's bay label is 16", and the bisect put -0.024 on activity-label and chat-label at
+   that commit: the crop shows the lettering overfilling the plate the comp leaves air in. With the
+   weight above, 80 percent of the 16px share is what the four plate regions scored best at. */
+.myx-board .myx-bay-label { font-size: 1.3270cqh; }
+/* THE STRIP'S VALUES ARE 12.8px, NOT 16, AND ITS CELLS INSET 4px (M3-04, the finish review's items 1
+   and 2). Measured on team-board-a.png at its native 1536x1024: the comp's interior cells inset their
+   text about 8px from the rule (lead-strip 8,8,9,8,8,3,9; lead-strip-2 7,5,6,9,7,6,5), and it prints
+   the same strings NARROWER than Archivo does at 16px on the axis floor -- gs-backend-claude 75px of
+   ink against our 93.9, 5h 74% 29 against 37.6, 14:01 24 against 29.6, median 0.84 of our width.
+   The comp's face is condensed past wdth 62, so its inset, its size and its no-truncation cannot
+   all be had in this face, and the choice was made on the frame rather than by argument. Injected
+   on the hero at 1536, each variant scored with comp-diff (strips = the six head-strip regions):
+     inset 0, 16px (before)    11 clipped, 109px overflow, strips 0.622, region median 0.630
+     inset 8, 16px             45 clipped, 621px overflow, strips 0.620, region median 0.620
+     inset 8, 12.8px           21 clipped, 181px overflow, strips 0.665, region median 0.670
+     inset 4, 12.8px (this)     9 clipped,  34px overflow, strips 0.678, region median 0.670
+   Every 8px variant clips 17 or more cells; 4px is the inset this face can carry while truncating
+   LESS than before, not more. The size is the one d040ad96 raised to --text-3 on the comp's cap
+   height, and its own note recorded the cost (10 of 99 cells clipping); the bisect put -0.084 on
+   builder-strip at that commit. */
+.myx-board .myx-board-strip .myx-sfield-value { font-size: 1.3270cqh; }
+.myx-board .myx-board-strip .myx-sfield { padding-inline: var(--space-2); }
+.myx-board .myx-sfield-label { font-size: 1.2439cqh; }
+/* NO ELLIPSIS ON A NAME THAT FITS TO A FRACTION (M3-04). A column name prints once per rack, so the
+   ones that did not fit got authored short forms (strings.ts); what was left over by less than a
+   pixel -- the lead bay's `context left` by 0.5px, the builder's `base` by 0.2 -- was being turned
+   into `ba…` by the ellipsis, which spends a whole glyph to save a fifth of a pixel. Measured with
+   the text's exact width, every board name now fits its box to within 1px, so clip hides no ink. */
+.myx-board .myx-sfield-label { text-overflow: clip; }
+.myx-board .myx-board-act .myx-sfield-value,
+.myx-board .myx-board-msg .myx-sfield-value { font-size: 1.4514cqh; }
+/* `.myx-board-foot` (M3-03): that class is on no element in the tree -- the footer is
+   `.myx-board-footer` (parts.tsx) -- so this rule matched nothing and the footer was the one thing
+   on the poster whose type did not follow the frame. It stayed at --text-1's 12px while every
+   neighbour scaled with the board, which is invisible at the comp's own 1536 (where 12px IS the
+   comp's size) and shows the moment the board is any other width: at 1440 the responsive gate read
+   footer-strip as CONTRADICTED, structure 47 percent, its ink box 553x48 against the comp's
+   538x22. */
+.myx-board .myx-board-footer { font-size: 1.2439cqh; }
+
+.myx-board-bay-0 { left: 0.879%; top: 8.174%; width: 30.769%; height: 83.864%; }
+.myx-board-bay-1 { left: 32.967%; top: 8.174%; width: 30.220%; height: 83.864%; }
+
+/* The bay's label plate is its own measured region, centered on the rack:
+   bay-claude-label (frame x17 y14.5 w12 h2.5) inside bay-claude (x9.8 y13.5
+   w28 h79); bay-deepseek-label (x44.5 y14.5 w14 h2.5) inside bay-deepseek. */
+.myx-board-bay .myx-bay-head {
+  position: absolute;
+  justify-content: center;
+  padding: 0 var(--space-2);
+  /* background-COLOR, not the shorthand: the plate's four corner pins are a background
+     LAYER (ui.css, E-5), and the shorthand would clear them. The border is left to
+     ui.css as well, so the plate keeps the same three-part edge as the paper it bolts to. */
+  background-color: var(--plate);
+}
+.myx-board-bay-0 .myx-bay-head { left: 25.71%; top: 1.266%; width: 42.857%; height: 3.165%; }
+.myx-board-bay-1 .myx-bay-head { left: 20.00%; top: 1.266%; width: 50.909%; height: 3.165%; }
+.myx-board-bay .myx-bay-label {
+  /* 400, NOT 600 (M3-04, the finish review's item 6): the comp sets its plate lettering light --
+     the reviewer measured activity-label's stem at 0.093 of its ink height in the comp against 0.130
+     here -- and the hero gate's live reading had bay-deepseek-label 26% heavier. Measured on the hero
+     with the size step below: chat-label +0.018, bay-claude-label +0.016, bay-deepseek-label +0.054,
+     no cell newly clipped. The weight was here from M1-05, so it was never the -0.140 regression. */
+  font-weight: 400;
+  font-family: var(--font-label);
+  color: var(--strip-ink);
+}
+
+/* THE CHAT BAY'S LABEL IS THE 14 ROLE, AND ONLY IT (M1-64). The board's shared rule used to carry
+   `font-size: var(--text-1)` for every bay in the board, which is how the chat label and the head
+   labels ended up on ONE rung while the contract sets them a step apart (chat 14, bay 16) -- the
+   ladder pair bay.label/chat.label read 1.000 against the comp's 1.112 because of it. Scoping the
+   size to the chat bay lets the head bays inherit ui.css's 16. Measured after: head bays 16px
+   (cap 11.82 against the comp's 10.9) and the chat bay 14px (cap 10.35 against 9.8), so the pair
+   reads 1.142 against the comp's 1.112. */
+.myx-board-bay-chat .myx-bay-label {
+  font-size: var(--text-2);
+}
+
+/* the rack: the strips are placed by their own regions, so the rows container
+   must not become their positioning context */
+.myx-board-bay .myx-bay-rows { display: contents; }
+
+/* session strips: regions lead-strip/2/3 (frame x10.5 w25.5 h6.5, y20/30/39.5)
+   inside bay-claude, and builder-strip/2/3 (frame x39.7 w25.5, same ys) inside
+   bay-deepseek. */
+/* The comp's plates are 90-94% of the region they were measured into, not the
+   whole of it, and its first line is inset 3px where the rest start at the
+   region's top: the region boxes are generous, the ink is not. These are the
+   comp's own plate extents (63px for line one, 60-61px for the rest of the
+   rack, on a 67px region), converted against the bay's 808.9px. */
+.myx-board-strip { left: 2.5%; width: 91.071%; }
+.myx-board-bay-1 .myx-board-strip { left: 2.545%; width: 92.727%; }
+.myx-board-strip-0 { top: 8.599%; height: 7.788%; }
+.myx-board-strip-1 { top: 20.886%; height: 7.479%; }
+.myx-board-strip-2 { top: 32.911%; height: 7.541%; }
+
+/* the empty slots of the rack, below the strips (each one's top is set inline,
+   from the same rack rhythm) */
+/* The rack's empty slots are the BAY's ribbing, which the comp draws at a 31-32px pitch and
+   ui.css now reproduces (see .myx-bay). This row drew its own hairline pairs on a 49px pitch,
+   which is a second texture on top of the first and the reason this build read as 50 hard rules
+   against the comp's continuous ribbing. The elements stay as the rack's rhythm; they draw
+   nothing. */
+.myx-board-slot {
+  position: absolute;
+  left: 1.5%;
+  width: 97%;
+  height: 5.5%;
+}
+
+/* --- the hand-off: region handoff-strip (frame x18.5 y47 w47 h16) --- */
+.myx-board-handoff {
+  position: absolute;
+  left: 10.440%;
+  top: 43.737%;
+  width: 51.648%;
+  height: 16.986%;
+  pointer-events: none;
+}
+/* The comp's gesture, read off its own pixels: the live strip's top-right
+   corner sits at the region's right edge and its top-left lands 47px lower, so
+   the cluster is a 608x58 strip turned 4.41 degrees. Its ghosts walk down and
+   away to the left -- the comp's envelope reaches the region's left edge only
+   in the bottom band, which is most of a strip-width from the live one, so the
+   deck spreads wider than a nudge. The percentages are offsets over the strip's
+   own box, which is what a transform's translate resolves against. */
+.myx-board-handoff .myx-strip { position: relative; height: 100%; }
+/* Both lifted rows are tighter than a racked one. The chat's label row starts
+   at y8 against the rack's y13, with its value at y30; the hand-off's label
+   starts at y10. Measure each against its own crop rather than assuming the
+   rack's inset. */
+.myx-board-msg .myx-sfield { padding-block-start: var(--space-2); }
+.myx-board-msg .myx-sfield-value { padding-block-start: var(--space-3); }
+.myx-board-handoff-msg .myx-sfield { padding-block-start: var(--space-3); }
+.myx-board-handoff-msg .myx-sfield-value { padding-block-start: var(--space-2); }
+.myx-board-handoff-live,
+.myx-board-ghost {
+  position: absolute;
+  left: 14.14%;
+  /* the comp's live plate, read down the region's middle columns where only it
+     is present: rows 31..83 of a 164px region */
+  top: 14.6%;
+  width: 84.76%;
+  height: 35.4%;
+}
+/* ---- E-6 · THE LIFT (M1-24) -------------------------------------------------
+   The one gesture in the comp that is a MOMENT rather than a state, and the single most
+   expressive element in the frame. It is hero-only and deliberately so: it belongs to the
+   hand-off, not to every strip.
+
+   THE ANGLE IS RE-FITTED HERE, and the number moved. M1-05 read it off the region's own
+   corners and got -4.41deg; E-6 fitted the strip's top edge over 15 columns sampled every
+   40px and got -0.0726 px/px. Re-taken against the comp for this row, the same 15 columns
+   at x 420..980 return y 524, 522, 519, 516, 513, 511, 508, 505, 501, 499, 497, 493, 490,
+   487, 483 -- a least-squares slope of -0.07259, or -4.152deg. The fit is the better
+   evidence (15 samples against 2 corners) and it is the value that goes in. The 0.26deg it
+   moves is under 3px at the strip's far end and is named here so the change is not silent.
+
+   THE SHADOW IS A LINE, NOT A BLUR. Sampled at four columns where open rack lies below the
+   strip (x 400, 430, 460, 490): a hard dark line at L 2.6-8.5, 5-6px below the strip's lower
+   edge, against a rack ground of L 18-25 -- 15 to 22 L below the surface it falls on. The
+   rows either side of it are 3-4x brighter. So it is `0 6px 0 -1px`: six pixels down, a
+   negative spread so the shadow reads as the plate's own footprint rather than a halo, and
+   ZERO blur. A blurred box-shadow is the wrong instrument here and would read as the old
+   world. Written against the ground it falls on -- the rack floor, which is what --room-deep
+   renders at -- rather than as the hex E-6 sampled, so it cannot invert: a cast shadow is
+   darker than its floor in both themes. */
+.myx-board-handoff-live {
+  transform: rotate(-4.15deg);
+  z-index: 3;
+  box-shadow: 0 6px 0 -1px color-mix(in srgb, var(--room-deep) 48%, black);
+}
+/* ---- L-2 · THE GHOST, MIXED TOWARD ITS GROUND (M1-24) -----------------------
+   This was `filter: brightness(0.5)`. Brightness multiplies luminance, so it always
+   moves a colour toward BLACK -- which reads as receding on a dark ground and as
+   ADVANCING on a light one. That is why it survived review: the ghost's relationship to
+   its own live twin is preserved almost exactly (3.913 light against 3.672 dark), and the
+   only thing that inverts is its relationship to the ground. Order the planes. Dark: bay
+   9.6 | room 13.4 | GHOST 108.7 | paper 216.7 -- the ghost sits between ground and paper,
+   a faded strip, correct. Light: GHOST 122.9 | bay 174.6 | room 225.4 | paper 245.8 -- the
+   ghost falls below the bay floor and becomes the heaviest object on the page, and in the
+   light teams render the two ghosted hand-off strips are the first thing the eye lands on.
+
+   The invariant is not the filter's 0.5, it is where the ghost sits in the interval:
+   (108.7 - 9.6) / (216.7 - 9.6) = 47.9 percent of the way from the ground to the paper.
+   Hold the FRACTION and the ground decides the rest -- dark 108.8 against the comp's
+   108.7, light 208.7, a value between bay and paper, where a faded strip belongs.
+   Written as a mix toward --room-deep, which is both the light-room's measured ground
+   (9.6 dark, 174.6 light) and the value the rack floor actually renders at, so the ghost
+   is a fixed distance from the surface it is lying on rather than from black.
+
+   The ghost is dimmed as a MATERIAL, not as one property: paper, ink and rule all move
+   the same 47.9 percent, which is what the filter did uniformly and what a single
+   background override would not. */
+.myx-board-ghost {
+  --ghost-paper: color-mix(in srgb, var(--strip) 47.9%, var(--room-deep));
+  --ghost-ink: color-mix(in srgb, var(--strip-ink) 47.9%, var(--room-deep));
+  --ghost-rule: color-mix(in srgb, var(--strip-ink-mute) 47.9%, var(--room-deep));
+}
+.myx-board-ghost .myx-strip { background-color: var(--ghost-paper); color: var(--ghost-ink); }
+.myx-board-ghost .myx-sfield {
+  background-color: var(--ghost-paper);
+  border-inline-end-color: var(--ghost-rule);
+}
+.myx-board-ghost .myx-sfield-label { border-bottom-color: var(--ghost-rule); }
+/* THE TWO GHOSTS ARE NOT THE SAME DENSITY, which is what the token sheet already says.
+   `--ghost` is `rgba(222,217,198,.15)` with the note "the comp lays the same slip down three
+   times and the ones behind measure 15 percent paper over the floor" -- and M1-35's census
+   found no reader for it. Reading the comp's hand-off band row by row, the plate tones are
+   bimodal rather than flat: peaks at L 25-35 and 60-80 and a dominant band at 100-125. The
+   near slip is the 47.9 percent above; the far one is the token's own 15, and it is bound as
+   an ALPHA over whatever is behind it rather than as a mix, which is precisely why the comp's
+   far ghost reads as a spread of tones and the build's two ghosts read as one flat 105. */
+.myx-board-ghost-2 .myx-strip,
+.myx-board-ghost-2 .myx-sfield { background-color: var(--ghost); }
+.myx-board-ghost-2 .myx-strip { color: var(--strip-ink-mute); }
+.myx-board-ghost-1 { transform: rotate(-4.15deg) translate(-30%, 110%); z-index: 2; }
+.myx-board-ghost-2 { transform: rotate(-4.15deg) translate(-105%, 245%); z-index: 1; }
+
+/* --- the chat bay: region chat-bay (frame x68 y13.5 w31 h42) --- */
+.myx-board-bay-chat { left: 64.835%; top: 8.174%; width: 34.066%; height: 44.586%; }
+.myx-board-bay-chat .myx-bay-head { left: 22.58%; top: 2.381%; width: 45.16%; height: 5.95%; }
+/* The comp pitches its chat strips down the region instead of stacking them:
+   its plates measure 74px on a 287px region, one every 100px. Each row's own
+   top is set inline from that rhythm. */
+.myx-board-msgs {
+  position: absolute;
+  left: 1.613%;
+  top: 15.476%;
+  width: 96.774%;
+  height: 66.667%;
+}
+.myx-board-msgs > .myx-board-msg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* WIDTH AUTO, SO left/right ACTUALLY PIN IT (M1-97). This strip is placed by its two edges, and
+     ui.css's `.myx-strip { width: max-content }` (M1-12, right for a RACK) gave it a third
+     constraint: with a width present the browser uses it and ignores `right`, so the strip sized
+     itself to its message and ran 43px past the frame. Measured: right edge 1579 against 1536. */
+  width: auto;
+  /* each chat row carries its own top and height inline, read off the comp's
+     plates (82, 69 and 72px on a 287px region, at 0, 106 and 200) */
+  height: 100%;
+  overflow: hidden;
+}
+/* The comp wraps a message too long for its line. This is the one field in the
+   board that wraps; everywhere else the value clips, because a wrapped value
+   would make one strip taller than its neighbours and break the row pitch. */
+.myx-board-msgs > .myx-board-msg .myx-sfield:last-child .myx-sfield-value {
+  white-space: normal;
+}
+
+/* --- the activity bay: region activity-bay (frame x68 y55.5 w31 h37) --- */
+.myx-board-bay-activity { left: 64.835%; top: 52.760%; width: 34.066%; height: 39.278%; }
+.myx-board-bay-activity .myx-bay-head { left: 20.97%; top: 2.70%; width: 48.39%; height: 6.757%; }
+/* The activity sample is pitched too: the comp's first strip starts 22px below
+   the region and the rest follow every 38px, so each row's top is set inline. */
+.myx-board-acts {
+  position: absolute;
+  left: 1.613%;
+  top: 14.865%;
+  width: 96.774%;
+  height: 59.459%;
+}
+/* the activity rows are the tightest rack on the page: the value follows its
+   label by two pixels, not eight, or the last line of a 38px plate is cut */
+.myx-board-act .myx-sfield-value { padding-block-start: var(--space-1); }
+/* L-7's column names print once, as the FIRST activity strip's label row (M3-04, index.tsx): the
+   band that stood here under the plate, outside every cell rule, was removed with its two rules. */
+.myx-board-acts > .myx-board-act {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Width auto for the same reason as the message strip above (M1-97): placed by its two edges,
+     and max-content from ui.css would give it a width that overrides `right` and runs it past the
+     frame. Measured after the message fix, this was the last offender at right=1579 of 1536. */
+  width: auto;
+  /* The comp's activity plates tile their region at the same 38px as their
+     pitch, not the 31px the plate-row scan first suggested: its labels sit 6px
+     into a plate and its values 29px in, and a value needs the room. */
+  height: 16.9%;
+  overflow: hidden;
+}
+
+/* --- the footer: region footer-strip (frame x1 y94 w36 h3), which the comp
+   draws across the rail's edge, so it is placed against the frame itself --- */
+.myx-board-footer {
+  position: fixed;
+  /* THE PLATE, NOT THE REGION (M3-03). These four numbers were the region box the footer was
+     measured INTO (x1 y94 w36 h3), and a region is generous where its ink is not -- the same
+     distinction the header above carries. Scanned on the comp's own pixels: the plate's paper runs
+     x 22..558 and y 968..988, so it is 537x21 at (22, 968) and not 553x31 at (15, 963). The build
+     was therefore 16px wider and 10px taller than the comp's plate with its first word 8px early,
+     and the responsive gate read footer-strip as CONTRADICTED at structure 47 percent (ink box
+     553x48 against the comp's 538x22). Expressed as shares of the frame, which is what the rest of
+     this sheet does, because the footer follows the frame at every width. */
+  left: 1.432%;
+  bottom: 3.418%;
+  width: 34.961%;
+  height: 2.051%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  /* The comp's first word starts at x38 against a plate opening at x22, so the text clears the pin
+     beside it by 16px -- measured with the plate itself (M3-03), where it used to be 8. */
+  padding: 0 var(--space-5);
+  background: var(--plate);
+  /* E-1 and E-5 on the footer, which is the strip's own material on a plate ground.
+     Measured across its top edge at comp x=300: 1px outline at L 4, 1px shade at L 115,
+     1px lip at L 189, then the face at L 178-186 -- the same three steps the strip's left
+     edge makes, with the shade landing on the same absolute grey (115 against the strip's
+     113), which is why the shade is taken from --strip here and not from the plate. The
+     lip IS relative to its own ground, so it is written against --plate, which the footer now
+     reads instead of the local derivation that stood in for it (M1-35's census).
+     The two pins are E-5's, at 6px in from each end and 12.5px down, the same mark the
+     header carries: comp x 27 and x 550 against a plate starting at x 22. */
+  border: var(--hair) solid color-mix(in srgb, var(--plate) 76%, white);
+  box-shadow:
+    0 0 0 var(--hair) color-mix(in srgb, var(--strip) 52%, black),
+    0 0 0 calc(var(--hair) * 2) color-mix(in srgb, var(--room) 27%, black);
+  color: var(--strip-ink);
+  /* FIGURE: the footer's team id and stamps are the comp's own. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.myx-board-footer::before,
+.myx-board-footer::after {
+  content: '';
+  position: absolute;
+  inset-block-start: var(--space-2);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--strip-ink);
+  pointer-events: none;
+}
+.myx-board-footer::before { inset-inline-start: var(--space-1); }
+.myx-board-footer::after { inset-inline-end: var(--space-1); }
+.myx-board-footer-cell { white-space: nowrap; }
+
+/* ---------- THE PHONE (M3-03): ONE BAY PER SCREEN ----------
+   The board is a poster: every box is a share of the board's own width and height, and its type is
+   a share of its height (cqh). Squeezed into a 390 screen, three bays got 110 pixels each and every
+   field clipped to its first letter. So on a phone the poster keeps its composition and gets the
+   width it needs: 280 percent of the screen, which puts each bay at 330 to 375 pixels -- one bay
+   per screen -- and the frame around it scrolls sideways and snaps to a bay's centre. 280 and not
+   300 is the arithmetic of the last snap: the chat bay starts at 64.835 percent and must fit inside
+   the final screen, so the board can be at most 1/(1 - 0.64835) = 2.84 screens wide.
+   The frame is the scroller rather than the page, so the view tabs, the list and the composer under
+   the board stay put while the thumb moves along the bays. The page's padding is --space-3 here
+   (app.css), so the frame cancels that and not the desktop's --space-5. */
+.myx-board-frame { display: contents; }
+/* ---------- THE PHONE (M3-04, the finish review's items 3 and 4): THE BOARD STACKS ----------
+   M3-03 made the board a poster 280 percent of the screen wide that panned under scroll-snap. The
+   finish review read the 390 capture as unusable, and it was: the chat and activity column was a
+   sliver at x 355-390, nothing said there was more to the right, and the two tilted hand-off strips
+   kept their desktop scale and ran off the frame. Below 720 the composition therefore stops being a
+   composition: every placed box returns to the flow and the bays stack in the comp's reading order
+   (the team header, the two heads, the hand-off, the chat, the activity), each at the screen's width.
+   The comp is not a spec for a phone; what it fixes -- the strip, the plate, the holder edge, the
+   words -- all survive, and what cannot survive a 390px column is dropped and named here:
+     - the empty rack slots under each head (nine blank rails a phone would scroll past for nothing);
+     - the hand-off's ghost, the lifted copy that draws its motion on a desktop, and the tilt of the
+       live strip, which at 390 put half of it off the frame;
+     - cqh type: the board is no longer a sized container, so its sizes go back to the ladder.
+   A strip's cells wrap at their declared ch widths instead of squeezing into ellipses, so every
+   value on the board reads in full; a cell wider than the screen is capped to it. Measured at 390:
+   the document is 390 wide and no element of the board crosses either edge. */
+@media (max-width: 720px) {
+  .myx-board-frame { display: block; height: auto; margin: 0; overflow: visible; }
+  .myx-board-frame > .myx-board {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    overflow: visible;
+    container-type: normal;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .myx-board-frame .myx-board-header,
+  .myx-board-frame .myx-board-bay,
+  .myx-board-frame .myx-bay-head,
+  .myx-board-frame .myx-board-strip,
+  .myx-board-frame .myx-board-handoff,
+  .myx-board-frame .myx-board-handoff-live,
+  .myx-board-frame .myx-board-msgs,
+  .myx-board-frame .myx-board-msg,
+  .myx-board-frame .myx-board-acts,
+  .myx-board-frame .myx-board-act,
+  .myx-board-frame .myx-board-footer {
+    position: static;
+    inset: auto;
+    width: auto;
+    height: auto;
+    transform: none;
+  }
+  .myx-board-frame .myx-board-slot,
+  .myx-board-frame .myx-board-ghost { display: none; }
+  .myx-board-frame .myx-board-bay { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); }
+  /* the plate keeps its pins, so it needs the room for them the desktop's fixed box gave it */
+  .myx-board-frame .myx-bay-head { align-self: center; width: max-content; max-width: 100%; padding-inline: var(--space-5); }
+  .myx-board-frame .myx-bay-rows,
+  .myx-board-frame .myx-board-msgs,
+  .myx-board-frame .myx-board-acts { display: flex; flex-direction: column; gap: var(--space-2); }
+  .myx-board-frame .myx-strip { max-width: 100%; }
+  .myx-board-frame .myx-strip-fields { flex-wrap: wrap; min-width: 0; }
+  .myx-board-frame .myx-strip-fields > .myx-sfield { flex: 0 0 auto; max-width: 100%; }
+  /* A LABEL BELONGS TO THE VALUE UNDER IT (M3-04). The desktop cell has no floor (the plate's fixed
+     height is the floor) and its value carries 8px above it, so once cells wrap the value sat 12px
+     under its own label and 4px over the next one's: every label read as the caption of the value
+     ABOVE it, five of five in the team header. The 8px moves from the value's top to the cell's
+     floor, so the pair is bound tighter than the space between pairs. */
+  .myx-board-frame .myx-sfield { padding-block-end: var(--space-3); }
+  .myx-board-frame .myx-sfield-value,
+  .myx-board-frame .myx-board-act .myx-sfield-value { padding-block-start: var(--space-1); }
+  .myx-board-frame .myx-sfield-value,
+  .myx-board-frame .myx-board-strip .myx-sfield-value,
+  .myx-board-frame .myx-board-act .myx-sfield-value,
+  .myx-board-frame .myx-board-msg .myx-sfield-value,
+  .myx-board-frame .myx-bay-label { font-size: var(--text-2); }
+  .myx-board-frame .myx-sfield-label,
+  .myx-board-frame .myx-board-footer { font-size: var(--text-1); }
+  .myx-board-frame .myx-board-footer { flex-wrap: wrap; row-gap: var(--space-1); column-gap: var(--space-4); padding: var(--space-2) var(--space-5); }
+}

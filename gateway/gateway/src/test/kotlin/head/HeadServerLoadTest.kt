@@ -8,6 +8,7 @@
 // The ramp semaphore bounds only the CONNECT burst (macOS listen backlog), never the held count.
 package head
 
+import campaign.v4105.headDeps
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -24,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -38,13 +40,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.Cancellables
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -208,7 +204,7 @@ class HeadServerLoadTest {
             defaultContextWindow = 272000,
         )
         head = HeadServer(
-            provider = CodexProvider(
+            provider = TestResponsesProvider(
                 tuning = ProviderTuning(
                     key = "codex",
                     label = "claudex",
@@ -224,19 +220,14 @@ class HeadServerLoadTest {
                 configSummary = "detailed",
             ),
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 120_000, totalTimeoutMs = 200_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
                 gate = gate,
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = {},
             ),
         )
-        head.start()
-        Thread.sleep(700) // Netty warmup
+        head.start() // binds before returning (Ktor Netty bind(...).sync()); no warm-up (V4-139)
     }
 
     @AfterAll
@@ -322,11 +313,14 @@ class HeadServerLoadTest {
         assertTrue(upstreamTorn, "upstream connections still parked: ${mock.held.get()} — cancel did not propagate")
     }
 
+    // A deadline poll, the rule's sanctioned shape: gate slots and parked upstream connections are
+    // released server-side after the clients leave, with no signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 100L
         val deadline = System.currentTimeMillis() + capMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return true
-            kotlinx.coroutines.delay(100)
+            kotlinx.coroutines.delay(pollMs)
         }
         return cond()
     }

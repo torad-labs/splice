@@ -12,12 +12,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.core.util.LogSink
 import splice.dialect.passthrough.BuiltPassthroughRequest
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughRequestBuilder
 
-private val PASS = PassthroughQuirksDefaults().kimi("kimi")
+private val PASS = KimiProfileFixture().kimi("kimi")
 
 /** The inverted defaults: a faithful passthrough, which is what the claude head rides. */
 private val NEUTRAL = PassthroughQuirks(providerTag = "claude-splice")
@@ -148,14 +149,25 @@ class PassthroughRequestBuilderTest {
         assertEquals(listOf("text"), types)
     }
 
+    /** V4-157 (2026-09-18): this arm used to assert that the SIGNATURE saved the block, and that
+     *  rule shipped a dead turn to a live operator session — Anthropic answered the whole request
+     *  with 400 invalid_request_error, `messages.903.content.0.thinking: each thinking block must
+     *  contain thinking`, request_id req_011CfBPZe8HG2qTVWNVXBmZm, and because Claude Code replays
+     *  the transcript every turn, every retry resent the same block. A signature records WHO wrote a
+     *  block, never that it contains anything.
+     *
+     *  THE EXPECTATION IS `text`, NOT AN EMPTY LIST, and the difference matters: this message holds
+     *  NOTHING ELSE, so the drop empties it and V4-39's substitution answers with one honest text
+     *  block rather than `content: []` — a shape no backend here can act on. Asserting an empty
+     *  array would pin that defect in place of this one. */
     @Test
-    fun `whitespace thinking WITH a signature survives`() {
+    fun `whitespace thinking WITH a signature is dropped too`() {
         val types = build(
             """{"model":"m","messages":[{"role":"assistant","content":[
                 {"type":"thinking","thinking":"   ","signature":"s"}
             ]}]}""",
         ).blockTypes(0)
-        assertEquals(listOf("thinking"), types)
+        assertEquals(listOf("text"), types)
     }
 
     // --- thinking -> adaptive + output_config effort ladder --------------------------------------
@@ -329,7 +341,7 @@ class PassthroughRequestBuilderTest {
     //
     // Every assertion here is a deformation that would be WRONG against api.anthropic.com. They are
     // the claude head's actual contract (campaign claude-head, CH-2): kimi opts into the deformations
-    // via PassthroughQuirksDefaults().kimi(), and a head that declares nothing gets its bytes forwarded as sent.
+    // via KimiProfileFixture().kimi(), and a head that declares nothing gets its bytes forwarded as sent.
 
     @Test
     fun `neutral preserves cache_control everywhere kimi strips it`() {
@@ -415,5 +427,36 @@ class PassthroughRequestBuilderTest {
         // cost). Only the adaptive rewrite (kimi) owns the omit-on-disabled rule.
         assertEquals("disabled", req["thinking"]!!.jsonObject["type"]?.jsonPrimitive?.content)
         assertNull(req["output_config"])
+    }
+
+    @Test
+    fun `an allowlist drop is reported, once per type, rather than losing content in silence`() {
+        // The wall for the DeepSeek scar: its allowlist was derived from a SUPPORTED table rather
+        // than from the endpoint's rejected set, so `image` and `document` were stripped from every
+        // request for a whole campaign. Nothing failed -- the upstream answered normally about the
+        // text it did receive, so a pasted screenshot simply had no effect. A drop is content loss
+        // with no other symptom, and this asserts it cannot happen quietly again.
+        val lines = mutableListOf<String>()
+        val builder = PassthroughRequestBuilder(PASS, null, LogSink { message -> lines += message })
+        val body = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","messages":[{"role":"user","content":[
+                {"type":"document","source":{"type":"text","media_type":"text/plain","data":"d"}},
+                {"type":"document","source":{"type":"text","media_type":"text/plain","data":"e"}},
+                {"type":"search_result","source":"https://x.test","title":"t","content":[]},
+                {"type":"text","text":"go"}]}]}""",
+        )
+        val req = builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false).req
+
+        // The drop itself is unchanged behaviour: kimi's allowlist carries neither type.
+        assertEquals(listOf("text"), req.blockTypes(0))
+
+        val dropped = lines.filter { "block_allowlist" in it }
+        assertEquals(2, dropped.size, "one line per dropped TYPE, not per block: $dropped")
+        assertTrue(dropped.any { "'document'" in it }, "the dropped type must be named: $dropped")
+        assertTrue(dropped.any { "'search_result'" in it }, "the dropped type must be named: $dropped")
+
+        // Attachments re-ride every turn, so an unlatched line would repeat per block per turn.
+        builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
+        assertEquals(2, lines.count { "block_allowlist" in it }, "the report must latch per type")
     }
 }

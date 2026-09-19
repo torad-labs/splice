@@ -4,8 +4,8 @@
 // registered schemes whose behavior diverges. Api-key and custom kinds deliberately remain
 // unregistered fallbacks. The TOML field therefore stays a raw String: an operator's unknown kind
 // never fails config parse, from() returns null, and provider arms retain generic API-key behavior.
-// Context display labels stay in their call sites (status vs boot word them differently);
-// only the shared facts live here.
+// Sign-in labels ARE registry data (the words splice login prints). Status and boot wording
+// stays at the call site — StatusTable.backendLabel still words them its own way.
 //
 // 2026-09-05 — SPLICE OWNS ITS CREDENTIAL. Every OAuth kind defaults to a file of splice's own
 // under ~/.config/splice/auth/, never the native app's (~/.codex/auth.json, ~/.grok/auth.json,
@@ -21,8 +21,11 @@ public sealed class AuthKind(
     public val wire: String,
     public val defaultAuthFile: String?,
     public val isOAuth: Boolean,
+    public val signInLabel: String,
+    /** The dialect on which code mode is available for this kind; null means never. */
+    public val codeModeDialect: Dialect?,
 ) {
-    /** OAuth schemes: a browser/device login mints a refresh-capable credential file. [authFile] is
+    /** OAuth schemes: a browser/device login mints a credential file. [authFile] is
      *  the splice-owned default for the kind — non-null here, so the legacy knobs and every arm can
      *  read it without a fallback literal of their own (header, 2026-09-05). [nativeAppFile] is the
      *  vendor's own CLI/app credential file: never a default, known so doctor can name a config
@@ -32,13 +35,17 @@ public sealed class AuthKind(
         public val authFile: String,
         public val nativeAppFile: String,
         public val nativeApp: String,
-    ) : AuthKind(wire, authFile, isOAuth = true)
+        signInLabel: String,
+        codeModeDialect: Dialect? = null,
+    ) : AuthKind(wire, authFile, isOAuth = true, signInLabel, codeModeDialect)
 
     public data object ChatgptOAuth : OAuth(
         "chatgpt-oauth",
         "~/.config/splice/auth/codex.json",
         "~/.codex/auth.json",
         "Codex CLI / ChatGPT app",
+        "Codex (ChatGPT)",
+        Dialect.OPENAI_RESPONSES,
     )
 
     public data object GrokOAuth : OAuth(
@@ -46,6 +53,7 @@ public sealed class AuthKind(
         "~/.config/splice/auth/grok.json",
         "~/.grok/auth.json",
         "Grok CLI",
+        "Grok (xAI)",
     )
 
     // DR-98: the null here claimed a "provider-computed path", but nothing computes one — every
@@ -59,12 +67,64 @@ public sealed class AuthKind(
         "~/.config/splice/auth/kimi.json",
         "~/.kimi/credentials/kimi-code.json",
         "Kimi CLI",
+        "Kimi (Moonshot)",
+    )
+
+    public data object MuseOAuth : OAuth(
+        "muse-oauth",
+        "~/.config/splice/auth/muse.json",
+        "~/.config/muse/auth.json",
+        "Muse Code",
+        "Muse (Meta)",
     )
 
     /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
      *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
      *  splice can run — which is why it is not an OAuth kind and has no default auth file. */
-    public data object Client : AuthKind("client", null, isOAuth = false)
+    public data object Client : AuthKind(
+        "client",
+        null,
+        isOAuth = false,
+        "Claude (client's own login)",
+        codeModeDialect = null,
+    )
+}
+
+/** Api-key heads stay unregistered on AuthKind. [ApiKeyProviderRow.id] and
+ *  [ApiKeyProviderRow.aliases] are load-bearing for provider selection: ApiKeyResponsesArm reads
+ *  the xai row (and its grok alias) to pick GrokProvider over OpenAiResponsesProvider. Labels
+ *  still feed login UX. */
+public data class ApiKeyProviderRow(
+    public val id: String,
+    public val label: String,
+    public val tokenPattern: String?,
+    public val aliases: Set<String> = emptySet(),
+)
+
+public object ApiKeyProviderRegistry {
+
+    private val ROWS: List<ApiKeyProviderRow> = listOf(
+        ApiKeyProviderRow("openrouter", "OpenRouter", "sk-or-[A-Za-z0-9_-]{20,}"),
+        // DeepSeek keys are a FIXED shape: `sk-` plus exactly 32 lowercase alphanumerics, 35 total.
+        // Pinned from two independent sources, not from a doc that only said "starts with sk-":
+        // trufflehog's DeepSeek detector carries `\b(sk-[a-z0-9]{32})\b` and verifies it live against
+        // api.deepseek.com/user/balance, and the operator's own stored key measures 35 with a
+        // 32-character lower-plus-digit body. Tighter than OpenRouter's open-ended `{20,}`, and the
+        // capture regex is quote-anchored to the WHOLE prompt, so a key discussed in prose is safe.
+        // Erring tight fails SAFE: no capture only means the head falls back to `claude-deepseek login`.
+        ApiKeyProviderRow("deepseek", "DeepSeek", "sk-[a-z0-9]{32}"),
+        ApiKeyProviderRow("moonshot", "Moonshot", null),
+        ApiKeyProviderRow("fireworks", "Fireworks", null),
+        ApiKeyProviderRow("openai", "OpenAI", null),
+        ApiKeyProviderRow("xai", "xAI", null, aliases = setOf("grok")),
+    )
+
+    public fun row(id: String): ApiKeyProviderRow? =
+        ROWS.firstOrNull { it.id == id || id in it.aliases }
+
+    /** The registered api-key provider rows. Exposed so login-matrix tests take their denominator
+     *  from the registry rather than a second list that can omit a new id. */
+    public fun rows(): List<ApiKeyProviderRow> = ROWS
 }
 
 /** The lookup half of [AuthKind] — the "registry" this file's header names. A named object since
@@ -72,8 +132,13 @@ public sealed class AuthKind(
  *  same bodies, same tolerance for an operator's custom kind (null, never a throw). */
 public object AuthKindRegistry {
 
-    private val KNOWN: List<AuthKind> =
-        listOf(AuthKind.ChatgptOAuth, AuthKind.GrokOAuth, AuthKind.KimiOAuth, AuthKind.Client)
+    private val KNOWN: List<AuthKind> = listOf(
+        AuthKind.ChatgptOAuth,
+        AuthKind.GrokOAuth,
+        AuthKind.KimiOAuth,
+        AuthKind.MuseOAuth,
+        AuthKind.Client,
+    )
 
     /** The registered schemes. Exposed so compatibility matrices derive their denominator from the
      *  registry rather than maintaining a second list that can silently omit a new kind. */

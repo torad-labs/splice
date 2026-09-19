@@ -156,6 +156,17 @@ public enum class Knob(
     // headers each round already carries. Any other value keeps polling.
     QUOTA_POLL("quotaPoll", KnobKind.STRING, listOf("CLAUDEX_QUOTA_POLL"), "auto", restartRequired = true),
 
+    // V4-110: how often a subscription head re-polls its provider's plan-usage endpoint, in
+    // milliseconds. Same five-minute cadence the poller always ran; floored in ConfigCoercion so an
+    // operator's too-fast value cannot hammer the provider's usage endpoint.
+    QUOTA_POLL_INTERVAL_MS(
+        "quotaPollIntervalMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_QUOTA_POLL_INTERVAL_MS"),
+        default = 300_000L,
+        restartRequired = true,
+    ),
+
     // Per-head admission (each head is a different backend/account). Bounded by default since the
     // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
     // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn
@@ -174,6 +185,32 @@ public enum class Knob(
         4L,
         restartRequired = true,
     ),
+
+    // V4-110 retry curve, promoted beside upstreamRetries. The DEFAULT IS THE GENERIC BOUNDED
+    // CURVE: every UNPREDICTED failure backs off on 200ms-base / 10s-cap / ±10%-jitter — never a
+    // bare failure and never a made-up cause. Known errors keep their SPECIFIC plans (DNS 1s/2s/4s,
+    // 429 Retry-After); this is the bounded floor everything else falls onto.
+    RETRY_BACKOFF_BASE_MS(
+        "retryBackoffBaseMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_RETRY_BACKOFF_BASE_MS"),
+        default = 200L,
+        restartRequired = true,
+    ),
+    RETRY_BACKOFF_CAP_MS(
+        "retryBackoffCapMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_RETRY_BACKOFF_CAP_MS"),
+        default = 10_000L,
+        restartRequired = true,
+    ),
+    RETRY_BACKOFF_JITTER_PCT(
+        "retryBackoffJitterPct",
+        KnobKind.NUMBER,
+        listOf("SPLICE_RETRY_BACKOFF_JITTER_PCT"),
+        default = 10L,
+        restartRequired = true,
+    ),
     UPSTREAM_TIMEOUT_MS(
         "upstreamTimeoutMs",
         KnobKind.NUMBER,
@@ -181,11 +218,16 @@ public enum class Knob(
         900_000L,
         restartRequired = true,
     ),
+
+    // The headers-phase timeout, and — through WatchdogBudget — the watchdog's FIRST-OUTPUT tier, so
+    // one number judges a stream before and after its first frame. 90_000 with STREAM_IDLE_MS below
+    // and for the same reason; read that entry, including the 129-compaction scar it keeps.
+    // Named rather than positional because §magic-number blesses this spelling (see STALL_REANCHOR_MS).
     FIRST_BYTE_TIMEOUT_MS(
         "firstByteTimeoutMs",
         KnobKind.NUMBER,
         listOf("CLAUDEX_FIRST_BYTE_TIMEOUT_MS"),
-        300_000L,
+        default = 90_000L,
         restartRequired = true,
     ),
 
@@ -193,14 +235,47 @@ public enum class Knob(
     // (@63fe5a6, model-provider-info/src/lib.rs:26) sets DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
     // and applies it ONLY to the receive side, as timeout(idle_timeout, ws_stream.next()). We ran
     // 180_000 against the same backend and paid for it: on 2026-09-01 the idle tier alone ended 129
-    // compactions, each one a whole transcript re-read that had already begun streaming. 300_000
-    // matches the reference and equals our own firstByteTimeoutMs, so a stream is now judged by one
-    // number before and after its first frame. Lower it per head when a head wants a tighter stall.
+    // compactions, each one a whole transcript re-read that had already begun streaming. That scar is
+    // why 300_000 was pinned here, and it is KEPT in this comment on purpose — a reader who finds the
+    // number changed with the accident deleted has been handed the reasoning that caused it.
+    //
+    // 2026-09-18 (V4-125) — 90_000, and this is NOT a return to the 129. It is a different mechanism
+    // wearing a smaller number, and the difference is the whole point of that row: a tier breach
+    // stopped being a VERDICT. Silence past the tier now asks the round's path pulse whether the peer
+    // is alive; a path that answers is HELD — polled on, never reaped short of the whole-turn cap —
+    // and a path that cannot answer is discovered by its own read error, which the re-anchor
+    // machinery already owns. The 129 died because 180_000 was the last word anyone said about them.
+    // 90_000 is a question, asked sooner, of a watchdog that no longer ends turns: it buys how long
+    // the operator waits before the proxy starts healing rather than how long a silent backend is
+    // tolerated, and five minutes of the former is experienced as a hang. Lower it per head for a
+    // tighter stall; a head that genuinely needs the long wait names 300_000 in its own config with
+    // a reason, which is the honest place for it now.
     STREAM_IDLE_MS(
         "streamIdleMs",
         KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
-        300_000L,
+        default = 90_000L,
+        restartRequired = true,
+    ),
+
+    // V4-116. The MID-OUTPUT STALL RE-ANCHOR tier: how long a round may sit silent AFTER the client
+    // has seen content before splice stops waiting and resumes the turn itself (cancel the round,
+    // re-POST from the salvage as an assistant prefill). 20s because a breach here is not a verdict,
+    // it is the trigger of a repair the client cannot see: the measured deepseek stall (session
+    // b10459ba, 2026-09-17) burned the whole 300_000 STREAM_IDLE_MS tier before ending a turn that
+    // was continuable the entire time. NOT a replacement for STREAM_IDLE_MS — arm it for a head
+    // whose upstream has been MEASURED to continue from a prefill (reanchor_prefill), because for a
+    // head that cannot be prefilled an early reap has nothing to resume into and only costs a
+    // slow-but-alive generation. STREAM_IDLE_MS stays that head's floor. Keep it at or above
+    // 3 x the poll floor (250ms) or the poller samples it too late to matter.
+    STALL_REANCHOR_MS(
+        "stallReanchorMs",
+        KnobKind.NUMBER,
+        listOf("CLAUDEX_STALL_REANCHOR_MS"),
+        // Named, not positional: §magic-number (the write-time mirror of detekt's MagicNumber)
+        // blocks a NEW bare literal in a call argument, and this is the spelling it blesses. The
+        // sibling entries above pass only because their literals are pre-existing.
+        default = 20_000L,
         restartRequired = true,
     ),
     AUTH_CACHE_MS(
@@ -266,6 +341,67 @@ public enum class Knob(
         restartRequired = true,
     ),
 
+    // ── shared MCP hosting (v0.4.0, FEATURES.md §8) ────────────────────────────────────────────
+    // One McpHost serves every head; these four shape its lifecycle. Daemon-global, read once at
+    // ControlPlane.start — a per-head override is meaningless but harmless. The [daemon] spellings
+    // (mcp_idle_timeout_ms etc.) are the same knob under DaemonConfig's @SerialName transliteration.
+    MCP_IDLE_TIMEOUT_MS(
+        "mcpIdleTimeoutMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MCP_IDLE_TIMEOUT_MS"),
+        default = 1_800_000L,
+        restartRequired = true,
+    ),
+    MCP_MAX_SERVERS(
+        "mcpMaxServers",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MCP_MAX_SERVERS"),
+        default = 32L,
+        restartRequired = true,
+    ),
+    MCP_REQUEST_TIMEOUT_MS(
+        "mcpRequestTimeoutMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MCP_REQUEST_TIMEOUT_MS"),
+        default = 1_800_000L,
+        restartRequired = true,
+    ),
+    MCP_INITIALIZE_TIMEOUT_MS(
+        "mcpInitializeTimeoutMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MCP_INITIALIZE_TIMEOUT_MS"),
+        default = 60_000L,
+        restartRequired = true,
+    ),
+
+    // ── request materialization (v0.4.0) ───────────────────────────────────────────────────────
+    // The largest request BODY splice will decode/translate, in bytes; past it the client gets a
+    // 413 rather than splice reading an unbounded body. Read per head from getConfig (HeadDeps).
+    MAX_REQUEST_BYTES(
+        "maxRequestBytes",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MAX_REQUEST_BYTES"),
+        default = 8 * 1024 * 1024L,
+        restartRequired = true,
+    ),
+    REQUEST_READ_TIMEOUT_MS(
+        "requestReadTimeoutMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_REQUEST_READ_TIMEOUT_MS"),
+        default = 30_000L,
+        restartRequired = true,
+    ),
+
+    // PROCESS-SHARED, not per head: the count of requests concurrently decoding/translating across
+    // the whole daemon (RequestMaterializationGate). One value for every head, read at daemon boot.
+    MATERIALIZATION_PERMITS(
+        "materializationPermits",
+        KnobKind.NUMBER,
+        listOf("SPLICE_MATERIALIZATION_PERMITS"),
+        default = 16L,
+        restartRequired = true,
+    ),
+
     // Extra trusted roots (colon-separated absolute paths) for the statusline git-branch lookup.
     // Default empty: only $HOME and /tmp are trusted, so repos elsewhere (devcontainer /workspace,
     // /srv layouts) show no branch segment — unauthenticated /statusline must never exec
@@ -275,5 +411,27 @@ public enum class Knob(
         KnobKind.STRING,
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         "",
+    ),
+
+    // V4-130 (FEATURES.md 6): how many UTC days of the console's activity stores (message edges and
+    // activity labels, `activity/<store>-YYYY-MM-DD.jsonl` under the state dir) are kept. Whole day
+    // files older than the window are deleted; today counts as one of the days. Daemon-wide.
+    ACTIVITY_RETENTION_DAYS(
+        "activityRetentionDays",
+        KnobKind.NUMBER,
+        listOf("SPLICE_ACTIVITY_RETENTION_DAYS"),
+        default = 90L,
+        restartRequired = true,
+    ),
+
+    // V4-130: the per-head switch for the activity label store. `*` stores every head, an empty value
+    // stores none, otherwise a comma-separated list of head keys. Message edges are not switched: the
+    // contract keeps them by default as metadata.
+    ACTIVITY_STORE_HEADS(
+        "activityStoreHeads",
+        KnobKind.STRING,
+        listOf("SPLICE_ACTIVITY_STORE_HEADS"),
+        "*",
+        restartRequired = true,
     ),
 }

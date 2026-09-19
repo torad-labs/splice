@@ -1,0 +1,140 @@
+/* The log tail: a header of read-outs, then one scrolling rack of virtualized line strips. Tokens
+   only (CONTRACTS.md section 1); radius 0, no shadow, no glow. */
+
+.myx-lt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* THE FILTER ROW'S TRACK. The head sits on the rack's ruled floor like any strip does, and the rail
+   — the bay's repeating-linear-gradient slot rule — is the topmost painted thing under anything
+   here that has no ground of its own. That is what drew a rule through the word `search` at its
+   x-height (M1-46's second defect), and measuring the first fix at 3840 showed the follow control
+   had the same hole: a 3x crop of `15new lines` carries the rail straight through both words. So
+   the track is the ROW's, not the field's: the whole filter row sits on strip paper and the fields
+   are boxes a step above it, which is the two-plane construction the rack itself already uses. */
+.myx-lt-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  background: var(--strip);
+  /* THE HEAD IS PAPER, SO IT DECLARES PAPER INK (M2R-01). Everything on it that inherits -- the
+     Flag's word now included, since the edge label takes its ground's ink -- reads on the strip. */
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  padding: var(--space-3) var(--space-4);
+}
+/* The new-lines count is a Figure, and Figure paints ROOM ink (--ink-strong / --ink-mute) unless
+   it stands in a .myx-strip (ui.css). This head is strip paper without being a strip, so the count
+   printed light-on-light beside the follow Flag in the dark room -- the same defect as the Flag's,
+   caught in the same capture. */
+.myx-lt-head .myx-fig-value { color: var(--strip-ink); }
+.myx-lt-head .myx-fig-unit { color: var(--strip-ink-mute); }
+
+.myx-lt-controls {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* A FILTER FIELD IS A BOXED PLANE, like every other field in this world (M1-46).
+   Two defects came from this row not being one. Its label had no opaque ground at any level of its
+   chain — label, field, controls, head, .myx-lt and .myx-bay-rows all measured transparent at 3840
+   in the light room — so the rack's own ruled floor, the bay's repeating-linear-gradient slot rail,
+   was the topmost painted thing under it and drew a rule through the word `search` at its x-height.
+   And its input was painted `--strip` while the StripField beside it is painted `--strip-field`, so
+   one control row showed two different papers side by side (+0 against +24 on R−B in dark; #F5EDDD
+   against #FFFFFF in light). A field is label and box on ONE paper: that is what the StripField
+   module does, and it is what stops a structural rule reading as a strike-through. */
+.myx-lt-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  padding: var(--space-2) var(--space-3);
+}
+.myx-lt-field-label {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  /* D7 (M1-52): this box paints the STRIP's paper, so it takes the STRIP's ink. --ink* is the
+     ROOM's ink and is light in the dark theme, because the room is dark - on paper it was
+     light-on-light. Measured before: 2.11:1 in dark. The same wrong pairing is in controls.css's
+     own comment from the first D7 and was fixed there and nowhere else; this is instance 5 of
+     five the source sweep found. */
+  color: var(--strip-ink-mute);
+}
+.myx-lt-field input {
+  padding: var(--space-1) var(--space-2);
+  /* The field's own paper is the ground; the input keeps the hairline that makes it read as a box
+     inside it, and its fill is the field's rather than the strip's. */
+  background: transparent;
+  color: var(--strip-ink);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  /* CODE: a log line. */
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+}
+
+/* THE FOLLOW TOGGLE'S RULE IS GONE WITH ITS MARKUP (M1-103). It dressed a `.myx-lt-toggle` label
+   around a native checkbox; the toggle is now `Flag`, which is a button with role="switch" carrying
+   a HolderEdge, and the edge prints its own word in its own ink.
+   THE MEASUREMENT IT RECORDED IS CARRIED, NOT LOST: M1-52 found the toggle's colour was the ROOM's
+   inherited by its children rather than printed on a text node of its own -- 1.24:1 on the strip's
+   paper in dark against a 4.5 bar, while light passed at 15.08:1 only because light's --ink happens
+   to be dark. That is why the label was invisible to the first sweep, and it is the instance the
+   D7 series ends on. The fact now lives where the replacement's ink is decided: HolderEdge's own
+   rules in shared/ui/ui.css, which were measured against the same paper. */
+
+/* The rack. A fixed height so the virtualizer has a viewport. It scrolls DOWN only (M3-04): it
+   scrolled both ways because the text field was wider than the room and a log line was held not to
+   wrap, and the finish review read the result at 1536 as a column cut at the bay's edge
+   (`first_byt…`). The line now wraps inside its own cell (index.tsx), so there is nothing to the
+   right to scroll to. */
+.myx-lt-scroll {
+  height: 66vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-top: var(--hair) solid var(--hairline-strong);
+  border-bottom: var(--hair) solid var(--hairline-strong);
+}
+
+.myx-lt-inner {
+  position: relative;
+  width: 100%;
+}
+
+
+.myx-lt-row {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+}
+
+/* THE LINES AND THEIR COLUMNS FILL THE RACK, AND THE TEXT CELL WRAPS (M3-04). A strip is
+   max-content in a rack (ui.css, M1-12), which leaves no slack for the text cell to grow into; here
+   the strip takes the rack's width, so the cell's flex-grow reaches it, and its value wraps where the
+   primitive clips. overflow-wrap: anywhere because a log line breaks inside a path or a key=value run
+   as readily as between words. */
+.myx-lt-row .myx-strip,
+.myx-lt-cols { width: 100%; }
+.myx-lt-row .myx-sfield:last-child .myx-sfield-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+/* A ROW CUT BY THE TOP OF THE TAIL KEEPS ITS FACTS (M3-04). Following the tail scrolls to the bottom,
+   so the top row is usually cut through, and its time, head and level -- printed on its FIRST line --
+   were above the fold while its text showed from the middle: a row that read as missing its data
+   (measured 27px above, all three hidden). They stay in view for as long as any of the row is; the
+   text cell scrolls with its words. */
+.myx-lt-row .myx-sfield:not(:last-child) .myx-sfield-value { position: sticky; top: 0; }
+/* The columns strip is the rack's head: it prints names and nothing else. Its empty value line and
+   its edge are hidden but keep their boxes, so every column lands on the x of the cells below it. */
+.myx-lt-cols .myx-sfield-value { display: none; }
+.myx-lt-cols .myx-edge { visibility: hidden; }
+/* a strip's holder pin (ui.css, E-5) shows only where no mark covers it, and this head hides its mark */
+.myx-lt-cols::before { content: none; }

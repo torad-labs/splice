@@ -14,16 +14,11 @@ import splice.dialect.responses.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ToolDeferralPolicy
+import splice.provider.grok.GrokQuirks
 
 private const val MIN_TOOL_SURFACE_FLOOR = 1
 private const val MAX_TOOL_SEARCH_LIMIT = 50
 private const val MAX_TOOL_SEARCH_ROUNDS = 5
-
-// DR-155: xAI's documented and ENFORCED minimum image edge. Its verbatim HTTP 400 body is "Image
-// dimensions 1x1 are too small. Both width and height must be at least 8 pixels." — six of those,
-// each costing a whole claude-grok turn, are what the DR-152 soak captured. GrokProvider carries the
-// same number for the same vendor on the Responses dialect.
-private const val XAI_MIN_IMAGE_EDGE_PX = 8
 
 /**
  * Declared TOML -> effective dialect quirk profile, for all three dialects. Every member is a pure
@@ -66,17 +61,22 @@ internal class QuirksOverlay {
         // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed 2026-07-19:
         // 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank the 07-18 chat-dialect
         // attempt). Unknown api-key vendors keep the bare quirks.
+        // xhigh is model-gated (grok-4.6+), not auth-kind-gated: an OpenRouter chat head on a grok
+        // model must keep sending xhigh. The regex lives on GrokQuirks; unknown model ids never match.
         val base = if (providerCfg.auth.kind == GROK_OAUTH) {
-            ChatQuirks(
-                providerTag = key,
-                sessionCacheKeyPrefix = label,
-                emitUsageInStream = true,
-                minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
-            )
+            GrokChatQuirks().profile(key, label)
         } else {
-            ChatQuirks(providerTag = key)
+            ChatQuirks(providerTag = key, xhighModels = GrokQuirks().xhighModels())
         }
-        return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
+        // V4-163: a LOCAL runtime asks for usage frames by default. Usage is opt-in on this dialect
+        // (stream_options.include_usage), and a head that never asks reports zero tokens per turn,
+        // so Claude Code never reaches its auto-compact threshold and the session hits the context
+        // wall. llama.cpp, Ollama, vLLM and LM Studio all answer the field; a hosted vendor of
+        // unknown tolerance still gets nothing, because strict ones 400 on unrecognized
+        // stream_options members. TOML wins over both, and null keeps the base — which is what
+        // leaves grok-oauth's own `true` and every other head's request bytes untouched.
+        val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal }
+        return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
     }
 
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
@@ -99,7 +99,15 @@ internal class QuirksOverlay {
             },
             stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.stripCacheControl,
             synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.synthesizeSignatures,
+            reanchorPrefill = providerCfg.quirks.reanchorPrefill ?: base.reanchorPrefill,
+            toolNameCap = toolNameCap(providerCfg, base),
         )
+
+    /** V4-110: the tool-name cap is an overlay — an operator's TOML value wins over the head's base
+     *  (muse's 64), and absent TOML keeps the base, so an un-edited config is unchanged. Its own
+     *  function so [passthroughQuirks] stays under the complexity ceiling. */
+    private fun toolNameCap(providerCfg: ProviderConfig, base: PassthroughQuirks): Int =
+        providerCfg.quirks.toolNameCap ?: base.toolNameCap
 
     /** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
      *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never

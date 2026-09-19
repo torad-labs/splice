@@ -4,7 +4,7 @@
 # A new operator's first hour, as a script: bring up mock upstreams, write a topology, install from
 # release-style artifacts (install.sh: checksum → init → install --all → doctor), let doctor grade
 # the machine, cold-start the daemon, drive a real streaming turn through every head at the wire
-# (stream_probe.py, the live e2e's contract oracle), count tokens, launch the REAL Claude Code
+# (stream_probe.ts, the live e2e's contract oracle), count tokens, launch the REAL Claude Code
 # wrapper for one print-mode turn, restart, read logs, uninstall. Every upstream is a mock inside
 # the container and the container has no network, so a byte that leaves is a failure.
 #
@@ -26,6 +26,8 @@ FAILED=0
 CODEX_MOCK_PORT=""
 CODEX_AUTH_PATH=""
 CHAT_MOCK_PORT=""
+TESTED_CLAUDE_CODE="${SPLICE_TESTED_CLAUDE_CODE:-}"
+CLAUDE_CODE_ACTUAL="$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
 
 # ── receipt plumbing ─────────────────────────────────────────────────────────────────────────────
 STEP_N=0
@@ -64,13 +66,15 @@ finish() {
     [ -f "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null
   done
   cp "$HOME/.claude-codex/logs/daemon.log" "$OUT/daemon.log" 2>/dev/null
-  python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" <<'EOF'
+  python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" "$CLAUDE_CODE_ACTUAL" "$TESTED_CLAUDE_CODE" <<'EOF'
 import json, sys, datetime
 steps = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 receipt = {
     "kind": "splice-fresh-machine-e2e",
     "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
     "verdict": "FAIL" if sys.argv[3] == "1" else "PASS",
+    "claudeCodeVersion": sys.argv[4],
+    "testedClaudeCodeVersion": sys.argv[5],
     "steps": steps,
 }
 json.dump(receipt, open(sys.argv[2], "w"), indent=1)
@@ -103,13 +107,24 @@ sys.exit(0 if d.get("ok") and d.get("readyHeads") == d.get("heads") and d.get("f
 
 echo "fresh-machine e2e: user=$(id -un) home=$HOME artifacts=$ARTIFACTS"
 
+client_version_receipt() {
+  echo "actual=$CLAUDE_CODE_ACTUAL tested=$TESTED_CLAUDE_CODE"
+  [ -n "$CLAUDE_CODE_ACTUAL" ] || { echo "claude --version did not report a numeric version"; return 1; }
+  [ -n "$TESTED_CLAUDE_CODE" ] || { echo "SPLICE_TESTED_CLAUDE_CODE was not provided"; return 1; }
+  [ "$CLAUDE_CODE_ACTUAL" = "$TESTED_CLAUDE_CODE" ] || {
+    echo "the image has Claude Code $CLAUDE_CODE_ACTUAL, but splice records $TESTED_CLAUDE_CODE as tested"
+    return 1
+  }
+}
+step "Claude Code version matches the splice tested pin" client_version_receipt
+
 # ── 1. the two mock upstreams (loopback only) ───────────────────────────────────────────────────
 # step() runs its command in a command substitution (a subshell), so the mocks report through
 # files — pid + the one JSON line each prints — and the MAIN shell reads the ports back.
 start_mocks() {
   nohup node "$REPO/checks/e2e/docker/mock_codex.mjs" "$REPO" 0 > "$OUT/mock_codex.out" 2> "$OUT/mock_codex.err" &
   echo $! > "$OUT/mock_codex.pid"
-  MOCK_CHAT_HOLD_S=45 nohup python3 "$REPO/checks/e2e/docker/mock_chat.py" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
+  MOCK_CHAT_HOLD_S=45 nohup bun "$REPO/checks/e2e/docker/mock_chat.ts" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
   echo $! > "$OUT/mock_chat.pid"
   for _ in $(seq 1 50); do
     [ -s "$OUT/mock_codex.out" ] && [ -s "$OUT/mock_chat.out" ] && break
@@ -270,7 +285,7 @@ step "/api/heads lists all three heads running" api_heads
 
 # ── 6. the wire contract, per head, through the real translators ───────────────────────────────
 probe() { # head port model
-  SPLICE_PROBE_BEARER="$(mgmt)" python3 "$REPO/checks/e2e/stream_probe.py" \
+  SPLICE_PROBE_BEARER="$(mgmt)" bun "$REPO/checks/e2e/stream_probe.ts" \
     --head "$1" --port "$2" --model "$3" --prompt "Count from 1 to 3 then say END." \
     --ttfb-ms 10000 --first-delta-ms 10000 --total-ms 30000 --gap-ms 10000
 }
@@ -296,9 +311,12 @@ launch_recipe() { # head port
 import json, sys
 port = sys.argv[1]
 r = json.load(sys.stdin); env = r.get("env", {})
-print({k: env.get(k) for k in ("ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES")}, "argv:", r.get("argv"))
+print({k: env.get(k) for k in ("ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES", "CLAUDE_CODE_RETRY_WATCHDOG")}, "argv:", r.get("argv"))
 assert env.get("ANTHROPIC_BASE_URL") == "http://127.0.0.1:%s" % port, env.get("ANTHROPIC_BASE_URL")
 assert int(env.get("API_TIMEOUT_MS") or 0) > 900_000, "API_TIMEOUT_MS must exceed the daemon 900s wall: %r" % env.get("API_TIMEOUT_MS")
+# V4-72: without persistent retry the client stops after 10 attempts (~2-3 min) and a longer
+# rate-limit hold ends the session instead of resuming when the window reopens. Every head.
+assert env.get("CLAUDE_CODE_RETRY_WATCHDOG") == "1", "persistent retry must be planted: %r" % env.get("CLAUDE_CODE_RETRY_WATCHDOG")
 assert r.get("argv"), "empty argv"' "$2"
 }
 step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"
@@ -594,6 +612,7 @@ expect = {
     "chatgpt-oauth": ["open this URL to sign in", "https://auth.openai.com"],
     "grok-oauth": ["open this URL to sign in", "https://"],
     "kimi-oauth": ["login error", "could not start device login", "enter this code"],
+    "muse-oauth": ["login error", "could not start device login", "enter this code"],
     "api-key": ["pipe it instead", "splice key set"],
     "client": ["no browser login for that kind"],
 }

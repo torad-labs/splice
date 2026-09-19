@@ -3,20 +3,23 @@
 // compact subsystem. Same-package.
 package splice.gateway.pipeline
 
+import splice.core.turn.TurnMeta
 import splice.gateway.compact.CompactStats
 
 internal class StreamCompact(private val compactStats: CompactStats) {
-    fun recordStreamError(elapsedMs: Long, error: String) {
-        record("stream_error", elapsedMs, error = error)
+    fun recordStreamError(meta: TurnMeta, elapsedMs: Long, error: String) {
+        record(meta, "stream_error", elapsedMs, error = error)
     }
 
-    fun record(outcome: String, elapsedMs: Long, chars: Int? = null, error: String? = null) {
+    fun record(meta: TurnMeta, outcome: String, elapsedMs: Long, chars: Int? = null, error: String? = null) {
         compactStats.record(
             buildMap {
                 put("outcome", outcome)
                 put("ms", elapsedMs)
                 chars?.let { put("chars", it) }
                 error?.let { put("error", it) }
+                meta.compactionInstructions?.let { put("instructions", it) }
+                meta.compactionInstructionsSource?.let { put("instructions_source", it) }
             },
         )
     }

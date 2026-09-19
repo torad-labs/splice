@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
+import mock.TestResponsesProvider
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -50,7 +51,6 @@ import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
 import splice.spi.Provider
@@ -78,7 +78,7 @@ private class BranchlessFakeAuth : splice.core.auth.RefreshableAuthProvider {
 private class DeadClientTerminal : TurnTerminal {
     override val hasEnded: Boolean = true
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String): Unit =
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -99,7 +99,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage): Unit =
         throw IOException("client hung up mid terminal frame")
-    override suspend fun emitError(type: ErrorType, message: String): Unit =
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
@@ -118,7 +118,7 @@ private class DeadClientSuccessTerminal : TurnTerminal {
 private class CancellationDuringSealTerminal(private val emission: CancellationException) : TurnTerminal {
     override val hasEnded: Boolean = false
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
-    override suspend fun emitError(type: ErrorType, message: String): Unit = throw emission
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean): Unit = throw emission
     override fun abandon() = Unit
     override suspend fun openText() = WireBlockIndex(0)
     override suspend fun openThinking() = WireBlockIndex(0)
@@ -142,7 +142,7 @@ class TurnEndingAccountingTest {
         tmp = Files.createTempDirectory("turn-ending-acct")
     }
 
-    private fun provider(): Provider = CodexProvider(
+    private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",
@@ -201,7 +201,7 @@ class TurnEndingAccountingTest {
             ),
             emitter = emitter,
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-            slot = InflightGate(LiveLimit { 1 }).acquire(),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-dr128.jsonl")),
                 log = log,

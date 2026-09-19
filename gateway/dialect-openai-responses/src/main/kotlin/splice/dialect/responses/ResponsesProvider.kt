@@ -8,6 +8,7 @@
 package splice.dialect.responses
 
 import splice.core.parse.AnthropicTurnBody
+import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
@@ -43,6 +44,8 @@ public abstract class ResponsesProvider(
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
 
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
+    private val compactionTail = ResponsesCompactionTail()
+    private val systemPrompt = ResponsesSystemPrompt()
     private val parts = ResponsesParts(
         ResponsesPartsInput(
             tuning = tuning,
@@ -68,10 +71,29 @@ public abstract class ResponsesProvider(
         return BuiltTurn(
             built.req,
             built.meta,
-            perTurnHeaders(built.meta) + parts.turnOptions.liteHeaders(built.meta),
+            perTurnHeaders(built.meta) + liteHeader(built.meta),
             toolSearch = built.toolSearch,
         )
     }
+
+    /** The lite header rides only when this provider declared both [ResponsesQuirks.responsesLiteHeader]
+     *  and a matching [ResponsesQuirks.responsesLiteModelRegex]. Compaction included — lite is a
+     *  property of the model, so a compaction built without the header would share no prefix with
+     *  the session's lite turns. */
+    private fun liteHeader(meta: TurnMeta): Map<String, String> {
+        val name = quirks.responsesLiteHeader ?: return emptyMap()
+        return if (quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
+            mapOf(name to "true")
+        } else {
+            emptyMap()
+        }
+    }
+
+    final override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn =
+        turn.copy(requestBody = compactionTail.append(turn.requestBody, instructions))
+
+    final override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
+        turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         parts.turnSeams.streamTranslator(meta, signals)

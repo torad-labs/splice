@@ -1,0 +1,101 @@
+{
+  "kind": "local-models-e2e",
+  "at": "2026-09-13T21:44:12Z",
+  "jar_sha256": "8e109233adfec189e3f572835f4913a9d96e11ce2d8b4fa625da66e6d8eef23e",
+  "vllm": {
+    "tested": false,
+    "documented": "checks/local-models/README.md"
+  },
+  "runtime": {
+    "runtime": "Ollama",
+    "version": "0.30.5",
+    "model": "qwen3:4b",
+    "digest": "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7",
+    "card_context_length": 262144,
+    "num_ctx": null,
+    "served_context_length": 32768,
+    "warm_load_s": 0.7,
+    "capabilities": [
+      "completion",
+      "tools",
+      "thinking"
+    ]
+  },
+  "context_limit": {
+    "declared": 32768,
+    "served": 32768,
+    "card": 262144
+  },
+  "boot": {
+    "good_head": {
+      "key": "ollama",
+      "port": 3198,
+      "healthy": true,
+      "authKind": "api-key"
+    },
+    "refused": {
+      "ollama-unlisted": "[2026-09-13 16:44:13] [ollama-unlisted][boot] SKIPPED (build failed): local runtime Ollama at http://localhost:11434/v1 refuses 'nope:latest': not listed by the runtime (listed: qwen3:4b)",
+      "ollama-overclaim": "[2026-09-13 16:44:13] [ollama-overclaim][boot] SKIPPED (build failed): local runtime Ollama at http://localhost:11434/v1 refuses 'qwen3:4b': declares context_window 65536, runtime serves 32768"
+    },
+    "up_line": "[2026-09-13 16:44:13] [daemon] up: control :3196, heads [ollama] DEGRADED=[ollama-unlisted, ollama-overclaim]"
+  },
+  "head_model": "claude-ollama--qwen3:4b",
+  "streaming": {
+    "head": "ollama",
+    "model": "claude-ollama--qwen3:4b",
+    "ok": true,
+    "ttfb_ms": 159,
+    "first_delta_ms": 166,
+    "total_ms": 1188,
+    "max_gap_ms": 8,
+    "events": 265,
+    "deltas": 257,
+    "keepalive_comments": 0,
+    "chunks_with_events": 264,
+    "violations": []
+  },
+  "cancellation": {
+    "deltas_before_cancel": 1,
+    "next_turn_s": 2.3,
+    "next_turn_text": "Hmm, the user just asked me to reply with the single word \"OK\". \n\nOkay, this is ",
+    "head_outcome": [
+      "error:conn-reset"
+    ],
+    "runtime_evidence": "srv          stop: cancel task, id_task = 853"
+  },
+  "tool_continuity": {
+    "tool_use_id": "call_xp8a0dw7",
+    "input": {
+      "city": "Lisbon"
+    },
+    "first_stop_reason": "tool_use",
+    "second_stop_reason": "end_turn",
+    "second_text": "The current weather in Lisbon is sunny with a temperature of 22 degrees Celsius and a light breeze."
+  },
+  "doctor": {
+    "local:ollama": {
+      "status": "ok",
+      "detail": "Ollama 0.30.5 at http://localhost:11434/v1 lists 1 model(s): qwen3:4b (ctx 32768)"
+    },
+    "local:ollama/qwen3:4b": {
+      "status": "ok",
+      "detail": "listed; serves 32768 >= declared 32768"
+    },
+    "local:ollama-unlisted": {
+      "status": "ok",
+      "detail": "Ollama 0.30.5 at http://localhost:11434/v1 lists 1 model(s): qwen3:4b (ctx 32768)"
+    },
+    "local:ollama-unlisted/nope:latest": {
+      "status": "fail",
+      "detail": "not listed by the runtime (listed: qwen3:4b)"
+    },
+    "local:ollama-overclaim": {
+      "status": "ok",
+      "detail": "Ollama 0.30.5 at http://localhost:11434/v1 lists 1 model(s): qwen3:4b (ctx 32768)"
+    },
+    "local:ollama-overclaim/qwen3:4b": {
+      "status": "fail",
+      "detail": "declares context_window 65536, runtime serves 32768"
+    }
+  }
+}

@@ -29,7 +29,13 @@ internal data class ChatRequest(
     /** {"include_usage": true} — without it xAI's chat stream carries NO usage frame at all
      *  (the in_tokens=0 blindness of the 2026-07-18 chat-dialect attempt). */
     @SerialName("stream_options") val streamOptions: JsonObject? = null,
+    /** V4-165: llama-server's slot override — the conversation's own slot (see SlotAffinity). Null
+     *  = omitted, which is every request of every head without slot_affinity. */
+    @SerialName(ID_SLOT_FIELD) val idSlot: Int? = null,
 )
+
+/** V4-166: [ChatRequest.idSlot]'s wire name — a routing field, left out of a request's identity. */
+public const val ID_SLOT_FIELD: String = "id_slot"
 
 // explicitNulls=false: null optionals (tools, reasoning_effort, reasoning) are omitted, exactly like
 // the builder's conditional puts.

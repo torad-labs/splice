@@ -18,7 +18,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.cli.StatusTable
+import splice.core.topology.ApiKeyProviderRegistry
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -51,6 +55,7 @@ class SignInPlanMatrixTest {
             "chatgpt-oauth" to head("codex", "claudex"),
             "grok-oauth" to head("xai", "claude-grok"),
             "kimi-oauth" to head("kimi", "claude-kimi"),
+            "muse-oauth" to head("muse", "claude-muse"),
             API_KEY to head("openrouter", "claude-openrouter"), // known token shape
             API_KEY to head("fireworks", "claude-fireworks"), // NO known token shape
         )
@@ -72,6 +77,7 @@ class SignInPlanMatrixTest {
         assertTrue(planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", "claudex"), "codex").viaBrowser)
         assertTrue(planner.signInPlan(providerCfg("grok-oauth"), head("xai", "claude-grok"), "xai").viaBrowser)
         assertTrue(planner.signInPlan(providerCfg("kimi-oauth"), head("kimi", "claude-kimi"), "kimi").viaBrowser)
+        assertTrue(planner.signInPlan(providerCfg("muse-oauth"), head("muse", "claude-muse"), "muse").viaBrowser)
         assertFalse(
             planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter").viaBrowser,
             "an api-key head has no browser flow — claiming one is what produced the dead-end prompt",
@@ -87,12 +93,55 @@ class SignInPlanMatrixTest {
         assertEquals("OPENROUTER_API_KEY", openrouter.tokenCapture?.envVar)
         assertTrue(openrouter.tokenCapture!!.tokenPattern.startsWith("sk-or-"))
 
-        for (vendor in listOf("fireworks", "openai", "moonshot")) {
+        ApiKeyProviderRegistry.rows().filter { it.tokenPattern == null }.forEach { row ->
             assertNull(
-                planner.signInPlan(providerCfg(API_KEY), head(vendor, "claude-$vendor"), vendor).tokenCapture,
-                "$vendor has no pinned token shape — guessing one risks capturing ordinary prose",
+                planner.signInPlan(providerCfg(API_KEY), head(row.id, "claude-${row.id}"), row.id).tokenCapture,
+                "${row.id} has no pinned token shape — guessing one risks capturing ordinary prose",
             )
         }
+    }
+
+    @Test
+    fun `every registry label reaches the plan and only pinned-shape vendors have a token pattern`() {
+        assertRegistryIds(
+            "api-key registry",
+            setOf("openrouter", "deepseek", "moonshot", "fireworks", "openai", "xai"),
+            ApiKeyProviderRegistry.rows().map { it.id }.toSet(),
+        )
+        assertRegistryIds(
+            "auth-kind registry",
+            setOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth", "client"),
+            AuthKindRegistry.knownKinds().map { it.wire }.toSet(),
+        )
+        // DeepSeek joined openrouter 2026-09-15: its key is a FIXED shape, `sk-` plus exactly 32
+        // lowercase alphanumerics, pinned from trufflehog's live-verified detector and corroborated
+        // against a real stored key's measured length and charset. A vendor whose shape is only
+        // "starts with sk-" stays null — that collides with OpenAI and with ordinary prose.
+        val patterned = ApiKeyProviderRegistry.rows().filter { it.tokenPattern != null }
+        assertEquals(setOf("openrouter", "deepseek"), patterned.map { it.id }.toSet())
+        ApiKeyProviderRegistry.rows().forEach { row ->
+            val plan = planner.signInPlan(providerCfg(API_KEY), head(row.id, "claude-${row.id}"), row.id)
+            assertEquals(row.label, plan.label, row.id)
+        }
+        AuthKindRegistry.knownKinds().forEach { kind ->
+            val dialect = when (kind) {
+                is AuthKind.Client, is AuthKind.KimiOAuth, is AuthKind.MuseOAuth ->
+                    Dialect.ANTHROPIC_PASSTHROUGH
+                else -> Dialect.OPENAI_RESPONSES
+            }
+            val plan = planner.signInPlan(
+                providerCfg(kind.wire).copy(dialect = dialect),
+                head(kind.wire, "claude-${kind.wire}"),
+                kind.wire,
+            )
+            assertEquals(kind.signInLabel, plan.label, kind.wire)
+        }
+    }
+
+    private fun assertRegistryIds(what: String, expected: Set<String>, actual: Set<String>) {
+        val missing = (expected - actual).sorted()
+        val unexpected = (actual - expected).sorted()
+        assertEquals(expected, actual, "$what missing=$missing unexpected=$unexpected")
     }
 
     /** DR-97: the DAEMON derives the api-key env from the HEAD key — effectiveApiKeyEnv(ctx.key)
@@ -108,7 +157,7 @@ class SignInPlanMatrixTest {
     /** An OAuth head never captures pastes: its secret never appears in the prompt box at all. */
     @Test
     fun `oauth kinds never enable paste capture`() {
-        for (kind in listOf("chatgpt-oauth", "grok-oauth", "kimi-oauth")) {
+        for (kind in listOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth")) {
             assertNull(
                 planner.signInPlan(providerCfg(kind), head("p", "claude-p"), "p").tokenCapture,
                 "$kind signs in through the browser — there is no token to paste",
@@ -122,6 +171,7 @@ class SignInPlanMatrixTest {
             "chatgpt-oauth" to "codex",
             "grok-oauth" to "xai",
             "kimi-oauth" to "kimi",
+            "muse-oauth" to "muse",
         )
         val invalid = listOf("/usr/bin/claudex", "./claudex", "claude grok", "claude;evil", "", "-claudex")
 
@@ -140,6 +190,24 @@ class SignInPlanMatrixTest {
     fun `oauth wrapper falls back to the topology key when command is absent`() {
         val plan = planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", null), "codex")
         assertEquals("codex login", plan.command)
+    }
+
+    @Test
+    fun `Muse sign-in names Meta and derives the command from the head`() {
+        val cfg = providerCfg("muse-oauth").copy(dialect = Dialect.ANTHROPIC_PASSTHROUGH)
+        for (wrapper in listOf("claude-muse", "muse-work", null)) {
+            val plan = planner.signInPlan(cfg, head("muse", wrapper), "muse-head")
+            assertEquals("${wrapper ?: "muse-head"} login", plan.command)
+            assertEquals("Muse (Meta)", plan.label)
+            assertTrue(plan.viaBrowser)
+            assertNull(plan.tokenCapture)
+        }
+    }
+
+    @Test
+    fun `Muse backend label names Meta rather than guessing from its wire dialect`() {
+        val cfg = providerCfg("muse-oauth").copy(dialect = Dialect.ANTHROPIC_PASSTHROUGH)
+        assertEquals("Meta Muse", StatusTable().backendLabel(cfg))
     }
 
     @Test

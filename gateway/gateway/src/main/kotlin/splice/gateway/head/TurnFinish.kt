@@ -7,6 +7,7 @@
 // TurnUsageStamp.kt (concentration, 2026-08-19).
 package splice.gateway.head
 
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
@@ -43,7 +44,12 @@ internal class TurnFinish(
         // Cancellation still skips the stamps (runCatchingCancellable rethrows immediately):
         // a cancellation seal is the documented no-bill case, unchanged.
         val streamed = Cancellables.runCatchingCancellable {
-            drive.pipeline.finishStream(drive.emitter, outcome, drive.meta, latencyMs)
+            drive.pipeline.finishStream(
+                drive.emitter,
+                outcome,
+                drive.meta,
+                latencyMs,
+            )
         }
         drive.perf.mark(PerfKeys.FINISH)
         (outcome as? TurnOutcome.Success)?.let { usageStamp.stampSuccess(drive, it) }
@@ -64,10 +70,19 @@ internal class TurnFinish(
         // makes the downgrade visible to the log and to head health (perf carries the honest tag
         // below). Local attribution: the downgrade is the gateway's own call — G20's
         // providerReported stays translator-owned.
-        if (outcome is TurnOutcome.Success && outcomeTag != "ok") {
+        if (outcome is TurnOutcome.Success && outcomeTag != OutcomeTag.OK.wire) {
             log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag — client received an error terminal"))
             health.local()
         }
-        telemetry.recordPerf(drive, outcomeTag)
+        // V4-117: the failing outcome is in scope here, so the perf row gets its cause and the
+        // attempt count the retry loop stamped on it. A Success carries neither, and both default to
+        // absent — the row for a healthy turn is byte-identical to what it was before this field.
+        val failure = outcome as? TurnOutcome.Failure
+        telemetry.recordPerf(
+            drive,
+            outcomeTag,
+            cause = failure?.cause?.name,
+            layers = failure?.layers ?: 0,
+        )
     }
 }

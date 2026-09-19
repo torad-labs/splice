@@ -3,9 +3,8 @@
 // as a 0..1 fraction, reset as epoch seconds), which is what its own status line and /usage draw.
 // Splice writes every response Claude Code sees, so a Codex, Kimi or Grok head can carry the same
 // headers Anthropic sends, and the client shows the head's real windows without knowing there is a
-// proxy. FROM the upstream: Anthropic's own unified family on a passthrough head, or the x-codex
-// family a Codex round answers with (used-percent / window-minutes / reset-at or reset-after-seconds
-// per primary/secondary window), sorted into slots by length like every other source.
+// proxy. FROM the upstream: Anthropic's own unified family on a passthrough head. Vendor families
+// (x-codex-*) live behind QuotaHeaderFamily in the owning provider module.
 package splice.core.usage
 
 import splice.core.util.WallClock
@@ -17,16 +16,45 @@ public fun interface QuotaHeaderRead {
     public operator fun invoke(name: String): String?
 }
 
-public class QuotaHeaders(private val clock: WallClock) {
-    private val slots = QuotaSlots()
+/** The three values `anthropic-ratelimit-unified-status` may carry. Taken from the client binary
+ *  (claude 2.1.257), which matches on all three and carries the literal `unified-status: rejected`
+ *  — so splice asserting `allowed` unconditionally was not a client limitation but ours. */
+public enum class QuotaStatus(public val wire: String) {
+    ALLOWED("allowed"),
+    WARNING("allowed_warning"),
+    REJECTED("rejected"),
+}
 
+public class QuotaHeaders(private val clock: WallClock) {
     /** The headers Claude Code reads. Empty for an empty snapshot; carries `-status: allowed` with
-     *  any window because the client keys its warning state off that header too. */
-    public fun forClient(snapshot: QuotaSnapshot): Map<String, String> {
+     *  any window because the client keys its warning state off that header too.
+     *
+     *  [status] and [resetEpochSeconds] exist so a REFUSAL can be stated on the same family — and
+     *  the DEFAULT is deliberately today's exact bytes, so every response that passes neither
+     *  parameter is unchanged down to the key order. Passing [QuotaStatus.ALLOWED] explicitly is
+     *  NOT the same as passing nothing when the snapshot is empty: an explicit status is always
+     *  written, because a refusal has to be stated even when no window is known.
+     *
+     *  [resetEpochSeconds] writes the PLAIN `anthropic-ratelimit-unified-reset`, which is a
+     *  different member from the per-window `-5h-reset` and `-7d-reset` above and is the one Claude
+     *  Code's withRetry actually reads off a 429 (getRateLimitResetDelayMs). WHY A PLAIN RESET
+     *  EXISTS AT ALL: a 429 is not a quota bar, it is a DEADLINE. The window members describe how
+     *  full a bucket is; this one says when to come back, and a client that has just been refused
+     *  needs the second and not the first. */
+    public fun forClient(
+        snapshot: QuotaSnapshot,
+        status: QuotaStatus? = null,
+        resetEpochSeconds: Long? = null,
+    ): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         clientWindow(out, "5h", snapshot.fiveHour)
         clientWindow(out, "7d", snapshot.sevenDay)
-        if (out.isNotEmpty()) out["$UNIFIED-status"] = "allowed"
+        if (status != null) {
+            out["$UNIFIED-status"] = status.wire
+        } else if (out.isNotEmpty()) {
+            out["$UNIFIED-status"] = QuotaStatus.ALLOWED.wire
+        }
+        resetEpochSeconds?.let { out["$UNIFIED-reset"] = it.toString() }
         return out
     }
 
@@ -37,9 +65,8 @@ public class QuotaHeaders(private val clock: WallClock) {
         out["$UNIFIED-$abbr-reset"] = reset.toString()
     }
 
-    /** Anthropic's unified family first (a passthrough head relays Anthropic's own numbers), else
-     *  the x-codex family; null when the response carries neither. */
-    public fun fromUpstream(header: QuotaHeaderRead): QuotaSnapshot? = unified(header) ?: codex(header)
+    /** Anthropic's unified family; null when the response does not carry it. */
+    public fun fromUpstream(header: QuotaHeaderRead): QuotaSnapshot? = unified(header)
 
     private fun unified(h: QuotaHeaderRead): QuotaSnapshot? {
         val five = unifiedWindow(h, "5h", FIVE_HOURS_SECONDS)
@@ -53,23 +80,10 @@ public class QuotaHeaders(private val clock: WallClock) {
         return QuotaWindow(utilization * PERCENT, reset, seconds)
     }
 
-    private fun codex(h: QuotaHeaderRead): QuotaSnapshot? {
-        val windows = listOfNotNull(
-            codexWindow(h, "primary", FIVE_HOURS_SECONDS),
-            codexWindow(h, "secondary", SEVEN_DAYS_SECONDS),
-        )
-        return if (windows.isEmpty()) null else slots.snapshot(windows, h("x-codex-plan-type"), clock())
-    }
-
-    private fun codexWindow(h: QuotaHeaderRead, which: String, defaultSeconds: Long): QuotaWindow? {
-        val used = h("x-codex-$which-used-percent")?.toDoubleOrNull() ?: return null
-        val minutes = h("x-codex-$which-window-minutes")?.toLongOrNull()
-        val resetAt = h("x-codex-$which-reset-at")?.toDoubleOrNull()?.let(::epochSeconds)
-            ?: h("x-codex-$which-reset-after-seconds")?.toLongOrNull()?.let { clock() / MILLIS + it }
-        return QuotaWindow(used, resetAt, minutes?.let { it * SECONDS_PER_MINUTE } ?: defaultSeconds)
-    }
-
-    /** Providers disagree on seconds vs millis for an epoch; anything past year 2286 in seconds is millis. */
+    /** Providers disagree on seconds vs millis; anything past [EPOCH_MILLIS_FLOOR] — the year 5138
+     *  read as seconds, March 1973 read as millis — is millis. The comparison converts for free:
+     *  Kotlin compares a Double against a Long directly, so the shared constant stays one Long and
+     *  no site restates it in its own numeric type. */
     private fun epochSeconds(value: Double): Long =
         if (value > EPOCH_MILLIS_FLOOR) (value / MILLIS).toLong() else value.toLong()
 }
@@ -77,5 +91,15 @@ public class QuotaHeaders(private val clock: WallClock) {
 private const val UNIFIED = "anthropic-ratelimit-unified"
 private const val PERCENT = 100.0
 private const val MILLIS = 1000L
-private const val SECONDS_PER_MINUTE = 60L
-private const val EPOCH_MILLIS_FLOOR = 10_000_000_000.0
+
+/** V4-122: the seconds-versus-milliseconds discriminator for a quota reset timestamp, declared
+ *  ONCE. Four files carried this name across three different values, which the checker held as a
+ *  scar because disagreement here silently mis-scales a reset time by 1000x — a bar that says six
+ *  days when the plan resets in nine minutes.
+ *
+ *  THE VALUE IS NOT A JUDGMENT CALL, which is why it could be unified from the code rather than
+ *  from a preference: read in SECONDS this threshold is the year 5138, in MILLISECONDS it is March
+ *  1973, so a real timestamp in either scale sits decades from the edge. This file's old
+ *  10_000_000_000.0 was the outlier — the same semantics with the comparison inverted, and the only
+ *  value close enough to a live timestamp for the direction of the test to matter. */
+public const val EPOCH_MILLIS_FLOOR: Long = 100_000_000_000

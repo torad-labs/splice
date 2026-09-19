@@ -4,6 +4,7 @@
 // keep splice.app.LoginSpec.
 package splice.app
 
+import splice.app.auth.OAuthLoginAccount
 import java.nio.file.Path
 
 /** Everything the flow needs for one provider's login (built by LoginCommand per head). */
@@ -19,4 +20,5 @@ public data class LoginSpec(
     val authPath: Path,
     /** token-endpoint response body → the auth.json content to persist. */
     val toAuthJson: AuthJsonFromResponse,
+    val account: OAuthLoginAccount? = null,
 )

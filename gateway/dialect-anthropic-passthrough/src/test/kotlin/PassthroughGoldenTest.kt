@@ -29,7 +29,9 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -37,8 +39,9 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughRequestBuilder
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
@@ -47,7 +50,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** KIMI's deformation set — see the CH-2 note in the file header. */
-private val KIMI_QUIRKS = PassthroughQuirksDefaults().kimi("kimi")
+private val KIMI_QUIRKS = KimiProfileFixture().kimi("kimi")
+
+/** V4-157: one remedy for all three halves of the shape guard — the block goes back, whichever
+ *  half went missing. A fixture entry that is only ever INPUT has no other way to say it matters. */
+private const val INCIDENT_BLOCK_REQUIRED =
+    "BLOCK_ALLOWLIST_FIXTURE must keep the V4-157 incident block at content.0 — a thinking block " +
+        "with blank text and a NON-EMPTY signature (request_id req_011CfBPZe8HG2qTVWNVXBmZm). It " +
+        "produces no bytes now that the rule drops it, so nothing else here would notice its loss."
 
 private val GOLDEN_DIR: Path = Path.of("src", "test", "resources", "goldens")
 private val JSON = Json {
@@ -56,7 +66,40 @@ private val JSON = Json {
 }
 private val UPDATING = System.getenv("UPDATE_GOLDENS") == "true"
 
-private fun assertGolden(name: String, actual: String) {
+/**
+ * V4-69: WHAT THE FAILURE GOLDEN WATCHES — the client-facing half of a failure, and nothing else.
+ *
+ *  The wire error type and the PROVIDER-TAGGED message (CH-2's providerTag prefix) are what the
+ *  operator reads and what a deformation would move; the rest of [TurnOutcome.Failure] is splice's
+ *  own bookkeeping — [TurnOutcome.Failure.partial] and [TurnOutcome.Failure.salvagedUsage] are
+ *  accounting, and [TurnOutcome.Failure.connReset] is a V4-67 journal tag. Freezing the data class's
+ *  whole `toString` froze those too, so adding a defaulted field red the wall although not one byte
+ *  the client sees had changed — which is what happened, and what cost two seats an evening.
+ *
+ *  Using the WIRE spelling ([ErrorType.wireName]) and not the enum's Kotlin name is the same point:
+ *  `overloaded_error` is what crosses to the client, `OVERLOADED` is an implementation detail.
+ *
+ *  NOT COVERED, deliberately and worth knowing: [TurnOutcome.Failure.deterministic] IS client-visible
+ *  (its KDoc says it chooses a readable ending over an SSE error event), so a change to it moves what
+ *  the client shows and this golden would not notice. That belongs to a second pin; it is not
+ *  bookkeeping and it is not the field that moved this wall.
+ */
+private fun failureSubject(failure: TurnOutcome.Failure): String =
+    "${failure.type.wireName} ${failure.message}"
+
+/** Drives the provider-tagged failure scenario under ARBITRARY quirks, so the canary can move the
+ *  provider tag and prove the subject still notices. One definition, used by the golden and by its
+ *  canary, so the two cannot drift onto different scenarios. */
+private suspend fun driveFailure(quirks: PassthroughQuirks): TurnOutcome.Failure =
+    PassthroughStreamTranslator(ctx(), quirks).driveTurn(
+        listOf(
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev("""{"type":"error","error":{"type":"overloaded_error","message":"upstream busy"}}"""),
+        ).asFlow(),
+        Recorder(),
+    ) as TurnOutcome.Failure
+
+private fun assertGolden(name: String, actual: String, subject: String = "what Kimi receives") {
     val file = GOLDEN_DIR.resolve(name)
     val body = if (actual.endsWith("\n")) actual else actual + "\n"
     if (UPDATING) {
@@ -75,10 +118,10 @@ private fun assertGolden(name: String, actual: String) {
         "missing golden $name — regenerate with UPDATE_GOLDENS=true and READ THE DIFF"
     }
     assertEquals(Files.readString(file), body) {
-        "KIMI WIRE BYTES MOVED ($name). Kimi behavior is frozen by the claude-head campaign; a diff " +
-            "here means the change under test altered what Kimi receives. Fix the change, not the " +
-            "golden. If the operator has decided kimi's wire genuinely changes, regenerate with " +
-            "UPDATE_GOLDENS=true and read the diff."
+        "GOLDEN MOVED ($name). Kimi behavior is frozen by the claude-head campaign; a diff here " +
+            "means the change under test altered $subject. Fix the change, not the golden. If the " +
+            "operator has decided it genuinely changes, regenerate with UPDATE_GOLDENS=true and " +
+            "read the diff."
     }
 }
 
@@ -160,9 +203,20 @@ private const val COMPACT_FIXTURE = """
 """
 
 /** the block allowlist: redacted_thinking / document / search_result are DROPPED today, and an
- *  empty unsigned thinking block is dropped while a signed one rides verbatim. */
+ *  EMPTY thinking block is dropped whether or not it carries a signature — only thinking that
+ *  contains thinking rides, signature verbatim.
+ *
+ *  V4-157 REWROTE THIS RULE AND THE FIXTURE BELOW, and the old one is worth naming because it
+ *  shipped a dead turn to a live operator session on 2026-09-18: a blank thinking block was dropped
+ *  only when its signature was ALSO empty, so a blank-but-SIGNED block was judged content-bearing
+ *  and rode upstream, where Anthropic answered the whole request with 400 invalid_request_error —
+ *  `messages.903.content.0.thinking: each thinking block must contain thinking`, request_id
+ *  req_011CfBPZe8HG2qTVWNVXBmZm. Every retry resent the same block, so the turn could not be
+ *  recovered and compaction was impossible for the rest of the session. The first block below IS
+ *  that shape; it must never appear in `request-block-allowlist.json` again. */
 private const val BLOCK_ALLOWLIST_FIXTURE = """
 {"model":"m","messages":[{"role":"assistant","content":[
+  {"type":"thinking","thinking":"","signature":"sig-empty-but-signed"},
   {"type":"thinking","thinking":"kept","signature":"sig-abc"},
   {"type":"thinking","thinking":"   ","signature":""},
   {"type":"redacted_thinking","data":"enc-blob"},
@@ -195,6 +249,20 @@ class PassthroughGoldenTest {
 
     @Test
     fun `content block allowlist is byte-stable`() {
+        // V4-157: the incident block at content.0 of the fixture is LOAD-BEARING INPUT for a proof
+        // this golden can no longer see. It red the wall ONCE, on unmodified HEAD, by riding into
+        // the built request; now that the rule drops it the output is byte-identical whether the
+        // block is in the fixture or not — so deleting it would take the proof away in silence,
+        // with every test still green, which is precisely the shape the block was added to catch.
+        // Guarded here, ahead of the comparison, so the two cannot be separated. The SHAPE is what
+        // is pinned, never the signature string: anyone may rotate that value without weakening it.
+        val incident = Json.parseToJsonElement(BLOCK_ALLOWLIST_FIXTURE).jsonObject
+            .getValue("messages").jsonArray.single().jsonObject
+            .getValue("content").jsonArray.first().jsonObject
+        assertEquals("thinking", incident["type"]?.jsonPrimitive?.content, INCIDENT_BLOCK_REQUIRED)
+        assertTrue(incident["thinking"]?.jsonPrimitive?.content?.isBlank() == true, INCIDENT_BLOCK_REQUIRED)
+        assertTrue(incident["signature"]?.jsonPrimitive?.content?.isNotEmpty() == true, INCIDENT_BLOCK_REQUIRED)
+
         assertGolden("request-block-allowlist.json", buildKimi(BLOCK_ALLOWLIST_FIXTURE))
     }
 
@@ -230,7 +298,12 @@ class PassthroughGoldenTest {
     }
 
     /** The provider-tagged failure text is user-facing on every head that runs this dialect, so it
-     *  is pinned too: CH-2 makes it providerTag-driven, and kimi's rendering must not move. */
+     *  is pinned too: CH-2 makes it providerTag-driven, and kimi's rendering must not move.
+     *
+     *  V4-69: the SUBJECT is the projection above — the wire error type and the provider-tagged
+     *  message — not the Failure data class's rendering. The old subject froze splice's own
+     *  bookkeeping, so a defaulted internal field (V4-67's connReset) red this wall while no byte
+     *  the client sees had changed. Nothing about the scenario changed; only what is watched. */
     @Test
     fun `provider-tagged failure text is byte-stable`() = runTest {
         val sink = Recorder()
@@ -241,7 +314,40 @@ class PassthroughGoldenTest {
             ).asFlow(),
             sink,
         )
-        assertGolden("translator-failure-text.txt", outcome.toString())
+        assertGolden(
+            "translator-failure-text.txt",
+            failureSubject(outcome as TurnOutcome.Failure),
+            subject = "the failure TYPE and its provider-tagged message",
+        )
+    }
+
+    /** V4-69 canary — the failure golden must still detect a REAL deformation and must NOT be moved
+     *  by an INTERNAL one. Both halves are CONSTRUCTED rather than awaited or mutated in main
+     *  sources: the second Failure below differs from the first only in a defaulted bookkeeping
+     *  field, which is exactly what the old subject could not tell apart from a wire change (V4-67's
+     *  connReset red this wall while no byte the client reads had moved). A wall that fails here has
+     *  stopped watching the client's bytes; a wall that passes the second half has stopped watching
+     *  splice's own bookkeeping, which is the point of the row. */
+    @Test
+    fun `canary — the failure golden detects a provider change and ignores internal fields`() = runTest {
+        val kimi = driveFailure(KIMI_QUIRKS)
+        val relabelled = driveFailure(KIMI_QUIRKS.copy(providerTag = "someone-else"))
+        assertNotEquals(
+            failureSubject(relabelled),
+            failureSubject(kimi),
+            "a different providerTag MUST move the subject, or this wall froze nothing at all",
+        )
+
+        assertEquals(
+            failureSubject(kimi.copy(connReset = true)),
+            failureSubject(kimi),
+            "connReset is splice's own V4-67 journal tag — not something the client reads",
+        )
+        assertEquals(
+            failureSubject(kimi.copy(salvagedUsage = Usage(inputTokens = 7, outputTokens = 9))),
+            failureSubject(kimi),
+            "salvaged accounting is bookkeeping, never part of what the client sees",
+        )
     }
 
     // --- the canary: a golden that cannot detect a deformation is worthless ------------------------

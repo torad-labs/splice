@@ -5,7 +5,8 @@
 // the `else ->` remainder is still handed to stopReasonFailure at the same call site.
 package splice.dialect.passthrough
 
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.spi.UpstreamFailureClassifier
 
@@ -23,7 +24,7 @@ internal class PassthroughTerminalState(
 
     internal var incomplete = false
     internal var finished = false
-    private var failureType: ErrorType? = null
+    private var failureCause: FailureCause? = null
     private var failureMessage: String = ""
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
@@ -50,9 +51,9 @@ internal class PassthroughTerminalState(
             // vendor value keep end_turn semantics (see [PassthroughFailureRules.stopReasonFailure]).
             // First latch wins so a later genuine `error` event can never be overwritten by a
             // trailing message_delta.
-            else -> failureRules.stopReasonFailure(reason)?.let { (type, why) ->
-                if (failureType == null) {
-                    failureType = type
+            else -> failureRules.stopReasonFailure(reason)?.let { (cause, why) ->
+                if (failureCause == null) {
+                    failureCause = cause
                     failureMessage = why
                 }
             }
@@ -62,12 +63,17 @@ internal class PassthroughTerminalState(
     /** The upstream SSE error event, already pulled apart by [PassthroughEventRouter] (which owns
      *  the frame-shape knowledge) — same classification, same order, receiver became argument. */
     internal fun onError(type: String, message: String) {
-        failureType = when (type) {
-            "overloaded_error" -> ErrorType.OVERLOADED
-            "rate_limit_error" -> ErrorType.RATE_LIMIT
-            "authentication_error" -> ErrorType.AUTHENTICATION
-            "invalid_request_error" -> ErrorType.INVALID_REQUEST
-            else -> ErrorType.API_ERROR
+        // V4-117: the verdict is a CAUSE now. Each arm names the condition the vendor's own error
+        // type describes, and the wire type follows from it — the mapping below derives exactly the
+        // ErrorType this table used to name by hand (overloaded → OVERLOADED, rate_limit →
+        // RATE_LIMIT, authentication → AUTHENTICATION, invalid_request → INVALID_REQUEST, and an
+        // unrecognised type → API_ERROR via UPSTREAM_REPORTED).
+        failureCause = when (type) {
+            "overloaded_error" -> FailureCause.UPSTREAM_STATUS_5XX
+            "rate_limit_error" -> FailureCause.VENDOR_RATE_LIMITED
+            "authentication_error" -> FailureCause.AUTH_MISSING
+            "invalid_request_error" -> FailureCause.UPSTREAM_STATUS_4XX
+            else -> FailureCause.UPSTREAM_REPORTED
         }
         failureMessage = message.ifEmpty { "error" }
     }
@@ -76,12 +82,35 @@ internal class PassthroughTerminalState(
     internal fun providerFailure(): TurnOutcome.Failure? =
         // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
         runawayGuard?.let {
-            TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
-        } ?: failureType?.let {
+            TurnOutcome.Failure(
+                it,
+                providerReported = false,
+                // V4-81: permanent, and it is the same argument the responses dialect's runaway arm
+                // makes by construction — the valve trips on the GENERATION ITSELF hitting its
+                // truncation bound, so re-sending the identical request reproduces the identical
+                // overrun. Marking it permanent is what stops the pre-content rule advertising a
+                // condition a retry cannot change as transient. This is the last of the four
+                // siblings (responses refusal, responses content-filter, chat refusal, chat
+                // content-filter); the sweep is closed.
+                permanent = true,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
+            )
+        } ?: failureCause?.let {
             // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
             // a non-clean stop_reason (CX-07, see [PassthroughFailureRules.stopReasonFailure]) —
             // provider-reported (G20)
-            TurnOutcome.Failure(it, "${quirks.providerTag}: $failureMessage", providerReported = true)
+            TurnOutcome.Failure(
+                "${quirks.providerTag}: $failureMessage",
+                providerReported = true,
+                // V4-117: the CAUSE the two producers above latched (onError's vendor type, or
+                // stopReasonFailure's stop_reason verdict), carried through untouched. An earlier
+                // draft hard-coded UPSTREAM_REPORTED here and threw both verdicts away, which seven
+                // tests caught: every SSE error arrived as API_ERROR regardless of what the vendor
+                // had called it.
+                cause = it,
+                phase = FailurePhase.MID_OUTPUT,
+            )
         }
 }
 
@@ -117,11 +146,15 @@ private class PassthroughFailureRules {
      * discriminator values COUNTED needs a per-turn telemetry channel the dialects do not have (see the
      * ledger note on W4-A) and is proposed as its own item rather than smuggled in here.
      */
-    fun stopReasonFailure(reason: String): Pair<ErrorType, String>? = when (reason) {
-        "refusal" -> ErrorType.API_ERROR to "generation refused by the model (stop_reason=refusal)"
-        "pause_turn" -> ErrorType.OVERLOADED to "backend paused the turn (stop_reason=pause_turn) — retry"
+    // V4-117: a CAUSE per arm, not a type. The three arms derive the same wire types they named by
+    // hand before (refusal → API_ERROR, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST),
+    // and the overflow arm reads the classifier's own cause rather than re-stating its type.
+    fun stopReasonFailure(reason: String): Pair<FailureCause, String>? = when (reason) {
+        "refusal" -> FailureCause.MODEL_REFUSED to "generation refused by the model (stop_reason=refusal)"
+        "pause_turn" ->
+            FailureCause.UPSTREAM_STATUS_5XX to "backend paused the turn (stop_reason=pause_turn) — retry"
         "model_context_window_exceeded" -> UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).let {
-            it.type to it.message
+            it.cause to it.message
         }
         else -> null
     }

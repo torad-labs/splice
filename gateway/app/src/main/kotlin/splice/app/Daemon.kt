@@ -17,20 +17,27 @@ import kotlinx.coroutines.sync.withLock
 import splice.app.head.HEAD_STOP_BUDGET_MS
 import splice.app.head.HeadBoot
 import splice.app.head.HeadProbes
+import splice.app.head.HeadPromptInputs
 import splice.app.head.HeadServerFactory
 import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.control.ControlServer
 import splice.control.DashboardPage
+import splice.control.DeclaredHead
+import splice.control.DeclaredHeads
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
+import splice.core.compaction.CompactionInstructions
+import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
+import splice.core.version.ClientVersionTracker
+import splice.gateway.head.CompactionTail
 import java.nio.file.Path
 
 public class Daemon(
@@ -56,9 +63,50 @@ public class Daemon(
         perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
     )
     private val mgmtKey = MgmtKey(statePaths)
+    private val clientVersions = ClientVersionTracker()
+
+    /** The topology's directory: a relative `system_prompt_file` or `[compaction] file =` resolves
+     *  against it. Hoisted above [controlPlane] (V4-136) because the shared compaction resolver
+     *  below needs it, and that resolver is handed to the control plane. */
+    private val topologyDir = topologyPath?.parent ?: TopologyLoader.configPath().parent
+
+    /** V4-136: ONE compaction resolver, SHARED. The console route reports the resolver the daemon
+     *  actually compacts with — including its live file cache — rather than a rebuilt copy that
+     *  would agree with this one only by luck. Constructed once and handed to both [compactionTail]
+     *  and [controlPlane], so there is no second instance to drift. */
+    private val compactionInstructions =
+        CompactionInstructions(topology.compaction, topologyDir, log = log)
+
+    /** V4-162: the context windows splice.toml declares, re-read while the daemon runs, and the
+     *  version the control plane publishes as running. Hoisted above [controlPlane], which reports
+     *  it; its catalogs resolve through [buildInputs] at re-read time, after start() built the heads. */
+    private val topologyWindows: TopologyWindows = TopologyWindows(
+        topologyPath,
+        topology,
+        topologyDigest,
+        HeadCatalogs { key, head, provider, legacy -> buildInputs.catalogFor(key, head, provider, legacy) },
+        log,
+    )
+
     private val controlPlane = ControlPlane(
         statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
-        topologyDigest, topologyPath, refreshCall,
+        // The booted config's identity and what it declared, as one value — three parameters until
+        // the width ratchet caught this constructor at 13. declaredHeads is still built HERE and not
+        // in ControlPlane, because this is the only place that holds the Topology: ControlPlane
+        // carries the digest and the path, never the object, and a second read of the file the heads
+        // were built from can diverge from it.
+        BootedTopology(
+            digest = topologyDigest,
+            path = topologyPath,
+            declaredHeads = DeclaredHeads {
+                topology.heads.mapValues { (_, head) -> DeclaredHead(head.provider, head.models) }
+            },
+            running = topologyWindows,
+        ),
+        refreshCall,
+        mcpHosting = McpHostingSettings().with(topology.daemon),
+        clientVersions = clientVersions,
+        compactionInstructions = compactionInstructions,
     )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
@@ -72,13 +120,33 @@ public class Daemon(
     // directly to pin that each head resolves against getConfig(key) — see HeadBuildInputs' KDoc.
     // Inferred so this file does not name HeadBuildInputs (concentration, 2026-08-19).
     internal val buildInputs get() = controlPlane.buildInputs
-    private val headServerFactory = HeadServerFactory(config, mgmtKey, log)
+
+    // The directory a relative `file =` / `system_prompt_file =` resolves against: the topology's
+    // own directory, so a config kept beside its text files moves as one unit.
     private val launchSpecFactory = LaunchSpecFactory(
         topology,
         controlPlane.signInPlanner,
         mgmtKey,
         controlPlane.buildInputs,
     )
+
+    // V4-130: ONE session-to-cwd resolver over every head's projects tree (then the vanilla one), for
+    // both the compaction tail and the heads' prompt layers. The vanilla-only default missed every
+    // headless session of a head that keeps its own tree.
+    private val sessionProject = SessionProject(headProjectsDirs = launchSpecFactory.headProjectsTrees())
+    private val compactionTail = CompactionTail(compactionInstructions, sessionProject)
+    private val headServerFactory =
+        HeadServerFactory(
+            config,
+            mgmtKey,
+            log,
+            compactionTail,
+            clientVersions,
+            HeadPromptInputs(topologyDir, topology.projects, sessionProject),
+            // V4-134: the control plane's publisher, so every head reports to the bus the console
+            // route streams from. Pinned by OneEventBusPinTest.
+            console = controlPlane.console,
+        )
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths,
         controlPlane.providerAssembly,
@@ -108,10 +176,11 @@ public class Daemon(
         // every sibling the first head's (or the default) port/model/base.
         val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
-            managedHeadFactory.assembleHead(
-                buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = key in legacySolo),
-                controlPort,
-            )
+            val legacy = key in legacySolo
+            val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)
+            // V4-162: attached before assembly, so every holder of the catalog (provider, launch spec,
+            // statusline) reads the windows splice.toml declares NOW.
+            managedHeadFactory.assembleHead(topologyWindows.attach(ctx, legacy), controlPort)
         }
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
@@ -133,8 +202,6 @@ public class Daemon(
     public suspend fun stop(): Unit = stopLock.withLock {
         if (!stopped) {
             stopped = true
-            headProbes.stop()
-            controlPlane.cancelProbes()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -143,6 +210,14 @@ public class Daemon(
             // stderr/daemon.log instead of the JVM default, a black hole once production redirects
             // stderr to /dev/null.
             headShutdown.stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
+
+            // Probe cancellation runs AFTER the heads have drained: the probe scope is the scope
+            // ProviderAssembly hands every provider, so cancelling it first means a SingleFlight
+            // token refresh raised by a turn still streaming inside the 45s drain is cancelled by a
+            // job that turn does not own — a foreign CancellationException in a live turn.
+            headProbes.stop()
+            controlPlane.cancelProbes()
+            topologyWindows.close()
         }
     }
 }

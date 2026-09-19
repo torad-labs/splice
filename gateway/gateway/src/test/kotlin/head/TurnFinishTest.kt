@@ -20,7 +20,8 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.perf.TurnPerf
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -112,7 +113,7 @@ class TurnFinishTest {
             ),
             emitter = emitter,
             watchdog = watchdog,
-            slot = InflightGate(LiveLimit { 1 }).acquire(),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-dr8x.jsonl")),
                 log = log,
@@ -137,11 +138,46 @@ class TurnFinishTest {
         val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
         val drive = rig.drive(emitter, watchdog)
         try {
-            rig.finish.finishTurn(drive, TurnOutcome.Failure(ErrorType.OVERLOADED, "upstream stalled"))
+            rig.finish.finishTurn(
+                drive,
+                TurnOutcome.Failure(
+                    "upstream stalled",
+                    cause = FailureCause.UPSTREAM_STALLED,
+                    phase = FailurePhase.MID_OUTPUT,
+                ),
+            )
         } finally {
             drive.slot.release()
         }
         return rig.logs.first()
+    }
+
+    /** V4-117's perf-row pin: the CAUSE the taxonomy named and the ATTEMPT COUNT the retry loop
+     *  stamped both reach the JSONL row, and the row still carries the outcome tag the operator
+     *  already greps — the two fields are an addition to the row, never a replacement for it. */
+    @Test
+    fun `a failure puts its cause and the loop attempt count on the perf row - V4-117`() = runBlocking {
+        val rig = Rig(tmp, "perf-cause")
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter)
+        try {
+            rig.finish.finishTurn(
+                drive,
+                TurnOutcome.Failure(
+                    "upstream stalled",
+                    cause = FailureCause.UPSTREAM_STALLED,
+                    phase = FailurePhase.MID_OUTPUT,
+                    layers = 3,
+                ),
+            )
+        } finally {
+            drive.slot.release()
+        }
+        AsyncFileIo.drain()
+        val row = Files.readAllLines(rig.perfFile).last()
+        assertTrue("\"cause\":\"UPSTREAM_STALLED\"" in row, "the cause must ride the row: $row")
+        assertTrue("\"layers\":3" in row, "the loop's attempt count must ride the row: $row")
+        assertTrue("\"outcome\":" in row, "the greppable outcome tag must survive: $row")
     }
 
     @Test
@@ -152,7 +188,7 @@ class TurnFinishTest {
             clock = ticks.clock,
             ticker = ticks.ticker,
         )
-        val slot = InflightGate(LiveLimit { 1 }, clock = ticks.clock).acquire()
+        val slot = InflightGate(LiveLimit { 1 }, clock = ticks.clock).admittedSlot()
         val target = launch { delay(10.seconds) }
         val poller = watchdog.launchIn(this, slot, target, ClientFrameEmitted { true })
         try {
@@ -225,7 +261,9 @@ class TurnFinishTest {
         } finally {
             drive.slot.release()
         }
-        assertEquals(502, emitter.httpStatus(), "the client must have received the empty-model error")
+        // V4-42: the empty_model ending is OVERLOADED now (retried with backoff), so the collect
+        // path's status is 529, not the api_error 502 it carried when this pin was written.
+        assertEquals(529, emitter.httpStatus(), "the client must have received the empty-model error")
         assertEquals(1L, rig.health.snapshot().localOrigin, "the downgrade must reach head health")
         assertTrue(rig.logs.any { it.contains("finish-degraded") }, "the downgrade must reach the log")
         AsyncFileIo.drain() // perf rows are appended asynchronously

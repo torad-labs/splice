@@ -11,12 +11,13 @@
   ],
   "scripts": {
     "gate": "bash checks/gate.sh",
+    "gate:no-python": "bun checks/no-python.ts && bun checks/no-python-selftest.ts",
     "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests && ast-grep test --config .rules/kotlin/ast-grep/sgconfig.yml --skip-snapshot-tests",
-    "gate:concentration": "python3 checks/concentration.py --ratchet --max-ratio 1.8",
-    "gate:campaign": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py",
-    "gate:campaign:census": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --no-run",
-    "gate:campaign:selftest": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --selftest",
-    "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py",
+    "gate:concentration": "bun checks/concentration.ts --ratchet --max-ratio 1.8",
+    "gate:campaign": "bun dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts",
+    "gate:campaign:census": "bun dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --no-run",
+    "gate:campaign:selftest": "bun dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --selftest",
+    "test:hooks": "bun .claude/hooks/tests/test_orchestrator.ts && bun .claude/hooks/tests/test_one_committer.ts",
     "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
@@ -25,7 +26,7 @@
     "oracle:capture": "node dev/campaigns/proxy-hardening/oracle/capture.mjs",
     "oracle:check": "node dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
     "oracle:replay": "node dev/campaigns/proxy-hardening/oracle/replay.mjs",
-    "gate:campaign:strict": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --strict",
+    "gate:campaign:strict": "bun dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --strict",
     "promote": "bash checks/promote.sh"
   },
   "devDependencies": {

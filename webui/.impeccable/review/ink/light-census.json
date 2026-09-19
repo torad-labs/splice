@@ -1,0 +1,371 @@
+{
+ "floor": 4.5,
+ "tree": {
+  "head": "9028c547",
+  "dirty": true,
+  "paths": [
+   "webui/src"
+  ],
+  "cssChanged": [],
+  "otherChanged": 4,
+  "at": "2026-09-18T15:07:43.689Z"
+ },
+ "sweepTree": {
+  "head": "9028c547",
+  "dirty": true,
+  "paths": [
+   "webui/src"
+  ],
+  "cssChanged": [],
+  "otherChanged": 4,
+  "at": "2026-09-18T15:07:43.574Z"
+ },
+ "frames": {
+  "1536": {
+   "pairs": 2297,
+   "pages": [
+    "accounts",
+    "compaction",
+    "doctor",
+    "fleet",
+    "logs",
+    "mcp",
+    "models",
+    "projects",
+    "sessions",
+    "settings",
+    "teams",
+    "turns",
+    "usage"
+   ],
+   "classes": 64,
+   "below": 0,
+   "belowByLargeOnly": 0,
+   "min": {
+    "theme": "light",
+    "addr": "teams",
+    "cls": "myx-sfield-label",
+    "ink": "#5A5749",
+    "ground": "#CECDC3",
+    "size": 12,
+    "weight": 400,
+    "large": false,
+    "ratio": 4.55,
+    "groundFrom": "myx-sfield",
+    "anc": [
+     "myx-sfield-label",
+     "myx-sfield",
+     "myx-strip-fields",
+     "myx-strip",
+     "myx-board-msg",
+     "myx-board-handoff-msg",
+     "myx-board-ghost",
+     "myx-board-ghost-1",
+     "myx-board-handoff",
+     "myx-board",
+     "myx-teams",
+     "myx-console-page",
+     "myx-console-body",
+     "myx-console"
+    ],
+    "sample": "time"
+   }
+  },
+  "3840": {
+   "pairs": 2297,
+   "pages": [
+    "accounts",
+    "compaction",
+    "doctor",
+    "fleet",
+    "logs",
+    "mcp",
+    "models",
+    "projects",
+    "sessions",
+    "settings",
+    "teams",
+    "turns",
+    "usage"
+   ],
+   "classes": 64,
+   "below": 0,
+   "belowByLargeOnly": 0,
+   "min": {
+    "theme": "light",
+    "addr": "teams",
+    "cls": "myx-sfield-label",
+    "ink": "#5A5749",
+    "ground": "#CECDC3",
+    "size": 30,
+    "weight": 400,
+    "large": true,
+    "ratio": 4.55,
+    "groundFrom": "myx-sfield",
+    "anc": [
+     "myx-sfield-label",
+     "myx-sfield",
+     "myx-strip-fields",
+     "myx-strip",
+     "myx-board-msg",
+     "myx-board-handoff-msg",
+     "myx-board-ghost",
+     "myx-board-ghost-1",
+     "myx-board-handoff",
+     "myx-board",
+     "myx-teams",
+     "myx-console-page",
+     "myx-console-body",
+     "myx-console"
+    ],
+    "sample": "time"
+   }
+  },
+  "1536-m1-47": {
+   "pairs": 2293,
+   "pages": [
+    "accounts",
+    "compaction",
+    "doctor",
+    "fleet",
+    "logs",
+    "mcp",
+    "models",
+    "projects",
+    "sessions",
+    "settings",
+    "teams",
+    "turns",
+    "usage"
+   ],
+   "classes": 64,
+   "below": 0,
+   "belowByLargeOnly": 0,
+   "min": {
+    "theme": "light",
+    "addr": "teams",
+    "cls": "myx-sfield-label",
+    "ink": "#5A5749",
+    "ground": "#CECDC3",
+    "size": 12,
+    "weight": 600,
+    "large": false,
+    "ratio": 4.55,
+    "groundFrom": "myx-sfield",
+    "anc": [
+     "myx-sfield-label",
+     "myx-sfield",
+     "myx-strip-fields",
+     "myx-strip",
+     "myx-board-msg",
+     "myx-board-handoff-msg",
+     "myx-board-ghost",
+     "myx-board-ghost-1",
+     "myx-board-handoff",
+     "myx-board",
+     "myx-teams",
+     "myx-console-page",
+     "myx-console-body",
+     "myx-console"
+    ],
+    "sample": "time"
+   }
+  }
+ },
+ "below": [],
+ "gap": {
+  "kinds": {
+   "SAME-RULE": 28,
+   "UNRESOLVED": 69,
+   "NOT-AN-INK-ROLE": 18,
+   "RENDERED": 66
+  },
+  "unrendered": 69,
+  "dispositions": {
+   "EXERCISED": 39,
+   "DEFERRED": 33,
+   "DEAD": 1
+  },
+  "exercisedInLight": 9
+ },
+ "divergence": {
+  "rooms": [
+   {
+    "key": "accounts|myx-accounts-order",
+    "a": 7.18,
+    "b": 3.63,
+    "factor": 1.98
+   },
+   {
+    "key": "settings|myx-knob-num",
+    "a": 4.68,
+    "b": 6.99,
+    "factor": 1.49
+   },
+   {
+    "key": "fleet|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "turns|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "sessions|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "teams|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "teams|myx-board-footer-cell",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "projects|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "accounts|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "usage|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "settings|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "models|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "logs|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "compaction|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "mcp|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "doctor|myx-bay-label",
+    "a": 12.83,
+    "b": 9.23,
+    "factor": 1.39
+   },
+   {
+    "key": "fleet|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "turns|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "sessions|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "projects|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "accounts|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "usage|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "settings|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "models|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "logs|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "compaction|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "mcp|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "doctor|myx-bay-count",
+    "a": 11.64,
+    "b": 8.52,
+    "factor": 1.37
+   },
+   {
+    "key": "logs|myx-fig-unit",
+    "a": 8.85,
+    "b": 6.93,
+    "factor": 1.28
+   }
+  ],
+  "frames": [],
+  "lightDefects": 0
+ }
+}

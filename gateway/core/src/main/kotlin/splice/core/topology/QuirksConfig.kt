@@ -49,8 +49,17 @@ public data class QuirksConfig(
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
      *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
     @SerialName("websocket") val webSocket: Boolean? = null,
-    /** Beta ChatGPT responses only: splice-owned JavaScript bridge. Absent/default stays off. */
+    /** ChatGPT responses only: splice-owned JavaScript bridge. Absent = on for that shape (0.4.0). */
     @SerialName("code_mode") val codeMode: Boolean? = null,
+    /** code-mode only: the JAR-bundled GraalJS worker pool size (JvmCodeModeRuntime maxWorkers).
+     *  NULLABLE overlay — absent keeps the code default (4). */
+    @SerialName("code_mode_workers") val codeModeWorkers: Int? = null,
+    /** code-mode only: how long one worker exchange may wait for the child's answer, in milliseconds
+     *  (JvmCodeModeRuntime advanceTimeoutMs). NULLABLE overlay — absent keeps the code default (5000). */
+    @SerialName("code_mode_timeout_ms") val codeModeTimeoutMs: Long? = null,
+    /** code-mode only: each child JVM's heap, in MB (the -Xmx). NULLABLE overlay — absent keeps the
+     *  code default (128). */
+    @SerialName("code_mode_heap") val codeModeHeapMb: Int? = null,
     /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
      *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
      *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this
@@ -60,6 +69,19 @@ public data class QuirksConfig(
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */
     @SerialName("reasoning_effort") val reasoningEffort: Boolean? = null,
+    /** openai-chat only: send stream_options.include_usage, so the stream ends with a usage frame.
+     *  null keeps the provider's own default — ON for a LOCAL runtime (V4-163) and for grok-oauth,
+     *  OFF for every other vendor, whose tolerance for extra fields is unknown. Without the frame a
+     *  head reports zero tokens per turn, Claude Code never reaches its auto-compact threshold, and
+     *  the session runs into the context wall instead. Set false for a local runtime that refuses
+     *  the field, true for a hosted vendor that accepts it. */
+    @SerialName("stream_usage") val streamUsage: Boolean? = null,
+    /** openai-chat only, for a llama-server runtime: keep each conversation on one server slot by
+     *  sending id_slot (V4-165). llama-server picks slots by prompt similarity and skips empty ones,
+     *  so a new session sharing the ~30K Claude Code preamble takes an idle conversation's slot and
+     *  that conversation re-prefills from zero. null/false = off (id_slot is llama.cpp's own field;
+     *  other runtimes have no slots to pin). */
+    @SerialName("slot_affinity") val slotAffinity: Boolean? = null,
     /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
      *  ABSENT TABLE = feature off — the nullable-overlay idiom of [reasoningCache] above. */
     @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,
@@ -88,6 +110,20 @@ public data class QuirksConfig(
     @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean? = null,
     /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
     @SerialName("strip_sampling_params") val stripSamplingParams: Boolean? = null,
+    /** V4-41: may a mid-stream re-anchor resume this upstream by APPENDING the salvaged answer as a
+     *  trailing assistant message? A VENDOR FACT, so it is measured per provider and never assumed:
+     *  deepseek and kimi continue from such a prefill (probed 2026-09-16), while muse 400s on it
+     *  outright — "assistant prefill is not supported by this server" — which would turn a retryable
+     *  overloaded_error into an invalid_request_error the client will NOT retry. ABSENT = off, so an
+     *  unmeasured vendor keeps exactly today's behaviour (the whole-stream restart still applies when
+     *  nothing visible was salvaged) and measurement is what earns the upgrade. */
+    @SerialName("reanchor_prefill") val reanchorPrefill: Boolean? = null,
+    /** anthropic-passthrough only: cap a forwarded tool NAME at this many characters, shortening
+     *  deterministically via ToolNameShortener. MUSE ONLY — api.meta.ai rejects a tool name over 64
+     *  characters where Anthropic accepts it (V4-32), and Claude Code's MCP names run past 80.
+     *  NULLABLE overlay — absent keeps the head's BASE profile (muse's built-in 64; 0 = no cap for
+     *  every other passthrough head), so the muse cap is overridable rather than hardcoded. */
+    @SerialName("tool_name_cap") val toolNameCap: Int? = null,
 ) {
     init {
         require(compactEffort == null) {

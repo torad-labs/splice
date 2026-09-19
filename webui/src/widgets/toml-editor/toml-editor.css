@@ -1,0 +1,41 @@
+/* The topology text views. CodeMirror brings its own runtime styles (injected,
+   not in this sheet); what this owns is the frame around them: a dark scope
+   inset's ground, the token scale for spacing and type, radius 0. */
+.myx-toml {
+  /* CODE: the TOML text view. */
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+  color: var(--strip-ink);
+  background: var(--strip);
+  /* --hair-strong was never defined, here or at any point in history, and an undefined custom
+     property in a var() with no fallback is invalid at computed-value time -- so this border
+     painted currentColor, not a hairline. The obvious repair, --hairline-strong, would have been
+     wrong the way the Flag was: this box sets background:var(--strip), so it is PAPER, and the
+     hairline tokens are the ROOM's. Paper's line is --strip-field-line, which is what the other
+     81 hairline borders in this tree pair with --hair. */
+  border: var(--hair) solid var(--strip-field-line);
+  max-height: 34rem;
+  overflow: auto;
+}
+
+.myx-toml .cm-editor {
+  outline: none;
+}
+
+.myx-toml .cm-editor.cm-focused {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.myx-toml .cm-scroller {
+  /* CODE: the TOML body itself. */
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+}
+
+.myx-toml-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}

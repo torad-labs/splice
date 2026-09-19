@@ -20,7 +20,7 @@ import splice.control.ManagedHead
 import splice.core.auth.RefreshAttempt
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
-import splice.provider.codex.RefreshedTokens
+import splice.spi.RefreshedTokens
 
 /**
  * Builds the x-www-form-urlencoded token-exchange body for a real authorization code.

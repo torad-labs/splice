@@ -1,23 +1,36 @@
-/* IBM Plex Mono, embedded in the single-file build (data URIs via Vite inline).
-   Serif faces intentionally fall back to system serif to keep the artifact small. */
+/* The two faces of the strip bay, embedded in the single-file build.
+   A compact workhorse grotesque for labels and copy (Archivo, variable), and a
+   tabular monospace for figures (JetBrains Mono, variable). Both are variable
+   files, so one @font-face rule covers the whole axis range and the build
+   inlines two files instead of six.
+
+   Archivo carries BOTH of its axes here: wght 100-900 and wdth 62-125. The
+   wdth axis is not decoration -- the comp's lettering is condensed (its strip
+   type measures about 0.31em of advance per character against a full-height
+   ascender), and a face without a width axis can only be squeezed with a
+   transform, which scales the glyph and lies to every size check downstream
+   (design review B2). The first cut loaded the wght-only file; this one is the
+   full variable font, same family, same OFL-Archivo.txt beside it.
+
+   url() rather than a bare path keeps them under Vite's assetsInlineLimit, so
+   the shipped artifact carries no font request. These two faces and their two
+   licences (OFL-Archivo.txt, OFL-JetBrainsMono.txt) are the whole of fonts/: the
+   finish row (M3-04) deleted the retired IBM Plex Mono files and their OFL.txt,
+   which had stood beside them unreferenced since the world changed faces. */
+
 @font-face {
-  font-family: 'IBM Plex Mono';
+  font-family: 'Archivo';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
   font-display: swap;
-  src: url('./fonts/ibm-plex-mono-400.woff2') format('woff2');
+  src: url('./fonts/archivo-var.woff2') format('woff2-variations');
 }
+
 @font-face {
-  font-family: 'IBM Plex Mono';
+  font-family: 'JetBrains Mono';
   font-style: normal;
-  font-weight: 500;
+  font-weight: 100 800;
   font-display: swap;
-  src: url('./fonts/ibm-plex-mono-500.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('./fonts/ibm-plex-mono-600.woff2') format('woff2');
+  src: url('./fonts/jetbrains-mono-var.woff2') format('woff2-variations');
 }

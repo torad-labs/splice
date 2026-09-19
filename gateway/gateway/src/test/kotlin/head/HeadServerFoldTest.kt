@@ -1,5 +1,5 @@
 // PORT-analog of HeadServerIntegrationTest for reasoning-continuation folding (codex 518n-2): a real
-// HeadServer (CodexProvider with a fold config + mock ChatGPT upstream) driven over HTTP. Pins:
+// HeadServer (TestResponsesProvider with a fold config + mock ChatGPT upstream) driven over HTTP. Pins:
 // fold-and-continue (a truncated round + a clean round fold into ONE downstream response, the
 // truncated output discarded, usage summed, the continuation marker in the round-2 upstream body);
 // the continuation cap (the head stops and emits the last round honestly); and passthrough parity
@@ -8,6 +8,8 @@
 // section the continuation round re-titles reaches the client exactly once (review of #58).
 package head
 
+import campaign.v4105.headDeps
+import campaign.v4105.headStores
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -16,10 +18,14 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import mock.MockChatGptUpstream
 import mock.SUMMARY_SECTION_A
 import mock.SUMMARY_SECTION_B
+import mock.TestResponsesProvider
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -37,13 +43,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.FoldConfig
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
-import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -88,7 +88,7 @@ class HeadServerFoldTest {
     @BeforeAll
     fun setUp() = runTest {
         tmp = Files.createTempDirectory("head-fold")
-        val provider = CodexProvider(
+        val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -109,14 +109,9 @@ class HeadServerFoldTest {
         head = HeadServer(
             provider = provider,
             listenPort = port,
-            deps = HeadDeps(
+            deps = headDeps(
+                tmp = tmp,
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
-                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = {},
             ),
         )
@@ -225,7 +220,7 @@ class HeadServerFoldTest {
      *  → abandon, and already-sealed → nothing — are indistinguishable from the wire alone, and a CI
      *  failure with log = {} costs a whole diagnostic round trip to tell them apart (2026-09-06). */
     private fun tightCapHead(gate: InflightGate, capPort: Int, log: (String) -> Unit = {}): HeadServer = HeadServer(
-        provider = CodexProvider(
+        provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -242,23 +237,19 @@ class HeadServerFoldTest {
             configSummary = "detailed",
         ),
         listenPort = capPort,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 20_000, maxRetries = 1),
-            inferenceToken = "test-inference-token",
             gate = gate,
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("cap-compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("cap-usage.json"), tmp.resolve("cap-ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("cap-perf.jsonl")),
             log = log,
-        ),
+        ).copy(stores = headStores(tmp, suffix = "-cap")),
     )
 
     /** DR-7's acceptance rig: a SHORT streamIdle (1s) with generous firstByte and totalCap, so the
      *  only thing that can fire is the mid-stream idle watchdog. The fold head above cannot express
      *  this — its 3s idle is longer than the stall is useful for. */
     private fun stallHead(stallPort: Int): HeadServer = HeadServer(
-        provider = CodexProvider(
+        provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
                 label = "claudex",
@@ -276,16 +267,11 @@ class HeadServerFoldTest {
             foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         ),
         listenPort = stallPort,
-        deps = HeadDeps(
+        deps = headDeps(
+            tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 60_000, maxRetries = 2),
-            inferenceToken = "test-inference-token",
-            gate = InflightGate({ 0 }),
-            shadow = ShadowClassifier(log = {}),
-            compactStats = CompactStats(tmp.resolve("stall-compact.jsonl")),
-            usageStore = UsageStore(tmp.resolve("stall-usage.json"), tmp.resolve("stall-ratelimit.json")),
-            perfStats = PerfStats(tmp.resolve("stall-perf.jsonl")),
             log = {},
-        ),
+        ).copy(stores = headStores(tmp, suffix = "-stall")),
     )
 
     // DR-7, THE acceptance wall. A round that streams reasoning and then stalls mid-part used to
@@ -370,10 +356,15 @@ class HeadServerFoldTest {
             assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $diag")
             assertTrue(sse.contains("stalled (watchdog)"), "expected the watchdog-named reason: $diag")
             assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall: $diag")
-            // the slot must come back within ~one poll interval, not ride the stall
-            val deadline = System.currentTimeMillis() + 2_000
-            while (System.currentTimeMillis() < deadline && gate.snapshot().inflight != 0) {
-                Thread.sleep(50)
+            // the slot must come back within ~one poll interval, not ride the stall. A deadline poll
+            // (the release happens on a server thread, with no signal to await), on IO so it waits in
+            // real time from inside runTest without blocking the test scheduler's thread.
+            withContext(Dispatchers.IO) {
+                val pollMs = 50L
+                val deadline = System.currentTimeMillis() + 2_000
+                while (System.currentTimeMillis() < deadline && gate.snapshot().inflight != 0) {
+                    delay(pollMs)
+                }
             }
             assertEquals(0, gate.snapshot().inflight, "the reaped turn must release its gate slot")
         } finally {

@@ -23,6 +23,7 @@ internal object ControlPlaneClient {
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null if it never connected' — a closed control port is the normal case and the escalation ladder branches on the null; the 401/403 this exists to expose arrives as a STATUS, not as a failure.
     ): Int? = Cancellables.runCatchingCancellable {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         try {

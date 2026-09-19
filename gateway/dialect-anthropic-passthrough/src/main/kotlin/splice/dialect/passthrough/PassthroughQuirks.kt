@@ -24,9 +24,9 @@ public fun interface IdentityHeaders {
  * "passthrough" a misnomer: a real Anthropic upstream loses prompt caching to [stripCacheControl],
  * has its tool schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
  * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that a
- * signature-VERIFYING upstream later rejects. Assembly selects [PassthroughQuirksDefaults.kimi]
+ * signature-VERIFYING upstream later rejects. Assembly selects the kimi provider's own profile
  * only for provider ID `kimi` on OAuth/API-key arms, then applies TOML overrides. Generic and CLIENT
- * arms receive no Kimi/vendor deformations unless TOML opts into them.
+ * arms receive no vendor deformations unless TOML opts into them.
  */
 public data class PassthroughQuirks(
     val providerTag: String,
@@ -59,36 +59,15 @@ public data class PassthroughQuirks(
      *  only if these reach the transcript. Kimi keeps its historical swallow (byte-identity law —
      *  flipping kimi's translator output is an operator decision, DR-123-class). */
     val dropServerToolBlocks: Boolean = false,
-)
-
-/**
- * The vendor deformation sets this dialect ships. A type rather than a companion factory on
- * [PassthroughQuirks] (Kotlin main sources carry no `companion` blocks); the member keeps the old
- * factory's exact name and argument, so a call site only gains a receiver.
- */
-public class PassthroughQuirksDefaults {
-
-    /** KIMI's deformation set — the shape that was hardcoded before the inversion. ONE
-     *  definition, so provider wiring and the byte-identity goldens cannot drift apart. */
-    public fun kimi(providerTag: String): PassthroughQuirks = PassthroughQuirks(
-        providerTag = providerTag,
-        mapThinkingToAdaptive = true,
-        mfjsSanitize = true,
-        blockAllowlist = KIMI_BLOCK_TYPES,
-        stripCacheControl = true,
-        synthesizeSignatures = true,
-        dropServerToolBlocks = true,
-    )
-}
-
-/** Kimi's own 400 enumerates the accepted content tags; everything else is dropped. FILE SCOPE ON
- *  PURPOSE: one shared immutable table, and [PassthroughQuirksDefaults.kimi] is its only reader. */
-private val KIMI_BLOCK_TYPES: Set<String> = setOf(
-    "text",
-    "image",
-    TYPE_THINKING,
-    "tool_use",
-    TYPE_TOOL_RESULT,
-    "server_tool_use",
-    "web_search_tool_result",
+    /** Ordered cheapest-first effort rungs the ladder may emit. null = no vendor ladder (neutral). */
+    val effortRungs: List<String>? = null,
+    /** V4-32: cap on tool `name` length, 0 = no cap. Muse's endpoint enforces 64 where
+     *  Anthropic's does not; every other head leaves this off and nothing is rewritten. */
+    val toolNameCap: Int = 0,
+    /** V4-41: may a re-anchor continuation APPEND the salvaged answer as a trailing assistant
+     *  message? Neutral is FALSE, which leaves a truncated turn ending exactly as it does today
+     *  except for the whole-stream restart that duplicates nothing. Measured per vendor, never
+     *  inferred: deepseek and kimi continue from a prefill, muse rejects the shape with a 400 that
+     *  would convert a retryable error into one Claude Code will not retry. */
+    val reanchorPrefill: Boolean = false,
 )

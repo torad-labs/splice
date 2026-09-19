@@ -18,6 +18,9 @@ package splice.spi
 
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerfTiming
+import splice.core.turn.FailureCause
+import splice.core.util.ERR_SNIPPET
+import splice.core.wire.HttpStatus
 
 internal data class RetryPlan(
     val decision: RetryDecision,
@@ -27,22 +30,40 @@ internal data class RetryPlan(
 
 internal enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
 
-internal class RetryRules(
-    private val maxRetries: Int,
-    private val cooldown: RateLimitCooldown,
-) {
+internal data class RateLimitTurn(
+    val cooldown: RateLimitCooldown,
+    val pooledAccount: Boolean,
+)
+
+internal class RetryRules(private val maxRetries: Int) {
     private val failureRules = FailureRules()
 
     /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
-     *  429/401/5xx floors actually fire (body-text-only classification left them dead code). */
-    fun giveUp(last: RetryOutcome.Failed?): Nothing =
-        throw UpstreamFailed(last?.text.orEmpty(), last?.status)
+     *  429/401/5xx floors actually fire (body-text-only classification left them dead code).
+     *
+     *  V4-61: A 429 CANNOT LEAVE THE LOOP UNARMED. Every 429 used to arm inside rateLimitedPlan
+     *  before returning GIVE_UP; now a 429 with budget left plans a BACKOFF instead, and the two
+     *  exits where that backoff is refused (turn deadline spent, wait does not fit the remaining
+     *  budget) would end the turn with no horizon — and an unarmed exit lets every follower
+     *  reproduce the limit upstream. Arming here, at the one exit, makes the invariant structural
+     *  rather than a property of each planner branch; re-arming an armed horizon is a max() and
+     *  costs nothing. The pushback is the header's own value, clamped by arm() exactly as before,
+     *  or the bare-429 default when there was none. */
+    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown, layers: Int): Nothing {
+        if (last?.status == HttpStatus.TOO_MANY_REQUESTS) {
+            cooldown.arm(last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+        }
+        // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
+        // rather than counted here, because this file decides and never counts (see the header).
+        throw UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
+    }
 
     suspend fun planRetry(
         ctx: PostContext,
         failed: RetryOutcome.Failed,
         attempt: Int,
         refreshedOnce: Boolean,
+        rateLimit: RateLimitTurn,
     ): RetryPlan {
         // Grok Build: encrypted_content decrypt failures must not spin retries.
         if (failureRules.isEncryptedContentError(failed.status, failed.text)) {
@@ -58,14 +79,59 @@ internal class RetryRules(
                 !refreshedOnce
         if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
         if (refreshable && TurnPerfTiming.timedOr(ctx.perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
+            ctx.authRefreshObserver()
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
         }
         ctx.onRetry(
             "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
                 failed.text.take(ERR_SNIPPET),
         )
-        return statusPlan(ctx, failed, attempt, refreshedOnce || refreshable)
+        return statusPlan(
+            ctx,
+            failed,
+            attempt,
+            refreshedOnce || refreshable,
+            rateLimit,
+        )
     }
+
+    /**
+     * Why re-sending [failed] cannot change its answer, or null when it can. These are the V4-62
+     * CARVE-OUTS — and they are the DEFINITION of that law, not exceptions to it: the operational
+     * law is that no turn ends while a retry COULD succeed, and for these the outcome is fixed before
+     * the request leaves. Sending it again is not a retry, it is a delay.
+     *
+     *  - A credential refreshed and REJECTED AGAIN. [nextRefreshed] true means a refresh RAN for this
+     *    turn (now or earlier), so every later attempt would carry the identical token. The
+     *    escalation ladder for an auth failure is not the same bytes again; it is refresh (G1) → and
+     *    when the refresh is itself rejected, EVICT and rotate (pooled — AccountTurnSelectionTest
+     *    pins [primary, backup]) or surface (single).
+     *  - A CONTEXT OVERFLOW (V4-164): the identical bytes are the identical token count against the
+     *    identical window. Its escalation is the CLIENT's — Claude Code compacts on the "prompt is
+     *    too long" line — and every re-send only delays that. Measured live on the bonsai head at
+     *    upstreamRetries=10: ten 1.4 MB re-sends, each re-tokenized by llama-server, 43 s before the
+     *    client could compact.
+     *
+     * Same principle as Failure.deterministic, one layer down: that carve-out covers verdicts splice
+     * computed with no upstream involved; these, verdicts whose answer cannot change. All of them are
+     * what a retry IS, never holes in V4-62.
+     */
+    private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
+        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
+            "rejected the credential again after a refresh (no retry: the bytes would be identical)"
+        overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"
+        else -> null
+    }
+
+    /** V4-167: a 4xx other than a rate limit, whose text says overflow. A 429 reading "too many tokens"
+     *  is a per-minute token quota, which heals with time and must reach the cooldown branch; a 5xx is
+     *  the server's own failure, and V4-62 retries it. Classified on the text before either, a TPM 429
+     *  gave up, armed no cooldown, and told the client to compact a conversation that fit. */
+    private fun overflowed(failed: RetryOutcome.Failed): Boolean =
+        failed.status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
+            failed.status != HttpStatus.TOO_MANY_REQUESTS &&
+            UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
+            FailureCause.REQUEST_TOO_LARGE
 
     /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
     private fun statusPlan(
@@ -73,36 +139,67 @@ internal class RetryRules(
         failed: RetryOutcome.Failed,
         attempt: Int,
         nextRefreshed: Boolean,
+        rateLimit: RateLimitTurn,
     ): RetryPlan {
-        if (failed.status == RATE_LIMITED) {
-            return cooldown.rateLimitedPlan(failed.retryAfterMs, ctx.onRetry, nextRefreshed)
-        }
-        // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
-        // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
-        // client owns any wait past 15s (it re-sends on its own backoff; the daemon holding the
-        // slot for a minute is what stacked the 2026-07-19 zombie herd).
-        val pushback = failed.retryAfterMs
-        val retryable = isRetryableStatus(failed.status)
-        if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
-            ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
-            // UP-001: a retryable status (408/5xx — RATE_LIMITED already returned above) carrying
-            // the same long pushback means the same thing a 429 does — arm the SAME shared cooldown
-            // (clamped the same way, by the same method) so the next turn doesn't immediately
-            // hammer an upstream that just asked for a long backoff. A NON-retryable status
-            // (400/401/403/404/...) is that turn's own problem — arming the head-wide cooldown on
-            // it would synthesize 429s for every OTHER turn over an error that says nothing about
-            // rate limits.
-            if (retryable) cooldown.arm(pushback)
+        fixedVerdict(failed, nextRefreshed)?.let { why ->
+            ctx.onRetry("upstream ${failed.status} $why")
             return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
-        val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
-        return RetryPlan(decision, refreshedOnce = nextRefreshed, minDelayMs = pushback ?: 0L)
+        if (failed.status == HttpStatus.TOO_MANY_REQUESTS) {
+            val canRetry = attempt < maxRetries - 1
+            return rateLimit.cooldown.rateLimitedPlan(
+                failed.retryAfterMs,
+                rateLimit,
+                canRetry,
+                ctx.onRetry,
+                nextRefreshed,
+                // V4-47: the failure TEXT, because the provider's own reset lives in the 429 body
+                // ("resets at <ISO8601>" / resets_at) and a fail-fast turn never reaches upstream to
+                // learn it. ARM TIME is the only point where that fact and the cooldown are both in
+                // scope, so it is captured here or nowhere.
+                body = failed.text,
+            )
+        }
+        // V4-62, operator law: "we would retry on any error, no matter what, with different levels
+        // of retry and escalation + backoff." So the status GATE is gone from the retry decision —
+        // every upstream failure status takes BACKOFF on the shared curve — and `isRetryableStatus`
+        // now decides only whether a pushback protects FOLLOWERS (UP-001), which is what it was
+        // really about.
+        //
+        // WHY A 400 EARNS A RETRY. Classification is not reliable enough to refuse a 1.5s one: a
+        // 403 has been observed as overload (the mock carries overload_403 for that reason), and
+        // the muse 400 on assistant prefill was OUR bug, not the client's — a turn we refused to
+        // retry was a turn we broke. The whole default budget on the 200ms doubling curve costs
+        // about 1.5s, so a genuinely permanent 4xx is cheap to discover and a misclassified
+        // transient is expensive to miss.
+        //
+        // THE PUSHBACK IS A FLOOR, CLAMPED. A short Retry-After is obeyed exactly. An absurd one
+        // still no longer means "go away and never retry" — it is clamped to the interactive
+        // ceiling, so the wait is bounded the way the client's patience is. Handing the raw value
+        // to the curve would hold a gate slot for the 88 minutes that stacked the 2026-07-19
+        // zombie herd; discarding it entirely is what V4-61 fixed for 429 and this generalizes.
+        val pushback = failed.retryAfterMs
+        if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
+            ctx.onRetry(
+                "upstream ${failed.status} Retry-After ${pushback}ms exceeds the interactive budget; " +
+                    "waiting ${RETRY_AFTER_GIVE_UP_MS}ms instead",
+            )
+            // UP-001: a retryable 408/5xx pushback still protects followers on this account. Pool
+            // selection reads unavailableForMs(), not this horizon, so it never switches.
+            if (isRetryableStatus(failed.status)) rateLimit.cooldown.arm(pushback)
+        }
+        val decision = if (attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
+        return RetryPlan(
+            decision,
+            refreshedOnce = nextRefreshed,
+            minDelayMs = minOf(pushback ?: 0L, RETRY_AFTER_GIVE_UP_MS),
+        )
     }
 
     // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays
     // terminal (Not Implemented never heals) and 4xx stays terminal except 408/429 (G4a).
     fun isRetryableStatus(status: Int): Boolean =
-        status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
+        status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.REQUEST_TIMEOUT ||
             (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
 }
 
@@ -134,17 +231,19 @@ internal class ReissueRules {
 // definition, so a log line can never claim a budget the interlock is not enforcing.
 internal const val MAX_STREAM_REISSUES = 2
 
-private const val REQUEST_TIMEOUT = 408
 private const val NOT_IMPLEMENTED = 501
 
-private const val SERVER_ERROR_MIN = 500
+// 599 stays local: no site ANSWERS with it, it is only the top of the 5xx window this file tests
+// membership in, so there is no second declaration for HttpStatus to retire.
 private const val SERVER_ERROR_MAX = 599
 
 // FILE SCOPE ON PURPOSE: one IntRange for the process, same reasoning as FailureRules.kt's
-// authBodyRe: allocate it once, not once per RetryRules.
-private val SERVER_ERRORS = SERVER_ERROR_MIN..SERVER_ERROR_MAX
+// authBodyRe: allocate it once, not once per RetryRules. Its floor reads the shared HttpStatus
+// member: the bottom of the 5xx window IS 500, so re-typing it here was a second declaration of
+// the same status code dressed as a range bound.
+private val SERVER_ERRORS = HttpStatus.INTERNAL_SERVER_ERROR..SERVER_ERROR_MAX
 
 // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
 // Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback
 // holds a gate slot for a request nobody is waiting on anymore.
-private const val RETRY_AFTER_GIVE_UP_MS = 15_000L
+internal const val RETRY_AFTER_GIVE_UP_MS = 15_000L

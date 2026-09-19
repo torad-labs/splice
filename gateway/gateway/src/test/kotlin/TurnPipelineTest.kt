@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.PROMOTE_MIN_CHARS
 import splice.core.turn.ReasoningDisplayParser
@@ -29,6 +31,7 @@ private class RecTerminal : TurnTerminal {
     val texts = mutableListOf<String>()
     var ending: String? = null
     var errorType: ErrorType? = null
+    var errorPermanent: Boolean = false
     var errorMessage: String = ""
     override var hasEnded: Boolean = false
         private set
@@ -38,9 +41,10 @@ private class RecTerminal : TurnTerminal {
         hasEnded = true
     }
 
-    override suspend fun emitError(type: ErrorType, message: String) {
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         ending = "error"
         errorType = type
+        errorPermanent = permanent
         errorMessage = message
         hasEnded = true
     }
@@ -118,18 +122,26 @@ class TurnPipelineTest {
         emittedThinking: Boolean = false,
     ): RecTerminal {
         val rec = RecTerminal()
-        pipeline(mirrorReasoning)
-            .finishStream(rec, outcome(thinking, emittedThinking), meta(showReasoning), elapsedMs = 1)
+        pipeline(mirrorReasoning).finishStream(
+            rec,
+            outcome(thinking, emittedThinking),
+            meta(showReasoning),
+            elapsedMs = 1,
+        )
         return rec
     }
 
     /** [run]'s compact sibling, returning the pipeline's own OUTCOME TAG alongside the terminal:
-     *  `empty_compact` and `empty_model` both reach the wire as the same API_ERROR shape, so the
+     *  `empty_compact` and `empty_model` both reach the wire as the same OVERLOADED shape, so the
      *  terminal alone cannot tell the compact gate from the non-compact one. */
     private suspend fun runCompact(thinking: String, mirrorReasoning: Boolean = false): Pair<RecTerminal, String> {
         val rec = RecTerminal()
-        val tag = pipeline(mirrorReasoning)
-            .finishStream(rec, outcome(thinking), meta("text", compact = true), elapsedMs = 1)
+        val tag = pipeline(mirrorReasoning).finishStream(
+            rec,
+            outcome(thinking),
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
         return rec to tag
     }
 
@@ -147,6 +159,93 @@ class TurnPipelineTest {
         return CompactStats(tmp.resolve("compact.jsonl")).read()
     }
 
+    /** V4-59's wall. NO text block and NO error message splice emits may be JSON.
+     *
+     *  The operator's complaint is the reason this is not a style rule: outcome.message is the raw
+     *  upstream body, so a vendor's error payload was rendered into his conversation as literal
+     *  braces, and splice did it to itself — the rate-limit fail-fast throws a hand-built
+     *  {"detail":...}, and UpstreamFailureClassifier reads error.message/message but never detail,
+     *  so its own body fell back to raw and travelled on intact.
+     *
+     *  THE ASSERTION IS ABOUT THE BYTES THE CLIENT RENDERS, NOT ABOUT A COUNT. Like V4-56, no edit to
+     *  a number can satisfy it — the only way to pass is to stop sending payloads. The denominator is
+     *  ErrorType.entries, read by reflection, so a failure class added later is covered the day it
+     *  exists rather than the day someone remembers this file.
+     *
+     *  MUTATION PROOF: delete the presentation call in TurnPipeline and feed the body below — every
+     *  case here reddens, because the raw JSON is exactly what arrives. */
+    @Test
+    fun `no text block or error message splice emits is json`() = runTest {
+        val payload = """{"detail":"Rate limit exceeded — this gateway is holding retries for 120s"}"""
+        val offending = mutableListOf<String>()
+        // V4-117: the denominator is FailureCause.entries now, not ErrorType.entries. It has to be:
+        // the type is DERIVED from (cause, phase), so a cause is the thing that can be added without
+        // this file knowing. What the test asserts — that no byte splice emits is JSON — is a
+        // property of the presentation seam, and every cause still crosses it.
+        for (cause in FailureCause.entries) {
+            // Both endings: the deterministic one is the visible leak, and the error event carries
+            // the identical body — presenting one and not the other leaves most failures leaking.
+            val explained = RecTerminal()
+            pipeline().finishStream(
+                explained,
+                TurnOutcome.Failure(payload, cause = cause, phase = FailurePhase.MID_OUTPUT, deterministic = true),
+                meta("text"),
+                elapsedMs = 1,
+            )
+            offending += inspect("text block for $cause", explained.texts.joinToString(" "))
+
+            val errored = RecTerminal()
+            pipeline().finishStream(
+                errored,
+                TurnOutcome.Failure(payload, cause = cause, phase = FailurePhase.MID_OUTPUT),
+                meta("text"),
+                elapsedMs = 1,
+                // The assertion here is about BYTES, not the type; `true` keeps the wire type the
+                // one the case names, so this wall stays a statement about presentation alone.
+            )
+            offending += inspect("error event for $cause", errored.errorMessage)
+        }
+        assertTrue(offending.isEmpty(), "JSON reached the client:\n" + offending.joinToString("\n"))
+    }
+
+    /** One rendered line's violations, as a list so a failure names EVERY case rather than the first. */
+    private fun inspect(what: String, rendered: String): List<String> = buildList {
+        if (rendered.contains("{")) add("$what: opens a brace -> $rendered")
+        if (rendered.contains("\"detail\"")) add("$what: carries a detail key -> $rendered")
+        if (rendered.contains("\"error\"")) add("$what: carries an error key -> $rendered")
+        // The positive half: a stripped body would also pass the checks above, so the sentence the
+        // operator should actually read must SURVIVE — and the code must be present to grep for.
+        if (!rendered.contains("Rate limit exceeded")) add("$what: dropped the human sentence -> $rendered")
+        if (!rendered.contains("SPLICE-")) add("$what: has no greppable code -> $rendered")
+    }
+
+    /** A body that is valid JSON but carries no human field is DESCRIBED. It is the one case where
+     *  the payload's own text is exactly what a reader cannot use, so reproducing it is not a
+     *  fallback — it is the defect wearing a fallback's name.
+     *
+     *  NOT markup: mapping a vendor's error PAGE here was tried and reverted, because an existing
+     *  test pins that a human-readable auth page keeps its text. This layer lifts a field or
+     *  describes; it does not judge whether prose is pretty. */
+    @Test
+    fun `a json body with no human field is described rather than dumped`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(
+            rec,
+            TurnOutcome.Failure(
+                """{"foo":1,"bar":[1,2,3],"baz":null}""",
+                cause = FailureCause.UPSTREAM_REPORTED,
+                phase = FailurePhase.MID_OUTPUT,
+                deterministic = true,
+            ),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        val text = rec.texts.single()
+        assertTrue(text.contains("could not be read"), "an unreadable body must be described: $text")
+        assertTrue(!text.contains("{"), "no body may be reproduced as braces: $text")
+        assertTrue(!text.contains("baz"), "no field of an unreadable body may be reproduced: $text")
+    }
+
     /** A deterministic failure (a verdict no retry can change) ends in words, not an error event;
      *  every other failure keeps the honestly-typed error the client is right to retry. */
     @Test
@@ -154,24 +253,68 @@ class TurnPipelineTest {
         val explained = RecTerminal()
         val tag = pipeline().finishStream(
             explained,
-            TurnOutcome.Failure(ErrorType.API_ERROR, "code-mode cell is unavailable", deterministic = true),
+            TurnOutcome.Failure(
+                "code-mode cell is unavailable",
+                cause = FailureCause.CODE_MODE_PROTOCOL,
+                phase = FailurePhase.MID_OUTPUT,
+                deterministic = true,
+            ),
             meta("text"),
             elapsedMs = 1,
         )
         assertEquals("terminal", explained.ending)
-        assertEquals(listOf("\u26A0 splice: code-mode cell is unavailable"), explained.texts)
-        assertEquals("failure:api_error", tag)
+        // V4-59: the verb is unchanged \u2014 still a text block, still marked as the proxy speaking \u2014
+        // and what changed is the words: the failure now names its stable code before the sentence.
+        // V4-117: the code is INVALID-REQUEST because the type is DERIVED, and the matrix gives
+        // CODE_MODE_PROTOCOL an empty ceiling \u2014 a non-retryable class \u2014 so the wire type is the
+        // client's bad-request one rather than api_error. The assertions follow the matrix; they are
+        // not relaxed to whatever the code happens to emit.
+        assertEquals(listOf("\u26A0 splice [SPLICE-INVALID-REQUEST] code-mode cell is unavailable"), explained.texts)
+        assertEquals("failure:invalid_request_error", tag)
 
         val retried = RecTerminal()
         pipeline().finishStream(
             retried,
-            TurnOutcome.Failure(ErrorType.API_ERROR, "upstream stream ended without response.completed"),
+            TurnOutcome.Failure(
+                "upstream stream ended without response.completed",
+                cause = FailureCause.UPSTREAM_REPORTED,
+                phase = FailurePhase.MID_OUTPUT,
+            ),
             meta("text"),
             elapsedMs = 1,
+            // AFTER content: the type the outcome carries is the type the client receives. The
+            // pre-content half of this seam is pinned by its own cases at the foot of the file.
         )
         assertEquals("error", retried.ending)
         assertEquals(ErrorType.API_ERROR, retried.errorType)
         assertTrue(retried.texts.isEmpty())
+    }
+
+    /** V4-42: a zero-content turn must reach the client RETRYABLE. The operator's journal caught one
+     *  at 07:05:30 on 2026-09-16 (tag=empty_model, between healthy turns, so not a quota artifact) —
+     *  a muse 200 with stop_reason max_tokens and no content blocks.
+     *
+     *  Zero content means nothing reached the client, so the turn is indistinguishable from a
+     *  transient overload and nothing the client read is at stake. The TYPE decides recovery: before
+     *  content Claude Code re-sends an api_error IDENTICALLY until it gives up — the 2.1.x behaviour
+     *  recorded on TurnOutcome.Failure.deterministic, 87 and 47 identical turns on 2026-09-07 —
+     *  so it reproduces the same empty turn rather than recovering, while overloaded_error is
+     *  retried on a backoff. The WORDS stay, because they are the diagnosis. */
+    @Test
+    fun `a zero-content turn ends as overloaded, not api_error, so the client retries it`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(rec, outcome(thinking = ""), meta("text"), elapsedMs = 1)
+
+        assertEquals("error", rec.ending, "a zero-content turn is an error ending, not a clean one")
+        assertEquals(
+            ErrorType.OVERLOADED,
+            rec.errorType,
+            "an empty turn BEFORE content must be retryable with backoff, not identically re-sent",
+        )
+        assertTrue(
+            rec.errorMessage.contains("no content"),
+            "the honest words must survive the type change: ${rec.errorMessage}",
+        )
     }
 
     @Test
@@ -179,7 +322,7 @@ class TurnPipelineTest {
         val rec = RecTerminal()
         pipeline().finishStream(rec, outcome(bandThinking), meta("text"), elapsedMs = 1)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
         assertTrue(rec.texts.isEmpty(), "nothing may reach the wire when the turn errors")
     }
 
@@ -187,7 +330,7 @@ class TurnPipelineTest {
     fun `the band is an honest error when reasoning is not displayed as text`() = runTest {
         val rec = run(mirrorReasoning = false, showReasoning = "hide", thinking = bandThinking)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
     }
 
     @Test
@@ -223,7 +366,7 @@ class TurnPipelineTest {
         // thinkingText non-empty but nothing ever reached the sink: the ONE genuinely empty turn.
         val rec = run(mirrorReasoning = false, showReasoning = "thinking", thinking = bandThinking)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: the empty_model branch, retryable
     }
 
     // THE ASTRA CELL (2026-09-05). Thirteen retry storms in one evening, every one the same shape:
@@ -298,8 +441,12 @@ class TurnPipelineTest {
             bodyText = "",
             emittedText = false,
         )
-        val tag = pipeline(mirrorReasoning = false)
-            .finishStream(rec, tooled, meta("text", compact = true), elapsedMs = 1)
+        val tag = pipeline(mirrorReasoning = false).finishStream(
+            rec,
+            tooled,
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
         assertEquals(mapOf("tooled_no_text" to 1), recordedCompact().byOutcome, "the shape must get a row")
         assertEquals("ok", tag, "recorded, not rewritten — the turn flows to the normal terminal")
     }
@@ -309,7 +456,7 @@ class TurnPipelineTest {
         val (rec, tag) = runCompact(thinking = "")
         assertEquals("empty_compact", tag)
         assertEquals("error", rec.ending)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: retryable, like empty_model
         assertTrue(rec.errorMessage.contains("compact returned no content"), rec.errorMessage)
         assertTrue(rec.texts.isEmpty(), "a blank summary must never reach the wire: ${rec.texts}")
         val stats = recordedCompact()
@@ -323,7 +470,7 @@ class TurnPipelineTest {
         // reasoning covers nothing on a compact turn and the honesty gate fires.
         val (rec, tag) = runCompact(thinking = bandThinking)
         assertEquals("empty_compact", tag)
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType) // V4-42: retryable, like empty_model
         assertTrue(rec.texts.isEmpty(), "compact must not emit a mirror block: ${rec.texts}")
     }
 
@@ -337,5 +484,75 @@ class TurnPipelineTest {
         assertEquals("terminal", rec.ending)
         assertTrue(rec.texts.any { it == summary }, "the summary must reach the wire: ${rec.texts}")
         assertEquals(mapOf("model_thinking" to 1), recordedCompact().byOutcome)
+    }
+    // V4-79 pin, RE-POINTED BY V4-81: TurnPipeline's Failure arm.
+    //
+    // V4-79 put the pre-content rule at this call, which made the pipeline the place that knew
+    // about CONTENT_FRAMES_OUT and forced a perf snapshot through finishStream on every turn. V4-81
+    // moved the rule to SseEmitter.emitError — the one place an error frame is written — so the
+    // pipeline's contract is now the narrower and more honest one: it reports the failure and says
+    // whether a retry could change it, and the wire type is not its business at all.
+    //
+    // The cells below therefore assert PASS-THROUGH, not remapping, and the remapping itself is
+    // pinned where it now happens (SseEmitterTest, "the pre-content rule is applied at the frame").
+    // Splitting them this way is the point: a cell here that still expected OVERLOADED would be
+    // testing a decision this file no longer makes, and would have gone red for the right reason
+    // only after someone re-implemented the rule in the wrong place.
+    //
+    // MUTATION PROOF (recorded in the ledger): drop `permanent = outcome.permanent` from the
+    // emitError call in TurnPipeline.finishStream and the permanent cell below goes red BY NAME.
+
+    @Test
+    fun `the pipeline hands the emitter the failure's own type and permanence - V4-81`() = runTest {
+        // V4-117: the pair is (cause, expected wire type). The expectation is written out rather
+        // than computed from the cause, so a cause that started deriving a DIFFERENT type would
+        // redden here instead of silently redefining what the test asserts.
+        val cases = listOf(
+            FailureCause.UPSTREAM_REPORTED to ErrorType.API_ERROR,
+            FailureCause.VENDOR_RATE_LIMITED to ErrorType.RATE_LIMIT,
+        )
+        for ((cause, expected) in cases) {
+            val rec = RecTerminal()
+            val tag = pipeline().finishStream(
+                rec,
+                TurnOutcome.Failure(
+                    "upstream stream ended without response.completed",
+                    cause = cause,
+                    phase = FailurePhase.MID_OUTPUT,
+                ),
+                meta("text"),
+                elapsedMs = 1,
+            )
+            assertEquals("error", rec.ending)
+            assertEquals(expected, rec.errorType, "the pipeline reports the failure; the emitter types the wire")
+            assertEquals(false, rec.errorPermanent, "an unclassified failure is not permanent by default")
+            // The words and the journal tag keep the honest class either way.
+            assertTrue(
+                rec.errorMessage.contains("response.completed"),
+                "the diagnosis must survive: ${rec.errorMessage}",
+            )
+            assertEquals("failure:${expected.wireName}", tag, "the log must still name the failure honestly")
+        }
+    }
+
+    @Test
+    fun `a permanent failure reaches the emitter marked as such - V4-81`() = runTest {
+        // See PreContentWireType: a failure the client would reproduce exactly by re-sending must
+        // not be advertised as transient, and this is the flag that tells the emitter so.
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            TurnOutcome.Failure(
+                "upstream: model refused",
+                cause = FailureCause.MODEL_REFUSED,
+                phase = FailurePhase.MID_OUTPUT,
+                permanent = true,
+            ),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(true, rec.errorPermanent, "the permanence verdict must survive the pipeline")
+        assertEquals("failure:api_error", tag)
     }
 }

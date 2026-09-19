@@ -1,6 +1,7 @@
 // NEW: the TOML topology schema (shape proven by spike P0-TOML incl. @SerialName mapping;
 // gateway/spikes/results/ktoml.md). Loaded once at daemon start by :app — adding a
-// provider or head is an operator action and implies a restart (no hot topology).
+// provider or head is an operator action and implies a restart (no hot topology). V4-162: the
+// context windows are the one exception, re-read while the daemon runs (see withoutWindows).
 // 2026-08-16 (HD-M8): the file's top-level functions were relocated without changing any body.
 // The extensions on types THIS file owns became members of those types, so `provider.catalogFor(...)`
 // and `topology.configOverrides()` read exactly as before; the three operator-facing diagnostics
@@ -21,18 +22,27 @@ package splice.core.topology
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import splice.core.compaction.CompactionConfig
+import splice.core.config.Knob
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
 import splice.core.model.WindowRule
+import splice.core.prompt.HeadSystemPrompt
+import splice.core.prompt.SystemPromptMode
+import java.nio.file.Path
 
 @Serializable
 public data class Topology(
     val daemon: DaemonConfig = DaemonConfig(),
     val claude: ClaudeSharingDefaults = ClaudeSharingDefaults(),
+    val compaction: CompactionConfig = CompactionConfig(),
     val defaults: Map<String, String> = emptyMap(),
     val providers: Map<String, ProviderConfig> = emptyMap(),
     val heads: Map<String, HeadConfig> = emptyMap(),
+    /** V4-124: per-repo standing prompts, keyed by the project root path. Absent = today's bytes. */
+    val projects: Map<String, ProjectConfig> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
      *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
@@ -50,14 +60,37 @@ public data class Topology(
     /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
      *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
      *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
-    public fun portCollisions(): Map<Int, List<String>> =
-        heads.entries.groupBy({ it.value.port }, { it.key }).filterValues { it.size > 1 }
+    /** V4-109: the CONTROL PLANE is a listener too, and it was invisible to this check — a head
+     *  declaring the daemon's own port was reported as clean, then the two fought over the bind at
+     *  start. [DaemonConfig.controlPort] is folded in under a name that cannot be mistaken for a
+     *  head key.
+     *
+     *  The EFFECTIVE port, not just the declared one: an absent `control_port` still yields a real
+     *  listener on the knob's default, so a head on that number collides in practice. What this
+     *  cannot see is a port pinned later by env (`SPLICE_CONTROL_PORT`) or by state config.json —
+     *  this is a pure function of the topology and deliberately reads no environment; an operator
+     *  who moves the control port onto a head's number at runtime gets the bind failure, which is
+     *  the same behaviour as before this check existed. */
+    public fun portCollisions(): Map<Int, List<String>> {
+        val controlPort = daemon.controlPort ?: (Knob.CONTROL_PORT.default as Long).toInt()
+        val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER)
+        return declared.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
+    }
 
     /** CTL-005: heads whose port is outside the valid TCP range — 0, negative, or > 65535 all
      *  parse fine as an Int and otherwise surface only at bind time, as an opaque error that
      *  never names the offending [heads.X] entry. Same idiom as [portCollisions]. */
     public fun invalidPortHeads(): Map<String, Int> =
         heads.filterValues { it.port !in validPortRange }.mapValues { it.value.port }
+
+    /** V4-162: this topology with every context window taken out, which is the comparison that
+     *  decides whether an edit to splice.toml needs a restart. Two files that differ only in windows
+     *  (or only in comments, which never reach this type) compare EQUAL here, and the running daemon
+     *  applies their windows live; any other difference is a restart. */
+    public fun withoutWindows(): Topology = copy(
+        providers = providers.mapValues { (_, provider) -> provider.withoutWindows() },
+        heads = heads.mapValues { (_, head) -> head.copy(contextWindow = null) },
+    )
 }
 
 @Serializable
@@ -80,6 +113,10 @@ public data class DaemonConfig(
     @SerialName("fold_max_continue") val foldMaxContinue: Int? = null,
     @SerialName("fold_marker_text") val foldMarkerText: String? = null,
     @SerialName("fold_max_tier") val foldMaxTier: Int? = null,
+    // Shared MCP hosting (v0.4.0, FEATURES.md §8). Nullable so an ABSENT key means "on" at the
+    // wiring site without a literal default here that the knob layer would then have to know.
+    @SerialName("mcp_hosting") val mcpHosting: Boolean? = null,
+    @SerialName("mcp_hosting_exclude") val mcpHostingExclude: List<String>? = null,
 )
 
 @Serializable
@@ -96,7 +133,14 @@ public data class ProviderConfig(
     @SerialName("extra_windows") val extraWindows: List<ExtraWindow> = emptyList(),
     @SerialName("window_rules") val windowRules: List<WindowRule> = emptyList(),
     @SerialName("default_context_window") val defaultContextWindow: Long = 0,
+    /** v0.4.0 (FEATURES.md §10): a user-managed local runtime (Ollama, LM Studio, vLLM) on the
+     *  openai-chat dialect. Absent = auto: an openai-chat provider on a loopback base_url is local. */
+    val local: Boolean? = null,
 ) {
+    /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
+    public val isLocal: Boolean
+        get() = local ?: LocalProviderRule().isLocalByDefault(dialect, baseUrl)
+
     /**
      * [extraHeaders] with TOML key quoting removed — THE accessor every consumer must use.
      *
@@ -117,15 +161,41 @@ public data class ProviderConfig(
             ) { "client auth cannot configure Authorization or x-api-key in extra_headers" }
         }
         if (quirks.codeMode == true) {
-            require(auth.kind == AuthKind.ChatgptOAuth.wire && dialect == Dialect.OPENAI_RESPONSES) {
-                "beta code_mode is only supported with auth.kind = '${AuthKind.ChatgptOAuth.wire}' " +
-                    "and dialect = 'openai-responses'"
-            }
+            require(codeModeShape) { codeModeRefusal() }
         }
+    }
+
+    /** True when this provider's auth kind declares code mode on this dialect in the registry. */
+    private val codeModeShape: Boolean
+        get() = AuthKindRegistry.from(auth.kind)?.codeModeDialect == dialect
+
+    /** Code mode graduated in 0.4.0 (Marcos, 2026-09-13): ON by default for the registry shape,
+     *  `code_mode = false` still turns it off, and every other provider shape stays off. */
+    public val codeModeEnabled: Boolean
+        get() = quirks.codeMode ?: codeModeShape
+
+    private fun codeModeRefusal(): String {
+        val named = AuthKindRegistry.knownKinds()
+            .filter { it.codeModeDialect != null }
+            .joinToString("; ") { kind ->
+                val dialectName = DialectWires.name(checkNotNull(kind.codeModeDialect))
+                "auth.kind = '${kind.wire}' and dialect = '$dialectName'"
+            }
+        return "code_mode is only supported with $named"
     }
 
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+
+    /** V4-162: this provider without its windows (see [Topology.withoutWindows]). extra_windows and
+     *  window_rules declare windows and nothing else, so they are dropped whole: a row added to or
+     *  removed from either is a window edit too. */
+    public fun withoutWindows(): ProviderConfig = copy(
+        models = models.map { it.copy(contextWindow = 0) },
+        extraWindows = emptyList(),
+        windowRules = emptyList(),
+        defaultContextWindow = 0,
+    )
 
     /** A catalog is the JOIN of this provider's models with the head's [HeadConfig.discoveryPrefix]
      *  — which is why it lives on the provider and takes the head, and why the two types stay in one
@@ -133,7 +203,7 @@ public data class ProviderConfig(
      *  the provider-wide surface for older topologies. [contextWindowOverride] wins over the declared
      *  per-head window and, when positive, replaces the window on every selected entry. */
     public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
-        val selectedModels = modelsFor(head)
+        val selectedModels = withHeadRates(modelsFor(head), head.rates)
         head.contextWindow?.let { require(it > 0) { "head context_window must be positive" } }
         val window = contextWindowOverride?.takeIf { it > 0 } ?: head.contextWindow
         return ModelCatalog(
@@ -156,6 +226,17 @@ public data class ProviderConfig(
                 selectedModels.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
             },
         )
+    }
+
+    /** Folds a head's own card over the provider entries it names (V4-37).
+     *
+     *  An OVERRIDE, never a replacement roster: an id the head does not name keeps the provider's
+     *  rates untouched, so declaring one tier's markup cannot silently strip the card from every
+     *  other model on the head. A null map is the no-op that keeps every existing topology
+     *  byte-identical — the whole point of NEVER-BELOW-STATUS-QUO. */
+    private fun withHeadRates(entries: List<ModelEntry>, rates: Map<String, ModelRates>?): List<ModelEntry> {
+        if (rates == null) return entries
+        return entries.map { entry -> rates[entry.id]?.let { rate -> entry.copy(rates = rate) } ?: entry }
     }
 
     private fun modelsFor(head: HeadConfig): List<ModelEntry> {
@@ -203,7 +284,43 @@ public data class HeadConfig(
     @SerialName("context_window") val contextWindow: Long? = null,
     val overrides: Map<String, String> = emptyMap(),
     val claude: ClaudeWrapperConfig = ClaudeWrapperConfig(),
-)
+    /** V4-36: standing instructions this head places on EVERY turn. Inline text or
+     *  [systemPromptFile] — never both (the resolver makes that a config error at load) — and
+     *  [systemPromptMode] picks the seam: `append` (the default) adds the text beside Claude
+     *  Code's own system field, `replace` SUBSTITUTES it, which strips the harness instructions
+     *  Claude Code ships in that field. Absent, or empty, is exactly today's bytes. */
+    @SerialName("system_prompt") val systemPrompt: String? = null,
+    @SerialName("system_prompt_file") val systemPromptFile: String? = null,
+    @SerialName("system_prompt_mode") val systemPromptMode: SystemPromptMode? = null,
+    /** V4-37: this head's OWN rate card, keyed by model id, USD per million tokens — an account
+     *  tier or a reseller markup that differs from the provider's published card. It WINS over the
+     *  provider model entry for the ids it names; an id it does not name keeps the provider's rates,
+     *  and with neither declared the statusline falls back to the client's own `total_cost_usd`
+     *  exactly as it does today. The case this exists for is two heads on ONE provider billed
+     *  differently — every other head is already correct from the provider entry alone.
+     *
+     *  It is folded into the catalog by [catalogFor] rather than threaded separately, because the
+     *  catalog is what the statusline already receives: the head's card then reaches the cost
+     *  segment without a new field on the runtime head handle or a second wiring path. */
+    val rates: Map<String, ModelRates>? = null,
+) {
+    /** V4-36: this head's standing prompt as its resolver. An ABSENT `system_prompt_mode` is the
+     *  documented default rather than a missing value — an operator who names no mode gets
+     *  `append` — so the default lives here, once, next to the schema that documents it, instead
+     *  of being re-spelt at each wiring site. [key] names the head in the resolved source. */
+    public fun systemPromptFor(key: String, configDir: Path): HeadSystemPrompt = HeadSystemPrompt(
+        text = systemPrompt,
+        file = systemPromptFile,
+        mode = systemPromptMode ?: SystemPromptMode.APPEND,
+        configDir = configDir,
+        source = "head:$key",
+    )
+}
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000
 private val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")
+
+/** What a control-plane port collision names as its owner in [Topology.portCollisions] — the
+ *  dotted form [DaemonConfig.controlPort]'s own TOML key, so the report points at where to look
+ *  and cannot be confused with a head key. */
+private const val CONTROL_PLANE_OWNER: String = "daemon.controlPort"

@@ -46,7 +46,9 @@ internal class DaemonBoundary {
      *  no message. Named by BRANCH over the three classes [runCatchingDaemonBoundary] can actually
      *  produce — the catch list above IS the closed set — rather than by reflecting on the runtime
      *  class, which is what this used to do. */
-    // SAFE-RENDER-EXEMPT[2026-09-01]: safety here is a property of the CALLERS, not of the catch list — kotlinx SerializationException extends IllegalArgumentException (verified against kotlinx-serialization-core 1.11.0), so a parser excerpt is squarely inside what runCatchingDaemonBoundary catches. The one caller is HeadBoot's assembly, which wires objects from already-parsed topology: every auth provider's init only wires cancellation, and ApiKeyAuthProvider's file reads are lazy and swallowed, so no credential file is opened inside the boundary. A caller that wraps a credential PARSE invalidates this exemption and must route instead.
+    // SAFE-RENDER-EXEMPT[2026-09-13]: HeadBoot assembly may discover pooled credential files.
+    // OAuthAccountFiles wraps parser failures in an authored outer message and its metadata checks
+    // never quote field values, so the message returned here cannot carry credential content.
     internal fun reason(failure: Throwable): String = failure.message ?: when (failure) {
         is IOException -> "IOException"
         is IllegalArgumentException -> "IllegalArgumentException"
@@ -76,6 +78,9 @@ internal class DaemonBoundary {
         var writer: java.io.Writer? = null
         var written = Cancellables
             .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+            .onFailure {
+                System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}) — starting at 0\n")
+            }
             .getOrDefault(0L)
         return LogSink { msg ->
             val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
@@ -99,8 +104,10 @@ internal class DaemonBoundary {
                     // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
                     // daemon.log went silent permanently. Reconcile from disk so the next line
                     // self-corrects, and say so on stderr (the one lane still alive here).
+                    // The rotate failure and the reconciled size are printed together below; this
+                    // stat's own failure has nowhere further to go than that same line, so it maps to 0.
                     written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
-                        .getOrDefault(0L)
+                        .getOrElse { 0L }
                     System.err.print(
                         "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}) — " +
                             "size reconciled to $written\n",
@@ -164,6 +171,10 @@ internal class DaemonBoundary {
         ProcessBuilder("ss", "-ltnpH", "( sport = :$port )").redirectErrorStream(true).start()
             .inputStream.bufferedReader().use { it.readText() }
             .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
+    }.onFailure {
+        // An empty list and "ss is missing / refused" read identically to the stop ladder, which is
+        // the 2026-07-18 shape exactly: say which one happened.
+        System.err.print("[daemon] port->pid lookup via ss failed (${SafeFailureText.render(it)})\n")
     }.getOrDefault(emptyList())
 }
 

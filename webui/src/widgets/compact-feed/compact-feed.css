@@ -1,0 +1,90 @@
+/* The compaction feed: two bays of strips and the opened event's detail beside
+   them. Tokens only for spacing and type; radius 0; no shadow or glow. */
+.myx-cfeed {
+  display: grid;
+  /* ---- THE DETAIL COLUMN RESTS CLOSED (M1-117) -------------------------------
+     This was `minmax(0, 1fr) minmax(0, 20rem)` unconditionally, so the second track held 20rem
+     whether or not anything was opened -- a resting column that is not resting, measuring 17.2
+     percent of compaction's frame and fifth worst in the console. Two rows missed it because the
+     column lives here while both were fenced to pages/compaction.
+     COLLAPSE, NOT UNMOUNT: the second track is 0 at rest, the -open class widens it, and the
+     transition on grid-template-columns IS the --dur-2 swell CONTRACTS section 6 specifies. The
+     earlier approval of unmount was wrong for a knowable reason -- an unmounted column has
+     nothing to animate FROM, so it cannot perform the swell that was cited as its justification.
+     The idiom is mirrored from sessions/sessions.css:58-74, which is the same grid with the same
+     0-track and the same transition; this is the console's third use, not a fourth variant.
+     column-gap goes to 0 with the track, or the collapse leaves a gutter of its own. */
+  grid-template-columns: minmax(0, 1fr) 0;
+  column-gap: 0;
+  row-gap: var(--space-5);
+  align-items: start;
+  padding: var(--space-5) var(--space-6);
+  transition: grid-template-columns var(--dur-2) var(--ease-out),
+              column-gap var(--dur-2) var(--ease-out);
+}
+.myx-cfeed-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  column-gap: var(--space-5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .myx-cfeed { transition: none; }
+}
+
+.myx-cfeed-bays {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.myx-cfeed-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The swell: the opened strip's detail arrives over --dur-2, the world's one
+   opening gesture, and holds still entirely under reduced motion. */
+.myx-cfeed-detail > * {
+  animation: myx-cfeed-swell var(--dur-2) var(--ease-out) both;
+}
+
+@keyframes myx-cfeed-swell {
+  from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-cfeed-detail > * { animation: none; }
+}
+
+.myx-cfeed-error {
+  /* FIGURE: a daemon's error words in a printed field, not code. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2);
+  /* D7 (M1-52): this box paints the STRIP's paper, so it takes the STRIP's ink. --ink* is the
+     ROOM's ink and is light in the dark theme, because the room is dark - on paper it was
+     light-on-light. Measured before: 1.33:1 in dark. The same wrong pairing is in controls.css's
+     own comment from the first D7 and was fixed there and nowhere else; this is instance 3 of
+     five the source sweep found. */
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: 1px solid var(--strip-field-line);
+  padding: var(--space-3);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* THE RACK'S COLUMN NAMES, ONCE (m1 design review B9, M2-32). The cells the names sit over are
+   `flex: 0 0 auto` with an inline flex-grow of their own ch, so a name has to take the same basis
+   and the same growth or it drifts off its column -- further the more slack the rack has, and the
+   outcomes rack renders 26ch as 847px. The widths and the growth arrive inline from ColumnNames;
+   what belongs here is only what is true of every name: it does not shrink, and it clips rather
+   than wrapping, because a wrapped name would make the head taller than the rows it labels. */
+.myx-cfeed-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}

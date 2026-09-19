@@ -7,9 +7,21 @@
 // (handoff, first-frame, re-issue count) and only ever sat here because its one helper
 // (isRetryableTransport) did — it now lives in RetryPolicy.kt with the rest of the loop's
 // decisions. The client CONSTRUCTION half is UpstreamTransport.kt.
+//
+// V4-66 (2026-09-16) — the ALLOWLIST still classifies; it no longer GATES the connect-phase
+// retry. [isRetryableTransport] and [classifyTransport] are unchanged, because stream REISSUE
+// (G5) and the DNS backoff schedule still ask them and a widened set there would re-issue a
+// stream on a failure nobody characterised. What changed is [rethrowUnlessRetryableTransport]:
+// an unclassified throwable used to rethrow on the first attempt with the whole budget unspent,
+// which is how a BARE java.io.IOException from the JDK header parser ("HTTP/1.1 header parser
+// received no bytes", measured live 2026-09-16 on claude-deepseek, attempts=1, 234ms) ended a
+// turn that a retry would have completed. The operator law is retry on any error with different
+// levels of retry and escalation plus backoff — V4-62 deleted the equivalent gate on the STATUS
+// side; this row deletes it here. The give-up gates are unchanged and still decide.
 package splice.spi
 
 import splice.core.util.Cancellables
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * A test applied to each link of a Throwable's cause chain — Ktor wraps engine exceptions, so the
@@ -95,19 +107,43 @@ internal class TransportFailures {
         }
     }
 
-    /** A transport error thrown BEFORE stream handoff retries; once handed off, non-transport,
-     *  past the deadline, or on the last attempt, rethrow. [deadlineHit] folds stream-handoff
-     *  and the loop's own deadlineExceeded — this file does not own the clock. Returns the
-     *  surviving phase so the caller can label POST_SEND (G16 possible-duplicate). */
+    /** A transport error thrown BEFORE stream handoff retries; once handed off, past the
+     *  deadline, or on the last attempt, rethrow. [deadlineHit] folds stream-handoff and the
+     *  loop's own deadlineExceeded — this file does not own the clock, and that fold is what
+     *  keeps a torn stream AFTER the client saw bytes from ever being re-POSTed here (duplicate
+     *  output is the one failure a retry must not manufacture). Returns the surviving phase so
+     *  the caller can label POST_SEND (G16 possible-duplicate).
+     *
+     *  V4-66: THE CLASS NO LONGER DECIDES. Every throwable that reaches this seam is retryable
+     *  once the two give-up gates above have declined, and an UNCLASSIFIED one is POST_SEND —
+     *  the conservative half, because this seam cannot see whether the request reached the
+     *  wire, so the honest label is "this retry may double-burn". The alternative that shipped
+     *  until today — `classifyTransport(e) ?: throw e` — made a six-name allowlist the gate on a
+     *  budget it was never meant to gate: the set answers "which failures may be RE-ISSUED as a
+     *  stream", and a bare IOException is not evidence about that question at all.
+     *
+     *  Cancellation is not weather. It is checked FIRST, so a cancelled turn aborts even with a
+     *  full budget and can never become a retry — the transport path cannot currently deliver one
+     *  (Cancellables.runCatchingCancellable captures IOException, SerializationException and
+     *  IllegalArgumentException only, so a CancellationException propagates before this seam),
+     *  which is exactly why the guard is written here rather than assumed from the call site.
+     *
+     *  WHAT ACTUALLY REACHES THIS SEAM, read from that catch list rather than assumed: an
+     *  IOException, a SerializationException (a truncated or malformed upstream body — weather,
+     *  and now retried, which is the point), and an IllegalArgumentException (a bad base_url
+     *  parse — permanent, and the whole default budget costs about 1.5s on the 200ms doubling
+     *  curve to discover, which is V4-62's own trade). Everything else — an IllegalState, an NPE,
+     *  any other RuntimeException — is never captured at all and still fails the turn on attempt
+     *  one, unchanged: retrying our own defects three times was never the law's intent. */
     internal fun rethrowUnlessRetryableTransport(
         e: Throwable,
         deadlineHit: Boolean,
         lastAttempt: Boolean,
     ): TransportFailurePhase {
-        val phase = classifyTransport(e) ?: throw e
+        if (e is CancellationException) throw e
         val giveUp = deadlineHit || lastAttempt
         if (giveUp) throw e
-        return phase
+        return classifyTransport(e) ?: TransportFailurePhase.POST_SEND
     }
 
     /** Inline so a suspend execute inside [block] inlines into the caller's coroutine
@@ -116,4 +152,4 @@ internal class TransportFailures {
         Cancellables.runCatchingCancellable(block)
 }
 
-private const val MAX_CAUSE_DEPTH = 8
+internal const val MAX_CAUSE_DEPTH = 8

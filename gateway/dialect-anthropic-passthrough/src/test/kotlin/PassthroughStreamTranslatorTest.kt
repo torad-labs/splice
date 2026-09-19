@@ -2,22 +2,30 @@
 // signature-synthesis-exactly-once contract, +cache_read usage normalization, stop_reason mapping,
 // ignored-block swallowing, L3 truncation honesty, JsonNull safety. Mirrors ChatStreamTranslatorTest.
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.passthrough.KimiProfileFixture
 import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughQuirksDefaults
+import splice.dialect.passthrough.PassthroughReanchorController
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
 import splice.spi.BufferCapacity
+import splice.spi.ReanchorRound
 import splice.spi.WireSink
 
 private class Rec : WireSink {
@@ -43,7 +51,7 @@ private class Rec : WireSink {
     override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) { calls.add("rawDelta:$delta") }
 }
 
-private val KIMI = PassthroughQuirksDefaults().kimi("kimi")
+private val KIMI = KimiProfileFixture().kimi("kimi")
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 private fun ctx() = PassthroughTurnContext({ false }, { null }, 180_000, 900_000)
@@ -274,6 +282,11 @@ class PassthroughStreamTranslatorTest {
         ) as TurnOutcome.Success
         assertEquals(52, s.usage.inputTokens) // 10 + cache_read 5 + cache_creation (30 + 7)
         assertEquals(5, s.usage.cachedTokens)
+        // V4-85: the same cache_creation total also leaves as its OWN disjoint bucket, because it
+        // bills at the cache_write rate rather than the input rate. It stays folded into
+        // inputTokens above (the context-window numerator needs it there); this is the read-off the
+        // perf counter and SessionCost price. Zero here meant a cache write billed as a cache MISS.
+        assertEquals(37, s.usage.cacheWriteTokens) // the nested 30 + 7, not folded away
     }
 
     @Test
@@ -289,6 +302,7 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
         assertEquals(14, s.usage.inputTokens) // 10 + flat 4; the nested object is not double-counted
+        assertEquals(4, s.usage.cacheWriteTokens) // and the write bucket reads the same flat 4, once
     }
 
     // CX-09 REGRESSION GUARD. emittedThinking must mean "the client received reasoning", not
@@ -464,8 +478,81 @@ class PassthroughStreamTranslatorTest {
         assertEquals(ErrorType.API_ERROR, failure.type)
         assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
         assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        // V4-81: the runaway verdict is PERMANENT, and the reason is the shape of the valve rather
+        // than the shape of the error: it trips on the GENERATION ITSELF hitting the truncation
+        // bound, so re-sending the identical request reproduces the identical overrun. Without this
+        // the pre-content wire-type rule would advertise it as overloaded_error and the client would
+        // re-send until its retry budget ran out — for a turn that cannot change. The other three
+        // siblings (responses refusal, responses content-filter, chat refusal/content-filter) are
+        // marked the same way; this pin closes the sweep.
+        assertTrue(failure.permanent, "a tripped runaway valve is not healed by a retry")
         val deltas = sink.calls.count { it.startsWith("text:") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+    }
+
+    // V4-116, OPERATOR RULING 2026-09-18 ("RETRY DEFAULT IS TOTAL"): A NEVER-SEEN FAILURE LANDS ON
+    // THE GENERIC PATH.
+    //
+    // The catch list this file's subject carries WAS a classifier with only known cells: IOException,
+    // SerializationException, IllegalArgumentException. Anything else ESCAPED `driveTurn` entirely,
+    // and escaping is what cost the turn its salvage — the failure reached the turn boundary with no
+    // partial, which reads downstream as "this dialect cannot continue", so the round was
+    // unrecoverable by construction for a reason nobody had enumerated. That is the stall scar
+    // wearing a different failure class, which is why the ruling reaches this row.
+    //
+    // [NeverSeenUpstreamFailure] is synthetic on purpose: it is not a JDK type, not a Ktor type, not
+    // a serialization type, and nothing in the tree names it. A test that reuses a class the code
+    // already mentions cannot prove recognition is irrelevant. On unmodified code this test does not
+    // merely assert wrongly — the exception PROPAGATES out of `runTest`, which is the red.
+    @Test
+    fun `a never-seen failure after content lands on the generic retry path`() = runTest {
+        val sink = Rec()
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(
+            flow {
+                emit(ev("""{"type":"message_start","message":{"usage":{"input_tokens":9}}}"""))
+                emit(ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""))
+                emit(
+                    ev(
+                        """{"type":"content_block_delta","index":0,""" +
+                            """"delta":{"type":"text_delta","text":"half an answer"}}""",
+                    ),
+                )
+                throw NeverSeenUpstreamFailure("vendor returned an abacus trace (code ABACUS-3)")
+            },
+            sink,
+        )
+
+        // `?: fail(..)` rather than assertNotNull: JUnit's assert does not narrow the type, and the
+        // assertions below are the POINT of this arm — all of them read the Failure's own fields.
+        val failure = outcome as? TurnOutcome.Failure
+            ?: fail("an unrecognised failure is an OUTCOME here, never an escape — got $outcome")
+        assertEquals(
+            "half an answer",
+            failure.partial?.bodyText,
+            "the salvage must ride the outcome, or no controller can ever resume this round",
+        )
+        assertFalse(
+            failure.message.contains("truncated"),
+            "an UNDIAGNOSED failure must not borrow a diagnosis: ${failure.message}",
+        )
+        assertTrue(
+            failure.message.contains(ABACUS_CODE),
+            "the raw vendor text is kept verbatim so the next incident is answerable: ${failure.message}",
+        )
+        assertTrue(
+            failure.message.contains(NEVER_SEEN_CLASS),
+            "and the throwable's own class is named, so a bug of ours stays tellable: ${failure.message}",
+        )
+        assertEquals(
+            ErrorType.OVERLOADED,
+            failure.type,
+            "the generic path keeps the retryable wire class this dialect already uses",
+        )
+        assertNotNull(
+            PassthroughReanchorController(prefill = true)
+                .continuationForFailure(ReanchorRound(resumeBody(), failure, 0)),
+            "the DEFAULT retry plan: a failure carrying salvage must be continuable, not merely reported",
+        )
     }
 }
 
@@ -936,4 +1023,60 @@ class PassthroughBlockEvictionTest {
             sink.calls,
         )
     }
+}
+
+// V4-16: unknown SSE types (e.g. Muse response.subscription_usage on Responses, never observed on
+// /v1/messages) are log-dropped once per stream. Own class: the primary translator test is at
+// detekt LargeClass.
+class PassthroughUnknownEventDropTest {
+
+    @Test
+    fun `unknown SSE event types are log-dropped once per stream`() = runTest {
+        val logs = mutableListOf<String>()
+        val ctx = PassthroughTurnContext({ false }, { null }, 180_000, 900_000, log = { logs.add(it) })
+        val unknown = ev(
+            """{"type":"response.subscription_usage","subscription":{"tier":"opaque",""" +
+                """"window":{"used_percent":1}}}""",
+        )
+        val events = listOf(
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            unknown,
+            ev("""{"type":"ping"}"""),
+            unknown,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        val sink = Rec()
+        val outcome = PassthroughStreamTranslator(ctx, KIMI).driveTurn(events.asFlow(), sink)
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertEquals("hi", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals(1, logs.size, "two unknown frames must log once: $logs")
+        assertTrue(logs.single().contains("response.subscription_usage"), logs.single())
+        assertTrue(logs.single().contains("kimi"), logs.single())
+        assertTrue(sink.calls.none { it.contains("subscription") }, sink.calls.toString())
+    }
+}
+
+/** The synthetic throwable the generic-path test drives: a class no production file names. */
+private class NeverSeenUpstreamFailure(message: String) : RuntimeException(message)
+
+private const val NEVER_SEEN_CLASS = "NeverSeenUpstreamFailure"
+private const val ABACUS_CODE = "ABACUS-3"
+
+/** A request the controller is willing to rewrite — one it can append an assistant prefill to. */
+private fun resumeBody(): JsonObject = buildJsonObject {
+    put("model", "deepseek-flash")
+    put(
+        "messages",
+        buildJsonArray {
+            add(
+                buildJsonObject {
+                    put("role", "user")
+                    put("content", "what is the answer")
+                },
+            )
+        },
+    )
 }

@@ -103,10 +103,17 @@ public class CodexOAuth {
         return normalized + "=".repeat(pad)
     }
 
-    public fun accountIdFromIdToken(idToken: String?): String? =
+    public fun accountIdFromIdToken(idToken: String?): String? = accountIdFromToken(idToken)
+
+    public fun accountIdFromToken(token: String?): String? = authClaim(token, "chatgpt_account_id")
+
+    /** Stable non-PII plan claim used only to build a default pool label. */
+    public fun planTypeFromToken(token: String?): String? = authClaim(token, "chatgpt_plan_type")
+
+    private fun authClaim(token: String?, name: String): String? =
         JsonScalars.str(
-            decodeJwtClaims(idToken)["https://api.openai.com/auth"] as? JsonObject,
-            "chatgpt_account_id",
+            decodeJwtClaims(token)["https://api.openai.com/auth"] as? JsonObject,
+            name,
         )
 
     /** Token strings -> the ~/.codex/auth.json object CodexAuthProvider reads (CLI-compatible shape). */

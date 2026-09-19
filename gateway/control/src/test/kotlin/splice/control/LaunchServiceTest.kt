@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import java.nio.file.Files
+import java.nio.file.Path
 
 class LaunchServiceTest {
 
@@ -33,7 +34,7 @@ class LaunchServiceTest {
         available: List<String> = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
         labels: Map<String, String> = available.associateWith { it },
     ) = LaunchSpec(
-        configDir = tmp.resolve(".claude-$head"),
+        trees = HeadTrees(tmp.resolve(".claude-$head")),
         pinnedModel = pinned,
         availableModelIds = available,
         modelLabels = labels,
@@ -56,6 +57,28 @@ class LaunchServiceTest {
     fun `API_TIMEOUT_MS is planted from the head's whole-turn budget`() {
         val env = service.launch(spec("codex"), emptyList(), dangerouslySkipPermissions = false).env
         assertEquals("960000", env["API_TIMEOUT_MS"])
+    }
+
+    // V4-72: the client's own retry budget is 10 attempts (~2-3 min), so a rate-limit hold longer
+    // than that used to end the SESSION rather than resume when the window reopened. Persistent mode
+    // is a client env flag (CLAUDE_CODE_RETRY_WATCHDOG, read by QI() in the 2.1.257 binary) and it
+    // is planted for EVERY head, so both spellings are pinned: a foreign head, and the native one
+    // that runs its client in subscriber mode — the mode whose 429 gate persistent retry is checked
+    // BEFORE, which is exactly why the native head needs this too rather than being exempt.
+    @Test
+    fun `CLAUDE_CODE_RETRY_WATCHDOG is planted for a foreign head`() {
+        val env = service.launch(spec("codex"), emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals("1", env["CLAUDE_CODE_RETRY_WATCHDOG"])
+    }
+
+    @Test
+    fun `CLAUDE_CODE_RETRY_WATCHDOG is planted for the native head too - V4-72`() {
+        val env = service.launch(nativeSpec(), emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals(
+            "1",
+            env["CLAUDE_CODE_RETRY_WATCHDOG"],
+            "a native head's client runs in subscriber mode; persistent retry is checked before that gate",
+        )
     }
 
     // DR-81 (assembly sweep): the spec is assembled once at boot, but `splice key set` promises
@@ -422,5 +445,59 @@ class LaunchServiceTest {
             ),
             recipe.unset,
         )
+    }
+
+    // V4-115: `-r` with NO id is Claude Code's session PICKER, and the picker is head-bounded. A bare
+    // `-r`, `-c`, and a plain launch must therefore adopt NOTHING — if any of them reached the
+    // cross-head resolver, the foreign session would appear in this head's tree and stop being
+    // private to its own.
+    @Test
+    fun `a bare -r is the picker and never adopts a sibling head's session`() {
+        val sibling = seedSiblingSession("abc-123")
+        val mine = spec("picker").copy(trees = HeadTrees(tmp.resolve(".claude-picker"), listOf(sibling)))
+
+        listOf(emptyList(), listOf("-r"), listOf("-c")).forEach { args ->
+            val recipe = service.launch(mine, extraArgs = args, dangerouslySkipPermissions = false)
+            assertNull(recipe.warning, "a picker launch has nothing to report: ${recipe.warning}")
+        }
+        assertFalse(
+            Files.exists(tmp.resolve(".claude-picker/projects/-home-x/abc-123.jsonl")),
+            "the picker must see this head's tree only",
+        )
+    }
+
+    @Test
+    fun `-r SESSION_ID adopts across heads, announces it, and leaves argv untouched`() {
+        val sibling = seedSiblingSession("abc-123")
+        val mine = spec("adopter").copy(trees = HeadTrees(tmp.resolve(".claude-adopter"), listOf(sibling)))
+
+        val recipe = service.launch(mine, extraArgs = listOf("-r", "abc-123"), dangerouslySkipPermissions = false)
+
+        val adopted = tmp.resolve(".claude-adopter/projects/-home-x/abc-123.jsonl")
+        assertTrue(Files.isRegularFile(adopted), "the sibling's transcript must land in THIS head's tree")
+        assertTrue(
+            recipe.warning.orEmpty().contains("copied into this head"),
+            "an adoption is an explicit act and is said out loud: ${recipe.warning}",
+        )
+        assertEquals(
+            listOf("claude", "-r", "abc-123"),
+            recipe.argv,
+            "the copy is additive — the client is still launched with the caller's own argv",
+        )
+    }
+
+    /** A SIBLING head's projects tree holding [sessionId] under the encoded cwd `-home-x`. The head
+     *  name is fixed and distinct from every calling head in these tests: seeding the CALLING head's
+     *  own dir would make the adoption a no-op (HeadOwned) and pin nothing. */
+    private fun seedSiblingSession(sessionId: String): Path {
+        val path = tmp.resolve(".claude-sibling/projects/-home-x/$sessionId.jsonl")
+        Files.createDirectories(path.parent)
+        Files.writeString(
+            path,
+            """{"type":"user","sessionId":"$sessionId","message":{"role":"user","content":"hi"}}
+{"type":"assistant","sessionId":"$sessionId","message":{"id":"m1","model":"k3-256k","content":[]}}
+""",
+        )
+        return tmp.resolve(".claude-sibling")
     }
 }

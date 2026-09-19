@@ -1,0 +1,82 @@
+/* One head per row: its key and source on the left, its fields in a grid, the
+   disable action last. Tokens only for spacing and type; radius 0; no shadow. */
+.myx-head {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  /* --hair IS A WIDTH AND --hairline IS A COLOUR (M1-75). This read
+     `border-bottom: 1px solid var(--hair)`, which substitutes to `1px solid 1px` - invalid at
+     computed-value time, so border-bottom-style reset to its initial `none` and THE RULE DREW
+     NOTHING. Not a currentColor fallback: measured on the live DOM, .myx-head (n=2) computed
+     border-bottom-style `none` and border-bottom-width `0px`, against .myx-rule (which spells
+     the idiom correctly) computing solid / 1px / rgba(236,234,226,.1). The idiom is documented
+     at tokens.css:55-56: `border-top: var(--hair) solid var(--hairline)`. */
+  border-bottom: var(--hair) solid var(--hairline);
+}
+
+.myx-head:last-child {
+  border-bottom: 0;
+}
+
+.myx-head-id {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+.myx-head-key {
+  /* FIGURE: a head key is an identifier in a column. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-3);
+  color: var(--ink-strong);
+}
+
+.myx-head-note {
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-head-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.myx-head-actions {
+  padding-bottom: var(--space-1);
+}
+
+/* A refusal is a list of sentences, so it gets the width to be read. */
+.myx-head-findings {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+/* ONE CLASS ON TWO PLANES, WHICH NO SINGLE INK CAN SERVE (D7, M1-52). `.myx-head-new` is the only
+   variant in this file that paints paper; every other head sits on the bay. The same
+   `.myx-head-key` and `.myx-head-note` are printed inside both, so the ink has to be scoped to the
+   plane rather than chosen for the class.
+
+   Measured, all four combinations, dark then light:
+
+     room inks  on the bay    15.85 / 6.99  and  8.91 / 4.68   -- pass
+     room inks  on this paper  1.07 / 2.11  and 19.62 / 10.30  -- FAIL in dark
+     paper inks on this paper 13.93 / 5.49  and 16.97 / 6.68   -- pass
+     paper inks on the bay     1.06 / 2.69  and  8.37 / 3.30   -- FAIL in dark and light
+
+   So swapping the tokens on the class merely reverses which plane fails; the first cut of this row
+   did exactly that and made `.myx-head-key` 1.07 -> 1.06. This is the D7 class's second shape: not
+   an ink borrowed onto the wrong plane, but one rule serving two. */
+.myx-head-new {
+  background: var(--strip-field);
+}
+.myx-head-new .myx-head-key { color: var(--strip-ink); }
+.myx-head-new .myx-head-note { color: var(--strip-ink-mute); }
+.myx-head-new .myx-head-findings { color: var(--strip-ink); }

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.auth.CredentialExpiry
+import splice.core.auth.CredentialFileDigest
 import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -180,7 +181,14 @@ public class KimiOAuth {
     // freshly re-authenticated credential from the rejected one it replaced within the same tick.
     internal fun kimiAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
         Cancellables.runCatchingCancellable {
-            CredentialFileIdentity(Files.getLastModifiedTime(authPath).toMillis(), Files.size(authPath))
+            CredentialFileIdentity(
+                Files.getLastModifiedTime(authPath).toMillis(),
+                Files.size(authPath),
+                // V4-70: metadata cannot see a same-length rewrite, so the CONTENT is part of
+                // the identity. A read failure throws into the catch below and becomes a null
+                // identity — unknown, which the latch treats as fail-open.
+                CredentialFileDigest.of(authPath),
+            )
         }.onFailure {
             log(
                 "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +

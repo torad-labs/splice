@@ -76,9 +76,10 @@ internal object LoginInterception {
         viaBrowser: Boolean = true,
         tokenCapture: TokenCaptureSpec? = null,
         loginOutcomeFile: String = "",
+        headKey: String = "",
         log: LogSink = LogSink(DaemonLog::write),
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe = HookExecProbe(HookScriptFiles::probeExecutability),
+        execProbe: HookExecProbe? = null,
     ): Map<String, List<JsonObject>> {
         if (loginCommand.isBlank()) HeadCommandsDir.reconcileBlankLogin(configDir, globalCommands, log)
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
@@ -98,6 +99,7 @@ internal object LoginInterception {
                             sentinel = LOGIN_SENTINEL,
                             outcomeFile = loginOutcomeFile,
                             canCapturePaste = tokenCapture != null,
+                            headKey = headKey,
                         ),
                     ),
                     chmod,
@@ -133,10 +135,10 @@ internal object LoginInterception {
         loginCommand: String,
         log: LogSink = LogSink(DaemonLog::write),
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe = HookExecProbe(HookScriptFiles::probeExecutability),
+        execProbe: HookExecProbe? = null,
     ): Map<String, List<JsonObject>> {
         val leg = Cancellables.runCatchingCancellable {
-            execProbe(configDir, chmod)?.let { failure ->
+            execProbe?.invoke(configDir, chmod)?.let { failure ->
                 // SAFE-RENDER-EXEMPT[2026-08-31]: an exec-bit probe on a directory we create — the failure names that directory, never file content
                 throw IOException("$configDir cannot execute a staged hook (${failure.message})")
             }
@@ -196,9 +198,9 @@ internal object LoginInterception {
         tokenCapture: TokenCaptureSpec?,
         log: LogSink,
         chmod: HookChmod,
-        execProbe: HookExecProbe,
+        execProbe: HookExecProbe?,
     ): Boolean {
-        val execFailure = execProbe(configDir, chmod) ?: return true
+        val execFailure = execProbe?.invoke(configDir, chmod) ?: return true
         if (tokenCapture != null) {
             throw IOException(
                 // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content

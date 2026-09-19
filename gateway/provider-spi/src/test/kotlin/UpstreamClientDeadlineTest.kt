@@ -45,7 +45,7 @@ class UpstreamClientDeadlineTest {
         clock = clock,
     )
 
-    private suspend fun postOnce(client: UpstreamClient): String = client.post(
+    private suspend fun postOnce(client: UpstreamClient): String = client.posted(
         PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
         "{}",
     ) { "ok" }

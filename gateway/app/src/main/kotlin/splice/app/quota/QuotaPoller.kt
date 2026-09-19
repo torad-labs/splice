@@ -12,6 +12,7 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
 import splice.gateway.usage.QuotaTracker
 import splice.spi.ProcessTicker
 import splice.spi.Ticker
@@ -25,19 +26,77 @@ internal class QuotaPoller(
     private val log: LogSink,
     private val intervalMs: Long = QUOTA_POLL_INTERVAL_MS,
     private val ticker: Ticker = ProcessTicker(),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val failureLogged = AtomicBoolean(false)
     private val firstLogged = AtomicBoolean(false)
+    private val lifecycle = Any()
 
-    fun start(): Job = scope.launch {
-        while (isActive) {
-            pollOnce()
-            if (!ticker.awaitTick(intervalMs)) return@launch
+    @Volatile private var job: Job? = null
+
+    @Volatile private var stopped = false
+    private val restartTimes = ArrayDeque<Long>()
+
+    fun start(): Job {
+        synchronized(lifecycle) {
+            val existing = job
+            if (existing != null) return existing
+            stopped = false
+            return launchSupervised()
         }
     }
 
+    fun stop() {
+        synchronized(lifecycle) {
+            stopped = true
+            job?.cancel()
+            job = null
+        }
+    }
+
+    private fun launchSupervised(): Job {
+        val launched = scope.launch {
+            while (isActive) {
+                pollOnce()
+                if (!ticker.awaitTick(intervalMs)) return@launch
+            }
+        }
+        job = launched
+        launched.invokeOnCompletion { cause -> superviseCompletion(launched, cause) }
+        return launched
+    }
+
+    private fun superviseCompletion(launched: Job, cause: Throwable?) {
+        if (cause == null || cause is kotlinx.coroutines.CancellationException) return
+        val n = synchronized(lifecycle) {
+            if (stopped || job !== launched) return
+            recordRestart()
+        }
+        val why = SafeFailureText.render(cause)
+        if (n <= MAX_RESTARTS) {
+            log("[$head][quota] loop died: $why — restarting ($n/$MAX_RESTARTS)\n")
+            synchronized(lifecycle) {
+                if (!stopped && job === launched) launchSupervised()
+            }
+        } else {
+            log(
+                "[$head][quota] loop died: $why — restart budget exhausted " +
+                    "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
+            )
+        }
+    }
+
+    private fun recordRestart(): Int = synchronized(restartTimes) {
+        val now = clock()
+        while (restartTimes.isNotEmpty() && now - restartTimes.first() > RESTART_WINDOW_MS) {
+            restartTimes.removeFirst()
+        }
+        restartTimes.addLast(now)
+        restartTimes.size
+    }
+
     internal suspend fun pollOnce() {
-        Cancellables.runCatchingCancellable { probe.probe() }
+        Cancellables.runCatchingBestEffort { probe.probe() }
             .onSuccess { snapshot -> snapshot?.let(::accept) }
             .onFailure { failure ->
                 if (failureLogged.compareAndSet(false, true)) {
@@ -59,3 +118,6 @@ internal class QuotaPoller(
 }
 
 internal const val QUOTA_POLL_INTERVAL_MS: Long = 5 * 60 * 1000L
+private const val MAX_RESTARTS = 5
+private const val RESTART_WINDOW_MS = 600_000L
+private const val MS_PER_MIN = 60_000L

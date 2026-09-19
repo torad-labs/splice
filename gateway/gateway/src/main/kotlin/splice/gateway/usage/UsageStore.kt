@@ -5,6 +5,7 @@
 // no change.
 package splice.gateway.usage
 
+import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.RateLimitState
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -45,7 +46,7 @@ public class UsageStore(
         }
     }
 
-    public fun persistRateLimit(header: HeaderLookup): Unit = rateLimitStore.persistRateLimit(header)
+    public fun persistRateLimit(header: QuotaHeaderRead): Unit = rateLimitStore.persistRateLimit(header)
 
     public fun readState(): UsageState {
         val (entries, tokens) = ring.stats(clock() - FIVE_HOURS_MS)

@@ -32,6 +32,8 @@ public data class ChatQuirks(
      * DR-152 soak. See [splice.core.media.ImageFloor] for why every unknown forwards.
      */
     val minImageEdgePx: Int? = null,
+    /** Models that accept reasoning_effort=xhigh. null = never emit xhigh (unknown vendors). */
+    val xhighModels: Regex? = null,
 ) {
     /** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
      *  keeps the provider's own default (see [emitReasoningEffort]). A member rather than the
@@ -39,6 +41,12 @@ public data class ChatQuirks(
      *  receiver was already a ChatQuirks, so every call site is unchanged. */
     public fun withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
         copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
+
+    /** V4-163: overlay `[providers.*.quirks].stream_usage`, or a caller's own default for a provider
+     *  kind, onto the profile — null keeps this profile's own value (see [emitUsageInStream]), which
+     *  is what keeps every unopted head's request bytes identical. */
+    public fun withStreamUsageToml(streamUsage: Boolean?): ChatQuirks =
+        copy(emitUsageInStream = streamUsage ?: this.emitUsageInStream)
 
     /** Honest markers for content this dialect cannot carry: documents always; images when the
      *  vendor has no vision. An image-only message still yields a marker — silently dropping the

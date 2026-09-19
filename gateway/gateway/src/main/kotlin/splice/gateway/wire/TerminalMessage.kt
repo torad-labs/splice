@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonObject
 
 /** The fields of the non-stream terminal message envelope, grouped so its builder
  *  ([SseEmitter.TerminalEnvelope.terminalMessageJson]) keeps a single cohesive argument (L3 wire mirror). */
-public data class TerminalMessage(
+internal data class TerminalMessage(
     val id: String,
     val model: String,
     val content: List<JsonObject>,

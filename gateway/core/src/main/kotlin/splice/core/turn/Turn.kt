@@ -35,6 +35,19 @@ public data class TurnMeta(
      *  false landing, and it must be visible in one grep of the perf JSONL. */
     val toolsEager: Int? = null,
     val toolsDeferred: Int? = null,
+    /** Effective custom compaction text and its scope source. Both stay null on ordinary turns;
+     *  compact turns use null text for the untouched client default and empty text for opt-out. */
+    val compactionInstructions: String? = null,
+    val compactionInstructionsSource: String? = null,
+    /** The head's standing system prompt and its provenance (mode, and the file when one backs it)
+     *  on every turn it was placed on — unlike the compaction pair above, which is compact-only.
+     *  Both stay null for a head that configures none, and for a dialect that could not place it
+     *  (the source then carries the " (not applied)" suffix). */
+    val systemPrompt: String? = null,
+    val systemPromptSource: String? = null,
+    /** sha256 of the provider body before any compaction tail: what a compaction retry is matched on
+     *  (CompactionReplay), so a tail resolved differently on the retry cannot miss the recording. */
+    val compactionRequestHash: String? = null,
     /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
      *  build fresh translators; without a shared set, a section re-titled by a continuation round
      *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror
@@ -149,7 +162,15 @@ public class SharedSummaryParts(
     }
 
     /** Explicit occurrence-safe count trim for tests and non-registry callers. Production instances
-     *  apply both constructor bounds at every [endRound]. */
+     *  apply both constructor bounds at every [endRound].
+     *
+     *  PUBLIC ON PURPOSE, and narrowing it to `internal` breaks the build (2026-09-18). The caller
+     *  this exists for is in ANOTHER module — ConversationSummaryPartsTest in dialect-openai-responses
+     *  — so `internal` makes the declaration unreachable from the only code that uses it. 8a489694
+     *  burned it to `internal` while reducing the public surface and the break did not surface until
+     *  a full `clean check` reached :dialect-openai-responses:compileTestKotlin, because no other leg
+     *  compiles that module's tests. It costs the public-surface ratchet nothing: that wall gates
+     *  declarations with no other-module use, and this one's whole purpose is an other-module use. */
     @Synchronized
     public fun trimToLast(n: Int) {
         finishRoundLocked()
@@ -200,13 +221,50 @@ public class SharedSummaryParts(
     }
 }
 
-/** The two-tier watchdog knobs (v35 doctrine): before the client has seen output the idle limit
- *  is firstByteTimeout (prefill is legitimately silent for minutes); after, streamIdle;
- *  totalCap bounds the whole turn. */
+// NEW: V4-122 — the ONE re-anchor continuation budget, in core because both re-anchoring dialects
+// read it and neither may own the other's constant.
+//
+// Two dialect files declared this at 5 — PassthroughReanchorController.kt and
+// ResponsesReanchorController.kt — and the checker held the name as a scar because they re-anchor
+// against the SAME client budget: the number is one policy, and a fork of it makes the two dialects
+// behave differently depending on which head the operator happens to be running. It used to be
+// widened from 2 to 5 at codex-rs parity (11ce5512) in one dialect at a time, which is exactly the
+// drift a single declaration prevents. Beside [WatchdogBudget] because it is the same kind of fact:
+// a bound on how long splice keeps a turn alive on its own.
+public const val DEFAULT_MAX_CONTINUATIONS: Int = 5
+
+/** The watchdog knobs (v35 doctrine): before the client has seen output the idle limit is
+ *  firstByteTimeout (prefill is legitimately silent for minutes); after, [stallReanchor] when the
+ *  round can be continued and [streamIdle] otherwise; totalCap bounds the whole turn. */
 public data class WatchdogBudget(
     val firstByteTimeout: Duration,
     val streamIdle: Duration,
     val totalCap: Duration,
+    /** V4-116: the MID-OUTPUT STALL-RE-ANCHOR tier — how long a round may sit silent AFTER the
+     *  client has seen content before the proxy gives up waiting and resumes it itself.
+     *
+     *  Why a tier of its own, rather than just a lower [streamIdle]. [streamIdle] is a STALL
+     *  DETECTOR: breaching it is an admission of defeat that ends the round, and its 300 s value is
+     *  inherited from codex-rs because 300 s is genuinely how long a legitimately-silent backend
+     *  may be. A breach of THIS tier is not defeat — it is the signal to CANCEL the round and
+     *  re-POST it from the salvage, which is invisible to the client (a proxy that owns the wire can
+     *  always resume; the operator's ruling, 2026-09-17) and costs one POST. Waiting 300 s to do
+     *  something we are willing to do at 20 s is the scar this tier exists to close: claude-deepseek
+     *  session b10459ba streamed 3810 content frames, went silent, sat through the whole 300 s
+     *  mid-output tier, and then ended the turn as an error even though the provider had been
+     *  MEASURED to continue from an assistant prefill.
+     *
+     *  OFF BY DEFAULT ([Duration.INFINITE]), and the default is load-bearing rather than timid.
+     *  Whether an early reap helps or hurts is a property of the PROVIDER, not of this class: a
+     *  provider that cannot be handed a prefill (muse answers one with a 400 that Claude Code never
+     *  retries — see PassthroughReanchorController) has no continuation to be reaped INTO, so for
+     *  it an early reap converts a 300 s wait into an identical error 280 s sooner and can only
+     *  ever cost a slow-but-alive generation. The head that has been MEASURED to continue is the
+     *  one that arms this, at construction (HeadBuildInputs), which is why the value travels on the
+     *  budget the head already owns. [streamIdle] therefore stays the hard floor for a provider
+     *  that never arms this tier, and for one whose continuation budget is spent (the controller
+     *  declines and the round finishes with the honest error). */
+    val stallReanchor: Duration = Duration.INFINITE,
 ) {
     /** The budget a COMPACT turn runs under: its pre-output silence is bounded by [totalCap] alone.
      *  A compaction's prefill + reasoning over the whole transcript is the case the v35 doctrine

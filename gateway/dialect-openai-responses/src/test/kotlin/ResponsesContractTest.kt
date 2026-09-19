@@ -30,6 +30,11 @@ private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = Respon
     forceStrictFalse = true,
     normalizeToolSchemas = true,
     toolSurface = toolSurface,
+    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+    // Mirrored from CodexQuirks (V4-31): dialect no longer defaults these, so a
+    // provider-neutral lite opt-in omits them. This profile must declare them.
+    liteTextVerbosity = "low",
+    sendClientMetadata = true,
 )
 
 class ResponsesContractTest {
@@ -53,10 +58,15 @@ class ResponsesContractTest {
 
     @Test
     fun `responses canonical request matches the golden bytes`() {
-        // This golden's green IS the default-off proof: neither emitStrict, toolSurface, nor the
-        // codex-only empty instructions field moves the provider-neutral request.
+        // Provider-neutral request: no emitStrict, no toolSurface, no empty-instructions field.
+        // Lite shape here is opted in via responsesLiteModelRegex, not a dialect default.
         val parsed = AnthropicParse.parseAnthropicBody(canonicalAnthropic)
-        val req = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
+        val req = ResponsesRequestBuilder(
+            ResponsesQuirks(
+                providerTag = "claudex",
+                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+            ),
+        )
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
         assertFalse("instructions" in req, "empty top-level instructions is a codex-only wire quirk")

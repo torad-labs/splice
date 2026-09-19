@@ -1,0 +1,35 @@
+/* The teams page. The board owns the first viewport and is measured against the
+   comp, so the page itself contributes no chrome: the view tabs sit at the end
+   of its flow, below the board (see index.tsx for why).
+
+   The height chain matters: the page area is a definite-height scroll box, so
+   the page fills it and the board fills the page. Without the first link the
+   board's own 100% resolves against an auto height and the whole rack collapses
+   into the top of the frame. */
+
+.myx-teams {
+  height: 100%;
+}
+
+.myx-teams .myx-views {
+  margin-top: var(--space-5);
+}
+
+/* The board's footer is position: fixed (board.css), because the comp draws it across the rail's
+   edge. It therefore floats over whatever scrolls beneath it, and this page now has a list and a
+   composer below the board. The LAST element carries the clearance -- 3% from the bottom plus the
+   footer's own 3% -- so the composer's last line can always scroll above it.
+   NOT padding on .myx-teams: the board sizes itself to 100% of that box, so a padding there
+   shortened the board and pulled the view tabs into the first viewport (measured in the by-role
+   capture, where the bays ended at y915 against the comp's 983). */
+.myx-teams .myx-teams-list,
+.myx-teams .myx-compose {
+  margin-top: var(--space-5);
+}
+.myx-teams .myx-compose { margin-bottom: 7vh; }
+
+/* On a phone the footer sits on the board rather than floating over the page (board.css, M3-03),
+   so the composer's clearance for it has nothing left to clear. */
+@media (max-width: 720px) {
+  .myx-teams .myx-compose { margin-bottom: 0; }
+}

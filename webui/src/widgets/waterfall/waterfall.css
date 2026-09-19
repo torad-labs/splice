@@ -1,0 +1,87 @@
+/* The waterfall and the request drawer. Tokens only (CONTRACTS.md section 1); the chart is a dark
+   scope inset, the bars are ink on that ground, and no colour carries meaning on its own. */
+
+.myx-wf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-wf-svg {
+  display: block;
+  width: 100%;
+}
+
+/* The un-filled part of every row: the grid of the inset, one step quieter than the bars. */
+.myx-wf-track {
+  fill: var(--scope-grid);
+}
+/* The bars are one ink at full strength: phase identity is carried by the row each bar sits in and
+   by its printed name in the legend, never by a hue (the holder edge is the only place attention
+   is allowed to be a colour). */
+.myx-wf-bar {
+  fill: var(--scope-ink);
+}
+
+.myx-wf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.myx-wf-legend-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.myx-wf-legend-name {
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--scope-ink);
+}
+
+.myx-wf-legend-ms {
+  /* FIGURE: a duration in ms, tabular so the legend lines up. */
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  color: var(--scope-ink);
+}
+
+/* The honest sentence for a head whose capture is off. It is printed on the room, not framed:
+   there is nothing to look at and the frame would imply there was. */
+.myx-wf-off {
+  margin: 0;
+  color: var(--ink-mute);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+}
+
+.myx-wf-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.myx-wf-drawer-fields {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.myx-wf-body {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--scope);
+  color: var(--scope-ink);
+  border: var(--hair) solid var(--scope-grid);
+  /* CODE: a captured body with its white-space preserved is a dump, not a figure. */
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

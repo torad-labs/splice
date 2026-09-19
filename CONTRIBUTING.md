@@ -38,17 +38,21 @@ changing a rule.
 
 ## PR title
 
-CI (`.github/workflows/pr-title.yml`) enforces Conventional Commits on the **PR title** — it is the
-squash-merge subject, so it becomes `main`'s history verbatim. Only these types pass:
+The org-injected PR-title gate (check name `title`) enforces Conventional Commits on the **PR
+title** — it is the squash-merge subject, so it becomes `main`'s history verbatim. This repo used
+to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The allowed types live once,
+in `checks/pr-title.sh`, mirroring the org gate. A second copy is how two types the org gate
+rejects survived here after that deletion.
 
-`feat` · `fix` · `docs` · `test` · `build` · `ci` · `chore` · `perf` · `refactor` · `revert` ·
-`release` · `codex`
+Check a title before opening the PR, the same way the PR template tells you to:
 
-Scope is optional: `fix(walls): …`. Anything else fails the `lint` check, which is a required check,
+    bash checks/pr-title.sh "feat(scope): subject"
+
+Scope is optional: `fix(walls): …`. Anything else fails the org check, which is a required check,
 so the PR cannot merge.
 
-**This list is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
-`verify(x):`, `style(y):` — fails the check.
+**That script is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
+`verify(x):` — fails the check.
 
 **Use an allowed type in your branch commit subject as well.** Only the title is linted, but the
 squash subject does not always come from the title: #66 passed with `chore(...)` and landed on `main`

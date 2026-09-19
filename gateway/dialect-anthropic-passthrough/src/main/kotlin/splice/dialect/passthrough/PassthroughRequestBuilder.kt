@@ -34,12 +34,15 @@ internal class PassthroughRequestBuilder(
     private val quirks: PassthroughQuirks,
     private val configEffort: String? = null,
     private val log: LogSink = LogSink(DaemonLog::write),
+    private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
+    // V4-32: ONE shortener for this builder's two rewrite sites, handed in by the provider so
+    // the stream translator shares it and can restore what was shortened here.
     private val cache = PassthroughCacheControl(quirks.stripCacheControl)
     private val fields = PassthroughFieldCopier(quirks, cache)
-    private val messages = PassthroughMessageScrubber(quirks, cache)
-    private val tools = PassthroughToolSanitizer(quirks, cache)
+    private val messages = PassthroughMessageScrubber(quirks, cache, names, log)
+    private val tools = PassthroughToolSanitizer(quirks, cache, names)
     private val thinking = PassthroughThinking(quirks, configEffort, log, cache)
     private val turnMeta = PassthroughTurnMeta()
 

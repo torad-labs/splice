@@ -12,10 +12,12 @@ import splice.core.wire.AnthropicRequest
 public class ChatRequestBuilder(
     private val quirks: ChatQuirks,
     private val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
+    /** V4-165: null unless the provider opted into slot_affinity — and then only llama-server reads it. */
+    private val affinity: SlotAffinity? = null,
 ) {
     private val wire = ChatWireMapper(quirks)
     private val assembler = ChatRequestAssembler(quirks, wire)
-    private val effortTiers = ChatEffortTiers()
+    private val effortTiers = ChatEffortTiers(quirks.xhighModels)
 
     public fun build(
         body: AnthropicRequest,
@@ -35,7 +37,9 @@ public class ChatRequestBuilder(
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
-        val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, body, ChatKnobs(effort, cacheKey))
+        val lease = affinity?.let { it.lease(it.conversationOf(sessionId, messages)) }
+        val knobs = ChatKnobs(effort, cacheKey, lease?.slot)
+        val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, body, knobs)
         val meta = TurnMeta(
             compact = compact,
             showReasoning = showReasoning,
@@ -47,6 +51,6 @@ public class ChatRequestBuilder(
             summary = if (effort != null) "detailed" else null,
             budgetTokens = body.thinking?.budgetTokens,
         )
-        return BuiltChatRequest(req, meta)
+        return BuiltChatRequest(req, meta, lease)
     }
 }

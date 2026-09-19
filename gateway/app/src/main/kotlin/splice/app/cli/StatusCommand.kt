@@ -5,26 +5,36 @@ package splice.app.cli
 
 import splice.app.LoginIo
 import splice.app.TopologyLoader
+import splice.core.GATEWAY_VERSION
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
-import splice.core.util.SafeFailureText
 
 /** The `status` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Also the home of the two credential-presence predicates doctor
  *  reads (isClientAuth / authPresent) — it owns "is this head configured?", so DoctorCommand
  *  constructs one rather than re-deriving them. Every member keeps the old function's name.
- *  The printed table lives on LoginKimi (existing-file extract, 2026-08-19). */
-internal class StatusCommand {
+ *  The printed table lives on StatusTable (extracted from LoginKimi, V4-21). */
+/** The daemon's /health view for a control port, or null when nothing answers. */
+internal fun interface HealthProbe {
+    operator fun invoke(port: Int): HealthView?
+}
+
+internal class StatusCommand(
+    private val healthProbe: HealthProbe = HealthProbe { port -> DaemonHealth().healthView(port) },
+    private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
+) {
 
     private val loginIo = LoginIo()
-    private val table = LoginKimi()
+    private val table = StatusTable()
+    private val extras = StatusExtras(accountPools)
 
     internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
         val port = AdminSupport.controlPort()
-        val up = AdminSupport.daemonUp(port)
+        val health = healthProbe(port)
+        val up = health?.version == GATEWAY_VERSION
 
         println("${BOLD}splice$RESET $DIM— Claude Code, wrapped$RESET")
         println()
@@ -34,6 +44,7 @@ internal class StatusCommand {
             "${YELLOW}stopped$RESET $DIM(starts on first launch)$RESET"
         }
         println("  daemon    $daemonLine")
+        clientVersionWarning(health)?.let { println("  warning   $YELLOW$it$RESET") }
         println("  config    $DIM${TopologyLoader.configPath()}$RESET")
         println("  jar       $DIM${jarLine()}$RESET")
         println()
@@ -42,18 +53,15 @@ internal class StatusCommand {
             val provider = topology.providers[head.provider] ?: continue
             println("  " + table.row(key, head, provider, envReader))
         }
+        if (up) extras.printAccounts(port, envReader)
         println()
         table.printNextSteps(topology, envReader)
     }
 
-    /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as
-     *  installed (the doctor jarCheck twin). Internal for the permanent arm (codex redo). */
-    internal fun jarLine(): String {
-        val jar = AdminSupport.selfJar() ?: return "not installed — run: splice install"
-        val failure = AdminSupport.jarAccessFailure(jar)
-            ?: return jar.toString()
-        return "$jar is unreadable (${SafeFailureText.render(failure)}) — fix access to it"
-    }
+    internal fun clientVersionWarning(health: HealthView?): String? = health?.clientVersionWarning
+
+    /** DR-86 twin of doctor's jarCheck; lives on StatusExtras, kept here for the permanent arm's callers. */
+    internal fun jarLine(): String = extras.jarLine()
 
     /** A head that DECLARES the caller's own credential rather than one splice holds.
      *

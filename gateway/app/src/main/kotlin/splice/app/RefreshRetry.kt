@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.wire.HttpStatus
 import splice.spi.ProcessWaiter
 import splice.spi.Waiter
 import kotlin.random.Random
@@ -20,19 +21,12 @@ internal const val REFRESH_MAX_ATTEMPTS = 3
 private const val REFRESH_BACKOFF_BASE_MS = 1000L
 private const val REFRESH_JITTER_LO = 0.9
 private const val REFRESH_JITTER_HI = 1.1
-private const val HTTP_UNAUTHORIZED = 401
-private const val HTTP_FORBIDDEN = 403
-private const val HTTP_TOO_MANY = 429
-private const val HTTP_INTERNAL = 500
-private const val HTTP_BAD_GATEWAY = 502
-private const val HTTP_UNAVAILABLE = 503
-private const val HTTP_GATEWAY_TIMEOUT = 504
 internal val refreshRetryableStatus = setOf(
-    HTTP_TOO_MANY,
-    HTTP_INTERNAL,
-    HTTP_BAD_GATEWAY,
-    HTTP_UNAVAILABLE,
-    HTTP_GATEWAY_TIMEOUT,
+    HttpStatus.TOO_MANY_REQUESTS,
+    HttpStatus.INTERNAL_SERVER_ERROR,
+    HttpStatus.BAD_GATEWAY,
+    HttpStatus.SERVICE_UNAVAILABLE,
+    HttpStatus.GATEWAY_TIMEOUT,
 )
 
 /** One refresh attempt's verdict: terminal (a result, possibly null) or worth retrying. */
@@ -54,11 +48,18 @@ internal class RefreshRetry(
 
     /** 401/403 are terminal by status alone; invalid_grant wins even under a nominally-retryable status. */
     internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
-        status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || isInvalidGrant(body, json)
+        status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN || isInvalidGrant(body, json)
 
-    private fun isInvalidGrant(body: String, json: Json): Boolean = Cancellables.runCatchingCancellable {
-        JsonScalars.str(json.parseToJsonElement(body) as? JsonObject, "error") == "invalid_grant"
-    }.getOrDefault(false)
+    /** A body that will not parse is not an invalid_grant — the status alone decides it. Both arms of
+     *  the Result are written out rather than collapsed, so the parse outcome is a named decision
+     *  instead of a default applied behind the reader's back. */
+    private fun isInvalidGrant(body: String, json: Json): Boolean {
+        val parsed = Cancellables.runCatchingCancellable { json.parseToJsonElement(body) as? JsonObject }
+        return parsed.fold(
+            onSuccess = { JsonScalars.str(it, "error") == "invalid_grant" },
+            onFailure = { false },
+        )
+    }
 
     /**
      * Run [call] up to [maxAttempts] times, handing each response to [classify]. A thrown exception
@@ -79,7 +80,9 @@ internal class RefreshRetry(
         while (attempt < maxAttempts) {
             val result = Cancellables.runCatchingCancellable { classify(call()) }
             lastFailure = result.exceptionOrNull()
-            val step = result.getOrDefault(RefreshStep.Retry)
+            // Both arms are named rather than defaulted: a throw on this attempt means Retry, and the
+            // failure itself is already captured above (DR-82 rethrows it once the budget is spent).
+            val step = result.fold(onSuccess = { it }, onFailure = { RefreshStep.Retry })
             if (step is RefreshStep.Terminal) return step.value
             attempt++
             if (attempt < maxAttempts) {

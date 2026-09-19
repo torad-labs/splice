@@ -1,0 +1,172 @@
+/* The doctor page: a rack of check strips, a detail column with the fixes, and the playground
+   behind a Reveal. Radius 0, tokens only. */
+
+.myx-doc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.myx-doc-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.myx-doc-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-6);
+  color: var(--ink-strong);
+}
+
+.myx-doc-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* ONE breakpoint for every page body: the detail column drops beneath the bay below 1120px, the
+   width at which the rail, a bay and a 24rem detail column stop fitting side by side. This value
+   was 1120 on accounts and 1600 on fleet, doctor and mcp, measured when a bay CLIPPED its rack —
+   a nine-field strip needs about 1206px of value width, so beside a detail column the rack lost
+   its tail. The bays scroll now (m1 design review B7, `.myx-bay-rows { overflow-x: auto }`), which
+   is what removes that constraint: a narrow bay scrolls its rack instead of cutting it, so the
+   brief's own topology — one detail column, the opened strip swelling into it on the right — holds
+   at the width the review measured (m1 design review B13). The rule belongs in the shell, in one
+   place, for every page row; until it is hoisted there it is repeated here with this note. */
+/* TWO COLUMNS OF MEMBERS, NOT ONE COLUMN OF SEVEN (M2-22). The checks are one table and the
+   report's own facts are a second; side by side they cost the height of the taller of the two
+   instead of the sum. 1.2 : 1 is the ratio the two racks' own declared widths ask for -- the checks
+   carry 44ch across two cells, the facts 38ch -- measured at 1536 as 520px and 434px in a 966px
+   bay area, both inside their columns with no rack scrolling. */
+.myx-doc-bays {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+/* IT SITS BELOW THE TWO-COLUMN RULE, AND THAT IS THE WHOLE FIX (M3-03). This block was above it.
+   Both rules are (0,1,0), so the later one won and `.myx-doc-bays` kept its two columns at every
+   width -- measured at 390: 197px and 165px side by side, the second bay's rack cut off at the
+   screen's edge, while the block that was supposed to stack them had been dead since M2-22 added
+   the two-column rule beneath it. The `.myx-doc-body` half worked all along, which is why the page
+   looked stacked and was not. */
+@media (max-width: 1120px) {
+  .myx-doc-body { grid-template-columns: minmax(0, 1fr); }
+  /* The inner pair stacks with it: two racks whose cells total 82ch cannot sit side by side in a
+     column that has just lost the detail column's 24rem. */
+  .myx-doc-bays { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* A TABLE'S ROWS, NOT A RACK'S STRIPS. `--space-7` between rows is the comp's measurement for
+   strips in a rack -- "34px (a 96px pitch carrying a 62px strip)", ui.css -- and it is right where
+   a rack holds a handful of rows a person reads one at a time. A table is read as a column, and the
+   comp draws its own table the other way: scanning down the activity bay of team-board-a, its
+   header strip occupies y 619..642 and its five data rows are 33, 34, 32, 32 and 33px tall at a
+   37-39px pitch -- a ~5px gap, which is --space-2. Before this rule doctor paid 96px per check. */
+.myx-doc-bays .myx-bay-rows {
+  gap: var(--space-2);
+  padding: var(--space-3) 0 var(--space-4);
+}
+
+/* The bay's own box does not add a second column of slack: it is one table, and a table that is
+   1000px wide holding 400px of cells is the defect this row is about. */
+.myx-doc-bays > .myx-bay { min-width: 0; }
+
+/* THE RACK'S COLUMN NAMES, at the same ch widths as the cells they name (B9's own instruction) and
+   with the cell's own box, so a name and its column cannot drift apart. */
+.myx-doc-col {
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* THE STRIP FILLS ITS BAY (M1-39's rule, carried here by M1-44). The ch width stops being a fixed
+   box and becomes each cell's SHARE: the cells keep their declared ch as their basis and the
+   leftover ch is distributed across them, so the column grid is still the declared one and only the
+   slack moves. Measured before this: the widest strip left 1203 px of bare bay to its right. */
+.myx-doc-bays .myx-strip { width: 100%; }
+/* RETIRED (M1-93): this was `.myx-sfield { flex: 1 1 auto }`, and it is now ALWAYS
+   overridden. share of the slack by flex-grow: 1 PER CELL, which is only a grid when
+   every row shape has the same cell count -- it does not, so the primitive now sets
+   flexGrow to the field's own ch (strip-field.tsx) and that inline value wins here.
+   REMOVED RATHER THAN LEFT, because a declaration that is always overridden READS AS
+   THE RULE THAT GOVERNS: the next seat debugging a rack width finds it, believes it,
+   changes it, and watches nothing happen. Verified dead on this page by DOM probe
+   before removal -- see the M1-93 note for the counts. */
+
+.myx-doc-bays > * { overflow-x: auto; }
+
+.myx-doc-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.myx-doc-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--hairline);
+  border-radius: 0;
+}
+
+.myx-doc-section-title {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+}
+
+.myx-doc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.myx-doc-fix {
+  font-family: var(--font-figure);
+  font-size: var(--text-2);
+  /* D7 (M1-52): this box paints the STRIP's paper, so it takes the STRIP's ink. --ink* is the
+     ROOM's ink and is light in the dark theme, because the room is dark - on paper it was
+     light-on-light. Measured before: 1.33:1 in dark. The same wrong pairing is in controls.css's
+     own comment from the first D7 and was fixed there and nowhere else; this is instance 2 of
+     five the source sweep found. */
+  color: var(--strip-ink);
+  background: var(--strip-field);
+  border: var(--hair) solid var(--strip-field-line);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.myx-doc-note {
+  margin: var(--space-0);
+  font-family: var(--font-label);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-doc-btn {
+  font-family: var(--font-label);
+  font-size: var(--text-2);
+  color: var(--ink);
+  background: transparent;
+  border: var(--hair) solid var(--hairline-strong);
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.myx-doc-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.myx-doc-btn:hover { border-color: var(--ink-strong); color: var(--ink-strong); }
+.myx-doc-btn:disabled { opacity: 0.55; cursor: not-allowed; }

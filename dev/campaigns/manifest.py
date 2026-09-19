@@ -74,6 +74,12 @@ USAGE:
   manifest.py laws                              print LAW header lines (no explicit path: aggregated
                                                 + deduped across ALL dev/campaigns/*.toml)
   manifest.py packet <ID>                         emit the computed packet for one item
+  manifest.py receipt <ID> --files f1 f2 ...      the builder's proof: per-file git blob hashes
+                                                  under the row (refuses missing, out-of-fence, glob)
+  manifest.py stage <ID>                          orchestrator: git add exactly the receipt's files,
+                                                  refusing out-of-fence, omitted and moved files
+  manifest.py reattest <ID>                       orchestrator: re-bind a wedged receipt to current bytes
+  manifest.py focus <ID> [--seat S]               write this seat's active pointer (re-anchor after compaction)
   manifest.py dispatch <ID> --to <seat>         FAIL-CLOSED dispatch (#924): refuse an uncut ID,
                                                 else record the dispatch + emit the packet
   manifest.py fence-check <ID> <pattern>        assert every tree file referencing the literal
@@ -3801,6 +3807,7 @@ VERDICT_SIGIL_RE = re.compile(r"^VERDICT: outcome=\w+")
 
 def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=None):
     notify = _notify_orchestrator if _notify is None else _notify
+    text = _one_line("note text", text)
 
     # The other half of the ONE-REVIEW-PER-ROW anchoring (_one_review_per_row_error): a note is free
     # to DISCUSS a verdict, but only cmd_verdict may AUTHOR the line the guard reads. Refusing here
@@ -3895,6 +3902,10 @@ def cmd_verdict(
         sys.exit("error: verdict --outcome must be accepted|redo|blocked")
     gap_named = (gap or "").strip() or None
     locus = contradiction.strip() if contradiction is not None else None
+    if gap_named is not None:
+        gap_named = _one_line("--gap", gap_named)
+    if locus is not None:
+        locus = _one_line("--contradiction", locus)
     if outcome == "redo" and gap_named is None:
         sys.exit("error: a redo verdict requires --gap <the named gap> (#948 §2b redo-not-accept)")
     if outcome == "accepted" and gap_named is not None:
@@ -3971,6 +3982,7 @@ def cmd_verdict(
 
 
 def cmd_edit_fence(path, item_id, files_text, override_bare_dir=False):
+    files_text = _one_line("fence text", files_text)
     files = [part.strip() for part in files_text.split(",")]
     if not files_text.strip() or any(not f for f in files):
         sys.exit("error: edit-fence requires non-empty comma-separated files")
@@ -4029,6 +4041,7 @@ def cmd_scan_bare_fences(path):
 
 
 def cmd_edit_verify(path, item_id, verify_text):
+    verify_text = _one_line("verify text", verify_text)
     if not verify_text.strip():
         sys.exit("error: edit-verify requires a non-empty value")
 
@@ -4043,6 +4056,7 @@ def cmd_edit_verify(path, item_id, verify_text):
 
 
 def cmd_edit_title(path, item_id, title_text):
+    title_text = _one_line("title text", title_text)
     if not title_text.strip():
         sys.exit("error: edit-title requires a non-empty value")
 
@@ -4088,6 +4102,17 @@ def cmd_claim(
             if alive(owner):
                 sys.exit(f"error: item {item_id!r} owned by {owner} (registry+tmux live)")
             supersedes = owner
+        # ITEM 7 (fences-are-disjoint as a WALL): refuse a claim whose fence intersects any live
+        # peer's fence, naming the peer — without it, overlapping live fences deadlock `stage`
+        # (each row's edits are the other's fenced-file-not-on-receipt). Checked under the lock
+        # against the same lines this mutate is about to write, never a racy pre-lock snapshot.
+        own_files = _item_files_from_lines(lines, s, e) or []
+        for peer_id, peer_files in _peer_fences_from_lines(lines, item_id):
+            if _fences_overlap(own_files, peer_files):
+                sys.exit(
+                    f"error: item {item_id!r} fence intersects live row {peer_id}'s fence — "
+                    "fences are disjoint (seat law); a row whose fence overlaps a live one waits"
+                )
         _rewrite_status(lines, s, e, "in_flight")
         return _append_block_lines(
             lines,
@@ -4280,6 +4305,11 @@ def cmd_handover(
 
 
 def cmd_add(path, item_id, phase, title, files, verify, status="todo", override_bare_dir=False):
+    item_id = _one_line("--id", item_id)
+    phase = _one_line("--phase", phase)
+    title = _one_line("--title", title)
+    files = _one_line("--files", files)
+    verify = _one_line("--verify", verify)
     bare_dirs = _bare_directory_fence_entries([f.strip() for f in files.split(",")])
     if bare_dirs and not override_bare_dir:
         sys.exit(_bare_dir_fence_block_error(item_id, bare_dirs))
@@ -4545,6 +4575,32 @@ def _live_peer_fences(path: str, exclude_id: str) -> list[tuple[str, list]]:
     return peers
 
 
+def _item_files_from_lines(lines: list[str], s: int, e: int) -> list | None:
+    """One item's own files= fence parsed from its block slice — the same tomllib read
+    _campaign_item_data already performs, so claim's fence check reads the SAME locked lines
+    it is about to mutate rather than a second, racy file read."""
+    try:
+        item = _campaign_item_data(lines[s:e])
+    except ValueError:
+        return None
+    files = item.get("files")
+    return files if isinstance(files, list) else None
+
+
+def _peer_fences_from_lines(lines: list[str], exclude_id: str) -> list[tuple[str, list]]:
+    """Every in_flight peer's fence from the LOCKED lines — the under-lock analogue of
+    _live_peer_fences, so the claim fence-intersection refusal sees the state as it is inside
+    the flock, not as a racy pre-lock snapshot could see it."""
+    peers: list[tuple[str, list]] = []
+    for iid, s, e in _blocks(lines):
+        if iid == exclude_id or _block_status(lines, s, e) != "in_flight":
+            continue
+        files = _item_files_from_lines(lines, s, e)
+        if files:
+            peers.append((iid, files))
+    return peers
+
+
 _FENCE_CHECK_EXCLUDE_DIRS = (".git", "node_modules", ".gradle", "build", "dist")
 
 
@@ -4650,7 +4706,10 @@ def cmd_packet(path, item_id):
     repo_root_name = (_git_repo_root(path) or Path.cwd()).name
     out = [
         f"PACKET {item_id} — {campaign_name} campaign. ONE item.",
-        f'0. pwd must be {repo_root_name} root; if not, STOP and reply "{item_id} blocked — wrong home".',
+        f"0. Claim + focus (re-anchors you after a compaction):",
+        f"     python3 dev/campaigns/manifest.py {path} claim {item_id} --session <your seat>",
+        f"     python3 dev/campaigns/manifest.py {path} focus {item_id} --seat <your seat>",
+        f'0b. pwd must be {repo_root_name} root; if not, STOP and reply "{item_id} blocked — wrong home".',
         f"1. Read the full spec: python3 dev/campaigns/manifest.py {path} get {item_id} — the SLOT note is the complete design, zero design freedom. Laws: manifest.py laws.",
         "1a. Claim identity = your tmux seat name.",
         f"2. Fence = exactly: {', '.join(files)}.",
@@ -4806,8 +4865,251 @@ def cmd_next_packet(path, session_id, _alive=None, _registry_dir=None, _this_fil
     cmd_packet(path, selected)
 
 
+
+# ── MILESTONE VERIFICATION (operator ruling 2026-09-17, global CLAUDE.md §16; lineage: the
+# grailseeker-scout ledger.ts patch .dev/campaigns/upstream/2026-09-17-milestone-verification,
+# vendored here in Python 2026-09-18). `verified` is redefined: NOT "the orchestrator re-gated
+# this row" but "the row's PHASE exit gate ran green and the phase review passed". Rows are
+# verified by their builder (scoped tests + compile + detekt, recorded in the landing note);
+# phases are verified by the orchestrator, once, in batch, with the exit-gate evidence quoted.
+# A phase cannot be half-verified: verify-phase refuses while any row of the phase is open.
+VERIFY_PHASE_ENV = "LEDGER_ORCHESTRATOR"
+
+
+def _phase_rows(path: str, phase: str) -> list[dict]:
+    with open(path, "rb") as handle:
+        doc = tomllib.load(handle)
+    rows = [row for row in doc.get("items", []) if row.get("phase") == phase]
+    if not rows:
+        sys.exit(f"error: no rows carry phase {phase!r}")
+    return rows
+
+
+def cmd_phase_status(path, phase):
+    """One line per row of the phase plus a readiness verdict for verify-phase. Exit 0 when every
+    row is done or verified (the phase is READY), 1 otherwise — so a script can gate on it."""
+    rows = _phase_rows(path, phase)
+    open_rows = [row["id"] for row in rows if row.get("status") not in ("done", "verified")]
+    done_rows = [row["id"] for row in rows if row.get("status") == "done"]
+    for row in rows:
+        print(f"{row['id']:<8} {row.get('status', '?'):<10} {str(row.get('title', ''))[:90]}")
+    if open_rows:
+        print(f"phase {phase}: {len(rows)} rows, {len(open_rows)} open ({', '.join(open_rows)}) — NOT ready for verify-phase")
+        return False
+    print(f"phase {phase}: {len(rows)} rows, {len(done_rows)} done, 0 open — READY for verify-phase")
+    return True
+
+
+def cmd_verify_phase(path, phase, evidence):
+    """Flip EVERY done row of the phase to verified, one dated note each quoting the exit-gate
+    evidence. Orchestrator-only (LEDGER_ORCHESTRATOR=1). Refuses while any row of the phase is
+    todo or in_flight, so a milestone is verified whole or not at all."""
+    if os.environ.get(VERIFY_PHASE_ENV) != "1":
+        sys.exit(f"error: verify-phase is orchestrator-only — run with {VERIFY_PHASE_ENV}=1")
+    evidence = _one_line("evidence", (evidence or "").strip())
+    if not evidence:
+        sys.exit("error: verify-phase requires the exit-gate evidence (command + GATE: PASS + tree sha)")
+    rows = _phase_rows(path, phase)
+    open_rows = [row["id"] for row in rows if row.get("status") not in ("done", "verified")]
+    if open_rows:
+        sys.exit(
+            f"error: phase {phase!r} is not closed — open rows: {', '.join(open_rows)}; "
+            "a milestone is verified whole or not at all"
+        )
+    done_rows = [row["id"] for row in rows if row.get("status") == "done"]
+    if not done_rows:
+        sys.exit(f"error: phase {phase!r} has no done rows to verify")
+    stamp = date.today().isoformat()
+    for item_id in done_rows:
+        cmd_note(path, item_id, f"VERIFY-PHASE {phase} {stamp}: {evidence}")
+        cmd_set_status(path, item_id, "verified")
+    print(f"verify-phase {phase}: {len(done_rows)} row(s) -> verified ({', '.join(done_rows)})")
+
+
+def _one_line(label: str, value: str) -> str:
+    """Free text is ONE line. A newline in a note/title/verify/evidence is a TOML injection:
+    `[[items]]` inside a note block becomes a forged row that `validate` blesses (grailseeker
+    Eli F5, ported here 2026-09-18). Every free-text arg lands in a single ledger line, so a
+    newline must be refused before it reaches the lock."""
+    if isinstance(value, str) and re.search(r"[\r\n]", value):
+        sys.exit(f"error: {label} must be a single line (newlines are refused: they would inject TOML into the ledger)")
+    return value
+
+
+_GLOB_CHARS_RE = re.compile(r"[*?\[]")
+
+
+def _bad_receipt_path(p: str) -> bool:
+    """A touched path must be repo-relative, plain, and glob-free — the three shapes `stage`
+    could otherwise mis-resolve (an absolute path, a `..` escape, or a `*` that fans out to
+    files the receipt never named)."""
+    if not isinstance(p, str) or not p:
+        return True
+    if p.startswith("/") or ".." in p.replace("\\", "/").split("/"):
+        return True
+    if _GLOB_CHARS_RE.search(p) or re.search(r"\s", p):
+        return True
+    return False
+
+
+_RECEIPT_RE = re.compile(r"^RECEIPT files=(\S+) blobs=(\S+)$")
+
+
+def _latest_receipt(lines: list[str], s: int, e: int) -> dict | None:
+    """The most recent RECEIPT note of an item, parsed back to its files + per-file blob hashes.
+    Notes append, so the last RECEIPT line wins — a builder re-runs its verify and records a
+    fresh receipt, and `stage` reads only the newest one."""
+    for line in reversed(lines[s:e]):
+        body = _note_body(line)
+        if body is None:
+            continue
+        match = _RECEIPT_RE.match(body)
+        if match:
+            files = [f for f in match.group(1).split(",") if f]
+            blobs = [b for b in match.group(2).split(",") if b]
+            return {"files": files, "blobs": blobs}
+    return None
+
+
+def _git_repo_root_or_die(path: str) -> Path:
+    root = _git_repo_root(path)
+    if root is None:
+        sys.exit(f"error: {path} is not inside a git repository (receipt/stage/reattest need one)")
+    return root
+
+
+def _git_blob_hash(root: Path, rel: str) -> str | None:
+    """The file's blob hash as it is on disk now, or None when it does not exist — the bytes
+    `stage` compares against the receipt so another builder's half-edit cannot ride this row's
+    commit (grailseeker Eli F4)."""
+    proc = subprocess.run(
+        ["git", "-C", str(root), "hash-object", "--", rel],
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _git_changed_paths(root: Path) -> list[str]:
+    """Every tracked-modified + untracked path from the worktree, one per entry — the pool
+    `stage` filters by the row's fence to find fenced files changed but not receipted."""
+    try:
+        diff = _run_git(root, ["diff", "--name-only", "-z"]).stdout
+    except subprocess.CalledProcessError:
+        diff = ""
+    try:
+        others = _run_git(root, ["ls-files", "--others", "--exclude-standard", "-z"]).stdout
+    except subprocess.CalledProcessError:
+        others = ""
+    return [p for p in (diff + others).split("\0") if p]
+
+
+def cmd_receipt(path, item_id, files):
+    """THE BUILDER'S PROOF. `receipt <ID> --files f1 f2 ...` records each file's `git
+    hash-object` blob hash as one dated note under the row. `stage` later compares those bytes,
+    so the touched list is no longer a self-report — it is the row's evidence in a shared
+    worktree (seat law 13). Refuses a missing file, a path outside the fence, and a glob."""
+    files = [part for arg in files for part in arg.split(",")]
+    files = [f.strip() for f in files if f.strip()]
+    if not files:
+        sys.exit("error: receipt requires at least one file: receipt <ID> --files f1 f2 ...")
+    bad = [f for f in files if _bad_receipt_path(f)]
+    if bad:
+        sys.exit(
+            "error: receipt --files must be repo-relative plain paths without whitespace or globs "
+            f"(rejected: {', '.join(bad)})"
+        )
+    fence = _item_files(path, item_id) or []
+    outside = [f for f in files if not _scope_matches(f, fence)]
+    if outside:
+        sys.exit(f"error: receipt names files outside the fence: {', '.join(outside)}")
+    root = _git_repo_root_or_die(path)
+    blobs = [_git_blob_hash(root, f) for f in files]
+    missing = [f for f, blob in zip(files, blobs) if blob is None]
+    if missing:
+        sys.exit(f"error: receipt touched files do not exist: {', '.join(missing)}")
+    cmd_note(path, item_id, f"RECEIPT files={','.join(files)} blobs={','.join(blobs)}")
+    print(f"{item_id}: receipt recorded ({len(files)} files)")
+
+
+def cmd_stage(path, item_id):
+    """THE ORCHESTRATOR'S ONLY PER-ROW JUDGMENT, MADE MECHANICAL. `git add` exactly the latest
+    receipt's files and refuse by name: a fenced file changed but not on the receipt (the
+    omission that lets CI test old code), and a receipted file whose blob moved since the
+    receipt (another builder's edit riding this commit). Orchestrator-only."""
+    if os.environ.get(VERIFY_PHASE_ENV) != "1":
+        sys.exit(f"error: stage is orchestrator-only — run with {VERIFY_PHASE_ENV}=1")
+    lines = _read(path)
+    s, e = _find(lines, item_id)
+    receipt = _latest_receipt(lines, s, e)
+    if receipt is None:
+        sys.exit(f"error: {item_id} has no receipt to stage from")
+    fence = _item_files(path, item_id) or []
+    if not fence:
+        sys.exit(f"error: {item_id} declares no files; a row without a fence cannot be staged")
+    outside = [f for f in receipt["files"] if not _scope_matches(f, fence)]
+    if outside:
+        sys.exit(f"error: {item_id}: receipt names files outside the fence: {', '.join(outside)}")
+    root = _git_repo_root_or_die(path)
+    touched = receipt["files"]
+    omitted = [f for f in _git_changed_paths(root) if _scope_matches(f, fence) and f not in touched]
+    if omitted:
+        sys.exit(
+            f"error: {item_id}: fenced files changed but not on the receipt: {', '.join(omitted)} — "
+            "the builder re-runs its verify and records a new receipt"
+        )
+    moved = [f for f, blob in zip(touched, receipt["blobs"]) if _git_blob_hash(root, f) != blob]
+    if moved:
+        sys.exit(
+            f"error: {item_id}: bytes moved since the receipt: {', '.join(moved)} — "
+            "someone edited after the verify ran; new receipt required"
+        )
+    _run_git(root, ["add", "--", *touched])
+    print(f"{item_id}: staged {len(touched)} files — commit now")
+
+
+def cmd_reattest(path, item_id):
+    """THE ONE SANCTIONED REPAIR for a wedged receipt: re-bind the latest receipt's blob hashes
+    to the bytes as they are now, under the lock. Orchestrator-only; the caller reviews
+    `git diff -- <files>` and notes what it blessed."""
+    if os.environ.get(VERIFY_PHASE_ENV) != "1":
+        sys.exit(f"error: reattest is orchestrator-only — run with {VERIFY_PHASE_ENV}=1")
+    lines = _read(path)
+    s, e = _find(lines, item_id)
+    receipt = _latest_receipt(lines, s, e)
+    if receipt is None:
+        sys.exit(f"error: {item_id} has no receipt to reattest")
+    root = _git_repo_root_or_die(path)
+    blobs = [_git_blob_hash(root, f) for f in receipt["files"]]
+    missing = [f for f, blob in zip(receipt["files"], blobs) if blob is None]
+    if missing:
+        sys.exit(f"error: reattest: receipted files no longer exist: {', '.join(missing)}")
+    cmd_note(path, item_id, f"RECEIPT files={','.join(receipt['files'])} blobs={','.join(blobs)}")
+    print(
+        f"{item_id}: reattested — proof re-bound to current bytes of {len(receipt['files'])} files; "
+        f"review `git diff -- {', '.join(receipt['files'])}` and note what was blessed"
+    )
+
+
+def cmd_focus(path, item_id, seat=None):
+    """The active pointer the SessionStart hook reads to re-anchor a compacted seat — the same
+    `.claude/state/ledger-active-<seat>.json` shape 12_inflight_reanchor consumes."""
+    lines = _read(path)
+    _find(lines, item_id)
+    seat_name = re.sub(r"[^a-zA-Z0-9._-]", "_", seat or os.environ.get("TMUX_PANE") or "default")[:128] or "default"
+    root = _git_repo_root_or_die(path)
+    state_dir = root / ".claude" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(
+        state_dir / f"ledger-active-{seat_name}.json",
+        {"ledger_path": str(Path(path).resolve()), "item_id": item_id},
+    )
+    print(f"{item_id}: active pointer written for seat {seat_name}")
+
+
 def cmd_add_law(path, text):
     """Append a dated # LAW line to the header comment banner (before [campaign])."""
+    text = _one_line("law text", text)
 
     def mutate(lines):
         stamp = date.today().isoformat()
@@ -4828,6 +5130,8 @@ def cmd_amend_header(path, old, new):
     """Replace substring old->new in exactly ONE header-banner comment line.
     The banner is hook-08-protected against raw edits; this is the sanctioned
     channel for fixing a rotted pointer without hand-editing the ledger."""
+    old = _one_line("old", old)
+    new = _one_line("new", new)
 
     def mutate(lines):
         end = len(lines)
@@ -5068,13 +5372,15 @@ def _cmd_selftest_body(path):
     assert "DIRFENCEA" in edit_warn_text, edit_warn_text
     assert "shared/sub/nested/" in edit_warn_text, edit_warn_text
 
+    # ITEM 7 (fences-are-disjoint as a WALL): the bare-directory claim-overlap case that used
+    # to WARN is now a hard refusal — `claim` refuses a fence intersecting a live peer's fence
+    # by name, superseding the old warn-only behavior.
     cmd_add(tmp_dirfence.name, "DIRFENCEC", "D", "claim overlap target", "shared/", "n/a", override_bare_dir=True)
-    claim_warn_buf = io.StringIO()
-    with redirect_stdout(claim_warn_buf):
+    try:
         cmd_claim(tmp_dirfence.name, "DIRFENCEC", "dir-owner-c", _alive=lambda _sid: False)
-    claim_warn_text = claim_warn_buf.getvalue()
-    assert "WARNING" in claim_warn_text, claim_warn_text
-    assert "DIRFENCEA" in claim_warn_text, claim_warn_text
+        raise AssertionError("a claim whose fence intersects a live peer must be refused")
+    except SystemExit as exc:
+        assert "intersects live row DIRFENCEA" in str(exc), str(exc)
 
     # Non-overlapping directories -> silent (no false positives).
     cmd_add(tmp_dirfence.name, "DIRFENCED", "D", "unrelated dir", "totally/unrelated/", "n/a", override_bare_dir=True)
@@ -5083,18 +5389,19 @@ def _cmd_selftest_body(path):
         cmd_claim(tmp_dirfence.name, "DIRFENCED", "dir-owner-d", _alive=lambda _sid: False)
     assert "WARNING" not in no_warn_buf.getvalue(), no_warn_buf.getvalue()
 
-    # A file (not a bare directory) peer under the same tree -> silent — this warning is
-    # scoped to directory-vs-directory collisions only, per the slot.
+    # A file peer under a live directory fence intersects it too (the directory covers the
+    # file) — ITEM 7 refuses this by name, where the old G32 warning was dir-vs-dir only.
     tmp_dirfence_file_peer = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dirfence_file_peer.close()
     _selftest_fixture_copy(path, tmp_dirfence_file_peer.name)
     cmd_add(tmp_dirfence_file_peer.name, "DIRFENCEE", "D", "exact file claimant", "shared/sub/exact.kt", "n/a")
     cmd_claim(tmp_dirfence_file_peer.name, "DIRFENCEE", "dir-owner-e", _alive=lambda _sid: False)
     cmd_add(tmp_dirfence_file_peer.name, "DIRFENCEF", "D", "dir vs file peer", "shared/sub/", "n/a", override_bare_dir=True)
-    file_peer_buf = io.StringIO()
-    with redirect_stdout(file_peer_buf):
+    try:
         cmd_claim(tmp_dirfence_file_peer.name, "DIRFENCEF", "dir-owner-f", _alive=lambda _sid: False)
-    assert "WARNING" not in file_peer_buf.getvalue(), file_peer_buf.getvalue()
+        raise AssertionError("a directory fence over a live file peer must be refused")
+    except SystemExit as exc:
+        assert "intersects live row DIRFENCEE" in str(exc), str(exc)
 
     # G30: qualified seat identity — two machines, SAME seat name, must never collide. Seat
     # names here are deliberately synthetic (never a real campaign seat) since _owner_alive's
@@ -5957,9 +6264,12 @@ def _cmd_selftest_body(path):
     packet_repo_root_name = (_git_repo_root(tmp_packet.name) or Path.cwd()).name
     assert f"PACKET {packet_id} — {packet_campaign_name} campaign. ONE item." in packet_text, packet_text
     assert (
-        f'0. pwd must be {packet_repo_root_name} root; if not, STOP and reply "{packet_id} blocked — wrong home".'
+        f'0b. pwd must be {packet_repo_root_name} root; if not, STOP and reply "{packet_id} blocked — wrong home".'
         in packet_text
     ), packet_text
+    assert "0. Claim + focus" in packet_text, packet_text
+    assert f"claim {packet_id} --session <your seat>" in packet_text, packet_text
+    assert f"focus {packet_id} --seat <your seat>" in packet_text, packet_text
     assert (
         f"1. Read the full spec: python3 dev/campaigns/manifest.py {tmp_packet.name} get {packet_id} — the SLOT note is the complete design, zero design freedom. Laws: manifest.py laws."
         in packet_text
@@ -6160,8 +6470,24 @@ def _cmd_selftest_body(path):
         fixture_manifest = git_repo / "dev" / "campaigns" / "orchestration-product.toml"
         fixture_manifest.parent.mkdir(parents=True, exist_ok=True)
         _selftest_fixture_copy(path, fixture_manifest)
-        fixture_script = git_repo / "dev" / "campaigns" / "manifest.py"
+        # THE FENCED FILE IS FIXTURE-ONLY (V4-120). It used to be dev/campaigns/manifest.py, which is
+        # the path THIS ROW fences — and the fixture ledger is a copy of the real one, so the moment
+        # V4-120 is in_flight its live fence collides with GITATTEST's and `claim` refuses, by this
+        # row's own ITEM 7 disjointness check. The verify command (`selftest`) therefore failed in
+        # exactly the state the row is worked in, and passed only while the row was still todo: a
+        # green that could not survive the work it was gating. A path no row fences keeps the arm's
+        # subject intact — a scoped diffstat naming the fenced file and excluding the rest.
+        # ...and it must stay in dev/campaigns/, because _is_canonical_ledger compares the ledger's
+        # parent with this script's parent — the fixture must look canonical for the hydrate arms to
+        # run at all. A name no row fences satisfies both.
+        fixture_scope = "dev/campaigns/selftest-git-scope.py"
+        fixture_script = git_repo / fixture_scope
         shutil.copy(__file__, fixture_script)
+        fixture_narrow_dir = git_repo / "dev" / "campaigns" / "selftest-narrow"
+        fixture_narrow_dir.mkdir(parents=True, exist_ok=True)
+        fixture_narrow = fixture_narrow_dir / "narrow.py"
+        fixture_narrow.write_text("# fixture\n", encoding="utf-8")
+        fixture_scope_narrow = "dev/campaigns/selftest-narrow/"
         fixture_toml = git_repo / "dev" / "campaigns" / "fixture.toml"
         fixture_toml.write_text("base fixture\n", encoding="utf-8")
         subprocess.run(
@@ -6171,7 +6497,8 @@ def _cmd_selftest_body(path):
                 str(git_repo),
                 "add",
                 "dev/campaigns/orchestration-product.toml",
-                "dev/campaigns/manifest.py",
+                fixture_scope,
+                "dev/campaigns/selftest-narrow/narrow.py",
                 "dev/campaigns/fixture.toml",
             ],
             check=True,
@@ -6183,7 +6510,7 @@ def _cmd_selftest_body(path):
             "GITATTEST",
             "G",
             "git bracket item",
-            "dev/campaigns/manifest.py",
+            fixture_scope,
             "echo git",
         )
         cmd_claim(fixture_manifest.as_posix(), "GITATTEST", "git-sid", _alive=lambda _sid: False)
@@ -6204,13 +6531,13 @@ def _cmd_selftest_body(path):
         done_note = next(line for line in lines[s:e] if "ATTEST: scoped diffstat:" in line)
         assert 'status = "done"' in blk, blk
         assert "ATTEST: scoped diffstat:" in blk, blk
-        assert "dev/campaigns/manifest.py" in done_note, done_note
+        assert fixture_scope in done_note, done_note
         assert "fixture.toml" not in done_note, done_note
         assert "orchestration-product.toml" not in done_note, done_note
         sidecar = git_repo / _sidecar_rel_path("GITATTEST")
         assert sidecar.exists(), sidecar
         sidecar_text = sidecar.read_text(encoding="utf-8")
-        assert "diff --git a/dev/campaigns/manifest.py b/dev/campaigns/manifest.py" in sidecar_text, sidecar_text[:500]
+        assert f"diff --git a/{fixture_scope} b/{fixture_scope}" in sidecar_text, sidecar_text[:500]
         assert "fixture.toml" not in sidecar_text, sidecar_text
 
         # G24: done -> verified must NOT double-attest (bracket already closed).
@@ -6226,7 +6553,7 @@ def _cmd_selftest_body(path):
             "VERIFATTEST",
             "G",
             "verified-closes-bracket item",
-            "dev/campaigns/manifest.py",
+            fixture_scope,
             "echo verif",
         )
         cmd_claim(fixture_manifest.as_posix(), "VERIFATTEST", "verif-sid", _alive=lambda _sid: False)
@@ -6251,20 +6578,20 @@ def _cmd_selftest_body(path):
             "NARROWATTEST",
             "G",
             "fence autonarrow item",
-            "dev/campaigns/",
+            fixture_scope_narrow,
             "echo narrow",
             override_bare_dir=True,
         )
         cmd_claim(fixture_manifest.as_posix(), "NARROWATTEST", "narrow-sid", _alive=lambda _sid: False)
-        fixture_script.write_text(
-            fixture_script.read_text(encoding="utf-8") + "\n# narrow scoped line\n", encoding="utf-8"
+        fixture_narrow.write_text(
+            fixture_narrow.read_text(encoding="utf-8") + "\n# narrow scoped line\n", encoding="utf-8"
         )
         cmd_set_status(fixture_manifest.as_posix(), "NARROWATTEST", "done")
         cmd_set_status(fixture_manifest.as_posix(), "NARROWATTEST", "verified")
         lines = _read(fixture_manifest.as_posix())
         s, e = _find(lines, "NARROWATTEST")
         blk = "".join(lines[s:e])
-        assert 'files = ["dev/campaigns/manifest.py"]' in blk, blk
+        assert 'files = ["dev/campaigns/selftest-narrow/narrow.py"]' in blk, blk
         assert "FENCE-AUTONARROWED" in blk, blk
 
         # PROD-V2-VERDICT-TOOLKIT-PROMOTION: the auto-hydrate on `verified` only writes a trace when
@@ -6302,7 +6629,7 @@ def _cmd_selftest_body(path):
             "BROKENHYDRATE",
             "G",
             "broken hydrate item",
-            "dev/campaigns/manifest.py",
+            fixture_scope,
             "echo broken",
         )
         stderr_buf = io.StringIO()
@@ -6865,6 +7192,160 @@ def _cmd_selftest_body(path):
     finally:
         shutil.rmtree(absent_dir, ignore_errors=True)
 
+    # VERIFY-PHASE (2026-09-18): a phase is verified whole or not at all, by the orchestrator only.
+    vp_dir = Path(tempfile.mkdtemp(prefix="manifest-verify-phase-"))
+    try:
+        vp_script = str(vp_dir / "manifest.py")
+        shutil.copy(__file__, vp_script)
+        vp_ledger = str(vp_dir / "fixture.toml")
+        Path(vp_ledger).write_text("", encoding="utf-8")
+        vp_env = dict(os.environ, TORAD_FLEET_ROOT=str(vp_dir), TORAD_LEDGER_NOTIFY="off")
+        vp_env.pop(VERIFY_PHASE_ENV, None)
+
+        def vp(*args, env=None):
+            return subprocess.run(
+                [sys.executable, vp_script, vp_ledger, *args],
+                capture_output=True, text=True, env=env or vp_env,
+            )
+
+        for iid in ("VP-1", "VP-2"):
+            assert vp("add", "--id", iid, "--phase", "m1", "--title", f"fixture {iid}",
+                      "--files", f"{iid.lower()}.py", "--verify", "true").returncode == 0
+        assert vp("set-status", "VP-1", "done").returncode == 0
+        # (a) not ready while VP-2 is todo: phase-status exits 1 and verify-phase refuses by name
+        assert vp("phase-status", "m1").returncode == 1, "phase-status must exit 1 with an open row"
+        orch_env = dict(vp_env, **{VERIFY_PHASE_ENV: "1"})
+        refused = vp("verify-phase", "m1", "gate evidence", env=orch_env)
+        assert refused.returncode != 0 and "VP-2" in refused.stderr, refused.stderr
+        assert 'status = "done"' in Path(vp_ledger).read_text(encoding="utf-8"), "a refusal must flip nothing"
+        # (b) orchestrator-only: without the env the verb refuses even when the phase is closed
+        assert vp("set-status", "VP-2", "done").returncode == 0
+        gated = vp("verify-phase", "m1", "gate evidence")
+        assert gated.returncode != 0 and VERIFY_PHASE_ENV in gated.stderr, gated.stderr
+        # (c) evidence is mandatory
+        blank = vp("verify-phase", "m1", "   ", env=orch_env)
+        assert blank.returncode != 0 and "evidence" in blank.stderr, blank.stderr
+        # (d) the closed phase verifies whole: both rows verified, each with the dated note
+        assert vp("phase-status", "m1").returncode == 0
+        ok = vp("verify-phase", "m1", "bash checks/gate.sh -> GATE: PASS @deadbeef", env=orch_env)
+        assert ok.returncode == 0, ok.stderr
+        vp_text = Path(vp_ledger).read_text(encoding="utf-8")
+        assert vp_text.count('status = "verified"') == 2, vp_text
+        assert vp_text.count("VERIFY-PHASE m1") == 2, vp_text
+        assert 'status = "done"' not in vp_text
+        # (e) an unknown phase is a hard error, never an empty success
+        assert vp("phase-status", "nope").returncode != 0
+    finally:
+        shutil.rmtree(vp_dir, ignore_errors=True)
+
+    # RECEIPT / STAGE / FOCUS / REATTEST (2026-09-18): the builder's proof becomes a receipt with
+    # per-file blob hashes; the orchestrator stages exactly those files, refusing out-of-fence,
+    # omitted, and bytes-moved. The fixture is a REAL git repo with a BASE COMMIT so `stage` runs
+    # against modified TRACKED files (item 9), not untracked ones — an untracked-only fixture would
+    # pass while the real stage path (tracked modifications) was broken.
+    rs_dir = Path(tempfile.mkdtemp(prefix="manifest-receipt-"))
+    try:
+        rs_script = str(rs_dir / "manifest.py")
+        shutil.copy(__file__, rs_script)
+        repo = rs_dir
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "selftest@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "selftest"], check=True)
+        (repo / "dev" / "campaigns").mkdir(parents=True, exist_ok=True)
+        (repo / "src").mkdir(parents=True, exist_ok=True)
+        (repo / "tests").mkdir(parents=True, exist_ok=True)
+        for rel in ("src/a.py", "src/b.py", "src/c.py", "src/zz.py", "tests/x_test.py"):
+            (repo / rel).write_text(f"# {rel}\n", encoding="utf-8")
+        rs_ledger = str(repo / "dev" / "campaigns" / "selftest.toml")
+        Path(rs_ledger).write_text("# no laws here\n\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "base commit"], check=True)
+        rs_env = dict(os.environ, TORAD_FLEET_ROOT=str(rs_dir), TORAD_LEDGER_NOTIFY="off")
+        rs_env.pop(VERIFY_PHASE_ENV, None)
+
+        def rs(*args, env=None):
+            return subprocess.run(
+                [sys.executable, rs_script, rs_ledger, *args],
+                capture_output=True, text=True, env=env or rs_env,
+            )
+
+        def rs_orch(*args):
+            return rs(*args, env=dict(rs_env, **{VERIFY_PHASE_ENV: "1"}))
+
+        assert rs("add", "--id", "R1", "--phase", "p", "--title", "row one",
+                  "--files", "src/a.py,tests/x_test.py", "--verify", "true").returncode == 0
+        assert rs("add", "--id", "R2", "--phase", "p", "--title", "row two",
+                  "--files", "src/b.py,src/c.py", "--verify", "true").returncode == 0
+
+        # add de-duplicates ids under the lock (item 5 / grailseeker F6)
+        dup_add = rs("add", "--id", "R1", "--phase", "p", "--title", "dup", "--verify", "true")
+        assert dup_add.returncode != 0 and "already exists" in dup_add.stderr, dup_add.stderr
+
+        # newlines refused in every free-text argument (item 4 / grailseeker F5)
+        assert "single line" in rs("note", "R1", "line one\n[[items]]\nid = \"GHOST\"").stderr
+        assert "single line" in rs("add", "--id", "X1", "--phase", "p", "--title", "t\n[[items]]").stderr
+
+        # receipt records per-file blob hashes (item 1)
+        assert rs("receipt", "R1", "--files", "src/a.py", "tests/x_test.py").returncode == 0
+        r1_text = Path(rs_ledger).read_text(encoding="utf-8")
+        assert "RECEIPT files=src/a.py,tests/x_test.py blobs=" in r1_text, r1_text
+
+        # receipt refusals: absolute path, missing file, out-of-fence, glob.
+        # R3 EXISTS ONLY FOR THE MISSING-FILE CASE, and it needs its own fence: cmd_receipt checks
+        # the fence BEFORE it hashes blobs, so a path outside the fence can never reach "do not
+        # exist" — it is refused as out-of-fence first. The arm used to receipt src/nope.py against
+        # R2, whose fence is src/b.py,src/c.py, and so could only ever assert the refusal it was not
+        # testing. A fenced path that was never created on disk is the only shape that reaches it.
+        assert rs("add", "--id", "R3", "--phase", "p", "--title", "row three",
+                  "--files", "src/missing.py", "--verify", "true").returncode == 0
+        assert "repo-relative" in rs("receipt", "R2", "--files", "/etc/passwd").stderr
+        assert "do not exist" in rs("receipt", "R3", "--files", "src/missing.py").stderr
+        assert "outside the fence" in rs("receipt", "R2", "--files", "src/zz.py").stderr
+        assert "globs" in rs("receipt", "R2", "--files", "src/*.py").stderr
+
+        # stage: orchestrator-only (item 2)
+        assert VERIFY_PHASE_ENV in rs("stage", "R2").stderr
+        # stage refuses a fenced file changed but not on the receipt
+        (repo / "src" / "c.py").write_text("# edited, not receipted\n", encoding="utf-8")
+        assert rs("receipt", "R2", "--files", "src/b.py").returncode == 0
+        omitted = rs_orch("stage", "R2")
+        assert omitted.returncode != 0 and "not on the receipt" in omitted.stderr and "src/c.py" in omitted.stderr, omitted.stderr
+        # stage refuses bytes moved since the receipt
+        assert rs("receipt", "R2", "--files", "src/b.py", "src/c.py").returncode == 0
+        (repo / "src" / "c.py").write_text("# edited after receipt\n", encoding="utf-8")
+        moved = rs_orch("stage", "R2")
+        assert moved.returncode != 0 and "bytes moved" in moved.stderr and "src/c.py" in moved.stderr, moved.stderr
+        # reattest is orchestrator-only, re-binds, then stage succeeds
+        assert VERIFY_PHASE_ENV in rs("reattest", "R2").stderr
+        (repo / "src" / "b.py").write_text("# b edited\n", encoding="utf-8")
+        assert rs_orch("reattest", "R2").returncode == 0
+        staged = rs_orch("stage", "R2")
+        assert staged.returncode == 0 and "staged 2 files" in staged.stdout, staged.stdout
+        cached = subprocess.run(
+            ["git", "-C", str(repo), "diff", "--cached", "--name-only"],
+            capture_output=True, text=True,
+        ).stdout.strip().split("\n")
+        assert sorted(cached) == sorted(["src/b.py", "src/c.py"]), cached
+
+        # focus writes the active pointer (item 6)
+        assert rs("focus", "R2", "--seat", "seat-1").returncode == 0
+        focus_file = repo / ".claude" / "state" / "ledger-active-seat-1.json"
+        assert focus_file.is_file(), focus_file
+        focus_data = json.loads(focus_file.read_text(encoding="utf-8"))
+        assert focus_data["item_id"] == "R2", focus_data
+        assert focus_data["ledger_path"] == str(Path(rs_ledger).resolve()), focus_data
+
+        # fences-are-disjoint as a wall (item 7): claim refuses an intersecting fence by name
+        assert rs("add", "--id", "C1", "--phase", "q", "--title", "overlap one",
+                  "--files", "src/overlap.py", "--verify", "true").returncode == 0
+        assert rs("add", "--id", "C2", "--phase", "q", "--title", "overlap two",
+                  "--files", "src/overlap.py", "--verify", "true").returncode == 0
+        assert rs("claim", "C1", "--session", "seat-c1").returncode == 0
+        collision = rs("claim", "C2", "--session", "seat-c2")
+        assert collision.returncode != 0 and "intersects live row C1" in collision.stderr, collision.stderr
+    finally:
+        shutil.rmtree(rs_dir, ignore_errors=True)
+
     # D11: id namespaces are PER-LEDGER by design (each campaign numbers its own G-/D-/S-series),
     # and every access is ledger-path-scoped, so cross-ledger reuse is harmless — NOT an invariant
     # to enforce. selftest reports the standing count as health context only (never a per-id flood:
@@ -6875,7 +7356,7 @@ def _cmd_selftest_body(path):
         if duplicates else "; no cross-ledger id reuse"
     )
     print(
-        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
+        "selftest OK (add/set-status/note/verdict/verify-phase/receipt/stage/reattest/focus/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
         f"round-trip + valid TOML{dup_note})"
     )
 
@@ -7170,6 +7651,31 @@ def main(argv):
         cmd_stale_claims(path, minutes)
     elif cmd == "add-law":
         cmd_add_law(path, rest[0])
+    elif cmd == "phase-status":
+        if len(rest) != 1:
+            sys.exit("error: phase-status usage: <phase>")
+        sys.exit(0 if cmd_phase_status(path, rest[0]) else 1)
+    elif cmd == "verify-phase":
+        if len(rest) != 2:
+            sys.exit('error: verify-phase usage: <phase> "<exit-gate evidence>"  (LEDGER_ORCHESTRATOR=1)')
+        cmd_verify_phase(path, rest[0], rest[1])
+    elif cmd == "receipt":
+        if len(rest) < 2 or rest[1] != "--files":
+            sys.exit("usage: receipt <ID> --files f1 f2 ...")
+        cmd_receipt(path, rest[0], rest[2:])
+    elif cmd == "stage":
+        if len(rest) != 1:
+            sys.exit("error: stage requires <ID>  (LEDGER_ORCHESTRATOR=1)")
+        cmd_stage(path, rest[0])
+    elif cmd == "reattest":
+        if len(rest) != 1:
+            sys.exit("error: reattest requires <ID>  (LEDGER_ORCHESTRATOR=1)")
+        cmd_reattest(path, rest[0])
+    elif cmd == "focus":
+        if not rest:
+            sys.exit("error: focus requires <ID> [--seat S]")
+        seat = _parse_single_flag(rest[1:], "--seat") if len(rest) > 1 else None
+        cmd_focus(path, rest[0], seat=seat)
     elif cmd == "laws":
         cmd_laws(path, aggregate=not explicit_path)
     elif cmd == "packet":

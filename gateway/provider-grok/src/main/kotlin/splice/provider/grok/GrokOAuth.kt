@@ -86,7 +86,7 @@ public class GrokOAuth {
         )
 
     /** Form body for the refresh-token grant. */
-    public fun grokRefreshForm(refreshToken: String, clientId: String): String =
+    internal fun grokRefreshForm(refreshToken: String, clientId: String): String =
         FormEncoding.formEncode(
             "grant_type" to WIRE_REFRESH_TOKEN,
             "client_id" to clientId,
@@ -123,6 +123,59 @@ public class GrokOAuth {
         }
     }
 
+    /**
+     * xAI answers a BLOCKED account with 403 exactly as it answers an expired token — the same
+     * conflation GrokAuthProvider's header records for the 2026-07-18 grok-dead-head incident — so
+     * STATUS alone can never tell a billing state from an auth state. This recognises the
+     * entitlement codes and phrases xAI actually sends, case-insensitively, on the BODY only.
+     *
+     * RULE 3 (2026-09-16 operator report: the grok login page kept reopening). These phrases choose
+     * ONLY the sentence an operator reads. They never decide whether to refresh or to sign in: that
+     * decision is GrokAuthProvider.allowRefreshAfterFailure's freshness invariant, which needs no
+     * vendor strings at all and therefore still holds for the next unrecognised 403 code. Mirrors
+     * KimiOAuth.isPlanTierRejection.
+     */
+    public fun isEntitlementRejection(body: String): Boolean {
+        val lower = body.lowercase()
+        return ENTITLEMENT_PHRASES.any { lower.contains(it) }
+    }
+
+    /**
+     * The sentence an operator reads for a recognised entitlement body, or null when the body is
+     * not recognised — the caller's cue to fall back to an honest generic 403 line rather than
+     * guess a cause. A wrong guess then costs a vague message instead of a browser loop.
+     *
+     * The link is the VENDOR's own, taken from the body when it carries one: splice does not invent
+     * a top-up URL.
+     */
+    public fun entitlementSentence(body: String): String? {
+        if (!isEntitlementRejection(body)) return null
+        val topUp = VENDOR_LINK.find(body)?.value
+        val cause = "grok: this account has run out of credits or needs a Grok subscription " +
+            "(xAI personal-team-blocked / spending-limit). A refresh cannot change a billing state, " +
+            "so splice did not re-authenticate."
+        // SAFE-RENDER-EXEMPT[2026-09-16]: neither value is a throwable — cause is a fixed literal and
+        // topUp is a host-constrained, length-bounded vendor URL, so no exception text and no
+        // arbitrary body bytes can reach the operator through this sentence.
+        return if (topUp == null) cause else "$cause Top up: $topUp"
+    }
+
     private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
         el as? JsonObject ?: JsonObject(emptyMap())
 }
+
+// The entitlement spellings xAI sends today. Lower-case on purpose: the match lower-cases the body.
+private val ENTITLEMENT_PHRASES = listOf(
+    "personal-team-blocked",
+    "spending-limit",
+    "spending limit",
+    "run out of credits",
+    "need a grok subscription",
+)
+
+// The vendor's own top-up link, when the 403 body carries one.
+// The vendor's own top-up link, and ONLY the vendor's. This string is quoted back to the operator,
+// and the previous spelling was https://[^\s"'}]+ — ANY url anywhere in a 403 body, unbounded. A
+// redirect carrying a token in its query would have been echoed verbatim. The doc comment said "the
+// VENDOR's own"; nothing enforced it. Host-constrained and length-bounded now, so it does. (DR-65)
+private val VENDOR_LINK = Regex("""https://(?:[a-z0-9-]+\.)*(?:x\.ai|grok\.com)(?:/[^\s"'}]{0,120})?""")

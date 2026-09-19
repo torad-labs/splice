@@ -13,7 +13,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -87,14 +88,22 @@ private fun retryableFailure(
     bodyText: String = "partial",
     thinkingText: String = "",
     emittedText: Boolean = bodyText.isNotEmpty(),
+    // V4-76: the tool shape of the cut. hasToolUse with toolTearOpen FALSE means the tool block's
+    // content_block_stop already reached the client (PartialRound's own contract); toolTearOpen
+    // means the client holds half a tool call nothing can complete.
+    hasToolUse: Boolean = false,
+    toolTearOpen: Boolean = false,
 ) = TurnOutcome.Failure(
-    ErrorType.OVERLOADED,
     "mid-stream death",
+    cause = FailureCause.UPSTREAM_STALLED,
+    phase = FailurePhase.MID_OUTPUT,
     providerReported = true,
     partial = TurnOutcome.PartialRound(
         thinkingText = thinkingText,
         bodyText = bodyText,
         emittedText = emittedText,
+        hasToolUse = hasToolUse,
+        toolTearOpen = toolTearOpen,
         usage = Usage(outputTokens = outputTokens),
     ),
 )
@@ -238,6 +247,68 @@ class ReanchorRunnerTest {
         )
         assertEquals(0, asks, "the controller is never consulted for a gone client")
         assertEquals(1, h.count("error"), "the turn still finishes with the honest error")
+    }
+
+    // ── V4-76: a cut AFTER a completed tool call must end CLEAN, not as a finalize-only error ──
+    //
+    // The measured operator symptom: once any content block has reached the client, Claude Code
+    // 2.1.257 never retries — it finalizes the partial and prints "Connection lost mid-response".
+    // No continuation is possible for this shape (a prefill cannot resume past a tool call whose
+    // result the model has not seen), so the ending has to be ours: the tool block COMPLETED, the
+    // client can simply run it, and the model continues next turn from the tool result.
+    @Test
+    fun `a cut after a COMPLETED tool call ends clean at tool_use - V4-76`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add {
+            val i = h.emitter.openTool("toolu_1", "Bash")
+            h.emitter.inputJsonDelta(i, "{\"command\":\"ls\"}")
+            h.emitter.closeBlock(i) // the block CLOSED: content_block_stop already reached the client
+            retryableFailure(outputTokens = 9, hasToolUse = true)
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(continuationBody(), ReanchorController { null }) // NO continuation is available
+
+        val success = h.finished as TurnOutcome.Success
+        assertTrue(success.hasToolUse, "the salvaged turn carries the completed tool call")
+        assertTrue(!success.incomplete, "and it is NOT an incomplete turn")
+        assertEquals(9, success.usage.outputTokens, "the torn round's usage is still billed")
+        assertEquals(0, h.count("error"), "the client must never see an error frame for this shape")
+        assertEquals(1, h.count("message_stop"), "and it gets a real terminal")
+        assertTrue(
+            h.frames.any { it.startsWith("event: message_delta") && it.contains("tool_use") },
+            "the terminal names stop_reason tool_use, got: " +
+                h.frames.filter { it.startsWith("event: message_delta") },
+        )
+    }
+
+    @Test
+    fun `an OPEN tool tear keeps today's honest error - V4-76 control`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add {
+            val i = h.emitter.openTool("toolu_2", "Bash")
+            h.emitter.inputJsonDelta(i, "{\"command\":\"l") // HALF the args JSON: never closed
+            retryableFailure(outputTokens = 4, hasToolUse = true, toolTearOpen = true)
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(continuationBody(), ReanchorController { null })
+
+        assertTrue(
+            h.finished is TurnOutcome.Failure,
+            "a client holding HALF a tool call cannot be told the turn ended clean",
+        )
+        assertEquals(1, h.count("error"), "the open tear still surfaces as the honest error")
     }
 
     @Test
@@ -853,5 +924,59 @@ class RoundStrategyUsageObservationTest {
 
         assertTrue(observed.isEmpty(), "ordinary turns must retain their existing accounting path")
         assertTrue(h.finished is TurnOutcome.Success, "the direct path still finishes normally")
+    }
+}
+
+/** V4-41 follow-up: the routing change must not be observable on the HAPPY path.
+ *
+ *  RoundStrategy picks its branch on `reanchor == null && toolSearch == null`, so wiring a re-anchor
+ *  controller moves EVERY anthropic-passthrough turn — including the ones that succeed on round one —
+ *  off the single-round branch and onto ReanchorRunner. That is a live change for the OAuth heads,
+ *  kimi, muse and deepseek on the success path and not only the failure path, and reading the two
+ *  branches as equivalent is not the same as measuring it. This pins the observable output: the SSE
+ *  bytes the client actually receives, and the outcome finishTurn is handed. The controller counts
+ *  its own consultations so a routing that quietly starts consulting it cannot pass either. */
+class RoundRoutingEquivalenceTest {
+
+    @Test
+    fun `a first-round Success is byte-identical with and without a re-anchor controller`() = runTest {
+        var consulted = 0
+        val controller = ReanchorController { _ ->
+            consulted++
+            continuationBody()
+        }
+        val success = TurnOutcome.Success(
+            hasToolUse = false,
+            incomplete = false,
+            usage = Usage(outputTokens = 5),
+        )
+
+        val plain = Harness()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = plain.emitter,
+            signals = plain.signals(),
+            postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
+            postRound = { success },
+            finish = { plain.finish(it) },
+            toolSearch = null,
+        ).run(continuationBody(), fold = null, reanchor = null)
+
+        val wired = Harness()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = wired.emitter,
+            signals = wired.signals(),
+            postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
+            postRound = { success },
+            finish = { wired.finish(it) },
+            toolSearch = null,
+        ).run(continuationBody(), fold = null, reanchor = controller)
+
+        assertEquals(plain.frames, wired.frames, "the client must see identical SSE bytes on a first-round Success")
+        assertEquals(plain.finished, wired.finished, "finishTurn must be handed the same outcome")
+        assertEquals(0, consulted, "a first-round Success must never consult the controller at all")
     }
 }

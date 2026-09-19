@@ -71,7 +71,7 @@ public class TopologyKnobLayer(private val topology: Topology) {
         // sibling at resolve time (declared-only portCollisions never fires; the collision is
         // created here). Two-plus heads: the per-head TOML governs, nothing is seeded.
         val codex = topology.heads.entries.singleOrNull { (_, head) ->
-            topology.providers[head.provider]?.auth?.kind == "chatgpt-oauth"
+            topology.providers[head.provider]?.auth?.kind == AuthKind.ChatgptOAuth.wire
         }
         codex?.let { (_, head) ->
             val provider = topology.providers.getValue(head.provider)
@@ -82,7 +82,7 @@ public class TopologyKnobLayer(private val topology: Topology) {
         }
 
         val grok = topology.heads.entries.singleOrNull { (_, head) ->
-            topology.providers[head.provider]?.auth?.kind == "grok-oauth"
+            topology.providers[head.provider]?.auth?.kind == AuthKind.GrokOAuth.wire
         }
         grok?.let { (_, head) ->
             val provider = topology.providers.getValue(head.provider)
@@ -95,4 +95,4 @@ public class TopologyKnobLayer(private val topology: Topology) {
 }
 
 /** The auth kinds the pre-topology management API addressed by name — one head each, ever. */
-private val LEGACY_KINDS = listOf("chatgpt-oauth", "grok-oauth")
+private val LEGACY_KINDS = listOf(AuthKind.ChatgptOAuth.wire, AuthKind.GrokOAuth.wire)

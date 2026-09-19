@@ -1,0 +1,57 @@
+/* The file view: a stack of file strips, each with its reveal under it. Tokens
+   only (CONTRACTS.md section 1); no radius, no shadow. */
+
+.myx-fv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.myx-fv-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The contents are read, not measured: the figure face would set every line as
+   a value. They stay on the room, inside the reveal's own body, and scroll
+   rather than stretching the column. */
+.myx-fv-text {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--scope);
+  color: var(--scope-ink);
+  border: var(--hair) solid var(--scope-grid);
+  /* CODE: a file's contents are read, not measured. */
+  font-family: var(--font-code);
+  font-size: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A PATH IDENTIFIES BY ITS TAIL, SO THIS ONE COLUMN CLIPS AT THE OTHER END.
+   Found by opening the capture on M2-31, not by a gate: at 1536 with a project open, the path
+   column holds 82ch of absolute path in 31ch of paper, and clipping from the right removed the
+   only bytes that carry information. Both instruction files in one repo printed as
+   `/home/marcos/Documents/dev/projects/...` -- two different files, one string, and the console
+   lying to its reader. Every path in this tree shares that prefix; none of them share the tail.
+
+   The mechanism is the box and the text pulling in opposite directions. `direction: rtl` on the
+   clipping box moves the overflow -- and therefore the ellipsis -- to the START of the line;
+   `direction: ltr` on the text inside it keeps the path itself in reading order, so it renders
+   `...v/projects/mythos/repo/CLAUDE.md` rather than reversed. The primitive's own span is the
+   inner element, so this needs no markup: myx-sfield-text is already there (shared/ui).
+   `unicode-bidi: plaintext` does NOT work here and was measured doing nothing: it takes the
+   paragraph direction from the first strong character, which for a path is a Latin letter, so it
+   puts the box back to ltr and the ellipsis back on the tail.
+
+   FIRST-CHILD IS THE DECLARATION, not a coincidence: path is the first field this widget renders
+   (index.tsx), and it is the only one of the two whose value is a path. `head` keeps clipping at
+   its tail, which is correct for a name. */
+.myx-fv .myx-strip-fields > .myx-sfield:first-child .myx-sfield-value { direction: rtl; }
+.myx-fv .myx-strip-fields > .myx-sfield:first-child .myx-sfield-text {
+  direction: ltr;
+  unicode-bidi: embed;
+}

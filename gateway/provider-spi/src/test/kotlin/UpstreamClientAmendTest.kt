@@ -46,7 +46,7 @@ class UpstreamClientAmendTest {
     private suspend fun post(
         client: UpstreamClient,
         amend: (Int, String, String) -> String?,
-    ): String = client.post(
+    ): String = client.posted(
         PostContext(
             url = "https://api.example.test/v1",
             auth = fakeAuth,

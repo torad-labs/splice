@@ -15,6 +15,16 @@ public data class Usage(
     // output_tokens_details.reasoning_tokens (Responses). Drives reasoning-continuation fold
     // detection (the 518n-2 truncation fingerprint); NEVER part of the client usage payload.
     val reasoningTokens: Long = 0,
+    // V4-85: prompt-cache WRITE — cache_creation_input_tokens, or the sum of Anthropic's per-TTL
+    // `cache_creation` buckets. Like [cachedTokens] this is a DISJOINT part of [inputTokens], not an
+    // addition to it, and it exists because a cache write bills at its own premium rate: folded into
+    // inputTokens alone it was indistinguishable from a cache MISS and billed as one. Zero on every
+    // dialect whose wire reports no such bucket (ChatUsage) — those heads never write a cache.
+    //
+    // APPENDED LAST, deliberately: Usage is constructed positionally as Usage(19, 7, 5, 3) in the
+    // code-mode and custom-call pins, so inserting it beside cachedTokens where it semantically
+    // belongs would silently re-read those four literals as a different set of buckets.
+    val cacheWriteTokens: Long = 0,
 ) {
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
     public operator fun plus(other: Usage): Usage = Usage(
@@ -22,6 +32,7 @@ public data class Usage(
         outputTokens = outputTokens + other.outputTokens,
         cachedTokens = cachedTokens + other.cachedTokens,
         reasoningTokens = reasoningTokens + other.reasoningTokens,
+        cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
     )
 }
 
@@ -35,6 +46,26 @@ public enum class ErrorType(public val wireName: String) {
     API_ERROR("api_error"),
     OVERLOADED("overloaded_error"),
 }
+
+/**
+ * The connection-tear ending, named ONCE (V4-67).
+ *
+ * TWO SPELLINGS ARE IN PLAY and they are why this is here rather than written where it is used:
+ * [CONN_RESET_KIND] is the journal label (`turn ERROR conn-reset ...`) and [CONN_RESET_OUTCOME] is
+ * the perf-row tag (`outcome=error:conn-reset`) — the same tag under the `error:` prefix every
+ * locally-classified ending uses. The second is DERIVED from the first at compile time, so the
+ * pair cannot drift the way the two literals in TurnConnEnd just did. This tag is the only string
+ * in the live journal that names this failure class, and it is what the operator greps: the row
+ * that made a torn stream continuable is the row that would otherwise have hidden its successor,
+ * because a converted tear finishes through the pipeline instead of the conn-reset surface.
+ *
+ * In core beside [ErrorType] because BOTH sides now read it: splice.gateway.head (internal) and
+ * splice.gateway.pipeline (public) cannot see each other, and a copy in each is the drift.
+ */
+public const val CONN_RESET_KIND: String = "conn-reset"
+
+/** The perf-row outcome tag for [CONN_RESET_KIND] — derived, never re-spelled. */
+public const val CONN_RESET_OUTCOME: String = "error:$CONN_RESET_KIND"
 
 /** A hosted tool call the round addressed to the GATEWAY (Responses `execution:"client"`), never
  *  to Claude Code. Value-typed id so a call_id can never be confused with a tool_use id. */
@@ -105,8 +136,16 @@ public sealed class TurnOutcome {
     ) : TurnOutcome()
 
     public data class Failure(
-        val type: ErrorType,
         val message: String,
+        /** V4-117: WHY this turn failed. REQUIRED, with no default, so the compiler is the wall:
+         *  a site that forgets it does not compile, which is stronger than the ast-grep rule that
+         *  used to police this. The value is the truth about the turn, never what the client is
+         *  told — see [phase] and the derived [type]. */
+        val cause: FailureCause,
+        /** V4-117: HOW FAR the turn had got, as the site knows it. The boundary — which alone
+         *  knows whether a client frame actually went out — corrects this with copy(phase = ...),
+         *  and [type] follows, so nobody authors the wire type. */
+        val phase: FailurePhase,
         /** True when a genuine upstream-reported error produced this failure (an error event/body
          *  the provider actually sent); false for locally-synthesized verdicts (watchdog stall,
          *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
@@ -127,7 +166,45 @@ public sealed class TurnOutcome {
          *  up when it arrives before content, and after content replaces the message with a fixed
          *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07). */
         val deterministic: Boolean = false,
-    ) : TurnOutcome()
+        /** V4-81: NO retry can change this verdict — an identical re-send reproduces it exactly.
+         *
+         *  Distinct from [deterministic], which is about the ENDING'S SHAPE (words the client
+         *  renders vs an error event); this is about whether the failure is RE-ATTEMPTABLE, and it
+         *  is what the pre-content wire-type rule reads. Advertising such a failure as transient is
+         *  the expensive lie: RetryPolicy arms a cooldown only for RATE_LIMITED, so with
+         *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure makes the client re-send the
+         *  identical bytes up to 300 times, six upstream attempts each, for a verdict that cannot
+         *  move. Set from the classifier's `transient = false` (UpstreamFailureClassifier), from a
+         *  deterministic refusal (ResponsesTerminalDecision), and from the local base_url parse —
+         *  the operator law "always a retry armed" is about failures a retry can HEAL.
+         *
+         *  Defaulted false: every construction that does not know stays exactly as it was, and the
+         *  rule treats "unknown" as retryable, which is today's behavior. */
+        val permanent: Boolean = false,
+        /** V4-67: a connection tear the GATEWAY synthesized into an outcome (SseRoundDriver
+         *  .tearOutcome) rather than letting it escape to the conn-reset surface. Carried so the
+         *  ending keeps the [CONN_RESET_OUTCOME] tag whatever path it finishes through: a
+         *  converted tear that no controller continues is finished by the pipeline, and without
+         *  this it recorded `failure:overloaded_error` — leaving the one string that names this
+         *  failure class absent from the perf row it is grepped in. Defaulted false, so every
+         *  other construction of this type is byte-unchanged. */
+        val connReset: Boolean = false,
+        /** V4-117: how many upstream attempts the retry loop made before this failure, stamped by
+         *  the LOOP (UpstreamFailed.layers) and carried here so the perf row can record it as
+         *  layers=<n>. Zero is the honest default: a failure that never reached the loop — a
+         *  watchdog, a refusal, a locally-decided verdict — genuinely had no attempts to report, and
+         *  a caller that has no count must not be forced to invent one. */
+        val layers: Int = 0,
+    ) : TurnOutcome() {
+
+        /** V4-117: DERIVED, never passed. The retry class the client keys on is a function of what
+         *  went wrong and how far the turn had got, so the site states the cause and the phase and
+         *  this follows — which is what makes it impossible for a failure and the wire to disagree.
+         *  It used to be a constructor argument, hand-picked at twenty-seven sites, and the emitter
+         *  relabelled it again for the pre-content case; now there is one author and the pre-content
+         *  rule is a property of [WireType] that the phase alone selects. */
+        val type: ErrorType get() = WireType.of(cause, phase)
+    }
 
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:
      *  the wire is already at a clean block boundary (translators closeAll before the terminal

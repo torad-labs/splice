@@ -67,10 +67,7 @@ class ExampleConfigTest {
     @Test
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(
-            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-splice"),
-            topology.heads.keys,
-        )
+        assertEquals(DOCUMENTED_HEADS, topology.heads.keys)
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
@@ -529,7 +526,7 @@ class ExampleConfigTest {
         // usageScale is a ModelCatalog METHOD, not a knob: the example's k3[1m] note has to name it
         // to explain why that row must declare exactly 1000000 (Claude Code hardcodes 1e6 for a
         // "[1m]" id, so any other declared value becomes a scale factor on a pinned row).
-        val prose = setOf("xAI", "usageScale")
+        val prose = setOf("xAI", "usageScale", "vLLM")
         prose.forEach {
             assertTrue(
                 !knobsByKey.containsKey(it),
@@ -546,3 +543,16 @@ class ExampleConfigTest {
         }
     }
 }
+
+// FILE SCOPE: the documented head roster, hoisted out of the assertion so adding a head does not
+// grow a class already at detekt's LargeClass bound.
+private val DOCUMENTED_HEADS = setOf(
+    "claudex",
+    "claude-grok",
+    "openrouter",
+    "fireworks",
+    "claude-kimi",
+    "claude-muse",
+    "claude-deepseek",
+    "claude-splice",
+)

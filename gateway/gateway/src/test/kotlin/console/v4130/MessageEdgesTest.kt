@@ -88,6 +88,9 @@ class MessageEdgesTest {
         assertFalse(label.looksLikeSideQuery(last("what was your most recent action?")), "one phrase is not enough")
         assertFalse(label.looksLikeSideQuery(last("fix the bug")))
         val exact = last("Describe your most recent action in 3-5 words using present tense (-ing).")
-        assertTrue(label.labelFor(exact) != null, "the exact opening is answered, so it never reaches the near-miss test")
+        assertTrue(
+            label.labelFor(exact) != null,
+            "the exact opening is answered, so it never reaches the near-miss test",
+        )
     }
 }

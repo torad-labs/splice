@@ -41,6 +41,7 @@ class SessionProjectTreesTest {
         Files.createSymbolicLink(kimi.resolve("projects"), vanilla)
         val cwd = home.resolve("work/other").toAbsolutePath()
         transcript(vanilla, "plain-1", cwd)
-        assertEquals(cwd, SessionProject(sessions, vanilla, headProjectsDirs = listOf(kimi.resolve("projects"))).projectFor("plain-1"))
+        val project = SessionProject(sessions, vanilla, headProjectsDirs = listOf(kimi.resolve("projects")))
+        assertEquals(cwd, project.projectFor("plain-1"))
     }
 }

@@ -48,15 +48,16 @@
  *                                         can never be mistaken in CI for a passing polarity run
  *        npm run gate:campaign:selftest   this gate's own red/green fixtures
  *
- *  LEDGER SOURCE  the ledger CLI's `<board> list` (concept #945: the CLI is the only sanctioned
- *        channel), cross-checked against the raw TOML item count so a silent parse drift cannot fake
- *        a pass.
+ *  LEDGER SOURCE  the board TOML itself, read once. The CLI is the sanctioned channel for WRITES,
+ *        which is what its flock and atomic append buy; a read routed through a human-facing table
+ *        only adds a column order nobody versioned. See ledgerItems.
  *
  *  V4-154: converted to TypeScript (bun) LAST, after the 35 walls it drives. A faithful port: the
  *  findings, their wording, the report, the exit codes and the selftest's cases are the Python
- *  file's. It still reads the ledger through dev/campaigns/manifest.py exactly as before — pointing
- *  it at the TypeScript ledger CLI is V4-143's cutover, not this row's, because a wall aimed at a tool
- *  that is not wired yet is a wall that passes by not running. TWO DELIBERATE DEVIATIONS, both about
+ *  file's. Its ledger read went straight to the TOML in V4-143's cutover (2026-09-18) rather than to
+ *  the TypeScript CLI: that CLI prints the columns in a different ORDER, which the count cross-check
+ *  could not have caught, so the cutover deleted the parse instead of re-aiming it. TWO DELIBERATE
+ *  DEVIATIONS, both about
  *  the one thing this repo no longer allows, an interpreter spawned for its own sake:
  *    1. runWall's fallback for a suffix other than .sh/.ts used to run the wall under the Python
  *       interpreter. No wall of that kind exists (the 35 are .ts) and checks/no-python.ts forbids a
@@ -76,10 +77,6 @@ const CAMPAIGN = resolve(ROOT, "dev/campaigns/proxy-hardening");
 const REGISTRY = resolve(CAMPAIGN, "walls/wall_registry.toml");
 const LAW_REGISTRY = resolve(CAMPAIGN, "walls/law_registry.toml");
 const BOARD = resolve(ROOT, "dev/campaigns/proxy-hardening.toml");
-const MANIFEST = resolve(ROOT, "dev/campaigns/manifest.py");
-// The ledger CLI's interpreter. Named once, on its own line, and only ever used to run MANIFEST:
-// checks/no-python.ts excuses this file's calls to that one tool while it is still debt (V4-143).
-const LEDGER_RUNTIME = "python3";
 
 const RED_STATUSES = new Set(["todo", "in_flight"]);
 const GREEN_STATUSES = new Set(["done", "verified"]);
@@ -134,35 +131,28 @@ function parseToml(path: string): Record<string, unknown> {
 
 // ── inputs ───────────────────────────────────────────────────────────────────
 
-/** id -> [phase, status] via the ledger CLI, cross-checked against the raw TOML count. */
+/** id -> [phase, status], read straight from the ledger TOML.
+ *
+ *  IT USED TO SHELL OUT TO THE LEDGER CLI AND PARSE ITS COLUMNS, and that was two bugs waiting
+ *  (V4-143, 2026-09-18). The CLI's listing is a HUMAN-FACING table: the bun CLI that replaced the
+ *  Python one prints a leading bullet and orders the columns `id status phase`, where the old one
+ *  printed `id phase status`. The bullet would have zeroed this parse and tripped the count
+ *  cross-check below — but the SWAP would not have. Eighty-eight rows would have parsed, the count
+ *  would have matched, and every row's phase would have been read as its status: a confident wrong
+ *  verdict on every wall, from a check that looked like it ran.
+ *
+ *  So this reads the ledger it was already reading for the cross-check. The CLI is the sanctioned
+ *  channel for WRITES — that is what its flock and its atomic append buy. For a read, routing
+ *  through a formatted table only adds a column order nobody versioned. The cross-check is gone
+ *  with the parse it was checking: there is no longer a second reading to disagree with the first. */
 export function ledgerItems(board: string = BOARD): Items {
-  const proc = spawnSync(LEDGER_RUNTIME, [MANIFEST, relative(ROOT, board), "list"], {
-    cwd: ROOT, encoding: "utf8", timeout: 120_000, killSignal: "SIGKILL", maxBuffer: 1 << 30,
-  });
-  if (proc.error && (proc.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
-    die(`campaign_wall_gate: manifest list timed out after 120s`);
-  }
-  if (proc.status !== 0) {
-    die(`campaign_wall_gate: manifest list failed: ${head((proc.stderr ?? "").trim(), 400)}`);
-  }
-  const out: Items = new Map();
-  for (const line of lines(proc.stdout ?? "")) {
-    const parts = words(line);
-    if (parts.length >= 3 && parts[0].includes("-") && isAlpha(head(parts[0], 2))) {
-      out.set(parts[0], [parts[1], parts[2]]);
-    }
-  }
-  // Review finding #10: the CLI listing is whitespace-columnar and could drift. Refuse to run on
-  // a parse that disagrees with the ledger itself rather than emit confident, wrong verdicts.
   const all = parseToml(board).items;
-  const truth = Array.isArray(all) ? all.length : 0;
-  if (out.size !== truth) {
-    die(
-      `campaign_wall_gate: parsed ${out.size} items from \`manifest list\` but the ledger has ` +
-        `${truth}. The listing format drifted — fix the parser, do not trust this run.`,
-    );
+  if (!Array.isArray(all)) die(`campaign_wall_gate: ${relative(ROOT, board)} has no [[items]]`);
+  const out: Items = new Map();
+  for (const row of all as Row[]) {
+    const id = String(row.id ?? "");
+    if (id !== "") out.set(id, [String(row.phase ?? ""), String(row.status ?? "")]);
   }
-  if (out.size === 0) die("campaign_wall_gate: no items — refusing to pass vacuously");
   return out;
 }
 

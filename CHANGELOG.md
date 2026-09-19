@@ -204,7 +204,7 @@
   crash fails pending calls honestly and the next call restarts the server, never replaying tool
   operations. `[daemon] mcp_hosting = false` turns it off, `mcp_hosting_exclude` keeps named
   servers per session; `/api/mcp` shows eligibility and ownership. Measured on the reference
-  machine's own MCP set with four parallel sessions (`checks/mcp-host/bench.py`). A client that
+  machine's own MCP set with four parallel sessions (`checks/mcp-host/bench.ts`). A client that
   falls a full buffer (256) of notifications behind on its stream loses the stale backlog, never the
   fact that its lists may have changed: the backlog collapses to the three `list_changed`
   notifications plus the newest one, so the client re-lists once it catches up. A hosted child

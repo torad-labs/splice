@@ -51,12 +51,16 @@ public class McpHost(
     sharing: McpSharing,
     global: GlobalMcpServers,
     private val config: McpHostConfig = McpHostConfig(),
-    launcher: McpProcessLauncher = StdioProcessLauncher(),
+    launcher: McpProcessLauncher? = null,
     private val log: LogSink,
 ) {
     private val codec = JsonRpcCodec()
+
+    // V4-147: the default launcher is built HERE because containment reports in words, and the log
+    // sink is a constructor argument — a default argument could not have named it.
+    private val spawner = launcher ?: StdioProcessLauncher(containment = McpContainment(log))
     private val sessions = McpSessions(config.clock)
-    private val servers = HostedServers(sharing, global, config, launcher, codec, log, sessions)
+    private val servers = HostedServers(sharing, global, config, spawner, codec, log, sessions)
     private val minting = SessionMinting(servers, sessions, log)
     private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions)
 

@@ -18,14 +18,24 @@ public fun interface McpProcessLauncher {
  *  A hosted child has no client whose cwd it could inherit, and the daemon's own cwd is whatever
  *  started it, so the child runs in [workingDir] (the home directory): a stated place, not an
  *  accident of the launch. A server that reads its cwd without naming it belongs in
- *  mcp_hosting_exclude (review 2026-09-14). */
+ *  mcp_hosting_exclude (review 2026-09-14).
+ *
+ *  V4-147: [containment] decides the two things a spawn owes the box — the cgroup the child runs in
+ *  (a slice hostshield caps) and its oom_score_adj (off splice's inherited -1000). Null keeps the
+ *  plain spawn, which is what a test wants and what a box without the hostshield layer gets anyway. */
 public class StdioProcessLauncher(
     private val workingDir: Path = Paths.get(System.getProperty("user.home")),
+    private val containment: McpContainment? = null,
 ) : McpProcessLauncher {
     override fun invoke(spec: McpServerSpec): Process {
-        val builder = ProcessBuilder(listOf(spec.command) + spec.args).directory(workingDir.toFile())
+        val command = listOf(spec.command) + spec.args
+        val builder = ProcessBuilder(containment?.placed(command) ?: command).directory(workingDir.toFile())
         builder.environment().putAll(spec.env)
-        return builder.start()
+        val child = builder.start()
+        // AFTER start and never before: the adj is written to the CHILD's pid, which is the one thing
+        // splice knows here and no process-tree match could tell it safely.
+        containment?.protect(spec.name, child)
+        return child
     }
 }
 

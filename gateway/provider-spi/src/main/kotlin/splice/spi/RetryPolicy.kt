@@ -18,6 +18,7 @@ package splice.spi
 
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerfTiming
+import splice.core.turn.FailureCause
 import splice.core.util.ERR_SNIPPET
 import splice.core.wire.HttpStatus
 
@@ -94,6 +95,36 @@ internal class RetryRules(private val maxRetries: Int) {
         )
     }
 
+    /**
+     * Why re-sending [failed] cannot change its answer, or null when it can. These are the V4-62
+     * CARVE-OUTS — and they are the DEFINITION of that law, not exceptions to it: the operational
+     * law is that no turn ends while a retry COULD succeed, and for these the outcome is fixed before
+     * the request leaves. Sending it again is not a retry, it is a delay.
+     *
+     *  - A credential refreshed and REJECTED AGAIN. [nextRefreshed] true means a refresh RAN for this
+     *    turn (now or earlier), so every later attempt would carry the identical token. The
+     *    escalation ladder for an auth failure is not the same bytes again; it is refresh (G1) → and
+     *    when the refresh is itself rejected, EVICT and rotate (pooled — AccountTurnSelectionTest
+     *    pins [primary, backup]) or surface (single).
+     *  - A CONTEXT OVERFLOW (V4-164): the identical bytes are the identical token count against the
+     *    identical window. Its escalation is the CLIENT's — Claude Code compacts on the "prompt is
+     *    too long" line — and every re-send only delays that. Measured live on the bonsai head at
+     *    upstreamRetries=10: ten 1.4 MB re-sends, each re-tokenized by llama-server, 43 s before the
+     *    client could compact.
+     *
+     * Same principle as Failure.deterministic, one layer down: that carve-out covers verdicts splice
+     * computed with no upstream involved; these, verdicts whose answer cannot change. All of them are
+     * what a retry IS, never holes in V4-62.
+     */
+    private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
+        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
+            "rejected the credential again after a refresh (no retry: the bytes would be identical)"
+        UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
+            FailureCause.REQUEST_TOO_LARGE ->
+            "is a context overflow (no retry: the same bytes overflow again)"
+        else -> null
+    }
+
     /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
     private fun statusPlan(
         ctx: PostContext,
@@ -102,25 +133,8 @@ internal class RetryRules(private val maxRetries: Int) {
         nextRefreshed: Boolean,
         rateLimit: RateLimitTurn,
     ): RetryPlan {
-        // V4-62 CARVE-OUT — and it is the DEFINITION of that law, not an exception to it.
-        //
-        // [nextRefreshed] true means a refresh RAN for this turn (either it happened now or it was
-        // already done), so an auth-refreshable failure reaching here is one where the credential
-        // was refreshed and REJECTED AGAIN. Every later attempt would carry the identical token:
-        // nothing varies between them, so the outcome is fixed before the request leaves. Sending it
-        // again is not a retry, it is a delay — and the operational law is that no turn ends while a
-        // retry COULD succeed. This one cannot. The escalation ladder for an auth failure is not the
-        // same bytes again; it is refresh (G1) → and when the refresh is itself rejected, EVICT and
-        // rotate (pooled — AccountTurnSelectionTest pins [primary, backup]) or surface (single).
-        //
-        // Same principle as Failure.deterministic, one layer down: that carve-out covers verdicts
-        // splice computed with no upstream involved; this one a verdict whose answer cannot change.
-        // Both are what a retry IS, never holes in V4-62.
-        if (nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text)) {
-            ctx.onRetry(
-                "upstream ${failed.status} rejected the credential again after a refresh " +
-                    "(no retry: the bytes would be identical)",
-            )
+        fixedVerdict(failed, nextRefreshed)?.let { why ->
+            ctx.onRetry("upstream ${failed.status} $why")
             return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
         if (failed.status == HttpStatus.TOO_MANY_REQUESTS) {

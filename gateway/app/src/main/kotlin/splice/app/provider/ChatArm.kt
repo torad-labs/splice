@@ -17,7 +17,6 @@ import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.spi.Provider
 import splice.spi.ProviderTuning
-import splice.spi.local.LlamaServerSlots
 import java.nio.file.Paths
 
 internal class ChatArm(
@@ -28,6 +27,7 @@ internal class ChatArm(
     private val overlay = QuirksOverlay()
     private val probeInputs = LocalProbeInputs()
     private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
+    private val slotTables = SlotTables(RuntimeSlotCount.Background(probeScope, log))
 
     // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered
     // api-key/custom kinds use generic Bearer auth. Grok rides this dialect because
@@ -76,13 +76,12 @@ internal class ChatArm(
     }
 
     /** V4-165: opted in by [providers.<key>.quirks] slot_affinity = true. The slot count comes from the
-     *  runtime, read on the first turn that needs it and again after any read that failed, so a head
-     *  that boots before its server simply sends its first turns unpinned. */
+     *  runtime, read in the background (RuntimeSlotCount), so a head that boots before its server
+     *  sends its first turns unpinned. V4-166: one table per runtime, shared by its heads (SlotTables). */
     private fun slotAffinity(ctx: ProviderBuild, bearer: String?): SlotAffinity? {
         if (ctx.providerCfg.quirks.slotAffinity != true) return null
         val http = JdkLocalHttp(probeInputs.headers(ctx.providerCfg, bearer))
-        val slots = LlamaServerSlots(ctx.providerCfg.baseUrl, http)
-        return SlotAffinity(slots::read)
+        return slotTables.forRuntime(ctx.key, ctx.providerCfg.baseUrl, bearer, http)
     }
 
     /** v0.4.0 (FEATURES.md §10): a local runtime that is UP and contradicts the row refuses the

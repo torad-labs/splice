@@ -31,8 +31,11 @@ internal data class ChatRequest(
     @SerialName("stream_options") val streamOptions: JsonObject? = null,
     /** V4-165: llama-server's slot override — the conversation's own slot (see SlotAffinity). Null
      *  = omitted, which is every request of every head without slot_affinity. */
-    @SerialName("id_slot") val idSlot: Int? = null,
+    @SerialName(ID_SLOT_FIELD) val idSlot: Int? = null,
 )
+
+/** V4-166: [ChatRequest.idSlot]'s wire name — a routing field, left out of a request's identity. */
+public const val ID_SLOT_FIELD: String = "id_slot"
 
 // explicitNulls=false: null optionals (tools, reasoning_effort, reasoning) are omitted, exactly like
 // the builder's conditional puts.

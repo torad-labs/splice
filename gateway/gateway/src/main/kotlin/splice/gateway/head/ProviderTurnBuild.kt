@@ -5,6 +5,7 @@
 // slot lease), and a build that throws between the provider and the drive must give it back.
 package splice.gateway.head
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.compaction.EffectiveCompactionInstructions
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.TurnPerf
@@ -50,7 +51,8 @@ internal class ProviderTurnBuild(
         // A dialect that cannot place the tail (no user text to extend) returns the request as it
         // was: the meta then says so instead of claiming instructions the wire never carried.
         val applied = effective?.tailText == null || tailed.requestBody != base.requestBody
-        val hash = if (compact) replay.bodyHash(base.requestBody.toString()) else null
+        // V4-166: without the routing fields (id_slot), so a retry routed to another slot still matches.
+        val hash = if (compact) replay.bodyHash(JsonObject(base.requestBody - base.routingFields).toString()) else null
         val withTail = effective?.let { eff ->
             tailed.copy(
                 meta = tailed.meta.copy(

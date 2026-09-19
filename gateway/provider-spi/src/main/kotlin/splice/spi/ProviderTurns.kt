@@ -24,9 +24,15 @@ public data class BuiltTurn(
      *  release when the turn is driven (a detached compaction drive included), at once when the turn
      *  is answered from a replay or dies before it is driven. Null = nothing held. */
     val onEnd: TurnEnd? = null,
+    /** V4-166: top-level body fields that ROUTE this turn rather than state it — llama-server's
+     *  id_slot. A request's identity (the compaction replay key) leaves them out, because a retry of
+     *  the same request may be routed elsewhere. Empty = every field is the request. */
+    val routingFields: Set<String> = emptySet(),
 )
 
-/** The end of one built turn, heard by the provider that built it (see [BuiltTurn.onEnd]). */
+/** The end of one built turn, heard by the provider that built it (see [BuiltTurn.onEnd]). [ended]
+ *  must not throw: it runs in the finally that releases the admission slot, where a throw would
+ *  replace the turn's own failure and strand the ends queued behind it. */
 public fun interface TurnEnd {
     public fun ended()
 }

@@ -68,7 +68,15 @@ internal class QuirksOverlay {
         } else {
             ChatQuirks(providerTag = key, xhighModels = GrokQuirks().xhighModels())
         }
-        return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
+        // V4-163: a LOCAL runtime asks for usage frames by default. Usage is opt-in on this dialect
+        // (stream_options.include_usage), and a head that never asks reports zero tokens per turn,
+        // so Claude Code never reaches its auto-compact threshold and the session hits the context
+        // wall. llama.cpp, Ollama, vLLM and LM Studio all answer the field; a hosted vendor of
+        // unknown tolerance still gets nothing, because strict ones 400 on unrecognized
+        // stream_options members. TOML wins over both, and null keeps the base — which is what
+        // leaves grok-oauth's own `true` and every other head's request bytes untouched.
+        val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal }
+        return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
     }
 
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.

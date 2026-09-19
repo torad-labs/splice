@@ -54,7 +54,7 @@ internal const val KEY_REQUIRED =
     "PUT /api/teams needs an Idempotency-Key header, so a retried create cannot make a second team"
 
 /** The daemon's team store, read per request because ControlPlane assigns it after construction. */
-public fun interface TeamSource {
+internal fun interface TeamSource {
     public operator fun invoke(): TeamStore?
 }
 
@@ -67,7 +67,7 @@ private data class InstructionsBody(val instructions: String? = null)
 @Serializable
 private data class TeamsBody(val teams: List<Team>)
 
-public class TeamsRoutes(
+internal class TeamsRoutes(
     private val teams: TeamSource,
     private val heads: Map<String, ManagedHead>,
     registry: SessionRegistry?,

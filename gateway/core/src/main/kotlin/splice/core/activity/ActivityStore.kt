@@ -26,7 +26,7 @@ import splice.core.util.WallClock
 import java.nio.file.Path
 
 /** The day-file prefix activity rows are written under. */
-public const val ACTIVITY_PREFIX: String = "activity"
+internal const val ACTIVITY_PREFIX: String = "activity"
 
 /** The activityStoreHeads value that stores every head. */
 public const val ALL_HEADS: String = "*"

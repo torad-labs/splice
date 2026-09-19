@@ -22,10 +22,13 @@ internal const val TEAM_ID = "team_id"
 internal const val PACKET_NOTE = "no wire source: a SendMessage call carries no dispatch unit"
 internal const val ACTIVITY_SAMPLE_NOTE = "labels are samples: one per activity side query the client sends, " +
     "about every 30 seconds while a session works; a gap is a session that sent none"
+
+// why: milliseconds in a day. The reads are day-scoped because the activity store writes one
+// file per day; this converts a day index to the epoch-millis window that file covers.
 private const val DAY_MS = 86_400_000L
 
 /** A sender's SendMessage texts by tool_use id (TranscriptReader.sentTexts), a seam for tests. */
-public fun interface SentTextSource {
+internal fun interface SentTextSource {
     public fun read(session: String, head: String?, ids: Set<String>): SentTexts
 }
 
@@ -40,7 +43,7 @@ internal fun interface DayPanel {
  *  missing_reason naming the path read, never an empty string. `packet` has no wire source, so every
  *  message carries null and the payload says why (6.1: the honest empty, never an invented value).
  *  Days are UTC calendar dates, today when the query omits one. Unwired stores answer 503. */
-public class TeamReads internal constructor(
+internal class TeamReads internal constructor(
     private val teams: TeamSource,
     private val registry: SessionRegistry?,
     private val activity: ActivitySource,

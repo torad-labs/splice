@@ -46,6 +46,8 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.HexFormat
 
+// why: 12 hex characters of the file's SHA-256, carried as the write's precondition token. Long
+// enough that two concurrent edits cannot collide by accident, short enough to pass in a header.
 private const val HASH_PREFIX = 12
 private const val FILE_PATH = "splice.toml"
 private const val UNEXPRESSIBLE = "the writer cannot express this edit; nothing was written"

@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicReference
 /** The state-dir subdirectory every activity store writes under. */
 public const val ACTIVITY_DIRECTORY: String = "activity"
 
+// why: 512 MiB, chosen against JsonlSink's rotate rather than against disk — the file header
+// above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
 private const val DAY_MAX_BYTES = 512L shl 20
 
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */

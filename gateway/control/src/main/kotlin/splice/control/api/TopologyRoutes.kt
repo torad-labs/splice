@@ -44,11 +44,11 @@ private const val HEADERS = "extra_headers"
 private const val TOPOLOGY = "topology"
 
 /** The daemon's topology writer, read per request: ControlPlane assigns it after construction. */
-public fun interface TopologySource {
+internal fun interface TopologySource {
     public operator fun invoke(): TopologyWriter?
 }
 
-public class TopologyRoutes(private val source: TopologySource, private val stale: TopologyStale) {
+internal class TopologyRoutes(private val source: TopologySource, private val stale: TopologyStale) {
     private val json = Json { encodeDefaults = false }
 
     public fun read(): JsonReply {

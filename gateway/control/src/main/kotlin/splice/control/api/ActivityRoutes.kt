@@ -30,11 +30,11 @@ internal const val EDGES_UNWIRED = "the activity stores are not wired into this 
 
 /** The daemon's activity stores, read per request because ControlPlane assigns them after the
  *  control server is constructed. Null = unwired. */
-public fun interface ActivitySource {
+internal fun interface ActivitySource {
     public operator fun invoke(): ActivityStores?
 }
 
-public class ActivityRoutes(private val registry: SessionRegistry, private val source: ActivitySource) {
+internal class ActivityRoutes(private val registry: SessionRegistry, private val source: ActivitySource) {
     /** GET /api/sessions/{id}/edges: `{session_id, edges}` in the SessionEdgesPayload shape. */
     public fun edges(sessionId: String): JsonReply {
         val index = index() ?: return unwired()

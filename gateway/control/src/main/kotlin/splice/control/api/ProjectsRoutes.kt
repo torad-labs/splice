@@ -51,14 +51,17 @@ import java.time.ZoneOffset
 /** The repo files read as a project's own instructions, in the order they are listed. */
 private val INSTRUCTION_FILES = listOf("CLAUDE.md", "AGENTS.md")
 private const val MEMORY_SUFFIX = ".md"
+
+// why: perf rows are keyed by the first 8 characters of a session id, so a lookup by full id
+// never matches. Truncate here to the same width the perf store tagged with.
 private const val PERF_TAG = 8
 
 /** A session's repo, as the sessions rows resolve it. */
-public fun interface RepoOf {
+internal fun interface RepoOf {
     public operator fun invoke(record: SessionRecord): RepoRoot?
 }
 
-public class ProjectsRoutes(
+internal class ProjectsRoutes(
     private val registry: SessionRegistry?,
     private val heads: Map<String, ManagedHead>,
     private val repoOf: RepoOf,

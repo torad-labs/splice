@@ -9,6 +9,7 @@ package splice.gateway.head
 
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
+import splice.core.prompt.SlotInstructions
 import splice.core.prompt.SystemPromptLayers
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -105,6 +106,10 @@ public data class HeadDeps(
          *  default reports to nobody, like every seam in this bundle; HeadServerFactory gives every
          *  production head a real one, and HeadEventsTest fails if a served turn stops reaching it. */
         val events: HeadEvents = NoHeadEvents,
+        /** V4-131: the per-session team-slot text appended after the head's layers (SlotInstructions).
+         *  Null (tests, tools) appends nothing; HeadServerFactory gives every production head the
+         *  daemon's one resolver, pinned by that row's tests. */
+        val slotInstructions: SlotInstructions? = null,
     )
 
     /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather

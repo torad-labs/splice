@@ -121,6 +121,7 @@ internal class HeadServerFactory(
         clientVersions = clientVersions,
         sessionProject = SessionProjectLookup { sessionProject.projectFor(it) },
         events = console?.forHead(key) ?: NoHeadEvents,
+        slotInstructions = console?.slots,
     )
 
     /** V4-110: the process-shared materialization permit count, read from the GLOBAL knob layer (no

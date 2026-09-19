@@ -47,6 +47,12 @@ import splice.core.activity.MessageEdge
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
+import splice.core.prompt.SessionAddress
+import splice.core.prompt.SlotInstructions
+import splice.core.sessions.HeadOfPid
+import splice.core.sessions.SessionRegistry
+import splice.core.teams.TEAMS_FILE
+import splice.core.teams.TeamStore
 import splice.core.util.WallClock
 import splice.gateway.head.HeadEvents
 import splice.gateway.head.HeadLifecycle
@@ -81,6 +87,17 @@ internal object ConsoleWiring {
         val heads = knobs[Knob.ACTIVITY_STORE_HEADS.key] as? String ?: ALL_HEADS
         return ActivityStores(statePaths.stateDir.resolve(ACTIVITY_DIRECTORY), days.coerceAtLeast(1L).toInt(), heads)
     }
+
+    /** V4-131: the daemon's ONE team store, `teams.json` under the state dir. */
+    internal fun teamStore(statePaths: StatePaths): TeamStore = TeamStore(statePaths.stateDir.resolve(TEAMS_FILE))
+
+    /** V4-131: a session id to its SendMessage address, from the same registry /api/sessions reads (the
+     *  home the state dir lives under, as ControlPlane.start derives it), for the slot text's lead line. */
+    internal fun sessionAddress(statePaths: StatePaths): SessionAddress {
+        val home = statePaths.rootDir.parent ?: statePaths.rootDir
+        val registry = SessionRegistry(home.resolve(".claude").resolve("sessions"), HeadOfPid { null })
+        return SessionAddress { session -> registry.read().firstOrNull { it.sessionId == session }?.address }
+    }
 }
 
 /** How many sessions [ConsoleEventPublisher] remembers the head of. A session past this many
@@ -92,6 +109,9 @@ private const val REMEMBERED_SESSIONS = 4096
 internal class ConsoleEventPublisher(
     internal val stores: ActivityStores? = null,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    /** V4-131: the team-slot resolver every head appends from. Carried here, beside the stores, because
+     *  this is the one console object HeadServerFactory already receives for every head. */
+    internal val slots: SlotInstructions? = null,
 ) {
     /** The bus GET /api/events streams from. ControlPlane assigns this exact instance to the
      *  ControlServer; nothing else constructs one for production. */

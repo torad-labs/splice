@@ -5,8 +5,9 @@
 //   repo   the git root of the row's cwd (RepoResolver: trusted roots only, worktrees folded into their
 //          shared repo, an outside cwd reported as itself with the reason). The key is left off a row
 //          with no cwd, because the console types it optional and non-nullable.
-//   team   always null in this row. Teams are V4-131's (the daemon's team store and its slot binding);
-//          the key is present so the console groups every row, and becomes the bound team id there.
+//   team   the id of the first unarchived team the session is bound in, by created time then id
+//          (V4-131, TeamStore.bindingsOf), or null when it is bound in none or the team store is
+//          unwired. Always present, so the console groups every row.
 //   edges  `{sent, received, last_at}` from the message edge store (ActivityRoutes), left off every
 //          row when the stores are unwired, never reported as zero sends nobody watched.
 // and GET /api/sessions/{id}/transcript, one page of the session's transcript (TranscriptReader).
@@ -22,7 +23,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -34,6 +34,7 @@ import splice.core.sessions.RepoResolver
 import splice.core.sessions.RepoRoot
 import splice.core.sessions.SKIPPED_SIDECHAIN
 import splice.core.sessions.SKIPPED_UNPARSEABLE
+import splice.core.sessions.SentTexts
 import splice.core.sessions.SessionRecord
 import splice.core.sessions.SessionRegistry
 import splice.core.sessions.TranscriptLookup
@@ -63,6 +64,8 @@ public class SessionsRoutes(
     /** The vanilla config root. Read only, never written (HEAD ISOLATION); a parameter so a test
      *  never reads the operator's own ~/.claude. */
     private val vanilla: Path = Paths.get(System.getProperty("user.home"), ".claude"),
+    /** V4-131: the team store the `team` key reads, per request. */
+    private val teams: TeamSource = TeamSource { null },
 ) {
     /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
     public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity)
@@ -113,11 +116,21 @@ public class SessionsRoutes(
         put("address", s.address)
         put("head", s.head ?: UNKNOWN_HEAD)
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
-        s.cwd?.let { put("repo", repoJson(resolverFor(s.head).resolve(it))) }
-        put("team", JsonNull)
+        repoOf(s)?.let { put("repo", repoJson(it)) }
+        put("team", s.sessionId?.let { teamOf(it) })
         val id = s.sessionId
         if (edges != null && id != null) put("edges", edges.summary(id, s.address))
     }
+
+    /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
+    internal fun repoOf(record: SessionRecord): RepoRoot? = record.cwd?.let { resolverFor(record.head).resolve(it) }
+
+    /** V4-131: a sender's SendMessage texts, from the transcript trees this route already searches. */
+    internal fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts =
+        transcripts.sentTexts(session, head, ids)
+
+    private fun teamOf(session: String): String? =
+        teams()?.bindingsOf(session)?.firstOrNull { (team, _) -> !team.archived }?.first?.id
 
     private fun repoJson(repo: RepoRoot) = buildJsonObject {
         put("root", repo.root)

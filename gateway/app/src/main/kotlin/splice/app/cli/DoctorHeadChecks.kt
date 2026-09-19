@@ -64,10 +64,11 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
         }
     }
 
-    /** JW-04: is the file on disk still the one the daemon booted from? Compared digest-to-digest
-     *  (the doctor hashes the local file; the daemon published what it parsed), with the daemon's
-     *  own topologyStale recompute as the belt. Fail-open: no health, no published digest, or an
-     *  unreadable local file all mean no row — never a fabricated verdict. */
+    /** JW-04: is the file on disk still the one the daemon runs? Compared digest-to-digest (the
+     *  doctor hashes the local file; the daemon publishes the version it runs — the booted bytes, or
+     *  a later edit that moved only context windows, which it re-reads live since V4-162), with the
+     *  daemon's own topologyStale recompute as the belt. Fail-open: no health, no published digest,
+     *  or an unreadable local file all mean no row — never a fabricated verdict. */
     internal fun topologyFreshness(snapshot: DaemonSnapshot, configPath: Path?): DoctorCheck? {
         val h = snapshot.health
         val booted = h?.topologyDigest?.takeIf { it.isNotEmpty() }

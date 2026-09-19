@@ -100,8 +100,9 @@ public class ControlServer(
     private val configuredHeads: Int = heads.size,
     // JW-04: the booted config identity + a per-request staleness recompute (fail-open lambda).
     // Topology stays deliberately non-hot-reloadable; these only make the required restart VISIBLE
-    // to the shim, doctor, and the dashboard.
-    private val topologyDigest: String = "",
+    // to the shim, doctor, and the dashboard. V4-162: the context windows are re-read live, so the
+    // digest names the version the daemon RUNS and is read per request like the staleness.
+    private val topologyDigest: TopologyDigest = TopologyDigest { "" },
     private val configPath: String = "",
     private val topologyStale: TopologyStale = TopologyStale { false },
     private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },

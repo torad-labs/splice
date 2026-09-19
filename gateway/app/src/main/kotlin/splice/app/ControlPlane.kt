@@ -15,6 +15,8 @@ import splice.control.FailedHeads
 import splice.control.LaunchService
 import splice.control.ManagedHead
 import splice.control.ShutdownDaemon
+import splice.control.TopologyDigest
+import splice.control.TopologyStale
 import splice.control.TurnPathStalled
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
@@ -111,6 +113,9 @@ internal class ControlPlane(
             bearer = McpAccessKey(mgmtKey::get),
         )
         val mcpHost = McpHost(sharing, McpGlobalRead(home, log), config = mcpHostConfig(), log = log)
+        // V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). A
+        // control plane built without one publishes the booted digest and compares bytes, as before.
+        val running = topology.running
         val srv = ControlServer(
             controlPort,
             heads,
@@ -122,9 +127,10 @@ internal class ControlPlane(
             shutdownDaemon,
             failedHeads,
             headCount,
-            topologyDigest = topology.digest,
+            topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
             configPath = topology.path?.toString().orEmpty(),
-            topologyStale = TopologyLoader.staleProbe(topology.path, topology.digest),
+            topologyStale = running?.let { TopologyStale(it::stale) }
+                ?: TopologyLoader.staleProbe(topology.path, topology.digest),
             turnPathStalled = turnPathStalled,
             mcpHost = mcpHost,
             sessions = SessionRegistry(

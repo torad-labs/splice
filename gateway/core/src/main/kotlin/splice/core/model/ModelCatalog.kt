@@ -63,6 +63,11 @@ public data class ModelCatalog(
     /** The head's pinned model (ANTHROPIC_MODEL at launch). Its declared window is what every launch
      *  plants as the client's window ([clientLaunchWindow]). */
     val pinnedModel: String = "",
+    /** V4-162: where a RUNNING head reads the windows in force now, so a context_window edit in
+     *  splice.toml needs no restart. Every window METHOD below answers from it; a reader of the window
+     *  FIELDS goes through [live]. Null = the windows above, fixed for this catalog's life, which is
+     *  every catalog built outside the daemon's head assembly. */
+    val liveWindows: LiveWindows? = null,
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
@@ -112,6 +117,10 @@ public data class ModelCatalog(
 
     /** Exact -> ordered startsWith prefix rules -> default. Order is the law. */
     public fun contextWindowFor(model: String?, defaultOverride: Long? = null): Long {
+        // V4-162: a running head answers from the windows splice.toml declares NOW. The live catalog
+        // carries no live source of its own ([withWindowsOf]), so this delegates exactly once, and
+        // [clientLaunchWindow], [clientContextWindowFor] and [usageScale] all follow through here.
+        liveWindows?.current()?.let { return it.contextWindowFor(model, defaultOverride) }
         val fallback = defaultOverride?.takeIf { it > 0 } ?: defaultContextWindow
         if (model.isNullOrEmpty()) return fallback
         val id = stripSuffixes(model)
@@ -183,6 +192,27 @@ public data class ModelCatalog(
         val client = clientContextWindowFor(id, sessionWindow)
         if (declared <= 0 || client <= 0) return 1.0
         return client.toDouble() / declared
+    }
+
+    /** V4-162: this catalog with the windows in force NOW, for a reader of the window FIELDS
+     *  ([models]' context_window, [extraWindows], [windowRules], [defaultContextWindow]). The window
+     *  methods here already answer from it. */
+    public fun live(): ModelCatalog = liveWindows?.current() ?: this
+
+    /** V4-162: this roster with [declared]'s windows, which is everything a context_window edit
+     *  changes. Every picker row keeps its id, label, description, rates and place, and takes the
+     *  window [declared] gives the same id, or keeps its own when [declared] no longer lists it: a
+     *  removed row is a roster change, and that stays a restart. The window-only ids, the prefix rules
+     *  and the default are [declared]'s whole. The result has no live source of its own. */
+    public fun withWindowsOf(declared: ModelCatalog): ModelCatalog {
+        val windows = declared.models.associate { it.id to it.contextWindow }
+        return copy(
+            models = models.map { entry -> windows[entry.id]?.let { entry.copy(contextWindow = it) } ?: entry },
+            extraWindows = declared.extraWindows,
+            windowRules = declared.windowRules,
+            defaultContextWindow = declared.defaultContextWindow,
+            liveWindows = null,
+        )
     }
 
     public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.label ?: id

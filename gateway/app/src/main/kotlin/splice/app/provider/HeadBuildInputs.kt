@@ -87,7 +87,7 @@ internal class HeadBuildInputs(
             key = key,
             head = resolvedHead,
             providerCfg = resolvedProvider,
-            catalog = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride),
+            catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern),
             watchdog = WatchdogBudget(
                 firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
                 streamIdle = headCfg.streamIdleMs.milliseconds,
@@ -100,6 +100,22 @@ internal class HeadBuildInputs(
             cfg = headCfg,
             loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).command,
         )
+    }
+
+    /** V4-162: the catalog head [key] boots with, as ONE derivation that [providerContext] and the live
+     *  window re-read (TopologyWindows) both call. A window edited while the daemon runs therefore
+     *  resolves through exactly the legacy knob remap and the per-head contextWindowOverride that boot
+     *  applied, read from the same getConfig(key). */
+    internal fun catalogFor(
+        key: String,
+        head: HeadConfig,
+        providerCfg: ProviderConfig,
+        legacyKnobsGovern: Boolean = true,
+    ): ModelCatalog {
+        val headCfg = config.getConfig(key)
+        val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
+        val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
+        return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride)
     }
 
     /** V4-116: is the MID-OUTPUT STALL RE-ANCHOR tier armed for THIS head?

@@ -50,14 +50,25 @@ public fun interface FailedHeads {
 }
 
 /**
- * Whether the topology on disk has diverged from the one this daemon booted — recomputed per
- * request, FAIL-OPEN (false when it cannot tell).
+ * Whether the topology on disk has diverged from the one this daemon runs — recomputed per request,
+ * FAIL-OPEN (false when it cannot tell).
  *
  * Reporting only. Topology is deliberately not hot-reloadable, so this exists to make the required
- * restart VISIBLE to the shim, doctor and dashboard, never to trigger one.
+ * restart VISIBLE to the shim, doctor and dashboard, never to trigger one. The context windows are
+ * the exception (V4-162): the daemon re-reads those, so an edit to nothing else is never stale.
  */
 public fun interface TopologyStale {
     public operator fun invoke(): Boolean
+}
+
+/**
+ * V4-162: the sha-256 of the splice.toml version this daemon runs, read per /health request — the
+ * booted bytes, or a later version whose only differences were context windows applied live. Doctor
+ * compares it with the file it hashes, so it must move when the daemon takes an edit without a
+ * restart, or the doctor would ask for one.
+ */
+public fun interface TopologyDigest {
+    public operator fun invoke(): String
 }
 
 /**

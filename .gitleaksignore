@@ -10,22 +10,22 @@
 # commit cde3ea1). Not a credential; no auth power; same class as the 13 fixture keys
 # above. The file at HEAD now carries redacted placeholders; this entry covers the
 # historical blob the scanner flags.
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
-561d7ec0eb8a2bef8d724832211a3896b2af3bd1:.dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
-c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
-c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
-2c8f0a4d5074ca9a3525544e896770417390249f:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
-dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
-5910ee1866fa962cac25fd9c17b416b869a654f8:.dev/campaigns/manifest.py:generic-api-key:116
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
+17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
+cb5bfa1b23e90bc5cf3bdacd195da5ecb75f124a:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
+cb5bfa1b23e90bc5cf3bdacd195da5ecb75f124a:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
+08ec59e3f5ee985f3efd48e610150ebbe329426f:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
+9c83bf192d7eb813133b44de57440b5130f3364b:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
+d98cf80eb1721f08735dada7e544233046b152d7:.dev/campaigns/manifest.py:generic-api-key:116
 cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.0-responses-request.json:generic-api-key:1
 # 2026-09-01: DR-151 synthetic secret — the literal a test PLANTS inside a hostile
 # throwable's toString() to prove SafeFailureText WITHHOLDS it (RefreshOutcomeTest, arm
@@ -40,4 +40,4 @@ cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.
 # 2026-09-01 — the DR-151 canary in RefreshOutcomeTest ("sk-live-DR151-must-never-appear", a
 # deliberately secret-shaped literal that the test proves is WITHHELD from the log) was vetted on
 # feat/claude-head at 5522ef38; squash-merging PR #99 gave the same line a new commit SHA on main.
-646ce260dbd8e68618640eac4e39e12bf486e5c9:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+0e91d54c27390a4694239e9e32e36861ce38ab53:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88

@@ -28,8 +28,8 @@ The remaining hand-edit risk — someone editing the .txt directly — is closed
 the gate runs (the same regenerate-and-diff idiom already used for webui/dist).
 
 Usage:
-    python3 checks/gen-secret-scan-allow.py            # write the .txt
-    python3 checks/gen-secret-scan-allow.py --check    # verify the committed .txt is current
+    python3 checks/secret-scan/gen-secret-scan-allow.py            # write the .txt
+    python3 checks/secret-scan/gen-secret-scan-allow.py --check    # verify the committed .txt is current
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / ".github" / "secret-scan-allow.toml"
 OUT = ROOT / ".github" / "secret-scan-allow.txt"
 
@@ -51,7 +51,7 @@ SUFFIX = r"[[:space:]]*$"
 # The one prose line in the output. Anchored at ^# so it is inert: a hit always begins with a
 # DIGIT, so this can never match one. It is generated rather than typed for exactly the reason
 # this whole script exists.
-HEADER = "^# GENERATED from secret-scan-allow.toml by checks/gen-secret-scan-allow.py. DO NOT EDIT."
+HEADER = "^# GENERATED from secret-scan-allow.toml by checks/secret-scan/gen-secret-scan-allow.py. DO NOT EDIT."
 
 
 def die(msg: str) -> None:
@@ -130,7 +130,7 @@ def main() -> int:
             print(
                 "secret-scan-allow.txt is STALE or hand-edited.\n"
                 "  It is generated from .github/secret-scan-allow.toml.\n"
-                "  Run: python3 checks/gen-secret-scan-allow.py",
+                "  Run: python3 checks/secret-scan/gen-secret-scan-allow.py",
                 file=sys.stderr,
             )
             return 1

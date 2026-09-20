@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/safe-failure-render-selftest.sh — mutation-proves checks/config/safe-failure-render.py
+# checks/config/safe-failure-render-selftest.sh — mutation-proves checks/config/safe-failure-render.py
 # (DR-140). Same defence-in-depth idiom as the rule-routing, config-guard, catalog and secret-scan
 # selftests: the leg guards the tree, this canary guards the LEG.
 #
@@ -17,7 +17,7 @@
 # Fixtures are synthetic and hermetic: the checker runs against a fabricated gateway tree in a
 # temp dir, never the repo's own sources.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

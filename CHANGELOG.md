@@ -7,6 +7,10 @@
   reproducer, the `goals/` note and the `.superpowers/` leftovers are gone; the one tracked
   milestone report now sits under `.dev/campaigns/head-decoupling/`, and the untracked `dev/`
   tree is folded into `.dev/`. Local machine paths are gone from the tracked ledgers and plans.
+- **The gate scripts are grouped by concern.** `checks/` now reads as `gate.sh`, `pr-title.sh` and one
+  directory per leg family (`campaign/`, `catalog/`, `config/`, `rules/`, `secret-scan/`, `release/`,
+  `oss/`, `e2e/`), every leg still beside its red-proof selftest. Three scripts nothing called
+  (the P8-CUT cutover gate, a reasoning-cache probe, a one-off codemod) are deleted.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

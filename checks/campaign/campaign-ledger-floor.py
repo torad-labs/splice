@@ -53,9 +53,9 @@ routine maintenance: it becomes a typed act and a reviewable diff line sitting n
 deletion that caused it. That diff is precisely the review signal that was missing.
 
 Usage:
-    python3 checks/campaign-ledger-floor.py                 # re-record (raise only)
-    python3 checks/campaign-ledger-floor.py --check         # verify; the gate leg
-    python3 checks/campaign-ledger-floor.py --allow-shrink  # re-record, permitting a decrease
+    python3 checks/campaign/campaign-ledger-floor.py                 # re-record (raise only)
+    python3 checks/campaign/campaign-ledger-floor.py --check         # verify; the gate leg
+    python3 checks/campaign/campaign-ledger-floor.py --allow-shrink  # re-record, permitting a decrease
 """
 from __future__ import annotations
 
@@ -64,9 +64,9 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = ROOT / ".dev" / "campaigns"
-FLOOR = ROOT / "checks" / "config" / "campaign-ledger-floor.json"
+FLOOR = ROOT / "checks" / "campaign" / "campaign-ledger-floor.json"
 
 # The same shape manifest.py's own HDR matches, so this counts what the CLI calls an item.
 HDR = re.compile(r"^\[\[items?\]\]\s*$")
@@ -103,7 +103,7 @@ def violations(current: dict, floor: dict) -> list[str]:
         if name not in floor:
             found.append(
                 f"{name}: on disk with no recorded floor — every ledger needs a disposition. "
-                f"Run `python3 checks/campaign-ledger-floor.py` to record it."
+                f"Run `python3 checks/campaign/campaign-ledger-floor.py` to record it."
             )
             continue
         if name not in current:
@@ -137,7 +137,7 @@ def main(argv: list[str]) -> int:
             print(
                 "\nA ledger is the memory of a campaign. If this shrink is deliberate (a `remove`,\n"
                 "a retired campaign), re-record it explicitly:\n"
-                "  python3 checks/campaign-ledger-floor.py --allow-shrink",
+                "  python3 checks/campaign/campaign-ledger-floor.py --allow-shrink",
                 file=sys.stderr,
             )
             return 1

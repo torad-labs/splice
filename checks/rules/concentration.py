@@ -114,7 +114,7 @@ CEILING EXCEPTIONS. Two files in this tree provably cannot reach 1.8 by refactor
 that pretends otherwise buys its green by lying about what is reachable. They are named in
 CEILING_EXCEPTIONS below with a ceiling and a justification a reader can evaluate, in the idiom
 this repo already uses twice — `nonLibrary` in splice.module-law.gradle.kts and UNROUTED_ALLOWLIST
-in checks/rule-routing.sh. Four properties, each of which is what stops the list becoming a
+in checks/rules/rule-routing.sh. Four properties, each of which is what stops the list becoming a
 laundry:
 
   - A CEILING, NOT A BLANKET. An excepted file is graded against its own recorded ceiling instead
@@ -143,7 +143,7 @@ THE RATCHET (--ratchet, 2026-08-18). Until this date NOTHING RAN THIS FILE. It w
 checks/gate.sh, from every package.json script and from CI, so `npm run gate` printed GATE: PASS
 while saying nothing about concentration and every ratio in the campaign was advisory — the same
 defect class as the 2026-07-16 style pack that sat unrouted for a month while 336 top-level
-functions accumulated under a green gate (see checks/rule-routing.sh, the wall written for that
+functions accumulated under a green gate (see checks/rules/rule-routing.sh, the wall written for that
 scar). A wall nobody routes is a wall nobody has, and that was true of this oracle itself.
 
 `--max-ratio 1.8` cannot be the gate leg today: it is red on 42 files, so landing it would mean
@@ -214,13 +214,13 @@ gate. That criterion forbids the work this oracle exists to drive, and the proof
     measured above: it moves on splits that touch nothing, so gating it penalises decomposition.
 
 USAGE
-    python3 checks/concentration.py                      # full table, exit 0
-    python3 checks/concentration.py --top 15             # worst 15 only
-    python3 checks/concentration.py --max-ratio 1.8      # gate: non-zero exit if any file is above
-    python3 checks/concentration.py --ratchet --max-ratio 1.8   # gate leg: band HIGH may not move
-    python3 checks/concentration.py --file <path>        # one file, with its neighbour list
-    python3 checks/concentration.py --since <ref>        # what moved since <ref>, and why
-    python3 checks/concentration.py --json               # machine-readable
+    python3 checks/rules/concentration.py                      # full table, exit 0
+    python3 checks/rules/concentration.py --top 15             # worst 15 only
+    python3 checks/rules/concentration.py --max-ratio 1.8      # gate: non-zero exit if any file is above
+    python3 checks/rules/concentration.py --ratchet --max-ratio 1.8   # gate leg: band HIGH may not move
+    python3 checks/rules/concentration.py --file <path>        # one file, with its neighbour list
+    python3 checks/rules/concentration.py --since <ref>        # what moved since <ref>, and why
+    python3 checks/rules/concentration.py --json               # machine-readable
 """
 from __future__ import annotations
 
@@ -236,7 +236,7 @@ import sys
 import tarfile
 import textwrap
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 SRC_GLOB = "gateway/*/src/main"
 SRC_RE = re.compile(r"^gateway/[^/]+/src/main/.*\.kt$")
 
@@ -283,7 +283,7 @@ CAUSE_DOMINANCE = 2 / 3
 # --------------------------------------------------------------------------------------------
 # The files this tree provably cannot bring under the gate by refactoring. Format:
 # (path, ceiling ratio, "YYYY-MM-DD: why"), the same shape as UNROUTED_ALLOWLIST in
-# checks/rule-routing.sh. Read CEILING EXCEPTIONS in the module docstring before adding one; the
+# checks/rules/rule-routing.sh. Read CEILING EXCEPTIONS in the module docstring before adding one; the
 # short version is that an entry here is a CEILING that still fails when breached, its
 # justification is mechanically required, a stale entry is a hard error, and every run prints the
 # list. Empty after HD-25: UpstreamClient measured 1.78 (C=91.0 / d=51.0) which is under
@@ -291,7 +291,7 @@ CAUSE_DOMINANCE = 2 / 3
 # red gate green is the laundering this list exists to prevent.
 CEILING_EXCEPTIONS: list[tuple[str, float, str]] = []
 
-# Every exemption starts with a date, exactly as checks/rule-routing.sh requires of
+# Every exemption starts with a date, exactly as checks/rules/rule-routing.sh requires of
 # UNROUTED_ALLOWLIST — an undated one is how the next exemption hides.
 EXCEPTION_JUSTIFICATION = re.compile(r"^\d{4}-\d{2}-\d{2}: \S")
 
@@ -442,7 +442,7 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
         )
         print(
             f"        worst: " + " | ".join(f"{r['file'].rsplit('/', 1)[-1]} {r['ratio']}" for r in over[:5]) + "\n"
-            f"        full list `python3 checks/concentration.py --top {len(over)}`; every one is HD-25's "
+            f"        full list `python3 checks/rules/concentration.py --top {len(over)}`; every one is HD-25's "
             f"work, not an exemption.\n"
             f"        a ceiling exception's justification reads with `--file <path>`."
         )
@@ -463,7 +463,7 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
     if len(high) > RATCHET_MAX_HIGH:
         problems.append(
             f"REGRESSION: band HIGH rose {RATCHET_MAX_HIGH} -> {len(high)}. A god object appeared that "
-            f"nothing recorded. Run `python3 checks/concentration.py --since HEAD --max-ratio {max_ratio}`: "
+            f"nothing recorded. Run `python3 checks/rules/concentration.py --since HEAD --max-ratio {max_ratio}`: "
             f"cause `own` is code in this change, cause `neighbourhood` is a denominator that moved under "
             f"the file, and the ΔC / Δdenom columns show the split the label was taken from. Fix the file — "
             f"raising RATCHET_MAX_HIGH is a dated edit recording that the tree got worse."
@@ -472,7 +472,7 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
         problems.append(
             f"SLACK: band HIGH fell {RATCHET_MAX_HIGH} -> {len(high)}, and the baseline still claims "
             f"{RATCHET_MAX_HIGH}. Set RATCHET_MAX_HIGH = {len(high)} and re-date RATCHET_RECORDED in "
-            f"checks/concentration.py. A baseline held above the measured count is unearned room for the "
+            f"checks/rules/concentration.py. A baseline held above the measured count is unearned room for the "
             f"next regression to hide in — the same defect as a ceiling recorded above its file's measured "
             f"ratio."
         )

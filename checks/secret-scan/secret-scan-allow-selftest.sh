@@ -19,7 +19,7 @@
 # The scan feeds `grep -nIE` output, so a hit always arrives as `<line>:<content>` and therefore
 # begins with a DIGIT. Every canary below is written in that shape.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Path is overridable so the hazards below can be exercised against a throwaway copy — a wall
 # nobody has watched fail is not known to work.
 ALLOW="${1:-$ROOT/.github/secret-scan-allow.txt}"
@@ -105,19 +105,19 @@ done
 # missing reason, invalid ERE — was unexercised: a wall nobody has watched fail. The arms below run
 # it against fixture inputs in a throwaway tree (the generator resolves its paths from __file__, so
 # copying it is enough to relocate its whole world).
-GEN="$ROOT/checks/gen-secret-scan-allow.py"
+GEN="$ROOT/checks/secret-scan/gen-secret-scan-allow.py"
 if [ ! -f "$GEN" ]; then
   bad "the generator is missing — the allowlist's source of truth cannot be verified"
 else
   gtmp="$(mktemp -d)"
   trap 'rm -rf "$gtmp"' EXIT
-  mkdir -p "$gtmp/checks" "$gtmp/.github"
-  cp "$GEN" "$gtmp/checks/"
+  mkdir -p "$gtmp/checks/secret-scan" "$gtmp/.github"
+  cp "$GEN" "$gtmp/checks/secret-scan/"
 
   # $1 label · $2 expected rc (0 generated / 1 refused) · $3 TOML body
   gen_arm() {
     printf '%s\n' "$3" > "$gtmp/.github/secret-scan-allow.toml"
-    ( cd "$gtmp" && python3 checks/gen-secret-scan-allow.py >/dev/null 2>&1 )
+    ( cd "$gtmp" && python3 checks/secret-scan/gen-secret-scan-allow.py >/dev/null 2>&1 )
     local rc=$?
     [ "$rc" = "$2" ] || bad "generator: $1 — expected rc=$2, got rc=$rc"
   }

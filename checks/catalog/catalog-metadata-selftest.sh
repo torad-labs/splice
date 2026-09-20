@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# checks/catalog-metadata-selftest.sh — red-green proof for catalog-metadata-sync.py, run by the
+# checks/catalog/catalog-metadata-selftest.sh — red-green proof for catalog-metadata-sync.py, run by the
 # gate. Same defence-in-depth idiom as secret-scan-allow-selftest.sh: the checker guards the
 # catalog↔verification-metadata seam, this canary guards the CHECKER, so a bug in it (a parser
 # change that starts silently skipping entries, a namespace regression) fails the gate instead of
 # silently waving drift through. Fixtures are synthetic but carry the REAL metadata xmlns — a
 # non-namespace-aware parser must fail HERE, not on the real file.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECKER="$ROOT/checks/catalog-metadata-sync.py"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CHECKER="$ROOT/checks/catalog/catalog-metadata-sync.py"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

@@ -15,7 +15,7 @@
 # BEFORE merge when the version's tag already exists, and release.yml's resolve step refuses
 # again at build time. The preflight here is a courtesy third look, not the net.
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 git fetch -q origin

@@ -64,19 +64,19 @@ echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
 # Dependabot edits the catalog but cannot regenerate verification metadata, so gradle bumps used
 # to arrive red six minutes into the gradle leg (#91). State the same fact statically, first and
 # in under a second, with the regeneration remedy attached. Selftest guards the checker itself.
-run "catalog metadata sync" python3 checks/catalog-metadata-sync.py
-run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
+run "catalog metadata sync" python3 checks/catalog/catalog-metadata-sync.py
+run "catalog metadata selftest" bash checks/catalog/catalog-metadata-selftest.sh
 run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
 run "ast-grep walls" npm run --silent gate:rules
 # The walls leg above proves the routed rules pass; it cannot prove they are ALL routed. .rules/kotlin
 # sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a
 # rule directory nobody named. This leg is that missing half — completeness, not conformance.
-run "rule routing"   bash checks/rule-routing.sh
+run "rule routing"   bash checks/rules/rule-routing.sh
 # DR-132: and the canary over that leg. rule-routing.sh shipped without a selftest, which is how its
 # forward direction ran fail-OPEN on flow-style rules — a dormant pack reported PASS, reproducing
 # the scar the leg above exists to prevent, inside the leg itself. Same pairing as config-guard.
-run "rule-routing selftest" bash checks/rule-routing-selftest.sh
-# checks/concentration.py — the decomposition campaign's own oracle — was itself the thing the leg
+run "rule-routing selftest" bash checks/rules/rule-routing-selftest.sh
+# checks/rules/concentration.py — the decomposition campaign's own oracle — was itself the thing the leg
 # above exists to catch: referenced by nothing but its ledger, so this gate printed PASS while
 # saying nothing about concentration and every ratio in the campaign was advisory. Wired 2026-08-18
 # as a RATCHET, not as `--max-ratio 1.8`: the tree-wide gate is red on 42 files, and a leg that
@@ -86,7 +86,7 @@ run "concentration"  npm run --silent gate:concentration
 # guards the tree, this canary guards the LEG. It shipped without one, and that is precisely why a
 # routing guard defeated by a single `#` survived into the branch — its red-proofs were hand-run
 # transcripts in a ledger note, so nothing re-ran them. Both of those bypasses are fixtures now.
-run "concentration selftest" bash checks/concentration-selftest.sh
+run "concentration selftest" bash checks/rules/concentration-selftest.sh
 run "hook tests"     npm run --silent test:hooks
 # Campaign enforcement, BLOCKING half only (C1/C2/C3/C5/C6/C7/C9): a wall that lies, a status that
 # lies, a fence collision, or a broken law are never acceptable. The ADVISORY half (C4 unwalled /
@@ -99,13 +99,13 @@ run "campaign selftest" npm run --silent gate:campaign:selftest
 # MEMORY itself. On 2026-09-01 drift-repair.toml lost 164 rows and 2604 lines, was committed and
 # pushed, and this ladder passed 13 of 13 — because no leg read the file. A green gate said nothing
 # about the one artifact whose entire purpose is to outlive the session that wrote it.
-run "campaign ledger floor" python3 checks/campaign-ledger-floor.py --check
-run "campaign ledger floor selftest" bash checks/campaign-ledger-floor-selftest.sh
+run "campaign ledger floor" python3 checks/campaign/campaign-ledger-floor.py --check
+run "campaign ledger floor selftest" bash checks/campaign/campaign-ledger-floor-selftest.sh
 # DR-184: and the CLI's own suite, which nothing ran. The leg two lines up named "campaign
 # selftest" is campaign_wall_gate.py's, not manifest.py's — so every arm guarding the instrument
 # that owns campaign memory fired only when a session remembered to type it.
-run "campaign CLI selftest" bash checks/campaign-cli-selftest.sh
-run "campaign CLI selftest canary" bash checks/campaign-cli-selftest-canary.sh
+run "campaign CLI selftest" bash checks/campaign/campaign-cli-selftest.sh
+run "campaign CLI selftest canary" bash checks/campaign/campaign-cli-selftest-canary.sh
 # Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the
 # captured Node oracle. Keeping the replay as a package script without a gate leg left the parity
 # claim entirely opt-in: every other check could pass while none of these fixtures ran.
@@ -122,20 +122,20 @@ run "code-mode mock selftest" python3 checks/e2e/code_mode_mock.py --selftest
 run "code-mode packaged mock" python3 checks/e2e/code_mode_mock.py \
   --artifact gateway/app/build/libs/app-all.jar \
   --receipt "checks/e2e/receipts/code-mode-mock-$(date -u +%Y%m%dT%H%M%S)-$$.json"
-run "config guard"   bash checks/config-guard.sh
-run "config-guard selftest" bash checks/config-guard-selftest.sh
+run "config guard"   bash checks/config/config-guard.sh
+run "config-guard selftest" bash checks/config/config-guard-selftest.sh
 # DR-140: the DR-65 wall. Every throwable rendered into text from a source that touches files or
 # names credential/state types is routed through SafeFailureText.render or carries a dated,
 # reasoned exemption; an undispositioned sink fails BY NAME. DR-73 swept this class by hand and
 # its denominator was files rather than sinks, so UsageRingFile's write half kept a raw render for
 # another eight days (DR-139) — a hand sweep closes the instance, a checker closes the class.
 run "safe-failure-render" python3 checks/config/safe-failure-render.py check .
-run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
+run "safe-failure-render selftest" bash checks/config/safe-failure-render-selftest.sh
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.
-run "secret-scan allowlist generated" python3 checks/gen-secret-scan-allow.py --check
-run "secret-scan allowlist" bash checks/secret-scan-allow-selftest.sh
+run "secret-scan allowlist generated" python3 checks/secret-scan/gen-secret-scan-allow.py --check
+run "secret-scan allowlist" bash checks/secret-scan/secret-scan-allow-selftest.sh
 run "webui lint"     npm run lint -w webui
 run "webui tests"    npm test -w webui
 webui_dist_before="$(mktemp)"

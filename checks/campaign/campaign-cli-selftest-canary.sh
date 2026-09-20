@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/campaign-cli-selftest-canary.sh — the canary for checks/campaign-cli-selftest.sh.
+# checks/campaign/campaign-cli-selftest-canary.sh — the canary for checks/campaign/campaign-cli-selftest.sh.
 #
 # gate.sh's own words, a few lines above where that leg is wired: "the leg guards the tree, this
 # canary guards the LEG. It shipped without one, and that is precisely why a routing guard defeated
@@ -13,8 +13,8 @@
 # $ROOT only to copy the leg out of it, and the real ledgers' sha256s are compared before and
 # after to prove it.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LEG="$ROOT/checks/campaign-cli-selftest.sh"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LEG="$ROOT/checks/campaign/campaign-cli-selftest.sh"
 
 before_real="$(sha256sum "$ROOT"/.dev/campaigns/*.toml | sha256sum | cut -d' ' -f1)"
 
@@ -29,8 +29,8 @@ make_root() {
   local root
   root="$(mktemp -d -t campaign-cli-canary-XXXXXX)"
   fixtures="$fixtures $root"
-  mkdir -p "$root/checks" "$root/.dev/campaigns"
-  cp "$LEG" "$root/checks/campaign-cli-selftest.sh"
+  mkdir -p "$root/checks/campaign" "$root/.dev/campaigns"
+  cp "$LEG" "$root/checks/campaign/campaign-cli-selftest.sh"
   cat >"$root/.dev/campaigns/manifest.py" <<'STUB'
 import sys
 # Stub: the canary is testing the LEG, not the CLI. Behaviour is keyed on the ledger's name so a
@@ -54,7 +54,7 @@ pass=0
 fail=0
 arm() { # arm <name> <expect: RED|GREEN> <root> [diagnosis substring]
   local name="$1" expect="$2" root="$3" want="${4:-}" out status
-  out="$(bash "$root/checks/campaign-cli-selftest.sh" 2>&1)"
+  out="$(bash "$root/checks/campaign/campaign-cli-selftest.sh" 2>&1)"
   status=$?
   local got; got=$([ $status -eq 0 ] && echo GREEN || echo RED)
   if [ "$got" != "$expect" ]; then

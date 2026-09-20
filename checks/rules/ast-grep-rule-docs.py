@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""checks/config/ast-grep-rule-docs.py — the ONE definition of "an ast-grep rule document",
+"""checks/rules/ast-grep-rule-docs.py — the ONE definition of "an ast-grep rule document",
 derived from a real YAML parse instead of a line grep.
 
 DR-131/DR-132. Both rule walls used to answer "is this a rule file?" and "does this doc carry
 severity: error?" with `grep -E '^[[:space:]]*id:'` and a matching count of `severity: error`
-lines. rule-routing.sh:38 said so out loud — "the SAME test checks/config-guard.sh uses ... so the
+lines. rule-routing.sh:38 said so out loud — "the SAME test checks/config/config-guard.sh uses ... so the
 two legs cannot disagree about what a rule is". They could not disagree with each OTHER. They
 could, and did, disagree with ast-grep, and a hand-authored pair of lists agreeing with each other
 is not a check against reality (the completeness law).

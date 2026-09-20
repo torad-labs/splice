@@ -14,7 +14,7 @@
 # Wholly non-destructive: every arm runs against a fixture tree under mktemp -d, and the real
 # ledgers are verified byte-identical at the end.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 ROOT=$PWD
 
 TMP=$(mktemp -d)
@@ -24,7 +24,7 @@ trap 'rm -rf "$TMP"' EXIT
 # selftest could corrupt a NESTED registry and still report itself clean.
 ledgers() { find .dev/campaigns -name '*.toml' | sort; }
 
-before=$(sha256sum checks/config/campaign-ledger-floor.json $(ledgers) | sha256sum)
+before=$(sha256sum checks/campaign/campaign-ledger-floor.json $(ledgers) | sha256sum)
 
 fail=0
 pass=0
@@ -33,15 +33,15 @@ pass=0
 fixture() {
   local dir="$TMP/$1"
   rm -rf "$dir"
-  mkdir -p "$dir/checks/config" "$dir/.dev/campaigns"
-  cp "$ROOT/checks/campaign-ledger-floor.py" "$dir/checks/"
+  mkdir -p "$dir/checks/campaign" "$dir/.dev/campaigns"
+  cp "$ROOT/checks/campaign/campaign-ledger-floor.py" "$dir/checks/campaign/"
   # DR-189: the whole TREE of ledgers, structure preserved — copying only the top level would
   # leave every fixture blind to exactly the nested registries the check was widened to cover.
   while IFS= read -r rel; do
     mkdir -p "$dir/.dev/campaigns/$(dirname "$rel")"
     cp "$ROOT/.dev/campaigns/$rel" "$dir/.dev/campaigns/$rel"
   done < <(cd "$ROOT/.dev/campaigns" && find . -name '*.toml' -printf '%P\n')
-  python3 "$dir/checks/campaign-ledger-floor.py" >/dev/null || return 1
+  python3 "$dir/checks/campaign/campaign-ledger-floor.py" >/dev/null || return 1
   echo "$dir"
 }
 
@@ -52,7 +52,7 @@ fixture() {
 # integrity leg whose evidence is "it crashed" tells the reader nothing about what was lost.
 arm() {
   local label="$1" expect="$2" dir="$3" want="${4:-}" out rc
-  out=$(python3 "$dir/checks/campaign-ledger-floor.py" --check 2>&1)
+  out=$(python3 "$dir/checks/campaign/campaign-ledger-floor.py" --check 2>&1)
   rc=$?
   local got=GREEN
   [ "$rc" -ne 0 ] && got=RED
@@ -134,7 +134,7 @@ arm "a campaign that grew rows and notes" GREEN "$d"
 d=$(fixture pristine) || exit 1
 arm "the tree as committed" GREEN "$d"
 
-after=$(sha256sum checks/config/campaign-ledger-floor.json $(ledgers) | sha256sum)
+after=$(sha256sum checks/campaign/campaign-ledger-floor.json $(ledgers) | sha256sum)
 if [ "$before" != "$after" ]; then
   fail=$((fail + 1))
   echo "  *** the selftest modified real ledgers — it must be non-destructive ***"

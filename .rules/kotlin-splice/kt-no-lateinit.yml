@@ -18,7 +18,7 @@
 # `property_declaration > modifiers > member_modifier > lateinit`. So the rule could never match
 # anything, in any repo, under any glob. Had it been promoted verbatim it would have joined the
 # gate green and stayed green forever — a wall reporting 0 because it is blind, which is precisely
-# the failure checks/rule-routing.sh exists to catch one level up. Fixed to `member_modifier` and
+# the failure checks/rules/rule-routing.sh exists to catch one level up. Fixed to `member_modifier` and
 # re-censused: with the working rule, 30 hits exist in the tree, ALL under src/test/ (JUnit
 # @TempDir and @BeforeEach fixture fields), and 0 under gateway/*/src/main. The production glob
 # exempts every one of them.

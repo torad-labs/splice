@@ -26,7 +26,7 @@ below repins transitives and directs anyway. Unparseable catalog shapes are a lo
 a silent skip — a skipped entry is exactly how drift would hide (brain #924).
 
 Usage:
-    python3 checks/catalog-metadata-sync.py [catalog.toml] [verification-metadata.xml]
+    python3 checks/catalog/catalog-metadata-sync.py [catalog.toml] [verification-metadata.xml]
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import NoReturn
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 NS = "{https://schema.gradle.org/dependency-verification}"
 
 REMEDY = """\

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/rule-routing.sh — the wall against a wall that is PRESENT but wired to nothing (HD-11).
+# checks/rules/rule-routing.sh — the wall against a wall that is PRESENT but wired to nothing (HD-11).
 #
 # On 2026-07-16 this repo installed a Kotlin rule pack at .rules/kotlin/ (no-loose-function,
 # no-companion-objects, a konsist ArchitectureTest) and the same day disabled the hook that ran it,
@@ -18,9 +18,9 @@
 # every gate run. A typo'd testDir does not slip through — it un-references .rules/rule-tests, and
 # the forward direction fails on it.
 #
-# Run: `bash checks/rule-routing.sh`, and as a leg of `npm run gate`.
+# Run: `bash checks/rules/rule-routing.sh`, and as a leg of `npm run gate`.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 fail=0
 err() { echo "  ✗ $1"; fail=1; }
@@ -36,7 +36,7 @@ UNROUTED_ALLOWLIST=(
 )
 
 # A "rule file" is a .yml/.yaml holding a YAML document with a top-level `id` — the SAME definition
-# checks/config-guard.sh uses, via the SAME module, so the two legs cannot disagree about what a
+# checks/config/config-guard.sh uses, via the SAME module, so the two legs cannot disagree about what a
 # rule is.
 #
 # DR-132: that shared definition used to be `grep -E '^[[:space:]]*id:'`, and two lists agreeing
@@ -53,11 +53,11 @@ UNROUTED_ALLOWLIST=(
 # class the script exists to catch, one level up, so an unrunnable module is a hard failure. The
 # `|| printf 0` inside rule_file_count is only an arithmetic safety net for that already-failed
 # world; the preflight is what makes it safe, and it is not a fallback path.
-python3 checks/config/ast-grep-rule-docs.py count .rules 1 >/dev/null 2>&1 ||
-  err "checks/config/ast-grep-rule-docs.py is not runnable (needs python3 + PyYAML) — the rule-file denominator cannot be computed, so this leg can vouch for nothing."
+python3 checks/rules/ast-grep-rule-docs.py count .rules 1 >/dev/null 2>&1 ||
+  err "checks/rules/ast-grep-rule-docs.py is not runnable (needs python3 + PyYAML) — the rule-file denominator cannot be computed, so this leg can vouch for nothing."
 
 rule_file_count() { # rule_file_count <dir> <maxdepth>
-  python3 checks/config/ast-grep-rule-docs.py count "$1" "$2" 2>/dev/null || printf '0\n'
+  python3 checks/rules/ast-grep-rule-docs.py count "$1" "$2" 2>/dev/null || printf '0\n'
 }
 
 normalize_path() { # strip surrounding quotes and any trailing slash

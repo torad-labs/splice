@@ -19,7 +19,7 @@ below is a generator rather than another checker.
 ## The file is GENERATED
 
 `secret-scan-allow.txt` is emitted from **`secret-scan-allow.toml`** by
-`checks/gen-secret-scan-allow.py`. Do not edit the `.txt`.
+`checks/secret-scan/gen-secret-scan-allow.py`. Do not edit the `.txt`.
 
 That is the fix for all three hazards above, and it is a different KIND of fix: they are now
 impossible to express rather than merely detected (brain concept #924, "you make drift not
@@ -36,9 +36,9 @@ the first was fixed as an instance, so the generator re-derived the class.
 An exemption also cannot be added without a `reason` — an unexplained one is not reviewable.
 
 ```bash
-python3 checks/gen-secret-scan-allow.py          # regenerate
-python3 checks/gen-secret-scan-allow.py --check  # what the gate runs
-bash checks/secret-scan-allow-selftest.sh        # canaries over the generated output
+python3 checks/secret-scan/gen-secret-scan-allow.py          # regenerate
+python3 checks/secret-scan/gen-secret-scan-allow.py --check  # what the gate runs
+bash checks/secret-scan/secret-scan-allow-selftest.sh        # canaries over the generated output
 ```
 
 The canary self-test stays as defence in depth: it verifies the generator's OUTPUT, so a bug in

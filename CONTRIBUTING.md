@@ -15,7 +15,7 @@ npm ci
 npm run gate              # the complete local/CI gate
 npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
 npm run test:hooks        # orchestrator hook test suite
-bash checks/config-guard.sh   # rules that guard the rules
+bash checks/config/config-guard.sh   # rules that guard the rules
 cd gateway && ./gradlew check # module-law + detekt + konsist + unit tests (Kotlin gateway)
 npm run lint -w webui && npm test -w webui && npm run build -w webui
 npm run oss:verify

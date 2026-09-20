@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/campaign-cli-selftest.sh — DR-184: run the ledger CLI's OWN regression suite in the gate.
+# checks/campaign/campaign-cli-selftest.sh — DR-184: run the ledger CLI's OWN regression suite in the gate.
 #
 # `manifest.py <ledger> selftest` is the only wall the campaign instrument has: the DR-181
 # missing-ledger arms, the add/set-status/note/verdict/edit-fence/claim/next-packet round trips,
@@ -23,7 +23,7 @@
 # this file's neighbourhood. Zero ledgers is a hard failure, not a silent skip — an empty
 # denominator is how a check passes by measuring nothing.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT" || exit 1
 
 shopt -s nullglob

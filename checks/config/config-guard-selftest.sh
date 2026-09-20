@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# checks/config-guard-selftest.sh — mutation-proves config-guard.sh's severity wall (DR-115).
+# checks/config/config-guard-selftest.sh — mutation-proves config-guard.sh's severity wall (DR-115).
 # The wall guards the RULES; this proves the wall can actually fail. Runs the real script against
 # a mirrored tree so fixtures never touch the repo's own .rules.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -13,13 +13,13 @@ err() { echo "  ✗ config-guard-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 # ── mirror: everything config-guard.sh and its two python legs read ──────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/gateway" "$tmp/.github"
-cp "$ROOT/checks/config-guard.sh" "$tmp/checks/"
+mkdir -p "$tmp/checks/config" "$tmp/checks/rules" "$tmp/gateway" "$tmp/.github"
+cp "$ROOT/checks/config/config-guard.sh" "$tmp/checks/config/"
 cp "$ROOT/checks/config/dependabot-kotlin-scope.py" "$ROOT/checks/config/concentration-leg-routed.py" "$tmp/checks/config/"
 # DR-131/DR-132: the shared rule-document enumerator the severity wall now parses with. Omitting it
 # would make config-guard.sh fail CLOSED on every fixture below — including the control — and a wall
 # that rejects everything because its checker is missing proves nothing about the checker.
-cp "$ROOT/checks/config/ast-grep-rule-docs.py" "$tmp/checks/config/"
+cp "$ROOT/checks/rules/ast-grep-rule-docs.py" "$tmp/checks/rules/"
 cp "$ROOT/gateway/detekt.yml" "$tmp/gateway/"
 cp "$ROOT/.github/dependabot.yml" "$tmp/.github/"
 cp "$ROOT/package.json" "$tmp/"
@@ -27,7 +27,7 @@ cp "$ROOT/checks/gate.sh" "$tmp/checks/"
 cp -r "$ROOT/.rules" "$tmp/.rules"
 
 rc=0
-guard() { bash "$tmp/checks/config-guard.sh" >"$tmp/out" 2>&1; rc=$?; }
+guard() { bash "$tmp/checks/config/config-guard.sh" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring>
   if [ "$rc" -eq 0 ]; then

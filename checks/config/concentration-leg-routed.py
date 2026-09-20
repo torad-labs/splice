@@ -2,13 +2,13 @@
 """checks/config/concentration-leg-routed.py — the concentration leg is ROUTED, and its definition
 still invokes the ratchet with a threshold.
 
-checks/rule-routing.sh exists for the analogous defect one surface down: a wall that is PRESENT but
+checks/rules/rule-routing.sh exists for the analogous defect one surface down: a wall that is PRESENT but
 wired to nothing, which is how .rules/kotlin sat dormant for a month under a green gate. The
 concentration leg has the same hole in package.json. `checks/gate.sh` runs
 `npm run --silent gate:concentration` and reports the leg green on exit 0, so the entire leg is
 defanged by a ONE-LINE edit:
 
-    "gate:concentration": "python3 checks/concentration.py --top 5"
+    "gate:concentration": "python3 checks/rules/concentration.py --top 5"
 
 That exits 0 unconditionally, and `npm run gate` keeps printing a green "concentration" leg over an
 oracle that is no longer grading anything. The gate's own output cannot distinguish the two states —
@@ -18,7 +18,7 @@ Two directions, exactly as rule-routing.sh checks both:
 
   forward — checks/gate.sh actually RUNS the gate:concentration script, through `run` so its real
             exit code is captured (a mention in a comment is not a routing)
-  inverse — that script invokes checks/concentration.py with --ratchet AND a numeric --max-ratio
+  inverse — that script invokes checks/rules/concentration.py with --ratchet AND a numeric --max-ratio
 
 Neither half is sufficient alone: a routed script that does not ratchet is the defang above, and a
 correct script that nothing runs is the 2026-07-16 dormant-pack scar.
@@ -29,9 +29,9 @@ tests over UNPARSED text. A single `#` defeats every one of them, because the re
 go on matching once they sit in a shell COMMENT, i.e. in the part of the line that never executes.
 Both halves were bypassed, and both were REPRODUCED against the old guard before this rewrite:
 
-    "gate:concentration": "true # python3 checks/concentration.py --ratchet --max-ratio 1.8"
+    "gate:concentration": "true # python3 checks/rules/concentration.py --ratchet --max-ratio 1.8"
 
-      -> `bash checks/config-guard.sh` printed `concentration-leg-routed: PASS` and exited 0, while
+      -> `bash checks/config/config-guard.sh` printed `concentration-leg-routed: PASS` and exited 0, while
          `npm run --silent gate:concentration` exited 0 having produced NO OUTPUT AT ALL: the only
          command that ran was `true`. The oracle was gone and every surface still said green.
 
@@ -55,13 +55,13 @@ guard FAILS CLOSED: nothing that cannot be parsed is ever counted as evidence th
 routed.
 
 KNOWN LIMIT, stated rather than discovered later: this guards the leg, not itself. Deleting the
-`concentration leg routed` line from checks/config-guard.sh removes this check. That regress is now
-caught one surface up — checks/concentration-selftest.sh runs both bypasses above as fixtures and
+`concentration leg routed` line from checks/config/config-guard.sh removes this check. That regress is now
+caught one surface up — checks/rules/concentration-selftest.sh runs both bypasses above as fixtures and
 also deletes the leg from a throwaway copy of checks/gate.sh — but the selftest's own routing is
 where the regress stops, for the same reason rule-routing.sh's does: one more level of guard, in
 the gate, is what the repo buys; beyond that the answer is code review, not another script.
 
-Run: `python3 checks/config/concentration-leg-routed.py`, and as part of `bash checks/config-guard.sh`.
+Run: `python3 checks/config/concentration-leg-routed.py`, and as part of `bash checks/config/config-guard.sh`.
 """
 from __future__ import annotations
 
@@ -73,11 +73,11 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = "gate:concentration"
-ORACLE = "checks/concentration.py"
+ORACLE = "checks/rules/concentration.py"
 
 # argv[0] of the leg must actually run a .py file. Asserting the interpreter POSITIVELY is the
 # generalisation of "argv[0] is not `true`": blacklisting one no-op leaves `:`, and leaves
-# `echo python3 checks/concentration.py --ratchet --max-ratio 1.8`, which satisfies every
+# `echo python3 checks/rules/concentration.py --ratchet --max-ratio 1.8`, which satisfies every
 # name-and-flag check in this file while executing nothing.
 PYTHON = re.compile(r"^python(3(\.\d+)?)?$")
 

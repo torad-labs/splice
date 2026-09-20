@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/concentration-selftest.sh — red-green proof for the concentration oracle AND for the guard
+# checks/rules/concentration-selftest.sh — red-green proof for the concentration oracle AND for the guard
 # that keeps its leg routed, run by the gate.
 #
 # WHY THIS EXISTS. Every other checker this repo wires has a paired selftest leg — catalog metadata,
@@ -9,7 +9,7 @@
 # written with raw substring tests, NOTHING re-ran them, and both halves of it turned out to be
 # defeated by a single `#`:
 #
-#     "gate:concentration": "true # python3 checks/concentration.py --ratchet --max-ratio 1.8"
+#     "gate:concentration": "true # python3 checks/rules/concentration.py --ratchet --max-ratio 1.8"
 #     run "concentration"  true  # gate:concentration disabled pending investigation
 #
 # Both kept every required substring while executing `true`. A transcript in a ledger cannot notice
@@ -36,7 +36,7 @@
 # red", which is worth nothing unless the unmutated harness is green. If the control fails, this
 # script says so and every fixture below it is reported as unproven rather than passing by accident.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -45,12 +45,12 @@ fail=0
 err() { echo "  ✗ concentration-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
-ORACLE="$tmp/checks/concentration.py"
+ORACLE="$tmp/checks/rules/concentration.py"
 ROUTING="$tmp/checks/config/concentration-leg-routed.py"
 SYNTH="$tmp/gateway/zz-selftest-synthetic/src/main/kotlin/splice/selftest"
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/gateway"
+mkdir -p "$tmp/checks/config" "$tmp/checks/rules" "$tmp/gateway"
 for main in "$ROOT"/gateway/*/src/main; do
   [ -d "$main" ] || continue
   mod="${main#"$ROOT"/gateway/}"
@@ -59,7 +59,7 @@ for main in "$ROOT"/gateway/*/src/main; do
 done
 [ -e "$tmp/gateway/core" ] || { echo "  ✗ concentration-selftest: no gateway modules found under $ROOT"; exit 1; }
 
-reset_oracle() { cp "$ROOT/checks/concentration.py" "$ORACLE"; }
+reset_oracle() { cp "$ROOT/checks/rules/concentration.py" "$ORACLE"; }
 reset_config() {
   cp "$ROOT/package.json" "$tmp/package.json"
   cp "$ROOT/checks/gate.sh" "$tmp/checks/gate.sh"
@@ -233,17 +233,17 @@ routing
 must_fail "4. gate:concentration rewritten to 'true'" "does not run a python interpreter"
 
 # The blocker itself: every required substring survives, in a comment the shell throws away.
-set_script 'true # python3 checks/concentration.py --ratchet --max-ratio 1.8'
+set_script 'true # python3 checks/rules/concentration.py --ratchet --max-ratio 1.8'
 routing
 must_fail "5. gate:concentration defanged by a shell comment" "does not run a python interpreter"
 
 # The original one-line defang the guard was written for, kept so it cannot regress either.
-set_script 'python3 checks/concentration.py --top 5'
+set_script 'python3 checks/rules/concentration.py --top 5'
 routing
 must_fail "5b. gate:concentration downgraded to --top 5" "does not pass --ratchet"
 
 # The oracle argv is present and valid, but a shell control operator masks any ratchet failure.
-set_script 'python3 checks/concentration.py --ratchet --max-ratio 1.8 || true'
+set_script 'python3 checks/rules/concentration.py --ratchet --max-ratio 1.8 || true'
 routing
 must_fail "5c. gate:concentration masks the oracle exit with shell control" "unsupported or trailing token"
 reset_config
@@ -441,8 +441,8 @@ reset_config
 # pre-DR-51 oracle: the intersection loop dropped the added and deleted rows entirely, and abs()
 # shares could not go negative, so an own-C FALL during a ratio RISE read as a positive share.
 G="$tmp/since-repo"
-mkdir -p "$G/checks" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
-cp "$ROOT/checks/concentration.py" "$G/checks/concentration.py"
+mkdir -p "$G/checks/rules" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
+cp "$ROOT/checks/rules/concentration.py" "$G/checks/rules/concentration.py"
 { printf 'package splice.a\nimport splice.b.SelftestMarkerB\nclass A0(val v: Int)\n'; for i in $(seq 1 40); do printf 'class AF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m1/src/main/kotlin/splice/a/A.kt"
 { printf 'package splice.b\nclass SelftestMarkerB(val v: Int)\n'; for i in $(seq 1 200); do printf 'class BF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m2/src/main/kotlin/splice/b/B.kt"
 printf 'package splice.b\nclass Doomed(val v: Int)\n' > "$G/gateway/m2/src/main/kotlin/splice/b/Doomed.kt"
@@ -455,7 +455,7 @@ git -C "$G" -c user.email=selftest@invalid -c user.name=selftest commit -qm fixt
 printf 'package splice.b\nclass SelftestMarkerB(val v: Int)\n' > "$G/gateway/m2/src/main/kotlin/splice/b/B.kt"
 printf 'package splice.a\nclass Fresh(val v: Int)\n' > "$G/gateway/m1/src/main/kotlin/splice/a/Fresh.kt"
 rm "$G/gateway/m2/src/main/kotlin/splice/b/Doomed.kt"
-python3 "$G/checks/concentration.py" --since HEAD --json >"$tmp/out" 2>&1; rc=$?
+python3 "$G/checks/rules/concentration.py" --since HEAD --json >"$tmp/out" 2>&1; rc=$?
 if [ "$rc" -ne 0 ]; then
   err "11. --since arm — the fixture repo run must succeed (exit $rc): $(head -3 "$tmp/out" | tr '\n' ' ')"
 elif ! python3 - "$tmp/out" <<'PY'

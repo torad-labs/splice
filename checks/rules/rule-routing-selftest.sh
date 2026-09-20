@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# checks/rule-routing-selftest.sh — mutation-proves checks/rule-routing.sh (DR-132).
+# checks/rules/rule-routing-selftest.sh — mutation-proves checks/rules/rule-routing.sh (DR-132).
 #
 # Same defence-in-depth idiom as the catalog, secret-scan, concentration and config-guard
 # selftests: the leg guards the tree, this canary guards the LEG. rule-routing.sh shipped without
@@ -11,7 +11,7 @@
 #
 # Runs the real script against a mirrored tree so fixtures never touch the repo's own .rules.
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -21,14 +21,14 @@ err() { echo "  ✗ rule-routing-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 # ── mirror: everything rule-routing.sh reads ─────────────────────────────────────────────────
-mkdir -p "$tmp/checks/config"
-cp "$ROOT/checks/rule-routing.sh" "$tmp/checks/"
-cp "$ROOT/checks/config/ast-grep-rule-docs.py" "$tmp/checks/config/"
+mkdir -p "$tmp/checks/rules"
+cp "$ROOT/checks/rules/rule-routing.sh" "$tmp/checks/rules/"
+cp "$ROOT/checks/rules/ast-grep-rule-docs.py" "$tmp/checks/rules/"
 cp "$ROOT/sgconfig.yml" "$tmp/"
 cp -r "$ROOT/.rules" "$tmp/.rules"
 
 rc=0
-routing() { bash "$tmp/checks/rule-routing.sh" >"$tmp/out" 2>&1; rc=$?; }
+routing() { bash "$tmp/checks/rules/rule-routing.sh" >"$tmp/out" 2>&1; rc=$?; }
 
 must_fail() { # must_fail <label> <substring>
   if [ "$rc" -eq 0 ]; then
@@ -89,10 +89,10 @@ cp "$ROOT/sgconfig.yml" "$tmp/"
 # A broken module returns 0 rule files for every directory, and 0 means "nothing to check here" —
 # silently turning this whole leg into a no-op. That is the bug class the leg exists to catch, one
 # level up, so an unrunnable enumerator has to be a hard failure and not a quiet fallback.
-mv "$tmp/checks/config/ast-grep-rule-docs.py" "$tmp/checks/config/ast-grep-rule-docs.py.bak"
+mv "$tmp/checks/rules/ast-grep-rule-docs.py" "$tmp/checks/rules/ast-grep-rule-docs.py.bak"
 routing
 must_fail "5. enumerator missing" "is not runnable"
-mv "$tmp/checks/config/ast-grep-rule-docs.py.bak" "$tmp/checks/config/ast-grep-rule-docs.py"
+mv "$tmp/checks/rules/ast-grep-rule-docs.py.bak" "$tmp/checks/rules/ast-grep-rule-docs.py"
 
 # ── 6. CONTROL: a dormant dir carrying a dated allowlist entry stays green ────────────────────
 # Guards against "fix" by rejecting every unreferenced directory: .rules/kotlin is deliberately

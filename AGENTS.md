@@ -182,7 +182,7 @@ this), not the clean snapshot.
 | duplicated JSONL append + tail reader (perf/compact drift; `:perf` reached into `:compact`) | T1 `core/util/JsonlSink.appendLine`/`readTail` + wall `kt-jsonl-sink-single-source` |
 | `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
 | god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
-| config weakened to hide findings | T2 `checks/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |
+| config weakened to hide findings | T2 `checks/config/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |
 | the tiers never running | T0 `gateway-gradle` CI job + `bash checks/gate.sh` — everything above actually executes |
 
 The gate reads **real** exit codes (`checks/gate.sh` → `GATE: PASS/FAIL`); a filtered `gradle|grep`

@@ -6,7 +6,10 @@
 //
 // The four cases are the four ways the map can stop describing the build: the channel is absent,
 // the channel is malformed, a module in the map has no build file (the old resolver's
-// `return emptySet()`), and a directory on disk ships production Kotlin that no module claims.
+// `return emptySet()`), and a directory on disk ships production Kotlin that no module claims. A
+// fifth, from the review of fdc71fad: the census channel — the sweep skips exactly the names the
+// build's census input excludes, so the build cannot leave the sweep UP-TO-DATE over a tree it
+// never fingerprinted.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -33,6 +36,14 @@ private const val DUPLICATE_ENTRY_EXPECTED = "splice.projectMap maps :core twice
 private const val UNMAPPED_DIR_EXPECTED = "providers/x ships production Kotlin under src/main/kotlin and the project map claims no module there — include it in settings.gradle.kts so every law grades it, or delete the sources; a module the build never included is silently ungoverned."
 
 private const val STALE_NAME_EXPECTED = "the project map has no :ghost — the laws grade the modules the build declares, so a name this file asks for and the build does not include is a stale entry, not a gap."
+
+private const val ABSENT_CENSUS_EXPECTED = "no -Dsplice.censusNotSwept: the unmapped-source sweep skips exactly the directory names the build's census input excludes, and a sweep that cannot see that list would walk trees the build never fingerprints. gateway/arch-tests/build.gradle.kts is what supplies it."
+
+private const val GENERATED_DIR_EXPECTED = "build ships production Kotlin under src/main/kotlin and the project map claims no module there — include it in settings.gradle.kts so every law grades it, or delete the sources; a module the build never included is silently ungoverned."
+
+/** Synthetic fixtures live under a temp dir, so this list is fixture data; the LIVE list is the
+ *  build's, read through [ProjectMap.CENSUS_PROPERTY]. */
+internal val fixtureNotSwept: Set<String> = setOf("build", ".git", ".gradle", "node_modules")
 
 /** Writes a fixture file and every directory above it, consuming mkdirs()' verdict rather than
  *  discarding it — a fixture that silently failed to land would make the proof below vacuous. */
@@ -88,7 +99,7 @@ class ProjectMapTest {
     fun `a NESTED module resolves through its mapped directory - P0`(@TempDir temp: File) {
         val buildFile = writeFixture(temp, "$NESTED_DIR/build.gradle.kts", "dependencies { }\n")
         val source = writeFixture(temp, "$NESTED_DIR/src/main/kotlin/X.kt", NESTED_FIXTURE_SOURCE)
-        val nested = ProjectMap.parse(temp, "$NESTED_MODULE=$NESTED_DIR")
+        val nested = ProjectMap.parse(temp, "$NESTED_MODULE=$NESTED_DIR", fixtureNotSwept)
         assertEquals(setOf(NESTED_MODULE), nested.modules)
         assertEquals(NESTED_DIR, nested.relativeDir(NESTED_MODULE))
         assertEquals(buildFile, nested.buildFile(NESTED_MODULE))
@@ -105,7 +116,7 @@ class ProjectMapTest {
     // case with NO EDGES, so the module's whole dependency grading disappeared without a failure.
     @Test
     fun `a module in the map with no build file fails BY NAME - P0`(@TempDir temp: File) {
-        val nested = ProjectMap.parse(temp, "$NESTED_MODULE=$NESTED_DIR")
+        val nested = ProjectMap.parse(temp, "$NESTED_MODULE=$NESTED_DIR", fixtureNotSwept)
         val failure = assertThrows<IllegalStateException> { nested.buildFile(NESTED_MODULE) }
         assertEquals(MISSING_BUILD_FILE_EXPECTED, failure.message, "the module must be named")
     }
@@ -117,27 +128,29 @@ class ProjectMapTest {
     fun `the map channel fails BY NAME when it is absent or malformed - P0`(@TempDir temp: File) {
         assertEquals(
             ABSENT_CHANNEL_EXPECTED,
-            assertThrows<IllegalStateException> { ProjectMap.parse(temp, null) }.message,
+            assertThrows<IllegalStateException> { ProjectMap.parse(temp, null, fixtureNotSwept) }.message,
             "an absent channel must fail, not grade an empty tree",
         )
         assertEquals(
             ABSENT_CHANNEL_EXPECTED,
-            assertThrows<IllegalStateException> { ProjectMap.parse(temp, "   ") }.message,
+            assertThrows<IllegalStateException> { ProjectMap.parse(temp, "   ", fixtureNotSwept) }.message,
             "a blank channel is an absent one wearing a label",
         )
         assertEquals(
             MALFORMED_ENTRY_EXPECTED,
-            assertThrows<IllegalStateException> { ProjectMap.parse(temp, "core=core") }.message,
+            assertThrows<IllegalStateException> { ProjectMap.parse(temp, "core=core", fixtureNotSwept) }.message,
             "an entry whose key is not a Gradle path must fail BY NAME, quoting the entry",
         )
         assertEquals(
             EMPTY_DIRECTORY_EXPECTED,
-            assertThrows<IllegalStateException> { ProjectMap.parse(temp, ":core=") }.message,
+            assertThrows<IllegalStateException> { ProjectMap.parse(temp, ":core=", fixtureNotSwept) }.message,
             "a module mapped to no directory is the same half-read map",
         )
         assertEquals(
             DUPLICATE_ENTRY_EXPECTED,
-            assertThrows<IllegalStateException> { ProjectMap.parse(temp, ":core=core;:core=elsewhere") }.message,
+            assertThrows<IllegalStateException> {
+                ProjectMap.parse(temp, ":core=core;:core=elsewhere", fixtureNotSwept)
+            }.message,
             "one module cannot live in two directories",
         )
     }
@@ -154,7 +167,7 @@ class ProjectMapTest {
         }
         assertEquals(
             listOf(UNMAPPED_DIR_EXPECTED),
-            ProjectMap.parse(temp, ":core=core").unmappedProductionDirViolations(),
+            ProjectMap.parse(temp, ":core=core", fixtureNotSwept).unmappedProductionDirViolations(),
             "the unclaimed tree must be named; the claimed one must not be",
         )
     }
@@ -163,11 +176,51 @@ class ProjectMapTest {
     // the mirror of the missing-build-file case, one level up.
     @Test
     fun `a module the map does not declare fails BY NAME - P0`(@TempDir temp: File) {
-        val nested = ProjectMap.parse(temp, "$NESTED_MODULE=$NESTED_DIR")
+        val nested = ProjectMap.parse(temp, "$NESTED_MODULE=$NESTED_DIR", fixtureNotSwept)
         assertEquals(
             STALE_NAME_EXPECTED,
             assertThrows<IllegalStateException> { nested.relativeDir(":ghost") }.message,
             "a law asking for a module the build has not got must fail by name",
+        )
+    }
+
+    // P0, from the review of fdc71fad: THE CENSUS CHANNEL. The sweep skips exactly the directory
+    // names the build hands it, and the build fingerprints the same tree as the task's census input,
+    // so the two cannot disagree about which directories count. An absent channel fails by name,
+    // like the map's: a sweep that invented its own list could walk a tree the build never
+    // fingerprints, and new sources there would leave the task UP-TO-DATE with the sweep unrun.
+    @Test
+    fun `the census channel fails BY NAME when it is absent - P0`() {
+        assertEquals(
+            ABSENT_CENSUS_EXPECTED,
+            assertThrows<IllegalStateException> { ProjectMap.notSweptFrom(null) }.message,
+            "an absent census channel must fail, not sweep with a list of its own",
+        )
+        assertEquals(
+            ABSENT_CENSUS_EXPECTED,
+            assertThrows<IllegalStateException> { ProjectMap.notSweptFrom("  ") }.message,
+            "a blank channel is an absent one wearing a label",
+        )
+        assertEquals(
+            setOf("build", "node_modules"),
+            ProjectMap.notSweptFrom("build; node_modules;"),
+            "the channel is a name list — trimmed, and never an empty name",
+        )
+    }
+
+    @Test
+    fun `the sweep skips exactly the directory names the build hands it - P0`(@TempDir temp: File) {
+        val generated = writeFixture(temp, "build/src/main/kotlin/Generated.kt", NESTED_FIXTURE_SOURCE)
+        assertTrue(generated.isFile) { "the fixture must land, or the sweep has nothing to find" }
+        assertEquals(
+            emptyList<String>(),
+            ProjectMap.parse(temp, ":core=core", setOf("build")).unmappedProductionDirViolations(),
+            "a name on the list is never entered",
+        )
+        assertEquals(
+            listOf(GENERATED_DIR_EXPECTED),
+            ProjectMap.parse(temp, ":core=core", setOf("node_modules")).unmappedProductionDirViolations(),
+            "a name off the list is swept — the list is load-bearing, not decoration",
         )
     }
 }

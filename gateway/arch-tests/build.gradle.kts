@@ -21,6 +21,16 @@ val moduleDirectories: Map<String, String> = rootProject.subprojects
     }
     .toSortedMap()
 
+// P0, from the review of fdc71fad: THE CENSUS. ProjectMap.unmappedProductionDirViolations sweeps the
+// WHOLE root for src/main/kotlin trees no module claims, but the mapped inputs below name only the
+// trees the map already knows — so a tree added under providers/x without touching
+// settings.gradle.kts changed no declared input, an ordinary :arch-tests:test stayed UP-TO-DATE,
+// and the unclaimed tree passed in silence. The census is its own input: every production Kotlin
+// file anywhere under the root, minus the directory names the sweep never enters. ONE list, written
+// here and handed to the test JVM as a property, so the build cannot fingerprint a narrower tree
+// than the sweep walks.
+val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modules")
+
 tasks.withType<Test>().configureEach {
     systemProperty("gateway.root", gatewayRoot.asFile.absolutePath)
     // THE CHANNEL: `:path=directory` pairs, ';'-separated, parsed by ProjectMap.kt and nowhere
@@ -31,6 +41,9 @@ tasks.withType<Test>().configureEach {
         "splice.projectMap",
         moduleDirectories.entries.joinToString(";") { (path, dir) -> "$path=$dir" },
     )
+    // The census channel: the same names the census input below excludes, so the sweep in the test
+    // JVM and the fingerprint that decides whether that JVM runs at all read one list.
+    systemProperty("splice.censusNotSwept", censusNotSwept.joinToString(";"))
     // Konsist scans the whole tree's sources at runtime — they are real inputs of this
     // task. Without declaring them, Gradle marks the task UP-TO-DATE after unrelated
     // module edits and the laws silently stop running (caught red-handed in P1-KONSIST's
@@ -41,6 +54,14 @@ tasks.withType<Test>().configureEach {
             gatewayRoot.dir("$dir/src/main/kotlin").asFileTree.matching { include("**/*.kt") }
         },
     ).withPropertyName("scannedProductionSources")
+    // The census: production Kotlin ANYWHERE under the root. A file that appears in a tree the
+    // map does not claim changes this fingerprint, so the sweep that names that tree actually runs.
+    inputs.files(
+        gatewayRoot.asFileTree.matching {
+            include("**/src/main/kotlin/**/*.kt")
+            censusNotSwept.forEach { name -> exclude("**/$name/**") }
+        },
+    ).withPropertyName("productionSourceCensus")
     // Same lesson, second input set (HD-11): the module-dependency-direction law reads the BUILD
     // files, so those are inputs too. Without this the law's own red/green proof came back
     // UP-TO-DATE after a forbidden `project(":gateway")` was added — a green that never ran.

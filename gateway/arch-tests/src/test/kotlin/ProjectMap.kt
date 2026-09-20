@@ -22,6 +22,12 @@ internal class ProjectMap private constructor(
     /** The Gradle root every relative directory in this map resolves against. */
     val root: File,
     private val directories: Map<String, String>,
+    /** Directory NAMES the unmapped-source sweep never enters: generated output and tool state.
+     *  Handed in by the build ([CENSUS_PROPERTY]), never a constant here, because the build
+     *  fingerprints exactly this tree as the task's census input. A name the build excluded and
+     *  this sweep entered is a tree whose new sources leave the task UP-TO-DATE — the sweep never
+     *  runs, and the unclaimed tree passes in silence. */
+    private val notSwept: Set<String>,
 ) {
     /** Every module the BUILD declares — the denominator every module-shaped law counts against. */
     val modules: Set<String> = directories.keys
@@ -56,7 +62,7 @@ internal class ProjectMap private constructor(
      *  tree every law walks past, and nothing in the tree says so. */
     fun unmappedProductionDirViolations(): List<String> =
         root.walkTopDown()
-            .onEnter { it.name !in NOT_SWEPT }
+            .onEnter { it.name !in notSwept }
             .filter { it.isDirectory && it.invariantSeparatorsPath.endsWith(MAIN_SOURCES) }
             .filter { main -> main.walkTopDown().any { it.isFile && it.extension == "kt" } }
             .map { it.parentFile.parentFile.parentFile.relativeTo(root).invariantSeparatorsPath }
@@ -77,6 +83,10 @@ internal class ProjectMap private constructor(
         /** The absolute Gradle root the laws read the tree from. */
         const val ROOT_PROPERTY: String = "gateway.root"
 
+        /** The census channel: the directory names the build's census input excludes, `;`-separated,
+         *  written by the same build script as [PROPERTY]. */
+        const val CENSUS_PROPERTY: String = "splice.censusNotSwept"
+
         /** The map this test JVM was handed. */
         fun fromSystemProperties(): ProjectMap {
             val root = System.getProperty(ROOT_PROPERTY)
@@ -84,12 +94,12 @@ internal class ProjectMap private constructor(
                 "no -D$ROOT_PROPERTY: the laws read the source tree through it, and a law that " +
                     "cannot find the tree must fail rather than grade nothing."
             }
-            return parse(File(root), System.getProperty(PROPERTY))
+            return parse(File(root), System.getProperty(PROPERTY), notSweptFrom(System.getProperty(CENSUS_PROPERTY)))
         }
 
         /** PURE, so every way the channel can break is provable against synthetic input rather than
          *  only against a build that happens to be configured correctly. */
-        fun parse(root: File, raw: String?): ProjectMap {
+        fun parse(root: File, raw: String?, notSwept: Set<String>): ProjectMap {
             check(!raw.isNullOrBlank()) {
                 "no -D$PROPERTY: the laws grade the modules the BUILD declares, and an absent map " +
                     "grades nothing while every law still reports green. " +
@@ -109,14 +119,24 @@ internal class ProjectMap private constructor(
                         "place one module in two directories; the channel is corrupt."
                 }
             }
-            return ProjectMap(root, directories.toMap())
+            return ProjectMap(root, directories.toMap(), notSwept)
+        }
+
+        /** PURE, like [parse]: the census channel's own failure is provable against synthetic input.
+         *  Absent or blank fails BY NAME — a sweep without the build's list would either walk trees
+         *  the build never fingerprints (a stale UP-TO-DATE green) or invent a list of its own. */
+        fun notSweptFrom(raw: String?): Set<String> {
+            check(!raw.isNullOrBlank()) {
+                "no -D$CENSUS_PROPERTY: the unmapped-source sweep skips exactly the directory names " +
+                    "the build's census input excludes, and a sweep that cannot see that list would " +
+                    "walk trees the build never fingerprints. gateway/arch-tests/build.gradle.kts " +
+                    "is what supplies it."
+            }
+            return raw.split(ENTRY_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         }
 
         private const val ENTRY_SEPARATOR = ";"
         private const val PAIR_SEPARATOR = "="
         private const val MAIN_SOURCES = "/src/main/kotlin"
-
-        /** Never swept for unmapped sources: generated output and tool state, not modules. */
-        private val NOT_SWEPT = setOf("build", ".git", ".gradle", "node_modules")
     }
 }

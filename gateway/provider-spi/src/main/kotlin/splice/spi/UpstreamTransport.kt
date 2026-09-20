@@ -323,8 +323,9 @@ internal class KeepaliveSocketFactory(
     }
 }
 
-// Seconds of silence before the first probe, seconds between probes, probes before the socket is
-// declared dead: 30 + 3 x 10 = a dead peer is known within 60s of its last byte.
-internal const val KEEPALIVE_IDLE_S: Int = 30
-internal const val KEEPALIVE_INTERVAL_S: Int = 10
-internal const val KEEPALIVE_PROBES: Int = 3
+// The three keepalive timings, 30 + 3 x 10: a dead peer is known within 60s of its last byte, and a
+// live-but-quiet SSE hold costs one empty segment every 30s. Chosen to sit well under the idle tier
+// Watchdog parks a round at, so the socket answers "dead" before the watchdog has to guess.
+internal const val KEEPALIVE_IDLE_S: Int = 30 // why: seconds of silence before the first probe
+internal const val KEEPALIVE_INTERVAL_S: Int = 10 // why: seconds between unanswered probes
+internal const val KEEPALIVE_PROBES: Int = 3 // why: unanswered probes before the kernel declares the peer dead

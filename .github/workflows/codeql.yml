@@ -43,6 +43,14 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          # webui/dist/index.html is the committed single-file bundle: every dependency's minified
+          # code inline, and CodeQL read it as ours — two "high" alerts on 2026-09-20 were
+          # react-router's redirect-protocol allowlist and style-mod's `&` selector nesting (#5, #8).
+          # The bundle has no reviewable source at that path by construction; checks/gate.sh
+          # proves it reproduces from webui/src, which stays scanned.
+          config: |
+            paths-ignore:
+              - webui/dist
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
         working-directory: gateway

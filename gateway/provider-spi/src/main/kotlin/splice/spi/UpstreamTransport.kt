@@ -1,27 +1,51 @@
-// PORT-OF: splice/spi/UpstreamClient.kt (Transport.defaultClient, CONNECT_TIMEOUT_MS, nodelayLogged) @ 3879c4c — invariants unchanged: still the ONE HttpClient construction in the tree, and every timeout, engine and protocol setting below is byte-for-byte the original.
+// PORT-OF: splice/spi/UpstreamClient.kt (Transport.defaultClient, CONNECT_TIMEOUT_MS, nodelayLogged) @ 3879c4c — the ONE HttpClient construction in the tree; the timeouts are the original's, the ENGINE changed in V4-141 (below).
 //
 // The ONE HttpClient construction in the tree (HD-25). Was UpstreamClient.Transport.defaultClient;
-// only the receiver moved — every timeout, engine and protocol setting below is byte-for-byte the
-// original, and UpstreamClient's `client` constructor default still calls it.
+// only the receiver moved, and UpstreamClient's `client` constructor default still calls it.
+//
+// V4-141: the engine is OkHttp, not the JDK HttpClient, for ONE reason — it hands us the socket.
+// The JDK client exposes no socket options (JDK-8338681), so its upstream sockets carried no TCP
+// keepalive and a half-open connection read as healthy for the whole turn cap; KeepaliveSocketFactory
+// arms every socket before it connects. The swap's own cost is named and paid here rather than
+// discovered in production: OkHttp is BLOCKING and its Dispatcher caps FIVE requests
+// per host by default, which would serialise every concurrent turn against one provider behind five
+// sockets — a worse outage than the reaps keepalive exists to end. So the Dispatcher runs on a
+// virtual-thread executor at UPSTREAM_MAX_REQUESTS, and that number is PINNED by a test. The SECOND
+// cost is the one the load test found (2026-09-20, first run of the swap: 1000 turns, peak 96 held
+// at the mock, ZERO live at the client): ktor's OkHttp engine bridges each response body to a channel
+// with a BLOCKING `source.read` on the ENGINE's dispatcher, which defaults to Dispatchers.IO (64
+// threads). Ninety-six held streams pinned all 64, and the head's own pipeline — which also runs on
+// IO — could no longer forward the delta it had already received: a deadlock at exactly the ramp
+// width. So the engine dispatcher is the same virtual-thread executor, and a held stream blocks a
+// virtual thread that costs nothing to park.
 //
 // Transport lessons from Grok Build / Codex CLI that this file is the home of:
 //   - shorter keepAlive than upstream idle so we don't reuse LB-killed sockets
-//   - pipelineMaxSize=1 so a cancelled SSE cannot poison siblings
+//   - HTTP/1.1 only, one stream per connection, so a cancelled SSE cannot poison siblings
 // The failure CLASSIFICATION half of the old Transport lives in TransportFailures.kt; the G5
 // re-issue interlock that used to sit beside it went to RetryPolicy.kt, where its three loop-budget
 // facts are.
 package splice.spi
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.java.Java
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
+import jdk.net.ExtendedSocketOptions
+import kotlinx.coroutines.asCoroutineDispatcher
+import okhttp3.Dispatcher
+import okhttp3.Protocol
 import splice.core.util.LogSink
 import java.io.IOException
 import java.net.ConnectException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketOption
 import java.net.URI
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.SocketFactory
 import kotlin.random.Random
 
 public class UpstreamTransport {
@@ -33,29 +57,55 @@ public class UpstreamTransport {
     ): HttpClient {
         if (noDelayGuard.compareAndSet(false, true)) {
             log(
-                "[upstream] tcp_nodelay(client)=unverifiable: java.net.http.HttpClient exposes " +
-                    "no public API to read or set TCP_NODELAY per connection (JDK-8338681, open)\n",
+                "[upstream] tcp_nodelay(client)=set keepalive(client)=${KEEPALIVE_IDLE_S}s/" +
+                    "${KEEPALIVE_INTERVAL_S}s/x$KEEPALIVE_PROBES: every upstream socket is armed by " +
+                    "KeepaliveSocketFactory before it connects (V4-141)\n",
             )
         }
-        return HttpClient(Java) {
+        // Built ONCE per client, outside the config block: ktor's OkHttp engine re-runs that block
+        // for every distinct timeout configuration it caches a client for, and a Dispatcher created
+        // inside it would give each cached client its own executor and its own per-host budget.
+        val threads = upstreamThreads()
+        val dispatcher = upstreamDispatcher(threads)
+        val sockets = KeepaliveSocketFactory()
+        return HttpClient(OkHttp) {
             install(HttpTimeout) {
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
                 requestTimeoutMillis = totalTimeoutMs
                 socketTimeoutMillis = firstByteTimeoutMs
             }
             engine {
-                // JDK HttpClient (async NIO), replacing ktor CIO. CIO's socket writer busy-spun
-                // on a non-writable upstream socket (macOS/kqueue) and melted CPU under
-                // concurrent large-body streams — 9 writer coroutines pegged cores and starved
-                // the coroutine dispatcher to 103 workers (busy-loop jstack, 2026-07-18). The
-                // JDK engine parks on write backpressure and drives the 1000-stream target on a
-                // shared selector, not a thread-per-write. HTTP/1.1 only — parity with the CIO
-                // lineage (undici allowH2:false): one stream per connection, cancel-safe; the
-                // app-level retry loop already owns connect retries.
-                protocolVersion = java.net.http.HttpClient.Version.HTTP_1_1
+                // The engine's own dispatcher, where every response body is read with a blocking
+                // `source.read` for as long as the stream is held: virtual, never Dispatchers.IO.
+                this.dispatcher = threads.asCoroutineDispatcher()
+                config {
+                    // HTTP/1.1 only — parity with the CIO and JDK lineages (undici allowH2:false):
+                    // one stream per connection, cancel-safe; the app-level retry loop already
+                    // owns connect retries. The JDK engine this replaced was chosen over ktor CIO
+                    // because CIO's socket writer busy-spun on a non-writable upstream socket
+                    // (macOS/kqueue, 2026-07-18); OkHttp blocks a virtual thread per call instead,
+                    // and the 1000-stream load test is the gate that says it scales.
+                    protocols(listOf(Protocol.HTTP_1_1))
+                    socketFactory(sockets)
+                    dispatcher(dispatcher)
+                }
             }
         }
     }
+
+    /** The one thread source under the upstream client — OkHttp's calls AND ktor's body readers —
+     *  and it is virtual because both block a thread per held stream. Internal so a test can pin
+     *  the kind: on platform threads the same code is a thread-per-stream daemon. */
+    internal fun upstreamThreads(): ExecutorService = Executors.newVirtualThreadPerTaskExecutor()
+
+    /** OkHttp's call scheduler, sized for the daemon rather than for a browser: the default
+     *  Dispatcher runs 64 calls in flight and FIVE per host, and every turn the daemon serves is a
+     *  call to one of two or three hosts. Internal so a test can pin both numbers. */
+    internal fun upstreamDispatcher(threads: ExecutorService = upstreamThreads()): Dispatcher =
+        Dispatcher(threads).apply {
+            maxRequests = UPSTREAM_MAX_REQUESTS
+            maxRequestsPerHost = UPSTREAM_MAX_REQUESTS
+        }
 
     /** Exponential backoff, jittered ±[jitterPct]% (codex shape — synchronized retry herds re-collide
      *  without it), capped at [capMs]; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
@@ -189,16 +239,92 @@ internal const val JITTER_PCT: Int = 10
 internal const val DNS_BACKOFF_BASE_MS: Long = 1_000L
 internal const val DNS_MAX_BACKOFF_MS: Long = 4_000L
 
-// G26: java.net.http.HttpClient/Builder expose no public API to read or set TCP_NODELAY per
-// connection (confirmed via javap on ktor-client-java-jvm; JDK-8338681 is an open
-// enhancement request for exactly this, still unresolved). Reflecting into
-// jdk.internal.net.http internals is fragile/module-encapsulated and disproportionate for a
-// LOW one-time diagnostic — the honest move is to log that verification is impossible via
-// public API, once per JVM (a JVM-wide guard so N heads sharing one daemon log it once, not
-// N times each time a head is assembled). Injectable like the backoff seams above (and
-// UpstreamClient's clock seam), so a test can pin its own guard instead of sharing process-wide state with
-// every other direct defaultClient() caller (UpstreamClientConnectTimeoutTest calls it too,
-// for its own unrelated real-socket connect-timeout probe).
+// V4-141: the in-flight ceiling for OkHttp's Dispatcher, total and per host — the same number the
+// load test drives (1000 streams against one mock host), with headroom. It replaces a default of 5
+// per host that no test would have caught short of the load test, which is why it is pinned.
+internal const val UPSTREAM_MAX_REQUESTS: Int = 4096
+
+// G26 (closed by V4-141): under the JDK engine TCP_NODELAY was UNVERIFIABLE — java.net.http.HttpClient
+// exposes no socket API (JDK-8338681) — so this logged that fact once per JVM instead of pretending.
+// KeepaliveSocketFactory now SETS it, with the keepalive timings, on every socket before it connects,
+// and the once-per-JVM line reports what is set rather than what cannot be read. Still a JVM-wide
+// guard so N heads sharing one daemon log it once, not N times each time a head is assembled;
+// injectable like the backoff seams above (and UpstreamClient's clock seam), so a test can pin its
+// own guard instead of sharing process-wide state with every other direct defaultClient() caller
+// (UpstreamClientConnectTimeoutTest calls it too, for its own real-socket connect-timeout probe).
 // FILE SCOPE ON PURPOSE: the guard is JVM-wide BY CONTRACT — as an UpstreamTransport field, every
 // `UpstreamTransport()` would carry a fresh guard and the once-per-JVM log would fire per client.
 private val nodelayLogged = AtomicBoolean(false)
+
+// V4-141 — the SocketFactory that arms every upstream socket BEFORE it connects.
+//
+// WHY A FACTORY. java.net.http.HttpClient exposes no socket options at all (JDK-8338681), so for as
+// long as it was the upstream engine the daemon's established upstream sockets carried no keepalive
+// timer — `ss -tnpo` showed none, while a standalone probe armed through a SocketFactory showed
+// `timer:(keepalive,...)`. Without keepalive a half-open connection (LB reaped it, the FIN never
+// reached us) reads as HEALTHY to every layer above: the SSE hold V4-125 landed then has no bound but
+// the whole-turn cap. OkHttp is the engine that takes a SocketFactory, and this is the factory. It lives in THIS file
+// rather than its own because the concentration ratchet's denominator is a per-package median: a
+// 60-line sibling in splice.spi moved app/codemode/CodeModeWire.kt into band HIGH without a line of
+// it changing (measured 2026-09-20), which is the ratchet's documented property, not a defect here.
+//
+// ARMED ON THE RAW SOCKET, BEFORE CONNECT. OkHttp asks for `createSocket()` (unconnected), connects it
+// itself, and layers TLS over it with `SSLSocketFactory.createSocket(raw, host, port, autoClose)`;
+// the options live on the raw file descriptor, so the TLS layer inherits them and a probe on the
+// wire is a plain TCP keepalive the peer's kernel answers without the application's help. That is
+// the whole point: it works on a connection whose application layer is silent, which is exactly the
+// case that cannot be told apart from a dead one any other way.
+//
+// THE THREE TIMINGS are the ones the evaluation measured (30s idle, 10s between probes, 3 probes):
+// a dead peer is declared within 60s of the last byte, and a live-but-quiet SSE hold costs one
+// empty segment every 30s. They are jdk.net.ExtendedSocketOptions, which the JDK supports on Linux
+// and macOS and only partly on Windows; an unsupported one is SKIPPED, not thrown, because
+// SO_KEEPALIVE itself is universal and a probe on the OS's own schedule (Linux: 2h) is still a
+// bound, where the alternative is a client that refuses to connect at all.
+internal class KeepaliveSocketFactory(
+    private val idleSeconds: Int = KEEPALIVE_IDLE_S,
+    private val intervalSeconds: Int = KEEPALIVE_INTERVAL_S,
+    private val probes: Int = KEEPALIVE_PROBES,
+) : SocketFactory() {
+
+    /** The one overload OkHttp calls: an unconnected socket it connects itself. */
+    override fun createSocket(): Socket = arm(Socket())
+
+    override fun createSocket(host: String, port: Int): Socket =
+        createSocket().also { it.connect(InetSocketAddress(host, port)) }
+
+    override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
+        createSocket().also {
+            it.bind(InetSocketAddress(localHost, localPort))
+            it.connect(InetSocketAddress(host, port))
+        }
+
+    override fun createSocket(host: InetAddress, port: Int): Socket =
+        createSocket().also { it.connect(InetSocketAddress(host, port)) }
+
+    override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
+        createSocket().also {
+            it.bind(InetSocketAddress(localAddress, localPort))
+            it.connect(InetSocketAddress(address, port))
+        }
+
+    /** Internal, not private: the test pins what an armed socket reads back, without a peer. */
+    internal fun arm(socket: Socket): Socket = socket.apply {
+        keepAlive = true
+        // G26 closed: TCP_NODELAY was "unverifiable" only because the JDK engine hid the socket.
+        tcpNoDelay = true
+        setIfSupported(this, ExtendedSocketOptions.TCP_KEEPIDLE, idleSeconds)
+        setIfSupported(this, ExtendedSocketOptions.TCP_KEEPINTERVAL, intervalSeconds)
+        setIfSupported(this, ExtendedSocketOptions.TCP_KEEPCOUNT, probes)
+    }
+
+    private fun setIfSupported(socket: Socket, option: SocketOption<Int>, value: Int) {
+        if (option in socket.supportedOptions()) socket.setOption(option, value)
+    }
+}
+
+// Seconds of silence before the first probe, seconds between probes, probes before the socket is
+// declared dead: 30 + 3 x 10 = a dead peer is known within 60s of its last byte.
+internal const val KEEPALIVE_IDLE_S: Int = 30
+internal const val KEEPALIVE_INTERVAL_S: Int = 10
+internal const val KEEPALIVE_PROBES: Int = 3

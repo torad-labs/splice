@@ -1,8 +1,8 @@
-// G26: TCP_NODELAY on the upstream client hop cannot be verified via any public JDK HttpClient
-// API — java.net.http.HttpClient/Builder expose no reader/setter for it (JDK-8338681, open).
-// defaultClient() logs that fact once per guard instance instead of pretending to verify it.
-// UpstreamClientConnectTimeoutTest ALSO calls defaultClient() directly (a real-socket connect-
-// timeout probe, unrelated to logging) — sharing the production companion-object guard across
+// G26, closed by V4-141: TCP_NODELAY on the upstream client hop is now SET by KeepaliveSocketFactory
+// (the JDK engine it replaced exposed no socket API, JDK-8338681), and defaultClient() logs what is
+// armed once per guard instance. UpstreamTransportOkHttpTest pins the socket options themselves;
+// this pins the once-ness. UpstreamClientConnectTimeoutTest ALSO calls defaultClient() directly (a
+// real-socket connect-timeout probe, unrelated to logging) — sharing the production guard across
 // test classes would make "exactly once" order-dependent on which test class the JUnit engine
 // happens to run first, so this test pins its own fresh AtomicBoolean via the noDelayGuard
 // parameter rather than relying on the process-wide default.

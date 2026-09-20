@@ -41,3 +41,37 @@ cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.
 # deliberately secret-shaped literal that the test proves is WITHHELD from the log) was vetted on
 # feat/claude-head at 5522ef38; squash-merging PR #99 gave the same line a new commit SHA on main.
 0e91d54c27390a4694239e9e32e36861ce38ab53:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+
+# 2026-09-20 triage (splice-lead). Seven findings that the 2026-07-28 list never
+# covered — they predate the dev/ -> .dev/ history rewrite and surfaced only once
+# that rewrite invalidated every fingerprint above and the re-point brought the
+# count back down. Each was inspected by hand, by matched value, not by file name:
+#   v0.4.0.toml:519        the matched span is the prose "auth diagnostics,
+#                          generation/CAS" inside a green-run receipt. Not a value.
+#   web-console.toml:2361  a 40-char git blob id in a `RECEIPT ... blobs=` line, the
+#                          shape ledger.ts:495 writes on every receipt. 258 such lines
+#                          exist and this is the only one whose id clears the entropy
+#                          floor; if more start tripping it, the class wants a
+#                          shape-exact regex in .gitleaks.toml rather than N more lines.
+#   head-decoupling.md:660 a dialect name: the passthrough dialect's identifier.
+#   head-decoupling.md:708 two Anthropic beta-header flag names, comma-joined, each
+#                          ending in a release date. Header values, not credentials.
+#   DoctorRedactionTest:14 a fabricated live-key-prefixed token, and :15 the canonical
+#                          HS256 example JWT whose payload decodes to a subject of "1".
+#                          Both are the INPUT to the test asserting splice redacts
+#                          credential shapes — a redaction test cannot exist without them.
+#   TranscriptSentTextsTest:21  a fake bearer in a transcript fixture: the first eight
+#                          letters of the alphabet followed by the digits 1 through 8.
+# None is a credential, so nothing here needs rotating.
+#
+# The values are DESCRIBED and never quoted, deliberately. Quoting them verbatim put
+# three of the same shapes into this file's own comment, and gitleaks scans this file
+# like any other — the first draft of this block added three fresh findings while
+# claiming to remove seven. Caught by scanning the block as content before committing.
+ee2a9b9fa7f2328ef6ba5f9d68e2479ecc6d46e7:.dev/campaigns/v0.4.0.toml:generic-api-key:519
+c1ccf08904c3d04223ac439dc992ec111db47d62:.dev/campaigns/web-console.toml:generic-api-key:2361
+0e91d54c27390a4694239e9e32e36861ce38ab53:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:660
+0e91d54c27390a4694239e9e32e36861ce38ab53:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
+777cd5af9a3cf3582a3f823fdbae8fcfd2d3595c:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:14
+777cd5af9a3cf3582a3f823fdbae8fcfd2d3595c:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:15
+908e95a52163419c0027b8d99d38e4e2acf3cd5c:gateway/core/src/test/kotlin/console/v4131/TranscriptSentTextsTest.kt:generic-api-key:21

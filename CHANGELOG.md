@@ -352,18 +352,16 @@
   which tells the daemon which session was chosen. The hook authenticates with the session's own
   bearer from its environment, may only touch transcripts under that head's tree, and never blocks
   a session: every refusal answers 200 and lands one line in the daemon log.
-- **Claude Code's prompt without the hedges: `system_prompt_mode = "strip"` (V4-170).** A head or a
-  project layer can now delete paragraphs from the client's own system field instead of replacing
-  it: the layer's text is a pattern list (one regex per line, `#` comments), and every
-  blank-line-separated paragraph of the client's system text that a pattern matches is removed at
-  the wire, on every dialect. Everything else — the other paragraphs, the block order, the
-  `cache_control` breakpoints, the dynamic blocks a session needs — rides through byte-identical,
-  so the prompt cache still warms from turn two, which `replace` could not offer. A pattern that
-  is not a regex is a config error at load. `config/prompts/claude-code-hedges.strip` is the
-  starting list for Claude Code 2.1.276 (its security-refusal and confirm-first paragraphs), meant
-  for a `[projects."<root>".heads.<key>]` layer so one repo on one head loses them and nothing else
-  changes; a small local model that refused ordinary work on reading those paragraphs is the case
-  that asked for it.
+- **A third system prompt mode, `strip`, edits the client's system field in place (V4-170, V4-171).**
+  A head or a project layer can now delete paragraphs from the client's own system field instead
+  of replacing it: the layer's text is a pattern list (one regex per line, `#` comments), and
+  every blank-line-separated paragraph of the client's system text that a pattern matches is
+  removed at the wire, on every dialect. Everything else — the other paragraphs, the block order,
+  the `cache_control` breakpoints — rides through byte-identical, so the prompt cache still warms
+  from turn two, which `replace` could not offer. A pattern that is not a regex is a config error
+  at load. Nothing is stripped unless an operator writes a strip layer, splice ships no pattern
+  list, and `splice doctor` WARNs on every strip layer as it does on replace: the client's
+  instructions are being edited, and what a pattern removes is the operator's to own.
 - **Slot affinity follows its server, costs a turn nothing, and says when it is off (V4-166).** The slot count is re-read from `/props` in the background every 10 s instead of once: a llama-server restarted with a different `-np` silently wraps an out-of-range `id_slot` onto a slot another conversation holds, and splice kept pinning to the old count. A turn no longer waits on that read (it ran on the request path, holding a process-wide permit, for up to the probe timeouts against an unreachable server). Every head on one runtime now shares one slot table, which also survives a config reload, so two heads, or a reload with turns in flight, can no longer pin two conversations to one slot. A runtime that gives no slot count (router mode, a non-llama server, a keyed `/props`) is logged once with its reason instead of leaving slot affinity off without a word, and `splice doctor` lists `slot_affinity` and `stream_usage`. A compaction retry routed to a different slot now still matches its recording: the replay key leaves out `id_slot`, which routes a request and is no part of it.
 - **Hosted MCP servers can be reclaimed, and are capped when the host declares a place for them (V4-147).** A child spawned by splice inherited splice's own `oom_score_adj` of -1000, so the ~14 GB of MCP servers this host is meant to gather would have become memory no out-of-memory killer was allowed to touch, in a cgroup with no ceiling. Each hosted child is now raised off that protection at spawn — written to the child's pid alone, splice's own never — and the value is read back from the child rather than assumed. Placement follows the same rule: a child runs inside the memory-capped slice when one is declared for it, and when none is (systemd will happily name a slice nobody defined, with no ceiling at all) splice says so once in the log instead of reporting containment it does not have.
 - **A hosted MCP server keeps working across a daemon restart, an idle reap and an eviction (V4-148).** When splice did not recognise a client's `Mcp-Session-Id` it answered the spec's "session not found", which means reinitialize — and Claude Code does not reinitialize: its tools for that server silently stop working for the rest of the session, `/mcp` still shows the server connected, `/mcp reconnect` does not recover it, and only a full relaunch does. Splice writes the value that triggers it, so an id it does not know is now adopted: the child is initialized under the id the client already holds, and the restart is invisible. A session the client explicitly ended still answers 404, and so does one whose notification stream overflowed, because that one must reinitialize to re-list what it missed. An adopted session keeps speaking the protocol version the client negotiated before the restart, since refusing it would only trade the 404 for a 400.

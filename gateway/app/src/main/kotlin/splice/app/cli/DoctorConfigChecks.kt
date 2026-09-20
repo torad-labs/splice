@@ -138,25 +138,37 @@ internal class DoctorConfigChecks(
      *  client's whole system field, and Claude Code ships its entire operating instruction set in
      *  that field — so the head then runs as a bare model with tools attached. That is the
      *  operator's choice to make, but it must never be a thing they DISCOVER; doctor says it
-     *  plainly. WARN, not FAIL: the configuration is legal and deliberate.
+     *  plainly. WARN, not FAIL: the configuration is legal and deliberate. V4-171: `strip` gets the
+     *  same row for the same reason — the client's instructions are being edited, and the repo
+     *  ships no pattern list, so the stance lives here rather than in a shipped default.
      *
      *  Fires only on a head that actually carries a prompt: `replace` with no `system_prompt` or
      *  `system_prompt_file` resolves to null and never reaches the wire, so warning about it would
      *  be noise. The declarations are read straight off the schema rather than resolved, because
      *  resolving would read the prompt FILE and doctor must not throw on an unreadable one. */
     private fun systemPromptChecks(topology: Topology): List<DoctorCheck> = topology.heads
-        .filterValues { it.systemPromptMode == SystemPromptMode.REPLACE && carriesPrompt(it) }
-        .map { (key, _) ->
+        .filterValues { editsClientField(it.systemPromptMode) && carriesPrompt(it) }
+        .map { (key, head) ->
             DoctorCheck(
                 "system-prompt:$key",
                 CheckStatus.WARN,
-                "head '$key' sets system_prompt_mode = \"replace\" — the client's own system field is " +
-                    "substituted, and Claude Code ships its entire operating instruction set in that " +
-                    "field, so this head runs as a bare model with tools attached",
+                if (head.systemPromptMode == SystemPromptMode.REPLACE) {
+                    "head '$key' sets system_prompt_mode = \"replace\" — the client's own system field is " +
+                        "substituted, and Claude Code ships its entire operating instruction set in that " +
+                        "field, so this head runs as a bare model with tools attached"
+                } else {
+                    "head '$key' sets system_prompt_mode = \"strip\" — the client's own system field is " +
+                        "edited on every turn: each paragraph a pattern matches is removed, and what is " +
+                        "removed is yours to own (V4-171)"
+                },
                 REPLACE_FIX,
             )
         }
 
     private fun carriesPrompt(head: HeadConfig): Boolean =
         !head.systemPrompt.isNullOrEmpty() || head.systemPromptFile != null
+
+    /** Replace and strip both change the client's own system field; append leaves it byte-identical. */
+    private fun editsClientField(mode: SystemPromptMode?): Boolean =
+        mode == SystemPromptMode.REPLACE || mode == SystemPromptMode.STRIP
 }

@@ -33,7 +33,8 @@ import java.nio.file.Paths
  * pattern list ([ParagraphStrip]), and every paragraph of the client's own system text that a
  * pattern matches is removed at the dialect seam. Every other paragraph, block and cache_control
  * breakpoint rides through byte-identically, so the dynamic blocks a session needs survive and the
- * cache still warms from turn two. This is the mode for "Claude Code's prompt without the hedges".
+ * cache still warms from turn two. The operator owns what a pattern removes: doctor WARNs on every
+ * strip layer (V4-171), and the repo ships no pattern list.
  */
 @Serializable
 public enum class SystemPromptMode(public val wire: String) {

@@ -57,6 +57,19 @@ internal class ClientAuth(
             ?: call.request.headers["x-api-key"]
 
     /**
+     * V4-173: the guard for an OPERATOR route (GET /wire), which is not a turn. [authorize] answers
+     * "may this caller run inference here?", and on a client-auth head that is "anyone with their
+     * own upstream credential" — the right policy for a turn and the wrong one for reading the
+     * bodies the head sent on other people's behalf. This route admits the management key alone,
+     * on every head kind, so what opens it is what `splice` itself holds and nothing a session has.
+     */
+    suspend fun authorizeOperator(call: ApplicationCall): Boolean {
+        if (matchesInferenceToken(presentedCredential(call))) return true
+        responses.respondUnauthorized(call, "this route takes splice's management key")
+        return false
+    }
+
+    /**
      * The open door, minus the one caller it must never serve (DR-30).
      *
      * splice's own inference token is not an upstream credential — sending it to the vendor spends

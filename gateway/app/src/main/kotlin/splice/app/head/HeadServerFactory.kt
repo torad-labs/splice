@@ -21,6 +21,7 @@ import splice.gateway.head.HeadServer
 import splice.gateway.head.NoHeadEvents
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.head.SessionProjectLookup
+import splice.gateway.wire.WireTap
 import splice.spi.InflightGate
 import splice.spi.Provider
 import java.nio.file.Path
@@ -69,6 +70,10 @@ internal class HeadServerFactory(
                     compactStats = stores.compactStats,
                     shadow = ShadowClassifier(log = log),
                     clientWindows = stores.clientWindows,
+                    // V4-173: the tap exists only for a head whose operator named a count, read
+                    // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
+                    // every other head's bodies unkept.
+                    wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
                 ),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,

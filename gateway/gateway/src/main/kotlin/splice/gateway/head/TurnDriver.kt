@@ -92,7 +92,7 @@ internal class TurnDriver(
     private val oneDrive = TurnOneDrive(
         provider,
         deps,
-        TurnRoundRun(provider, log, sseRoundDriver, turnFinish),
+        TurnRoundRun(provider, log, sseRoundDriver, turnFinish, deps.stores.wireTap),
     )
 
     /** V4-99 item 5: the seal contract the two drive entries actually need, held here so they

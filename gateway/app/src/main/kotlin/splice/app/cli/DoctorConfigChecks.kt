@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import splice.app.cli.doctor.DoctorProjectPromptChecks
+import splice.app.cli.doctor.DoctorWireTapChecks
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.prompt.SystemPromptMode
@@ -40,6 +41,9 @@ internal class DoctorConfigChecks(
 ) {
     /** V4-124's project prompt layer rows, in their own file (splice.app.cli.doctor) since V4-156. */
     private val projectPrompts = DoctorProjectPromptChecks(REPLACE_FIX, STRIP_FIX)
+
+    /** V4-173: the row that keeps an opted-in wire tap visible on every run. */
+    private val wireTaps = DoctorWireTapChecks()
 
     internal fun configurationChecks(
         topo: DoctorTopology,
@@ -87,7 +91,8 @@ internal class DoctorConfigChecks(
             // v0.4.0 (FEATURES.md §10): local runtimes answer for themselves, in their own words.
             listOf(summary) + brokenRefs + portDupes + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
-                projectPrompts.projectPromptChecks(topology) + localRuntime.localChecks(topology, live)
+                projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
+                localRuntime.localChecks(topology, live)
         }
     }
 

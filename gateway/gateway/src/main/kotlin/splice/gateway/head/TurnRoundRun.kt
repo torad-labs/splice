@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import splice.core.util.LogSink
 import splice.gateway.round.RoundInterception
 import splice.gateway.round.RoundStrategy
+import splice.gateway.wire.WireTap
 import splice.spi.Provider
 
 internal class TurnRoundRun(
@@ -15,6 +16,8 @@ internal class TurnRoundRun(
     private val log: LogSink,
     private val sseRoundDriver: SseRoundDriver,
     private val turnFinish: TurnFinish,
+    /** V4-173: the head's opt-in upstream wire tap, null on every head that did not turn it on. */
+    private val wireTap: WireTap?,
 ) {
     suspend fun run(drive: TurnDrive, self: CoroutineScope, turnJob: Job) {
         // Folding is null for sol / every non-codex head → the single-round path is
@@ -28,10 +31,16 @@ internal class TurnRoundRun(
             log = log,
             emitter = drive.emitter,
             signals = drive.signals,
+            // V4-173: THE choke point. Every upstream request of every runner — the single round,
+            // each fold round, each re-anchor, each tool-search continuation — and whatever an
+            // interceptor substituted, passes through one of these two lambdas as the string the
+            // driver POSTs. Recorded here, an audit sees exactly the bytes, not the turn's first draft.
             postRoundToSink = { bodyJson, sink ->
+                wireTap?.record(drive.meta, bodyJson)
                 sseRoundDriver.postRound(drive, bodyJson, sink, self, turnJob)
             },
             postRound = { bodyJson ->
+                wireTap?.record(drive.meta, bodyJson)
                 sseRoundDriver.postRound(drive, bodyJson, drive.emitter, self, turnJob)
             },
             finish = { outcome -> turnFinish.finishTurn(drive, outcome) },

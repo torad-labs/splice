@@ -12,13 +12,17 @@ import java.io.File
  *
  *  DR-165: this list is no longer the DENOMINATOR, only the covered set. It used to be both, and a
  *  denominator taken from the list being checked cannot fail for anything absent from that list —
- *  the same tautology the module-direction law below already avoids by reading settings.gradle.kts.
+ *  the same tautology the module-direction law below already avoids by reading the build's own map.
  *  `fir-checks` was the live proof: it ships three production files and was simply not here, so
- *  neither this law nor the contract-coverage law had ever looked at it. */
+ *  neither this law nor the contract-coverage law had ever looked at it.
+ *
+ *  P0: modules are named by GRADLE PATH, not by directory name — the path is the stable identity
+ *  when a module moves under dialects/ or providers/, and [ProjectMap] is what turns it into a
+ *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
-    "core", "provider-spi", "dialect-openai-responses", "dialect-openai-chat",
-    "dialect-anthropic-passthrough", "provider-codex", "provider-grok", "provider-openai",
-    "provider-kimi", "provider-muse", "gateway", "control", "app", "fir-checks",
+    ":core", ":provider-spi", ":dialect-openai-responses", ":dialect-openai-chat",
+    ":dialect-anthropic-passthrough", ":provider-codex", ":provider-grok", ":provider-openai",
+    ":provider-kimi", ":provider-muse", ":gateway", ":control", ":app", ":fir-checks",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
@@ -31,15 +35,18 @@ private val SLOT_HEADER_EXEMPT: Map<String, String> = emptyMap()
 
 /** DR-165: every module that ACTUALLY ships production Kotlin, read off the tree. This is the
  *  denominator both coverage laws now use — the module-direction law already derives its own from
- *  settings.gradle.kts, and these two were the stragglers still trusting a hand-authored list. */
-private fun productionModules(root: File): Set<String> =
-    root.listFiles().orEmpty()
-        .filter { it.isDirectory }
+ *  the build, and these two were the stragglers still trusting a hand-authored list.
+ *
+ *  P0: the modules come from the PROJECT MAP and their sources from the directory the map gives,
+ *  not from the root's immediate child directories. The old walk could only ever see a module that
+ *  is a direct child of the Gradle root, so a module under providers/ would drop out of the
+ *  denominator and stop being graded with nothing going red. */
+private fun productionModules(map: ProjectMap): Set<String> =
+    map.modules
         .filter { module ->
-            val main = File(module, "src/main/kotlin")
+            val main = map.mainSources(module)
             main.isDirectory && main.walkTopDown().any { it.isFile && it.extension == "kt" }
         }
-        .map { it.name }
         .toSet()
 
 /** DR-165: the disposition of every production module, as violation lines. PURE so it can be proven
@@ -98,24 +105,34 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
  *  `provider-kimi/.../KimiQuirks.kt` (Kimi's own deformation set) — the head-assembly provider
  *  package, plus the one provider module that builds its own profile rather than taking the
  *  neutral one. */
-private val PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES = listOf(
-    "dialect-anthropic-passthrough/src/main/", // the class's own module
-    "app/src/main/kotlin/splice/app/provider/", // head assembly: ProviderAssembly + its arms
-    "provider-kimi/src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
+private val PASSTHROUGH_QUIRKS_ALLOWED_SITES = mapOf(
+    ":dialect-anthropic-passthrough" to "src/main/", // the class's own module
+    ":app" to "src/main/kotlin/splice/app/provider/", // head assembly: ProviderAssembly + its arms
+    ":provider-kimi" to "src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
 )
+
+/** P0: the allowed sites as root-relative path prefixes, resolved through the project map — the
+ *  module's IDENTITY is what carries the allowance, so a module that moves keeps it without an
+ *  edit here, and a module the build drops fails by name instead of quietly widening the law. */
+private fun passthroughQuirksAllowedPrefixes(map: ProjectMap): List<String> =
+    PASSTHROUGH_QUIRKS_ALLOWED_SITES.map { (module, inModule) -> "${map.relativeDir(module)}/$inModule" }
 
 /** HD-9: one file's PassthroughQuirks-construction violations, as violation lines. PURE so it can
  *  be proven against synthetic input — the live tree is clean today, so a silently-deleted matcher
  *  would look identical to a passing law. The declaring `class PassthroughQuirks(` line is not a
  *  construction and is skipped so the class's own file never self-reports. */
-private fun passthroughQuirksConstructionViolations(path: String, text: String): List<String> {
-    if (PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES.any { path.startsWith(it) }) return emptyList()
+private fun passthroughQuirksConstructionViolations(
+    path: String,
+    text: String,
+    allowedPrefixes: List<String>,
+): List<String> {
+    if (allowedPrefixes.any { path.startsWith(it) }) return emptyList()
     val violations = mutableListOf<String>()
     text.lineSequence().forEachIndexed { index, line ->
         if (line.contains("class PassthroughQuirks(")) return@forEachIndexed
         if (line.contains("PassthroughQuirks(")) {
             violations += "$path:${index + 1} constructs PassthroughQuirks outside its allowed sites " +
-                "(${PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES.joinToString()}) — a provider's deformation " +
+                "(${allowedPrefixes.joinToString()}) — a provider's deformation " +
                 "profile belongs to the module that owns the provider or to head assembly, not to " +
                 "whichever file happens to need it."
         }
@@ -126,14 +143,15 @@ private fun passthroughQuirksConstructionViolations(path: String, text: String):
 /** HD-9 (#924 capstone): every production file under `src/main`, across every module that ships
  *  one — the SOURCE-derived denominator [passthroughQuirksConstructionViolations] is graded
  *  against, reusing [productionModules] rather than a hand list for the same DR-165 reason. */
-private fun allProductionFiles(root: File): List<File> =
-    productionModules(root).sorted().flatMap { module ->
-        File(root, "$module/src/main/kotlin").walkTopDown().filter { it.isFile && it.extension == "kt" }
+private fun allProductionFiles(map: ProjectMap): List<File> =
+    productionModules(map).sorted().flatMap { module ->
+        map.mainSources(module).walkTopDown().filter { it.isFile && it.extension == "kt" }
     }
 
-/** HD-9: the dialect modules — [productionModules] filtered to the `dialect-*` adapters. */
-private fun dialectModules(root: File): Set<String> =
-    productionModules(root).filter { it.startsWith("dialect-") }.toSet()
+/** HD-9: the dialect modules — [productionModules] filtered to the `:dialect-*` adapters. P0: the
+ *  filter is on the module's Gradle PATH, which survives the module moving into dialects/. */
+private fun dialectModules(map: ProjectMap): Set<String> =
+    productionModules(map).filter { it.startsWith(":dialect-") }.toSet()
 
 /** HD-9 (#924 capstone): dialects adapt ONE wire format; [splice.core.topology] is the
  *  operator-facing head/provider registry (TOML parsing, quirks-config overlays), and a dialect
@@ -158,12 +176,16 @@ private fun topologyImportViolations(path: String, text: String): List<String> {
 
 class ArchitectureLawsTest {
 
-    private val root: File = File(System.getProperty("gateway.root"))
+    // P0: the module set and every module's directory come from the BUILD, through one channel
+    // that fails by name when it is absent — see ProjectMap.kt.
+    private val map = ProjectMap.fromSystemProperties()
 
     // Konsist resolves scopeFromDirectory RELATIVE to the Gradle root it detects;
     // absolute paths get prefixed and blow up (caught in this law's first red/green).
+    // P0: the directory is the map's, so the relative path stays correct for a module that is not
+    // a direct child of the root.
     private fun mainScope(module: String) =
-        Konsist.scopeFromDirectory("$module/src/main/kotlin")
+        Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
 
     // DR-165 (found by codex-splice's test audit, confirmed by a mutant that deleted a whole dialect
     // from PORT_SCOPE_MODULES while the suite stayed green): the denominator now comes from the
@@ -172,7 +194,7 @@ class ArchitectureLawsTest {
     // neither fails BY NAME instead of silently leaving coverage.
     @Test
     fun `slot headers - every production module is dispositioned, and its files declare PORT-OF or NEW`() {
-        val onDisk = productionModules(root)
+        val onDisk = productionModules(map)
         org.junit.jupiter.api.Assertions.assertTrue(onDisk.size > 1) {
             "the source tree yielded ${onDisk.size} production modules — the walk is broken, " +
                 "and a law that reads no modules passes vacuously."
@@ -201,31 +223,31 @@ class ArchitectureLawsTest {
     fun `the disposition guard can actually fail - DR-165`() {
         assertEquals(
             emptyList<String>(),
-            slotHeaderDispositions(setOf("core", "harness"), setOf("core"), mapOf("harness" to "a reason")),
+            slotHeaderDispositions(setOf(":core", ":harness"), setOf(":core"), mapOf(":harness" to "a reason")),
             "covered plus exempt-with-a-reason is a complete disposition",
         )
         assertEquals(
             listOf(
-                "newmod ships production Kotlin but is in neither PORT_SCOPE_MODULES nor " +
+                ":newmod ships production Kotlin but is in neither PORT_SCOPE_MODULES nor " +
                     "SLOT_HEADER_EXEMPT — cover it (preferred) or exempt it WITH a written reason.",
             ),
-            slotHeaderDispositions(setOf("core", "newmod"), setOf("core"), emptyMap()),
+            slotHeaderDispositions(setOf(":core", ":newmod"), setOf(":core"), emptyMap()),
             "a module the source tree has and no list mentions must fail BY NAME",
         )
         assertEquals(
             listOf(
-                "harness is exempted from the slot-header law with a blank reason — a placeholder " +
+                ":harness is exempted from the slot-header law with a blank reason — a placeholder " +
                     "is an absence wearing a label; write why, or cover the module.",
             ),
-            slotHeaderDispositions(setOf("core", "harness"), setOf("core"), mapOf("harness" to "  ")),
+            slotHeaderDispositions(setOf(":core", ":harness"), setOf(":core"), mapOf(":harness" to "  ")),
             "a blank reason is not a disposition",
         )
         assertEquals(
             listOf(
-                "PORT_SCOPE_MODULES names gone, which ships no production Kotlin — drop the entry; " +
+                "PORT_SCOPE_MODULES names :gone, which ships no production Kotlin — drop the entry; " +
                     "it currently governs nothing.",
             ),
-            slotHeaderDispositions(setOf("core"), setOf("core", "gone"), emptyMap()),
+            slotHeaderDispositions(setOf(":core"), setOf(":core", ":gone"), emptyMap()),
             "a listing that governs nothing must fail, or the list rots into decoration",
         )
     }
@@ -236,32 +258,32 @@ class ArchitectureLawsTest {
     // exists to remove, not one it may quietly add.
     @Test
     fun `the contract-coverage guard can actually fail - DR-165`() {
-        assertEquals(null, contractViolation("dialect-x", hasFixture = true, hasConsumer = true))
+        assertEquals(null, contractViolation(":dialect-x", hasFixture = true, hasConsumer = true))
         assertEquals(
-            "dialect-x ships a *RequestBuilder but no src/test/resources/contract/<name>.json",
-            contractViolation("dialect-x", hasFixture = false, hasConsumer = true),
+            ":dialect-x ships a *RequestBuilder but no src/test/resources/contract/<name>.json",
+            contractViolation(":dialect-x", hasFixture = false, hasConsumer = true),
             "a builder with no fixture is the #924 Phase 1 case",
         )
         assertEquals(
-            "dialect-x has a contract fixture but no *ContractTest.kt reading it — a golden " +
+            ":dialect-x has a contract fixture but no *ContractTest.kt reading it — a golden " +
                 "nothing compares against pins nothing",
-            contractViolation("dialect-x", hasFixture = true, hasConsumer = false),
+            contractViolation(":dialect-x", hasFixture = true, hasConsumer = false),
             "a fixture with no consumer is the fail-open one layer down",
         )
     }
 
     @Test
     fun `core stays framework-free - no ktor imports in core`() {
-        val dir = File(root, "core/src/main/kotlin")
+        val dir = map.mainSources(":core")
         if (!dir.exists()) return
-        mainScope("core").imports.assertTrue { !it.name.startsWith("io.ktor") }
+        mainScope(":core").imports.assertTrue { !it.name.startsWith("io.ktor") }
     }
 
     @Test
     fun `core wire types are serializable`() {
-        val dir = File(root, "core/src/main/kotlin")
+        val dir = map.mainSources(":core")
         if (!dir.exists()) return
-        mainScope("core")
+        mainScope(":core")
             .classes()
             .filter { it.resideInPackage("..wire..") }
             .assertTrue { cls -> cls.annotations.any { it.name.endsWith("Serializable") } }
@@ -282,8 +304,8 @@ class ArchitectureLawsTest {
     // and the reason a fixture alone was never the guarantee this law claims to give.
     @Test
     fun `every RequestBuilder module ships a request-byte contract fixture and a test that reads it`() {
-        val builderModules = productionModules(root).filter { module ->
-            val mainDir = File(root, "$module/src/main/kotlin")
+        val builderModules = productionModules(map).filter { module ->
+            val mainDir = map.mainSources(module)
             mainDir.isDirectory && mainDir.walkTopDown().any { it.isFile && it.name.endsWith("RequestBuilder.kt") }
         }
         org.junit.jupiter.api.Assertions.assertTrue(
@@ -291,10 +313,10 @@ class ArchitectureLawsTest {
             "expected at least one *RequestBuilder module — did the module layout change?",
         )
         val violations = builderModules.mapNotNull { module ->
-            val contractDir = File(root, "$module/src/test/resources/contract")
+            val contractDir = File(map.dir(module), "src/test/resources/contract")
             val hasFixture =
                 contractDir.isDirectory && !contractDir.listFiles { f -> f.extension == "json" }.isNullOrEmpty()
-            val testDir = File(root, "$module/src/test/kotlin")
+            val testDir = File(map.dir(module), "src/test/kotlin")
             val hasConsumer = testDir.isDirectory &&
                 testDir.walkTopDown().any { it.isFile && it.name.endsWith("ContractTest.kt") }
             contractViolation(module, hasFixture, hasConsumer)
@@ -310,17 +332,22 @@ class ArchitectureLawsTest {
 
     // HD-9 (#924 capstone): PassthroughQuirks is a provider's deformation profile; only the class's
     // own module and the code that assembles a head's provider may build one. See
-    // PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES for the pointer correction — the briefing said
+    // PASSTHROUGH_QUIRKS_ALLOWED_SITES for the pointer correction — the briefing said
     // "Daemon.kt"; Daemon.kt never constructs one.
     @Test
     fun `PassthroughQuirks is constructed only by its module or head assembly - HD-9`() {
-        val files = allProductionFiles(root)
+        val files = allProductionFiles(map)
         org.junit.jupiter.api.Assertions.assertTrue(files.size > 10) {
             "the tree yielded ${files.size} production file(s) — the walk is broken, and a law that " +
                 "reads no files passes vacuously."
         }
+        val allowedPrefixes = passthroughQuirksAllowedPrefixes(map)
         val violations = files.sortedBy { it.path }.flatMap { file ->
-            passthroughQuirksConstructionViolations(file.relativeTo(root).path, file.readText())
+            passthroughQuirksConstructionViolations(
+                file.relativeTo(map.root).path,
+                file.readText(),
+                allowedPrefixes,
+            )
         }
         org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
             violations.joinToString(
@@ -334,11 +361,13 @@ class ArchitectureLawsTest {
     // so a silently-deleted matcher would look identical to a passing law.
     @Test
     fun `the PassthroughQuirks construction guard can actually fail - HD-9`() {
+        val allowedPrefixes = passthroughQuirksAllowedPrefixes(map)
         assertEquals(
             emptyList<String>(),
             passthroughQuirksConstructionViolations(
                 "dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughQuirks.kt",
                 "public data class PassthroughQuirks(\n    val providerTag: String,\n)\n",
+                allowedPrefixes,
             ),
             "the declaring class line is not a construction, and its own module is allowed anyway",
         )
@@ -347,6 +376,7 @@ class ArchitectureLawsTest {
             passthroughQuirksConstructionViolations(
                 "app/src/main/kotlin/splice/app/provider/PassthroughArm.kt",
                 "val q = PassthroughQuirks(providerTag = key)\n",
+                allowedPrefixes,
             ),
             "head assembly's own provider package is allowed",
         )
@@ -361,6 +391,7 @@ class ArchitectureLawsTest {
             passthroughQuirksConstructionViolations(
                 "gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt",
                 "package splice.gateway.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
+                allowedPrefixes,
             ),
             "a construction outside the allowed sites must fail BY NAME, naming the exact line",
         )
@@ -369,16 +400,16 @@ class ArchitectureLawsTest {
     // HD-9 (#924 capstone): dialects speak wire format; they do not read topology/operator config.
     @Test
     fun `no dialect main file imports the topology package - HD-9`() {
-        val modules = dialectModules(root)
+        val modules = dialectModules(map)
         org.junit.jupiter.api.Assertions.assertTrue(modules.size >= 3) {
             "found ${modules.size} dialect module(s) — the walk is broken, and a law that reads no " +
                 "dialect modules passes vacuously."
         }
         val files = modules.sorted().flatMap { module ->
-            File(root, "$module/src/main/kotlin").walkTopDown().filter { it.isFile && it.extension == "kt" }
+            map.mainSources(module).walkTopDown().filter { it.isFile && it.extension == "kt" }
         }
         val violations = files.sortedBy { it.path }.flatMap { file ->
-            topologyImportViolations(file.relativeTo(root).path, file.readText())
+            topologyImportViolations(file.relativeTo(map.root).path, file.readText())
         }
         org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
             violations.joinToString(

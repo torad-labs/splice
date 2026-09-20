@@ -10,23 +10,7 @@
 # commit cde3ea1). Not a credential; no auth power; same class as the 13 fixture keys
 # above. The file at HEAD now carries redacted placeholders; this entry covers the
 # historical blob the scanner flags.
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
-17ed960b536d2d78ee74be750da33ad9b8fcfa07:.dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
-cb5bfa1b23e90bc5cf3bdacd195da5ecb75f124a:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
-cb5bfa1b23e90bc5cf3bdacd195da5ecb75f124a:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
-08ec59e3f5ee985f3efd48e610150ebbe329426f:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
-9c83bf192d7eb813133b44de57440b5130f3364b:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
-d98cf80eb1721f08735dada7e544233046b152d7:.dev/campaigns/manifest.py:generic-api-key:116
-cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.0-responses-request.json:generic-api-key:1
+# (dead before the rewrite — its commit is on no branch; kept for the record)
 # 2026-09-01: DR-151 synthetic secret — the literal a test PLANTS inside a hostile
 # throwable's toString() to prove SafeFailureText WITHHOLDS it (RefreshOutcomeTest, arm
 # 'a non-allowlisted throwable carrying a secret is withheld at the persist sink'). Triaged
@@ -35,43 +19,36 @@ cde3ea158f8f99962a1c3ae8c31fe72d793f185a:.dev/research/wire-compare/codex-0.145.
 # credential-SHAPED on purpose — a low-entropy stand-in would not exercise the renderer the
 # way a real token does. gitleaks scans HISTORY, so redacting it at HEAD cannot clear commit
 # 5522ef3; the fingerprint is the only channel that closes it.
-5522ef38c19e701c337cabd7b8e75b6e18fe6598:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
-
+# (dead before the rewrite — its commit is on no branch; kept for the record)
 # 2026-09-01 — the DR-151 canary in RefreshOutcomeTest ("sk-live-DR151-must-never-appear", a
 # deliberately secret-shaped literal that the test proves is WITHHELD from the log) was vetted on
 # feat/claude-head at 5522ef38; squash-merging PR #99 gave the same line a new commit SHA on main.
-0e91d54c27390a4694239e9e32e36861ce38ab53:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
-
-# 2026-09-20 triage (splice-lead). Seven findings that the 2026-07-28 list never
-# covered — they predate the dev/ -> .dev/ history rewrite and surfaced only once
-# that rewrite invalidated every fingerprint above and the re-point brought the
-# count back down. Each was inspected by hand, by matched value, not by file name:
-#   v0.4.0.toml:519        the matched span is the prose "auth diagnostics,
-#                          generation/CAS" inside a green-run receipt. Not a value.
-#   web-console.toml:2361  a 40-char git blob id in a `RECEIPT ... blobs=` line, the
-#                          shape ledger.ts:495 writes on every receipt. 258 such lines
-#                          exist and this is the only one whose id clears the entropy
-#                          floor; if more start tripping it, the class wants a
-#                          shape-exact regex in .gitleaks.toml rather than N more lines.
-#   head-decoupling.md:660 a dialect name: the passthrough dialect's identifier.
-#   head-decoupling.md:708 two Anthropic beta-header flag names, comma-joined, each
-#                          ending in a release date. Header values, not credentials.
-#   DoctorRedactionTest:14 a fabricated live-key-prefixed token, and :15 the canonical
-#                          HS256 example JWT whose payload decodes to a subject of "1".
-#                          Both are the INPUT to the test asserting splice redacts
-#                          credential shapes — a redaction test cannot exist without them.
-#   TranscriptSentTextsTest:21  a fake bearer in a transcript fixture: the first eight
-#                          letters of the alphabet followed by the digits 1 through 8.
-# None is a credential, so nothing here needs rotating.
-#
-# The values are DESCRIBED and never quoted, deliberately. Quoting them verbatim put
-# three of the same shapes into this file's own comment, and gitleaks scans this file
-# like any other — the first draft of this block added three fresh findings while
-# claiming to remove seven. Caught by scanning the block as content before committing.
-ee2a9b9fa7f2328ef6ba5f9d68e2479ecc6d46e7:.dev/campaigns/v0.4.0.toml:generic-api-key:519
-c1ccf08904c3d04223ac439dc992ec111db47d62:.dev/campaigns/web-console.toml:generic-api-key:2361
-0e91d54c27390a4694239e9e32e36861ce38ab53:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:660
-0e91d54c27390a4694239e9e32e36861ce38ab53:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
-777cd5af9a3cf3582a3f823fdbae8fcfd2d3595c:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:14
-777cd5af9a3cf3582a3f823fdbae8fcfd2d3595c:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:15
-908e95a52163419c0027b8d99d38e4e2acf3cd5c:gateway/core/src/test/kotlin/console/v4131/TranscriptSentTextsTest.kt:generic-api-key:21
+# 2026-09-20: the history rewrite (dev/ -> .dev/, private paths and names out of history) renamed
+# every commit, so the fingerprints above were re-pointed through the rewrite's commit map — same
+# path, same rule, same line, new commit — which keeps the triage above instead of redoing it. The
+# four below were untriaged and already red before the rewrite (CI's v8.21.2 scans every branch
+# from a main checkout, so feat/v0.4.0's commits count here); each was opened at its commit:
+# DoctorRedactionTest builds a fake log line for a redaction test (the "key" is 20 characters, the
+# JWT's payload decodes to {"sub":"1"}); TranscriptSentTextsTest's token is the literal
+# abcdefgh12345678; the web-console ledger line is a git blob sha in a RECEIPT.
+1574f46b22b2e76837a851d129f4280f82612db5:.dev/campaigns/manifest.py:generic-api-key:116
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
+2c4e9d1c089fdace484878aa23b63491326cb7a9:.dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
+5445ad0d8933b2973ccce81185f297d6db397b4b:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:14
+5445ad0d8933b2973ccce81185f297d6db397b4b:gateway/app/src/test/kotlin/DoctorRedactionTest.kt:generic-api-key:15
+550f2af292c47972c4c55217d0bde36cc0d4b26c:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
+550f2af292c47972c4c55217d0bde36cc0d4b26c:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
+5fe76b407c737788ba3185e5165f52978e83c394:.dev/campaigns/web-console.toml:generic-api-key:2361
+680ae60bd6651f46cc8307e5748fc305ac6cc148:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
+89f11e1ff5c6a8c1c15fd87040a3204e122cc0c7:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+a993fa8291f416a324ec47c6b8b0053ac56f6aaf:gateway/core/src/test/kotlin/console/v4131/TranscriptSentTextsTest.kt:generic-api-key:21
+b44913049fe38a3ea90d9e317ee17cd0ff74987e:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73

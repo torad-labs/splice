@@ -3,6 +3,7 @@ package splice.app.head
 
 import splice.app.provider.Wired
 import splice.control.HeadAccountAuthSource
+import splice.control.HeadAccountPinSource
 import splice.control.HeadAccountPoolSource
 import splice.control.HeadAccountPoolView
 import splice.control.HeadAccountSwitchView
@@ -40,9 +41,13 @@ internal class HeadAccountPools {
         return AccountPool(accounts, accountNow)
     }
 
-    fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let { accountPool ->
-        HeadAccountPoolSource { sessionId -> controlView(accountPool.view(sessionId)) }
-    }
+    // V4-132: a NAMED class, not the bare HeadAccountPoolSource { } lambda this returned before —
+    // a fun-interface lambda cannot ALSO implement HeadAccountPinSource, and widening
+    // HeadAccountPoolSource itself would break every test double that implements it by SAM
+    // conversion. AuthRoutes discovers the pin capability with a checked cast
+    // (`managed.accountPool as? HeadAccountPinSource`), the same idiom StatuslineRoute already
+    // uses for HeadPerfSkipSource.
+    fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let(::PoolSource)
 
     fun authSource(wired: Wired): HeadAccountAuthSource? = wired.accounts.takeIf { pooled(wired) }
         ?.let { accounts ->
@@ -69,10 +74,23 @@ internal class HeadAccountPools {
                 credentialPresent = account.credentialPresent,
                 authExcludedUntilEpochMillis = account.authExcludedUntilEpochMillis,
                 authExclusionReason = account.authExclusionReason,
+                fiveHourWindowSeconds = account.fiveHourWindowSeconds,
+                sevenDayWindowSeconds = account.sevenDayWindowSeconds,
             )
         },
         lastSwitch = view.lastSwitch?.let { switch ->
             HeadAccountSwitchView(switch.from, switch.to, switch.reason, switch.atEpochMillis)
         },
     )
+
+    /** An INNER class (not a top-level one — the wall bans those in main sources) so it can reach
+     *  the outer [controlView] without widening it past `private`. */
+    private inner class PoolSource(private val pool: AccountPool) : HeadAccountPoolSource, HeadAccountPinSource {
+        override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
+            pinnedLabel = pool.pinned(),
+            nextTargetLabel = pool.nextTargetLabel(),
+        )
+
+        override fun pin(label: String): Boolean = pool.pin(label)
+    }
 }

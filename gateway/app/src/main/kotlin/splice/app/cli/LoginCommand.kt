@@ -7,6 +7,7 @@ package splice.app.cli
 
 import splice.app.DeviceLoginFlow
 import splice.app.LoginIo
+import splice.app.LoginObserver
 import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
@@ -56,20 +57,29 @@ internal class LoginCommand {
         label: String? = null,
     ): Boolean = runLoginAttempt(headKey, provider, topology, label).ok
 
-    private suspend fun runLoginAttempt(
+    /** V4-132: the console's login-id/poll seam (LoginSessions) reuses THIS dispatch rather than
+     *  re-deriving auth-kind -> flow routing a second time — [runLoginAttempt] is already the
+     *  single source [login] and [runLoginFlow] share. Widened to `internal` (from `private`) and
+     *  given an [observer] for exactly that call; every existing call site passes null and is
+     *  unaffected. api-key heads have no off-request answer (the flow needs an interactive
+     *  console), so an observed api-key login degrades to [LoginResult] false through the same
+     *  `System.console() == null` branch [splice.app.LoginIo.apiKeyLogin] already takes headless —
+     *  never a crash, never a second dispatch table. */
+    internal suspend fun runLoginAttempt(
         headKey: String,
         provider: ProviderConfig,
         topology: Topology,
         label: String?,
+        observer: LoginObserver? = null,
     ): LoginResult = try {
         when (provider.auth.kind) {
             "kimi-oauth" -> {
                 val spec = kimi.spec(headKey, oauthAuthPath(provider), label)
-                LoginResult(DeviceLoginFlow.run(spec), spec.account)
+                LoginResult(DeviceLoginFlow.run(spec, observer = observer), spec.account)
             }
             "muse-oauth" -> {
                 val spec = muse.spec(headKey, oauthAuthPath(provider), label)
-                LoginResult(DeviceLoginFlow.run(spec), spec.account)
+                LoginResult(DeviceLoginFlow.run(spec, observer = observer), spec.account)
             }
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
@@ -81,7 +91,7 @@ internal class LoginCommand {
             }
             else -> {
                 val spec = specFor(headKey, topology, label)
-                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow.run(spec), spec.account)
+                if (spec == null) LoginResult(false) else LoginResult(OAuthLoginFlow.run(spec, observer), spec.account)
             }
         }
     } catch (e: OAuthAccountRefused) {
@@ -92,7 +102,8 @@ internal class LoginCommand {
         LoginResult(false)
     }
 
-    private data class LoginResult(val ok: Boolean, val account: OAuthLoginAccount? = null)
+    // internal (V4-132): LoginSessions (splice.app) reads .ok/.account off runLoginAttempt's result.
+    internal data class LoginResult(val ok: Boolean, val account: OAuthLoginAccount? = null)
 
     private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
         if (headArg != null) {

@@ -793,7 +793,7 @@ export async function fleetSelftest(): Promise<number> {
   const { mkdtempSync, readdirSync, rmSync, copyFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "fleet-selftest-"));
-  const dir = join(root, "dev", "campaigns");
+  const dir = join(root, ".dev", "campaigns");
   mkdirSync(dir, { recursive: true });
   for (const name of readdirSync(HERE)) if (name.endsWith(".ts")) copyFileSync(join(HERE, name), join(dir, name));
   const fleetRootDir = join(root, "fleet");

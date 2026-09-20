@@ -167,8 +167,8 @@ arm("a .sh calling a script that DOES exist", "green", (r) => {
 // bad" implementation passes its red arm and then charges correct ledger authorship.
 
 const ledger = (r: string, id: string, status: string, verify: string) => {
-  mkdirSync(join(r, "dev", "campaigns"), { recursive: true });
-  writeFileSync(join(r, "dev", "campaigns", "c.toml"), `[[items]]\nid = "${id}"\nstatus = "${status}"\nverify = "${verify}"\n`);
+  mkdirSync(join(r, ".dev", "campaigns"), { recursive: true });
+  writeFileSync(join(r, ".dev", "campaigns", "c.toml"), `[[items]]\nid = "${id}"\nstatus = "${status}"\nverify = "${verify}"\n`);
 };
 
 arm("a TODO row whose verify names a missing .py", "red", (r) => {
@@ -218,21 +218,21 @@ arm("a TODO row naming the WRONG runtime for the extension", "red", (r) => {
 // in BOTH their files= lists, and updating one leaves the other stale.
 arm("a TODO row whose files= names a missing .py", "red", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");
-  mkdirSync(join(r, "dev", "campaigns"), { recursive: true });
-  writeFileSync(join(r, "dev", "campaigns", "c.toml"), `[[items]]\nid = "T-5"\nstatus = "todo"\nfiles = ["checks/vanished.py"]\n`);
+  mkdirSync(join(r, ".dev", "campaigns"), { recursive: true });
+  writeFileSync(join(r, ".dev", "campaigns", "c.toml"), `[[items]]\nid = "T-5"\nstatus = "todo"\nfiles = ["checks/vanished.py"]\n`);
   writeFileSync(join(r, LIST), list(["a.py"]));
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
 }, (r) => !existsSync(join(r, "checks", "vanished.py")));
 
 arm("a TODO row whose files= is a GLOB", "green", (r) => {
   writeFileSync(join(r, "a.py"), "x\n");
-  mkdirSync(join(r, "dev", "campaigns"), { recursive: true });
-  writeFileSync(join(r, "dev", "campaigns", "c.toml"), `[[items]]\nid = "T-6"\nstatus = "todo"\nfiles = ["checks/*.py"]\n`);
+  mkdirSync(join(r, ".dev", "campaigns"), { recursive: true });
+  writeFileSync(join(r, ".dev", "campaigns", "c.toml"), `[[items]]\nid = "T-6"\nstatus = "todo"\nfiles = ["checks/*.py"]\n`);
   writeFileSync(join(r, LIST), list(["a.py"]));
   git(r, "add", "-A"); git(r, "commit", "-qm", "base");
   // The setup that must take is the GLOB being in the ledger — `checks/` itself always exists here,
   // because the fixture creates it, so asserting on that graded nothing.
-}, (r) => readFileSync(join(r, "dev", "campaigns", "c.toml"), "utf8").includes('files = ["checks/*.py"]'));
+}, (r) => readFileSync(join(r, ".dev", "campaigns", "c.toml"), "utf8").includes('files = ["checks/*.py"]'));
 
 // The fifth surface: a registry row whose wall= names a file that is gone. builder2 deleted a .py
 // whose law_registry row still named it, and every census passed.

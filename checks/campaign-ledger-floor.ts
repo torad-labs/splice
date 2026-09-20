@@ -69,7 +69,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const LEDGER_DIR = resolve(ROOT, "dev", "campaigns");
+const LEDGER_DIR = resolve(ROOT, ".dev", "campaigns");
 const FLOOR = resolve(ROOT, "checks", "config", "campaign-ledger-floor.json");
 const SELF = "bun checks/campaign-ledger-floor.ts";
 

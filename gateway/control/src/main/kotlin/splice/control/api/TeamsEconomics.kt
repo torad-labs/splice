@@ -1,8 +1,18 @@
 // NEW: V4-160 — the team economics, moved verbatim out of TeamsRoutes.kt (concentration, 2026-09-18).
 // TeamsRoutes.kt's header states what the economics count and why.
+//
+// V4-159: WHAT "A CHECK" IS FOR A MEMBER, and where it is read from. The daemon observes nothing
+// inside a session's own tool calls (no git status, no test runner, no CI) — the one thing it DOES
+// observe per slot, already tallied here for tokens and cost, is whether each of the slot's turns
+// reached the backend and came back cleanly: PerfRow.outcome, the same tag TurnPipeline/TurnEnding
+// write and PerfSummary reads (splice.core.perf.OutcomeTag, kt-outcome-tag-single-source). A "check"
+// is therefore defined as the outcome tag of the slot's most recently tallied turn: "pass" when that
+// tag is OutcomeTag.OK, "fail" for anything else (a cancelled, rate-limited, upstream-failed or
+// otherwise non-OK turn) — a turn-health signal, not a build/test verdict. A slot that has tallied no
+// turns at all has nothing to observe, so it stays the honest empty: checks null, checks_source
+// naming why, exactly as it did before this row landed (CONTRACTS section 8).
 package splice.control.api
 
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,11 +24,22 @@ import splice.control.PerfRow
 import splice.core.model.ModelCatalog
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.teams.Team
 import splice.core.teams.TeamSlot
 
-internal const val CHECKS_SOURCE = "V4-159"
+/** Where a present [PerfTally.lastOutcome]-derived `checks` value came from. */
+internal const val CHECKS_SOURCE = "the outcome tag of the slot's most recently tallied turn (PerfRow.outcome)"
+
+/** Why `checks` is null: the slot has tallied no turns yet, so there is nothing to read. */
+internal const val NO_TURNS_CHECKS_SOURCE = "no turns recorded yet for this slot"
+private const val CHECKS_PASS = "pass"
+private const val CHECKS_FAIL = "fail"
+
+/** The single spelling a turn's outcome tag must match to count as a passing check
+ *  (kt-outcome-tag-single-source: name the tag, never re-spell it). */
+private val OK = OutcomeTag.OK.wire
 private const val ROLE = "role"
 
 /** The perf row's session tag width (TurnDrive.SESSION_TAG_CHARS). */
@@ -51,8 +72,8 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
                         add(
                             tally.json {
                                 it.put("slot", slot)
-                                it.put("checks", JsonNull)
-                                it.put("checks_source", CHECKS_SOURCE)
+                                it.put("checks", checksOf(tally.lastOutcome))
+                                it.put("checks_source", checksSourceOf(tally.lastOutcome))
                             },
                         )
                     }
@@ -60,6 +81,13 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
             )
         }
     }
+
+    /** "pass"/"fail" from the slot's newest tallied outcome tag, null before its first turn. */
+    private fun checksOf(outcome: String?): String? = outcome?.let { if (it == OK) CHECKS_PASS else CHECKS_FAIL }
+
+    /** Where [checksOf] came from, or why it has nothing to report yet. */
+    private fun checksSourceOf(outcome: String?): String =
+        if (outcome == null) NO_TURNS_CHECKS_SOURCE else CHECKS_SOURCE
 
     /** Every session [slot] ever held, the current one included. */
     private fun held(slot: TeamSlot): List<String> = slot.sessionsHistory + listOfNotNull(slot.session)
@@ -98,6 +126,12 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     var lastAt: Long? = null
         private set
 
+    /** [lastAt]'s own outcome tag (V4-159's `checks` source) — the row whose ts set [lastAt], not
+     *  simply the last row added: rows arrive in file/append order, but this stays correct even if
+     *  a caller ever hands them out of order. Null before the first counted turn. */
+    var lastOutcome: String? = null
+        private set
+
     /** The priced total, or null while any counted turn had no rate card. */
     val costUsd: Double? get() = usd.takeIf { unpriced == 0L }
 
@@ -116,7 +150,9 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         cacheRead += buckets.cacheRead
         cacheWrite += buckets.cacheWrite
         output += buckets.output
-        lastAt = maxOf(lastAt ?: row.ts, row.ts)
+        val previousLastAt = lastAt
+        if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
+        lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
         val rates = rates(row.model, catalog)
         if (rates == null) unpriced += 1 else usd += cost.of(buckets, rates)
     }

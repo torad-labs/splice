@@ -66,11 +66,11 @@ Test files: one per production file touched, named in each task.
 The manifest CLI creates a ledger on first `add`. Add the first item, then `add-law` the campaign laws:
 
 ```bash
-cd /home/user/Documents/dev/projects/atlas/repo
+cd <repo>
 L=.dev/campaigns/head-decoupling.toml
 M="python3 .dev/campaigns/manifest.py $L"
 $M add --id HD-1 --phase profile --title "PassthroughProfile registry (dialect module): named data bundle {quirks base, base headers, usesDeviceIdentity} for NEUTRAL and KIMI; ProviderConfig gains nullable profile key; Daemon resolves explicit > auth-kind default (kimi-oauth->KIMI, api-key->KIMI, client->NEUTRAL) and all three dispatch arms consume the resolved profile; KIMI_BASE_HEADERS moves into the profile; example TOML documents it on kimi's entry. Goldens green UNMODIFIED." --files "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughProfile.kt, gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughProfileTest.kt, gateway/core/src/main/kotlin/splice/core/topology/Topology.kt, gateway/core/src/test/kotlin/TopologyConfigOverridesTest.kt, gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/app/src/test/kotlin/splice/app/PassthroughQuirksOverlayTest.kt, gateway/app/src/test/kotlin/ExampleConfigTest.kt, config/splice.example.toml" --verify "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :core:test :app:test --console=plain"
-$M add-law "PROVENANCE — plan docs/superpowers/plans/2026-08-15-head-decoupling.md; boundaries from claude-head CH-12 deferred items (a)-(i). Concept #924: violations become impossible to express, not review comments."
+$M add-law "PROVENANCE — plan .docs/superpowers/plans/2026-08-15-head-decoupling.md; boundaries from claude-head CH-12 deferred items (a)-(i). Concept #924: violations become impossible to express, not review comments."
 $M add-law "NEVER-BELOW-STATUS-QUO — kimi goldens frozen; profile defaults reproduce today's arm behavior exactly; validation never rejects a working config."
 $M add-law "FAIL-CLOSED BOOT + REPAIR OFFER (operator, 2026-08-15) — findings refuse boot listing ALL at once; CLI detects installed harnesses (claude/kimi/codex/grok) and offers an interactive fix session. Never boot on a finding, never fix silently."
 $M add-law "BRANCH feat/claude-head; builders module-tests only, no push; gate + commit chain are the orchestrator's."
@@ -83,7 +83,7 @@ $M add-law "BRANCH feat/claude-head; builders module-tests only, no push; gate +
 - [ ] **Step 4: Commit**
 
 ```bash
-git add .dev/campaigns/head-decoupling.toml docs/superpowers/plans/2026-08-15-head-decoupling.md
+git add .dev/campaigns/head-decoupling.toml .docs/superpowers/plans/2026-08-15-head-decoupling.md
 git commit -m "chore(campaigns): open the head-decoupling campaign (plan + ledger)"
 ```
 

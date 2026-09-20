@@ -23,7 +23,7 @@ splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced*
 
 When something is wrong, `splice doctor` names the exact fix:
 
-<img src="docs/assets/doctor.svg" alt="splice doctor output: every failing check prints its fix" width="760">
+<img src=".docs/assets/doctor.svg" alt="splice doctor output: every failing check prints its fix" width="760">
 
 ## Why it exists
 
@@ -265,10 +265,7 @@ Opaque replay also ships off. Set `CLAUDEX_REPLAY_REASONING=1` only if you delib
 
 ## The cache-replay experiment
 
-`experiments/cache-replay/` is a self-contained A/B that probes one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** It runs a fixed multi-turn conversation twice, once carrying the encrypted reasoning items forward and once dropping them, and reports cached vs. uncached input tokens per turn.
-
-- `real-ab.sh`: two isolated real Claude-Code sessions on a side-port, same turns, only the replay toggled.
-- `run.mjs` / `replay-captured.mjs`: dependency-free Node harnesses; `replay-captured.mjs` replays a captured, sanitized transcript so the A/B is reproducible without live credentials.
+An A/B run in July 2026 asked one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** Two isolated real Claude Code sessions ran the same fixed multi-turn workload on a side port, only the replay toggled, and a captured, sanitized transcript replayed it without live credentials. Its harness was retired with the Node proxy it drove; the result is what matters:
 
 The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin. Read `experiments/cache-replay/README.md` for the caveats and run it yourself.
 
@@ -280,8 +277,13 @@ config/        splice.example.toml — the sample multi-provider topology
 bin/           splice-launch (the installed wrapper) + claudex (the codex-head entry)
 install.sh     fetch/build the jar, install the shim, link wrapper commands
 webui/         React 19 + Vite + Zustand dashboard, single-file build
-experiments/   cache-replay A/B reproducer
+checks/        the gate (`npm run gate`) and its legs: wall routing, the concentration ratchet,
+               release acceptance, the OSS ladder, the e2e harnesses
 .rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)
+.claude/       the hook orchestrator that runs the walls on every agent write, and its tests
+.dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`),
+               research notes, release material
+.docs/         design specs and plans, README assets
 ```
 
 The **gateway/** Kotlin daemon is the only stack. The legacy `server/` Node proxy and its

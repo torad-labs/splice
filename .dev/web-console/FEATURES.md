@@ -607,10 +607,14 @@ was sent under (from the V4-130 wire observation if it carries one), `detail` is
 sample's second line. If V4-130's observation cannot produce `packet`, say so and the column
 takes the honest empty — it does not get invented.
 
-`checks` is the one real conflict: it is in all three comps and the daemon has no source. It
-**keeps its column** and ships the honest empty with `source` naming the row that will fill it,
-exactly as section 8 already requires for a pending route. Removing it would change the board's
-geometry against the comp of record; faking it would be worse.
+`checks` was the one real conflict: it is in all three comps and the daemon had no source. It
+**kept its column** and shipped the honest empty with `source` naming the row that would fill it,
+exactly as section 8 requires for a pending route. Removing it would have changed the board's
+geometry against the comp of record; faking it would have been worse. **FILLED by V4-159
+(2026-09-20):** the source is `PerfRow.outcome`, the outcome tag of the slot's most recently
+tallied turn — `pass` when that tag is `OK`, `fail` otherwise. It is a turn-health signal, not a
+build or test verdict, and a slot that has tallied no turns still ships the honest empty with
+`checks_source` naming the absence.
 
 **`PUT /api/teams`: create and replace are different operations, and the sentence that deferred
 them named one and authorised the other** (corrected 2026-09-18, V4-131). The deferral read "one

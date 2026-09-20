@@ -15,6 +15,7 @@ import splice.core.util.JsonScalars
 import java.nio.file.Path
 import java.time.Instant
 
+// why: the same 8-character session tag the perf rows and log lines print (SESSION_TAG_CHARS)
 private const val SESSION_COLUMN_CHARS = 8
 
 internal class TraceView {
@@ -91,11 +92,11 @@ internal class TraceView {
         val response = attempt["response"]?.jsonObject
         val transport = JsonScalars.strOrEmpty(attempt["transport"])
         val status = response?.let { JsonScalars.str(it, "status") } ?: "-"
-        val failure = JsonScalars.str(attempt, "failure")?.let { "  ${YELLOW}failure: $it$RESET" }.orEmpty()
+        val ended = JsonScalars.str(attempt, "failure")?.let { "  ${YELLOW}failure: $it$RESET" }.orEmpty()
         println(
             "\n$BOLD── upstream attempt ${JsonScalars.strOrEmpty(attempt["attempt"])}$RESET  " +
                 "round=${JsonScalars.strOrEmpty(attempt["round"])} $transport status=$status " +
-                "${JsonScalars.strOrEmpty(attempt["durationMs"])}ms  ${JsonScalars.strOrEmpty(attempt["url"])}$failure",
+                "${JsonScalars.strOrEmpty(attempt["durationMs"])}ms  ${JsonScalars.strOrEmpty(attempt["url"])}$ended",
         )
         println("${DIM}request headers$RESET")
         printHeaders(request)

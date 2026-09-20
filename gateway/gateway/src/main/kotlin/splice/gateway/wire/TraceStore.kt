@@ -46,6 +46,7 @@ public fun interface TurnIdMint {
 
 private val randomTurnIds = TurnIdMint { UUID.randomUUID().toString().replace("-", "").take(TURN_ID_CHARS) }
 
+// why: 48 random bits — unique across a head's retention window, short enough to type after --turn
 private const val TURN_ID_CHARS = 12
 
 /** One head's trace: begins a [TurnTrace] per admitted turn and writes what each turn reports. */

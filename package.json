@@ -30,7 +30,8 @@
     "promote": "bash checks/promote.sh"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.2"
+    "@ast-grep/cli": "0.45.2",
+    "bun": "1.4.2"
   },
   "overrides": {
     "handlebars": "4.7.9"

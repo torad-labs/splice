@@ -28,7 +28,7 @@ internal class CodexCodeModeHistory(json: Json) {
         if (!validBaseline) return true
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
         val items = projected.logicalItems
-        val ownedFollowUps = ownership.followUps(items, record.media + candidateMedia)
+        val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
         val tailStart = record.baselineLogicalCount
         val continuityEnd = tailStart + record.continuity.size
         val afterContinuity = if (items.subList(tailStart, minOf(continuityEnd, items.size)) == record.continuity) {
@@ -108,7 +108,7 @@ internal class CodexCodeModeHistory(json: Json) {
         // ONCE, right after the canonical custom output — the same place the ordinary path puts a
         // tool_result's images, after its function_call_output — whether this is the live
         // continuation or a later turn's replay of the same record.
-        val canonical = record.continuity + record.outer + codec.customOutput(record) + record.media.values.flatten()
+        val canonical = record.continuity + record.outer + codec.customOutput(record) + record.accepted.durableMedia()
         val logical = input.logicalItems.filterIndexed { index, _ -> index in retained }.toMutableList()
         logical.addAll(boundary, canonical)
         val continuityReplay = record.continuityReplay.map {
@@ -226,7 +226,7 @@ private class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
     fun retained(items: List<JsonElement>, record: CodeModeRecord, continuity: Set<Int>): Set<Int>? {
         val boundary = record.baselineLogicalCount
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
-        val ownedFollowUps = followUps(items, record.media)
+        val ownedFollowUps = followUps(items, record)
         val ownedItemBefore = items.take(boundary).any { isCallback(it, owned) || isOpaque(it, record.outerCallId) }
         if (ownedItemBefore || ownedFollowUps.any { it < boundary }) return null
         return items.indices.filter { index ->
@@ -237,10 +237,15 @@ private class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
         }.toSet()
     }
 
-    fun followUps(items: List<JsonElement>, media: Map<String, List<JsonElement>>): Set<Int> {
+    /** [candidateMedia]: this turn's follow-ups for results the record has not accepted yet. */
+    fun followUps(
+        items: List<JsonElement>,
+        record: CodeModeRecord,
+        candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
+    ): Set<Int> {
         val owned = mutableSetOf<Int>()
         items.forEachIndexed { index, element ->
-            val expected = expectedAfter(element, media)
+            val expected = expectedAfter(element, record, candidateMedia)
             val end = index + 1 + expected.size
             val present = expected.isNotEmpty() && end <= items.size
             if (present && items.subList(index + 1, end) == expected) owned += (index + 1 until end)
@@ -260,10 +265,22 @@ private class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
             codec.string(item, CODE_MODE_FIELD_TYPE) in CUSTOM_TYPES
     }
 
-    private fun expectedAfter(element: JsonElement, media: Map<String, List<JsonElement>>): List<JsonElement> {
+    /** The sequence the record owns right after [element]: a result's own follow-ups after its
+     *  function_call_output, or — once a history is already canonical (a second script in the same
+     *  turn re-canonicalizes the body the first one posted) — the whole durable sequence after the
+     *  record's custom output, so the rewrite removes and re-inserts it rather than doubling it. */
+    private fun expectedAfter(
+        element: JsonElement,
+        record: CodeModeRecord,
+        candidateMedia: Map<String, List<JsonElement>>,
+    ): List<JsonElement> {
         val item = element as? JsonObject ?: return emptyList()
-        if (codec.string(item, CODE_MODE_FIELD_TYPE) != TYPE_FUNCTION_OUTPUT) return emptyList()
-        return media[codec.string(item, CODE_MODE_FIELD_CALL_ID)].orEmpty()
+        val callId = codec.string(item, CODE_MODE_FIELD_CALL_ID)
+        return when (codec.string(item, CODE_MODE_FIELD_TYPE)) {
+            TYPE_FUNCTION_OUTPUT -> record.accepted.media(callId) ?: candidateMedia[callId].orEmpty()
+            TYPE_CUSTOM_OUTPUT -> if (callId == record.outerCallId) record.accepted.durableMedia() else emptyList()
+            else -> emptyList()
+        }
     }
 }
 
@@ -287,6 +304,7 @@ private class NativeReplayValidator {
 
 private data class ProjectedRewrite(val input: ResponsesCodeModeInput?, val error: String? = null)
 private data class ReplayRewrite(val items: List<ResponsesCodeModeReplay>?, val error: String? = null)
-private val CUSTOM_TYPES = setOf("custom_tool_call", "custom_tool_call_output")
+private const val TYPE_CUSTOM_OUTPUT = "custom_tool_call_output"
+private val CUSTOM_TYPES = setOf("custom_tool_call", TYPE_CUSTOM_OUTPUT)
 private const val TYPE_FUNCTION_OUTPUT = "function_call_output"
 private val FUNCTION_TYPES = setOf("function_call", TYPE_FUNCTION_OUTPUT)

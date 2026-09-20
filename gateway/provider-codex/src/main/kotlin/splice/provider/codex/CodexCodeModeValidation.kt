@@ -66,12 +66,17 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
     }
 
     /** An accepted result replayed as something else. V4-179: identity includes the media — a replay
-     *  carrying different pixels under an accepted id with the same text is a different result — and
-     *  a LEGACY id (accepted before media was captured, no entry) is compared on text alone, as it
-     *  always was. */
-    private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean =
-        record.results[prior.id]?.let { it != prior } == true ||
-            record.media[prior.id]?.let { it != turn.toolMedia[prior.id].orEmpty() } == true
+     *  carrying different pixels under an accepted id with the same text is a different result. A
+     *  LEGACY id (accepted before media was captured, no entry) is compared on text alone, as it
+     *  always was, and its text was rendered by the previous daemon with the previous markers: the
+     *  same client blocks rendered that way ([CodexCodeModeBridge.Turn.legacyResults]) are the same
+     *  result, so an upgrade under a parked script does not turn every replay into a conflict. */
+    private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean {
+        val accepted = record.results[prior.id] ?: return false
+        val media = record.accepted.media(prior.id)
+            ?: return accepted != prior && accepted != turn.legacyResults.firstOrNull { it.id == prior.id }
+        return accepted != prior || media != turn.toolMedia[prior.id].orEmpty()
+    }
 
     private fun pendingFrameProblem(record: CodeModeRecord, current: Map<String, CodeModeResult>): String? {
         // Lost continuations preserve partial evidence; they never send a frame to a worker.

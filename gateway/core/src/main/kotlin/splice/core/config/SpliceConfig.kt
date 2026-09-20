@@ -67,6 +67,12 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val traceMaxBodyChars: Int
         get() = long(Knob.TRACE_MAX_BODY_CHARS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
 
+    /** V4-176: the systemd user unit that supervises this install, and the slice hosted MCP servers
+     *  are spawned into. splice owns NEITHER — it reads these names, asks systemd about them, and
+     *  says so when the answer is that they are not there. */
+    public val supervisorUnit: String get() = string(Knob.SUPERVISOR_UNIT).orEmpty()
+    public val mcpSlice: String get() = string(Knob.MCP_SLICE).orEmpty()
+
     // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
     public val statuslineGitRoots: List<String>
         get() = string(Knob.STATUSLINE_GIT_ROOTS).orEmpty()

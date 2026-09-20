@@ -16,9 +16,12 @@
 // the unit name and then asking systemctl, which is a subprocess on the request path and a second
 // source of truth about a host fact this repo does not own.
 //
-// THE UNIT IS NOT OURS. It lives with hostshield (its Documentation= line points there), so nothing
-// here reads, writes or ships a copy of it; if the unit ever needs a change, that is a hostshield
-// ledger entry and this file does not move.
+// THE UNIT IS NOT OURS, and naming whose it is would be naming one host's answer to a question
+// every host answers differently. splice states the REQUIREMENT and reads it back: a unit that
+// starts this process and restarts it when it exits. Whatever supplies that — a distro package, a
+// container runtime's restart policy, an operator's own hand-written unit — owns the file, points
+// its Documentation= at itself, and is where a change to it belongs. Nothing here reads, writes or
+// ships a copy of one.
 package splice.app.console
 
 import splice.control.api.DaemonSupervised

@@ -786,6 +786,17 @@ command = "claude-splice"
 # mcpMaxServers = 32                                        # count; most MCP server processes hosted at once (daemon-wide)
 # mcpRequestTimeoutMs = 1800000                             # ms; how long one forwarded MCP request may wait for the child
 # mcpInitializeTimeoutMs = 60000                            # ms; the child initialize handshake budget
+# mcpSlice = "app-mcp.slice"                                # the systemd slice hosted MCP servers are spawned into
+# supervisorUnit = "splice.service"                         # the systemd user unit that restarts this daemon
+#
+#   THE TWO NAMES ABOVE ARE SPLICE'S SUPERVISION CONTRACT, and splice owns NEITHER of them.
+#   It restarts INTO `supervisorUnit` (which is why POST /api/daemon/restart may drain at all: a
+#   unit with Restart= brings the process back, and a daemon started by hand is refused in words
+#   rather than stopped), and it spawns hosted MCP servers INTO `mcpSlice`, asking systemd for that
+#   slice's MemoryMax at every spawn — a slice with no ceiling is reported as no containment, never
+#   treated as some. Supply them however you like: a packaged unit, your own hand-written one, a
+#   container runtime's restart policy. Change the names here only if yours are called something
+#   else; the defaults are what this repo's install.sh layout produces.
 # maxRequestBytes = 8388608                                 # bytes; largest request body the gateway decodes (413 past this)
 # requestReadTimeoutMs = 30000                              # ms; how long one client request body read may take
 # materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits

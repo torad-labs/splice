@@ -1,7 +1,7 @@
 // NEW: V4-146 (2026-09-20) — the four source kinds shared MCP hosting could not see. Before this
 // file, McpGlobalRead (splice.app) read exactly one file, `<home>/.claude.json`'s top-level
-// `mcpServers` — kind GLOBAL, one home. Measured on this box (hostshield-orchestrator, 2026-09-18,
-// confirmed here): the operator has 15 `~/.claude*` roots — Claude Code relocates `.claude.json`
+// `mcpServers` — kind GLOBAL, one home. Measured on a development box (2026-09-18, confirmed here):
+// the operator has 15 `~/.claude*` roots — Claude Code relocates `.claude.json`
 // itself under CLAUDE_CONFIG_DIR, so `~/.claude-bonsai/.claude.json`, `~/.claude-claude-grok/
 // .claude.json`, … are real, independent files, never symlinks — plus PROJECT overrides nested
 // inside every one of those files (`projects.<path>.mcpServers`), REPO manifests the operator's own

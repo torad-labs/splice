@@ -8,9 +8,10 @@
 // drain-and-exit returns in about two seconds.
 //
 // THAT IS WHY NOTHING HERE RELAUNCHES ANYTHING. A splice-side relauncher would be a SECOND supervisor
-// racing `Restart=always` on the same process — the hostshield scar exactly (two reapers sharing one
-// escalation state file collapsed a 30s TERM-to-KILL grace to ~2s over two days). The unit is
-// hostshield's own; a change to it is a hostshield ledger entry, never an edit from here.
+// racing `Restart=always` on the same process, and two supervisors sharing one escalation state is a
+// measured failure shape, not a theoretical one: on this box's own host layer, two reapers sharing an
+// escalation file collapsed a 30s TERM-to-KILL grace to ~2s over two days. The unit belongs to
+// whatever supervises this install; a change to it is made there, never from here.
 //
 // AND THAT IS NOT TRUE OF EVERY DAEMON, WHICH IS THE ROW'S REAL CONTENT. Someone who ran
 // `splice.jar daemon` by hand is supervised by nothing: taking the drain there would STOP the daemon

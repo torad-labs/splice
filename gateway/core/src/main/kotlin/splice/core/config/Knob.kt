@@ -413,6 +413,37 @@ public enum class Knob(
         "",
     ),
 
+    // V4-176: THE SUPERVISION CONTRACT, as two names the operator supplies rather than two constants
+    // splice asserts about the box it happens to run on.
+    //
+    // splice RESTARTS INTO a systemd user unit it does not own, and it SPAWNS hosted MCP servers into
+    // a slice it does not create. Both requirements are real and neither is splice's to satisfy: a
+    // unit that brings the process back is why `POST /api/daemon/restart` may drain at all, and a
+    // slice with a memory ceiling is why a hosted server cannot eat the box. What was wrong was
+    // spelling them as facts — one hardcoded unit name, one hardcoded slice name, and prose naming
+    // the private tool that supplies them here. A reader packaging splice for their own machine could
+    // act on none of it.
+    //
+    // Named by config, they become a documented integration point: whatever the reader's supervision
+    // is called, they say so once. The defaults are what this repo's own install.sh layout produces,
+    // so a box that changes neither needs no config at all, and a box that has neither still runs —
+    // the daemon refuses the drain in words (DaemonRoutes) and says hosted children are uncapped
+    // (McpContainment) instead of pretending.
+    SUPERVISOR_UNIT(
+        "supervisorUnit",
+        KnobKind.STRING,
+        listOf("SPLICE_SUPERVISOR_UNIT"),
+        "splice.service",
+        restartRequired = true,
+    ),
+    MCP_SLICE(
+        "mcpSlice",
+        KnobKind.STRING,
+        listOf("SPLICE_MCP_SLICE"),
+        "app-mcp.slice",
+        restartRequired = true,
+    ),
+
     // V4-130 (FEATURES.md 6): how many UTC days of the console's activity stores (message edges and
     // activity labels, `activity/<store>-YYYY-MM-DD.jsonl` under the state dir) are kept. Whole day
     // files older than the window are deleted; today counts as one of the days. Daemon-wide.

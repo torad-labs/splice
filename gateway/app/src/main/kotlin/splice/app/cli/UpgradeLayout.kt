@@ -3,7 +3,8 @@
 // config and credentials elsewhere — never touched here) plus one directory per release under
 // <share>/releases/<version>/ holding the PRISTINE jar and launch shim, with `current` and
 // `previous` links. The live jar becomes a symlink into the current release; the live shim stays a
-// real file so a local edit (the hostshield launcher patch) survives — UpgradeWrapper decides.
+// real file so a local edit survives — a host that patches the shim after install is the case this
+// is for, and UpgradeWrapper decides what happens to such an edit.
 package splice.app.cli
 
 import splice.core.GATEWAY_VERSION

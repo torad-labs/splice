@@ -59,7 +59,7 @@ class DrainBudgetTest {
             "STOP_DEADLINE_MS (${STOP_DEADLINE_MS}ms) must stay under systemd's stop timeout " +
                 "(${SYSTEMD_STOP_TIMEOUT_MS}ms), or the host SIGKILLs the process mid-drain and the " +
                 "drain merely LOOKS armed. Raising this needs a TimeoutStopSec in the unit first, " +
-                "which is a hostshield change and not this repo's.",
+                "which is a change to whatever supervises the install and not this repo's.",
         )
     }
 }

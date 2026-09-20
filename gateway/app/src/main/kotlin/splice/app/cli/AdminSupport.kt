@@ -8,6 +8,7 @@ import splice.app.LoginIo
 import splice.app.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
@@ -38,6 +39,24 @@ internal object AdminSupport {
             )
         }.getOrNull()
         return controlPort(topology, envReader)
+    }
+
+    /** V4-176: the systemd user unit that supervises this install, by name, through the same
+     *  TOML < state < env precedence as [controlPort]. splice does not own the unit; it reads the
+     *  name so a box whose packager called it something else is not permanently "unsupervised".
+     *  A blank value falls back to the knob's declared default rather than asking systemctl about
+     *  an empty unit name. */
+    fun supervisorUnit(envReader: EnvReader = EnvReader(System::getenv)): String {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-176): an unreadable TOML means "no TOML layer" here, which is the answer the state and env layers below are then decided by; [controlPort] above already PRINTS the diagnostic for the very same file on the very same upgrade path, and a second copy would report one corrupt config twice.
+        val topology = Cancellables.runCatchingCancellable {
+            TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(envReader))
+        }.getOrNull()
+        val unit = ConfigService(
+            StatePaths(envReader = envReader),
+            headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
+            envReader = envReader,
+        ).getConfig().supervisorUnit
+        return unit.ifBlank { Knob.SUPERVISOR_UNIT.default as String }
     }
 
     /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic

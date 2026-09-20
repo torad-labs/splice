@@ -425,9 +425,10 @@ context_window = 1000000
 # `projects` shares the transcript tree, so a session started on ANY head (or in plain `claude`) shows
 # in every head's `-r` picker and resumes there — switch head when an account runs dry and carry on.
 # A head's existing private transcripts are merged into ~/.claude/projects (same files, never copies)
-# the first time it launches with this on. The one cost: a transcript carries the model id of the
-# head that wrote it, so resuming it elsewhere prints Claude Code's "Session model X could not be
-# restored" once and continues on the resuming head's default. Isolate `projects` on a head to keep
+# the first time it launches with this on. A transcript carries the model id of the head that wrote
+# it, so on resume splice moves its assistant rows onto the resuming head's model where they lie —
+# at launch for `-r SESSION_ID`, and through a SessionStart hook (matcher `resume`, installed in each
+# head's settings.json) for the picker and `-c`. Isolate `projects` on a head to keep
 # its transcripts private; that head then reaches a foreign session only by name — `<wrapper> -r
 # SESSION_ID` finds the id in the other heads' trees, COPIES it in with every assistant row's model
 # rewritten to this head's, and launches; an id that exists nowhere is reported and nothing is copied.

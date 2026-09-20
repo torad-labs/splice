@@ -92,14 +92,16 @@ class SharedTranscriptsResumeTest {
         // compaction follows the session too: no registry entry, resolved from the global transcript
         val project = SessionProject(home.resolve(".claude/sessions"), global).projectFor(sessionId)
         assertEquals(cwd.toAbsolutePath().normalize(), project)
-        // `-r SESSION_ID` on head B finds it in its own (shared) tree: nothing is copied or rewritten,
-        // and the transcript keeps the model the other head wrote — the recorded cost of the join.
+        // `-r SESSION_ID` on head B finds it in its own (shared) tree: nothing is copied, and (V4-169)
+        // the assistant rows are moved onto head B's model WHERE THEY LIE, so Claude Code's restore
+        // check finds a model this head serves. Same file, same inode, one row changed.
         service.launch(
             spec(headB, "b", sharing, listOf(headA)),
             listOf("-r", sessionId),
             dangerouslySkipPermissions = false,
         )
-        assertEquals("deepseek-flash", modelOf(Files.readString(onB)), "a shared transcript is never rewritten")
+        assertEquals(headModel, modelOf(Files.readString(onB)), "moved onto the resuming head's model in place")
+        assertEquals(onA.toRealPath(), onB.toRealPath(), "still the one shared file")
     }
 
     // The migration case, which is EVERY head on the operator machine after V4-115: projects/ is a

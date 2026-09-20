@@ -19,8 +19,9 @@
 //     the OTHER heads' projects trees, copies SESSION_ID.jsonl and its SESSION_ID/ subdir into the
 //     calling head's tree, and launches. It is a COPY — never a link, never a move, and the source
 //     is left byte-identical — so the two heads never share an inode, an append, or a deletion.
-// (C) MODEL FOLLOWS THE HEAD. On that copy, every assistant row's `message.model` is rewritten to
-//     the calling head's pinned model. Claude Code restores a resumed session's model from the
+// (C) MODEL FOLLOWS THE HEAD. On that copy — and, since V4-169, IN PLACE on a session the calling
+//     head already sees through the shared tree (V4-168) — every assistant row's `message.model` is
+//     rewritten to the calling head's pinned model (TranscriptModelRewrite, shared with the resume hook). Claude Code restores a resumed session's model from the
 //     transcript and refuses one the head does not serve — the reason string it prints with
 //     "Session model <X> could not be restored" is "is not in the availableModels allowlist"
 //     (verified in the 2.1.257 binary, strings around tengu_resume_model_restore). The materializer
@@ -45,13 +46,8 @@
 // rejected id is reported without echoing it.
 package splice.core.launch
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
-import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.io.IOException
@@ -61,9 +57,6 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 private const val TRANSCRIPT_SUFFIX = ".jsonl"
-private const val TRANSCRIPT_TYPE = "type"
-private const val TRANSCRIPT_MESSAGE = "message"
-private const val ASSISTANT_TYPE = "assistant"
 
 /** A Claude Code session id, and the only shape allowed to become a path component or a message. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
@@ -71,8 +64,10 @@ private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
 /** The answer to "where did this launch's `-r SESSION_ID` come from?". A sealed OUTCOME, not an
  *  exception: every refusal is a value the caller's `when` has to handle. */
 public sealed class SessionAdoption {
-    /** The id is already in the calling head's own tree — nothing was copied, nothing was rewritten. */
-    public data class HeadOwned(public val transcript: Path) : SessionAdoption()
+    /** The id is already in the calling head's own tree — nothing was copied. Its assistant rows were
+     *  moved onto the head's model in place (V4-169); [modelsRewritten] is 0 when they already named it,
+     *  or when the rewrite failed, which is logged and never blocks the launch. */
+    public data class HeadOwned(public val transcript: Path, public val modelsRewritten: Int = 0) : SessionAdoption()
 
     /** A foreign transcript was copied in, and its assistant rows were rewritten to the head's model. */
     public data class Adopted(
@@ -101,9 +96,7 @@ public sealed class SessionAdoption {
     public data class Invalid(public val cause: String) : SessionAdoption()
 }
 
-public class ResumeAcrossHeads {
-
-    private val json = Json { ignoreUnknownKeys = true }
+public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = TranscriptModelRewrite()) {
 
     /** Resolve `-r [sessionId]` for the head launching from [callingConfigDir], looking in every
      *  other head's CLAUDE_CONFIG_DIR. [pinnedModel] is that head's model — the one its roster serves. */
@@ -123,10 +116,25 @@ public class ResumeAcrossHeads {
         val own = findAllIn(callingConfigDir, sessionId, log).firstOrNull()
         val foreign = others.flatMap { dir -> findAllIn(dir, sessionId, log) }
         return when {
-            own != null -> SessionAdoption.HeadOwned(own.transcript)
+            own != null -> SessionAdoption.HeadOwned(own.transcript, rewriteInPlace(own.transcript, pinnedModel, log))
             foreign.isEmpty() -> SessionAdoption.Absent(sessionId, (listOf(callingConfigDir) + others).map(::headName))
             else -> copyIn(callingConfigDir, preferSameCwd(callingConfigDir, foreign, log), sessionId, pinnedModel, log)
         }
+    }
+
+    /** V4-169: a session this head already sees — its own, or any head's through the shared tree — is
+     *  moved onto this head's model where it lies. Nothing else is at stake in a failure here (the
+     *  session still resumes, on the head's default, with Claude Code's one-line notice), so it is
+     *  said in the log and the launch goes on. */
+    private fun rewriteInPlace(transcript: Path, pinnedModel: String, log: LogSink): Int {
+        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, pinnedModel) }
+        outcome.exceptionOrNull()?.let { cause ->
+            log(
+                "[resume] $transcript could not be moved onto $pinnedModel (${SafeFailureText.render(cause)}) — " +
+                    "the session resumes on this head's default model after Claude Code's restore notice\n",
+            )
+        }
+        return outcome.getOrDefault(0)
     }
 
     /** A config dir as the operator names it in a message: the directory itself, never a guess. */
@@ -179,7 +187,7 @@ public class ResumeAcrossHeads {
             Files.copy(chosen.transcript, target, REPLACE_EXISTING)
             val sourceSubdir = chosen.transcript.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
-            rewriteModels(target, targetSubdir, pinnedModel)
+            rewriter.rewrite(target, pinnedModel)
         }
         copied.exceptionOrNull()?.let { cause ->
             return SessionAdoption.Refused(sessionId, chosen.headConfigDir, SafeFailureText.render(cause))
@@ -221,55 +229,6 @@ public class ResumeAcrossHeads {
             )
         }
     }
-
-    /** Rewrite every assistant row's `message.model` in the copied transcript and in every jsonl
-     *  under its subdir. Rows are re-encoded only when they change, so history this head did not
-     *  touch stays byte-identical. A read or write failure ABORTS the adoption: half-rewritten
-     *  history is precisely what leaves a resumed session on a model the head cannot serve. */
-    private fun rewriteModels(transcript: Path, sessionSubdir: Path, pinnedModel: String): Int {
-        var rewritten = rewriteFile(transcript, pinnedModel)
-        if (Files.isDirectory(sessionSubdir, NOFOLLOW_LINKS)) {
-            jsonlUnder(sessionSubdir).forEach { file -> rewritten += rewriteFile(file, pinnedModel) }
-        }
-        return rewritten
-    }
-
-    private fun jsonlUnder(dir: Path): List<Path> = Files.walk(dir).use { stream ->
-        stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }.toList()
-    }
-
-    private fun rewriteFile(file: Path, pinnedModel: String): Int {
-        val text = Cancellables.runCatchingCancellable { Files.readString(file) }
-            .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
-        var changed = 0
-        val rows = text.split("\n").map { row ->
-            val rewritten = rewriteRow(row, pinnedModel)
-            if (rewritten != null) changed += 1
-            rewritten ?: row
-        }
-        if (changed == 0) return 0
-        Cancellables.runCatchingCancellable { Files.writeString(file, rows.joinToString("\n")) }
-            .exceptionOrNull()
-            ?.let { cause -> throw IOException("$file unwritable (${SafeFailureText.render(cause)})") }
-        return changed
-    }
-
-    /** The rewritten row, or null when this row is not an assistant row on another model — an
-     *  unparseable line included: a transcript is history, and history is never silently dropped. */
-    private fun rewriteRow(row: String, pinnedModel: String): String? {
-        val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
-            .getOrNull() ?: return null
-        val message = assistantMessage(obj)
-        if (message == null || JsonScalars.str(message, Keys.MODEL) == pinnedModel) return null
-        val fixedMessage = JsonObject(message.toMutableMap().apply { put(Keys.MODEL, JsonPrimitive(pinnedModel)) })
-        return json.encodeToString(
-            JsonObject.serializer(),
-            JsonObject(obj.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, fixedMessage) }),
-        )
-    }
-
-    private fun assistantMessage(row: JsonObject): JsonObject? =
-        if (JsonScalars.str(row, TRANSCRIPT_TYPE) == ASSISTANT_TYPE) row[TRANSCRIPT_MESSAGE] as? JsonObject else null
 
     /** A missing or unreadable projects dir is an ordinary miss for a search (a head that has never
      *  run a session has none), so it is named once and read as empty — never a thrown launch. */

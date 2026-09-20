@@ -102,7 +102,25 @@ class ResumeAcrossHeadsTest {
         val adoption = adoption(calling, listOf(headConfig(home, "kimi")), "abc-123")
 
         assertEquals(mine, (adoption as SessionAdoption.HeadOwned).transcript)
+        assertEquals(0, adoption.modelsRewritten, "already on this head's model: nothing to move")
         assertEquals(theirsText, Files.readString(theirs), "an unadopted head's transcript is not touched")
+    }
+
+    // V4-169: on the shared tree (V4-168) every head's -r SESSION_ID finds the session in its OWN tree,
+    // whichever head wrote it — so HeadOwned is exactly where a foreign model id now gets moved, in
+    // place. Mutant: HeadOwned(own.transcript) with no rewrite — the count and the row both go red.
+    @Test
+    fun `a session this head already sees is moved onto its model in place`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        val mine = register(home, "codex", encodedCwd("repo"), "abc-123", model = "k3-256k")
+        val subdir = mine.resolveSibling("abc-123").resolve("subagents")
+        write(subdir.resolve("agent-1.jsonl"), transcript("abc-123", "k3-256k"))
+
+        val adoption = adoption(calling, emptyList(), "abc-123")
+
+        assertEquals(2, (adoption as SessionAdoption.HeadOwned).modelsRewritten, "the transcript and its subdir")
+        assertEquals(pinned, modelOf(lines(Files.readString(mine))[1]), "moved where it lies, no copy")
+        assertEquals("k3-256k", modelOf(lines(Files.readString(mine))[2]), "a non-assistant row keeps its model")
     }
 
     @Test

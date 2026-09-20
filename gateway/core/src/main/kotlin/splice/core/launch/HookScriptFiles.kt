@@ -137,7 +137,10 @@ internal object HookScriptFiles {
         }
     }
 
-    fun hookEntry(script: Path, timeoutSeconds: Int): JsonObject = buildJsonObject {
+    /** [matcher] narrows the event (SessionStart matches its `source`: startup, resume, clear, compact);
+     *  null registers for every occurrence, as the login hooks do. */
+    fun hookEntry(script: Path, timeoutSeconds: Int, matcher: String? = null): JsonObject = buildJsonObject {
+        matcher?.let { put("matcher", it) }
         putJsonArray("hooks") {
             addJsonObject {
                 put("type", "command")

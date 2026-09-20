@@ -95,6 +95,42 @@ class ResponsesSystemPromptTest {
         )
     }
 
+    // ── V4-170: strip ──
+
+    private val hedges = "^IMPORTANT: Assist with authorized security testing"
+
+    @Test
+    fun `strip on the non-lite shape edits the top level instructions in place`() {
+        val request = json.parseToJsonElement(
+            """{"instructions":"House rules.\n\nIMPORTANT: Assist with authorized security testing.\n\nBe kind.",""" +
+                """"input":[{"role":"user","content":"hi"}],"tool_choice":"auto"}""",
+        ).jsonObject
+
+        val updated = prompt.apply(request, hedges, SystemPromptMode.STRIP)
+
+        assertEquals("House rules.\n\nBe kind.", updated.getValue("instructions").jsonPrimitive.content)
+        assertEquals(request.getValue("input").toString(), updated.getValue("input").toString())
+    }
+
+    @Test
+    fun `strip on a lite turn edits the developer item where replace would - untouched stays the same instance`() {
+        val request = json.parseToJsonElement(
+            """{"input":[{"role":"developer","content":"IMPORTANT: Assist with authorized security testing.""" +
+                """\n\nBe kind."},""" +
+                """{"role":"user","content":[{"type":"input_text","text":"hi"}]}]}""",
+        ).jsonObject
+        val untouched = json.parseToJsonElement(
+            """{"instructions":"Be kind.","input":[{"role":"user","content":"hi"}]}""",
+        ).jsonObject
+
+        val input = prompt.apply(request, hedges, SystemPromptMode.STRIP).getValue("input").jsonArray
+
+        assertEquals(2, input.size)
+        assertEquals("Be kind.", input[0].jsonObject.getValue("content").jsonPrimitive.content)
+        assertEquals(request.getValue("input").jsonArray[1].toString(), input[1].toString())
+        assertSame(untouched, prompt.apply(untouched, hedges, SystemPromptMode.STRIP))
+    }
+
     @Test
     fun `an absent input and empty text both preserve the request`() {
         val request = json.parseToJsonElement("""{"model":"wire"}""").jsonObject

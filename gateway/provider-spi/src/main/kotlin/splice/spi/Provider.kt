@@ -68,7 +68,8 @@ public interface Provider : ProviderIdentity {
 
     /** Place the head's standing system prompt at this dialect's system seam, on EVERY turn.
      *  [mode] is APPEND (the default: the client's own system field survives byte-identically and
-     *  the prompt rides beside it) or REPLACE (that field is substituted). The unchanged default
+     *  the prompt rides beside it), REPLACE (that field is substituted) or STRIP (the prompt is a
+     *  pattern list and the matching paragraphs are deleted from that field). The unchanged default
      *  preserves current behavior for a provider whose dialect has not opted into the capability —
      *  and TurnPreparation then reports the prompt as NOT APPLIED rather than claiming text the
      *  wire never carried. */

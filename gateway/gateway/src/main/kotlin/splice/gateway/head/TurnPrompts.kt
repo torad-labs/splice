@@ -46,7 +46,8 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
             placed[index] = next.requestBody != current.requestBody
             next
         }
-        val applied = resolved.filterIndexed { index, _ -> placed[index] }
+        // V4-170: a strip layer's text is its pattern list, never prompt text the wire carried.
+        val applied = resolved.filterIndexed { index, layer -> placed[index] && layer.mode != SystemPromptMode.STRIP }
         val source = resolved.withIndex().joinToString("+") { (index, layer) ->
             if (placed[index]) layer.source else "${layer.source} (not applied)"
         }

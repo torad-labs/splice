@@ -7,20 +7,44 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.prompt.ParagraphStrip
 import splice.core.prompt.SystemPromptMode
 import splice.core.util.JsonScalars
 
 /** Inserts ONE system-role message before the first user message — after the client's own leading
  *  system messages — so the insertion point is the same on every turn of a conversation and the
- *  prompt cache keeps hitting. A request whose messages are not an array is left untouched. */
+ *  prompt cache keeps hitting. STRIP (V4-170) edits the client's system-role messages in place
+ *  instead. A request whose messages are not an array is left untouched. */
 public class ChatSystemPrompt {
     public fun apply(request: JsonObject, text: String, mode: SystemPromptMode): JsonObject {
         if (text.isEmpty()) return request
         val messages = request["messages"] as? JsonArray ?: return request
-        val updated = if (mode == SystemPromptMode.REPLACE) replaced(messages, text) else inserted(messages, text)
-        return JsonObject(request.toMutableMap().apply { put("messages", updated) })
+        val updated = when (mode) {
+            SystemPromptMode.REPLACE -> replaced(messages, text)
+            SystemPromptMode.STRIP -> stripped(messages, ParagraphStrip(text, "chat"))
+            SystemPromptMode.APPEND -> inserted(messages, text)
+        }
+        return updated?.let { JsonObject(request.toMutableMap().apply { put("messages", it) }) } ?: request
+    }
+
+    /** Every system-role message whose string content a pattern touches is rewritten in place (a
+     *  message stripped to nothing is dropped); every other message keeps its bytes. Null when no
+     *  message changed, so the caller sends the request as it was and reports the layer as not
+     *  applied. */
+    private fun stripped(messages: JsonArray, strip: ParagraphStrip): JsonArray? {
+        var changed = false
+        val kept = messages.mapNotNull { message ->
+            val obj = message as? JsonObject ?: return@mapNotNull message
+            val text = JsonScalars.str(obj, CONTENT)?.takeIf { roleOf(obj) == SYSTEM } ?: return@mapNotNull message
+            val after = strip.strip(text)
+            if (after === text) return@mapNotNull message
+            changed = true
+            if (after.isEmpty()) null else JsonObject(obj.toMutableMap().apply { put(CONTENT, JsonPrimitive(after)) })
+        }
+        return if (changed) JsonArray(kept) else null
     }
 
     private fun inserted(messages: JsonArray, text: String): JsonArray {
@@ -47,7 +71,7 @@ public class ChatSystemPrompt {
 
     private fun systemMessage(text: String): JsonObject = buildJsonObject {
         put(ROLE, SYSTEM)
-        put("content", text)
+        put(CONTENT, text)
     }
 }
 

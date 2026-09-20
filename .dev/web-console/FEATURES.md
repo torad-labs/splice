@@ -117,7 +117,8 @@ in-flight turns before restarting (V4-74). One exception is live already: a mode
 - `[heads.<key>]`: `provider`, `port`, `discovery_prefix`, `pinned_model`, `models` as
   `{id, slot}` rows where slot is opus, sonnet, haiku or fable, `context_window`, `overrides`
   (runtime knobs as strings), `claude` (`command`, `share`, `isolate`), `system_prompt` or
-  `system_prompt_file` with `system_prompt_mode` append or replace, `rates`.
+  `system_prompt_file` with `system_prompt_mode` append, replace or strip (a pattern list that
+  deletes matching paragraphs from the client's own system text, V4-170), `rates`.
 - Model rates: `input`, `cache_read`, `output`, optional `cache_write`, per million tokens.
   Absent rates mean "no dollar figure", never zero.
 

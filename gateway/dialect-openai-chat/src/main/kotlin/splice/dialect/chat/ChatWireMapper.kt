@@ -274,7 +274,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
 // Chat wire field names — repeated across the message/tool/image mappings.
 private const val ROLE = "role"
-private const val CONTENT = "content"
+internal const val CONTENT = "content" // V4-170: shared with ChatSystemPrompt, the one declaration on this wire
 private const val TYPE = "type"
 private const val NAME = "name"
 private const val TEXT = "text"

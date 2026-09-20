@@ -48,6 +48,19 @@ class DoctorConfigChecksTest {
         assertTrue(row.detail.contains("bare model with tools attached"), row.detail)
     }
 
+    /** V4-170: the strip mode decodes from TOML through the daemon's own loader and reads as an OK
+     *  row naming the mode — an operator sees "strip" where the layer sits, never a warning for
+     *  keeping the client's field. */
+    @Test
+    fun `a strip layer parses from TOML and gets an OK row naming the mode`(@TempDir tmp: Path) {
+        val topology = TopologyLoader.parse(toml(tmp, projectMode = "\"strip\""))
+        val row = projectRows(toml(tmp, projectMode = "\"strip\"")).first()
+
+        assertEquals(SystemPromptMode.STRIP, topology.projects.values.single().systemPromptMode)
+        assertEquals(CheckStatus.OK, row.status)
+        assertEquals("project:$tmp strip (inline)", row.detail)
+    }
+
     @Test
     fun `a root that does not exist on disk is a warning, not a failure`(@TempDir tmp: Path) {
         val gone = tmp.resolve("gone")

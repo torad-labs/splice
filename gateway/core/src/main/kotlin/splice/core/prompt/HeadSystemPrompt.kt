@@ -28,6 +28,12 @@ import java.nio.file.Paths
  * harness instructions and the head then behaves like a bare model with tools attached. The cache
  * cost is a prefix change ONCE per session rather than per turn, so the cache still warms from turn
  * two — the invariant is unaffected.
+ *
+ * [STRIP] (V4-170) keeps the client's field and DELETES paragraphs from it: the layer's text is a
+ * pattern list ([ParagraphStrip]), and every paragraph of the client's own system text that a
+ * pattern matches is removed at the dialect seam. Every other paragraph, block and cache_control
+ * breakpoint rides through byte-identically, so the dynamic blocks a session needs survive and the
+ * cache still warms from turn two. This is the mode for "Claude Code's prompt without the hedges".
  */
 @Serializable
 public enum class SystemPromptMode(public val wire: String) {
@@ -36,6 +42,9 @@ public enum class SystemPromptMode(public val wire: String) {
 
     @SerialName("replace")
     REPLACE("replace"),
+
+    @SerialName("strip")
+    STRIP("strip"),
 }
 
 /** Reads one prompt file named by `system_prompt_file`. */
@@ -85,6 +94,12 @@ public class HeadSystemPrompt(
         text != null -> text
         file == null -> null
         else -> read(file)
+    }
+
+    init {
+        // V4-170: a strip layer's text is a pattern list; a bad regex is a load error, never a layer
+        // that silently strips nothing.
+        if (mode == SystemPromptMode.STRIP) prompt?.takeIf(String::isNotEmpty)?.let { ParagraphStrip(it, source) }
     }
 
     /** The prompt this head places on every turn, or null when it configures none. */

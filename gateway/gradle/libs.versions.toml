@@ -41,10 +41,15 @@ ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
-# Upstream streaming client engine. JDK HttpClient (async NIO) — CIO's socket writer busy-spins on a
-# non-writable upstream socket (macOS/kqueue especially), melting CPU under concurrent large-body
-# streams; the JDK engine parks correctly and scales to the 1000-stream target on a few threads.
+# Upstream streaming client engine (V4-141): OkHttp, because it is the one ktor engine that hands us
+# the SOCKET. java.net.http.HttpClient exposes no socket options (JDK-8338681), so its sockets carried
+# no TCP keepalive and a half-open upstream read as healthy for the whole turn cap; OkHttp takes a
+# SocketFactory, so every upstream socket is armed before it connects. The JDK engine is still the
+# auth/alert/probe client in :app and :control (small, non-streaming), so it stays in the catalog.
+# OkHttp's own knobs that MUST be set are in UpstreamTransport: the Dispatcher's 5-per-host default
+# would serialise every turn against one provider behind five sockets.
 ktor-client-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 # Kotlin compiler internals — the :fir-checks compiler-plugin module compiles against these
 # (compileOnly: the compiler provides them at plugin-load time) and drives K2JVMCompiler in tests.

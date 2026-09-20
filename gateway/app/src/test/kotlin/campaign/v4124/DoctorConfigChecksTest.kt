@@ -46,6 +46,7 @@ class DoctorConfigChecksTest {
         assertEquals(CheckStatus.WARN, row.status)
         assertTrue(row.detail.contains("every earlier layer"), row.detail)
         assertTrue(row.detail.contains("bare model with tools attached"), row.detail)
+        assertTrue(requireNotNull(row.fix).contains("system_prompt_mode = \"append\""), row.fix.orEmpty())
     }
 
     /** V4-170: the strip mode decodes from TOML through the daemon's own loader. V4-171: it WARNs
@@ -60,6 +61,11 @@ class DoctorConfigChecksTest {
         assertEquals(CheckStatus.WARN, row.status)
         assertTrue(row.detail.contains("system_prompt_mode = \"strip\" (inline)"), row.detail)
         assertTrue(row.detail.contains("yours to own"), row.detail)
+        // V4-172: the STRIP remedy, not the REPLACE one. A strip layer's value is a regex list, so
+        // "set system_prompt_mode = append instead" would ship the patterns upstream as prompt text.
+        val fix = requireNotNull(row.fix)
+        assertTrue(fix.contains("regexes, never prompt text"), fix)
+        assertTrue(fix.contains("narrow the pattern list"), fix)
     }
 
     @Test

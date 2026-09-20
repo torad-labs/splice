@@ -458,10 +458,12 @@ share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE
 #             pattern that is not a regex, or a list with no pattern, is a config error at load.
 #             You are editing the client's own instructions: what a pattern removes is yours to
 #             own, and `splice doctor` WARNs on every strip layer, as it does on replace. splice
-#             ships no pattern list. Example — a project whose own append layer restates the
-#             client's context-management paragraph drops the original:
+#             ships no pattern list. A pattern matches ONE paragraph: a `# Heading` pattern removes
+#             the heading and leaves the section body, so name a distinctive sentence of the
+#             paragraph you mean. Example — a project whose own append layer restates the client's
+#             summarization rule drops the original paragraph:
 #               system_prompt_mode = "strip"
-#               system_prompt = "^# Context management"
+#               system_prompt = "some or all of the current context is summarized"
 #   system_prompt_mode = "append"
 
 # ── per-project system prompt, and per head of that project ──

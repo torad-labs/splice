@@ -33,14 +33,30 @@ public class PassthroughSystemPrompt {
     /** Every block keeps its position, its `cache_control` and its bytes unless a pattern matched a
      *  paragraph inside it; a block stripped to nothing is dropped. A system no pattern touches — or
      *  a shape that is not text — leaves the request the same instance, so the caller reports the
-     *  layer as not applied. */
+     *  layer as not applied.
+     *
+     *  V4-172: a `system` the client sent as a BARE STRING is rewritten as a bare string, not
+     *  promoted to a block array. The shape of the field is the very front of the request body, and
+     *  a layer whose patterns match on one turn and not the next would otherwise flip it back and
+     *  forth — a prefix change on alternating turns, which is exactly the cache this mode exists to
+     *  keep.
+     */
     private fun stripped(request: JsonObject, strip: ParagraphStrip): JsonObject {
         val system = request[SYSTEM]
-        val blocks = when {
-            system is JsonPrimitive && system.isString -> listOf(textBlock(system.content))
-            system is JsonArray -> system.toList()
-            else -> return request
+        return when {
+            system is JsonPrimitive && system.isString -> strippedString(request, system.content, strip)
+            system is JsonArray -> strippedBlocks(request, system, strip)
+            else -> request
         }
+    }
+
+    private fun strippedString(request: JsonObject, text: String, strip: ParagraphStrip): JsonObject {
+        val after = strip.strip(text)
+        if (after.removed == 0) return request
+        return JsonObject(request.toMutableMap().apply { put(SYSTEM, JsonPrimitive(after.text)) })
+    }
+
+    private fun strippedBlocks(request: JsonObject, blocks: JsonArray, strip: ParagraphStrip): JsonObject {
         val kept = blocks.map { block -> strippedBlock(block, strip) }
         if (kept.all { it.changed.not() }) return request
         return JsonObject(request.toMutableMap().apply { put(SYSTEM, JsonArray(kept.mapNotNull { it.block })) })
@@ -53,9 +69,9 @@ public class PassthroughSystemPrompt {
         val text = JsonScalars.str(obj, TEXT) ?: return StrippedBlock(block, changed = false)
         val after = strip.strip(text)
         return when {
-            after === text -> StrippedBlock(block, changed = false)
-            after.isEmpty() -> StrippedBlock(null, changed = true)
-            else -> StrippedBlock(rewritten(obj, after), changed = true)
+            after.removed == 0 -> StrippedBlock(block, changed = false)
+            after.text.isEmpty() -> StrippedBlock(null, changed = true)
+            else -> StrippedBlock(rewritten(obj, after.text), changed = true)
         }
     }
 

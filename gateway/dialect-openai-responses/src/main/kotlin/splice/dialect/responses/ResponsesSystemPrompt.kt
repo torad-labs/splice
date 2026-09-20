@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.prompt.ParagraphStrip
+import splice.core.prompt.Stripped
 import splice.core.prompt.SystemPromptMode
 import splice.core.util.JsonScalars
 
@@ -21,7 +22,7 @@ import splice.core.util.JsonScalars
 public class ResponsesSystemPrompt {
     public fun apply(request: JsonObject, text: String, mode: SystemPromptMode): JsonObject {
         if (text.isEmpty()) return request
-        val input = request["input"] as? JsonArray ?: return request
+        val input = request[INPUT] as? JsonArray ?: return request
         return when (mode) {
             SystemPromptMode.REPLACE -> replaced(request, input, text)
             SystemPromptMode.STRIP -> stripped(request, input, ParagraphStrip(text, "responses"))
@@ -29,22 +30,47 @@ public class ResponsesSystemPrompt {
         }
     }
 
-    /** The client's system text is wherever `replaced` would rewrite it — the lite base developer
-     *  item, else the top-level `instructions` — and it is stripped there, in place. A text no
-     *  pattern touches leaves the request the same instance. */
+    /** THE UNION, NOT THE EITHER/OR (V4-172). `replaced` rewrites the lite base developer item when
+     *  there is one and the top-level `instructions` otherwise, and the first cut of this method
+     *  copied that rule — but `isBaseInstructions` matches "a developer item whose content is a
+     *  string", which is EXACTLY the shape [appended] builds. On a non-lite turn an append layer
+     *  followed by a strip layer therefore stripped splice's OWN item and left the client's
+     *  `instructions` untouched: the documented case in `config/splice.example.toml` failing
+     *  silently. A strip edits whatever system text is present at its point, so it edits BOTH.
+     *
+     *  A text no pattern touches is left exactly as it was; an item stripped to nothing is dropped,
+     *  the way the passthrough and chat seams drop an emptied block or message. */
     private fun stripped(request: JsonObject, input: JsonArray, strip: ParagraphStrip): JsonObject {
-        val base = input.indexOfFirst { isBaseInstructions(it) }
-        val current = if (base < 0) {
-            JsonScalars.str(request, INSTRUCTIONS)
-        } else {
-            JsonScalars.str(input[base] as JsonObject, CONTENT)
+        val fields = request.toMutableMap()
+        var removed = 0
+        val instructions = JsonScalars.str(request, INSTRUCTIONS)?.let(strip::strip)
+        if (instructions != null && instructions.removed > 0) {
+            removed += instructions.removed
+            fields[INSTRUCTIONS] = JsonPrimitive(instructions.text)
         }
-        val after = current?.let(strip::strip)
-        return if (after == null || after === current) request else replaced(request, input, after)
+        val items = input.mapNotNull { item ->
+            val after = strippedItem(item, strip) ?: return@mapNotNull item
+            removed += after.removed
+            if (after.text.isEmpty()) null else rewrittenItem(item as JsonObject, after.text)
+        }
+        if (removed == 0) return request
+        fields[INPUT] = JsonArray(items)
+        return JsonObject(fields)
     }
 
+    /** The strip of one base-instructions item, or null when this item is not one or no pattern
+     *  touched it — either way the item rides on unchanged. */
+    private fun strippedItem(item: JsonElement, strip: ParagraphStrip): Stripped? {
+        if (!isBaseInstructions(item)) return null
+        val text = JsonScalars.str(item as JsonObject, CONTENT) ?: return null
+        return strip.strip(text).takeIf { it.removed > 0 }
+    }
+
+    private fun rewrittenItem(item: JsonObject, text: String): JsonObject =
+        JsonObject(item.toMutableMap().apply { put(CONTENT, JsonPrimitive(text)) })
+
     private fun appended(request: JsonObject, input: JsonArray, text: String): JsonObject =
-        JsonObject(request.toMutableMap().apply { put("input", JsonArray(input + developerItem(text))) })
+        JsonObject(request.toMutableMap().apply { put(INPUT, JsonArray(input + developerItem(text))) })
 
     /** Substitutes the client's system text wherever the dialect placed it. A lite turn moved it
      *  into a leading developer item (the top-level field is omitted, or carries codex's empty
@@ -58,7 +84,7 @@ public class ResponsesSystemPrompt {
             fields[INSTRUCTIONS] = JsonPrimitive(text)
             return JsonObject(fields)
         }
-        fields["input"] = JsonArray(
+        fields[INPUT] = JsonArray(
             input.mapIndexed { index, item ->
                 if (index == base) {
                     JsonObject((item as JsonObject).toMutableMap().apply { put(CONTENT, JsonPrimitive(text)) })
@@ -88,6 +114,7 @@ public class ResponsesSystemPrompt {
 }
 
 private const val INSTRUCTIONS = "instructions"
+private const val INPUT = "input"
 private const val ROLE = "role"
 private const val CONTENT = "content"
 private const val DEVELOPER = "developer"

@@ -5,6 +5,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.JsonScalars
+import splice.core.wire.ContentBlock
+import splice.core.wire.DocumentBlock
+import splice.core.wire.ImageBlock
+import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.spi.BuiltTurn
@@ -50,28 +54,47 @@ internal class CodexCodeModeTurnBuilder(private val bridge: CodexCodeModeBridge?
             first[FIELD_TOOLS] is JsonArray
     }
 
-    private fun toolResults(body: AnthropicTurnBody): List<CodeModeResult> = body.typed.messages
+    /** Internal, not private: V4-178 pins the marker on the parsed result, and the interceptor the
+     *  turn rides in is an opaque lambda a test cannot look inside. */
+    internal fun toolResults(body: AnthropicTurnBody): List<CodeModeResult> = body.typed.messages
         .flatMap { it.content }
         .filterIsInstance<ToolResultBlock>()
         .filter { it.toolUseId.startsWith(CODE_MODE_CLIENT_ID_PREFIX) }
         .map { block ->
             CodeModeResult(
                 id = block.toolUseId,
-                // V4-114: the refusal NARROWS instead of asserting. `require(part is TextBlock)`
-                // smart-casts, so the text read is checked by the compiler; the previous shape
-                // tested every part in one `all {}` and then re-asserted each with `as TextBlock`,
-                // two statements that had to agree with nothing holding them together — and a new
-                // ContentBlock subtype would have arrived as a ClassCastException on the turn path.
-                // Same refusal, same type (IllegalArgumentException), same message.
-                output = block.content.joinToString("") { part ->
-                    require(part is TextBlock) {
-                        "code-mode tool result '${block.toolUseId}' contains unsupported non-text content"
-                    }
-                    part.text
-                },
+                output = block.content.joinToString("") { part -> resultText(block.toolUseId, part) },
                 isError = block.isError == true,
             )
         }
+
+    /** V4-178: what a splice_exec script reads back for one part of a client tool result.
+     *
+     *  Text is the text. Anything else is a MARKER, never a refusal and never a silent drop: this
+     *  was `require(part is TextBlock)` (V4-114, chosen over a `filterIsInstance` that would have
+     *  shipped the text half as the whole result), and the refusal reached Claude Code as an error
+     *  terminal on a screenshot that agent-browser returned inside a code-mode call — and then on
+     *  every turn after it, because the image stays in the client's history until compaction
+     *  drops it (session 22d0cee0, 2026-09-20). A wedge is worse than either shape V4-114 weighed.
+     *
+     *  The marker names the media and the size so the model knows what it did not get, and says
+     *  why in words it can act on: function_call_output.output is string-only and a script return
+     *  is a string, so pixels cannot ride this path. Carrying them in a follow-up input_image
+     *  message, as the ordinary tool_result path does (ResponsesInputTools.appendToolResult), is
+     *  the passthrough row, not this one. */
+    private fun resultText(toolUseId: String, part: ContentBlock): String = when (part) {
+        is TextBlock -> part.text
+        is ImageBlock -> omitted(toolUseId, "image", part.source)
+        is DocumentBlock -> omitted(toolUseId, "document", part.source)
+        else -> omitted(toolUseId, "non-text content", null)
+    }
+
+    private fun omitted(toolUseId: String, kind: String, source: MediaSource?): String {
+        val media = source?.mediaType?.takeIf { it.isNotEmpty() } ?: kind
+        val size = (source?.data?.length?.let { ", $it base64 chars" } ?: source?.url?.let { ", url $it" }).orEmpty()
+        return "[$kind omitted by splice code-mode from tool_result $toolUseId: $media$size — a " +
+            "splice_exec script reads tool results as text only; call the tool outside code mode to see it]"
+    }
 }
 
 private const val FIELD_INPUT = "input"

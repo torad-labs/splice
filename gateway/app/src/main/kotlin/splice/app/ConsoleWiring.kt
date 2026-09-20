@@ -83,6 +83,12 @@ internal object ConsoleWiring {
         // this is the one place that knows the booted file's path. A null path is a daemon booted
         // without a config file: the route declines rather than writing a file nobody asked for.
         srv.ports.topology = topology.path?.let { TopologyWriter(it, TopologyParse(TopologyLoader::parse)) }
+
+        // V4-132: the login/remove/relabel machinery — :control depends on :core only, so this is
+        // the port's :app-side implementation, assigned here like every port above it. Unassigned,
+        // the four routes behind it answer a named 503 rather than a payload reading as "no
+        // accounts".
+        srv.ports.accounts = ConsoleAccountsImpl()
     }
 
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with

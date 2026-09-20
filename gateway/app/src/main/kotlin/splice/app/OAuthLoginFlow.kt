@@ -41,8 +41,12 @@ public object OAuthLoginFlow {
     // V4-122: ERR_BODY_CAP is LoginIo's declaration now, read from this package — one width for the
     // login flow rather than one per file that renders it.
 
-    /** Runs the browser OAuth flow to completion; returns true on success. */
-    public suspend fun run(spec: LoginSpec): Boolean {
+    /** Runs the browser OAuth flow to completion; returns true on success.
+     *
+     *  [observer], V4-132: the console's login-id/poll seam (POST/GET /api/auth/{head}/login[/{id}]),
+     *  null for the CLI. Present means this call is being WATCHED off-request: [awaitCode] reports
+     *  the authorize URL through it instead of opening a browser on the daemon's own desktop. */
+    public suspend fun run(spec: LoginSpec, observer: LoginObserver? = null): Boolean {
         val codeRef = AtomicReference<String?>(null)
         val errRef = AtomicReference<String?>(null)
         val latch = CountDownLatch(1)
@@ -54,7 +58,7 @@ public object OAuthLoginFlow {
         }
         server.start()
         try {
-            val code = awaitCode(spec, latch, codeRef, errRef) ?: return false
+            val code = awaitCode(spec, latch, codeRef, errRef, observer) ?: return false
             return exchangeAndPersist(spec, code)
         } finally {
             server.stop(0)
@@ -80,11 +84,18 @@ public object OAuthLoginFlow {
         latch: CountDownLatch,
         codeRef: AtomicReference<String?>,
         errRef: AtomicReference<String?>,
+        observer: LoginObserver?,
     ): String? {
-        println("splice: opening your browser to sign in (${spec.head})…")
-        if (!loginIo.openBrowser(spec.authorizeUrl)) {
-            println("splice: open this URL to sign in:")
-            println(spec.authorizeUrl)
+        if (observer != null) {
+            // Off-request: report the URL through the poll seam for the CONSOLE to open, never the
+            // daemon's own (nonexistent) desktop.
+            observer.announced(LoginAnnouncement(browserUrl = spec.authorizeUrl))
+        } else {
+            println("splice: opening your browser to sign in (${spec.head})…")
+            if (!loginIo.openBrowser(spec.authorizeUrl)) {
+                println("splice: open this URL to sign in:")
+                println(spec.authorizeUrl)
+            }
         }
         // LOOPBACK **OR** STDIN PASTE. A loopback callback can simply never arrive — a browser on
         // another machine, an SSH session, a container without a shared localhost, a redirect the

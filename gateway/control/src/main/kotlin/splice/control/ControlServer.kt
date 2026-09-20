@@ -31,6 +31,7 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.control.api.AccountsRoute
 import splice.control.api.ActivitySource
 import splice.control.api.AuthRoutes
 import splice.control.api.ClaudeHeadRoutes
@@ -166,8 +167,9 @@ public class ControlServer(
     private val perfPayloads = PerfPayloads(heads)
     private val economicsPayloads = EconomicsPayloads(heads)
     private val compactPayloads = CompactPayloads(heads)
-    private val authRoutes = AuthRoutes(heads, resolver)
+    private val authRoutes = AuthRoutes(heads, resolver, ports)
     private val claudeHeadRoutes = ClaudeHeadRoutes(heads)
+    private val accountsRoute = AccountsRoute(heads)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
     private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
@@ -221,8 +223,7 @@ public class ControlServer(
                 }
                 get("/api/perf/summary") { guarded(call) { perfPayloads.summary(call) } }
                 get("/api/economics") { guarded(call) { respond(call, economicsPayloads.economicsJson()) } }
-                get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
-                post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
+                authAndAccountRoutes(this)
                 get("/api/compact") { guarded(call) { respond(call, compactPayloads.compactJson()) } }
                 sessionsRoutes?.let { sessionRoutes(this, it) }
                 get("/api/logs/{head}") { guarded(call) { headRoutes.logsJson(call, tail(call, DEFAULT_LOG_TAIL)) } }
@@ -295,6 +296,22 @@ public class ControlServer(
     }
 
     private fun id(call: ApplicationCall): String = call.parameters["id"].orEmpty()
+
+    /** V4-132: the auth/accounts table, split out of [controlEngine] for the same LongMethod
+     *  reason [consoleRoutes] was. EXPLICIT constant segments (login, switch, accounts/{label})
+     *  ahead of the `{action}` catch-all — Ktor's routing tree scores a literal segment over a
+     *  parameter, so POST .../login wins over POST .../{action} regardless of registration order;
+     *  pinned by a test rather than assumed. */
+    private fun authAndAccountRoutes(route: Route) {
+        route.get("/api/auth") { guarded(call) { respond(call, authRoutes.authJson()) } }
+        route.get("/api/accounts") { guarded(call) { respond(call, accountsRoute.accountsJson()) } }
+        route.post("/api/auth/{head}/login") { guarded(call) { authRoutes.startLogin(call) } }
+        route.get("/api/auth/{head}/login/{id}") { guarded(call) { authRoutes.pollLogin(call) } }
+        route.post("/api/auth/{head}/switch") { guarded(call) { authRoutes.switchAccount(call) } }
+        route.delete("/api/auth/{head}/accounts/{label}") { guarded(call) { authRoutes.removeAccount(call) } }
+        route.patch("/api/auth/{head}/accounts/{label}") { guarded(call) { authRoutes.relabelAccount(call) } }
+        route.post("/api/auth/{head}/{action}") { guarded(call) { authRoutes.authAction(call) } }
+    }
 
     /** The console's routes, split out of [controlEngine] for the same reason that function was split
      *  out of start(): the table outgrew the 50-line wall a row at a time, and the wall was measuring

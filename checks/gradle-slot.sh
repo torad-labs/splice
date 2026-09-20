@@ -40,10 +40,24 @@ echo "gradle-slot: $LABEL holds the slot — gradle busy" >&2
 # here, that took `gradle clean check` and every gradle leg down on CI with `buildgate: command not
 # found`. Same `command -v` guard checks/e2e/docker/run.sh:69 already uses for the same binary: the
 # containment is a local nicety, the gradle run is the thing under test.
+# --offline is a LOCAL nicety and CI is where it becomes a lie. This machine already holds every
+# artifact, so refusing the network there keeps a seat's build off a flaky mirror. A runner starts
+# from a restored cache that is keyed on the lockfiles and therefore always one dependency bump
+# behind the tree: the 2026-09-20 red was `No cached version of org.junit:junit-bom:6.1.3 available
+# for offline mode`, on the leg whose verdict IS the gate. Resolving dependencies is part of what
+# CI is for, so the flag is dropped exactly where the cache cannot be trusted to be complete.
+# Same shape as the buildgate guard above and the same lesson: a path every seat runs through must
+# not carry one machine's assumptions (checks/e2e/docker/run.sh:69).
+# An `if`, not `[ ... ] && offline=()`: under `set -e` an AND-OR list that short-circuits is only
+# exempt while it is not the last command, so that spelling is one edit away from exiting 1 here.
+offline=(--offline)
+if [ -n "${CI:-}" ]; then
+  offline=()
+fi
 if command -v buildgate >/dev/null; then
-  buildgate ./gradlew --offline --no-daemon "$@"
+  buildgate ./gradlew "${offline[@]}" --no-daemon "$@"
 else
-  ./gradlew --offline --no-daemon "$@"
+  ./gradlew "${offline[@]}" --no-daemon "$@"
 fi
 rc=$?
 echo "gradle-slot: $LABEL released — gradle free (exit $rc)" >&2

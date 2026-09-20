@@ -63,11 +63,42 @@ function sectionOneNames(): Set<string> {
   return names;
 }
 
+/**
+ * The base branch's token sheet — the denominator this wall's whole design rests on, so it is read
+ * or the wall FAILS, never skipped.
+ *
+ * `main` is a local branch on a developer clone and is NOT one on a CI runner: actions/checkout
+ * fetches the single PR merge ref, so `git show main:` there is `fatal: invalid object name
+ * 'main'` — which is how this leg went red on 2026-09-20 with a message naming neither the wall
+ * nor the cause. The candidates are tried in order and the failure, if every one misses, says what
+ * was looked for and how to supply it. A wall that quietly passed when it could not read its own
+ * denominator would be the completeness failure this file's header is about, one level up.
+ */
+const BASE_REFS = ['main', 'origin/main', 'refs/remotes/origin/main'] as const;
+
+function baseTokenSheet(): string {
+  for (const ref of BASE_REFS) {
+    try {
+      return execSync(`git show ${ref}:webui/src/shared/tokens.css`, {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      // Next candidate. The throw below is what reports an exhausted list.
+    }
+  }
+  throw new Error(
+    `the world wall cannot read its denominator: none of ${BASE_REFS.join(', ')} resolves ` +
+      'webui/src/shared/tokens.css. On a runner, fetch the base branch before the webui tests ' +
+      '(git fetch --depth=1 origin main:refs/remotes/origin/main).',
+  );
+}
+
 /** The old tokens: what main's sheet defines that section 1 does not sanction. */
 function oldTokens(): Set<string> {
-  const mainSheet = execSync('git show main:webui/src/shared/tokens.css', { cwd: repoRoot, encoding: 'utf8' });
   const sanctioned = sectionOneNames();
-  return new Set(declaredNames(mainSheet).filter((name) => !sanctioned.has(name)));
+  return new Set(declaredNames(baseTokenSheet()).filter((name) => !sanctioned.has(name)));
 }
 
 /** The old primitives: what @shared/ui exports minus the world's own re-exports. */

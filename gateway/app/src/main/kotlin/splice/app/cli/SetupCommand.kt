@@ -5,21 +5,14 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
-import splice.app.cli.prompt.ConsolePresence
-import splice.app.cli.prompt.KeyReader
-import splice.app.cli.prompt.MultiSelectPrompt
 import splice.app.cli.prompt.SelectOption
 import splice.app.cli.prompt.SelectOutcome
-import splice.app.cli.prompt.SelectPrompt
-import splice.app.cli.prompt.Spinner
-import splice.app.cli.prompt.TerminalMode
 import splice.app.cli.prompt.WizardCancelled
-import splice.app.cli.prompt.WizardFrame
 import splice.app.cli.setup.CLAUDE_PROFILE
 import splice.app.cli.setup.ClaudeWrap
 import splice.app.cli.setup.DaemonClaudeWrap
-import splice.app.cli.setup.LanePicker
 import splice.app.cli.setup.SetupClaudeLane
+import splice.app.cli.setup.SetupPrompts
 import splice.app.cli.setup.SetupSignIn
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
@@ -31,7 +24,9 @@ import java.nio.file.Path
 internal class SetupCommand(
     private val installCommand: InstallCommand = InstallCommand(),
     loginHead: HeadSignIn = HeadSignIn { key -> LoginCommand().login(key) },
-    private val frame: WizardFrame = WizardFrame(),
+    /** V4-176: the six terminal seams as one collaborator — see SetupPrompts for why they were
+     *  always one. A test replaces the bundle; production takes its defaults. */
+    private val prompts: SetupPrompts = SetupPrompts(),
     private val detect: SetupProbe = SetupProbe {
         SetupDetection(
             EnvReader(System::getenv),
@@ -39,40 +34,18 @@ internal class SetupCommand(
             DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
         ).detect()
     },
-    private val choose: StartChoice = StartChoice { options, index ->
-        SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out).ask(
-            "Starting point",
-            options,
-            index,
-        )
-    },
-    private val spinner: Spinner = Spinner(),
     private val env: EnvReader = EnvReader(System::getenv),
     private val profiles: AddProfiles = AddProfiles(),
-    private val pickHeads: HeadPicker = HeadPicker { options, initial ->
-        MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out).ask(
-            "Heads to add",
-            options,
-            initial,
-            minimum = 0,
-        )
-    },
     private val addProfile: ProfileAdd = ProfileAdd { name ->
         AddCommand(restart = DaemonRestart { true }).add(listOf(name, "--yes"))
     },
     private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
-    private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
-    /** V4-175: the Claude lane question. Its two seams are constructed here for the same reason
-     *  every other prompt is — production paints a menu and speaks HTTP, a test hands over neither. */
-    private val pickLane: LanePicker = LanePicker { options, initialIndex ->
-        SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out).ask(
-            "Claude lane",
-            options,
-            initialIndex,
-        )
-    },
+    /** V4-175: the wrap call. Not a prompt — it CHANGES THE MACHINE, which is the line SetupPrompts
+     *  draws, so it stays here beside install, add and restart. */
     private val wrapClaude: ClaudeWrap = DaemonClaudeWrap(),
 ) {
+    private val frame = prompts.frame
+
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead)
 
@@ -87,19 +60,19 @@ internal class SetupCommand(
         val facts = detect()
         printDetected(facts)
         val options = startOptions(facts)
-        val start = chosenStart(choose(options, initialIndex(facts, options)))
+        val start = chosenStart(prompts.choose(options, initialIndex(facts, options)))
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
-        val lanes = SetupClaudeLane(pickLane, wrapClaude)
-        val picker = SetupHeads(profiles, pickHeads, addProfile, restart, hasConsole, env, frame)
+        val lanes = SetupClaudeLane(prompts.pickLane, wrapClaude)
+        val picker = SetupHeads(profiles, prompts.pickHeads, addProfile, restart, prompts.hasConsole, env, frame)
         val heads = picker.offer(facts, path)
         val lane = lanes.ask(heads)
         frame.note("Summary", summaryLines(start, path, bin, heads, lanes.summaryLine(lane)))
         if (!frame.confirm("Install now?", true)) frame.cancel("not installing")
-        spinner.start("Installing")
+        prompts.spinner.start("Installing")
         val result = Cancellables.runCatchingBestEffort { runInstall() }
         val installed = result.fold(onSuccess = { it }, onFailure = { false })
-        spinner.stop(if (installed) "Installed wrappers" else "Install failed")
+        prompts.spinner.stop(if (installed) "Installed wrappers" else "Install failed")
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
         lanes.apply(lane, picker.addAll(heads))?.let { println(it) }

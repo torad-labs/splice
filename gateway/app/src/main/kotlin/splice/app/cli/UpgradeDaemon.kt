@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §5 — the running daemon's side of an upgrade — wait until every head's
 // inflight on /api/heads is zero (or --now), restart the user unit when one supervises the daemon
-// (hostshield's splice.service) and the plain restart verb otherwise, then CONFIRM: the daemon that
+// (any splice.service the host installed) and the plain restart verb otherwise, then CONFIRM: the daemon that
 // answers /health must report the version that was just activated. Neither path's exit code is that
 // proof — the restart verb polled for the OLD CLI's own version and called a good restart a failure,
 // and a unit whose file names the jar but whose daemon was started by hand restarted a JVM that lost
@@ -12,7 +12,6 @@ import java.nio.file.Path
 
 private const val POLL_MS = 2_000L
 private const val MAX_WAIT_MS = 30L * 60 * 1000
-private const val USER_UNIT = "splice.service"
 private const val NANOS_PER_MS = 1_000_000L
 private const val CONFIRM_POLLS = 60
 private const val CONFIRM_POLL_MS = 250L
@@ -55,6 +54,11 @@ internal class UpgradeDaemon(
     private val pollMs: Long = POLL_MS,
     private val maxWaitMs: Long = MAX_WAIT_MS,
     private val confirmPollMs: Long = CONFIRM_POLL_MS,
+    /** V4-176: the unit that supervises this install, by name, from the knob layer. splice does not
+     *  own it and cannot assume one is there — an absent or inactive unit is the "started by hand"
+     *  arm below, which the restart verb handles. Hardcoding the name made a box whose packager
+     *  called the unit something else look permanently unsupervised. */
+    private val userUnit: String = AdminSupport.supervisorUnit(),
 ) {
     /** True only when every head reports zero turns, or no daemon exists at all. A read that cannot
      *  see the turns (key, timeout, shape) is waited out like a busy one and then refused: an unknown
@@ -82,18 +86,18 @@ internal class UpgradeDaemon(
         InflightRead.NoDaemon -> "no daemon running"
     }
 
-    /** The user unit when one supervises THIS install — its ExecStart names [liveJar] (hostshield's
-     *  splice.service does) AND it is active, so the daemon on the port is its process; a loaded but
+    /** The user unit when one supervises THIS install — its ExecStart names [liveJar] AND the unit
+     *  is active, so the daemon on the port is its process; a loaded but
      *  inactive unit means a daemon started by hand, which only the restart verb's stop reaches. An
      *  install under another share dir (a second copy, a test home) never restarts someone else's
      *  unit. Whatever ran, the verdict is /health's: it must report [version]. */
     fun restart(liveJar: Path, version: String): DaemonRestarted {
-        val unit = process(listOf("systemctl", "--user", "show", "-p", "ExecStart", "--value", USER_UNIT), false)
-        val active = process(listOf("systemctl", "--user", "is-active", USER_UNIT), false)
+        val unit = process(listOf("systemctl", "--user", "show", "-p", "ExecStart", "--value", userUnit), false)
+        val active = process(listOf("systemctl", "--user", "is-active", userUnit), false)
         val supervised = unit.code == 0 && unit.stdout.contains(liveJar.toString()) &&
             active.stdout.trim() == "active"
         if (supervised) {
-            process(listOf("systemctl", "--user", "restart", USER_UNIT), true)
+            process(listOf("systemctl", "--user", "restart", userUnit), true)
         } else {
             restartVerb(version)
         }

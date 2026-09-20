@@ -18,6 +18,7 @@ import splice.control.ShutdownDaemon
 import splice.control.TopologyDigest
 import splice.control.TopologyStale
 import splice.control.TurnPathStalled
+import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
 import splice.core.compaction.CompactionInstructions
@@ -221,6 +222,10 @@ internal class ControlPlane(
             maxServers = ms(Knob.MCP_MAX_SERVERS).toInt(),
             requestTimeout = ms(Knob.MCP_REQUEST_TIMEOUT_MS).milliseconds,
             initializeTimeout = ms(Knob.MCP_INITIALIZE_TIMEOUT_MS).milliseconds,
+            // V4-176: the slice is a NAME, not a duration, and a blank one would spawn every hosted
+            // child into a `--slice=` systemd rejects. An empty knob therefore falls back to the
+            // declared default rather than being passed through.
+            slice = (m[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() } ?: APP_MCP_SLICE,
         )
     }
 }

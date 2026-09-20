@@ -356,7 +356,7 @@ if [ ! -L "$BIN_DIR/splice" ] || [ ! -e "$BIN_DIR/splice" ]; then
 fi
 # 4b. Keep a PRISTINE copy of this release under releases/<version>/ for `splice upgrade`: it is
 #     what rollback repoints at, and what the upgrade compares the live launch shim against so a
-#     local edit (the hostshield launcher patch lands AFTER this script) is kept rather than
+#     local edit (a host that patches the launcher does so AFTER this script) is kept rather than
 #     overwritten. Best effort: an install never fails for want of its own archive copy.
 JAR_VERSION="${JAR_VERSION_OUTPUT#splice }"
 RELEASE_DIR="${SHARE_DIR}/releases/${JAR_VERSION}"

@@ -21,8 +21,8 @@ public fun interface McpProcessLauncher {
  *  mcp_hosting_exclude (review 2026-09-14).
  *
  *  V4-147: [containment] decides the two things a spawn owes the box — the cgroup the child runs in
- *  (a slice hostshield caps) and its oom_score_adj (off splice's inherited -1000). Null keeps the
- *  plain spawn, which is what a test wants and what a box without the hostshield layer gets anyway. */
+ *  (a slice the host caps) and its oom_score_adj (off splice's inherited -1000). Null keeps the
+ *  plain spawn, which is what a test wants and what a box with no such slice gets anyway. */
 public class StdioProcessLauncher(
     private val workingDir: Path = Paths.get(System.getProperty("user.home")),
     private val containment: McpContainment? = null,

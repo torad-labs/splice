@@ -20,4 +20,7 @@ public data class McpHostConfig(
     /** Child initialize handshake budget — a server that cannot answer this is not hostable. */
     val initializeTimeout: Duration = 1.minutes,
     val clock: HostClock = HostClock(System::currentTimeMillis),
+    /** V4-176: the slice hosted children are spawned into, by name. splice never creates it — it
+     *  asks systemd for the CEILING on it at every spawn and says so in the log when there is none. */
+    val slice: String = APP_MCP_SLICE,
 )

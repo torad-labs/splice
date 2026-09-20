@@ -1,4 +1,4 @@
-// NEW: V4-147 (2026-09-19) — a hosted MCP child is CAPPED by a slice hostshield declares, and left
+// NEW: V4-147 (2026-09-19) — a hosted MCP child is CAPPED by a slice the HOST declares, and left
 // SELECTABLE by every reaper, instead of inheriting splice's own unkillability.
 //
 // MEASURED ON THIS BOX (2026-09-18): splice's MainPID runs at oom_score_adj -1000, and its three live
@@ -9,10 +9,16 @@
 // both killers forbidden to touch it). THE CAP IS THE LOAD-BEARING HALF: an adj only orders victims
 // once the box is already in trouble.
 //
-// THE SPLIT OF OWNERSHIP (hostshield MANIFEST, layer shared-mcp-containment, agreed 2026-09-18):
-// hostshield owns the slice and its caps; splice owns the adj of each child it spawns, because its
+// THE SPLIT OF OWNERSHIP, stated as a contract rather than as one host's arrangement: THE HOST owns
+// [APP_MCP_SLICE] and the ceiling on it, because a cap is a policy about the whole box and only the
+// box's owner can size it; SPLICE owns the oom_score_adj of each child it spawns, because its
 // launcher is the only component that knows which pid is a hosted server and which is splice itself.
-// Law 19 keeps the unit files out of this repo.
+// Neither half is optional and neither can be done by the other: a cap with no adj leaves the child
+// unkillable inside its cap, and an adj with no cap orders victims in a box already in trouble.
+//
+// splice therefore ships NO unit and NO slice file. It asks systemd for the cap at spawn time
+// ([placed] below) and says so in the log when the answer is that there is none, which is the only
+// honest thing to do about a requirement the host has not met.
 //
 // TWO THINGS MEASURED HERE, and both shape this class:
 //   - `systemd-run --user --scope` EXECS the command (verified: the spawned pid is the command's own,
@@ -63,8 +69,8 @@ public class McpContainment(
                 log(
                     "[mcp-host] hosted children are not capped: ${LogSafe.str(slice)} declares no " +
                         "memory ceiling " +
-                        "(hostshield layer shared-mcp-containment is not installed), so they run in " +
-                        "splice's own cgroup\n",
+                        "so they run in splice's own cgroup — declare a memory ceiling on that " +
+                        "slice to contain them\n",
                 )
             }
             return command
@@ -112,16 +118,17 @@ public class ProcOomScoreAdj(private val procRoot: Path = Path.of("/proc")) : Oo
     }
 }
 
-/** The slice hostshield declares for hosted MCP servers (its MANIFEST names it; dash-nesting puts it
- *  under app.slice, so it inherits that backstop and adds its own tighter cap). */
+/** The slice the host is asked to declare for hosted MCP servers. The name follows systemd's own
+ *  dash-nesting, so it sits under `app.slice` and inherits whatever backstop the box puts there
+ *  while carrying its own tighter cap. splice never creates it — see the ownership split above. */
 public const val APP_MCP_SLICE: String = "app-mcp.slice"
 
 // why: systemd's own word for "no ceiling" in `show -p MemoryMax --value`, which is what a slice
 // nobody declared answers — the value that must never read as containment.
 private const val UNCAPPED = "infinity"
 
-// why: the adj every hosted child is raised to. Strictly above hostshield's ADJ_FLOOR (-400) so every
-// reaper can still select it — the whole point of the raise — while staying below an ordinary user
-// process (0), because killing an MCP server destroys a capability the session cannot respawn by
-// itself (hostshield MANIFEST, idle-daemon-reaper note) rather than a cache.
+// why: the adj every hosted child is raised to. Strictly above the -400 floor an out-of-memory reaper
+// is conventionally told to skip, so every reaper can still select it — the whole point of the raise —
+// while staying below an ordinary user process (0), because killing an MCP server destroys a
+// capability the session cannot respawn by itself rather than a cache.
 public const val HOSTED_ADJ: Int = -100

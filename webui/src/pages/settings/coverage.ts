@@ -53,6 +53,11 @@ const EDITABLE_KNOBS = [
   // row and takes effect on the next PUT (no restart); the perf-archive retention days is ordinary
   // restart-required, read only once a head names an archiveDir. Both PATCH-able like any knob.
   'BUDGET_DEFAULT_ACTION', 'PERF_ARCHIVE_RETENTION_DAYS',
+  // V4-176: the two names that make splice's supervision requirement an integration point instead
+  // of an assertion about one box — the systemd user unit it restarts into and the slice hosted MCP
+  // servers are spawned into. splice owns neither; it reads the names and reports what it finds.
+  // Ordinary restart-required knobs the console edits like any other.
+  'SUPERVISOR_UNIT', 'MCP_SLICE',
 ] as const;
 
 /** FEATURES 4.11: "The four host knobs, read-only with the reason." They shape one McpHost read

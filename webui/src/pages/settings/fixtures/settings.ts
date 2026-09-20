@@ -36,6 +36,11 @@ const EFFECTIVE = {
   // V4-133: Knob.kt's defaults. budgetDefaultAction is hot (read live per PUT /api/budgets);
   // perfArchiveRetentionDays is restart-required like activityRetentionDays.
   budgetDefaultAction: 'warn', perfArchiveRetentionDays: 90,
+  // V4-176: splice's supervision contract, as two names the operator supplies — the systemd user
+  // unit it restarts into and the slice hosted MCP servers are spawned into. Both restart-required.
+  // They are here because THIS FILE is compared to Knob.kt, not to a count: a fixture that lags the
+  // daemon fails the arm above rather than quietly proving a claim over a stale sample.
+  supervisorUnit: 'splice.service', mcpSlice: 'app-mcp.slice',
 };
 
 export const fixtureConfig: ConfigPayload = {

@@ -62,7 +62,7 @@ public class McpHost(
 
     // V4-147: the default launcher is built HERE because containment reports in words, and the log
     // sink is a constructor argument — a default argument could not have named it.
-    private val spawner = launcher ?: StdioProcessLauncher(containment = McpContainment(log))
+    private val spawner = launcher ?: StdioProcessLauncher(containment = McpContainment(log, config.slice))
     private val sessions = McpSessions(config.clock)
     private val servers = HostedServers(sharing, global, config, spawner, codec, log, sessions)
     private val minting = SessionMinting(servers, sessions, log)

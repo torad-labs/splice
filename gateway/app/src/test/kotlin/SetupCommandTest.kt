@@ -21,6 +21,7 @@ import splice.app.cli.prompt.MultiSelectOutcome
 import splice.app.cli.prompt.SelectOutcome
 import splice.app.cli.prompt.Spinner
 import splice.app.cli.prompt.WizardFrame
+import splice.app.cli.setup.SetupPrompts
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -46,16 +47,18 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
-                    loginHead = NO_REAL_LOGIN,
-                    frame = WizardFrame(
-                        out = StringBuilder(),
-                        ask = ConfirmPrompt { _, _ ->
-                            asked += 1
-                            false
-                        },
+                    prompts = SetupPrompts(
+                        frame = WizardFrame(
+                            out = StringBuilder(),
+                            ask = ConfirmPrompt { _, _ ->
+                                asked += 1
+                                false
+                            },
+                        ),
+                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
+                        spinner = Spinner(StringBuilder(), tty = false),
                     ),
-                    choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
-                    spinner = Spinner(StringBuilder(), tty = false),
+                    loginHead = NO_REAL_LOGIN,
                     detect = { emptyFacts() },
                 ).setup()
             }
@@ -71,10 +74,12 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    prompts = SetupPrompts(
+                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
+                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
+                        spinner = Spinner(StringBuilder(), tty = false),
+                    ),
                     loginHead = NO_REAL_LOGIN,
-                    frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
-                    choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
-                    spinner = Spinner(StringBuilder(), tty = false),
                     detect = { emptyFacts() },
                 ).setup()
             }
@@ -121,9 +126,11 @@ class SetupCommandTest {
                 seedOauthTopology(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
+                            spinner = Spinner(tty = false),
+                        ),
                         loginHead = { true },
-                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
-                        spinner = Spinner(tty = false),
                     ).setup()
                 }
             }
@@ -160,13 +167,15 @@ class SetupCommandTest {
             val before = Files.readString(path)
             runBlocking {
                 SetupCommand(
-                    loginHead = NO_REAL_LOGIN,
-                    frame = WizardFrame(
-                        out = StringBuilder(),
-                        ask = ConfirmPrompt { _, _ -> false },
+                    prompts = SetupPrompts(
+                        frame = WizardFrame(
+                            out = StringBuilder(),
+                            ask = ConfirmPrompt { _, _ -> false },
+                        ),
+                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
+                        spinner = Spinner(StringBuilder(), tty = false),
                     ),
-                    choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
-                    spinner = Spinner(StringBuilder(), tty = false),
+                    loginHead = NO_REAL_LOGIN,
                     detect = { emptyFacts() },
                 ).setup()
             }
@@ -181,10 +190,12 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    prompts = SetupPrompts(
+                        frame = WizardFrame(out = StringBuilder(), ask = ConfirmPrompt { _, d -> d }),
+                        choose = { _, _ -> SelectOutcome.Cancelled },
+                        spinner = Spinner(StringBuilder(), tty = false),
+                    ),
                     loginHead = NO_REAL_LOGIN,
-                    frame = WizardFrame(out = StringBuilder(), ask = ConfirmPrompt { _, d -> d }),
-                    choose = { _, _ -> SelectOutcome.Cancelled },
-                    spinner = Spinner(StringBuilder(), tty = false),
                     detect = { emptyFacts() },
                 ).setup()
             }
@@ -203,12 +214,14 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
+                            pickHeads = HeadPicker { options, _ ->
+                                offered += options.map { it.value }
+                                MultiSelectOutcome.Chosen(emptyList())
+                            },
+                        ),
                         loginHead = NO_REAL_LOGIN,
-                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
-                        pickHeads = HeadPicker { options, _ ->
-                            offered += options.map { it.value }
-                            MultiSelectOutcome.Chosen(emptyList())
-                        },
                         addProfile = ProfileAdd { error("empty tick must not add") },
                         detect = { emptyFacts() },
                     ).setup()
@@ -260,10 +273,12 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            pickHeads = HeadPicker { _, _ ->
+                                MultiSelectOutcome.Chosen(listOf("codex", "grok", "kimi"))
+                            },
+                        ),
                         loginHead = NO_REAL_LOGIN,
-                        pickHeads = HeadPicker { _, _ ->
-                            MultiSelectOutcome.Chosen(listOf("codex", "grok", "kimi"))
-                        },
                         addProfile = ProfileAdd { name ->
                             added += name
                             name != "grok"
@@ -283,8 +298,10 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("codex", "kimi")) },
+                        ),
                         loginHead = NO_REAL_LOGIN,
-                        pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("codex", "kimi")) },
                         addProfile = ProfileAdd { true },
                         restart = DaemonRestart {
                             restarts += 1
@@ -304,9 +321,11 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
+                            pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("muse", "deepseek")) },
+                        ),
                         loginHead = NO_REAL_LOGIN,
-                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
-                        pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("muse", "deepseek")) },
                         detect = { emptyFacts() },
                     ).setup()
                 }
@@ -324,12 +343,14 @@ class SetupCommandTest {
                 seedGrok(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
+                            pickHeads = HeadPicker { options, _ ->
+                                offered += options.map { it.value }
+                                MultiSelectOutcome.Chosen(emptyList())
+                            },
+                        ),
                         loginHead = NO_REAL_LOGIN,
-                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
-                        pickHeads = HeadPicker { options, _ ->
-                            offered += options.map { it.value }
-                            MultiSelectOutcome.Chosen(emptyList())
-                        },
                         addProfile = ProfileAdd { error("empty tick must not add") },
                         detect = { emptyFacts() },
                     ).setup()
@@ -346,13 +367,15 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            hasConsole = { true },
+                            pickHeads = HeadPicker { _, selected ->
+                                initial = selected
+                                MultiSelectOutcome.Chosen(emptyList())
+                            },
+                        ),
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth", "muse-oauth")) },
-                        hasConsole = { true },
-                        pickHeads = HeadPicker { _, selected ->
-                            initial = selected
-                            MultiSelectOutcome.Chosen(emptyList())
-                        },
                         addProfile = ProfileAdd { error("empty tick must not add") },
                     ).setup()
                 }
@@ -369,13 +392,15 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            hasConsole = { false },
+                            pickHeads = HeadPicker { _, selected ->
+                                initial = selected
+                                MultiSelectOutcome.Chosen(emptyList())
+                            },
+                        ),
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth")) },
-                        hasConsole = { false },
-                        pickHeads = HeadPicker { _, selected ->
-                            initial = selected
-                            MultiSelectOutcome.Chosen(emptyList())
-                        },
                         addProfile = ProfileAdd { error("empty tick must not add") },
                     ).setup()
                 }
@@ -391,8 +416,10 @@ class SetupCommandTest {
                 seedShim(home)
                 runBlocking {
                     SetupCommand(
+                        prompts = SetupPrompts(
+                            pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(wanted) },
+                        ),
                         loginHead = NO_REAL_LOGIN,
-                        pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(wanted) },
                         addProfile = ProfileAdd { name ->
                             added += name
                             true
@@ -413,10 +440,12 @@ class SetupCommandTest {
             seedShim(home)
             runBlocking {
                 SetupCommand(
+                    prompts = SetupPrompts(
+                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
+                        choose = { _, _ -> SelectOutcome.Chosen(pick) },
+                        spinner = Spinner(StringBuilder(), tty = false),
+                    ),
                     loginHead = NO_REAL_LOGIN,
-                    frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, _ -> false }),
-                    choose = { _, _ -> SelectOutcome.Chosen(pick) },
-                    spinner = Spinner(StringBuilder(), tty = false),
                     detect = { emptyFacts() },
                 ).setup()
             }

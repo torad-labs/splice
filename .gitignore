@@ -67,5 +67,8 @@ credentials.json
 
 # gradle-slot.sh lock + holder (checks/gradle-slot.sh)
 gateway/.gradle-slot.lock*
-# buildgate's per-project lock (hostshield build-reaper.sh:60) — a machine artifact, never source
-gateway/.hostshield-build.lock
+# A host build wrapper's per-project lock. checks/gradle-slot.sh runs gradle through whatever
+# memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
+# lock here. A machine artifact, never source, and the pattern is the SHAPE rather than one tool's
+# name so a box with a differently-named wrapper needs no edit to this file.
+gateway/.*-build.lock

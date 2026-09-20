@@ -1,4 +1,4 @@
-// NEW: V4-147 — a hosted MCP child is capped by a slice hostshield declares and left selectable by
+// NEW: V4-147 — a hosted MCP child is capped by a slice the host declares and left selectable by
 // every reaper, and splice's own process keeps its protection. Both halves are pinned here, because
 // neither has a gauge of its own: an uncapped cgroup looks exactly like a capped one from inside, and
 // an adj that did not land reads as success unless something goes back and looks.
@@ -21,8 +21,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
-// hostshield's floor: a reaper skips anything at or below it, so a hosted child must sit strictly
-// above — that is what the raise is for.
+// The floor an out-of-memory reaper is conventionally told to skip: it passes over anything at or
+// below this, so a hosted child must sit strictly above — that is what the raise is for.
 private const val ADJ_FLOOR = -400
 
 private val COMMAND = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem")
@@ -131,8 +131,8 @@ class McpContainmentTest {
         }
     }
 
-    // The raise has one job: leave the child selectable. A value at or below hostshield's floor would
-    // be a quieter version of the -1000 this row removes.
+    // The raise has one job: leave the child selectable. A value at or below that floor would be a
+    // quieter version of the -1000 this row removes.
     @Test
     fun `the hosted adj is strictly above the floor every reaper skips`() {
         assertTrue(HOSTED_ADJ > ADJ_FLOOR, "HOSTED_ADJ=$HOSTED_ADJ must sit above $ADJ_FLOOR")

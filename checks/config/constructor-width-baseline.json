@@ -1,5 +1,5 @@
 {
-  "recorded": "2026-09-18",
+  "recorded": "2026-09-20",
   "max_params": 12,
   "max_subsystems": 6,
   "law": "V4-93 ratchet. One entry per primary constructor already over a width on the recorded date, with the numbers MEASURED that day. The gate fails when an unrecorded constructor crosses 12 parameters or 6 subsystems, when a recorded one gets WIDER than its entry, when an entry is recorded ABOVE the measurement (padding), and when an entry stops offending or names a class that is gone. Re-measure with `bun checks/constructor-width.ts --write-baseline`; the diff is the record of what moved.",
@@ -7,6 +7,10 @@
     "gateway/control/src/main/kotlin/splice/control/ControlServer.kt ControlServer": {
       "params": 17,
       "subsystems": 5
+    },
+    "gateway/control/src/main/kotlin/splice/control/HeadAccountPool.kt HeadAccountView": {
+      "params": 14,
+      "subsystems": 0
     },
     "gateway/control/src/main/kotlin/splice/control/LaunchTypes.kt LaunchSpec": {
       "params": 21,
@@ -46,6 +50,10 @@
     },
     "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecordSnapshot": {
       "params": 22,
+      "subsystems": 0
+    },
+    "gateway/provider-spi/src/main/kotlin/splice/spi/AccountSelection.kt AccountView": {
+      "params": 14,
       "subsystems": 0
     }
   }

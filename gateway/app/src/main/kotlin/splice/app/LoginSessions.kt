@@ -26,6 +26,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -33,9 +34,10 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
+// why: a login attempt is a short-lived, operator-driven event — one per click in the console.
+// 256 is far above any plausible burst of concurrent logins across every head, and the map is
+// access-ordered so the cap only ever evicts attempts nobody has polled in a long time.
 private const val MAX_TRACKED_LOGINS = 256
-private const val SESSION_MAP_CAPACITY = 16
-private const val SESSION_MAP_LOAD = 0.75f
 
 /** Off-request orchestration for one head's login attempts. A daemon-lifetime singleton (held by
  *  [ConsoleAccountsImpl]), so every login this daemon starts shares one bounded id space. */
@@ -44,8 +46,8 @@ internal class LoginSessions(
 ) {
     private val lock = Any()
     private val sessions = object : LinkedHashMap<String, AtomicReference<LoginStatus>>(
-        SESSION_MAP_CAPACITY,
-        SESSION_MAP_LOAD,
+        LruSizing.INITIAL_CAPACITY,
+        LruSizing.LOAD_FACTOR,
         true,
     ) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, AtomicReference<LoginStatus>>?) =

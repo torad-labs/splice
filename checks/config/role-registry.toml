@@ -173,9 +173,10 @@ names = [
     "BrowserOpener",
     "CredentialPresenceProbe",
     "DirectoryProbe",
+    "HeadAccountPinSource",
     "VersionedRestart",
 ]
-reason = """Two ask and two ACT, which is the distinction that matters when the answer is a bare Boolean. DirectoryProbe asks whether a path is a directory; CredentialPresenceProbe asks whether a head's credential is configured. BrowserOpener LAUNCHES a browser at a URL and reports whether the launch succeeded; VersionedRestart "restarts the daemon the plain way (stop, then cold start from this shell), waiting for a daemon that reports [expectedVersion]" — a multi-second side effect whose false means "it did not come back", not "no". A probe's double wired where an actor was meant reports a clean skip for work that never ran, which is the shape of a green upgrade that never upgraded."""
+reason = """Two ask and two ACT, which is the distinction that matters when the answer is a bare Boolean. DirectoryProbe asks whether a path is a directory; CredentialPresenceProbe asks whether a head's credential is configured. BrowserOpener LAUNCHES a browser at a URL and reports whether the launch succeeded; VersionedRestart "restarts the daemon the plain way (stop, then cold start from this shell), waiting for a daemon that reports [expectedVersion]" — a multi-second side effect whose false means "it did not come back", not "no". A probe's double wired where an actor was meant reports a clean skip for work that never ran, which is the shape of a green upgrade that never upgraded. ADDED 2026-09-20 (V4-132): HeadAccountPinSource answers whether a head has an account PINNED by the operator - a stored policy decision, read per selection. BrowserOpener performs an action and reports whether it worked; CredentialPresenceProbe and DirectoryProbe ask whether something EXISTS on disk; VersionedRestart performs a restart. A pin is none of those, and reading it must never be satisfiable by a probe that happens to return true."""
 
 # ── 4 names, (String) -> String ───────────────────────────────────────────────────────────────────
 [[groups]]
@@ -286,12 +287,13 @@ dated = "2026-09-17"
 names = [
     "ClasspathHtml",
     "DaemonVersionRead",
+    "WrapStateRead",
 ]
 reason = """ClasspathHtml reads the bundled dashboard HTML out of the jar and is null when the \
 resource is absent from this build. DaemonVersionRead asks the RUNNING daemon for its version and \
 is null when no daemon answers. One null means \"not packaged\", the other means \"not running\", \
 and the upgrade path branches on the second — a shared port would let a missing resource read as a \
-stopped daemon and trigger a restart nobody asked for."""
+stopped daemon and trigger a restart nobody asked for. ADDED 2026-09-20 (V4-129): WrapStateRead is not a third way to read a string - it answers ONE question LaunchService must ask on every launch, wrapped or not: what absolute binary does the wrapped claude really point at, or null when nothing is wrapped. Null is the LOAD-BEARING value, not an absence: it is exactly the case where the bare name resolved through PATH is correct, which is today's byte-identical behaviour. ClasspathHtml reads a bundled asset and DaemonVersionRead reads a version string; neither can answer that question, and substituting one would make every head's launch exec the wrong binary or itself."""
 
 # ── 2 names, () -> TurnOutcome ────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -396,10 +398,11 @@ prompt. Two names is the only thing keeping the pair readable at the call site."
 signature = "suspend ()->Unit"
 dated = "2026-09-17"
 names = [
+    "HeadRestart",
     "Heartbeat",
     "MgmtRoute",
 ]
-reason = """Heartbeat is "the one frame the pinger may write for the turn: a `ping` event, after message_start only" — a PERIODIC write, bounded to a single legal frame type because the wire must stay legal, and it exists against the client's 600 s stream watchdog (two 11-12 minute compactions on 2026-09-05 hung at exactly 600 s without it). MgmtRoute is "the body of one authenticated `/mgmt` route, run only AFTER the bearer key matched", and its KDoc says that ordering IS the type's content: everything mutating on the control plane is wrapped in one, so a route responding outside one would be reachable without the management key. A repeating one-frame-only writer and an authorization-gated route body are the two seams whose confusion either breaks the wire or removes the auth gate."""
+reason = """Heartbeat is "the one frame the pinger may write for the turn: a `ping` event, after message_start only" — a PERIODIC write, bounded to a single legal frame type because the wire must stay legal, and it exists against the client's 600 s stream watchdog (two 11-12 minute compactions on 2026-09-05 hung at exactly 600 s without it). MgmtRoute is "the body of one authenticated `/mgmt` route, run only AFTER the bearer key matched", and its KDoc says that ordering IS the type's content: everything mutating on the control plane is wrapped in one, so a route responding outside one would be reachable without the management key. A repeating one-frame-only writer and an authorization-gated route body are the two seams whose confusion either breaks the wire or removes the auth gate. ADDED 2026-09-20 (V4-132): HeadRestart restarts ONE head so a switched account takes effect, and its failure means the operator's switch silently did not apply. Heartbeat is a periodic liveness tick whose individual failure is tolerable by design; MgmtRoute serves a request. Collapsing HeadRestart into either would put an account switch on a best-effort path."""
 
 # ── 2 names, suspend (String) -> Boolean ──────────────────────────────────────────────────────────
 [[groups]]

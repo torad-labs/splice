@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.util.LogSink
+import splice.core.util.LruSizing
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -42,9 +43,12 @@ public class ClientWindows(
 
     private val lock = Any()
     private val ioLock = Any()
-    private val windows = object : LinkedHashMap<String, Long>(INITIAL_CAPACITY, LOAD_FACTOR, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?): Boolean = size > capacity
-    }
+    private val windows =
+        object : LinkedHashMap<String, Long>(LruSizing.INITIAL_CAPACITY, LruSizing.LOAD_FACTOR, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, Long>?,
+            ): Boolean = size > capacity
+        }
 
     init {
         store?.let { load(it) }
@@ -100,6 +104,3 @@ public class ClientWindows(
     private fun unreadable(path: Path, e: Exception): String =
         "[windows] client-window registry at $path ignored (${e::class.simpleName}); sessions re-teach it\n"
 }
-
-private const val INITIAL_CAPACITY = 16
-private const val LOAD_FACTOR = 0.75f

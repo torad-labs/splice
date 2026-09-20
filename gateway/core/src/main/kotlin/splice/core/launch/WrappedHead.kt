@@ -30,6 +30,7 @@ import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -91,7 +92,7 @@ public class WrapStateStore(
     }
 }
 
-// WrapState, WrapStateRead, NowMillis, ClaudeHeadStatus, WrapResult and UnwrapResult live in
+// WrapState, WrapStateRead, ClaudeHeadStatus, WrapResult and UnwrapResult live in
 // WrappedHeadTypes.kt (concentration split, 2026-09-20) — same package, same FQCNs.
 
 /** The pre-flight read [WrappedHead.wrap] needs before it writes anything — split out so neither
@@ -108,7 +109,7 @@ public class WrappedHead(
     private val stateStore: WrapStateStore = WrapStateStore(),
     private val materializer: ClaudeConfigMaterializer = ClaudeConfigMaterializer(home),
     private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
-    private val now: NowMillis = NowMillis { System.currentTimeMillis() },
+    private val now: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val commandPath: Path get() = installPaths.binDir.resolve(CLAUDE_COMMAND)
     private val shimPath: Path get() = installPaths.shareDir.resolve(SHIM_NAME)
@@ -199,7 +200,7 @@ public class WrappedHead(
                 shimPath = shim.toString(),
                 settingsBackupPath = settingsBackup.toString(),
                 claudeJsonBackupPath = claudeJsonBackup.toString(),
-                wrappedAtEpochMillis = now.nowEpochMillis(),
+                wrappedAtEpochMillis = now(),
             ),
         )
         atomicSymlink(cmd, shim)
@@ -228,7 +229,7 @@ public class WrappedHead(
         Cancellables.runCatchingCancellable { cmd.toRealPath().toString() }.getOrNull()
 
     private fun backupPath(original: Path): Path =
-        original.resolveSibling("${original.fileName}.splice-wrap-backup-${now.nowEpochMillis()}")
+        original.resolveSibling("${original.fileName}.splice-wrap-backup-${now()}")
 
     /** No-op when [original] does not exist — its own absence IS what [restore] must reproduce, and
      *  an absent backup path is how it tells the two states apart. */
@@ -253,7 +254,7 @@ public class WrappedHead(
      *  move leaves [link] untouched, and the move itself is one atomic step with no missing-entry
      *  window either direction. */
     private fun atomicSymlink(link: Path, target: Path) {
-        val staged = link.resolveSibling(".${link.fileName}.splice-wrap-${now.nowEpochMillis()}")
+        val staged = link.resolveSibling(".${link.fileName}.splice-wrap-${now()}")
         symlink(staged, target)
         try {
             Files.move(staged, link, ATOMIC_MOVE, REPLACE_EXISTING)

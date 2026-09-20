@@ -39,6 +39,7 @@ internal class CodexCodeModeTurnBuilder(
             tools = body.typed.tools.map { it.name }.toSet(),
             toolResults = toolResults(body),
             toolMedia = toolMedia(body),
+            legacyResults = legacyResults(body),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
         return built.copy(
@@ -79,6 +80,18 @@ internal class CodexCodeModeTurnBuilder(
     /** V4-179: each bridge result's follow-up items, rendered once here and nowhere else. */
     internal fun toolMedia(body: AnthropicTurnBody): Map<String, List<JsonElement>> =
         bridgeResults(body).associate { block -> block.toolUseId to media.followUps(block).items }
+
+    /** V4-179: the same results as the daemon before this row rendered them — for replay identity
+     *  against a record that daemon persisted (CodexCodeModeValidation.conflicts), never for the model. */
+    internal fun legacyResults(body: AnthropicTurnBody): List<CodeModeResult> = bridgeResults(body).map { block ->
+        CodeModeResult(
+            id = block.toolUseId,
+            output = block.content.joinToString("") { part -> legacy.resultText(block.toolUseId, part) },
+            isError = block.isError == true,
+        )
+    }
+
+    private val legacy = CodeModeLegacyMarkers()
 
     private fun bridgeResults(body: AnthropicTurnBody): List<ToolResultBlock> = body.typed.messages
         .flatMap { it.content }
@@ -130,6 +143,25 @@ internal class CodexCodeModeTurnBuilder(
 /** A document (or an unknown block) has no wire shape on this path at all — not the ordinary one
  *  either — so its marker names that rather than a delivery that did not happen. */
 private const val DOCUMENT_REASON = "this content type cannot ride to the model on this path"
+
+/** The V4-178 rendering, byte for byte: what a record written by the daemon before V4-179 holds as
+ *  an accepted result's text. It exists only so that record's replays still compare equal; a marker
+ *  the model reads comes from [CodexCodeModeTurnBuilder]. */
+private class CodeModeLegacyMarkers {
+    fun resultText(toolUseId: String, part: ContentBlock): String = when (part) {
+        is TextBlock -> part.text
+        is ImageBlock -> omitted(toolUseId, "image", part.source)
+        is DocumentBlock -> omitted(toolUseId, "document", part.source)
+        else -> omitted(toolUseId, "non-text content", null)
+    }
+
+    private fun omitted(toolUseId: String, kind: String, source: MediaSource?): String {
+        val media = source?.mediaType?.takeIf { it.isNotEmpty() } ?: kind
+        val size = (source?.data?.length?.let { ", $it base64 chars" } ?: source?.url?.let { ", url $it" }).orEmpty()
+        return "[$kind omitted by splice code-mode from tool_result $toolUseId: $media$size — a " +
+            "splice_exec script reads tool results as text only; call the tool outside code mode to see it]"
+    }
+}
 
 private const val FIELD_INPUT = "input"
 private const val FIELD_TOOLS = "tools"

@@ -153,8 +153,7 @@ internal class CodexCodeModeRegistry(
         sweeper.evictIdleCell()?.also { store.save(records, history.entries) }
     }
 
-    /** V4-179: [media] holds the follow-up items rendered for each supplied result; a supplied id
-     *  absent from it is captured as "no media" (an empty list), never left legacy. */
+    /** V4-179: [media] holds the follow-up items rendered for each supplied result; see [CodeModeAccepted.accept]. */
     fun acceptResults(
         record: CodeModeRecord,
         digest: String,
@@ -163,22 +162,17 @@ internal class CodexCodeModeRegistry(
     ) = synchronized(monitor) {
         val priorDigest = record.lastDigest
         val priorTime = record.updatedAt
-        val priorResults = record.results.toMap()
-        val priorMedia = record.media.toMap()
+        val prior = record.accepted.copy()
         record.lastDigest = digest
         record.updatedAt = config.clock.millis()
-        record.results.putAll(supplied)
-        supplied.keys.forEach { id -> record.media[id] = media[id].orEmpty() }
+        record.accepted.accept(supplied, media)
         try {
             store.save(records, history.entries)
         } catch (error: CodeModePersistenceException) {
             // Only this pre-advance transition is reversible. Never roll back a running cell.
             record.lastDigest = priorDigest
             record.updatedAt = priorTime
-            record.results.clear()
-            record.results.putAll(priorResults)
-            record.media.clear()
-            record.media.putAll(priorMedia)
+            record.accepted.restore(prior)
             throw error
         }
     }

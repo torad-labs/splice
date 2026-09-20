@@ -54,12 +54,9 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         assertEquals(turn.toolMedia.getValue(id).single(), items[customOutput + 1])
         assertFalse(items[customOutput].jsonObject.getValue("output").jsonPrimitive.content.contains(IMAGE_A))
         // Persisted beside the output, not inside it.
-        val record = savedRecord()
-        val result = record.getValue("results").jsonObject.getValue(id).jsonObject
+        val result = savedResult(id)
         assertFalse(result.getValue("output").jsonPrimitive.content.contains(IMAGE_A))
-        val media = record.getValue("media").jsonArray.single().jsonObject
-        assertEquals(id, media.getValue("id").jsonPrimitive.content)
-        assertEquals(turn.toolMedia.getValue(id), media.getValue("items").jsonArray.toList())
+        assertEquals(turn.toolMedia.getValue(id), result.getValue("media").jsonArray.toList())
     }
 
     @Test
@@ -117,8 +114,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         assertEquals(2, images.size)
         assertEquals(turn.toolMedia.getValue(first).single(), images[0])
         assertEquals(turn.toolMedia.getValue(second).single(), images[1])
-        val saved = savedRecord().getValue("media").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content }
-        assertEquals(listOf(first, second), saved)
+        assertEquals(listOf(first, second), savedRecord().getValue("results").jsonObject.keys.toList())
     }
 
     @Test
@@ -177,13 +173,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, id to "shot"), RecordingSink()) { completedOutcome() }
 
-        // The same file a v3 daemon would have written: no `media` field at all. Nothing else moves.
-        val file = tempDir.resolve("bridge.json")
-        val state = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        val legacyRecords = state.getValue("records").jsonArray.map { record ->
-            JsonObject(record.jsonObject.filterKeys { it != "media" })
-        }
-        Files.writeString(file, JsonObject(state + ("records" to JsonArray(legacyRecords))).toString())
+        // The same file a v3 daemon would have written: no `media` key on any result. Nothing else moves.
+        rewriteSavedResults { result -> JsonObject(result.filterKeys { it != "media" }) }
 
         val reloaded = bridge(ScriptedRuntime(ArrayDeque()))
         var replay = ""
@@ -199,8 +190,74 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         assertEquals(1, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
         assertEquals(1, imageMessages(items).size, items.toString())
         assertTrue(logLines.none { it.contains("history rewrite skipped") }, logLines.toString())
-        // And a text-only v3 result is unchanged: no media entry is minted for it on reload.
-        assertFalse(Files.readString(file).contains("\"media\":[{"))
+        // And a v3 result is unchanged: no media entry is minted for it on reload.
+        assertFalse(Files.readString(tempDir.resolve("bridge.json")).contains("\"media\""))
+    }
+
+    @Test
+    fun `a second script in the same turn re-canonicalizes the posted body without doubling the image`() = runTest {
+        val steps = listOf(calls("r1"), CodeModeStep.Completed("done"), CodeModeStep.Completed("b-done"))
+        val runtime = ScriptedRuntime(ArrayDeque(steps))
+        val manager = bridge(runtime)
+        val id = start(manager, runtime)
+        val turn = turnWithResults(manager, id to IMAGE_A)
+        val posted = mutableListOf<String>()
+        val outcome = manager.interceptor(turn, null, disableParallel = false)
+            .intercept(history(turn, id to "shot"), RecordingSink()) { body ->
+                posted += body
+                // Upstream answers A's canonical history with a second script, B, at once.
+                if (posted.size == 1) outerOutcome("outer-2") else completedOutcome()
+            }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        assertEquals(2, posted.size)
+        val first = input(posted[0])
+        val second = input(posted[1])
+        // B's body is A's canonical body re-canonicalized: the durable image is still there ONCE,
+        // still right after A's custom output, and B's own pair follows.
+        assertEquals(1, imageMessages(second).size, second.toString())
+        val aOutput = second.indexOfFirst {
+            it.jsonObject["call_id"] == JsonPrimitive("outer-call") &&
+                it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output")
+        }
+        assertEquals(turn.toolMedia.getValue(id).single(), second[aOutput + 1])
+        assertEquals(2, second.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
+        assertEquals(first, second.take(first.size), "A's canonical prefix is unchanged under B")
+    }
+
+    @Test
+    fun `an image result the previous daemon accepted still matches after the upgrade`() = runTest {
+        val (reloaded, first, second) = parkedByPreviousDaemon { manager, id ->
+            turnWithResults(manager, id to IMAGE_A)
+        }
+        val replay = turnWithResults(reloaded, first to IMAGE_A, second to null)
+        val outcome = reloaded.interceptor(replay, null, disableParallel = false)
+            .intercept(history(replay, first to "shot", second to "next"), RecordingSink()) { completedOutcome() }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+    }
+
+    @Test
+    fun `a document result the previous daemon accepted still matches after the upgrade`() = runTest {
+        val (reloaded, first, second) = parkedByPreviousDaemon { manager, id ->
+            turnWithBlocks(manager, id to DOCUMENT)
+        }
+        val replay = turnWithBlocks(reloaded, first to DOCUMENT, second to TEXT_ONLY)
+        val outcome = reloaded.interceptor(replay, null, disableParallel = false)
+            .intercept(history(replay, first to "doc", second to "next"), RecordingSink()) { completedOutcome() }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+    }
+
+    @Test
+    fun `a legacy result replayed with different text is still a conflict`() = runTest {
+        val (reloaded, first, second) = parkedByPreviousDaemon { manager, id ->
+            turnWithResults(manager, id to IMAGE_A)
+        }
+        val changed = """{"type":"text","text":"changed"},${imageBlock(IMAGE_A)}"""
+        val replay = turnWithBlocks(reloaded, first to changed, second to TEXT_ONLY)
+        val outcome = reloaded.interceptor(replay, null, disableParallel = false)
+            .intercept(history(replay, first to "shot", second to "next"), RecordingSink()) { error("must not post") }
+        assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
+        val message = (outcome as TurnOutcome.Failure).message
+        assertTrue(message.contains("conflicting replay for code-mode tool result '$first'"), message)
     }
 
     // ---- harness ----
@@ -219,21 +276,64 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
     private fun turnWithResults(
         manager: CodexCodeModeBridge,
         vararg results: Pair<String, String?>,
+    ): CodexCodeModeBridge.Turn = turnWithBlocks(
+        manager,
+        *results.map { (id, image) -> id to (TEXT_ONLY + image?.let { "," + imageBlock(it) }.orEmpty()) }.toTypedArray(),
+    )
+
+    /** [blocks]: each result id to the raw Anthropic content parts of its tool_result. */
+    private fun turnWithBlocks(
+        manager: CodexCodeModeBridge,
+        vararg blocks: Pair<String, String>,
     ): CodexCodeModeBridge.Turn {
-        val blocks = results.joinToString(",") { (id, image) ->
-            val imagePart = image?.let {
-                """,{"type":"image","source":{"type":"base64","media_type":"image/png","data":"$it"}}"""
-            }
-            val parts = """{"type":"text","text":"t"}""" + imagePart.orEmpty()
+        val results = blocks.joinToString(",") { (id, parts) ->
             """{"type":"tool_result","tool_use_id":"$id","content":[$parts]}"""
         }
         val body = AnthropicParse.parseAnthropicBody(
             """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
-                """"messages":[{"role":"user","content":[$blocks]}]}""",
+                """"messages":[{"role":"user","content":[$results]}]}""",
         )
         val builder = CodexCodeModeTurnBuilder(manager, media())
-        return turn(results = builder.toolResults(body)).copy(toolMedia = builder.toolMedia(body))
+        return turn(results = builder.toolResults(body))
+            .copy(toolMedia = builder.toolMedia(body), legacyResults = builder.legacyResults(body))
     }
+
+    /** A script parked by the daemon BEFORE V4-179: its first result (the turn [accept] builds for
+     *  that result's id) was accepted and persisted with that daemon's marker text and no media, the
+     *  script then asked for a second call, and the daemon restarted (the record reloads LOST).
+     *  Returns the reloaded bridge and the two client ids. */
+    private suspend fun parkedByPreviousDaemon(
+        accept: (CodexCodeModeBridge, String) -> CodexCodeModeBridge.Turn,
+    ): Triple<CodexCodeModeBridge, String, String> {
+        val runtime = ScriptedRuntime(ArrayDeque(listOf(calls("r1"), calls("r2"))))
+        val manager = bridge(runtime)
+        val first = start(manager, runtime)
+        val accepted = accept(manager, first)
+        val sink = RecordingSink()
+        manager.interceptor(accepted, null, disableParallel = false)
+            .intercept(history(accepted, first to "one"), sink) { error("script still running") }
+        val second = sink.tools.single().id
+        // What that daemon wrote: the V4-178 marker as the result's text, and no media key.
+        val legacyText = JsonPrimitive(accepted.legacyResults.single().output)
+        rewriteSavedResults { result -> JsonObject(result.filterKeys { it != "media" } + ("output" to legacyText)) }
+        return Triple(bridge(ScriptedRuntime(ArrayDeque())), first, second)
+    }
+
+    private fun rewriteSavedResults(rewrite: (JsonObject) -> JsonObject) {
+        val file = tempDir.resolve("bridge.json")
+        val state = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val records = state.getValue("records").jsonArray.map { record ->
+            val results = record.jsonObject.getValue("results").jsonObject.mapValues { (_, r) -> rewrite(r.jsonObject) }
+            JsonObject(record.jsonObject + ("results" to JsonObject(results)))
+        }
+        Files.writeString(file, JsonObject(state + ("records" to JsonArray(records))).toString())
+    }
+
+    private fun savedResult(id: String): JsonObject =
+        savedRecord().getValue("results").jsonObject.getValue(id).jsonObject
+
+    private fun imageBlock(data: String): String =
+        """{"type":"image","source":{"type":"base64","media_type":"image/png","data":"$data"}}"""
 
     /** The Responses input the ordinary walk renders for that history: each pair, then the images
      *  the walk rides after its function_call_output — the very items the turn's media holds. */
@@ -286,6 +386,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
 
 private const val IMAGE_A = "AAAA"
 private const val IMAGE_B = "AQID"
+private const val TEXT_ONLY = """{"type":"text","text":"t"}"""
+private const val DOCUMENT = """{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"AAAA"}}"""
 private fun roleText(role: String, text: String): JsonObject = buildJsonObject {
     put("role", role)
     put("content", text)

@@ -51,7 +51,7 @@ public class HeadServer(
     private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()
     private val admissionGate = AdmissionGate(provider, deps, window, responses)
-    private val diagnostics = HeadDiagnostics(provider, listenPort, deps.gate, driver)
+    private val diagnostics = HeadDiagnostics(provider, listenPort, deps.gate, driver, deps.stores.wireTap)
     private val admission = HeadAdmission(
         deps,
         clientAuth,

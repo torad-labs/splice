@@ -74,6 +74,11 @@ public sealed class Command {
         override fun run(): Int = outcomeExitCode(PerfCommand().perf(args))
     }
 
+    /** V4-173: the upstream request bodies a head sent, when its operator opted in. */
+    public data class Wire(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(WireCommand().wire(args))
+    }
+
     /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`
      *  arm still calls it unqualified; it was a top-level function until the no-top-level-functions
      *  law (2026-08-15) gave it the type it always belonged to. Visibility unchanged (internal). */

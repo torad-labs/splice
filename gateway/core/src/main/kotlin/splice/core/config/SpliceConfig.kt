@@ -54,6 +54,9 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val toolSurfaceOff: Boolean get() = string(Knob.TOOL_SURFACE) == "off"
     public val quotaPollOff: Boolean get() = string(Knob.QUOTA_POLL) == "off"
 
+    /** V4-173: how many upstream request bodies this head keeps in memory; 0 (the default) keeps none. */
+    public val wireTap: Int get() = long(Knob.WIRE_TAP).toInt().coerceAtLeast(0)
+
     // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
     public val statuslineGitRoots: List<String>
         get() = string(Knob.STATUSLINE_GIT_ROOTS).orEmpty()

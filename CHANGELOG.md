@@ -362,6 +362,15 @@
   at load. Nothing is stripped unless an operator writes a strip layer, splice ships no pattern
   list, and `splice doctor` WARNs on every strip layer as it does on replace: the client's
   instructions are being edited, and what a pattern removes is the operator's to own.
+- **See what splice sent upstream, once you ask it to keep it (V4-173).** A proxy that cannot show
+  the request it sent cannot be audited — and nothing kept one: the perf row records how many bytes
+  went upstream, never which. `[heads.KEY.overrides] wireTap = N` now makes that head keep its last
+  N upstream request bodies, in memory only, and `splice wire <head>` prints them exactly as they
+  left (every round's — a folded or re-anchored turn is several requests). It is off by default and
+  opt-in on purpose: a body carries the whole conversation it was sent for, so no head keeps one
+  unless its operator named a count, nothing is ever written to disk, a restart forgets them, the
+  route on the head's port answers only to the management key (a client-auth head's own callers
+  cannot read it), and `splice doctor` warns on every run naming the head while it is on.
 - **The strip mode's own review repairs (V4-172).** Two adversarial reviews of the above found, and
   this fixes: paragraphs are now split on a blank line in ANY line ending (CRLF text was one
   paragraph, so a single matching pattern deleted the whole system field, and a gap of two blank

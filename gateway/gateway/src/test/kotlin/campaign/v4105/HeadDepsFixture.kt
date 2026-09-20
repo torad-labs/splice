@@ -24,6 +24,7 @@ import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.WireTap
 import splice.spi.AccountPool
 import splice.spi.InflightGate
 import splice.spi.UpstreamClient
@@ -39,6 +40,8 @@ public fun headStores(
     economics: EconomicsStore? = null,
     clientWindows: ClientWindows = ClientWindows(),
     suffix: String = "",
+    /** V4-173: off unless a cell turns it on — the production default, not a convenience. */
+    wireTap: WireTap? = null,
 ): HeadDeps.HeadStores = HeadDeps.HeadStores(
     usageStore = UsageStore(tmp.resolve("usage$suffix.json"), tmp.resolve("ratelimit$suffix.json")),
     perfStats = PerfStats(tmp.resolve("perf$suffix.jsonl")),
@@ -46,6 +49,7 @@ public fun headStores(
     compactStats = CompactStats(tmp.resolve("compact$suffix.jsonl")),
     shadow = ShadowClassifier(log = { }),
     clientWindows = clientWindows,
+    wireTap = wireTap,
 )
 
 /** No quota and no pool: the shape a head that neither observes nor emits quota runs as. */

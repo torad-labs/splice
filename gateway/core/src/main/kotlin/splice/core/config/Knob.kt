@@ -434,4 +434,18 @@ public enum class Knob(
         "*",
         restartRequired = true,
     ),
+
+    // V4-173: the per-head upstream wire tap — how many of the most recent upstream REQUEST BODIES
+    // the head keeps, in memory only, for `splice wire <head>`. OFF BY DEFAULT (0) and opt-in by
+    // construction: a body carries the user's whole conversation, so nothing is kept unless an
+    // operator names a count for a head, nothing is ever written to disk, and a restart forgets it.
+    // Set through [heads.KEY.overrides], never the global view, so turning it on for one head keeps
+    // every other head's bodies unkept.
+    WIRE_TAP(
+        "wireTap",
+        KnobKind.NUMBER,
+        listOf("SPLICE_WIRE_TAP"),
+        default = 0L,
+        restartRequired = true,
+    ),
 }

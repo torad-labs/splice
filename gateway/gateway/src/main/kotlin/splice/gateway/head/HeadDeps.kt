@@ -21,6 +21,7 @@ import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.WireTap
 import splice.spi.AccountPool
 import splice.spi.InflightGate
 import splice.spi.ProcessTicker
@@ -82,6 +83,10 @@ public data class HeadDeps(
         val compactStats: CompactStats,
         val shadow: ShadowClassifier,
         val clientWindows: ClientWindows,
+        /** V4-173: the head's opt-in ring of upstream request bodies. NULL IS OFF, and it is the
+         *  default for every head an operator has not named a count for — a nullable with no
+         *  default, like [economicsStore], so a construction site that forgets cannot get a tap. */
+        val wireTap: WireTap?,
     )
 
     /** Which account a turn spends, and the trackers that decide eligibility. */

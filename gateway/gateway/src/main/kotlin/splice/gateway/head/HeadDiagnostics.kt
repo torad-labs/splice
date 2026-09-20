@@ -14,6 +14,7 @@ import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
+import splice.gateway.wire.WireTap
 import splice.spi.InflightGate
 import splice.spi.Provider
 
@@ -24,6 +25,8 @@ internal class HeadDiagnostics(
      *  and nothing else, so the whole 25-parameter bundle was carried to reach one snapshot. */
     private val gate: InflightGate,
     private val driver: TurnDriver,
+    /** V4-173: null on every head whose operator did not turn the tap on. */
+    private val wireTap: WireTap?,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -49,6 +52,11 @@ internal class HeadDiagnostics(
         put("version", GATEWAY_VERSION)
         put("head", provider.key)
     }.toString()
+
+    /** V4-173: GET /wire — the last [last] upstream request bodies this head sent, or null when the
+     *  tap is off so the route can say which knob turns it on rather than answer an empty list a
+     *  reader would take for "nothing was sent". */
+    fun wireJson(last: Int): String? = wireTap?.json(provider.key, last)
 
     fun modelsJson(): String {
         // EVERY catalog model gets a discovery row, including the pinned one — Claude Code needs

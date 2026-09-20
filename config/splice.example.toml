@@ -712,6 +712,16 @@ command = "claude-splice"
 # quotaPollIntervalMs = 300000                              # ms; how often a subscription head re-polls usage
 # maxQueued = 512                                           # requests; admission queue cap, 0 = unlimited (HOT)
 # upstreamRetries = 4                                       # attempts; upstream re-POSTs per round before failing
+# wireTap = 0                                               # bodies; how many of this head's most recent upstream
+#                                                           #     REQUEST BODIES to keep, in memory only, for
+#                                                           #     `splice wire <head>`. 0 (the default) keeps none.
+#                                                           #     OPT-IN ON PURPOSE: a body carries the whole
+#                                                           #     conversation it was sent for. Set it on ONE head
+#                                                           #     while you audit what splice sends (a system-prompt
+#                                                           #     layer, a compaction tail, a dialect's shape), read
+#                                                           #     it, then remove it. Nothing is written to disk, a
+#                                                           #     restart forgets it, and `splice doctor` names the
+#                                                           #     head on every run while it is on.
 # retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
 # retryBackoffCapMs = 10000                                 # ms; the generic retry curve's ceiling
 # retryBackoffJitterPct = 10                                # percent; the generic retry curve's plus-or-minus jitter
@@ -774,6 +784,7 @@ command = "claude-splice"
 #   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
 #   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
 #   CLAUDEX_UPSTREAM_RETRIES upstreamRetries CLAUDEX_UPSTREAM_TIMEOUT_MS upstreamTimeoutMs
+#   SPLICE_WIRE_TAP wireTap
 #   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
 #   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
 #   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug

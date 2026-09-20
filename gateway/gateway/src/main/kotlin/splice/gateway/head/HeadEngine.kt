@@ -7,6 +7,8 @@
 package splice.gateway.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
@@ -40,6 +42,10 @@ private const val RUNNING_LIMIT = 2048
 // (review 2026-07-22); 60s already carries 6x headroom over the default-10s load-test
 // truncations (52/1000 stream tails).
 private const val WRITE_TIMEOUT_S = 60
+
+/** V4-173: the 404 body of GET /wire on a head whose tap is off. */
+private const val WIRE_TAP_OFF =
+    """{"error":"wire tap is off for head KEY: set [heads.KEY.overrides] wireTap = N (bodies to keep) and restart"}"""
 
 /** The head's Ktor/Netty listener: POST /v1/messages EXACTLY, POST /v1/messages/count_tokens,
  *  GET /v1/models (discovery-wrapped) and GET /health {ok,port,version}. */
@@ -77,6 +83,7 @@ internal class HeadEngine(
                                 call.respondText(diagnostics.modelsJson(), ContentType.Application.Json)
                             }
                         }
+                        get("/wire") { wire(call) }
                         post("/v1/messages") { admission.handleMessages(call) }
                         // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
                         // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.
@@ -116,5 +123,23 @@ internal class HeadEngine(
     fun stop() {
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
+    }
+
+    /** V4-173: the operator's view of what this head sent upstream. Management key only
+     *  (authorizeOperator), and OFF answers 404 naming the knob, so an empty list can never be
+     *  read as "nothing left this head". */
+    private suspend fun wire(call: ApplicationCall) {
+        if (!clientAuth.authorizeOperator(call)) return
+        val last = call.request.queryParameters["last"]?.toIntOrNull() ?: 0
+        val payload = diagnostics.wireJson(last)
+        if (payload == null) {
+            call.respondText(
+                WIRE_TAP_OFF.replace("KEY", provider.key),
+                ContentType.Application.Json,
+                HttpStatusCode.NotFound,
+            )
+        } else {
+            call.respondText(payload, ContentType.Application.Json)
+        }
     }
 }

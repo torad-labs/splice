@@ -34,7 +34,17 @@ echo "$LABEL pid=$$ since=$(date -Is)" >"$HOLDER"
 trap 'rm -f "$HOLDER"' EXIT
 cd "$ROOT/gateway"
 echo "gradle-slot: $LABEL holds the slot — gradle busy" >&2
-buildgate ./gradlew --offline --no-daemon "$@"
+# buildgate is this MACHINE's memory-containment wrapper (~/.local/bin/buildgate, a host build-reaper
+# artifact), not a repo tool — nothing in the tree provides it. Calling it unconditionally made this
+# script exit 127 anywhere it is absent, and since the 2026-09-17 law routes EVERY gradle run through
+# here, that took `gradle clean check` and every gradle leg down on CI with `buildgate: command not
+# found`. Same `command -v` guard checks/e2e/docker/run.sh:69 already uses for the same binary: the
+# containment is a local nicety, the gradle run is the thing under test.
+if command -v buildgate >/dev/null; then
+  buildgate ./gradlew --offline --no-daemon "$@"
+else
+  ./gradlew --offline --no-daemon "$@"
+fi
 rc=$?
 echo "gradle-slot: $LABEL released — gradle free (exit $rc)" >&2
 exit $rc

@@ -148,7 +148,7 @@ class SseRoundConsumeTest {
             clampOutput = OutputClamp { it },
         ),
         t0 = 0,
-        upstreamModel = "gpt-5.6-sol",
+        trace = null,
         perf = TurnPerf(),
         turnHeaders = emptyMap(),
         signals = RunnerSignals(),

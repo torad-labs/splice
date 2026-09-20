@@ -29,17 +29,23 @@ package splice.gateway.head
 
 import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.uri
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.wire.AnthropicRequest
 import splice.gateway.compact.CompactClassifier
+import splice.gateway.wire.ClientInbound
 import splice.gateway.wire.FrameRecording
 import splice.spi.BuiltTurn
+import splice.spi.HeaderRedaction
 import splice.spi.Provider
 
 internal sealed class Preparation {
-    data class Ready(val built: BuiltTurn, val stream: Boolean) : Preparation()
+    /** [inbound] is the request as it arrived, kept ONLY for a head whose trace is on (V4-174):
+     *  null on every other head, so the body is not held twice for a turn nothing will read. */
+    data class Ready(val built: BuiltTurn, val stream: Boolean, val inbound: ClientInbound?) : Preparation()
     data class Rejected(val message: String) : Preparation()
 
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */
@@ -77,6 +83,7 @@ internal class TurnPreparation(
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)
         val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
+        val inbound = deps.stores.trace?.let { inbound(call, body.text) }
         val unwrappedModel = provider.catalog.unwrap(parsed.typed.model)
         if (!provider.catalog.contains(parsed.typed.model)) {
             return Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
@@ -84,8 +91,26 @@ internal class TurnPreparation(
         messageEdges.observe(sessionId, parsed.typed)
         val label = activityLabel.labelFor(parsed.typed)
         if (label == null) nearMissLabelQuery(parsed.typed, sessionId)
-        return if (label != null) local(label, parsed.typed, sessionId, perf) else build(call, parsed, sessionId, perf)
+        return if (label != null) {
+            local(label, parsed.typed, sessionId, perf)
+        } else {
+            build(call, parsed, Arrival(sessionId, inbound), perf)
+        }
     }
+
+    /** What the request arrived with, beyond its parsed body: the client's session, and the request
+     *  itself when the head's trace will want it (V4-174) — one value, so the build path's
+     *  signatures did not grow a parameter each. */
+    private data class Arrival(val sessionId: String?, val inbound: ClientInbound?)
+
+    /** V4-174: the client's request for the trace — method, path, headers with every credential-
+     *  class value redacted (HeaderRedaction), and the exact body. */
+    private fun inbound(call: ApplicationCall, body: String): ClientInbound = ClientInbound(
+        method = call.request.httpMethod.value,
+        path = call.request.uri,
+        headers = HeaderRedaction.redact(call.request.headers.entries().associate { (k, v) -> k to v.joinToString() }),
+        body = body,
+    )
 
     /** A reworded activity side query rides upstream as an ordinary turn; the console counts it. */
     private fun nearMissLabelQuery(request: AnthropicRequest, sessionId: String?) {
@@ -108,24 +133,25 @@ internal class TurnPreparation(
     private fun build(
         call: ApplicationCall,
         parsed: AnthropicTurnBody,
-        sessionId: String?,
+        arrival: Arrival,
         perf: TurnPerf,
     ): Preparation {
         // One scan of system + last-user text: classification and shadow instrumentation share it.
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.stores.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val fromProvider = providerTurns.build(parsed, compactProbe.compact, sessionId, perf)
-        return providerTurns.endingOnFailure(fromProvider) { handedOn(call, parsed, sessionId, perf, fromProvider) }
+        val fromProvider = providerTurns.build(parsed, compactProbe.compact, arrival.sessionId, perf)
+        return providerTurns.endingOnFailure(fromProvider) { handedOn(call, parsed, arrival, perf, fromProvider) }
     }
 
     private fun handedOn(
         call: ApplicationCall,
         parsed: AnthropicTurnBody,
-        sessionId: String?,
+        arrival: Arrival,
         perf: TurnPerf,
         fromProvider: BuiltTurn,
     ): Preparation {
+        val sessionId = arrival.sessionId
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
         // session. Stamped here, once, when the provider left it null.
@@ -148,7 +174,7 @@ internal class TurnPreparation(
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
-        return replayed ?: Preparation.Ready(built, parsed.typed.stream)
+        return replayed ?: Preparation.Ready(built, parsed.typed.stream, arrival.inbound)
     }
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn

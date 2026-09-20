@@ -137,6 +137,10 @@ public class UpstreamClient(
         var refreshedOnce: Boolean = false
         var lastErr: RetryOutcome.Failed? = null
 
+        // V4-174: every SEND, whichever budget paid for it (a backoff attempt, the refresh's free
+        // retry, a G5 reissue, the RC-4 amended resend) — the ordinal the wire observer sees.
+        var sent: Int = 0
+
         // G5: a small budget for re-issuing a stream torn BEFORE the client saw a byte. Spans the
         // whole turn (declared once here, never reset per handoff) and is deliberately smaller than
         // and independent of `maxRetries` — re-POSTing after a 2xx is a costlier, riskier act.
@@ -151,6 +155,20 @@ public class UpstreamClient(
          *  400 lands on the last permitted attempt (review 2026-07-24: an `attempt += 1` here made
          *  the loop guard eat the resend at the budget boundary — the amend computed a valid body
          *  and then gave up on the stale pre-amendment error). */
+        /** V4-174: one send's recorder, built only when the context carries an observer; [sent]
+         *  counts every send whatever budget paid for it. Here, with [report], because both are
+         *  bookkeeping on this state and [runAttempt] has no complexity to spare. */
+        fun recorderFor(ctx: PostContext, body: RequestBody, clock: ElapsedClock): AttemptRecorder? {
+            sent += 1
+            return ctx.wire?.let { AttemptRecorder(sent, ctx.url, body.json, body.encoding, clock) }
+        }
+
+        /** V4-174: the attempt is reported once, after it ended either way — a thrown transport
+         *  failure and a classified HTTP failure are both endings the trace must show. */
+        fun report(ctx: PostContext, recorder: AttemptRecorder?, failure: Throwable?) {
+            if (recorder != null) ctx.wire?.attempted(recorder.finish(failure))
+        }
+
         fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
             if (amendedOnce) return null
             val amended = ctx.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
@@ -199,6 +217,7 @@ public class UpstreamClient(
         activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
         val creds = ctx.requireAuth()
         ctx.markAttempt()
+        val recorder = state.recorderFor(ctx, body, clock)
         var streamHandedOff = false
         // catchCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
         // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
@@ -209,7 +228,7 @@ public class UpstreamClient(
         // with attempts=1 and end a turn a retry would have completed.
         val attempted = try {
             transportFailures.catchCancellable {
-                request.execute(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
+                request.execute(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block, recorder)
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport
@@ -220,6 +239,7 @@ public class UpstreamClient(
             Result.failure(e)
         }
         val transportError = attempted.exceptionOrNull()
+        state.report(ctx, recorder, transportError)
         if (transportError != null) {
             return onTransportError(transportError, ctx, streamHandedOff, state, t0)
         }

@@ -74,6 +74,7 @@ internal class HeadServerFactory(
                     // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
                     // every other head's bodies unkept.
                     wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) },
+                    trace = stores.trace,
                 ),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,

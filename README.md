@@ -185,6 +185,7 @@ splice upgrade        # verified upgrade to the latest release (--to vX, --now, 
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
 splice wire <head>    # the request bodies a head sent upstream — only once you opt that head in
+splice trace <head>   # a head's full request/response trace from disk (--turn ID, --purge) — opt-in per head
 splice restart        # restart the daemon with this shell's environment
 splice dashboard      # open the control dashboard (loopback :3096)
 splice init           # write the supported OpenRouter API-key starter topology

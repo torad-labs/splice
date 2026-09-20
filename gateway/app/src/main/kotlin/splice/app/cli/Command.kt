@@ -5,6 +5,7 @@ package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
 import splice.app.TopologyLoader
+import splice.app.cli.trace.TraceCommand
 import splice.app.cli.wire.WireCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
@@ -78,6 +79,11 @@ public sealed class Command {
     /** V4-173: the upstream request bodies a head sent, when its operator opted in. */
     public data class Wire(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(WireCommand().wire(args))
+    }
+
+    /** V4-174: a head's full request/response trace, from its day files, when its operator opted in. */
+    public data class Trace(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(TraceCommand().trace(args))
     }
 
     /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`

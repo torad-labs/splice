@@ -207,6 +207,7 @@ private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
         shadow = ShadowClassifier(log = {}),
         clientWindows = ClientWindows(),
         wireTap = null,
+        trace = null,
     ),
     quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap()),
     seams = HeadDeps.HeadSeams(),

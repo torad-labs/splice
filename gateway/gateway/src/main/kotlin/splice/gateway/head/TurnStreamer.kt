@@ -89,6 +89,7 @@ internal class TurnStreamer(
                 writeMutex = Mutex(),
                 clientGone = AtomicBoolean(false),
                 recording = recording,
+                trace = inputs.trace,
             )
             val emitter = emitters.create(
                 write = { frame ->

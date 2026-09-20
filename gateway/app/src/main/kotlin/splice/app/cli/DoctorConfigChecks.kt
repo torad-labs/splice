@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import splice.app.cli.doctor.DoctorProjectPromptChecks
+import splice.app.cli.doctor.DoctorTraceChecks
 import splice.app.cli.doctor.DoctorWireTapChecks
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -44,6 +45,7 @@ internal class DoctorConfigChecks(
 
     /** V4-173: the row that keeps an opted-in wire tap visible on every run. */
     private val wireTaps = DoctorWireTapChecks()
+    private val traces = DoctorTraceChecks(StatePaths(envReader = env))
 
     internal fun configurationChecks(
         topo: DoctorTopology,
@@ -92,7 +94,7 @@ internal class DoctorConfigChecks(
             listOf(summary) + brokenRefs + portDupes + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
-                localRuntime.localChecks(topology, live)
+                traces.traceChecks(topology) + localRuntime.localChecks(topology, live)
         }
     }
 

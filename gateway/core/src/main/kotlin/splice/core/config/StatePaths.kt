@@ -26,6 +26,10 @@ public class StatePaths(
 
     public val daemonLockFile: Path = stateDir.resolve("daemon.lock")
 
+    /** V4-174: where a traced head's day files live (`<head>-YYYY-MM-DD.jsonl`), owner-only. ONE
+     *  path for the daemon that writes them and the `splice trace` verb that reads them. */
+    public val traceDir: Path = stateDir.resolve("trace")
+
     /** Per-head stat files. The codex/grok names are the frozen legacy contract (the header's
      *  own words — the out-of-repo HUD reads codex-usage.json / grok-usage.json byte-identically);
      *  new heads derive `<head>-usage.json` / `<head>-ratelimit.json`. The claudex/claude-grok

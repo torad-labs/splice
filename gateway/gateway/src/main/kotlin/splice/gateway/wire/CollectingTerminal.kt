@@ -15,7 +15,9 @@ import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val OK_STATUS = 200
+/** The status a stream turn commits before its first frame, and a clean collect answers with;
+ *  shared with TurnTrace's turn record so 200 is spelled once in this package (V4-174). */
+internal const val OK_STATUS = 200
 
 internal class CollectingTerminal(
     private val model: String,

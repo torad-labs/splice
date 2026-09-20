@@ -75,6 +75,10 @@ internal class ClientChannel(
     /** Set for a turn that must outlive its client (a compaction): every frame is appended here as
      *  well as written, and a lost client detaches the channel instead of failing the turn. */
     val recording: FrameRecording? = null,
+    /** V4-174: the turn's trace, when the head's is on: every frame written toward the client is
+     *  handed to it beside the recording, the pinger's frames included, whether or not the socket
+     *  still takes them. */
+    val trace: TurnTrace? = null,
     /** Flipped once for good by [detachIfRecording]: writes are recorded, none reach the socket. */
     val detached: AtomicBoolean = AtomicBoolean(false),
     /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
@@ -106,6 +110,7 @@ internal class ClientChannel(
 
     private fun write(frame: String, perf: TurnPerf, clock: ElapsedClock, modelOutput: Boolean) {
         recording?.append(frame)
+        trace?.clientFrame(frame)
         if (detached.get()) return
         val t = clock()
         // A dead client fails the write in two shapes: IOException from the engine write, and

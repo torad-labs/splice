@@ -21,6 +21,7 @@ import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.TraceStore
 import splice.gateway.wire.WireTap
 import splice.spi.AccountPool
 import splice.spi.InflightGate
@@ -87,6 +88,9 @@ public data class HeadDeps(
          *  default for every head an operator has not named a count for — a nullable with no
          *  default, like [economicsStore], so a construction site that forgets cannot get a tap. */
         val wireTap: WireTap?,
+        /** V4-174: the head's opt-in full request/response trace. NULL IS OFF, the same law as
+         *  [wireTap]: no default, so a construction site that forgets cannot get a trace. */
+        val trace: TraceStore?,
     )
 
     /** Which account a turn spends, and the trackers that decide eligibility. */

@@ -46,6 +46,9 @@ const EDITABLE_KNOBS = [
   // V4-173: the per-head upstream wire tap (0 = off). An ordinary restart-required knob a head
   // reads at assembly; the console edits it like any other, and `splice doctor` warns while it is on.
   'WIRE_TAP',
+  // V4-174: the per-head full request/response trace (off), its retention and body cap. Ordinary
+  // restart-required knobs a head reads at assembly; `splice doctor` warns while the trace is on.
+  'TRACE', 'TRACE_RETENTION_DAYS', 'TRACE_MAX_BODY_CHARS',
 ] as const;
 
 /** FEATURES 4.11: "The four host knobs, read-only with the reason." They shape one McpHost read

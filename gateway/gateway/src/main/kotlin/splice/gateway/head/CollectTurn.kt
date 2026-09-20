@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.model.ClientWindows
+import splice.gateway.wire.ClientAnswer
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
@@ -57,7 +58,11 @@ internal class CollectTurn(
             coalesced = ImmediateSseWriter(writeRaw = {}, flushRaw = {}),
             writeMutex = Mutex(),
             clientGone = AtomicBoolean(false),
+            trace = inputs.trace,
         )
+        // V4-174: no frames cross this channel, so the trace reads the collected answer instead —
+        // at the turn record, once the terminal has closed and the body exists.
+        inputs.trace?.collectedAnswer { ClientAnswer(terminal.httpStatus(), terminal.responseBody().toString()) }
         val drive = driveFactory.assembleDrive(inputs, terminal, channel)
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
         // native connection abort client-side, and sealing there only wrote an error body nobody

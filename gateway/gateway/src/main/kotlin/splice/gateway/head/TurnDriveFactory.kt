@@ -62,7 +62,7 @@ internal class TurnDriveFactory(
             slot = inputs.slot,
             pipeline = drivePipeline.make(meta),
             t0 = inputs.t0,
-            upstreamModel = meta.upstreamModel,
+            trace = inputs.trace,
             perf = perf,
             turnHeaders = built.extraHeaders,
             account = inputs.account,

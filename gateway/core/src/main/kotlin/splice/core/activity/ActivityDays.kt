@@ -24,6 +24,7 @@ package splice.core.activity
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
+import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -47,6 +48,11 @@ public class ActivityDays(
     private val prefix: String,
     private val retentionDays: Int,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    /** V4-174: true for a store whose lines carry private content (a head's trace): the day files
+     *  live in an owner-only directory (SecureFile.ownerOnlyDirectory), asserted on every append so
+     *  a recreated directory is never left at the umask's default. The activity stores keep the
+     *  plain directory they always had. */
+    private val ownerOnly: Boolean = false,
 ) {
     private val sweptFor = AtomicReference<LocalDate?>(null)
     private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl")
@@ -58,7 +64,7 @@ public class ActivityDays(
         AsyncFileIo.submit {
             // ast-grep-ignore: kt-no-silent-result-collapse -- a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed append must not surface on the turn that produced it
             Cancellables.runCatchingCancellable {
-                Files.createDirectories(dir)
+                if (ownerOnly) SecureFile.ownerOnlyDirectory(dir) else Files.createDirectories(dir)
                 JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
                 if (sweptFor.getAndSet(today) != today) sweep(today)
             }
@@ -81,6 +87,15 @@ public class ActivityDays(
             // ast-grep-ignore: kt-no-silent-result-collapse -- a file that cannot be deleted now is retried on the next day's sweep, and reads already ignore it
             if (date.isBefore(oldest)) deleteDay(file)
         }
+    }
+
+    /** V4-174: deletes EVERY day file of this store, whatever its age, with JsonlSink's siblings —
+     *  the `splice trace --purge` verb. Returns the day files that existed, so the caller can say
+     *  what went; a file that could not be deleted is still listed and still on disk. */
+    public fun purge(): List<Path> {
+        val files = days().map { (_, file) -> file }
+        files.forEach(::deleteDay)
+        return files
     }
 
     /** The day file and the siblings JsonlSink writes beside it. */

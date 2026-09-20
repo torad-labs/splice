@@ -5,6 +5,7 @@ package splice.gateway.head
 
 import splice.core.perf.TurnPerf
 import splice.gateway.usage.QuotaTracker
+import splice.gateway.wire.TurnTrace
 import splice.spi.AccountSelection
 import splice.spi.BuiltTurn
 import splice.spi.InflightGate
@@ -50,6 +51,9 @@ internal data class TurnInputs(
      *
      *  REQUIRED, NO DEFAULT: the wiring IS the control. */
     val markHandedOff: HandoffMark,
+    /** V4-174: this turn's trace, begun at admission for a head whose trace is on; null records
+     *  nothing. REQUIRED, NO DEFAULT, for [markHandedOff]'s reason: the wiring is the control. */
+    val trace: TurnTrace?,
     val account: AccountSelection? = null,
     val quota: QuotaTracker? = null,
 )

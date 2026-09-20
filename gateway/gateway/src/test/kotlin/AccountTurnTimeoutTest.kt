@@ -201,7 +201,7 @@ class AccountTurnTimeoutTest {
             slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = pipeline,
             t0 = 0L,
-            upstreamModel = "gpt-5.6-sol",
+            trace = null,
             perf = TurnPerf { elapsedMs },
             turnHeaders = emptyMap(),
             signals = RunnerSignals(),

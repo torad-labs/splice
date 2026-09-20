@@ -181,7 +181,7 @@ private class TelemetryRig(tmp: Path, private val tag: String) {
             clampOutput = OutputClamp { it },
         ),
         t0 = 0,
-        upstreamModel = "sonnet-4-6",
+        trace = null,
         perf = TurnPerf(),
         turnHeaders = emptyMap(),
         signals = RunnerSignals(),

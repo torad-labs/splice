@@ -4,7 +4,7 @@ import { NO_TASKS_EXIT, runUnderSlot } from "../lib/slot.ts";
 
 export const usage = "slot <label> [--] <gradle args...>   run gradle under the worktree's gradle slot";
 
-export function slot(argv: readonly string[]): number {
+export async function slot(argv: readonly string[]): Promise<number> {
   const label = argv[0];
   if (!label || label.startsWith("-")) {
     console.error("gradle-slot: a label (row id or seat) is required — it is what a waiting seat reads out of the holder file");

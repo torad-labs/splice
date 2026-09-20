@@ -24,11 +24,11 @@ describe("gate run", () => {
     expect(slotScript).toContain("--no-daemon");
   });
 
-  test("takes no arguments — the gate of record is one fixed invocation", () => {
+  test("takes no arguments — the gate of record is one fixed invocation", async () => {
     const original = console.error;
     console.error = () => {};
     try {
-      expect(run([":app:test"])).toBe(2);
+      expect(await run([":app:test"])).toBe(2);
     } finally {
       console.error = original;
     }

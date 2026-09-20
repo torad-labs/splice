@@ -8,15 +8,20 @@
 //   - `buildgate` is this MACHINE's containment wrapper, absent on CI, so it is guarded (:37-42);
 //   - `--offline` is a local nicety and a lie on CI, where the restored cache is always one
 //     dependency bump behind the tree (:43-50);
-//   - gradle's exit status propagates, and the release line reports it (:57-68).
+//   - gradle's exit status propagates, and the release line reports it (:57-68);
+//   - a signal reaches the WRAPPER, not only the process group: `kill <pid>` on the gate is how a
+//     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
+//     milliseconds. That is why gradle is orchestrated asynchronously below (:98-131).
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { constants as osConstants } from "node:os";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
+import { exitForSignal, exitStatusOf } from "./status.ts";
 
 export const SLOT_TIMEOUT_EXIT = 75;
 export const NO_TASKS_EXIT = 2;
 const FAST_PATH_MS = 1000;
+/** The three the shell script traps. A forwarded signal is the only way the JVM ever hears one. */
+const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 export interface SlotOptions {
   readonly layout: Layout;
@@ -52,7 +57,7 @@ function holderOf(holderPath: string): string {
 }
 
 /** Run gradle under the slot. Returns the exit code to propagate — it never calls process.exit. */
-export function runUnderSlot(options: SlotOptions): number {
+export async function runUnderSlot(options: SlotOptions): Promise<number> {
   const env = options.env ?? Bun.env;
   const { label, args } = options;
 
@@ -87,28 +92,54 @@ export function runUnderSlot(options: SlotOptions): number {
       /* the trap in gradle-slot.sh is best-effort too */
     }
   };
-  const onSignal = (signal: NodeJS.Signals) => {
-    drop();
-    slot?.release();
-    process.kill(process.pid, signal);
-  };
   process.once("exit", drop);
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, onSignal);
+
+  // Why the child is orchestrated asynchronously: `Bun.spawnSync` blocks the thread, so a signal
+  // that arrives while gradle runs is only DELIVERED once gradle has already finished — the handler
+  // then runs after `finally` removed it, or not at all. Measured on the unfixed code: SIGTERM to
+  // the gate's own pid left the wrapper alive, still holding the slot, and it exited 0 when the
+  // child finished 1.5s later, where checks/gradle-slot.sh was dead in 12ms with 143.
+  //
+  // So: forward the signal to the JVM, keep the slot and the holder file until the child is
+  // genuinely gone — a contender that took the lock while gradle was still shutting down would be
+  // the second gradle in one project dir this file exists to prevent — and only then report
+  // 128+signum. Handlers go on BEFORE the spawn so a signal landing between the holder write and
+  // the first JVM instruction is not the default disposition killing us with the holder on disk.
+  let child: Bun.Subprocess | undefined;
+  let received: NodeJS.Signals | undefined;
+  const handlers = FORWARDED.map(
+    (signal) =>
+      [
+        signal,
+        () => {
+          received ??= signal;
+          child?.kill(signal);
+        },
+      ] as const,
+  );
+  for (const [signal, forward] of handlers) process.on(signal, forward);
 
   try {
     console.error(`gradle-slot: ${label} holds the slot — gradle busy`);
-    const rc = spawnGradle(options.layout.buildRoot, args, env);
+    child = spawnGradle(options.layout.buildRoot, args, env);
+    if (received) child.kill(received);
+    await child.exited;
+    const rc = received ? exitForSignal(received) : exitStatusOf(child);
     console.error(`gradle-slot: ${label} released — gradle free (exit ${rc})`);
     return rc;
   } finally {
+    for (const [signal, forward] of handlers) process.off(signal, forward);
     process.off("exit", drop);
-    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.off(signal, onSignal);
     drop();
     slot.release();
   }
 }
 
-function spawnGradle(buildRoot: string, args: readonly string[], env: Record<string, string | undefined>): number {
+function spawnGradle(
+  buildRoot: string,
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Bun.Subprocess {
   // The child inherits the caller's environment, as it does under bash — gradle needs JAVA_HOME,
   // HOME and PATH, and `buildgate` refuses without HOME. `env` only ADDS to it.
   const childEnv: Record<string, string> = {};
@@ -126,8 +157,5 @@ function spawnGradle(buildRoot: string, args: readonly string[], env: Record<str
   const argv = buildgate
     ? [buildgate, gradlew, ...offline, "--no-daemon", ...args]
     : [gradlew, ...offline, "--no-daemon", ...args];
-  const proc = Bun.spawnSync(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv });
-  // bash reports a signalled child as 128+signum; Bun hands back the signal NAME instead.
-  if (proc.signalCode) return 128 + (osConstants.signals[proc.signalCode as keyof typeof osConstants.signals] ?? 0);
-  return proc.exitCode ?? 1;
+  return Bun.spawn(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv });
 }

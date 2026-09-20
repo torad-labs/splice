@@ -20,6 +20,7 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.launch.McpInventory
 import splice.core.launch.McpSharing
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
@@ -53,6 +54,9 @@ public class McpHost(
     private val config: McpHostConfig = McpHostConfig(),
     launcher: McpProcessLauncher? = null,
     private val log: LogSink,
+    /** V4-146: the five-kind census; null keeps today's `/api/mcp` shape exactly (every existing
+     *  caller that builds an McpHost without one — every test fixture included). */
+    inventory: McpInventory? = null,
 ) {
     private val codec = JsonRpcCodec()
 
@@ -62,7 +66,7 @@ public class McpHost(
     private val sessions = McpSessions(config.clock)
     private val servers = HostedServers(sharing, global, config, spawner, codec, log, sessions)
     private val minting = SessionMinting(servers, sessions, log)
-    private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions)
+    private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions, inventory)
 
     @Volatile private var sweeper: ScheduledExecutorService? = null
 

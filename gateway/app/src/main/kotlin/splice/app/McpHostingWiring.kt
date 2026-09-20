@@ -2,12 +2,26 @@
 // a value the control plane can take without seeing the topology, and the tolerant read of the
 // operator's ~/.claude.json that the planner and the host both consult (never cached: an edit to
 // the operator's servers takes effect at the next spawn).
+//
+// V4-146 (2026-09-20): McpInventoryWiring at the bottom of this file is the production wiring for
+// the five-kind census (splice.core.launch.McpSources / McpInventory) — real filesystem roots
+// around the SAME McpGlobalRead and McpSharing this file already builds, so the census can never
+// disagree with what the real pipeline did for the canonical home.
 package splice.app
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import splice.control.mcp.GlobalMcpServers
+import splice.core.launch.GlobalMcpServersReader
+import splice.core.launch.McpGlobalPlan
+import splice.core.launch.McpInventory
+import splice.core.launch.McpSharing
+import splice.core.launch.McpSourceKind
+import splice.core.launch.PluginInlineReader
+import splice.core.launch.PluginMcpJsonReader
+import splice.core.launch.ProjectMcpServersReader
+import splice.core.launch.RepoMcpJsonReader
 import splice.core.topology.DaemonConfig
 import splice.core.util.LogSink
 import java.io.IOException
@@ -68,4 +82,27 @@ internal class McpGlobalRead(
         lastFailure = reason
         return buildJsonObject {}
     }
+}
+
+/** V4-146: production wiring for the five-kind MCP census. Built around the SAME [home], [sharing]
+ *  and [global] the caller already constructed for the real hosting pipeline — the census asks
+ *  McpSharing for the canonical home's actual plan rather than re-deriving eligibility, so it can
+ *  never disagree with what the pipeline did; the four other readers only WIDEN what else is
+ *  visible around that one rewritten file (this file's header). */
+internal class McpInventoryWiring(
+    home: Path,
+    sharing: McpSharing,
+    global: GlobalMcpServers,
+) {
+    val inventory: McpInventory = McpInventory(
+        readers = mapOf(
+            McpSourceKind.GLOBAL to GlobalMcpServersReader(home),
+            McpSourceKind.PROJECT to ProjectMcpServersReader(home),
+            McpSourceKind.REPO to RepoMcpJsonReader(home),
+            McpSourceKind.PLUGIN_MCP_JSON to PluginMcpJsonReader(home),
+            McpSourceKind.PLUGIN_INLINE to PluginInlineReader(home),
+        ),
+        canonicalGlobalFile = home.resolve(".claude.json"),
+        canonicalPlan = McpGlobalPlan { sharing.plan(global()) },
+    )
 }

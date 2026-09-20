@@ -119,7 +119,7 @@ internal class ControlPlane(
             endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
             bearer = McpAccessKey(mgmtKey::get),
         )
-        val mcpHost = McpHost(sharing, McpGlobalRead(home, log), config = mcpHostConfig(), log = log)
+        val mcpHost = mcpHost(home, sharing)
         // V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). A
         // control plane built without one publishes the booted digest and compares bytes, as before.
         val running = topology.running
@@ -176,6 +176,21 @@ internal class ControlPlane(
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
     private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
         heads.entries.firstOrNull { it.value.launchSpec?.port == port }?.key
+
+    /** V4-146: one McpGlobalRead instance for both the rewrite pipeline and the census — a second
+     *  one would double the "malformed"/"unreadable" diagnostics on the same file. Split out of
+     *  [start] to keep that budget; the census only WIDENS what `/api/mcp` can report, it never
+     *  changes what [sharing] rewrites (see McpHostingWiring.kt's header). */
+    private fun mcpHost(home: Path, sharing: McpSharing): McpHost {
+        val globalRead = McpGlobalRead(home, log)
+        return McpHost(
+            sharing,
+            globalRead,
+            config = mcpHostConfig(),
+            log = log,
+            inventory = McpInventoryWiring(home, sharing, globalRead).inventory,
+        )
+    }
 
     /** V4-110: the shared MCP host's four lifecycle values, read from the knob layer (daemon-global).
      *  Absent knobs keep their declared defaults — the map is always seeded by the merge, so each

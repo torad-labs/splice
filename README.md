@@ -338,6 +338,12 @@ when idle and evicted under memory pressure; a crash fails the pending calls hon
 call restarts the server. `[daemon] mcp_hosting = false` turns hosting off,
 `mcp_hosting_exclude = ["name"]` keeps named servers per session.
 
+Hosting itself still rewrites only your one global `~/.claude.json`; `/api/mcp`'s `sources`
+section additionally censuses the other four places a server can be declared on this box (a
+project-scoped override inside `.claude.json`, a repo's own `.mcp.json`, and a plugin's own
+`.mcp.json` or inline `plugin.json`) so you can see what is not hosted and why, even though
+splice does not rewrite those kinds yet.
+
 ### Compaction instructions
 
 `[compaction]` in `splice.toml` adds your own instructions to Claude Code's compaction requests,

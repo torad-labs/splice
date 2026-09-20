@@ -31,8 +31,16 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.DirectoryProbe
+import splice.core.launch.GlobalMcpServersReader
 import splice.core.launch.McpAccessKey
+import splice.core.launch.McpGlobalPlan
+import splice.core.launch.McpInventory
 import splice.core.launch.McpSharing
+import splice.core.launch.McpSourceKind
+import splice.core.launch.PluginInlineReader
+import splice.core.launch.PluginMcpJsonReader
+import splice.core.launch.ProjectMcpServersReader
+import splice.core.launch.RepoMcpJsonReader
 import java.net.ServerSocket
 import java.nio.file.Files
 import kotlin.io.path.writeText
@@ -68,7 +76,24 @@ class McpRoutesTest {
             DirectoryProbe { false },
         )
         generatedConfig = sharing.plan(global).rewritten.toString()
-        host = McpHost(sharing, { global }, log = { })
+        // V4-146: the five-kind census wired end to end — a temp home carrying the SAME servers as
+        // [global], so /api/mcp's "sources" section can be asserted against a real HTTP round trip
+        // rather than only unit-tested against McpInventory directly (see mcp/McpInventoryTest.kt).
+        val censusHome = tmp.resolve("census-home")
+        Files.createDirectories(censusHome)
+        censusHome.resolve(".claude.json").writeText("""{"mcpServers":$global}""")
+        val inventory = McpInventory(
+            readers = mapOf(
+                McpSourceKind.GLOBAL to GlobalMcpServersReader(censusHome),
+                McpSourceKind.PROJECT to ProjectMcpServersReader(censusHome),
+                McpSourceKind.REPO to RepoMcpJsonReader(censusHome),
+                McpSourceKind.PLUGIN_MCP_JSON to PluginMcpJsonReader(censusHome),
+                McpSourceKind.PLUGIN_INLINE to PluginInlineReader(censusHome),
+            ),
+            canonicalGlobalFile = censusHome.resolve(".claude.json"),
+            canonicalPlan = McpGlobalPlan { sharing.plan(global) },
+        )
+        host = McpHost(sharing, { global }, log = { }, inventory = inventory)
         control = ControlServer(
             port = port,
             heads = emptyMap(),
@@ -114,6 +139,14 @@ class McpRoutesTest {
             header("Authorization", "Bearer $key")
         }.bodyAsText()
         assertTrue(status.contains("\"hosted\":true"), status)
+        // V4-146: the census section rides along on the same never-cached /api/mcp payload,
+        // additive to the "hosting"/"servers" shape FEATURES.md §6 already documents.
+        val sources = json.parseToJsonElement(status).jsonObject["sources"]!!.jsonObject
+        assertTrue(sources["kinds"]!!.jsonObject.keys.containsAll(EXPECTED_KIND_KEYS), sources.toString())
+        assertTrue(
+            sources["servers"]!!.toString().contains("\"name\":\"fake\""),
+            "the canonical home's own server should show up dispositioned in the census: $sources",
+        )
         val wrongVersion = client.delete("http://127.0.0.1:$port/mcp/fake") {
             header("Authorization", "Bearer $key")
             header("Mcp-Session-Id", session)
@@ -184,6 +217,7 @@ class McpRoutesTest {
     }
 }
 
+private val EXPECTED_KIND_KEYS = setOf("global", "project", "repo", "plugin_mcp_json", "plugin_inline")
 private const val STREAM_WAIT_MS = 5_000L
 private const val MAX_SSE_LINES = 6
 private const val INITIALIZED_MSG = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""

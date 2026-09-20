@@ -223,4 +223,24 @@ class ProjectMapTest {
             "a name off the list is swept — the list is load-bearing, not decoration",
         )
     }
+
+    // The same list bounds the INNER walk: a production tree whose only Kotlin sits under a name on
+    // the list (providers/x/src/main/kotlin/build/X.kt) is a tree the build's census never
+    // fingerprints, so the sweep must not count it either — or an incremental run stays green while
+    // a forced run names providers/x, and the two disagree about the same file.
+    @Test
+    fun `the list bounds the inner walk below the source root too - P0`(@TempDir temp: File) {
+        val nested = writeFixture(temp, "$NESTED_DIR/src/main/kotlin/build/X.kt", NESTED_FIXTURE_SOURCE)
+        assertTrue(nested.isFile) { "the fixture must land, or the sweep has nothing to find" }
+        assertEquals(
+            emptyList<String>(),
+            ProjectMap.parse(temp, ":core=core", setOf("build")).unmappedProductionDirViolations(),
+            "Kotlin under a name on the list is invisible to the census, so it must be invisible here",
+        )
+        assertEquals(
+            listOf(UNMAPPED_DIR_EXPECTED),
+            ProjectMap.parse(temp, ":core=core", setOf("node_modules")).unmappedProductionDirViolations(),
+            "with build off the list the same tree is named — the list bounds both walks",
+        )
+    }
 }

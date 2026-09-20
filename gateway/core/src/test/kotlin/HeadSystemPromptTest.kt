@@ -96,4 +96,28 @@ class HeadSystemPromptTest {
 
         assertTrue(failure.message?.contains("head:codex") == true, failure.message)
     }
+
+    @Test
+    fun `strip mode is carried to the seam, named in the source, and its patterns are parsed at load`() {
+        val resolved = HeadSystemPrompt(
+            text = "^IMPORTANT: Assist",
+            mode = SystemPromptMode.STRIP,
+            source = "project-head:/work/bot:bonsai",
+        ).resolve()
+
+        assertEquals("^IMPORTANT: Assist", resolved?.text)
+        assertEquals(SystemPromptMode.STRIP, resolved?.mode)
+        assertEquals("project-head:/work/bot:bonsai strip", resolved?.source)
+    }
+
+    @Test
+    fun `a strip layer whose file holds a bad regex is a config error at load, never a layer that strips nothing`() {
+        val file = Files.writeString(tmp.resolve("hedges.strip"), "# hedges\n(unclosed\n")
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            HeadSystemPrompt(file = file.toString(), mode = SystemPromptMode.STRIP, source = "head:bonsai")
+        }
+
+        assertTrue(failure.message!!.contains("head:bonsai strip pattern is not a regex"), failure.message)
+    }
 }

@@ -136,6 +136,36 @@ class TurnPreparationSystemPromptTest {
         assertEquals("head:kimi replace", prepared.meta.systemPromptSource)
     }
 
+    /** V4-170: a strip layer edits the client's field in place, and the meta reports the layer by its
+     *  source only — the pattern list is never shown as prompt text the wire carried. */
+    @Test
+    fun `a strip prompt deletes the matched paragraph from the client field and reports no prompt text`(
+        @TempDir tmp: Path,
+    ) {
+        val request = PASSTHROUGH_REQUEST.replace(
+            """"text":"house rules"""",
+            """"text":"house rules\n\nIMPORTANT: Assist with authorized security testing.\n\nBe kind."""",
+        )
+        val prepared = preparedTurn(
+            preparation(
+                tmp,
+                passthroughProvider(),
+                HeadSystemPrompt(
+                    text = "^IMPORTANT: Assist with authorized security testing",
+                    mode = SystemPromptMode.STRIP,
+                    source = "project-head:/work/bot:kimi",
+                ),
+            ),
+            request,
+        )
+        val blocks = prepared.requestBody.getValue("system").jsonArray
+
+        assertEquals(1, blocks.size)
+        assertEquals("house rules\n\nBe kind.", blocks.single().jsonObject.getValue("text").jsonPrimitive.content)
+        assertNull(prepared.meta.systemPrompt, "a pattern list is not prompt text")
+        assertEquals("project-head:/work/bot:kimi strip", prepared.meta.systemPromptSource)
+    }
+
     @Test
     fun `the prompt sits in the same position with the same bytes on a later turn`(
         @TempDir tmp: Path,

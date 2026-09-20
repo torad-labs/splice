@@ -9,7 +9,9 @@
 //
 // THE FOLD, in order head -> project -> project-head: an append layer is added after whatever is
 // already there; a replace layer drops everything before it (the client's field, which the dialect
-// seam drops for it, AND every earlier layer). Later appends still land after a replace. The result
+// seam drops for it, AND every earlier layer). Later appends still land after a replace. A strip
+// layer (V4-170) is kept in order like an append: at the seam it edits whatever system text is
+// there at its point, the client's field and every earlier append alike. The result
 // is the list of layers the dialect seam applies one after another, so each append stays its own
 // trailing block and the client's cache breakpoints are never moved.
 package splice.core.prompt

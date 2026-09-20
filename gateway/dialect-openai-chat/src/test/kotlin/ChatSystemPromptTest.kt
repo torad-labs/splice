@@ -97,6 +97,38 @@ class ChatSystemPromptTest {
         assertSame(plain, prompt.apply(plain, "", SystemPromptMode.APPEND))
     }
 
+    // ── V4-170: strip ──
+
+    private val hedges = "^IMPORTANT: Assist with authorized security testing"
+
+    @Test
+    fun `strip rewrites the client system message in place and leaves every other message byte-identical`() {
+        val request = messages(
+            """{"role":"system","content":"You are Claude Code.\n\nIMPORTANT: Assist with authorized security """ +
+                """testing.\n\n# Harness\n - rules"}""",
+            """{"role":"user","content":"hi"}""",
+        )
+        val user = request.getValue("messages").jsonArray[1].toString()
+
+        val after = applied(request, SystemPromptMode.STRIP, hedges)
+
+        assertEquals(2, after.size)
+        assertEquals("You are Claude Code.\n\n# Harness\n - rules", content(after[0]))
+        assertEquals(user, after[1].toString())
+    }
+
+    @Test
+    fun `strip drops a system message stripped to nothing, and an untouched request stays the same instance`() {
+        val only = messages(
+            """{"role":"system","content":"IMPORTANT: Assist with authorized security testing."}""",
+            """{"role":"user","content":"hi"}""",
+        )
+        val untouched = messages("""{"role":"system","content":"Be kind."}""", """{"role":"user","content":"hi"}""")
+
+        assertEquals(listOf("user"), applied(only, SystemPromptMode.STRIP, hedges).map(::role))
+        assertSame(untouched, prompt.apply(untouched, hedges, SystemPromptMode.STRIP))
+    }
+
     private fun applied(
         request: JsonObject,
         mode: SystemPromptMode,

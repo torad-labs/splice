@@ -450,6 +450,16 @@ share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE
 #             there, so replace strips the harness instructions and the head then behaves like a
 #             bare model with tools attached. `splice doctor` WARNs on any head that sets it. Use
 #             it deliberately, usually on a head you drive yourself rather than through Claude Code.
+#   "strip"   KEEPS the client's field and DELETES paragraphs from it. The prompt text is then a
+#             PATTERN LIST — one regex per line, blank lines and `#` comments ignored — and every
+#             blank-line-separated paragraph of the client's own system text that a pattern
+#             matches is removed at the wire; every other paragraph, block and cache_control
+#             breakpoint rides through byte-identical, so the dynamic blocks a session needs
+#             survive and the cache still warms from turn two. A pattern that is not a regex, or a
+#             list with no pattern, is a config error at load. This is "Claude Code's prompt without
+#             the hedges": config/prompts/claude-code-hedges.strip in the repo is the starting list
+#             for 2.1.276 (its security-refusal and confirm-first paragraphs), usually attached as a
+#             project-head layer so one repo on one head loses them and nothing else changes.
 #   system_prompt_mode = "append"
 
 # ── per-project system prompt, and per head of that project ──
@@ -466,8 +476,10 @@ share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE
 #
 # Composition, in order head -> project -> project-head: append layers stack as separate blocks
 # after the client's system field, in that order. A replace at ANY layer substitutes the client's
-# field AND every earlier layer; later append layers still land after it. A session whose cwd
-# cannot be resolved gets the head layer only. No [projects] table at all is exactly today's bytes.
+# field AND every earlier layer; later append layers still land after it. A strip layer edits
+# whatever system text is there at its point in the order (the client's field and every earlier
+# append alike). A session whose cwd cannot be resolved gets the head layer only. No [projects]
+# table at all is exactly today's bytes.
 #
 # CACHE TRADE: every layer is a trailing block, so a breakpoint Claude Code sets inside `system`
 # never invalidates, and editing a layer misses the message-level breakpoints for ONE turn before

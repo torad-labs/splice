@@ -236,9 +236,10 @@ describe('settings: the coverage manifest', () => {
     expect(new Set(topologyDeclared.map((entry) => entry.name))).toEqual(topologyNames);
     expect(new Set(dispositions.map((entry) => entry.name)).size).toBe(dispositions.length);
 
-    // The eight names the two FEATURES sections call read-only, and no others.
+    // The names the two FEATURES sections call read-only, and no others (15 since V4-170 added the
+    // third system prompt mode value, strip).
     const readOnly = dispositions.filter((entry) => entry.disposition === 'read-only').map((entry) => entry.name);
-    expect(readOnly).toHaveLength(14);
+    expect(readOnly).toHaveLength(15);
     for (const entry of dispositions) {
       if (entry.disposition === 'read-only' || entry.disposition === 'excluded') expect(entry.reason).toBeTruthy();
       if (entry.disposition === 'pending') expect(entry.where).toBeTruthy();

@@ -3,6 +3,7 @@ package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import splice.spi.CodeModeCell
 import splice.spi.CodeModeResult
 
@@ -152,23 +153,33 @@ internal class CodexCodeModeRegistry(
         sweeper.evictIdleCell()?.also { store.save(records, history.entries) }
     }
 
-    fun acceptResults(record: CodeModeRecord, digest: String, supplied: Map<String, CodeModeResult>) =
-        synchronized(monitor) {
-            val priorDigest = record.lastDigest
-            val priorTime = record.updatedAt
-            val priorResults = record.results.toMap()
-            record.lastDigest = digest
-            record.updatedAt = config.clock.millis()
-            record.results.putAll(supplied)
-            try {
-                store.save(records, history.entries)
-            } catch (error: CodeModePersistenceException) {
-                // Only this pre-advance transition is reversible. Never roll back a running cell.
-                record.lastDigest = priorDigest
-                record.updatedAt = priorTime
-                record.results.clear()
-                record.results.putAll(priorResults)
-                throw error
-            }
+    /** V4-179: [media] holds the follow-up items rendered for each supplied result; a supplied id
+     *  absent from it is captured as "no media" (an empty list), never left legacy. */
+    fun acceptResults(
+        record: CodeModeRecord,
+        digest: String,
+        supplied: Map<String, CodeModeResult>,
+        media: Map<String, List<JsonElement>> = emptyMap(),
+    ) = synchronized(monitor) {
+        val priorDigest = record.lastDigest
+        val priorTime = record.updatedAt
+        val priorResults = record.results.toMap()
+        val priorMedia = record.media.toMap()
+        record.lastDigest = digest
+        record.updatedAt = config.clock.millis()
+        record.results.putAll(supplied)
+        supplied.keys.forEach { id -> record.media[id] = media[id].orEmpty() }
+        try {
+            store.save(records, history.entries)
+        } catch (error: CodeModePersistenceException) {
+            // Only this pre-advance transition is reversible. Never roll back a running cell.
+            record.lastDigest = priorDigest
+            record.updatedAt = priorTime
+            record.results.clear()
+            record.results.putAll(priorResults)
+            record.media.clear()
+            record.media.putAll(priorMedia)
+            throw error
         }
+    }
 }

@@ -71,6 +71,12 @@ internal data class CodeModeRecordSnapshot(
     val nativeSegments: List<CodeModeNativeSegment> = emptyList(),
     val continuity: List<JsonElement> = emptyList(),
     val continuityReplay: List<CodeModeNativeSegment> = emptyList(),
+    /** V4-179: the follow-up wire items (images) of each ACCEPTED client result, in acceptance order.
+     *  ABSENT for a result id means legacy, not captured: nothing is owned and whatever the client's
+     *  history carries for it stays ordinary content, as it did before. PRESENT with an empty list
+     *  means captured with no media. A v3 file without this field decodes to the empty list, which
+     *  is exactly "nothing captured" — no metadata-version bump, no invalidated records. */
+    val media: List<CodeModeMediaSnapshot> = emptyList(),
 ) {
     fun restore(): CodeModeRecord = CodeModeRecord(
         id = id,
@@ -105,6 +111,7 @@ internal data class CodeModeRecordSnapshot(
         nativeSegments = nativeSegments,
         continuity = continuity,
         continuityReplay = continuityReplay,
+        media = media.associateTo(linkedMapOf()) { it.id to it.items },
     )
 
     /** A completed record with old metadata is still terminal — the rewrite omits it (and logs) rather
@@ -136,6 +143,8 @@ internal data class CodeModeRecord(
     val nativeSegments: List<CodeModeNativeSegment>,
     val continuity: List<JsonElement>,
     val continuityReplay: List<CodeModeNativeSegment>,
+    /** Follow-up items per accepted result id, insertion-ordered; see [CodeModeRecordSnapshot.media]. */
+    val media: MutableMap<String, List<JsonElement>> = linkedMapOf(),
 ) {
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 
@@ -166,8 +175,14 @@ internal data class CodeModeRecord(
         nativeSegments = nativeSegments,
         continuity = continuity,
         continuityReplay = continuityReplay,
+        media = media.map { (id, items) -> CodeModeMediaSnapshot(id, items) },
     )
 }
+
+/** One accepted result's follow-up items, keyed by its client id; the LIST order is the persisted
+ *  sequence order across results and rounds, never a map's iteration order. */
+@Serializable
+internal data class CodeModeMediaSnapshot(val id: String, val items: List<JsonElement>)
 
 @Serializable
 internal data class CodeModeNativeSegment(

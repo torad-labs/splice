@@ -130,6 +130,48 @@ describe("the P1 coverage proof", () => {
     expect(lost[0]).toContain("gateway/control/src/main/kotlin");
   });
 
+  test("mutant (e): a modules row typed as a scalar cannot waive the source root it names", async () => {
+    // `modules = "app"` instead of `modules = ["app"]`. Valid TOML, one character, and on a reader
+    // that maps a mistyped field to [] the whole report stays GREEN: the row still covers :app's
+    // loss — and every other module's too, for any rule it names.
+    const copy = copyOfTheRealRules();
+    edit(
+      copy.exclusions,
+      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]',
+      '[[exclusion]]\nrule = "kt-no-println"\nmodules = "app"',
+    );
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const invalid = report.findings.filter((f) => f.kind === "exclusion-invalid").map((f) => f.message);
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]).toContain("kt-no-println");
+    expect(invalid[0]).toContain('has modules = the string "app"');
+    // and the loss it used to excuse is reported again, by name
+    const lost = messagesFor(report, "kt-no-println", "source-root-lost");
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain("gateway/app/src/main/kotlin");
+  });
+
+  test("mutant (f): a files row typed as a scalar cannot become a whole-source-root row", async () => {
+    const copy = copyOfTheRealRules();
+    edit(
+      copy.exclusions,
+      'files = ["gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]',
+      'files = "gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"',
+    );
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const invalid = report.findings.filter((f) => f.kind === "exclusion-invalid").map((f) => f.message);
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]).toContain("kt-http-status-single-source");
+    expect(invalid[0]).toContain("has files = the string");
+    // the file it named is lost again — the row did not widen into one that excuses source roots
+    const lost = messagesFor(report, "kt-http-status-single-source", "file-lost");
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain("splice/core/wire/HttpStatus.kt");
+    expect(messagesFor(report, "kt-http-status-single-source", "source-root-lost")).toEqual([]);
+  });
+
   test("a stale exclusion is a finding, not a default", async () => {
     const copy = copyOfTheRealRules();
     edit(

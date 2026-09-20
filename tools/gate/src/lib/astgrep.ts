@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Rule } from "./rules.ts";
+import { exitStatusOf } from "./status.ts";
 
 /** The tree-sitter ROOT node kind per language — an always-match probe, one node per file. */
 const ROOT_KIND: Readonly<Record<string, string>> = {
@@ -31,7 +32,10 @@ export function runAstGrep(repoRoot: string, args: readonly string[]): number {
     cwd: repoRoot,
     stdio: ["inherit", "inherit", "inherit"],
   });
-  return proc.exitCode ?? 1;
+  // Through `exitStatusOf`, never `proc.exitCode ?? 1`: a scan the operator ^C'd or the OOM killer
+  // took is 130/137 under the npm chain this leg replaces, and reporting it as 1 says "rules failed"
+  // about a run that never finished.
+  return exitStatusOf(proc);
 }
 
 export interface ProbeResult {

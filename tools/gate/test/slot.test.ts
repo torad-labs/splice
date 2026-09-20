@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
+import { takeExclusive } from "../src/lib/flock.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const real = layout();
@@ -43,16 +44,16 @@ describe("the gradle slot", () => {
     expect(lockPath(real, { GRADLE_SLOT_LOCK: "/tmp/elsewhere.lock" })).toBe("/tmp/elsewhere.lock");
   });
 
-  test("an EMPTY task list is DID NOT RUN, never PASSED", () => {
+  test("an EMPTY task list is DID NOT RUN, never PASSED", async () => {
     const fake = fakeBuildRoot();
-    expect(runUnderSlot({ layout: fake.layout, label: "empty", args: [] })).toBe(NO_TASKS_EXIT);
+    expect(await runUnderSlot({ layout: fake.layout, label: "empty", args: [] })).toBe(NO_TASKS_EXIT);
     expect(existsSync(fake.receipt)).toBe(false);
     expect(existsSync(join(fake.dir, ".gradle-slot.lock"))).toBe(false);
   });
 
-  test("the holder is written BEFORE the JVM starts, and removed on exit", () => {
+  test("the holder is written BEFORE the JVM starts, and removed on exit", async () => {
     const fake = fakeBuildRoot();
-    const code = runUnderSlot({ layout: fake.layout, label: "V4-108", args: [":app:test"], env: { CI: "1", PATH: fake.path } });
+    const code = await runUnderSlot({ layout: fake.layout, label: "V4-108", args: [":app:test"], env: { CI: "1", PATH: fake.path } });
     expect(code).toBe(0);
     const receipt = readFileSync(fake.receipt, "utf8");
     expect(receipt).toContain("ARGS:--no-daemon :app:test");
@@ -60,21 +61,21 @@ describe("the gradle slot", () => {
     expect(existsSync(join(fake.dir, ".gradle-slot.lock.holder"))).toBe(false);
   });
 
-  test("gradle's exit status propagates", () => {
+  test("gradle's exit status propagates", async () => {
     const fake = fakeBuildRoot("exit 7\n");
-    expect(runUnderSlot({ layout: fake.layout, label: "red", args: ["check"], env: { CI: "1", PATH: fake.path } })).toBe(7);
+    expect(await runUnderSlot({ layout: fake.layout, label: "red", args: ["check"], env: { CI: "1", PATH: fake.path } })).toBe(7);
   });
 
-  test("--offline is a local nicety and is dropped on CI", () => {
+  test("--offline is a local nicety and is dropped on CI", async () => {
     const local = fakeBuildRoot();
-    runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
+    await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
     expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline --no-daemon help");
     const ci = fakeBuildRoot();
-    runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
+    await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
     expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--no-daemon help");
   });
 
-  test("the shell script's flock and this CLI's cannot both hold the slot", () => {
+  test("the shell script's flock and this CLI's cannot both hold the slot", async () => {
     const fake = fakeBuildRoot();
     const lock = join(fake.dir, ".gradle-slot.lock");
     writeFileSync(`${lock}.holder`, "another-seat pid=4242 since=2026-09-20T00:00:00-05:00\n");
@@ -87,7 +88,7 @@ describe("the gradle slot", () => {
       console.error = (...parts: unknown[]) => void stderr.push(parts.join(" "));
       let code: number;
       try {
-        code = runUnderSlot({
+        code = await runUnderSlot({
           layout: fake.layout,
           label: "blocked",
           args: ["check"],
@@ -106,7 +107,7 @@ describe("the gradle slot", () => {
     }
   });
 
-  test("...and the other direction: while this CLI holds it, the shell's flock cannot", () => {
+  test("...and the other direction: while this CLI holds it, the shell's flock cannot", async () => {
     const fake = fakeBuildRoot();
     const lock = join(fake.dir, ".gradle-slot.lock");
     // The probes run from inside gradlew, i.e. while the slot is genuinely held, and use `flock -n`
@@ -117,7 +118,7 @@ describe("the gradle slot", () => {
       `#!/usr/bin/env bash\nexec 9>"${lock}"\nflock -n 9 && echo GOT >"${fake.receipt}" || echo BUSY >"${fake.receipt}"\nbash -c 'exec 9>"${lock}"; flock -n 9 && echo GOT || echo BUSY' >>"${fake.receipt}"\nexit 0\n`,
     );
     chmodSync(join(fake.dir, "gradlew"), 0o755);
-    runUnderSlot({ layout: fake.layout, label: "holding", args: ["help"], env: { CI: "1", PATH: fake.path } });
+    await runUnderSlot({ layout: fake.layout, label: "holding", args: ["help"], env: { CI: "1", PATH: fake.path } });
     // both probes run from a separate process, the way a second seat's gradle-slot.sh would
     expect(readFileSync(fake.receipt, "utf8").trim().split("\n")).toEqual(["BUSY", "BUSY"]);
   });
@@ -135,7 +136,7 @@ describe("the gradle slot", () => {
     expect(isoSeconds(now)).toBe(shell);
   });
 
-  test("buildgate wraps gradle when PATH has it, and is skipped when it does not", () => {
+  test("buildgate wraps gradle when PATH has it, and is skipped when it does not", async () => {
     const fake = fakeBuildRoot();
     const binDir = mkdtempSync(join(tmpdir(), "gate-buildgate-"));
     workspaces.push(binDir);
@@ -143,14 +144,85 @@ describe("the gradle slot", () => {
     writeFileSync(join(binDir, "buildgate"), `#!/usr/bin/env bash\necho WRAPPED >"${marker}"\nexec "$@"\n`);
     chmodSync(join(binDir, "buildgate"), 0o755);
 
-    runUnderSlot({ layout: fake.layout, label: "wrapped", args: ["help"], env: { CI: "1", PATH: `${binDir}:${fake.path}` } });
+    await runUnderSlot({ layout: fake.layout, label: "wrapped", args: ["help"], env: { CI: "1", PATH: `${binDir}:${fake.path}` } });
     expect(existsSync(marker)).toBe(true);
     expect(readFileSync(fake.receipt, "utf8")).toContain("ARGS:--no-daemon help");
 
     rmSync(marker);
     const bare = fakeBuildRoot();
-    runUnderSlot({ layout: bare.layout, label: "bare", args: ["help"], env: { CI: "1", PATH: bare.path } });
+    await runUnderSlot({ layout: bare.layout, label: "bare", args: ["help"], env: { CI: "1", PATH: bare.path } });
     expect(existsSync(marker)).toBe(false);
     expect(readFileSync(bare.receipt, "utf8")).toContain("ARGS:--no-daemon help");
+  });
+
+  // ── the signal path ───────────────────────────────────────────────────────────────────────────
+  //
+  // `kill <pid>` on the gate is how a seat, a CI cancel and a supervisor all stop a run, so these
+  // signal the wrapper's REAL pid and nothing else — signalling the process group would kill the
+  // child too and prove nothing about forwarding. Against the unfixed CLI (Bun.spawnSync, handlers
+  // removed in `finally` before a queued signal could run) all three were red: the wrapper ignored
+  // SIGTERM, held the slot for the child's whole sleep and exited 0.
+
+  /** `runUnderSlot` in a process of its own, exiting with whatever it returns. */
+  function wrapperProcess(fake: ReturnType<typeof fakeBuildRoot>, label: string): Bun.Subprocess {
+    const runner = join(fake.dir, "runner.ts");
+    const options = { layout: fake.layout, label, args: ["check"], env: { CI: "1", PATH: fake.path } };
+    writeFileSync(
+      runner,
+      `import { runUnderSlot } from ${JSON.stringify(join(import.meta.dir, "..", "src", "lib", "slot.ts"))};\n` +
+        `process.exit(await runUnderSlot(${JSON.stringify(options)}));\n`,
+    );
+    return Bun.spawn([process.execPath, runner], { stdio: ["ignore", "ignore", "ignore"] });
+  }
+
+  async function waitForFile(path: string, what: string, ms = 10_000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!existsSync(path)) {
+      if (Date.now() > deadline) throw new Error(`the fake gradle never ${what} — no ${path} after ${ms}ms`);
+      await Bun.sleep(5);
+    }
+  }
+
+  for (const [signal, status] of [["SIGTERM", 143], ["SIGINT", 130]] as const) {
+    test(`a parent-only ${signal} ends the wrapper with ${status}, long before the child would finish`, async () => {
+      // `exec`, so the child is the sleep itself: a bash that only forwards its own death would let
+      // the sleep outlive the wrapper and make a prompt exit say nothing about the JVM.
+      const fake = fakeBuildRoot('touch "$(dirname "$0")/started"\nexec sleep 5\n');
+      const holder = join(fake.dir, ".gradle-slot.lock.holder");
+      const wrapper = wrapperProcess(fake, "signalled");
+      await waitForFile(join(fake.dir, "started"), "started");
+      expect(existsSync(holder)).toBe(true);
+      const at = Date.now();
+      process.kill(wrapper.pid, signal);
+      expect(await wrapper.exited).toBe(status);
+      expect(Date.now() - at).toBeLessThan(2_000);
+      expect(existsSync(holder)).toBe(false);
+    });
+  }
+
+  test("the slot and the holder are kept until the child is actually GONE", async () => {
+    // The obvious wrong fix — drop the holder and release the lock inside the signal handler, then
+    // die — frees the slot while the JVM is still running its shutdown hooks. A contender that
+    // starts there is the second gradle in one project dir this file exists to prevent.
+    const fake = fakeBuildRoot(
+      'trap \'touch "$(dirname "$0")/terminating"; sleep 1; exit 143\' TERM\n' +
+        'touch "$(dirname "$0")/started"\nsleep 5 &\nwait $!\n',
+    );
+    const lock = join(fake.dir, ".gradle-slot.lock");
+    const wrapper = wrapperProcess(fake, "shutting-down");
+    await waitForFile(join(fake.dir, "started"), "started");
+    process.kill(wrapper.pid, "SIGTERM");
+    await waitForFile(join(fake.dir, "terminating"), "received the forwarded SIGTERM");
+
+    const contender = takeExclusive(lock, 25, 5);
+    contender?.release();
+    expect(contender, "a contender took the slot while the child was still shutting down").toBeUndefined();
+    expect(existsSync(`${lock}.holder`)).toBe(true);
+
+    expect(await wrapper.exited).toBe(143);
+    expect(existsSync(`${lock}.holder`)).toBe(false);
+    const free = takeExclusive(lock, 250, 5);
+    expect(free, "the slot must be free once the wrapper is gone").toBeDefined();
+    free?.release();
   });
 });

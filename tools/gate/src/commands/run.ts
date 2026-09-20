@@ -17,7 +17,7 @@ export const usage = "run                                  the gate of record: c
 export const GATE_OF_RECORD_LABEL = "gate-of-record";
 export const GATE_OF_RECORD_TASKS = ["--no-build-cache", "clean", "check"] as const;
 
-export function run(argv: readonly string[]): number {
+export async function run(argv: readonly string[]): Promise<number> {
   if (argv.length > 0) {
     console.error(`gate run: takes no arguments (got ${argv.join(" ")}) — the gate of record is one fixed invocation`);
     return 2;

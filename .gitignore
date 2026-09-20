@@ -51,12 +51,21 @@ credentials.json
 .claude/commands/
 .claude/mcp.json
 /torad.json
-/goals/924-enforcement.md
-/dev/session-review-2026-07-18.md
+/.dev/research/924-enforcement.md
+/.dev/session-review-2026-07-18.md
 /.dev/research/gateway-best-practices-2026-07-18.md
 /.dev/research/gateway-gaps-tracker.md
+# release media projects (a node tree per release video)
+/.dev/media/
 # --- end OSS-K entries ---
 
 # transient operator wall grant (/grant) — never committed
 .claude/state/walls-grant.json
 .claude/tmp/
+
+# per-machine agent tooling installs: skills and hook mirrors for the other seats
+/.agents/
+/.codex/
+
+# the host build semaphore's lock, written beside the gradle tree
+.hostshield-build.lock

@@ -61,6 +61,22 @@
   seven-day, per-model weekly windows), window fields only and gated on `rate_limits_available`, so
   a follow-up console surface can read a session's real Claude-reported windows rather than
   splice's own derived quota.
+- **Console daemon table stakes: opt-in body capture, budgets, alerts and a playground (V4-133).**
+  `GET`/`PUT /api/heads/{head}/capture` reports and flips the TRACE knob per head — the capture
+  store V4-174 already built, not a second one — and always answers `restart_required: true`,
+  because making the switch hot would touch the turn-serving path outside this change.
+  `GET`/`PUT /api/budgets` holds per-head daily USD budgets with a `warn`/`block` action, defaulting
+  the action from the new `budgetDefaultAction` knob when a row omits one. `GET`/`PUT /api/alerts`
+  holds a desktop-notification flag and one webhook URL, and `POST /api/alerts/test` fires one real
+  delivery to whatever is SAVED, never an unsaved draft. `POST /api/playground` sends one prompt
+  through one head's own credential and provider — anthropic-passthrough, openai-chat or
+  openai-responses, whichever the head is on — as an independent one-shot call that never touches
+  the turn pipeline, so it writes no perf row, no trace record and no economics: the request and
+  response ride back in the HTTP response and nowhere else. Every new store (`budgets.json`,
+  `alerts.json`) is a plain 0600 JSON file under the state dir, same shape as `teams.json`. The perf
+  JSONL rotate that discarded its next-oldest generation on every rotation now archives it first,
+  timestamped, when a head sets `archiveDir`; `perfArchiveRetentionDays` sweeps generations past its
+  window.
 - **A llama-server head keeps each conversation on its own slot (V4-165).** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,
   so a new session sharing Claude Code's ~30K preamble took an idle conversation's slot and that

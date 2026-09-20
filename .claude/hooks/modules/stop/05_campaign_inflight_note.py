@@ -32,7 +32,7 @@ def run(data: dict) -> Optional[HookResult]:
     root = find_project_root(data.get("cwd"))
     if root is None:
         return None
-    campaigns = root / "dev" / "campaigns"
+    campaigns = root / ".dev" / "campaigns"
     if not campaigns.is_dir():
         return None
 

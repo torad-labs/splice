@@ -96,4 +96,10 @@ public class ConsolePorts {
     /** V4-128: the writer over splice.toml, assigned by ControlPlane after construction like [teams] and
      *  read at call time. Null answers GET and PUT /api/topology with a named 503. */
     public var topology: TopologyWriter? = null
+
+    /** V4-132: the login/remove/relabel machinery behind POST/GET /api/auth/{head}/login[/{id}] and
+     *  DELETE/PATCH /api/auth/{head}/accounts/{label} — see [ConsoleAccounts]'s own KDoc for why it
+     *  is a port at all. Assigned by ConsoleWiring after construction like every port above; null
+     *  answers those four routes with a named 503, never a payload that reads as "no accounts". */
+    public var accounts: ConsoleAccounts? = null
 }

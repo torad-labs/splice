@@ -3,6 +3,24 @@
 ## Unreleased
 
 ### Added
+- **The console can sign accounts in, switch, remove and relabel them, from one joined view
+  (V4-132).** `POST /api/auth/{head}/login` starts a device or browser login off the request that
+  asked for it and answers immediately with a login id; `GET /api/auth/{head}/login/{id}` polls it
+  for the user code and verification link (device flow) or the browser URL (OAuth flow), through
+  `signed_in` once the credential lands and `live_after_restart` once the head has restarted and
+  the account is confirmed in its pool. `DELETE`/`PATCH /api/auth/{head}/accounts/{label}` remove
+  or relabel a pooled account; the primary is refused for both, never silently accepted.
+  `POST /api/auth/{head}/switch` is a REAL pin now — `AccountPool.select` tries the pinned account
+  FIRST, ahead of the primary preference, from the next turn, and falls through to ordinary policy
+  the moment the pin names an unavailable or unknown account, so pinning never wedges a head that
+  would otherwise still be serving turns. `GET /api/accounts` joins every pool's accounts across
+  every head, on the credential path — two heads sharing one login are one row, not one per head —
+  carrying each window's own reported length (a 30-day provider is never rendered as a 7-day one),
+  the operator's pin, the next target by the real selector order, and single-login heads read from
+  their `/api/auth` view. The statusline now records each session's `rate_limits` object (five-hour,
+  seven-day, per-model weekly windows), window fields only and gated on `rate_limits_available`, so
+  a follow-up console surface can read a session's real Claude-reported windows rather than
+  splice's own derived quota.
 - **A llama-server head keeps each conversation on its own slot (V4-165).** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,
   so a new session sharing Claude Code's ~30K preamble took an idle conversation's slot and that

@@ -50,6 +50,16 @@ public class AccountPool(
     private val statelessLock = Any()
     private var statelessPrevious: SessionAccount? = null
 
+    // V4-132: the REAL pin behind POST /api/auth/{head}/switch. Before this, `select` was
+    // policy-only (FEATURES.md 4.5 "Manual switch"): even a session sitting on a deliberately
+    // chosen backup fell back to primary on its very next turn, because [choose] always tried
+    // primary first when the session's previous account was not already primary. A pin is tried
+    // FIRST, ahead of primary — [candidates] below is the one order [choose] and [nextTargetLabel]
+    // both walk, so a pin changes both the same way. An unavailable pin falls through to the same
+    // policy as before (NEVER-BELOW-STATUS-QUO): pinning never wedges a head that would otherwise
+    // still be serving turns on its own.
+    private val pinnedLabel = AtomicReference<String?>(null)
+
     init {
         require(accounts.isNotEmpty()) { "account pool must not be empty" }
         require(byLabel.size == accounts.size) { "account labels must be unique" }
@@ -90,7 +100,7 @@ public class AccountPool(
         sticky: Boolean,
     ): Pair<Selection, SessionAccount?> {
         val chosen = choose(if (sticky) previous?.label else null, at)
-            ?: return Selection.Exhausted(earliestReset(at)) to null
+            ?: return Selection.Exhausted(AccountAvailability.earliestReset(accounts, at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
         val prior = previous ?: primary?.let { SessionAccount(it.label, null) }
@@ -119,6 +129,7 @@ public class AccountPool(
         synchronized(sessions) { sessions.clear() }
         synchronized(statelessLock) { statelessPrevious = null }
         headLastSwitch.set(null)
+        pinnedLabel.set(null)
         accounts.forEach {
             it.cooldown.clear()
             it.cooldown.clearUnavailable()
@@ -126,37 +137,131 @@ public class AccountPool(
         }
     }
 
-    private fun choose(previousLabel: String?, at: Long): ChosenAccount? {
-        val previous = previousLabel?.let(byLabel::get)
-        val primary = checkNotNull(primary)
-        val prefersPrimary = previous == null || previous !== primary
-        val primaryChoice = primary.takeIf { prefersPrimary }?.let { acquireIfAvailable(it, at) }
-        if (primaryChoice != null) return primaryChoice
-        val previousChoice = previous?.let { acquireIfAvailable(it, at) }
-        if (previousChoice != null) return previousChoice
-        val candidates = accounts.sortedWith(compareBy<PoolAccount>(::sevenDayUsed).thenBy { it.label })
-        return candidates.firstNotNullOfOrNull { acquireIfAvailable(it, at) }
+    /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until
+     *  [unpin] or the next [reset]. False (nothing pinned) when [label] names no account here. */
+    public fun pin(label: String): Boolean {
+        val account = byLabel[label] ?: return false
+        pinnedLabel.set(account.label)
+        return true
     }
 
+    public fun unpin() {
+        pinnedLabel.set(null)
+    }
+
+    /** The currently pinned label, or null when nothing is pinned. Safe for an operator surface —
+     *  no credential material, just the label [select] already exposes elsewhere. */
+    public fun pinned(): String? = pinnedLabel.get()
+
+    /** The label [select] would choose next for [sessionId] (null = head-wide), without acquiring
+     *  a credential lease — a read-only probe for an operator surface (GET /api/accounts "the next
+     *  target by the real selector order"). Walks the exact same [candidates] order [choose] does,
+     *  testing only [available]: [acquireIfAvailable] takes a probe lease, which this must not. */
+    public fun nextTargetLabel(sessionId: String? = null): String? {
+        val at = now()
+        val previousLabel = if (sessionId == null) {
+            synchronized(statelessLock) { statelessPrevious?.label }
+        } else {
+            synchronized(sessions) { sessions[sessionId]?.label }
+        }
+        return candidates(previousLabel).firstOrNull { AccountAvailability.available(it, at) }?.label
+    }
+
+    /** The one selection order [choose] and [nextTargetLabel] both walk: the pin (if any), then
+     *  primary, then the caller's previous account, then every account by lowest seven-day used —
+     *  [distinctBy] below collapses whichever of those coincide (previous === primary is the
+     *  common case) so no account is probed twice in one call. Behaviour-identical to the pre-pin
+     *  order when nothing is pinned: that used to special-case "previous === primary" to avoid a
+     *  duplicate probe: same effect, one list. */
+    private fun candidates(previousLabel: String?): List<PoolAccount> {
+        val pin = pinnedLabel.get()?.let(byLabel::get)
+        val previous = previousLabel?.let(byLabel::get)
+        val bySevenDay = accounts.sortedWith(
+            compareBy<PoolAccount>(AccountAvailability::sevenDayUsed).thenBy { it.label },
+        )
+        return (listOfNotNull(pin, primary, previous) + bySevenDay).distinctBy { it.label }
+    }
+
+    private fun choose(previousLabel: String?, at: Long): ChosenAccount? =
+        candidates(previousLabel).firstNotNullOfOrNull { acquireIfAvailable(it, at) }
+
     private fun acquireIfAvailable(account: PoolAccount, at: Long): ChosenAccount? {
-        if (!available(account, at)) return null
+        if (!AccountAvailability.available(account, at)) return null
         val lease = account.acquireCredential(at, now) ?: return null
         return ChosenAccount(account, lease)
     }
 
+    // V4-132 added the pin branch as a fifth case in the SAME `when` (rather than a fourth early
+    // `return`) to stay under ReturnCount's limit of 3 — one `return when`, whatever its arm count.
     private fun switchReason(previousLabel: String, chosen: PoolAccount, at: Long): String {
-        if (chosen.primary) return "primary account reset"
         val previous = byLabel.getValue(previousLabel)
-        if (previous.cooldown.unavailableForMs() > 0L) return "rate limit exceeds turn wait budget"
         val quota = previous.quota.snapshot()
         return when {
-            exhausted(quota?.fiveHour, at) -> "5-hour quota exhausted"
-            exhausted(quota?.sevenDay, at) -> "7-day quota exhausted"
+            chosen.label == pinnedLabel.get() -> "operator pinned this account"
+            chosen.primary -> "primary account reset"
+            previous.cooldown.unavailableForMs() > 0L -> "rate limit exceeds turn wait budget"
+            AccountAvailability.exhausted(quota?.fiveHour, at) -> "5-hour quota exhausted"
+            AccountAvailability.exhausted(quota?.sevenDay, at) -> "7-day quota exhausted"
             else -> "account unavailable"
         }
     }
 
-    private fun earliestReset(at: Long): Long? = accounts.mapNotNull { blockedUntil(it, at) }.minOrNull()
+    private fun accountView(account: PoolAccount, selected: String?, at: Long): AccountView {
+        val snapshot = account.quota.snapshot()
+        val credential = account.credentialStatus(at)
+        return AccountView(
+            label = account.label,
+            primary = account.primary,
+            selected = account.label == selected,
+            plan = snapshot?.plan,
+            fiveHourUsedPercent = snapshot?.fiveHour?.usedPercent,
+            fiveHourResetEpochSeconds = snapshot?.fiveHour?.resetsAt,
+            sevenDayUsedPercent = snapshot?.sevenDay?.usedPercent,
+            sevenDayResetEpochSeconds = snapshot?.sevenDay?.resetsAt,
+            available = AccountAvailability.available(account, at),
+            credentialPresent = credential.credentialPresent,
+            authExcludedUntilEpochMillis = credential.excludedUntilEpochMillis,
+            authExclusionReason = credential.reason,
+            // V4-132 (GET /api/accounts, FEATURES.md §4.5): the window's own reported LENGTH,
+            // dropped by every projection before this row even though QuotaWindow has carried it
+            // since Quota.kt:14 — a provider that reports a 30-day period (Grok) or a 7-day one
+            // must not be rendered as though both were the same "weekly" bar.
+            fiveHourWindowSeconds = snapshot?.fiveHour?.windowSeconds,
+            sevenDayWindowSeconds = snapshot?.sevenDay?.windowSeconds,
+        )
+    }
+
+    private data class ChosenAccount(
+        val account: PoolAccount,
+        val lease: AccountCredentialEligibility.Lease,
+    )
+
+    private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?)
+}
+
+/** Pure per-account availability/quota math — every function here takes the [PoolAccount] (and
+ *  [at]) it needs and touches no [AccountPool] state, so V4-132 split it out rather than push
+ *  [AccountPool] past detekt's 15-function class ceiling (TooManyFunctions) with its new
+ *  pin/unpin/pinned/nextTargetLabel surface. Behaviour is byte-identical to the methods it
+ *  replaces — a relocation, not a rewrite. */
+private object AccountAvailability {
+    fun available(account: PoolAccount, at: Long): Boolean {
+        val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
+        if (!account.credentialStatus(at).selectable || runtimeUnavailable) return false
+        val snapshot = account.quota.snapshot() ?: return true
+        return !exhausted(snapshot.fiveHour, at) && !exhausted(snapshot.sevenDay, at)
+    }
+
+    fun sevenDayUsed(account: PoolAccount): Double = account.quota.snapshot()?.sevenDay?.usedPercent ?: 0.0
+
+    fun exhausted(window: QuotaWindow?, at: Long): Boolean {
+        if (window == null || window.usedPercent < FULLY_USED) return false
+        val reset = window.resetsAt ?: return false
+        return reset * MS_PER_SECOND > at
+    }
+
+    fun earliestReset(accounts: List<PoolAccount>, at: Long): Long? =
+        accounts.mapNotNull { blockedUntil(it, at) }.minOrNull()
 
     private fun blockedUntil(account: PoolAccount, at: Long): Long? {
         val snapshot = account.quota.snapshot()
@@ -174,46 +279,4 @@ public class AccountPool(
         }
         return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset).maxOrNull()
     }
-
-    private fun available(account: PoolAccount, at: Long): Boolean {
-        val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
-        if (!account.credentialStatus(at).selectable || runtimeUnavailable) return false
-        val snapshot = account.quota.snapshot() ?: return true
-        return !exhausted(snapshot.fiveHour, at) && !exhausted(snapshot.sevenDay, at)
-    }
-
-    private fun sevenDayUsed(account: PoolAccount): Double =
-        account.quota.snapshot()?.sevenDay?.usedPercent ?: 0.0
-
-    private fun accountView(account: PoolAccount, selected: String?, at: Long): AccountView {
-        val snapshot = account.quota.snapshot()
-        val credential = account.credentialStatus(at)
-        return AccountView(
-            label = account.label,
-            primary = account.primary,
-            selected = account.label == selected,
-            plan = snapshot?.plan,
-            fiveHourUsedPercent = snapshot?.fiveHour?.usedPercent,
-            fiveHourResetEpochSeconds = snapshot?.fiveHour?.resetsAt,
-            sevenDayUsedPercent = snapshot?.sevenDay?.usedPercent,
-            sevenDayResetEpochSeconds = snapshot?.sevenDay?.resetsAt,
-            available = available(account, at),
-            credentialPresent = credential.credentialPresent,
-            authExcludedUntilEpochMillis = credential.excludedUntilEpochMillis,
-            authExclusionReason = credential.reason,
-        )
-    }
-
-    private fun exhausted(window: QuotaWindow?, at: Long): Boolean {
-        if (window == null || window.usedPercent < FULLY_USED) return false
-        val reset = window.resetsAt ?: return false
-        return reset * MS_PER_SECOND > at
-    }
-
-    private data class ChosenAccount(
-        val account: PoolAccount,
-        val lease: AccountCredentialEligibility.Lease,
-    )
-
-    private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?)
 }

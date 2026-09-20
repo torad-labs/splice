@@ -142,6 +142,10 @@ public data class AccountView(
     val credentialPresent: Boolean = true,
     val authExcludedUntilEpochMillis: Long? = null,
     val authExclusionReason: String? = null,
+    /** V4-132: the window's own reported length in seconds — see [AccountPool]'s [AccountView]
+     *  construction for why the projection carries it now. */
+    val fiveHourWindowSeconds: Long? = null,
+    val sevenDayWindowSeconds: Long? = null,
 )
 
 /** One session's safe pool projection. */

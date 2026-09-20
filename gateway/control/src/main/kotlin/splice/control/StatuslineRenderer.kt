@@ -83,6 +83,12 @@ public class StatuslineRenderer(
     private val blob = StatuslineJson()
     private val row = StatuslineRow(catalog)
     private val windowLearner = StatuslineWindowLearner(catalog, clientWindows)
+
+    /** V4-132 (FEATURES.md §4.5 "Claude windows", §6 "statusline rate_limits capture"): each
+     *  session's last captured `rate_limits` snapshot. Internal, not wrapped in an accessor fun —
+     *  [StatuslineRenderer] already sits at detekt's 15-function class ceiling, and a property read
+     *  ([StatuslineRateLimits.forSession]) costs it nothing a wrapper function would. */
+    internal val rateLimits = StatuslineRateLimits()
     private val bars = StatuslineBars()
     private val branchCacheLock = Any()
     private val branchCache = LinkedHashMap<String, CachedBranch>(
@@ -108,12 +114,13 @@ public class StatuslineRenderer(
         val snapshot = usage?.snapshot()
         val pool = accountPool?.view(sessionId)
         val account = pool?.selectedAccount()
+        rateLimits.record(sessionId, account?.label, root)
         val selectedQuota = pool?.selectedQuota()
         val switchReason = pool?.lastSwitch?.takeIf { it.to == account?.label }?.reason
         val accountText = account?.let { selected ->
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
-        val modelId = blob.str(blob.obj(root, "model")?.get("id"))
+        val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
@@ -130,7 +137,7 @@ public class StatuslineRenderer(
     }
 
     private fun modelSegment(root: JsonObject): String? {
-        val model = blob.obj(root, "model") ?: return null
+        val model = blob.obj(root, MODEL_FIELD) ?: return null
         val id = blob.str(model["id"])
         val name = row.label(id) ?: blob.str(model["display_name"]) ?: id ?: return null
         val effort = bars.effort(root)?.let { "${dim("·")}$it" }.orEmpty()
@@ -139,7 +146,7 @@ public class StatuslineRenderer(
 
     private fun contextSegment(root: JsonObject): String? {
         val cw = blob.obj(root, "context_window") ?: return null
-        val id = blob.str(blob.obj(root, "model")?.get("id"))
+        val id = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
         val (size, used) = row.window(id, blob.num(cw["context_window_size"]) ?: 0, usedTokens(cw))
         val pct = blob.num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
         val color = when {
@@ -316,3 +323,9 @@ private const val GIT_CACHE_TTL_MS = 2_000L
 private const val GIT_CACHE_INITIAL_CAPACITY = 16
 private const val GIT_CACHE_LOAD_FACTOR = 0.75f
 private const val GIT_CACHE_MAX_ENTRIES = 64
+
+// V4-132: pulled out of 4 call sites (StringLiteralDuplication, threshold 4) once
+// StatuslineRateLimits.kt's modelScoped() added a fourth read of the same JSON field name.
+// internal, not private: StatuslineRateLimits.kt (same package) reaches this one constant across
+// the concentration split rather than carrying a second "model" literal of its own.
+internal const val MODEL_FIELD = "model"

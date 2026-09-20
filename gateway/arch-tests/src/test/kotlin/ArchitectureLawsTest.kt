@@ -82,6 +82,80 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
     else -> null
 }
 
+/** HD-9 (#924 capstone): the files allowed to directly construct
+ *  [splice.dialect.passthrough.PassthroughQuirks]. A quirks profile is one provider's wire
+ *  deformation set (Kimi's adaptive-thinking map, Muse's tool-name cap); letting any file build
+ *  one lets provider identity leak into whichever module happens to need a header tweak. Only the
+ *  class's own module and the code that assembles a head's provider may build one. Tests are
+ *  exempt by construction — the walk below reads only `src/main`.
+ *
+ *  STALE POINTER CORRECTED: the row's own briefing named `Daemon.kt` as the head-assembly entry
+ *  point. Daemon.kt never constructs a PassthroughQuirks — it delegates entirely to
+ *  `ManagedHeadFactory` -> `ProviderAssembly`. Measured 2026-09-20
+ *  (`grep -rn "PassthroughQuirks(" gateway/PROJECT/src/main` over every module): the three live
+ *  call sites are `app/.../provider/PassthroughArm.kt` (client + unregistered API-key heads),
+ *  `app/.../provider/MusePassthroughArm.kt` (Muse's tool-name-cap profile) and
+ *  `provider-kimi/.../KimiQuirks.kt` (Kimi's own deformation set) — the head-assembly provider
+ *  package, plus the one provider module that builds its own profile rather than taking the
+ *  neutral one. */
+private val PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES = listOf(
+    "dialect-anthropic-passthrough/src/main/", // the class's own module
+    "app/src/main/kotlin/splice/app/provider/", // head assembly: ProviderAssembly + its arms
+    "provider-kimi/src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
+)
+
+/** HD-9: one file's PassthroughQuirks-construction violations, as violation lines. PURE so it can
+ *  be proven against synthetic input — the live tree is clean today, so a silently-deleted matcher
+ *  would look identical to a passing law. The declaring `class PassthroughQuirks(` line is not a
+ *  construction and is skipped so the class's own file never self-reports. */
+private fun passthroughQuirksConstructionViolations(path: String, text: String): List<String> {
+    if (PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES.any { path.startsWith(it) }) return emptyList()
+    val violations = mutableListOf<String>()
+    text.lineSequence().forEachIndexed { index, line ->
+        if (line.contains("class PassthroughQuirks(")) return@forEachIndexed
+        if (line.contains("PassthroughQuirks(")) {
+            violations += "$path:${index + 1} constructs PassthroughQuirks outside its allowed sites " +
+                "(${PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES.joinToString()}) — a provider's deformation " +
+                "profile belongs to the module that owns the provider or to head assembly, not to " +
+                "whichever file happens to need it."
+        }
+    }
+    return violations
+}
+
+/** HD-9 (#924 capstone): every production file under `src/main`, across every module that ships
+ *  one — the SOURCE-derived denominator [passthroughQuirksConstructionViolations] is graded
+ *  against, reusing [productionModules] rather than a hand list for the same DR-165 reason. */
+private fun allProductionFiles(root: File): List<File> =
+    productionModules(root).sorted().flatMap { module ->
+        File(root, "$module/src/main/kotlin").walkTopDown().filter { it.isFile && it.extension == "kt" }
+    }
+
+/** HD-9: the dialect modules — [productionModules] filtered to the `dialect-*` adapters. */
+private fun dialectModules(root: File): Set<String> =
+    productionModules(root).filter { it.startsWith("dialect-") }.toSet()
+
+/** HD-9 (#924 capstone): dialects adapt ONE wire format; [splice.core.topology] is the
+ *  operator-facing head/provider registry (TOML parsing, quirks-config overlays), and a dialect
+ *  that imports it can react to raw operator config directly instead of the typed request it is
+ *  handed — the same layering violation `core stays framework-free` guards one level up, applied
+ *  to the boundary directly above it. PURE for the same synthetic-proof reason as the
+ *  construction guard above. */
+private fun topologyImportViolations(path: String, text: String): List<String> {
+    val violations = mutableListOf<String>()
+    text.lineSequence().forEachIndexed { index, line ->
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("import ")) return@forEachIndexed
+        val imported = trimmed.removePrefix("import ").trim().removeSuffix(";")
+        if (imported == "splice.core.topology" || imported.startsWith("splice.core.topology.")) {
+            violations += "$path:${index + 1} imports $imported — dialects adapt one wire format and " +
+                "must not read topology/operator config directly; take what you need as a typed " +
+                "parameter instead."
+        }
+    }
+    return violations
+}
+
 class ArchitectureLawsTest {
 
     private val root: File = File(System.getProperty("gateway.root"))
@@ -232,6 +306,114 @@ class ArchitectureLawsTest {
                 postfix = "\nSee gateway/CONTRACT.md.",
             )
         }
+    }
+
+    // HD-9 (#924 capstone): PassthroughQuirks is a provider's deformation profile; only the class's
+    // own module and the code that assembles a head's provider may build one. See
+    // PASSTHROUGH_QUIRKS_ALLOWED_PREFIXES for the pointer correction — the briefing said
+    // "Daemon.kt"; Daemon.kt never constructs one.
+    @Test
+    fun `PassthroughQuirks is constructed only by its module or head assembly - HD-9`() {
+        val files = allProductionFiles(root)
+        org.junit.jupiter.api.Assertions.assertTrue(files.size > 10) {
+            "the tree yielded ${files.size} production file(s) — the walk is broken, and a law that " +
+                "reads no files passes vacuously."
+        }
+        val violations = files.sortedBy { it.path }.flatMap { file ->
+            passthroughQuirksConstructionViolations(file.relativeTo(root).path, file.readText())
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
+            violations.joinToString(
+                separator = "\n  - ",
+                prefix = "PASSTHROUGH-QUIRKS CONSTRUCTION (HD-9) violated:\n  - ",
+            )
+        }
+    }
+
+    // HD-9: the construction guard proven against SYNTHETIC input — the live tree is clean today,
+    // so a silently-deleted matcher would look identical to a passing law.
+    @Test
+    fun `the PassthroughQuirks construction guard can actually fail - HD-9`() {
+        assertEquals(
+            emptyList<String>(),
+            passthroughQuirksConstructionViolations(
+                "dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughQuirks.kt",
+                "public data class PassthroughQuirks(\n    val providerTag: String,\n)\n",
+            ),
+            "the declaring class line is not a construction, and its own module is allowed anyway",
+        )
+        assertEquals(
+            emptyList<String>(),
+            passthroughQuirksConstructionViolations(
+                "app/src/main/kotlin/splice/app/provider/PassthroughArm.kt",
+                "val q = PassthroughQuirks(providerTag = key)\n",
+            ),
+            "head assembly's own provider package is allowed",
+        )
+        assertEquals(
+            listOf(
+                "gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt:2 constructs PassthroughQuirks " +
+                    "outside its allowed sites (dialect-anthropic-passthrough/src/main/, " +
+                    "app/src/main/kotlin/splice/app/provider/, provider-kimi/src/main/) — a provider's " +
+                    "deformation profile belongs to the module that owns the provider or to head " +
+                    "assembly, not to whichever file happens to need it.",
+            ),
+            passthroughQuirksConstructionViolations(
+                "gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt",
+                "package splice.gateway.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
+            ),
+            "a construction outside the allowed sites must fail BY NAME, naming the exact line",
+        )
+    }
+
+    // HD-9 (#924 capstone): dialects speak wire format; they do not read topology/operator config.
+    @Test
+    fun `no dialect main file imports the topology package - HD-9`() {
+        val modules = dialectModules(root)
+        org.junit.jupiter.api.Assertions.assertTrue(modules.size >= 3) {
+            "found ${modules.size} dialect module(s) — the walk is broken, and a law that reads no " +
+                "dialect modules passes vacuously."
+        }
+        val files = modules.sorted().flatMap { module ->
+            File(root, "$module/src/main/kotlin").walkTopDown().filter { it.isFile && it.extension == "kt" }
+        }
+        val violations = files.sortedBy { it.path }.flatMap { file ->
+            topologyImportViolations(file.relativeTo(root).path, file.readText())
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
+            violations.joinToString(
+                separator = "\n  - ",
+                prefix = "DIALECT TOPOLOGY IMPORT (HD-9) violated:\n  - ",
+            )
+        }
+    }
+
+    // HD-9: the import guard proven against SYNTHETIC input.
+    @Test
+    fun `the dialect topology import guard can actually fail - HD-9`() {
+        assertEquals(
+            emptyList<String>(),
+            topologyImportViolations("x/Y.kt", "package x\nimport splice.core.util.LogSink\n"),
+            "an unrelated core import is not a topology import",
+        )
+        assertEquals(
+            listOf(
+                "x/Y.kt:2 imports splice.core.topology.AuthKind — dialects adapt one wire format and " +
+                    "must not read topology/operator config directly; take what you need as a typed " +
+                    "parameter instead.",
+            ),
+            topologyImportViolations("x/Y.kt", "package x\nimport splice.core.topology.AuthKind\n"),
+            "a member import must fail BY NAME, naming the exact line",
+        )
+        assertEquals(
+            listOf(
+                "x/Y.kt:2 imports splice.core.topology — dialects adapt one wire format and must not " +
+                    "read topology/operator config directly; take what you need as a typed parameter " +
+                    "instead.",
+            ),
+            topologyImportViolations("x/Y.kt", "package x\nimport splice.core.topology\n"),
+            "the bare package import must fail too",
+        )
     }
 
     private companion object {

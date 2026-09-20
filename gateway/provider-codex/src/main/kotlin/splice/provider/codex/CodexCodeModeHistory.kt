@@ -325,7 +325,6 @@ private class NativeReplayValidator {
 
 private data class ProjectedRewrite(val input: ResponsesCodeModeInput?, val error: String? = null)
 private data class ReplayRewrite(val items: List<ResponsesCodeModeReplay>?, val error: String? = null)
-private const val TYPE_CUSTOM_OUTPUT = "custom_tool_call_output"
 private val CUSTOM_TYPES = setOf("custom_tool_call", TYPE_CUSTOM_OUTPUT)
 private const val TYPE_FUNCTION_OUTPUT = "function_call_output"
 private val FUNCTION_TYPES = setOf("function_call", TYPE_FUNCTION_OUTPUT)

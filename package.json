@@ -32,7 +32,6 @@
   "devDependencies": {
     "@ast-grep/cli": "0.45.2",
     "@types/bun": "^1.3.9",
-    "bun": "1.4.2",
     "typescript": "^5.9.3"
   },
   "trustedDependencies": [

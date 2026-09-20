@@ -1,0 +1,405 @@
+# rule-coverage-exclusions.toml — every source root a routed ast-grep rule does NOT reach, with a
+# date and a written reason.
+#
+# `bun tools/gate rules --prove-coverage` derives the denominator from the source — the Gradle
+# source roots named by settings.gradle.kts and the workspace surfaces named by package.json — and
+# requires every routed rule to reach every one of them. A rule that reaches none of a source root's
+# files, or loses a file inside a root it does cover, fails BY NAME unless a row below says why.
+#
+# That is the point. `ast-grep scan` cannot see a glob that selects nothing: narrowing
+# `gateway/*/src/main/**/*.kt` to `gateway/app/src/main/**/*.kt` leaves the scan green while fifteen
+# modules lose enforcement. The rows here are the only way that narrowing can be legitimate, and
+# each one is dated so the narrowing has a history instead of a habit.
+#
+# Row shape:
+#   rule / rules   the routed rule id(s) this disposition speaks for (required)
+#   modules        Gradle module ids or workspace names; omitted means every module
+#   sourceSets     main | test | testFixtures | src; omitted means every source set
+#   files          ast-grep path globs. A row WITH files excuses individual FILES inside a root the
+#                  rule already covers. A row WITHOUT files excuses a WHOLLY lost source root, and
+#                  only a wholly lost one — a partial loss must be spelled file by file, so that
+#                  losing a whole module can never hide behind a broad row.
+#   date           YYYY-MM-DD (required — an undated exclusion is not a disposition)
+#   reason         why (required — a blank reason is an absence wearing a label)
+#
+# A row that excuses nothing is stale and fails too.
+
+# ─── source-set scope ────────────────────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rules = [
+  "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
+  "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
+  "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
+  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-http-status-single-source",
+  "kt-json-scalars-single-source", "kt-jsonl-sink-single-source", "kt-l3-end-turn-literal",
+  "kt-l3-sole-wire-terminals", "kt-log-escapes-caller-input", "kt-no-atomic-in-data-class",
+  "kt-no-blocking-io-under-monitor", "kt-no-companion-objects", "kt-no-coroutine-scope-factory",
+  "kt-no-delay-in-production", "kt-no-exception-as-outcome", "kt-no-extension-functions",
+  "kt-no-global-scope", "kt-no-hardcoded-dispatchers", "kt-no-lambda-seam", "kt-no-lateinit",
+  "kt-no-object-command", "kt-no-println", "kt-no-raw-thread", "kt-no-reflection-in-production",
+  "kt-no-request-body-gzip", "kt-no-runblocking-exported-bridge", "kt-no-runblocking-in-daemon",
+  "kt-no-runcatching-in-coroutine", "kt-no-sealed-interface", "kt-no-secondary-constructor",
+  "kt-no-silent-result-collapse", "kt-no-stream-options-request", "kt-no-system-getenv",
+  "kt-no-todo-throws", "kt-no-top-level-functions", "kt-no-unsafe-bang-bang", "kt-no-unsafe-cast",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-quota-tracker-single-resolution",
+  "kt-secure-file-single-source", "kt-shared-summary-parts-single-source",
+  "kt-state-paths-single-source", "kt-tool-partition-no-transcript",
+  "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone", "kt-ws-frame-without-epoch",
+]
+sourceSets = ["test", "testFixtures"]
+date = "2026-09-20"
+reason = """
+Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
+sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test) and
+kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :arch-tests.
+"""
+
+[[exclusion]]
+rule = "kt-no-quality-suppress"
+sourceSets = ["testFixtures"]
+date = "2026-09-20"
+reason = """
+The wall binds src/main and src/test but not src/testFixtures, so a @Suppress of a detekt structural
+rule in one of the four shared fixture files is not caught. A real gap, recorded rather than closed:
+widening a rule is a change to .rules/, not to this proof. Close it by adding
+`gateway/*/src/testFixtures/**/*.kt` to the rule's files: and deleting this row.
+"""
+
+[[exclusion]]
+rule = "kt-tests-no-wall-clock"
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+A test-determinism law: a test may not wait on the wall clock. Production waiting is governed by
+kt-no-delay-in-production, which binds src/main.
+"""
+
+# ─── module scope ────────────────────────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
+modules = [
+  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
+  "provider-openai", "gateway", "app", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Both walls are scoped to the control plane: `guarded(call)` covers the 25 control-plane routes, and
+LogSafe escapes the operator- and HTTP-supplied values (argv, head keys) that :control interpolates
+into log lines. Only :control declares those routes. Widening either wall to the head's proxy wire
+is a separate, evidence-led change to .rules/.
+"""
+
+[[exclusion]]
+rule = "kt-json-scalars-single-source"
+modules = [
+  "core", "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat",
+  "gateway", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Declared scope is the modules that read backend JSON scalars into strings: the five providers,
+:control and :app. :core declares JsonScalars itself, the dialects own typed wire codecs, and
+:fir-checks is a Kotlin compiler plugin with no JSON on its path.
+"""
+
+[[exclusion]]
+rule = "kt-no-exception-as-outcome"
+modules = [
+  "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat",
+  "provider-codex", "provider-grok", "provider-kimi", "provider-muse", "provider-openai",
+  "gateway", "control", "app", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+The sealed-outcome law is pinned where refusal types are DECLARED — :core and :provider-spi. Every
+other module consumes those sealed hierarchies rather than declaring its own exception-as-outcome.
+"""
+
+[[exclusion]]
+rule = "kt-no-println"
+modules = ["app"]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+The rule's own exemption, quoted from .rules/kotlin-splice/kt-no-println.yml: ":app is the
+wiring/entry/CLI layer — a terminal tool legitimately writes to stdout (doctor output, usage).
+Daemon LOGGING still flows through the injected log lambda."
+"""
+
+[[exclusion]]
+rule = "kt-no-runblocking-exported-bridge"
+modules = [
+  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
+  "provider-openai", "gateway", "control", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+The bridge wall grades the one path where runBlocking is allowed at all — :app's Main.kt and cli/
+tree, the exact two paths kt-no-runblocking-in-daemon exempts. Everywhere else runBlocking is banned
+outright, so there is no exported bridge to find.
+"""
+
+[[exclusion]]
+rule = "kt-no-runcatching-in-coroutine"
+modules = ["core", "provider-codex", "provider-grok", "provider-kimi", "provider-muse", "provider-openai", "fir-checks"]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Declared scope is the turn/stream path: :provider-spi, the three dialects, :gateway, :control and
+:app. :core is framework-free vocabulary, the five provider modules are auth/quirk adapters outside
+that path, and :fir-checks is a compiler plugin.
+"""
+
+[[exclusion]]
+rule = "kt-no-silent-result-collapse"
+modules = ["core", "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat", "fir-checks"]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Declared scope is the modules that consume Result from backend, auth and process calls. :core
+declares the outcome types, the dialects are pure byte builders, and :fir-checks is a compiler
+plugin.
+"""
+
+[[exclusion]]
+rule = "kt-no-silent-result-collapse"
+modules = ["provider-muse"]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+:provider-muse is the ONE provider missing from this wall's files: list, which names provider-spi,
+grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
+credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
+.rules/, out of this stage's fence. Close it by adding `gateway/provider-muse/src/main/**/*.kt` to
+the rule and deleting this row.
+"""
+
+[[exclusion]]
+rule = "kt-no-stream-options-request"
+modules = ["dialect-openai-chat"]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+The rule's own exemption, quoted from its files: comment: "every main source EXCEPT the chat
+dialect, where include_usage is the documented usage-frame knob — a NEW dialect/provider must not
+reopen the incident."
+"""
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+modules = [
+  "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
+  "provider-openai", "gateway", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Head isolation (V4-115) is decided in three places only: core/launch materialises a head's Claude
+config dir, control/Launch* assembles the per-launch spec, and app's LaunchSpecFactory sets
+CLAUDE_CONFIG_DIR. No other module spells a config dir at all.
+"""
+
+[[exclusion]]
+rule = "kt-outcome-tag-single-source"
+modules = [
+  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
+  "provider-openai", "app", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Perf-row outcome tags are emitted by the head and the control plane. :core declares OutcomeTag
+itself (splice/core/perf/OutcomeTag.kt), and no other module writes a perf row.
+"""
+
+[[exclusion]]
+rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
+modules = [
+  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
+  "provider-openai", "control", "app", "fir-checks",
+]
+sourceSets = ["main"]
+date = "2026-09-20"
+reason = """
+Three head-local laws: which QuotaTracker a turn reads, the one sanctioned turn-cleanup flush
+(DR-93), and the paired IOException/IllegalStateException catch on the client socket. All three
+name structures that exist only inside :gateway.
+"""
+
+# ─── file scope: the single declaration site each single-source wall exempts ──────────────────────
+
+[[exclusion]]
+rule = "kt-error-envelope-single-source"
+files = ["gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
+date = "2026-09-20"
+reason = "The sole builder of the Anthropic error envelope — exempt BY PATH so no other file can claim it."
+
+[[exclusion]]
+rule = "kt-form-encoding-single-source"
+files = ["gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt"]
+date = "2026-09-20"
+reason = "The sole percent-encoder; every other file calls it."
+
+[[exclusion]]
+rule = "kt-http-status-single-source"
+files = ["gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]
+date = "2026-09-20"
+reason = "The sole declaration site of HTTP status numbers — exempt BY PATH, per the rule's own comment."
+
+[[exclusion]]
+rule = "kt-jsonl-sink-single-source"
+files = ["gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt"]
+date = "2026-09-20"
+reason = "The sole append-only JSONL sink; re-deriving writeString(CREATE, APPEND) elsewhere is what the rule bans."
+
+[[exclusion]]
+rule = "kt-l2-single-mirror-definition"
+files = ["gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt"]
+date = "2026-09-20"
+reason = "L2: mirrorInto is defined exactly once, and this is that file."
+
+[[exclusion]]
+rules = ["kt-l3-end-turn-literal", "kt-l3-sole-wire-terminals"]
+files = ["gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt"]
+date = "2026-09-20"
+reason = "L3: SseEmitter is the only file allowed to hold the end_turn / message_stop / message_delta literals."
+
+[[exclusion]]
+rules = ["kt-no-delay-in-production", "kt-no-hardcoded-dispatchers"]
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/ProcessRuntime.kt"]
+date = "2026-09-20"
+reason = "The process runtime edge — the single main-source file allowed to name the global clock and the global dispatchers."
+
+[[exclusion]]
+rule = "kt-secure-file-single-source"
+files = ["gateway/core/src/main/kotlin/splice/core/util/SecureFile.kt"]
+date = "2026-09-20"
+reason = "The sole 0600 atomic-write primitive; re-deriving it is exactly what the wall bans."
+
+[[exclusion]]
+rule = "kt-shared-summary-parts-single-source"
+files = ["gateway/core/src/main/kotlin/**/turn/Turn.kt"]
+date = "2026-09-20"
+reason = "TurnMeta's default constructs SharedSummaryParts once per turn; this is that declaration."
+
+[[exclusion]]
+rule = "kt-state-paths-single-source"
+files = [
+  "gateway/core/src/main/kotlin/**/config/StatePaths.kt",
+  "gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
+  "gateway/core/src/main/kotlin/splice/core/launch/McpSources.kt",
+]
+date = "2026-09-20"
+reason = """
+The rule's three dated exemptions: StatePaths.kt is the resolver, LaunchSpecFactory carries the
+per-head CLAUDE_CONFIG_DIR contract, and McpSources names `.claude-plugin`, a plugin manifest
+dirname rather than a state root.
+"""
+
+[[exclusion]]
+rule = "kt-quota-tracker-single-resolution"
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt"]
+date = "2026-09-20"
+reason = "The sole resolver, created by fix row V4-104."
+
+[[exclusion]]
+rule = "kt-no-system-getenv"
+files = ["gateway/core/src/main/kotlin/**/config/**"]
+date = "2026-09-20"
+reason = "System.getenv is allowed only inside core/config, which is the layered ConfigService everything else reads."
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+files = [
+  "gateway/core/src/main/kotlin/**/*.kt",
+  "gateway/control/src/main/kotlin/**/*.kt",
+  "gateway/app/src/main/kotlin/**/*.kt",
+]
+date = "2026-09-20"
+reason = """
+Inside the three modules it covers, the wall binds only the launch seam — core/launch/**,
+control/Launch*.kt and app head/LaunchSpecFactory.kt — plus its one dated ignore,
+core/**/launch/ClaudeConfigKeys.kt, the single source of the vanilla dir's NAME. The rest of those
+three modules never spells a config dir. Losing a whole module still fails: a files-row can never
+excuse a wholly lost source root.
+"""
+
+[[exclusion]]
+rule = "kt-no-runblocking-in-daemon"
+files = ["gateway/app/src/main/kotlin/**/Main.kt", "gateway/app/src/main/kotlin/**/cli/**"]
+date = "2026-09-20"
+reason = """
+runBlocking is allowed at process entry — app Main.kt and the CLI tree. That exempted path is not
+unguarded: kt-no-runblocking-exported-bridge grades it, requiring every bridge into it to be private.
+"""
+
+[[exclusion]]
+rule = "kt-no-runblocking-exported-bridge"
+files = ["gateway/app/src/main/kotlin/**/*.kt"]
+date = "2026-09-20"
+reason = """
+Inside :app the wall binds the entry path only — Main.kt and cli/** — because that is the only place
+runBlocking may appear at all (kt-no-runblocking-in-daemon bans it everywhere else, so no other file
+can export a bridge to it).
+"""
+
+[[exclusion]]
+rule = "kt-turn-finally-flush-quietly"
+files = ["gateway/gateway/src/main/kotlin/**/*.kt"]
+date = "2026-09-20"
+reason = """
+Inside :gateway the wall binds head/*.kt, the directory that owns turn cleanup. wire/, reasoning/
+and the compaction files run no turn-finally block, so there is no flush for them to get wrong.
+"""
+
+[[exclusion]]
+rule = "kt-wire-catch-ioexception-alone"
+files = ["gateway/gateway/src/main/kotlin/**/*.kt"]
+date = "2026-09-20"
+reason = """
+Inside :gateway the wall binds wire/**, the client socket. A CLOSED channel's IllegalStateException
+is only reachable where the socket is written, and that is wire/.
+"""
+
+[[exclusion]]
+rule = "kt-tests-no-wall-clock"
+files = [
+  "gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt",
+  "gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt",
+  "gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt",
+  "gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt",
+  "gateway/spikes/src/test/kotlin/PoolCancelSpike.kt",
+  "gateway/spikes/src/test/kotlin/SseFlushSpike.kt",
+]
+date = "2026-09-20"
+reason = """
+The rule's own dated census, reason by reason: a proof of absence has no event to await
+(LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
+either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double; and the two spikes
+are measurement experiments disabled without -PrunSpikes.
+"""
+
+# ─── file scope: the console surface ─────────────────────────────────────────────────────────────
+
+[[exclusion]]
+rule = "webui-css-tokens-only"
+files = ["webui/src/shared/tokens.css"]
+date = "2026-09-20"
+reason = "The token scales themselves — the one stylesheet allowed to hold raw px/rem values."
+
+[[exclusion]]
+rule = "webui-fetch-only-in-api"
+files = ["webui/src/shared/api/**", "webui/src/entities/*/api/**"]
+date = "2026-09-20"
+reason = "FSD: the api segments ARE the HTTP layer the rule confines fetch to."

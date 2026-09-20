@@ -34,19 +34,31 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 /** splice's own state root under $HOME. The default since v0.4.0. */
-public const val SPLICE_STATE_HOME: String = ".splice"
+internal const val SPLICE_STATE_HOME: String = ".splice"
 
 /** The pre-0.4 state root, inherited from the upstream port. Read only when it is the one on disk. */
-public const val LEGACY_STATE_HOME: String = ".claude-codex"
+internal const val LEGACY_STATE_HOME: String = ".claude-codex"
 
 /** Points the state dir anywhere; wins over everything but an explicit `baseOverride`. */
-public const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
+internal const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
 
 /** The pre-0.4 spelling of [STATE_DIR_ENV]. Still honoured — hermetic tests, `splice-launch` and
  *  anyone scripting it set it — but [STATE_DIR_ENV] is the name that will outlive it. */
-public const val LEGACY_STATE_DIR_ENV: String = "CLAUDEX_STATE_DIR"
+internal const val LEGACY_STATE_DIR_ENV: String = "CLAUDEX_STATE_DIR"
 
 private const val STATE_LEAF: String = "state"
+
+// WHY THESE FOUR ARE internal AND NOT public (V4-177, the public-surface ratchet, 2026-09-20).
+// Nothing outside :core resolves a state root — that is this file's whole reason to exist and the
+// ast-grep wall's subject — so a public spelling would be surface no module consumes, which the
+// ratchet gates by name. :core's own tests still read them (a test compilation is associated with
+// its main compilation, so `internal` is visible there), which is where the constants earn their
+// keep: StateRootTest builds every filesystem shape out of these rather than out of literals, so
+// the table cannot quietly test a root the production code stopped using.
+//
+// :app's tests deliberately do NOT reach across for them. They spell the two roots locally and
+// assert StatePaths agrees on a clean home, which fails LOUDLY on divergence rather than importing
+// the boundary away — the module law is not a thing a test gets an exemption from.
 
 /** How [StatePaths.stateDir] got its value — the fact doctor reports, so an adopted legacy root is
  *  never mistaken for a daemon that came up with an empty one. */

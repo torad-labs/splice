@@ -41,7 +41,7 @@ class DaemonMaterializerTest {
     @Test
     fun `a capture head fails closed when the wired exec reports noexec`(@TempDir tmp: Path) {
         val failing = HookExec { _, _ -> IOException("Cannot run program: error=13, Permission denied") }
-        val materializer = DaemonMaterializer.build(tmp, rewrite = null, hookExec = failing)
+        val materializer = DaemonMaterializer.build(tmp, rewrite = null, hookExec = failing, controlPort = 3096)
 
         assertThrows<IOException> { materializer.materialize(captureSpec(tmp.resolve(".claude-head"))) }
     }

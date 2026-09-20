@@ -25,6 +25,7 @@ import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.McpAccessKey
 import splice.core.launch.McpSharing
 import splice.core.prompt.SlotInstructions
@@ -35,6 +36,7 @@ import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
+import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
@@ -80,6 +82,11 @@ internal class ControlPlane(
         slots = SlotInstructions(teams, ConsoleWiring.sessionAddress(statePaths)),
     )
 
+    /** The daemon's one materializer: the real hook exec (V4-103) and the control port the resume hook
+     *  (V4-169) calls back on. Its own member so the start() budget holds and the call stays greppable. */
+    private fun materializer(home: Path, sharing: McpSharing, controlPort: Int): ClaudeConfigMaterializer =
+        DaemonMaterializer.build(home, sharing.rewrite(), hookExec = HookProcessExec.exec, controlPort = controlPort)
+
     internal fun cancelProbes() {
         probeScope.cancel()
     }
@@ -123,7 +130,7 @@ internal class ControlPlane(
             mgmtKey,
             dashboardHtml,
             log,
-            LaunchService(DaemonMaterializer.build(home, sharing.rewrite(), hookExec = HookProcessExec.exec)),
+            LaunchService(materializer(home, sharing, controlPort)),
             shutdownDaemon,
             failedHeads,
             headCount,

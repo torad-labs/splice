@@ -64,6 +64,10 @@ public class ClaudeConfigMaterializer(
      *  exec-probe — a test materializer omits it; the daemon wires the real one so a noexec config
      *  dir still fails the capture-hook launch. */
     private val hookExec: HookExec? = null,
+    /** V4-169: the daemon's control port, for the SessionStart resume hook each head gets — a
+     *  resumed session is moved onto the head's model where it lies. Null installs no hook (tests,
+     *  and a materializer built without a daemon behind it). */
+    private val resumeHookPort: Int? = null,
 ) {
 
     private val json = Json {
@@ -107,16 +111,21 @@ public class ClaudeConfigMaterializer(
                 headKey = spec.headKey,
                 execProbe = hookExecProbe,
             ),
-            if (spec.advertiseKeySetup && spec.tokenCapture != null) {
-                LoginInterception.keySetupAdvertiser(
-                    spec.configDir,
-                    spec.tokenCapture,
-                    spec.loginCommand,
-                    execProbe = hookExecProbe,
-                )
-            } else {
-                emptyMap()
-            },
+            LoginInterception.concat(
+                if (spec.advertiseKeySetup && spec.tokenCapture != null) {
+                    LoginInterception.keySetupAdvertiser(
+                        spec.configDir,
+                        spec.tokenCapture,
+                        spec.loginCommand,
+                        execProbe = hookExecProbe,
+                    )
+                } else {
+                    emptyMap()
+                },
+                resumeHookPort?.let { port ->
+                    ResumeHook.install(spec.configDir, port, spec.headKey, log, execProbe = hookExecProbe)
+                } ?: emptyMap(),
+            ),
         )
         writeSettings(spec, hookAdditions, existingSettings)
         val mcpCount = writeClaudeJson(

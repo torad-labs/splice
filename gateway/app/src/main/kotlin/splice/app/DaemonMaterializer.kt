@@ -25,5 +25,7 @@ internal object DaemonMaterializer {
         home: Path,
         rewrite: McpRewrite?,
         hookExec: HookExec,
-    ): ClaudeConfigMaterializer = ClaudeConfigMaterializer(home, mcpRewrite = rewrite, hookExec = hookExec)
+        controlPort: Int,
+    ): ClaudeConfigMaterializer =
+        ClaudeConfigMaterializer(home, mcpRewrite = rewrite, hookExec = hookExec, resumeHookPort = controlPort)
 }

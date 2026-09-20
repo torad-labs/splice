@@ -52,6 +52,7 @@ import splice.control.api.PerfPayloads
 import splice.control.api.PerfRoutes
 import splice.control.api.ProjectsRoutes
 import splice.control.api.RepoOf
+import splice.control.api.ResumeHookRoute
 import splice.control.api.SentTextSource
 import splice.control.api.SessionsRoutes
 import splice.control.api.StatuslineRoute
@@ -168,6 +169,11 @@ public class ControlServer(
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
     private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
+
+    // V4-169: the SessionStart resume hook's receiving end — mgmt-guarded like the statusline, and
+    // reachable only from loopback, because the daemon binds there.
+    private val resumeHookRoute = ResumeHookRoute(heads, log)
+
     private val mcpRoutes = mcpHost?.let(::McpRoutes)
 
     @Volatile
@@ -228,6 +234,7 @@ public class ControlServer(
                 consoleRoutes(this)
                 post("/launch/{head}") { guarded(call) { launchRoutes.launch(call) } }
                 post("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
+                post("/hooks/resume/{head}") { guarded(call) { resumeHookRoute.resume(call) } }
                 get("/statusline/{head}") { guarded(call) { statuslineRoute.statusline(call) } }
                 if (mcpRoutes != null && mcpHost != null) {
                     get("/api/mcp") { guarded(call) { respond(call, mcpHost.statusJson()) } }

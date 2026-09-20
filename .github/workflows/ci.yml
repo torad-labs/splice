@@ -20,6 +20,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The world wall (webui/tests/world.test.ts) derives its denominator from the BASE branch's
+      # token sheet, and the checkout above brings only the PR merge ref — so `git show main:...`
+      # was `fatal: invalid object name 'main'` and the webui leg went red for a reason that had
+      # nothing to do with the code under test. One shallow ref is all the wall needs.
+      - name: fetch the base branch the world wall reads
+        run: git fetch --depth=1 origin main:refs/remotes/origin/main
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin

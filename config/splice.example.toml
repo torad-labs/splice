@@ -696,10 +696,10 @@ context_window = 200000
 # your settings.json and .claude.json across, backing both up first, so there is a way back.
 #
 # The recursion this comment used to warn about is handled in code since V4-129: a wrapped `claude`
-# ON PATH *is* the shim, so a head launching the bare string would invoke itself — LaunchService.kt:103
-# execs `wrapState.realBinaryPath() ?: claudeBinary`, the real binary the wrap recorded. Setting
-# `command = "claude"` by hand still gets you a second command named `claude` with none of that
-# bookkeeping: no backups, no recorded real binary, nothing for an unwrap to restore.
+# ON PATH *is* the shim, so a head launching the bare name would invoke itself — LaunchService.kt:103
+# execs the real binary path the wrap recorded, and falls back to the bare name only when nothing is
+# wrapped. Setting `command = "claude"` by hand still gets you a second command named `claude` with
+# none of that bookkeeping: no backups, no recorded real binary, nothing for an unwrap to restore.
 command = "claude-splice"
 
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────

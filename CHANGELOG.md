@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- **A team member's `checks` field reads a real outcome (V4-159).** `GET /api/teams/{id}/economics`
+  shipped every slot's `checks` as an honest empty (`checks: null`) because the daemon had no
+  per-member signal to fill it with. It now reads the outcome tag of the slot's most recently
+  tallied turn (`PerfRow.outcome`, the same perf rows already tallied for tokens and cost):
+  `"pass"` when that tag is `OutcomeTag.OK`, `"fail"` for anything else (rate-limited, cancelled, an
+  upstream failure and the like) — a turn-health signal, never a build or test verdict, since the
+  daemon observes nothing inside a session's own tool calls. A slot that has tallied no turns at all
+  keeps the honest empty, `checks_source` naming why.
 - **A llama-server head keeps each conversation on its own slot (V4-165).** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,
   so a new session sharing Claude Code's ~30K preamble took an idle conversation's slot and that

@@ -24,8 +24,9 @@
 // any aggregate with a turn no rate card priced: a partial sum would be a differently-wrong confident
 // number.
 //
-// CHECKS has no source yet: every economics slot carries checks null and checks_source naming V4-159,
-// the row that will fill it (CONTRACTS section 8: the honest empty names its row).
+// CHECKS (V4-159): a slot's `checks` is "pass"/"fail" from the outcome tag of its most recently
+// tallied turn, null with checks_source naming the absence when the slot has tallied none yet —
+// TeamsEconomics.kt's header says what "a check" is and where it is read from.
 //
 // UNWIRED IS NOT EMPTY: no team store answers 503 naming it. An unknown team is 404; a refused write
 // or an unreadable body is 400 naming why.

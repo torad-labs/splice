@@ -20,6 +20,12 @@ private const val CHECK_TOPOLOGY = "topology"
 private const val REPLACE_FIX =
     "set system_prompt_mode = \"append\" to add your text beside the client's own instructions instead"
 
+/** V4-172: a strip layer's value is a REGEX LIST, so REPLACE_FIX's advice would ship the patterns
+ *  upstream as prompt text. The remedy for a strip layer is to stop stripping or to narrow it. */
+internal const val STRIP_FIX =
+    "remove the layer to leave the client's field untouched, or narrow the pattern list — a strip " +
+        "layer's value is regexes, never prompt text, so it cannot be reused under append"
+
 internal enum class CheckStatus { OK, INFO, WARN, FAIL }
 
 /** The doctor configuration section as a constructed collaborator (Kotlin style law, 2026-08-15:
@@ -33,7 +39,7 @@ internal class DoctorConfigChecks(
     private val env: EnvReader = EnvReader(System::getenv),
 ) {
     /** V4-124's project prompt layer rows, in their own file (splice.app.cli.doctor) since V4-156. */
-    private val projectPrompts = DoctorProjectPromptChecks(REPLACE_FIX)
+    private val projectPrompts = DoctorProjectPromptChecks(REPLACE_FIX, STRIP_FIX)
 
     internal fun configurationChecks(
         topo: DoctorTopology,
@@ -161,7 +167,28 @@ internal class DoctorConfigChecks(
                         "edited on every turn: each paragraph a pattern matches is removed, and what is " +
                         "removed is yours to own (V4-171)"
                 },
-                REPLACE_FIX,
+                if (head.systemPromptMode == SystemPromptMode.REPLACE) REPLACE_FIX else STRIP_FIX,
+            )
+        } + strippingNothingChecks(topology)
+
+    /** V4-172: `strip` with no text at all. The layer resolves to null and never reaches a seam, so
+     *  the head runs exactly as if the key were absent — and the row above, which fires only on a
+     *  head that CARRIES a prompt, would say nothing at all.
+     *
+     *  STRIP ONLY, deliberately. `replace` with no text is a landed decision to stay silent (the
+     *  cell above this one in DoctorSystemPromptCheckTest pins it, V4-36): replacing the field with
+     *  nothing is at least a coherent thing to have meant. A strip layer with no pattern list is
+     *  not — the mode has no meaning without patterns, which is why an EMPTY one is now a load
+     *  error (HeadSystemPrompt) and an ABSENT one is this row. */
+    private fun strippingNothingChecks(topology: Topology): List<DoctorCheck> = topology.heads
+        .filterValues { it.systemPromptMode == SystemPromptMode.STRIP && !carriesPrompt(it) }
+        .map { (key, _) ->
+            DoctorCheck(
+                "system-prompt:$key",
+                CheckStatus.WARN,
+                "head '$key' sets system_prompt_mode = \"strip\" with no system_prompt or " +
+                    "system_prompt_file, so the client's field is not edited at all",
+                "add the layer's pattern list, or remove system_prompt_mode",
             )
         }
 

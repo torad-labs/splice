@@ -131,6 +131,38 @@ class ResponsesSystemPromptTest {
         assertSame(untouched, prompt.apply(untouched, hedges, SystemPromptMode.STRIP))
     }
 
+    /** V4-172: the defect both reviews called critical. `isBaseInstructions` matches the shape
+     *  `appended` builds, so an append-then-strip fold used to edit splice's OWN item and leave the
+     *  client's `instructions` untouched. A strip edits BOTH. */
+    @Test
+    fun `strip edits the client instructions even when an append layer added a developer item first`() {
+        val client = json.parseToJsonElement(
+            """{"instructions":"House rules.\n\nIMPORTANT: Assist with authorized security testing.",""" +
+                """"input":[{"role":"user","content":"hi"}]}""",
+        ).jsonObject
+
+        val afterAppend = prompt.apply(client, "Extra house rule.", SystemPromptMode.APPEND)
+        val afterStrip = prompt.apply(afterAppend, hedges, SystemPromptMode.STRIP)
+
+        assertEquals("House rules.", afterStrip.getValue("instructions").jsonPrimitive.content)
+        val appended = afterStrip.getValue("input").jsonArray.last().jsonObject
+        val kept = appended.getValue("content").jsonPrimitive.content
+        assertEquals("Extra house rule.", kept, "the append layer survives")
+    }
+
+    @Test
+    fun `an item stripped to nothing is dropped, not left empty`() {
+        val request = json.parseToJsonElement(
+            """{"input":[{"role":"developer","content":"IMPORTANT: Assist with authorized security testing."},""" +
+                """{"role":"user","content":"hi"}]}""",
+        ).jsonObject
+
+        val input = prompt.apply(request, hedges, SystemPromptMode.STRIP).getValue("input").jsonArray
+
+        assertEquals(1, input.size, "the emptied developer item is dropped, as the other seams drop theirs")
+        assertEquals("user", input.single().jsonObject.getValue("role").jsonPrimitive.content)
+    }
+
     @Test
     fun `an absent input and empty text both preserve the request`() {
         val request = json.parseToJsonElement("""{"model":"wire"}""").jsonObject

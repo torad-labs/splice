@@ -48,6 +48,23 @@ public enum class SystemPromptMode(public val wire: String) {
     STRIP("strip"),
 }
 
+/**
+ * The perf-row counters a turn carrying standing prompt layers writes (V4-172), by the same rule as
+ * [splice.core.prompt.SLOT_PROMPT_CHANGED]: declared beside the feature that writes them, because the
+ * perf row writes every counter by name.
+ *
+ * WHY THEY EXIST. `TurnMeta.systemPromptSource` carries "(not applied)" for a layer the dialect could
+ * not place — and nothing in production read it, so every early return in the three seams, and a
+ * strip pattern gone stale on a client upgrade, were invisible: the paragraphs rode upstream forever
+ * and no log, row or counter said so. A layer is configured once and trusted on every turn
+ * afterwards, so "configured" and "actually changed the bytes" must be separately greppable in the
+ * perf JSONL. [SYSTEM_PROMPT_LAYERS] below [SYSTEM_PROMPT_APPLIED] is the false landing.
+ */
+public const val SYSTEM_PROMPT_LAYERS: String = "system_prompt_layers"
+
+/** How many of those layers changed the request body on this turn. */
+public const val SYSTEM_PROMPT_APPLIED: String = "system_prompt_applied"
+
 /** Reads one prompt file named by `system_prompt_file`. */
 public fun interface SystemPromptFileRead {
     public operator fun invoke(path: Path): String
@@ -100,7 +117,11 @@ public class HeadSystemPrompt(
     init {
         // V4-170: a strip layer's text is a pattern list; a bad regex is a load error, never a layer
         // that silently strips nothing.
-        if (mode == SystemPromptMode.STRIP) prompt?.takeIf(String::isNotEmpty)?.let { ParagraphStrip(it, source) }
+        // V4-172: an EMPTY pattern source is the shape a botched write leaves, and takeIf(isNotEmpty)
+        // let it through as a layer that resolves to null and strips nothing forever while doctor
+        // printed a row saying the field was being edited. A list with only comments already fails
+        // here; the zero-byte file now fails with it.
+        if (mode == SystemPromptMode.STRIP && prompt != null) ParagraphStrip(prompt, source)
     }
 
     /** The prompt this head places on every turn, or null when it configures none. */

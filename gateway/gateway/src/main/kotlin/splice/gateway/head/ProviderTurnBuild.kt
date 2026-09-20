@@ -64,6 +64,6 @@ internal class ProviderTurnBuild(
         } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
         // AFTER the tail, so the compaction request hash and its applied check keep reading the
         // provider body BEFORE any tail — a retry must still match its recording byte for byte.
-        return prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId), sessionId, perf)
+        return prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId, perf), sessionId, perf)
     }
 }

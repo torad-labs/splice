@@ -17,9 +17,11 @@ import splice.core.topology.Topology
 import java.nio.file.Files
 import java.nio.file.Paths
 
-/** [replaceFix] is DoctorConfigChecks' fix text for a REPLACE layer, passed in so both sections
+/** [replaceFix] is DoctorConfigChecks' fix text for a REPLACE layer, and [stripFix] its remedy for a
+ *  STRIP layer — whose value is a regex list, so "use append instead" would ship the patterns to the
+ *  model as prompt text (V4-172). Passed in so both sections
  *  give the one remedy from its one declaration. */
-internal class DoctorProjectPromptChecks(private val replaceFix: String) {
+internal class DoctorProjectPromptChecks(private val replaceFix: String, private val stripFix: String) {
 
     /** V4-124: one row per project layer (the project's own, then each per-head one) naming its
      *  root, mode and source. A layer set to replace is a WARN for the same reason a head's is. A
@@ -87,7 +89,7 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String) {
             "$name sets system_prompt_mode = \"strip\" ($source): the client's own system field is edited on " +
                 "every turn in this project — each paragraph a pattern matches is removed, and what is removed " +
                 "is yours to own",
-            replaceFix,
+            stripFix,
         )
         SystemPromptMode.APPEND, null -> DoctorCheck("project-prompt:$name", CheckStatus.OK, "$name append ($source)")
     }

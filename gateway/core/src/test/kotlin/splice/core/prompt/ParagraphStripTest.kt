@@ -25,7 +25,7 @@ class ParagraphStripTest {
             source = "test",
         )
 
-        val after = strip.strip(CLAUDE_CODE_TEXT)
+        val after = strip.strip(CLAUDE_CODE_TEXT).text
 
         assertEquals(
             "\nYou are an interactive agent that helps users with software engineering.\n\n" +
@@ -39,7 +39,7 @@ class ParagraphStripTest {
     fun `a pattern is a find inside the paragraph, so a heading paragraph can be named by any of its lines`() {
         val strip = ParagraphStrip("displayed to the user", source = "test")
 
-        val after = strip.strip(CLAUDE_CODE_TEXT)
+        val after = strip.strip(CLAUDE_CODE_TEXT).text
 
         assertTrue(!after.contains("# Harness"), after)
         assertTrue(after.contains("IMPORTANT: Assist"), "an unmatched paragraph is untouched")
@@ -49,7 +49,7 @@ class ParagraphStripTest {
     fun `a text no pattern touches comes back as the same instance`() {
         val strip = ParagraphStrip("^NEVER PRESENT", source = "test")
 
-        assertSame(CLAUDE_CODE_TEXT, strip.strip(CLAUDE_CODE_TEXT))
+        assertSame(CLAUDE_CODE_TEXT, strip.strip(CLAUDE_CODE_TEXT).text, "nothing matched: the same instance back")
     }
 
     @Test
@@ -70,5 +70,47 @@ class ParagraphStripTest {
 
         assertTrue(failure.message!!.contains("`(unclosed`"), failure.message)
         assertTrue(failure.message!!.contains("head:bonsai"), failure.message)
+    }
+
+    // ── V4-172: the repairs both adversarial reviews asked for ──
+
+    @Test
+    fun `CRLF text is paragraphs, not one blob - the whole field is never deleted for a one-paragraph match`() {
+        val crlf = "House rules.\r\n\r\nIMPORTANT: Assist with authorized security testing.\r\n\r\nBe kind."
+
+        val after = ParagraphStrip("^IMPORTANT: Assist", source = "test").strip(crlf)
+
+        assertEquals(1, after.removed)
+        assertEquals("House rules.\r\n\r\nBe kind.", after.text, "kept paragraphs keep their CRLF separators verbatim")
+    }
+
+    @Test
+    fun `a wider blank gap still starts a paragraph, so a caret-anchored pattern keeps matching`() {
+        val wide = "House rules.\n\n\n# Context management\n - summarize\n\nBe kind."
+
+        val after = ParagraphStrip("^# Context management", source = "test").strip(wide)
+
+        assertEquals(1, after.removed, "the paragraph after a two-line gap does not begin with a newline")
+        assertEquals("House rules.\n\n\nBe kind.", after.text)
+    }
+
+    @Test
+    fun `the count distinguishes nothing matched from some matched from all matched`() {
+        val text = "one\n\ntwo\n\nthree"
+
+        assertEquals(0, ParagraphStrip("^nope", source = "t").strip(text).removed)
+        assertEquals(1, ParagraphStrip("^two", source = "t").strip(text).removed)
+        assertEquals(3, ParagraphStrip("^one\n^two\n^three", source = "t").strip(text).removed)
+        assertEquals("", ParagraphStrip("^one\n^two\n^three", source = "t").strip(text).text)
+    }
+
+    @Test
+    fun `a removed paragraph takes exactly one separator with it, never leaving a double gap`() {
+        val text = "a\n\nb\n\nc\n\nd"
+
+        val after = ParagraphStrip("^b\n^c", source = "t").strip(text)
+
+        assertEquals(2, after.removed)
+        assertEquals("a\n\nd", after.text)
     }
 }

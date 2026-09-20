@@ -40,9 +40,13 @@ public class ChatSystemPrompt {
             val obj = message as? JsonObject ?: return@mapNotNull message
             val text = JsonScalars.str(obj, CONTENT)?.takeIf { roleOf(obj) == SYSTEM } ?: return@mapNotNull message
             val after = strip.strip(text)
-            if (after === text) return@mapNotNull message
+            if (after.removed == 0) return@mapNotNull message
             changed = true
-            if (after.isEmpty()) null else JsonObject(obj.toMutableMap().apply { put(CONTENT, JsonPrimitive(after)) })
+            if (after.text.isEmpty()) {
+                null
+            } else {
+                JsonObject(obj.toMutableMap().apply { put(CONTENT, JsonPrimitive(after.text)) })
+            }
         }
         return if (changed) JsonArray(kept) else null
     }

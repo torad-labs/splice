@@ -33,10 +33,12 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
 import splice.core.prompt.SystemPromptMode
+import splice.core.topology.ProjectConfig
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
@@ -47,6 +49,7 @@ import splice.gateway.head.ClientAuth
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.Preparation
 import splice.gateway.head.RequestBodyReader
+import splice.gateway.head.SessionProjectLookup
 import splice.gateway.head.TurnPreparation
 import splice.spi.BuiltTurn
 import splice.spi.InflightGate
@@ -166,6 +169,69 @@ class TurnPreparationSystemPromptTest {
         assertEquals("project-head:/work/bot:kimi strip", prepared.meta.systemPromptSource)
     }
 
+    /** V4-172, the finding both reviews ranked first: `systemPromptSource` had no production reader,
+     *  so a strip layer whose patterns had gone stale was indistinguishable from one that worked.
+     *  The perf row now carries configured-vs-applied, which is the false landing in one grep. */
+    @Test
+    fun `the perf row carries how many layers were configured and how many changed the bytes`(
+        @TempDir tmp: Path,
+    ) {
+        val matching = HeadSystemPrompt(
+            text = "^IMPORTANT: Assist with authorized security testing",
+            mode = SystemPromptMode.STRIP,
+            source = "head:kimi",
+        )
+        val stale = HeadSystemPrompt(
+            text = "^A PARAGRAPH NO CLIENT SENDS",
+            mode = SystemPromptMode.STRIP,
+            source = "head:kimi",
+        )
+        val request = PASSTHROUGH_REQUEST.replace(
+            """"text":"house rules"""",
+            """"text":"house rules\n\nIMPORTANT: Assist with authorized security testing."""",
+        )
+
+        val (_, applied) = preparedWithPerf(preparation(tmp, passthroughProvider(), matching), request)
+        val (_, nothing) = preparedWithPerf(preparation(tmp, passthroughProvider(), stale), request)
+
+        assertEquals(1L, applied.counters["system_prompt_layers"])
+        assertEquals(1L, applied.counters["system_prompt_applied"])
+        assertEquals(1L, nothing.counters["system_prompt_layers"], "configured counts even when it strips nothing")
+        assertEquals(0L, nothing.counters["system_prompt_applied"], "THE false landing: configured, applied nothing")
+    }
+
+    /** V4-172: a strip layer edits every system block present AT ITS POINT — including one an earlier
+     *  append layer just added. Measured per layer as it was folded, that append looked placed while
+     *  the wire no longer carried it, so "placed" is re-measured against the finished body whenever a
+     *  strip layer is in the fold. */
+    @Test
+    fun `an append a later strip deleted is reported as not applied`(
+        @TempDir tmp: Path,
+    ) {
+        val root = tmp.resolve("bot")
+        val layers = SystemPromptLayers(
+            HeadSystemPrompt(text = "Be terse.", source = "head:kimi"),
+            projects = mapOf(
+                "\"$root\"" to ProjectConfig(
+                    systemPrompt = "^Be terse\\.",
+                    systemPromptMode = SystemPromptMode.STRIP,
+                ),
+            ),
+        )
+
+        val (prepared, perf) = preparedWithPerf(
+            preparation(tmp, passthroughProvider(), layers, cwd = root),
+            PASSTHROUGH_REQUEST,
+        )
+
+        val body = prepared.requestBody.toString()
+        assertFalse(body.contains("Be terse."), body)
+        assertNull(prepared.meta.systemPrompt, "the wire does not carry it, so the meta must not claim it")
+        assertEquals("head:kimi append (not applied)+project:$root strip", prepared.meta.systemPromptSource)
+        assertEquals(2L, perf.counters["system_prompt_layers"])
+        assertEquals(1L, perf.counters["system_prompt_applied"], "only the strip changed the bytes that shipped")
+    }
+
     @Test
     fun `the prompt sits in the same position with the same bytes on a later turn`(
         @TempDir tmp: Path,
@@ -201,11 +267,11 @@ class TurnPreparationSystemPromptTest {
             application {
                 routing {
                     post("/alpha") {
-                        fromAlpha = build(alpha, call)
+                        fromAlpha = build(alpha, call, TurnPerf())
                         call.respondText("ok")
                     }
                     post("/beta") {
-                        fromBeta = build(beta, call)
+                        fromBeta = build(beta, call, TurnPerf())
                         call.respondText("ok")
                     }
                 }
@@ -246,24 +312,30 @@ class TurnPreparationSystemPromptTest {
     // ── harness ──────────────────────────────────────────────────────────────────────────
 
     /** Runs one turn through a real application route and returns what the provider built. */
-    private fun preparedTurn(preparation: TurnPreparation, request: String): BuiltTurn {
+    private fun preparedTurn(preparation: TurnPreparation, request: String): BuiltTurn =
+        preparedWithPerf(preparation, request).first
+
+    /** V4-172: the turn AND the perf row it stamped — the counters are the feature's only production
+     *  signal, so a cell has to be able to read them. */
+    private fun preparedWithPerf(preparation: TurnPreparation, request: String): Pair<BuiltTurn, PerfSnapshot> {
         var captured: BuiltTurn? = null
+        val perf = TurnPerf()
         testApplication {
             application {
                 routing {
                     post("/v1/messages") {
-                        captured = build(preparation, call)
+                        captured = build(preparation, call, perf)
                         call.respondText("ok")
                     }
                 }
             }
             postJson("/v1/messages", request)
         }
-        return requireNotNull(captured)
+        return requireNotNull(captured) to perf.snapshot()
     }
 
-    private suspend fun build(preparation: TurnPreparation, call: ApplicationCall): BuiltTurn {
-        val result = preparation.prepareTurn(call, TurnPerf())
+    private suspend fun build(preparation: TurnPreparation, call: ApplicationCall, perf: TurnPerf): BuiltTurn {
+        val result = preparation.prepareTurn(call, perf)
         return (result as? Preparation.Ready)?.built ?: error("expected a Ready preparation, got $result")
     }
 
@@ -274,13 +346,24 @@ class TurnPreparationSystemPromptTest {
         }
     }
 
-    private fun preparation(tmp: Path, provider: Provider, prompt: HeadSystemPrompt): TurnPreparation {
+    private fun preparation(tmp: Path, provider: Provider, prompt: HeadSystemPrompt): TurnPreparation =
+        preparation(tmp, provider, SystemPromptLayers(prompt), cwd = null)
+
+    /** [cwd] is what the session lookup answers, so a cell can put the turn inside a project root
+     *  and exercise more than one layer (V4-172). */
+    private fun preparation(
+        tmp: Path,
+        provider: Provider,
+        layers: SystemPromptLayers,
+        cwd: Path?,
+    ): TurnPreparation {
         val deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(firstByteTimeoutMs = 1_000, totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             log = {},
-            policy = HeadDeps.HeadPolicy(systemPrompt = SystemPromptLayers(prompt)),
+            policy = HeadDeps.HeadPolicy(systemPrompt = layers),
+            seams = HeadDeps.HeadSeams(sessionProject = SessionProjectLookup { cwd }),
         )
         return TurnPreparation(
             provider,

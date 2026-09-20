@@ -33,7 +33,23 @@ class DoctorSystemPromptCheckTest {
         assertEquals(CheckStatus.WARN, row.status)
         assertTrue(row.detail.contains("system_prompt_mode = \"strip\""), row.detail)
         assertTrue(row.detail.contains("yours to own"), row.detail)
-        assertTrue(requireNotNull(row.fix).contains("append"), row.fix.orEmpty())
+        // V4-172: NOT the replace remedy — "use append instead" would ship the regex list upstream
+        // as prompt text.
+        val fix = requireNotNull(row.fix)
+        assertTrue(fix.contains("regexes, never prompt text"), fix)
+        assertTrue(fix.contains("remove the layer"), fix)
+    }
+
+    /** V4-172: a mode that edits the client's field but names no text resolves to null and never
+     *  reaches a seam. The row above fires only on a head that carries a prompt, so without this one
+     *  the operator's belief that stripping happens is never contradicted. */
+    @Test
+    fun `strip mode with no pattern list warns that the client field is not edited at all`() {
+        val row = promptRows(head("one", null, "\"strip\"")).single()
+
+        assertEquals(CheckStatus.WARN, row.status)
+        assertTrue(row.detail.contains("with no system_prompt or system_prompt_file"), row.detail)
+        assertTrue(row.detail.contains("not edited at all"), row.detail)
     }
 
     @Test

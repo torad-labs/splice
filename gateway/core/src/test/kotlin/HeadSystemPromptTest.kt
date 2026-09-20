@@ -120,4 +120,17 @@ class HeadSystemPromptTest {
 
         assertTrue(failure.message!!.contains("head:bonsai strip pattern is not a regex"), failure.message)
     }
+
+    /** V4-172: the zero-byte file a botched write leaves used to skip validation, resolve to null and
+     *  strip nothing forever while doctor printed a row saying the field was being edited. */
+    @Test
+    fun `an empty strip pattern source is a load error, not a layer that silently strips nothing`() {
+        val file = Files.writeString(tmp.resolve("hedges.strip"), "")
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            HeadSystemPrompt(file = file.toString(), mode = SystemPromptMode.STRIP, source = "head:bonsai")
+        }
+
+        assertTrue(failure.message!!.contains("names no pattern"), failure.message)
+    }
 }

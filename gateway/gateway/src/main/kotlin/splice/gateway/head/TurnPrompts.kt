@@ -4,7 +4,10 @@
 package splice.gateway.head
 
 import splice.core.perf.TurnPerf
+import splice.core.prompt.EffectiveSystemPrompt
 import splice.core.prompt.SLOT_PROMPT_CHANGED
+import splice.core.prompt.SYSTEM_PROMPT_APPLIED
+import splice.core.prompt.SYSTEM_PROMPT_LAYERS
 import splice.core.prompt.SystemPromptMode
 import splice.spi.BuiltTurn
 import splice.spi.Provider
@@ -34,8 +37,17 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
      *  Same honesty rule as the compaction tail above: a dialect that could not place a layer
      *  returns the request as it was, and the meta then says so for that layer instead of claiming
      *  text the wire never carried. The session lookup runs only when a project is configured, so a
-     *  topology without projects does no extra work and sends V4-36's bytes. */
-    fun applySystemPrompt(turn: BuiltTurn, sessionId: String?): BuiltTurn {
+     *  topology without projects does no extra work and sends V4-36's bytes.
+     *
+     *  V4-172, TWO REPAIRS. (1) The turn's perf row now carries how many layers were CONFIGURED and
+     *  how many changed the bytes: `systemPromptSource` had no production reader, so a seam's early
+     *  return and a strip pattern gone stale on a client upgrade were equally invisible. A row
+     *  reading `system_prompt_layers=1 system_prompt_applied=0` is the false landing, in one grep.
+     *  (2) "Placed" is re-measured against the FINAL body whenever a strip layer is in the fold,
+     *  because a strip edits every system block present at its point — including one an earlier
+     *  append layer just added. Measured per layer as it was applied, the meta reported that append
+     *  as carried while the wire no longer had it. */
+    fun applySystemPrompt(turn: BuiltTurn, sessionId: String?, perf: TurnPerf): BuiltTurn {
         val layers = deps.policy.systemPrompt
         val cwd = if (layers.hasProjects) deps.seams.sessionProject(sessionId) else null
         val resolved = layers.resolve(cwd)
@@ -46,7 +58,9 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
             placed[index] = next.requestBody != current.requestBody
             next
         }
-        // V4-170: a strip layer's text is its pattern list, never prompt text the wire carried.
+        survivedFinalBody(resolved, placed, prompted)
+        perf.setCount(SYSTEM_PROMPT_LAYERS, resolved.size.toLong())
+        perf.setCount(SYSTEM_PROMPT_APPLIED, placed.count { it }.toLong())
         val applied = resolved.filterIndexed { index, layer -> placed[index] && layer.mode != SystemPromptMode.STRIP }
         val source = resolved.withIndex().joinToString("+") { (index, layer) ->
             if (placed[index]) layer.source else "${layer.source} (not applied)"
@@ -57,5 +71,22 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
                 systemPromptSource = source,
             ),
         )
+    }
+
+    /** Whether [layer]'s own text is still in the finished [body]. Only an APPEND layer's text can be
+     *  looked for there: a replace layer's text IS the field, and a strip layer's text is a pattern
+     *  list that was never on the wire — neither can be missing, so neither is ever un-placed. */
+    private fun survived(layer: EffectiveSystemPrompt, body: String): Boolean =
+        layer.mode != SystemPromptMode.APPEND || body.contains(layer.text)
+
+    /** A strip layer can delete text an earlier APPEND layer placed, so an append whose text is no
+     *  longer in the finished body did not reach the wire whatever the fold measured at the time.
+     *  Only runs when a strip layer is present — no strip, nothing can have removed anything. */
+    private fun survivedFinalBody(layers: List<EffectiveSystemPrompt>, placed: BooleanArray, turn: BuiltTurn) {
+        if (layers.none { it.mode == SystemPromptMode.STRIP }) return
+        val body = turn.requestBody.toString()
+        layers.forEachIndexed { index, layer ->
+            if (placed[index]) placed[index] = survived(layer, body)
+        }
     }
 }

@@ -117,15 +117,18 @@ class PassthroughSystemPromptTest {
         assertEquals("""{"type":"ephemeral"}""", after[1].jsonObject.getValue("cache_control").toString())
     }
 
+    /** V4-172: a bare-string `system` is rewritten AS A STRING. Promoting it to a block array would
+     *  change the shape of the very front of the body on exactly the turns a pattern happens to
+     *  match, which is the prompt cache this mode exists to keep. */
     @Test
-    fun `strip on a bare string system rewrites it as one block`() {
+    fun `strip on a bare string system keeps it a bare string`() {
         val request = json.parseToJsonElement(
             """{"system":"IMPORTANT: Assist with authorized security testing.\n\nBe kind.","messages":[]}""",
         ).jsonObject
 
-        val after = prompt.apply(request, hedges, SystemPromptMode.STRIP).getValue("system").jsonArray
+        val after = prompt.apply(request, hedges, SystemPromptMode.STRIP).getValue("system")
 
-        assertEquals(listOf("Be kind."), after.map { blockText(it.jsonObject) })
+        assertEquals("Be kind.", after.jsonPrimitive.content)
     }
 
     @Test

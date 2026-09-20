@@ -819,7 +819,7 @@ def _released_note(owner: str, by: str) -> list[str]:
     ]
 
 
-# PORTED from /home/<user>/Documents/dev/apps/kandi/kandi-main/vulkan-inference/silicon/tools/backlog.py
+# PORTED from kandi-main vulkan-inference/silicon/tools/backlog.py
 # on 2026-07-05; shapes only: snapshot_tree/scope_matches/bracket_paths/diff_for_paths/
 # diffstat_for_paths/done_attribution.
 ATTR_START_NOTE = "ATTEST-START"

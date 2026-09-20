@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+- **Repository layout consolidated.** `docs/` is now `.docs/`. The `experiments/` cache-replay
+  reproducer, the `goals/` note and the `.superpowers/` leftovers are gone; the one tracked
+  milestone report now sits under `.dev/campaigns/head-decoupling/`, and the untracked `dev/`
+  tree is folded into `.dev/`. Local machine paths are gone from the tracked ledgers and plans.
+
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 
 ### Fixed

@@ -260,7 +260,57 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         assertTrue(message.contains("conflicting replay for code-mode tool result '$first'"), message)
     }
 
+    @Test
+    fun `a completed record replayed with different media is omitted, not mixed with the captured image`() = runTest {
+        val (manager, id) = completedWith(IMAGE_A)
+        // Same id, same text, equal-length base64 (the marker text is identical too): B is keyed to r1
+        // from inside the same tool_result, so this is not a user image — it is a different result.
+        val replay = turnWithResults(manager, id to IMAGE_B)
+        var posted = ""
+        val outcome = manager.interceptor(replay, null, disableParallel = false)
+            .intercept(history(replay, id to "shot", tail = ANSWER_AND_NEXT), RecordingSink()) {
+                posted = it
+                completedOutcome()
+            }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        val items = input(posted)
+        // Coherent fallback: the record is omitted (no canonical pair, no captured A), and the client's
+        // ordinary callback with B rides exactly as the client sent it.
+        assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
+        assertEquals(listOf(replay.toolMedia.getValue(id).single()), imageMessages(items))
+        assertEquals(1, items.count { it.jsonObject["type"] == JsonPrimitive("function_call_output") })
+        val skipped = logLines.any { it.contains("history rewrite skipped") && it.contains("differ") }
+        assertTrue(skipped, logLines.toString())
+    }
+
+    @Test
+    fun `a captured-empty result replayed with an image is omitted the same way`() = runTest {
+        val (manager, id) = completedWith(null)
+        val replay = turnWithResults(manager, id to IMAGE_B)
+        var posted = ""
+        manager.interceptor(replay, null, disableParallel = false)
+            .intercept(history(replay, id to "t", tail = ANSWER_AND_NEXT), RecordingSink()) {
+                posted = it
+                completedOutcome()
+            }
+        val items = input(posted)
+        assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
+        assertEquals(listOf(replay.toolMedia.getValue(id).single()), imageMessages(items))
+    }
+
     // ---- harness ----
+
+    /** One script that accepted r1 ([image] or text-only) and completed. Returns the bridge and r1's id. */
+    private suspend fun completedWith(image: String?): Pair<CodexCodeModeBridge, String> {
+        val runtime = ScriptedRuntime(ArrayDeque(listOf(calls("r1"), CodeModeStep.Completed("done"))))
+        val manager = bridge(runtime)
+        val id = start(manager, runtime)
+        val turn = turnWithResults(manager, id to image)
+        val outcome = manager.interceptor(turn, null, disableParallel = false)
+            .intercept(history(turn, id to "t"), RecordingSink()) { completedOutcome() }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        return manager to id
+    }
 
     private suspend fun start(manager: CodexCodeModeBridge, runtime: ScriptedRuntime): String {
         val sink = RecordingSink()

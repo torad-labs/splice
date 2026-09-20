@@ -54,8 +54,12 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
     ): Boolean = history.hasExtraContent(bodyJson, record, candidateMedia)
 
-    fun canonicalize(bodyJson: String, records: List<CodeModeRecord>): CodeModeRewrite {
-        val rewrite = history.canonicalize(bodyJson, records)
+    fun canonicalize(
+        bodyJson: String,
+        records: List<CodeModeRecord>,
+        replayMedia: Map<String, List<JsonElement>> = emptyMap(),
+    ): CodeModeRewrite {
+        val rewrite = history.canonicalize(bodyJson, records, replayMedia)
         rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
             log(
                 "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +

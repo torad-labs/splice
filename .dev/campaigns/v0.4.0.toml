@@ -5914,3 +5914,12 @@ verify = "bash checks/gradle-slot.sh V4-179 :provider-codex:test :dialect-openai
 # [2026-09-20] gate on 87923595 RED: const-single-source (TYPE_CUSTOM_OUTPUT declared twice) -> one internal declaration in CodexCodeModeHistoryCodec; row verify 9 green (128+403), const wall OK.
 # [2026-09-20] verified on gate bc31352c (GATE: PASS, clean ship worktree, gate-bc31352c.log); splice-astra bounded code review PASS at 87923595 (all three findings closed); installed live: jar acc6cf0da1c18e18 built from a clean export of bc31352c, pid 3517071, backup /home/marcos/.local/share/splice/splice.jar.bak-20260920-1817-pre-bc31352c
 # [2026-09-20] VERIFY-PHASE feature 2026-09-20: bash checks/gate.sh in the clean ship worktree ship-65c67dda at bc31352c (git status empty): GATE: PASS, gate-bc31352c.log; V4-179 installed live (jar acc6cf0da1c18e18, pid 3517071); every feature row verified on its own gate of record
+
+[[items]]
+id = "V4-180"
+phase = "restructure"
+title = "RESTRUCTURE PREREQUISITES (splice-vast, PR #159, P0+P1+P2): the laws read the build, rules prove their reach, tools/gate. Head chore/restructure @ f7bd4802 forked from 2ee0e194; no overlap with V4-179 (merge-tree clean). Owner: splice-vast; orchestrator records the PR's own gate and merge."
+files = ["gateway/arch-tests/**", "tools/gate/**", "package.json", "package-lock.json", "bun.lock", ".github/workflows/ci.yml", ".github/workflows/release.yml", "CONTRIBUTING.md"]
+status = "in_flight"
+verify = "npm run gate && bun test tools/gate && bun tools/gate rules --prove-coverage"
+# [2026-09-20] opened as PR #159 (https://github.com/torad-labs/splice/pull/159), base feat/v0.4.0, head f7bd4802. splice-vast's evidence: npm run gate -> GATE: PASS at f7bd4802 (81 legs, 200 ok, local ladder through the slot, gate-tip.log in vast's scratchpad); bun test tools/gate 36 pass; rules --prove-coverage 62 rules x 35 roots OK; splice-astra code review PASS at f7bd4802. Merge-ref CI running; merges after CI and astra's PR-level look; PR 1 (chore/restructure-1 @ 837f8fe7) stacks on it.

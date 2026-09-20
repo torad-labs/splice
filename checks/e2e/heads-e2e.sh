@@ -46,7 +46,19 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-STATE_DIR="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
+# V4-177: same state-root rule as StatePaths.kt and bin/splice-launch — SPLICE_STATE_DIR, then the
+# pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that
+# is the only root on the box.
+resolve_state_dir() {
+  if [ -n "${SPLICE_STATE_DIR:-}" ]; then printf '%s\n' "$SPLICE_STATE_DIR"; return 0; fi
+  if [ -n "${CLAUDEX_STATE_DIR:-}" ]; then printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0; fi
+  if [ ! -d "$HOME/.splice/state" ] && [ -d "$HOME/.claude-codex/state" ]; then
+    printf '%s\n' "$HOME/.claude-codex/state"
+  else
+    printf '%s\n' "$HOME/.splice/state"
+  fi
+}
+STATE_DIR="$(resolve_state_dir)"
 CONTROL_PORT="${SPLICE_CONTROL_PORT:-3096}"
 CONTROL="http://127.0.0.1:${CONTROL_PORT}"
 PROBE="$ROOT/checks/e2e/stream_probe.ts"

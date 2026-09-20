@@ -829,7 +829,7 @@ command = "claude-splice"
 #   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath
 #   CLAUDEX_MODEL / CLAUDEX_PINNED_MODEL model           CLAUDE_GROK_MODEL / CLAUDE_GROK_PINNED_MODEL model
 #   CODEX_MODEL_CONTEXT_WINDOW contextWindowOverride     CLAUDEX_STATUSLINE_GIT_ROOTS statuslineGitRoots
-#   CLAUDEX_STATE_DIR the state directory    SPLICE_USAGE_WARN_PCT usageWarnPct
+#   SPLICE_USAGE_WARN_PCT usageWarnPct
 #   SPLICE_USAGE_WARN_TOKENS_5H usageWarnTokens5h        CLAUDEX_MIRROR_REASONING mirrorReasoning
 #   CLAUDEX_SHOW_REASONING / CODEX_SHOW_REASONING showReasoning
 #   CLAUDEX_REASONING_EFFORT / CODEX_REASONING_EFFORT effort
@@ -844,9 +844,13 @@ command = "claude-splice"
 #   SPLICE_MATERIALIZATION_PERMITS materializationPermits
 #   SPLICE_ACTIVITY_RETENTION_DAYS activityRetentionDays  SPLICE_ACTIVITY_STORE_HEADS activityStoreHeads
 #   SPLICE_BUDGET_DEFAULT_ACTION budgetDefaultAction      SPLICE_PERF_ARCHIVE_RETENTION_DAYS perfArchiveRetentionDays
+#   SPLICE_SUPERVISOR_UNIT supervisorUnit                 SPLICE_MCP_SLICE mcpSlice
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup
+#   SPLICE_STATE_DIR        the state directory, overriding both the default root and the
+#                           pre-0.4 one it adopts; CLAUDEX_STATE_DIR is the older spelling
+#                           and still works, with SPLICE_STATE_DIR winning when both are set
 #   SPLICE_BIN_DIR          the install bin directory        SPLICE_SHARE_DIR the install share directory
 #   SPLICE_RELEASE_BASE_URL the base URL `splice upgrade` downloads a release from
 #   XDG_CONFIG_HOME         where the config and key store live when it is set

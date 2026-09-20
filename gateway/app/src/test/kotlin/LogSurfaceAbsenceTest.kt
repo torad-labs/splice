@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.LogFileSource
 import splice.app.cli.DaemonHealth
 import splice.app.cli.DaemonSpawn
+import splice.core.config.SPLICE_STATE_HOME
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -40,10 +41,14 @@ class LogSurfaceAbsenceTest {
     // StatePaths' default root rides user.home (saved/restored, the AdminSupportTest idiom for
     // JVM-global properties); logs/ occupied by a FILE makes the boot-log read fail with a
     // present-but-unreadable class (NotDirectory), no chmod needed.
+    //
+    // V4-177: the root is SPLICE_STATE_HOME, not a literal. The fake home has no `<root>/state`
+    // under either name, so StatePaths takes the current default and this test follows it by
+    // construction — which is the point of reading the constant instead of spelling the dir.
     @Test
     fun `an unreadable boot log is said, not swallowed - DR-68`(@TempDir tmp: Path) {
-        Files.createDirectories(tmp.resolve(".claude-codex"))
-        Files.writeString(tmp.resolve(".claude-codex").resolve("logs"), "not a directory")
+        Files.createDirectories(tmp.resolve(SPLICE_STATE_HOME))
+        Files.writeString(tmp.resolve(SPLICE_STATE_HOME).resolve("logs"), "not a directory")
         val printed = withHomeCapturingStdout(tmp) { DaemonSpawn(DaemonHealth()).printBootLogTail() }
         assertTrue(printed.contains("boot log"), printed)
         assertTrue(printed.contains("unreadable"), printed)

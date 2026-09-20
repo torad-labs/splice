@@ -39,7 +39,7 @@ TTFB, first-delta, total, and max inter-event gap. Also a `count_tokens` sanity 
 **Tier 2 — tmux TUI drive**: launches the head's real Claude Code wrapper (`claudex`,
 `claude-grok`, `claude-kimi`, `claude-muse`, …) inside an isolated tmux server (`-L splice-e2e`), auto-answers
 first-run prompts, sends two live prompts, asserts the answers render, then runs an oracle over
-the head's perf JSONL (`~/.claude-codex/state/<head>-perf.jsonl`) for the drive window. A head
+the head's perf JSONL (`<state root>/<head>-perf.jsonl`) for the drive window. A head
 that is not logged in is reported SKIP, never FAIL.
 
 The perf oracle asserts three things about the window:

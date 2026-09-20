@@ -13,6 +13,20 @@
 # silently: a head that cannot be probed is a FAIL with a reason, never a green.
 set -uo pipefail
 
+# V4-177: same state-root rule as StatePaths.kt and bin/splice-launch — SPLICE_STATE_DIR, then the
+# pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that
+# is the only root on the box. Inside the container there is never a pre-0.4 root to adopt; the
+# branch is kept anyway so this file cannot drift from the rule it is exercising.
+resolve_state_dir() {
+  if [ -n "${SPLICE_STATE_DIR:-}" ]; then printf '%s\n' "$SPLICE_STATE_DIR"; return 0; fi
+  if [ -n "${CLAUDEX_STATE_DIR:-}" ]; then printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0; fi
+  if [ ! -d "$HOME/.splice/state" ] && [ -d "$HOME/.claude-codex/state" ]; then
+    printf '%s\n' "$HOME/.claude-codex/state"
+  else
+    printf '%s\n' "$HOME/.splice/state"
+  fi
+}
+
 ARTIFACTS="${ARTIFACTS:-/artifacts}"
 REPO="${REPO:-/repo}"
 OUT="${OUT:-/out}"
@@ -65,7 +79,7 @@ finish() {
   for pidf in "$OUT"/mock_*.pid; do
     [ -f "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null
   done
-  cp "$HOME/.claude-codex/logs/daemon.log" "$OUT/daemon.log" 2>/dev/null
+  cp "$(resolve_state_dir)/../logs/daemon.log" "$OUT/daemon.log" 2>/dev/null
   python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" "$CLAUDE_CODE_ACTUAL" "$TESTED_CLAUDE_CODE" <<'EOF'
 import json, sys, datetime
 steps = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -84,7 +98,7 @@ EOF
 }
 trap finish EXIT
 
-mgmt() { cat "$HOME/.claude-codex/state/mgmt-key"; }
+mgmt() { cat "$(resolve_state_dir)/mgmt-key"; }
 curl_mgmt() { curl -sS -m 10 -H "Authorization: Bearer $(mgmt)" "$@"; }
 strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
 
@@ -101,7 +115,7 @@ sys.exit(0 if d.get("ok") and d.get("readyHeads") == d.get("heads") and d.get("f
     sleep 1
   done
   echo "daemon not healthy after $1s"; curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
-  tail -20 "$HOME/.claude-codex/logs/daemon.log" 2>/dev/null
+  tail -20 "$(resolve_state_dir)/../logs/daemon.log" 2>/dev/null
   return 1
 }
 
@@ -439,7 +453,8 @@ step "wrapper turn: claude-mockchat -p through the head" wrapper_turn claude-moc
 # stamps every response with the anthropic-ratelimit-unified-* headers Claude Code reads into its
 # rate_limits, and draws the same windows on the status line beside effort and session spend.
 quota_bars() {
-  local log="$HOME/.claude-codex/logs/daemon.log" hdrs line frag
+  local log hdrs line frag
+  log="$(resolve_state_dir)/../logs/daemon.log"
   for _ in $(seq 1 30); do grep -q '\[claudex\]\[quota\]' "$log" 2>/dev/null && break; sleep 0.5; done
   grep '\[claudex\]\[quota\]' "$log" | tail -1 || { echo "the codex usage probe never reported"; return 1; }
   hdrs="$(curl_mgmt -D - -o /dev/null -X POST "http://127.0.0.1:$CODEX_HEAD_PORT/v1/messages" \

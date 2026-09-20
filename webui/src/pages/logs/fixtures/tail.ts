@@ -28,7 +28,7 @@ const lines = [
 export const fixture = {
   payload: {
     key: 'claude-deepseek',
-    path: '/home/user/.claude-codex/logs/daemon.log',
+    path: '/home/user/.splice/logs/daemon.log',
     lines,
   } satisfies LogsPayload,
 };

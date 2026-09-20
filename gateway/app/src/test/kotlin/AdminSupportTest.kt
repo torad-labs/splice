@@ -146,7 +146,7 @@ class AdminSupportTest {
     @Test
     fun `daemon launch passes jar and logsDir as positional argv, never inside the shell string`() {
         val jar = Path.of("/home/o'brien/splice.jar")
-        val logs = Path.of("/home/o'brien/.claude-codex/logs")
+        val logs = Path.of("/home/o'brien/.splice/logs")
         val argv = DaemonLaunch().daemonLaunchArgv(jar, logs)
         val script = argv[argv.indexOf("-c") + 1]
         assertFalse(script.contains("o'brien"), "paths must not be interpolated into the shell script")

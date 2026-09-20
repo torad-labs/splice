@@ -33,7 +33,7 @@
  *                       provider credential in its environment), read it, stop it. The tree's
  *                       build is gateway/app/build/libs/app-all.jar.
  *    --control <url>    read an already-running daemon instead (default http://127.0.0.1:3096,
- *                       bearer from ~/.claude-codex/state/mgmt-key or --key-file). Read-only GETs.
+ *                       bearer from the state root's mgmt-key or --key-file). Read-only GETs.
  *    --capture <dir>    also write each payload read, as <call-site id>.json.
  *    --replay <dir>     read payloads from a capture instead of HTTP (no daemon).
  *    --selftest         read, then prove the check can fail on those real payloads: for EVERY
@@ -484,6 +484,18 @@ async function answers(url: string): Promise<boolean> {
  *  scratch rather than inherited, so no provider credential in this shell reaches the daemon and
  *  its head can never spend quota: the head boots unauthenticated, which is a state the console
  *  renders and therefore a payload worth reading. */
+/** V4-177: the LIVE install's mgmt-key file, resolved the way StatePaths.kt resolves the state root
+ *  — env first, then ~/.splice/state, adopting a pre-0.4 ~/.claude-codex/state in place when that is
+ *  the only one on the box. `--attach` points at whatever daemon is already running here, so picking
+ *  the wrong root reads a key that daemon never minted and every GET comes back 401. */
+function liveMgmtKeyFile(): string {
+  const fromEnv = process.env.SPLICE_STATE_DIR ?? process.env.CLAUDEX_STATE_DIR;
+  if (fromEnv !== undefined && fromEnv.trim() !== "") return join(fromEnv, "mgmt-key");
+  const current = join(homedir(), ".splice", "state");
+  const legacy = join(homedir(), ".claude-codex", "state");
+  return join(!existsSync(current) && existsSync(legacy) ? legacy : current, "mgmt-key");
+}
+
 async function boot(jar: string): Promise<Daemon> {
   if (!existsSync(jar)) throw new Error(`--boot: no jar at ${jar}; build it with :app:shadowJar`);
   const home = mkdtempSync(join(tmpdir(), "console-wire-keys-"));
@@ -553,7 +565,9 @@ async function boot(jar: string): Promise<Daemon> {
     }
     await Bun.sleep(250);
   }
-  const keyFile = join(home, ".claude-codex/state/mgmt-key");
+  // V4-177: a daemon booted into a fresh HOME writes the current layout; there is no pre-0.4
+  // root in a throwaway home for it to adopt.
+  const keyFile = join(home, ".splice/state/mgmt-key");
   return { base, key: readFileSync(keyFile, "utf8").trim(), pid: child.pid ?? null, stop };
 }
 
@@ -932,7 +946,7 @@ async function main(): Promise<number> {
   const jar = argOf("--boot");
   const daemon = jar !== undefined
     ? await boot(resolve(jar))
-    : await attach(argOf("--control") ?? "http://127.0.0.1:3096", argOf("--key-file") ?? join(homedir(), ".claude-codex/state/mgmt-key"));
+    : await attach(argOf("--control") ?? "http://127.0.0.1:3096", argOf("--key-file") ?? liveMgmtKeyFile());
   try {
     const out = await run(checker, calls, fetches, httpSource(daemon, payloads));
     if (daemon.pid !== null) {

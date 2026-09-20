@@ -199,7 +199,7 @@ before writing anything (the file parses, the credential is present, the endpoin
 models are listed where the dialect lists them; `--live` adds one short turn) and appends the two
 tables through a temp file and one rename, so a refused add leaves your file byte-identical.
 
-The dashboard and every control endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
+The dashboard and every control endpoint are bearer-guarded and loopback-only. `splice dashboard` prints the unlock key; it lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
 
 ### Plan usage in Claude Code
 
@@ -257,7 +257,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 | OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
 | Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
 | splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |
-| splice control plane | — | `~/.claude-codex/state/mgmt-key` | dashboard/API unlock key — password-equivalent |
+| splice control plane | — | `~/.splice/state/mgmt-key` (pre-0.4 installs: `~/.claude-codex/state/mgmt-key`) | dashboard/API unlock key — password-equivalent |
 
 ### More than one account per provider
 

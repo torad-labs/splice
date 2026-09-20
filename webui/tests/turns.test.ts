@@ -305,7 +305,7 @@ describe('logs board', () => {
   const board = (over: Partial<React.ComponentProps<typeof LogsBoard>> = {}) =>
     render(
       h(LogsBoard, {
-        payload: { key: 'claudex', path: '/home/user/.claude-codex/logs/daemon.log', lines: [] },
+        payload: { key: 'claudex', path: '/home/user/.splice/logs/daemon.log', lines: [] },
         filter: NO_FILTER,
         follow: true,
         appended: 0,
@@ -322,7 +322,7 @@ describe('logs board', () => {
   test('an empty tail names the path it read', () => {
     const out = board();
     expect(out).toContain('no lines in this tail');
-    expect(out).toContain('/home/user/.claude-codex/logs/daemon.log');
+    expect(out).toContain('/home/user/.splice/logs/daemon.log');
   });
 
   test('capture off is a sentence, and the pending capture route names its row', () => {

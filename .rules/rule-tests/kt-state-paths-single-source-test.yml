@@ -2,6 +2,15 @@ id: kt-state-paths-single-source
 valid:
   - 'val dir = statePaths.stateDir'
   - 'val dir = statePaths.resolve("state")'
+  # V4-177: the five dot-prefixed splice TEMP names in main sources. They share the `.splice`
+  # prefix with the state root and are not state roots; a substring regex would red every one of
+  # them, which is why the root pattern requires a `/` or end-of-node after the segment.
+  - 'val probe = Files.createTempFile(dir, ".splice-doctor-write-probe.", ".tmp")'
+  - 'val probe = Files.createTempFile(dir, ".splice-exec-probe.", ".tmp")'
+  - 'val staged = dst.resolveSibling(".${dst.fileName}.splice-link-${UUID.randomUUID()}")'
+  - 'val backup = original.resolveSibling("${original.fileName}.splice-wrap-backup-${now()}")'
+  # the install share dir is `<prefix>/share/splice` — no dot, so not this wall's subject
+  - 'val share = home.resolve(".local/share/splice")'
 invalid:
   - 'val dir = home.resolve(".claude-codex/state")'
   # the evasions the widened fragment closes (2026-07-26 audit): the old
@@ -9,3 +18,8 @@ invalid:
   # the full substring in any single string_content node and both scanned clean.
   - 'val dir = home.resolve(".claude-" + "codex")'
   - 'val dir = home.resolve("~/.claude-$head/state")'
+  # V4-177: the NEW root has to be as unspellable as the old one, or the wall would guard the
+  # root nobody writes any more and wave the one everybody writes straight through.
+  - 'val dir = home.resolve(".splice/state")'
+  - 'val dir = Paths.get(home, ".splice")'
+  - 'val dir = Paths.get("~/.splice/$leaf")'

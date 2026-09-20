@@ -21,9 +21,25 @@ topology_control_port() {
     }
   ' "$config"
 }
+# V4-177: the state root, resolved EXACTLY as StatePaths.kt resolves it — SPLICE_STATE_DIR, then
+# the pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when
+# that is the only one on the box. Two implementations of one rule is the whole risk here: this shim
+# reads the mgmt-key and config.json the daemon WRITES, so a shim that picked the other root would
+# hand the operator "mgmt-key not found" on a perfectly healthy install, or cold-start a second
+# daemon against an empty state dir while the real one is up. Keep the branches byte-for-byte in step
+# with StatePaths.kt; StateDirAgreementTest pins them against each other.
+resolve_state_dir() {
+  if [ -n "${SPLICE_STATE_DIR:-}" ]; then printf '%s\n' "$SPLICE_STATE_DIR"; return 0; fi
+  if [ -n "${CLAUDEX_STATE_DIR:-}" ]; then printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0; fi
+  if [ ! -d "$HOME/.splice/state" ] && [ -d "$HOME/.claude-codex/state" ]; then
+    printf '%s\n' "$HOME/.claude-codex/state"
+  else
+    printf '%s\n' "$HOME/.splice/state"
+  fi
+}
 state_control_port() {
-  local state_dir="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
-  local config="${state_dir}/config.json"
+  local config
+  config="$(resolve_state_dir)/config.json"
   [ -f "$config" ] || return 0
   python3 -c 'import json, sys
 try:
@@ -47,7 +63,7 @@ JAR="${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}/splice.jar}"
 # 1G→2G after the 2026-07-19 429 storm: ~650 concurrent SSE turns exhausted 1G even before the
 # inflight cap existed; 2G rides out a full 48-inflight + 512-queue burst with headroom.
 SPLICE_JVM_OPTS="${SPLICE_JVM_OPTS:--Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000}"
-STATE_DIR="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
+STATE_DIR="$(resolve_state_dir)"
 # JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a
 # tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
 LOGS_DIR="$STATE_DIR/../logs"

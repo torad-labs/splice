@@ -58,7 +58,7 @@ function head(over: Partial<HeadStatus> & { key: string }): HeadStatus {
 }
 
 function logs(lines: string[], over: Partial<LogsPayload> = {}): LogsPayload {
-  return { key: over.key ?? 'claudex', path: over.path ?? '/home/user/.claude-codex/logs/daemon.log', lines };
+  return { key: over.key ?? 'claudex', path: over.path ?? '/home/user/.splice/logs/daemon.log', lines };
 }
 
 /** The store holds a union; a test that expects rows must fail loudly when it holds the pending

@@ -6,7 +6,7 @@
  *  whole-workload RSS, and wall time.
  *
  *  Usage:
- *    bench.ts --control-port 3196 --mgmt-key-file ~/.claude-codex/state/mgmt-key \
+ *    bench.ts --control-port 3196 --mgmt-key-file ~/.splice/state/mgmt-key \
  *             --servers ast-grep,remotion-docs,torad-fleet,figma-comments --sessions 4 \
  *             --out checks/e2e/receipts/mcp-host-bench.json
  *

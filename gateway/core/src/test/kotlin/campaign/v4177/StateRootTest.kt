@@ -23,7 +23,10 @@
 package campaign.v4177
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.LEGACY_STATE_DIR_ENV
@@ -159,6 +162,82 @@ class StateRootTest {
         assertEquals(given, paths.stateDir)
         assertEquals(StateDirOrigin.OVERRIDE, paths.origin)
         assertNull(paths.unmigratedLegacyDir)
+    }
+
+    // THE PROVEN-ABSENCE ARMS. `Files.exists` is two-valued by contract — false means "does not
+    // exist OR its existence cannot be determined" — so a pre-0.4 root holding the whole install's
+    // history behind a non-traversable parent read as ABSENT, the daemon minted a fresh mgmt-key in
+    // a new root, and every head's history read as empty. unmigratedLegacyDir gated on the SAME
+    // failing probe, so doctor said nothing at all: the box told a clean-install story. This is the
+    // law MgmtKeyRead already encodes one directory away, applied to the decision that picks where
+    // the whole product's state lives.
+    @Test
+    fun `an unreadable pre-0_4 root is never read as absent`(@TempDir home: Path) {
+        Files.createDirectories(home.resolve(LEGACY_STATE_HOME).resolve("state"))
+        val legacyRoot = home.resolve(LEGACY_STATE_HOME).toFile()
+        legacyRoot.setReadable(false, false)
+        legacyRoot.setExecutable(false, false)
+        assumeTrue(
+            !Files.isReadable(home.resolve(LEGACY_STATE_HOME).resolve("state")),
+            "running as a user that ignores permission bits (root); this shape is unobservable here",
+        )
+
+        try {
+            val paths = StatePaths(envReader = NO_ENV, homeDir = home)
+
+            // It does NOT adopt — it cannot prove the root is a directory — but it also refuses to
+            // pretend this is a clean box: the fault names the path so doctor can warn.
+            assertEquals(StateDirOrigin.DEFAULT, paths.origin)
+            assertNotNull(paths.rootProbeFault, "an unreadable root must be reported, never silently skipped")
+            assertTrue(
+                home.resolve(LEGACY_STATE_HOME).resolve("state").toString() in paths.rootProbeFault!!,
+                "the fault must name the path an operator has to go look at: ${paths.rootProbeFault}",
+            )
+        } finally {
+            legacyRoot.setExecutable(true, false)
+            legacyRoot.setReadable(true, false)
+        }
+    }
+
+    // A REGULAR FILE where a state dir belongs. Files.exists called this true, so adoption took it
+    // and every subsequent write failed with NotDirectoryException; the shell copies' `[ -d ]`
+    // called it false and went elsewhere, so the daemon and splice-launch disagreed about the root.
+    @Test
+    fun `a file where the pre-0_4 state dir belongs is not a state root`(@TempDir home: Path) {
+        Files.createDirectories(home.resolve(LEGACY_STATE_HOME))
+        Files.writeString(home.resolve(LEGACY_STATE_HOME).resolve("state"), "not a directory")
+
+        val paths = StatePaths(envReader = NO_ENV, homeDir = home)
+
+        assertEquals(home.resolve(SPLICE_STATE_HOME).resolve("state"), paths.stateDir)
+        assertEquals(StateDirOrigin.DEFAULT, paths.origin)
+        assertNull(paths.unmigratedLegacyDir, "a file is not history to migrate")
+        assertTrue("is not a directory" in paths.rootProbeFault.orEmpty(), paths.rootProbeFault.orEmpty())
+    }
+
+    @Test
+    fun `a file where the current state dir belongs does not trigger adoption`(@TempDir home: Path) {
+        makeState(home, LEGACY_STATE_HOME)
+        Files.createDirectories(home.resolve(SPLICE_STATE_HOME))
+        Files.writeString(home.resolve(SPLICE_STATE_HOME).resolve("state"), "not a directory")
+
+        val paths = StatePaths(envReader = NO_ENV, homeDir = home)
+
+        // Adoption needs the CURRENT root proven absent. A file is not absence.
+        assertEquals(home.resolve(SPLICE_STATE_HOME).resolve("state"), paths.stateDir)
+        assertEquals(StateDirOrigin.DEFAULT, paths.origin)
+        assertTrue("is not a directory" in paths.rootProbeFault.orEmpty(), paths.rootProbeFault.orEmpty())
+    }
+
+    // Mutant: report a fault on a healthy box. Both roots gave a definite answer, so there is
+    // nothing to warn about — and a fault that fires for everyone is a WARN operators scroll past.
+    @Test
+    fun `a box with definite answers on both roots reports no fault`(@TempDir home: Path) {
+        makeState(home, LEGACY_STATE_HOME)
+        makeState(home, SPLICE_STATE_HOME)
+
+        assertNull(StatePaths(envReader = NO_ENV, homeDir = home).rootProbeFault)
+        assertNull(StatePaths(envReader = envOf(STATE_DIR_ENV to home.toString()), homeDir = home).rootProbeFault)
     }
 
     // Adoption is a WHOLE-ROOT decision, not a stateDir-only one. logsDir and compactStatsFile hang

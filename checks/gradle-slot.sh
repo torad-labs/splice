@@ -54,11 +54,16 @@ offline=(--offline)
 if [ -n "${CI:-}" ]; then
   offline=()
 fi
+# `set -e` does NOT exempt a failing command in an `if` BODY, so the `rc=$?` below was unreachable
+# on a red build: the script exited at the gradlew line and the release line printed only on success,
+# always reading `(exit 0)`. The slot was still freed by the EXIT trap and gradle's status still
+# propagated, so no verdict was ever wrong — but a seat grepping the log for "gradle free" after a
+# red never found it. `|| rc=$?` keeps the failure and makes the line tell the truth.
+rc=0
 if command -v buildgate >/dev/null; then
-  buildgate ./gradlew "${offline[@]}" --no-daemon "$@"
+  buildgate ./gradlew "${offline[@]}" --no-daemon "$@" || rc=$?
 else
-  ./gradlew "${offline[@]}" --no-daemon "$@"
+  ./gradlew "${offline[@]}" --no-daemon "$@" || rc=$?
 fi
-rc=$?
 echo "gradle-slot: $LABEL released — gradle free (exit $rc)" >&2
 exit $rc

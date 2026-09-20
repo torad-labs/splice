@@ -42,7 +42,11 @@ internal class SetupCommand(
     private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
     /** V4-175: the wrap call. Not a prompt — it CHANGES THE MACHINE, which is the line SetupPrompts
      *  draws, so it stays here beside install, add and restart. */
-    private val wrapClaude: ClaudeWrap = DaemonClaudeWrap(),
+    /** V4-177 review: `env` and not a fresh `EnvReader(System::getenv)`. DaemonClaudeWrap reads
+     *  the mgmt-key and resolves the control port through it, so the default silently ignored
+     *  the hermetic environment this class already threads — one preselection change away from
+     *  a test wrapping the developer's own ~/.claude. */
+    private val wrapClaude: ClaudeWrap = DaemonClaudeWrap(env),
 ) {
     private val frame = prompts.frame
 

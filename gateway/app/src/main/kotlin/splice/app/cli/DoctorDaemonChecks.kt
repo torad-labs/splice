@@ -43,7 +43,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
         // daemon.lock is a flock advisory gate whose FILE persists after the daemon exits, so its mere
         // presence proves nothing about liveness (DaemonLock.kt) — report the path only, never a
         // fabricated staleness WARN. The state dir path is the same kind of orientation detail.
-        val stateInfo = listOfNotNull(stateLayout.check(statePaths)) + listOf(
+        val stateInfo = stateLayout.checks(statePaths) + listOf(
             // JW-17: PROVE writability, don't just print the path — an unwritable state root
             // degrades daemon.log, config persistence, and usage/perf/compact appends all silently.
             probeWrite.writableProbe("state dir", statePaths.stateDir),
@@ -100,7 +100,26 @@ internal class DoctorStateLayout {
      *  Silent when there is nothing to say — a fresh install on the current layout, or a caller that
      *  pointed the state dir somewhere itself, in which case the old root is not unmigrated, it is
      *  simply not theirs. A row that fires for everyone is a row operators learn to scroll past. */
-    internal fun check(statePaths: StatePaths): DoctorCheck? = when (statePaths.origin) {
+    internal fun checks(statePaths: StatePaths): List<DoctorCheck> =
+        listOfNotNull(probeFault(statePaths), layout(statePaths))
+
+    /** A candidate root that could not be RULED OUT. This is the arm that keeps the whole row
+     *  honest: before it existed, a pre-0.4 root the daemon could not READ was indistinguishable
+     *  from one that was not there, so the box reported a clean install and said nothing at all —
+     *  in exactly the case an operator is about to delete and re-init history that is still on
+     *  disk. WARN and not FAIL because the daemon does come up and serve; what it cannot do is
+     *  promise this is a fresh box. */
+    private fun probeFault(statePaths: StatePaths): DoctorCheck? = statePaths.rootProbeFault?.let { fault ->
+        DoctorCheck(
+            CHECK_STATE_LAYOUT,
+            CheckStatus.WARN,
+            "a state root could not be ruled out: $fault — ${statePaths.stateDir} is being used, but " +
+                "history under an unreadable root is NOT gone and must not be re-initialised away",
+            "make the path above readable (or remove it if it is genuinely not yours), then re-run",
+        )
+    }
+
+    private fun layout(statePaths: StatePaths): DoctorCheck? = when (statePaths.origin) {
         StateDirOrigin.ADOPTED_LEGACY -> DoctorCheck(
             CHECK_STATE_LAYOUT,
             CheckStatus.INFO,

@@ -18,9 +18,22 @@ set -uo pipefail
 # is the only root on the box. Inside the container there is never a pre-0.4 root to adopt; the
 # branch is kept anyway so this file cannot drift from the rule it is exercising.
 resolve_state_dir() {
-  if [ -n "${SPLICE_STATE_DIR:-}" ]; then printf '%s\n' "$SPLICE_STATE_DIR"; return 0; fi
-  if [ -n "${CLAUDEX_STATE_DIR:-}" ]; then printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0; fi
-  if [ ! -d "$HOME/.splice/state" ] && [ -d "$HOME/.claude-codex/state" ]; then
+  # A variable holding only whitespace is NOT an answer. `-n` calls " " set; Kotlin's isNotBlank
+  # does not, and StatePaths blank-checks PER VARIABLE. Without this, SPLICE_STATE_DIR=" " in a unit
+  # file makes this read " /mgmt-key" relative to CWD and report "mgmt-key not found" on a perfectly
+  # healthy install, while the daemon resolves the real root. The pattern IS isNotBlank: at least
+  # one non-whitespace character. Per variable, so an empty SPLICE_STATE_DIR falls through to
+  # CLAUDEX_STATE_DIR instead of skipping it.
+  case "${SPLICE_STATE_DIR:-}" in *[![:space:]]*) printf '%s\n' "$SPLICE_STATE_DIR"; return 0 ;; esac
+  case "${CLAUDEX_STATE_DIR:-}" in *[![:space:]]*) printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0 ;; esac
+  # Adoption needs POSITIVE evidence on both sides, the rule StatePaths' three-valued probe follows:
+  # only proven absence may start a fresh root. `[ ! -d ]` is ALSO true for a path that cannot be
+  # stat-ed, so an unreadable ~/.splice would adopt the pre-0.4 root here while the daemon declines
+  # and warns. Believe "absent" only when the parent is traversable, or absent itself.
+  # `-e`, not `-d`: a REGULAR FILE at the current root is not proven absence either, and `[ ! -d ]`
+  # called it adoptable while StatePaths declines and reports it as a fault.
+  if [ ! -e "$HOME/.splice/state" ] && { [ ! -e "$HOME/.splice" ] || [ -x "$HOME/.splice" ]; } &&
+     [ -d "$HOME/.claude-codex/state" ]; then
     printf '%s\n' "$HOME/.claude-codex/state"
   else
     printf '%s\n' "$HOME/.splice/state"
@@ -79,7 +92,11 @@ finish() {
   for pidf in "$OUT"/mock_*.pid; do
     [ -f "$pidf" ] && kill "$(cat "$pidf")" 2>/dev/null
   done
-  cp "$(resolve_state_dir)/../logs/daemon.log" "$OUT/daemon.log" 2>/dev/null
+  # Named, not swallowed: this runs in the EXIT trap, so a wrong root or an absent log used to
+  # leave the artifacts dir with no daemon.log and nothing saying why — whoever investigates the
+  # e2e red gets no daemon output and no explanation for its absence.
+  _daemon_log="$(resolve_state_dir)/../logs/daemon.log"
+  cp "$_daemon_log" "$OUT/daemon.log" 2>/dev/null || echo "no daemon.log at $_daemon_log" >&2
   python3 - "$STEPS_FILE" "$RECEIPT" "$FAILED" "$CLAUDE_CODE_ACTUAL" "$TESTED_CLAUDE_CODE" <<'EOF'
 import json, sys, datetime
 steps = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -98,7 +115,14 @@ EOF
 }
 trap finish EXIT
 
-mgmt() { cat "$(resolve_state_dir)/mgmt-key"; }
+# Fails BY NAME. `cat` on a missing key wrote to stderr and yielded "", so every curl went out as
+# `Authorization: Bearer ` and the run reported a wall of 401s — "no key at this path" told as an
+# auth failure, which sends the reader looking at the wrong half of the system.
+mgmt() {
+  local key="$(resolve_state_dir)/mgmt-key"
+  [ -r "$key" ] || { echo "no mgmt-key at $key" >&2; return 1; }
+  cat "$key"
+}
 curl_mgmt() { curl -sS -m 10 -H "Authorization: Bearer $(mgmt)" "$@"; }
 strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
 
@@ -115,7 +139,8 @@ sys.exit(0 if d.get("ok") and d.get("readyHeads") == d.get("heads") and d.get("f
     sleep 1
   done
   echo "daemon not healthy after $1s"; curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
-  tail -20 "$(resolve_state_dir)/../logs/daemon.log" 2>/dev/null
+  _daemon_log="$(resolve_state_dir)/../logs/daemon.log"
+  tail -20 "$_daemon_log" 2>/dev/null || echo "no daemon.log at $_daemon_log" >&2
   return 1
 }
 
@@ -456,7 +481,7 @@ quota_bars() {
   local log hdrs line frag
   log="$(resolve_state_dir)/../logs/daemon.log"
   for _ in $(seq 1 30); do grep -q '\[claudex\]\[quota\]' "$log" 2>/dev/null && break; sleep 0.5; done
-  grep '\[claudex\]\[quota\]' "$log" | tail -1 || { echo "the codex usage probe never reported"; return 1; }
+  grep '\[claudex\]\[quota\]' "$log" | tail -1 || { echo "the codex usage probe never reported (read $log)"; return 1; }
   hdrs="$(curl_mgmt -D - -o /dev/null -X POST "http://127.0.0.1:$CODEX_HEAD_PORT/v1/messages" \
     -H 'Content-Type: application/json' \
     -d '{"model":"claude-codex--gpt-5-codex","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"hi"}]}')"

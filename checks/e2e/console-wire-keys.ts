@@ -47,7 +47,7 @@
  *  The exit code and the last line always agree.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
@@ -488,12 +488,37 @@ async function answers(url: string): Promise<boolean> {
  *  — env first, then ~/.splice/state, adopting a pre-0.4 ~/.claude-codex/state in place when that is
  *  the only one on the box. `--attach` points at whatever daemon is already running here, so picking
  *  the wrong root reads a key that daemon never minted and every GET comes back 401. */
+export function liveStateDir(home = homedir(), env = process.env): string {
+  // PER VARIABLE, and blank is not an answer. `??` falls through only on null/undefined, so
+  // `export SPLICE_STATE_DIR=` gave "" and skipped CLAUDEX_STATE_DIR entirely — while Kotlin and
+  // all three shell copies fall through to it. That is the exact variable StatePaths' own KDoc
+  // names as the real case, and reading the wrong key turns every GET into a 401 that reads like a
+  // payload/contract failure rather than a wrong root.
+  for (const name of ["SPLICE_STATE_DIR", "CLAUDEX_STATE_DIR"]) {
+    const value = env[name];
+    if (value !== undefined && value.trim() !== "") return value;
+  }
+  // Adoption needs POSITIVE evidence on both sides: the current root proven absent, the pre-0.4 one
+  // proven to be a DIRECTORY. statSync with throwIfNoEntry keeps "absent" apart from "cannot be
+  // read", which is StatePaths' three-valued probe and the reason a file at either path is not a
+  // state root.
+  const probe = (dir: string): "dir" | "absent" | "unusable" => {
+    try {
+      const found = statSync(dir, { throwIfNoEntry: false });
+      if (found === undefined) return "absent";
+      return found.isDirectory() ? "dir" : "unusable";
+    } catch {
+      // EACCES on the parent: present-or-absent is UNKNOWN, which is not absent.
+      return "unusable";
+    }
+  };
+  const current = join(home, ".splice", "state");
+  const legacy = join(home, ".claude-codex", "state");
+  return probe(current) === "absent" && probe(legacy) === "dir" ? legacy : current;
+}
+
 function liveMgmtKeyFile(): string {
-  const fromEnv = process.env.SPLICE_STATE_DIR ?? process.env.CLAUDEX_STATE_DIR;
-  if (fromEnv !== undefined && fromEnv.trim() !== "") return join(fromEnv, "mgmt-key");
-  const current = join(homedir(), ".splice", "state");
-  const legacy = join(homedir(), ".claude-codex", "state");
-  return join(!existsSync(current) && existsSync(legacy) ? legacy : current, "mgmt-key");
+  return join(liveStateDir(), "mgmt-key");
 }
 
 async function boot(jar: string): Promise<Daemon> {
@@ -974,4 +999,7 @@ async function main(): Promise<number> {
   }
 }
 
-process.exit(await main());
+// Behind import.meta.main (the checks/no-python.ts idiom, for its stated reason): importing this
+// module must TAKE A READING, not boot a daemon and run the whole wire check. StateDirAgreementTest
+// imports liveStateDir to pin it against StatePaths, which is only possible with this guard.
+if (import.meta.main) process.exit(await main());

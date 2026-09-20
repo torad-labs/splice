@@ -388,17 +388,29 @@ class MidStreamTearContinuesTest {
     }
 
     /** The perf row this head wrote for the turn just finished. PerfStats appends through
-     *  AsyncFileIo, so it is polled rather than read once — the HeadServerCapacityTest idiom. */
-    private fun perfRow(port: Int): String {
-        val file = tmp.resolve("perf-$port.jsonl")
+     *  AsyncFileIo, so it is polled rather than read once — the HeadServerCapacityTest idiom.
+     *
+     *  Polled for a row that was NOT THERE before the turn, never for "any row": the file is per
+     *  head and every arm on the same port appends to it, so "the last row" is the previous arm's
+     *  row until this turn's append lands — and it landed late enough once (V4-141 gate of record,
+     *  2026-09-20: ARM 7 read ARM 5's `outcome: ok` row while its own `error:conn-reset` row was
+     *  still in the writer) for the arm to fail on a row it never wrote. [before] is the count
+     *  taken by [perfRowsBefore] ahead of the turn. */
+    private fun perfRow(port: Int, before: Int): String {
         repeat(PERF_POLLS) {
-            if (Files.exists(file)) {
-                val rows = Files.readString(file).trim().lines().filter { it.isNotBlank() }
-                if (rows.isNotEmpty()) return rows.last()
-            }
+            val rows = perfRows(port)
+            if (rows.size > before) return rows.last()
             Thread.sleep(PERF_POLL_MS)
         }
         return ""
+    }
+
+    private fun perfRowsBefore(port: Int): Int = perfRows(port).size
+
+    private fun perfRows(port: Int): List<String> {
+        val file = tmp.resolve("perf-$port.jsonl")
+        if (!Files.exists(file)) return emptyList()
+        return Files.readString(file).lines().filter { it.isNotBlank() }
     }
 
     private fun reset(vararg acts: Act) {
@@ -551,13 +563,14 @@ class MidStreamTearContinuesTest {
     fun `an unrecovered converted tear is still recorded as conn-reset`() {
         val tears = Array(TEARS_PAST_BUDGET) { Act.TRUNCATE_BEFORE_CONTENT }
         reset(*tears)
+        val before = perfRowsBefore(prefillPort)
         val received = drainTurn(prefillPort)
 
         assertTrue(
             received.contains("overloaded_error"),
             "the client still reads the honest retryable error" + diagnostics(received),
         )
-        val row = perfRow(prefillPort)
+        val row = perfRow(prefillPort, before)
         assertTrue(
             row.contains(PERF_OUTCOME_FIELD + CONN_RESET_OUTCOME + QUOTE),
             "an unrecovered tear must stay greppable as conn-reset, got: " + row + diagnostics(received),
@@ -706,13 +719,14 @@ class MidStreamTearContinuesTest {
     @Test
     fun `a spent re-anchor stamps reanchors and the stall it was reaped on`() {
         reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
+        val before = perfRowsBefore(stallPrefillPort)
         val received = drainTurn(stallPrefillPort)
         assertTrue(
             received.contains(SECOND_HALF),
             "precondition: this arm only means anything if the stall WAS re-anchored" + diagnostics(received),
         )
 
-        val row = perfRow(stallPrefillPort)
+        val row = perfRow(stallPrefillPort, before)
         assertTrue(
             row.contains(REANCHORS_FIELD + "1"),
             "the spent continuation must be countable from the row, got: " + row,

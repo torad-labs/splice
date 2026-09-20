@@ -132,7 +132,7 @@ def run(data: dict) -> Optional[HookResult]:
     if pointer_item is not None:
         return HookResult(kind="inject", payload=_payload([pointer_item]), module_name=MODULE_NAME)
 
-    items = _campaign_inflight_items(root / "dev" / "campaigns")
+    items = _campaign_inflight_items(root / ".dev" / "campaigns")
     if not items:
         return None
     return HookResult(kind="inject", payload=_payload(items), module_name=MODULE_NAME)

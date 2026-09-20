@@ -20,7 +20,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-LEDGER = Path(__file__).resolve().parent.parent / "dev" / "campaigns" / "kotlin-gateway.toml"
+LEDGER = Path(__file__).resolve().parent.parent / ".dev" / "campaigns" / "kotlin-gateway.toml"
 
 # Items that CANNOT complete in an autonomous session (need the operator's credentials / live
 # sessions / a deliberate destructive action). Reported as BLOCKED; never fail the gate on them.

@@ -63,11 +63,11 @@ import tempfile
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-CAMPAIGN = ROOT / "dev" / "campaigns" / "proxy-hardening"
+CAMPAIGN = ROOT / ".dev" / "campaigns" / "proxy-hardening"
 REGISTRY = CAMPAIGN / "walls" / "wall_registry.toml"
 LAW_REGISTRY = CAMPAIGN / "walls" / "law_registry.toml"
-BOARD = ROOT / "dev" / "campaigns" / "proxy-hardening.toml"
-MANIFEST = ROOT / "dev" / "campaigns" / "manifest.py"
+BOARD = ROOT / ".dev" / "campaigns" / "proxy-hardening.toml"
+MANIFEST = ROOT / ".dev" / "campaigns" / "manifest.py"
 
 RED_STATUSES = {"todo", "in_flight"}
 GREEN_STATUSES = {"done", "verified"}

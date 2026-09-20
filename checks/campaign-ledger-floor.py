@@ -65,7 +65,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LEDGER_DIR = ROOT / "dev" / "campaigns"
+LEDGER_DIR = ROOT / ".dev" / "campaigns"
 FLOOR = ROOT / "checks" / "config" / "campaign-ledger-floor.json"
 
 # The same shape manifest.py's own HDR matches, so this counts what the CLI calls an item.

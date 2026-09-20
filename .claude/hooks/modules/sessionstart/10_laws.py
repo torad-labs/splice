@@ -19,7 +19,7 @@ def applies(data: dict) -> bool:
 
 def run(data: dict) -> HookResult | None:
     project_root = find_project_root(data.get("cwd") or data.get("project_dir") or ".")
-    manifest = project_root / "dev" / "campaigns" / "manifest.py"
+    manifest = project_root / ".dev" / "campaigns" / "manifest.py"
     if not manifest.exists():
         return None
 

@@ -230,7 +230,12 @@ class TeamsRoutesTest {
         val lead = rig.find(body, "slots", "slot", "lead")
         assertEquals("null", lead.getValue("cost_usd").toString(), "a turn with no rate card leaves no dollar figure")
         assertEquals("1", lead.getValue("unpriced_turns").jsonPrimitive.content)
-        assertEquals("null", lead.getValue("checks").toString(), "checks has no source yet")
-        assertEquals("V4-159", lead.getValue("checks_source").jsonPrimitive.content, "the honest empty names its row")
+        // V4-159: the lead's one row (rig.row's default outcome) is "ok", so checks reads "pass".
+        assertEquals("pass", lead.getValue("checks").jsonPrimitive.content, "the lead's one row is ok")
+        assertEquals(
+            "the outcome tag of the slot's most recently tallied turn (PerfRow.outcome)",
+            lead.getValue("checks_source").jsonPrimitive.content,
+            "checks now has a real source",
+        )
     }
 }

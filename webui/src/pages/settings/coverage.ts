@@ -43,6 +43,9 @@ const EDITABLE_KNOBS = [
   // console does with it. Both are ordinary PATCH-able knobs; their restart-required flag reaches
   // the page from `restart_required_keys`, never from here.
   'ACTIVITY_RETENTION_DAYS', 'ACTIVITY_STORE_HEADS',
+  // V4-173: the per-head upstream wire tap (0 = off). An ordinary restart-required knob a head
+  // reads at assembly; the console edits it like any other, and `splice doctor` warns while it is on.
+  'WIRE_TAP',
 ] as const;
 
 /** FEATURES 4.11: "The four host knobs, read-only with the reason." They shape one McpHost read

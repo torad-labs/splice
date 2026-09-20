@@ -11,8 +11,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.TopologyLoader
 import splice.app.cli.AddHttp
 import splice.app.cli.AddHttpReply
-import splice.app.cli.WireCommand
-import splice.app.cli.WireOpts
+import splice.app.cli.wire.WireCommand
+import splice.app.cli.wire.WireOpts
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream

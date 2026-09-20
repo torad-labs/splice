@@ -5,6 +5,7 @@ package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
 import splice.app.TopologyLoader
+import splice.app.cli.wire.WireCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 

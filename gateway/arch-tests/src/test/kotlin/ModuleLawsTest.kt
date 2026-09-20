@@ -590,7 +590,7 @@ class ModuleLawsTest {
         assertEquals(
             listOf(NESTED_EDGE_EXPECTED),
             moduleDirectionViolations(
-                map = ProjectMap.parse(temp, ":provider-x=providers/x"),
+                map = ProjectMap.parse(temp, ":provider-x=providers/x", fixtureNotSwept),
                 law = ModuleLawFile(NESTED_MODULE_LAW_SOURCE),
                 testPlane = mapOf(":provider-x" to setOf(":core")),
                 unrestricted = emptySet(),

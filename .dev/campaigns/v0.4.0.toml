@@ -5923,3 +5923,13 @@ files = ["gateway/arch-tests/**", "tools/gate/**", "package.json", "package-lock
 status = "in_flight"
 verify = "npm run gate && bun test tools/gate && bun tools/gate rules --prove-coverage"
 # [2026-09-20] opened as PR #159 (https://github.com/torad-labs/splice/pull/159), base feat/v0.4.0, head f7bd4802. splice-vast's evidence: npm run gate -> GATE: PASS at f7bd4802 (81 legs, 200 ok, local ladder through the slot, gate-tip.log in vast's scratchpad); bun test tools/gate 36 pass; rules --prove-coverage 62 rules x 35 roots OK; splice-astra code review PASS at f7bd4802. Merge-ref CI running; merges after CI and astra's PR-level look; PR 1 (chore/restructure-1 @ 837f8fe7) stacks on it.
+# [2026-09-20] PR #159 head moved to bdd18e0e: CI 'report' (coverage.yml) was red at f7bd4802 on StateDirAgreementTest 'Cannot run program bun' — same signature on feat/v0.4.0's own coverage run at 5b25e335 (run 35525857993), red on every PR since c2d4af74/V4-177 because the coverage job runs module tests and the doctor test spawns bun -e on a runner without bun. Fix forward in coverage.yml only (+9: pinned setup-bun, bun install --frozen-lockfile); actionlint + zizmor clean. Merges with gh pr merge --merge when CI is green.
+
+[[items]]
+id = "V4-181"
+phase = "restructure"
+title = "RESTRUCTURE PR 1 (splice-vast, PR #160): delete 430 paths and rewire every consumer in the same commit. Head chore/restructure-1 @ 837f8fe7, one commit on f7bd4802; base chore/restructure, retargets to feat/v0.4.0 when #159 merges (gh pr update-branch, no force-push). Owner: splice-vast; splice-astra reviews (review -> fix -> re-review -> merge)."
+files = ["430 deleted paths + their consumers (see PR #160 file list; none under gateway/provider-codex/**", "gateway/dialect-openai-responses/** or checks/config/constructor-width-baseline.json)"]
+status = "in_flight"
+verify = "npm run gate && bun tools/gate rules --prove-coverage && git ls-files | wc -l"
+# [2026-09-20] opened as PR #160 (https://github.com/torad-labs/splice/pull/160). splice-vast's evidence at 837f8fe7: npm run gate -> GATE: PASS (81 legs, 200 ok, local ladder through the slot); git ls-files | wc -l = 2147 (2574 - 430 + the three files f7bd4802 added); rules --prove-coverage green at 34 roots.

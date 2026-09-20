@@ -8,6 +8,7 @@ export const S = {
   claudeHead: 'claude head',
   mode: 'head mode',
   separate: 'separate',
+  wrapped: 'wrapped',
   wrap: 'wrap',
   unwrapLabel: 'unwrap',
   confirmUnwrap: 'confirm unwrap',
@@ -25,7 +26,9 @@ export const S = {
   sample: 'sample data',
   onPath: 'claude on path',
   shim: 'shim',
-  rewritten: 'rewritten files',
+  realBinary: 'real binary',
+  logins: 'stored logins',
+  selected: 'selected login',
   backups: 'backup files',
 } as const;
 

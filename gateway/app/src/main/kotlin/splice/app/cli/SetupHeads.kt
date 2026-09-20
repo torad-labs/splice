@@ -49,8 +49,13 @@ internal class SetupHeads(
         return pickFrom(tickable, facts)
     }
 
-    suspend fun addAll(names: List<String>) {
-        if (names.isEmpty()) return
+    /** Returns what LANDED, which is a different list from what was ticked: `splice add` refuses a
+     *  command collision or a topology that stops parsing. The Claude lane is applied from that
+     *  list and only after the restart below, because wrapping reads the LIVE `claude-splice`
+     *  head's own spec — a wrap posted before the daemon carries the head it was just handed is
+     *  refused with "the 'claude-splice' head is not configured", which is the daemon being right. */
+    suspend fun addAll(names: List<String>): List<String> {
+        if (names.isEmpty()) return emptyList()
         val landed = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (name in names) {
@@ -61,6 +66,7 @@ internal class SetupHeads(
         if (landed.isNotEmpty()) parts += "added ${landed.joinToString(", ")}"
         if (failed.isNotEmpty()) parts += "failed ${failed.joinToString(", ")}"
         println(parts.joinToString("; "))
+        return landed
     }
 
     private fun announceExcluded(catalog: List<AddProfile>) {
@@ -114,9 +120,13 @@ internal class SetupHeads(
     }
 }
 
+// V4-175: `claude` LEFT this map. Its reason — "needs a name" — was never true of that row:
+// AddPrepare.kt:42 takes `args.name ?: profile.headKey` and the catalogue gives it `claude-splice`,
+// so `splice add claude --yes` has always worked unaided. The wrong reason is what kept the lane
+// choice off the wizard entirely, which is the half of V4-175 the operator asked for. `api-key`
+// stays: its headKey and baseUrl are both empty by construction, so it genuinely cannot be ticked.
 private val TICK_EXCLUDED = mapOf(
     "api-key" to "needs a base URL; run: splice add api-key --base-url URL --name NAME",
-    "claude" to "needs a name; run: splice add claude --name NAME",
 )
 
 internal const val API_KEY_KIND = "api-key"

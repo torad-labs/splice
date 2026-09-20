@@ -12,7 +12,9 @@ export const EMPTIES = {
   noKnobs: { text: 'this view holds no knobs', source: 'the other view tabs' },
   noHeads: { text: 'no heads declared', source: 'splice.toml' },
   topologyPending: { text: 'the console cannot read the file yet', source: 'V4-128 serves /api/topology' },
-  claudePending: { text: 'the console cannot read the mode yet', source: 'V4-129 serves /api/claude-head' },
+  // V4-175: not "pending" any more. The route is served (V4-129), so the only absence left is the
+  // one before the first poll answers, and it names the route rather than a row that closed.
+  claudeUnread: { text: 'the mode has not been read yet', source: 'GET /api/claude-head' },
   nothingChanged: { text: 'nothing changed yet', source: 'the loaded topology' },
 } as const;
 

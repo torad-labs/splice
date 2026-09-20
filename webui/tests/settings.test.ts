@@ -168,55 +168,132 @@ describe('settings: the document model', () => {
 });
 
 describe('settings: the Claude head modes', () => {
-  test('wrap prints the files it rewrites and the shim it installs', () => {
+  // V4-175: these arms used to build their own payload and assert against it, which is why they
+  // were green while the page rendered blanks — the fixture WAS the denominator. Every field below
+  // is now the daemon's, pinned against it by WebuiContractTest's "claude-head payload matches
+  // ClaudeHeadPayload" arm; if the two drift again, the Kotlin build goes red first.
+  const logins = {
+    count: 2,
+    selected: 'work',
+    labels: ['personal', 'work'],
+    constraint: 'one login per Claude head at a time, chosen at session launch; no mid-session switch',
+  };
+
+  test('wrapped is the daemon mode string, and the card prints the binary an unwrap restores', () => {
     const markup = render(
       h(ClaudeModeSection, {
         state: {
-          mode: 'wrap',
-          head: 'claude-splice',
-          config_dir: '~/.config/splice/claude-splice',
-          auth_kind: 'client',
-          claude_on_path: '~/.local/share/claude/versions/2.1.257',
-          shim_path: '~/.local/bin/claude',
-          rewritten_files: ['~/.claude/settings.json', '~/.claude/.claude.json'],
-          backup_paths: ['~/.claude/settings.json.bak'],
-          wrap_supported: true,
+          mode: 'wrapped',
+          resolves_to: '~/.local/share/splice/splice-launch',
+          shim_path: '~/.local/share/splice/splice-launch',
+          real_binary_path: '~/.local/share/claude/versions/2.1.257',
+          claude_logins: logins,
         },
+        result: null,
         onWrap: () => undefined,
         onUnwrap: () => undefined,
         busy: false,
       }),
     );
-    expect(markup).toContain('~/.claude/settings.json');
-    expect(markup).toContain('~/.local/bin/claude');
+    // The mutant this arm exists for: `wrap` instead of `wrapped` reads as `separate` on screen,
+    // which told the operator their claude command was untouched while the shim was installed.
+    expect(markup).toContain('wrapped');
+    expect(markup).not.toContain('separate leaves the vanilla setup untouched');
     expect(markup).toContain('~/.local/share/claude/versions/2.1.257');
-    expect(markup).toContain('shadowing the claude command');
+    expect(markup).toContain('shadowed the claude command');
     expect(markup).toContain('unwrap');
   });
 
-  test('separate says what it does not touch, and a pending route names its row', () => {
+  test('a wrapped head with no readable state says so rather than hiding the row', () => {
+    const markup = render(
+      h(ClaudeModeSection, {
+        state: {
+          mode: 'wrapped',
+          resolves_to: '~/.local/share/splice/splice-launch',
+          shim_path: '~/.local/share/splice/splice-launch',
+          real_binary_path: null,
+          claude_logins: logins,
+        },
+        result: null,
+        onWrap: () => undefined,
+        onUnwrap: () => undefined,
+        busy: false,
+      }),
+    );
+    expect(markup).toContain('real binary');
+    expect(markup).toContain('unknown');
+  });
+
+  test('separate says what it does not touch, and prints the stored logins with the constraint', () => {
     const separate = render(
       h(ClaudeModeSection, {
         state: {
           mode: 'separate',
-          head: 'claude-splice',
-          config_dir: '~/.config/splice/claude-splice',
-          auth_kind: 'client',
-          claude_on_path: null,
-          wrap_supported: false,
+          resolves_to: null,
+          shim_path: '~/.local/share/splice/splice-launch',
+          real_binary_path: null,
+          claude_logins: { count: 0, selected: null, labels: [], constraint: logins.constraint },
         },
+        result: null,
         onWrap: () => undefined,
         onUnwrap: () => undefined,
         busy: false,
       }),
     );
     expect(separate).toContain('nothing outside');
-    expect(separate).toContain('will not route around that guard');
+    expect(separate).toContain('nothing named claude');
+    expect(separate).toContain('no mid-session switch');
+    // A client-auth head holds no account, so `none` here is an answer, never a missing pool.
+    expect(separate).toContain('none');
+    // real_binary_path is separate mode's null BY DEFINITION; printing it would be printing a
+    // question nobody asked.
+    expect(separate).not.toContain('real binary');
+  });
 
-    const pending = render(
-      h(ClaudeModeSection, { state: { pending: 'V4-129' }, onWrap: () => undefined, onUnwrap: () => undefined, busy: false }),
+  test("wrap's two backup paths are printed, and only wrap carries them", () => {
+    const base = {
+      mode: 'wrapped' as const,
+      resolves_to: '~/.local/share/splice/splice-launch',
+      shim_path: '~/.local/share/splice/splice-launch',
+      real_binary_path: '~/.local/share/claude/versions/2.1.257',
+      claude_logins: logins,
+    };
+    const wrapped = render(
+      h(ClaudeModeSection, {
+        state: base,
+        result: {
+          ok: true,
+          ...base,
+          settings_backup_path: '~/.claude/settings.json.splice-wrap-backup-1000',
+          claude_json_backup_path: '~/.claude/.claude.json.splice-wrap-backup-1000',
+        },
+        onWrap: () => undefined,
+        onUnwrap: () => undefined,
+        busy: false,
+      }),
     );
-    expect(pending).toContain('V4-129 serves /api/claude-head');
+    expect(wrapped).toContain('~/.claude/settings.json.splice-wrap-backup-1000');
+    expect(wrapped).toContain('~/.claude/.claude.json.splice-wrap-backup-1000');
+
+    // Unwrap consumes the backups and its answer carries none, so no empty backup rows appear.
+    const unwrapped = render(
+      h(ClaudeModeSection, {
+        state: { ...base, mode: 'separate', real_binary_path: null },
+        result: { ok: true, ...base, mode: 'separate', real_binary_path: null },
+        onWrap: () => undefined,
+        onUnwrap: () => undefined,
+        busy: false,
+      }),
+    );
+    expect(unwrapped).not.toContain('backup files');
+  });
+
+  test('before the first poll answers, the empty names the route and not a closed row', () => {
+    const unread = render(
+      h(ClaudeModeSection, { state: null, result: null, onWrap: () => undefined, onUnwrap: () => undefined, busy: false }),
+    );
+    expect(unread).toContain('GET /api/claude-head');
+    expect(unread).not.toContain('V4-129');
   });
 });
 
@@ -237,8 +314,13 @@ describe('settings: the coverage manifest', () => {
     expect(new Set(dispositions.map((entry) => entry.name)).size).toBe(dispositions.length);
 
     // The names the two FEATURES sections call read-only, and no others (15 since V4-170 added the
-    // third system prompt mode value, strip).
-    const readOnly = dispositions.filter((entry) => entry.disposition === 'read-only').map((entry) => entry.name);
+    // third system prompt mode value, strip). KNOBS AND TOPOLOGY KEYS ONLY: the sentence this pin
+    // enforces is about those two vocabularies, and counting routes into it made the number answer
+    // a different question than the one it is named for — V4-175 moved /api/claude-head off
+    // `pending` onto a read-only status read and the arithmetic went red for a correct manifest.
+    const readOnly = dispositions
+      .filter((entry) => entry.kind !== 'route' && entry.disposition === 'read-only')
+      .map((entry) => entry.name);
     expect(readOnly).toHaveLength(15);
     for (const entry of dispositions) {
       if (entry.disposition === 'read-only' || entry.disposition === 'excluded') expect(entry.reason).toBeTruthy();

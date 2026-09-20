@@ -204,6 +204,34 @@ class WebuiContractTest {
         assertFields(api("/api/logs/codex"), listOf("key", "path", "lines"), "LogsPayload")
     }
 
+    /** ClaudeHeadPayload (webui entities/claude-head/model/types.ts). ADDED BY V4-175, and it is
+     *  the route that proves why this wall's route list has to be the denominator rather than a
+     *  sample: /api/claude-head was absent from it, so the webui's types were written AHEAD of the
+     *  daemon ("PENDING V4-129") and V4-129 then shipped a different payload. Nothing compared the
+     *  two, and the settings page has been reading `head`, `config_dir` and `claude_on_path` off a
+     *  response that never carried them — rendering two blanks and, worse, printing "nothing named
+     *  claude" from an absent field while the daemon knew the answer under another name. */
+    @Test
+    fun `claude-head payload matches ClaudeHeadPayload`() = runBlocking {
+        val payload = api("/api/claude-head")
+        assertFields(payload, listOf("mode", "resolves_to", "shim_path", "real_binary_path"), "ClaudeHeadPayload")
+        assertFields(
+            payload["claude_logins"]!!.jsonObject,
+            listOf("count", "selected", "labels", "constraint"),
+            "ClaudeHeadPayload.claude_logins",
+        )
+        // The one VALUE this wall pins, because a name check could not have caught it: the webui's
+        // CLAUDE_HEAD_MODES is the closed set the settings page branches on, and it read `wrap`
+        // against a daemon that says `wrapped`, so `mode === 'wrap'` was never true and a WRAPPED
+        // machine rendered the separate badge, the separate sentence and a Wrap button. Both
+        // spellings are present on every field list; only the value tells them apart.
+        val mode = payload["mode"]!!.jsonPrimitive.content
+        assertTrue(
+            mode in listOf("separate", "wrapped"),
+            "mode '$mode' is outside webui CLAUDE_HEAD_MODES — the page would render the other branch",
+        )
+    }
+
     /** EconomicsPayload + HeadEconomics + EconomicsBucket (webui shared/api). The bucket fields
      *  are the burn page's whole input; a rename here silently blanks the quota gauge, which is
      *  the one surface whose failure mode is reading SAFE while the plan drains.

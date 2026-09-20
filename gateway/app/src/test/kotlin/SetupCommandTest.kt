@@ -219,9 +219,14 @@ class SetupCommandTest {
             val named = catalog.filter { name -> "splice add $name" in log }.toSet()
             assertEquals(catalog, offered.toSet() + named, "catalog=$catalog offered=$offered named=$named log=$log")
             assertTrue("api-key" in named, log)
-            assertTrue("claude" in named, log)
             assertFalse("api-key" in offered)
-            assertFalse("claude" in offered)
+            // V4-175: `claude` is TICKABLE now. It was excluded with "needs a name", which was
+            // never true of that row (AddPrepare.kt:42 falls back to profile.headKey, and the
+            // catalogue gives it `claude-splice`), and the wrong reason is what kept the lane
+            // choice off the wizard. The invariant above — offered OR excluded by name, never
+            // silently absent — is unchanged and still what this arm is for.
+            assertTrue("claude" in offered, log)
+            assertFalse("claude" in named, log)
         }
 
         @Test

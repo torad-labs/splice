@@ -115,12 +115,17 @@ export const dispositions: readonly Disposition[] = [
   ...entries('topology', 'read-only', MODE_VALUES, 'a system prompt mode value'),
   ...entries('topology', 'read-only', RETIRED_TOPOLOGY, 'retired, the daemon refuses it'),
 
-  // The routes this page reads and writes. `/api/config` exists (GET and PATCH). The topology and
-  // Claude head routes do not: they are served by V4-128 and V4-129, and every surface that needs
-  // them renders the honest empty naming that row.
+  // The routes this page reads and writes. `/api/config` exists (GET and PATCH). `/api/topology`
+  // does not: it is served by V4-128, and the surface that needs it renders the honest empty
+  // naming that row.
+  //
+  // V4-175: the three Claude head routes moved off `pending`. V4-129 shipped them and these
+  // entries stayed as they were — the same staleness class as an allowlist entry for a fixture
+  // that was edited: a disposition that says "not built yet" about a route the page is calling is
+  // a manifest describing an earlier tree, and nothing fails while it does.
   { kind: 'route', name: '/api/config', disposition: 'editable' },
   { kind: 'route', name: '/api/topology', disposition: 'pending', where: 'V4-128' },
-  { kind: 'route', name: '/api/claude-head', disposition: 'pending', where: 'V4-129' },
-  { kind: 'route', name: '/api/claude-head/wrap', disposition: 'pending', where: 'V4-129' },
-  { kind: 'route', name: '/api/claude-head/unwrap', disposition: 'pending', where: 'V4-129' },
+  { kind: 'route', name: '/api/claude-head', disposition: 'read-only', reason: 'a status read; the mode changes through the two action routes beside it' },
+  { kind: 'route', name: '/api/claude-head/wrap', disposition: 'editable' },
+  { kind: 'route', name: '/api/claude-head/unwrap', disposition: 'editable' },
 ];

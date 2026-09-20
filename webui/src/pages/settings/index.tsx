@@ -9,7 +9,7 @@
 //     saving a new one does anything now;
 //   * the topology document, from GET /api/topology (PENDING V4-128), as forms per key plus the
 //     raw text and a diff behind reveals;
-//   * the Claude head's mode, from GET /api/claude-head (PENDING V4-129).
+//   * the Claude head's mode, from GET /api/claude-head, switched through POST /wrap and /unwrap.
 //
 // A route that does not exist yet renders the honest empty naming its v0.4.0 row. Nothing on this
 // page is ever mocked.
@@ -26,6 +26,7 @@ import {
 import type { ConfigPayload, ConfigValue } from '@shared/api';
 // `fetchClaudeHead` is not imported: the poll below runs it on its own first tick.
 import { startClaudeHeadPolling, unwrapClaudeHead, useClaudeHead, wrapClaudeHead } from '@entities/claude-head';
+import type { ClaudeHeadActionResult } from '@entities/claude-head';
 import {
   fetchTopology,
   saveTopology,
@@ -84,6 +85,8 @@ export function SettingsPage() {
   const [writeResult, setWriteResult] = useState<TopologyWriteResult | null>(null);
   const [busyTopology, setBusyTopology] = useState(false);
   const [busyClaude, setBusyClaude] = useState(false);
+  const [claudeResult, setClaudeResult] = useState<ClaudeHeadActionResult | null>(null);
+  const [claudeFault, setClaudeFault] = useState<string | null>(null);
 
   useEffect(() => startTopologyPolling(POLL_MS), []);
   useEffect(() => startClaudeHeadPolling(POLL_MS), []);
@@ -165,9 +168,16 @@ export function SettingsPage() {
       .finally(() => setBusyTopology(false));
   };
 
-  const action = (run: () => Promise<unknown>) => {
+  // V4-175: this used to be `void run().finally(...)`, which dropped BOTH halves of the answer —
+  // the backup paths a wrap reports, and the 409 sentence a refusal carries ("claude is not
+  // currently wrapped"). A refused click printed nothing at all and left an unhandled rejection.
+  const action = (run: () => Promise<ClaudeHeadActionResult>) => {
     setBusyClaude(true);
-    void run().finally(() => setBusyClaude(false));
+    setClaudeFault(null);
+    void run()
+      .then(setClaudeResult)
+      .catch((err: unknown) => setClaudeFault(err instanceof Error ? err.message : String(err)))
+      .finally(() => setBusyClaude(false));
   };
 
   return (
@@ -184,6 +194,7 @@ export function SettingsPage() {
       {config.error === null ? null : <Fault message={config.error} />}
       {topology.error === null ? null : <Fault message={topology.error} />}
       {claude.error === null ? null : <Fault message={claude.error} />}
+      {claudeFault === null ? null : <Fault message={claudeFault} />}
 
       <section className="myx-settings-section">
         <h2 className="myx-settings-title">{S.knobs}</h2>
@@ -259,14 +270,19 @@ export function SettingsPage() {
       <section className="myx-settings-section">
         <h2 className="myx-settings-title">{S.claudeHead}</h2>
         <ClaudeModeSection
-          state={fixture === null ? (claude.data ?? { pending: 'V4-129' }) : {
+          state={fixture === null ? claude.data : {
             mode: 'separate',
-            head: 'claude-splice',
-            config_dir: '~/.config/splice/claude-splice',
-            auth_kind: 'client',
-            claude_on_path: '~/.local/bin/claude',
-            wrap_supported: true,
+            resolves_to: '~/.local/share/claude/versions/2.1.257',
+            shim_path: '~/.local/share/splice/splice-launch',
+            real_binary_path: null,
+            claude_logins: {
+              count: 2,
+              selected: 'work',
+              labels: ['personal', 'work'],
+              constraint: 'one login per Claude head at a time, chosen at session launch; no mid-session switch',
+            },
           }}
+          result={claudeResult}
           busy={busyClaude}
           onWrap={() => action(wrapClaudeHead)}
           onUnwrap={() => action(unwrapClaudeHead)}

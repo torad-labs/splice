@@ -49,6 +49,10 @@ const EDITABLE_KNOBS = [
   // V4-174: the per-head full request/response trace (off), its retention and body cap. Ordinary
   // restart-required knobs a head reads at assembly; `splice doctor` warns while the trace is on.
   'TRACE', 'TRACE_RETENTION_DAYS', 'TRACE_MAX_BODY_CHARS',
+  // V4-133 (console daemon table stakes): the budget default action fills a bare PUT /api/budgets
+  // row and takes effect on the next PUT (no restart); the perf-archive retention days is ordinary
+  // restart-required, read only once a head names an archiveDir. Both PATCH-able like any knob.
+  'BUDGET_DEFAULT_ACTION', 'PERF_ARCHIVE_RETENTION_DAYS',
 ] as const;
 
 /** FEATURES 4.11: "The four host knobs, read-only with the reason." They shape one McpHost read

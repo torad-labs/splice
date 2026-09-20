@@ -32,7 +32,12 @@ import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.control.api.ActivitySource
+import splice.control.api.AlertRoutes
+import splice.control.api.AlertSource
 import splice.control.api.AuthRoutes
+import splice.control.api.BudgetRoutes
+import splice.control.api.BudgetSource
+import splice.control.api.CaptureRoutes
 import splice.control.api.CompactPayloads
 import splice.control.api.CompactionInstructionsRoute
 import splice.control.api.ConfigRoutes
@@ -50,6 +55,8 @@ import splice.control.api.McpRoutes
 import splice.control.api.ModelsRoute
 import splice.control.api.PerfPayloads
 import splice.control.api.PerfRoutes
+import splice.control.api.PlaygroundRoute
+import splice.control.api.PlaygroundSource
 import splice.control.api.ProjectsRoutes
 import splice.control.api.RepoOf
 import splice.control.api.ResumeHookRoute
@@ -152,6 +159,13 @@ public class ControlServer(
     private val compactionRoute = CompactionInstructionsRoute(resolver)
 
     private val topologyRoutes = TopologyRoutes(TopologySource { ports.topology }, topologyStale)
+
+    // V4-133 (FEATURES.md §5/§6): read at CALL time through the same TopologySource/BudgetSource/
+    // AlertSource/PlaygroundSource discipline every other console port keeps — see ConsolePorts.
+    private val captureRoutes = CaptureRoutes(resolver, config, TopologySource { ports.topology })
+    private val budgetRoutes = BudgetRoutes(BudgetSource { ports.budgets }, config)
+    private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
+    private val playgroundRoute = PlaygroundRoute(resolver, PlaygroundSource { ports.playground })
 
     private val daemonRoutes = DaemonRoutes()
     private val modelsRoute = ModelsRoute(heads)
@@ -320,6 +334,22 @@ public class ControlServer(
         route.post("/api/daemon/restart") {
             guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.supervised) }
         }
+        // V4-133, FEATURES.md §5/§6 — table stakes: opt-in body capture (the TRACE knob, see
+        // CaptureRoutes' header), budgets, alerts and one never-recorded playground call.
+        route.get("/api/heads/{head}/capture") {
+            guarded(call) { captureRoutes.read(call.parameters["head"].orEmpty()).send(call) }
+        }
+        route.put("/api/heads/{head}/capture") {
+            guarded(call) {
+                captureRoutes.write(call.parameters["head"].orEmpty(), call.receiveText()).send(call)
+            }
+        }
+        route.get("/api/budgets") { guarded(call) { budgetRoutes.read().send(call) } }
+        route.put("/api/budgets") { guarded(call) { budgetRoutes.write(call.receiveText()).send(call) } }
+        route.get("/api/alerts") { guarded(call) { alertRoutes.read().send(call) } }
+        route.put("/api/alerts") { guarded(call) { alertRoutes.write(call.receiveText()).send(call) } }
+        route.post("/api/alerts/test") { guarded(call) { alertRoutes.test().send(call) } }
+        route.post("/api/playground") { guarded(call) { playgroundRoute.run(call.receiveText()).send(call) } }
     }
 
     @Synchronized

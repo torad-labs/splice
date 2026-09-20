@@ -57,6 +57,10 @@
 #     typed alternative: `URL.openConnection()` is declared to return URLConnection and the JDK
 #     offers no typed accessor; `Files.readAttributes(path, "basic:...")` returns Map<String, Object>;
 #     `Knob.default` is `Any` by construction (ConfigCoercion.kt:68-87).
+#   2026-09-20 (V4-133): `String` — the same `Knob.default: Any` shape as the 2026-09-17 `Long`
+#     entry above, this time for a STRING-kinded knob (BudgetRoutes.kt reading
+#     Knob.BUDGET_DEFAULT_ACTION.default when a PUT /api/budgets row names no action). No typed
+#     accessor exists for either kind; the coercion is `Any` by the same construction.
 # A NEW foreign target goes RED and the remedy is one dated line here with its reason — never an
 # inline suppression. That is the intended cost: 13 target types have accumulated over this repo's
 # life, so the rate is low and each addition is a reviewed decision rather than silence.
@@ -68,9 +72,9 @@ note: >
   The knowledge is already at the call site: the `!is` test or the nullable continuation probe one
   line above decided the shape. Let a `when` bind it, or let the function that decided hand the
   narrowed type back. `as?` with `?: return` is compliant — 25 sites in this tree already use it.
-  Foreign casts (the seven kotlinx JSON types, JDK HttpURLConnection/FileTime, `Any`-typed Long unboxing) and the
-  `null as T?` serialization ascription are exempt; a NEW foreign target needs a dated exemption
-  entry in this rule's header, not an inline ignore.
+  Foreign casts (the seven kotlinx JSON types, JDK HttpURLConnection/FileTime, `Any`-typed Long/String
+  unboxing) and the `null as T?` serialization ascription are exempt; a NEW foreign target needs a
+  dated exemption entry in this rule's header, not an inline ignore.
 files:
   - gateway/*/src/main/**/*.kt
 rule:
@@ -87,4 +91,4 @@ rule:
     - not:
         has:
           kind: user_type
-          regex: '^(JsonObject|JsonArray|JsonPrimitive|JsonElement|JsonNull|JsonDecoder|JsonEncoder|HttpURLConnection|FileTime|Long)$'
+          regex: '^(JsonObject|JsonArray|JsonPrimitive|JsonElement|JsonNull|JsonDecoder|JsonEncoder|HttpURLConnection|FileTime|Long|String)$'

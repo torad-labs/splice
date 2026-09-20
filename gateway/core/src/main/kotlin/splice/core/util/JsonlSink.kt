@@ -16,9 +16,30 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+/** V4-133: a hook [JsonlSink.appendLine] calls just before an about-to-rotate write would REPLACE
+ *  an existing rolled `.1` generation with a fresh one — the moment that generation's rows are
+ *  gone for good. The default, [JsonlSink.NO_ARCHIVE], does nothing: every caller that does not
+ *  pass one keeps today's exact behaviour (one generation, then discard). A caller that wants more
+ *  than one generation of history — PerfStats' opt-in archive dir is the first — copies [rolled]
+ *  out before returning. Exceptions are the caller's problem to avoid: [JsonlSink] runs this under
+ *  the same best-effort guard as the append itself, so a broken hook degrades to the old discard
+ *  rather than losing the row this append is for. */
+public fun interface RotationArchive {
+    public fun beforeReplace(rolled: Path)
+}
+
+/** The three rotation-policy values [JsonlSink.append]/[JsonlSink.rotateIfOver] need together —
+ *  bundled so adding [archive] (V4-133) did not take [JsonlSink.rotateIfOver] past the
+ *  LongParameterList wall's 6-parameter ceiling. */
+private data class RotatePolicy(val maxBytes: Long, val rotate: Boolean, val archive: RotationArchive)
+
 public object JsonlSink {
     private val locks = ConcurrentHashMap<Path, Any>()
     private val unrotated = AtomicInteger()
+
+    /** The default for every caller that does not name an archive: discard the rolled generation,
+     *  exactly as [JsonlSink] always has. */
+    public val NO_ARCHIVE: RotationArchive = RotationArchive { }
 
     /**
      * Append [line], rotating one generation before [maxBytes] can grow without bound.
@@ -48,14 +69,19 @@ public object JsonlSink {
      * and it is strictly above the status quo of parking the lane forever. [unrotatedAppends]
      * counts the degrade so it is observable rather than silent.
      */
-    public fun appendLine(file: Path, line: String, maxBytes: Long = DEFAULT_MAX_BYTES) {
+    public fun appendLine(
+        file: Path,
+        line: String,
+        maxBytes: Long = DEFAULT_MAX_BYTES,
+        archive: RotationArchive = NO_ARCHIVE,
+    ) {
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
             val lockPath = normalized.resolveSibling("${normalized.fileName}.lock")
             FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
                 val lock = acquireBounded(channel)
                 try {
-                    append(file, line, maxBytes, rotate = lock != null)
+                    append(file, line, RotatePolicy(maxBytes, rotate = lock != null, archive))
                 } finally {
                     lock?.release()
                 }
@@ -96,27 +122,30 @@ public object JsonlSink {
      * lands, because that is the 2026-08-25 ENOSPC fix — a heal after the write fuses the fragment
      * with the row that followed it and costs both.
      */
-    private fun append(file: Path, line: String, maxBytes: Long, rotate: Boolean) {
+    private fun append(file: Path, line: String, policy: RotatePolicy) {
         val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
         val currentSize = if (Files.exists(file)) Files.size(file) else 0L
-        val rotated = rotateIfOver(file, currentSize, encoded.size, maxBytes, rotate)
+        val rotated = rotateIfOver(file, currentSize, encoded.size, policy)
         writeForced(file, healedBytes(file, encoded, currentSize, rotated))
     }
 
-    /** Rolls one generation when this row would take the file past [maxBytes], and answers whether
-     *  it did — which [healedBytes] needs, since a freshly rotated file has no tail to heal. A
-     *  caller that lost the cross-process lock passes [rotate] false and appends unrotated; see
-     *  [appendLine]'s DR-178 note for why that degrade beats parking the lane. */
-    private fun rotateIfOver(
-        file: Path,
-        currentSize: Long,
-        encodedSize: Int,
-        maxBytes: Long,
-        rotate: Boolean,
-    ): Boolean {
-        val rotated = rotate && currentSize > 0 && currentSize + encodedSize > maxBytes
+    /** Rolls one generation when this row would take the file past [RotatePolicy.maxBytes], and
+     *  answers whether it did — which [healedBytes] needs, since a freshly rotated file has no
+     *  tail to heal. A caller that lost the cross-process lock passes [RotatePolicy.rotate] false
+     *  and appends unrotated; see [appendLine]'s DR-178 note for why that degrade beats parking
+     *  the lane.
+     *
+     *  V4-133: an existing `.1` is handed to [RotatePolicy.archive] BEFORE the move replaces it —
+     *  the one moment its rows are still on disk anywhere. Best-effort: a throwing hook degrades
+     *  to the discard every caller already lived with, never to a lost or corrupted append. */
+    private fun rotateIfOver(file: Path, currentSize: Long, encodedSize: Int, policy: RotatePolicy): Boolean {
+        val rotated = policy.rotate && currentSize > 0 && currentSize + encodedSize > policy.maxBytes
         if (rotated) {
             val rolled = file.resolveSibling("${file.fileName}.1")
+            if (Files.exists(rolled)) {
+                // A throwing hook degrades to today's discard; it must never block or corrupt the append.
+                Cancellables.runCatchingCancellable { policy.archive.beforeReplace(rolled) }
+            }
             Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
         }
         return rotated
@@ -231,7 +260,10 @@ public object JsonlSink {
         return whole.lineSequence().filter { it.isNotEmpty() }.toList()
     }
 
-    private const val DEFAULT_MAX_BYTES = 64L * 1024 * 1024
+    // why: PerfStats (V4-133) takes this as its own default so a caller that wants a SMALL cap for
+    // a test does not have to duplicate the number — one source, the same law const-single-source
+    // enforces for every other repeated constant.
+    public const val DEFAULT_MAX_BYTES: Long = 64L * 1024 * 1024
     private const val NEWLINE_BYTE = '\n'.code.toByte()
 
     // DR-178: three orders of magnitude above a healthy hold (stat + maybe-rename + append) and far

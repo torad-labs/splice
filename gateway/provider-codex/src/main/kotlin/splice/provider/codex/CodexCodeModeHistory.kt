@@ -56,15 +56,24 @@ internal class CodexCodeModeHistory(json: Json) {
      * is OMITTED, never fatal: its client calls stay in the history as the ordinary tool calls the
      * client already saw, which is the pre-code-mode wire shape. Records after an omitted one were
      * measured on top of its canonical items, so they omit too; the caller logs each omission.
+     *
+     * [replayMedia]: this turn's follow-ups per result id (V4-179). A CAPTURED result the client now
+     * replays with different media is not the result the record accepted, and its record omits the
+     * same way — the client's callback and its media stay as ordinary history — rather than the
+     * canonical media riding beside the replayed ones. A legacy id (nothing captured) is not judged.
      */
-    fun canonicalize(bodyJson: String, records: List<CodeModeRecord>): CodeModeRewrite {
+    fun canonicalize(
+        bodyJson: String,
+        records: List<CodeModeRecord>,
+        replayMedia: Map<String, List<JsonElement>> = emptyMap(),
+    ): CodeModeRewrite {
         val root = codec.root(bodyJson)
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
         val conversation = codec.conversation(codec.projection.project(root.second))
         var body = conversation.body
         val omitted = mutableListOf<CodeModeOmission>()
         records.forEach { record ->
-            val rewritten = canonicalizeRecord(body, record)
+            val rewritten = canonicalizeRecord(body, record, replayMedia)
             val error = rewritten.error
             if (error == null) body = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
         }
@@ -90,12 +99,24 @@ internal class CodexCodeModeHistory(json: Json) {
             ?: ProjectedRewrite(ResponsesCodeModeInput(input.logicalItems, checkNotNull(replay.items)))
     }
 
-    private fun canonicalizeRecord(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
-        metadataProblem(record)?.let { return ProjectedRewrite(null, it) }
-        if (!codec.validPrefix(input.logicalItems, record)) {
-            return ProjectedRewrite(null, "code-mode logical history does not match its persisted baseline")
-        }
-        return rewriteRecord(input, record)
+    private fun canonicalizeRecord(
+        input: ResponsesCodeModeInput,
+        record: CodeModeRecord,
+        replayMedia: Map<String, List<JsonElement>>,
+    ): ProjectedRewrite {
+        val problem = metadataProblem(record)
+            ?: "code-mode logical history does not match its persisted baseline".takeUnless {
+                codec.validPrefix(input.logicalItems, record)
+            }
+            ?: replayedMediaProblem(record, replayMedia)
+        return problem?.let { ProjectedRewrite(null, it) } ?: rewriteRecord(input, record)
+    }
+
+    private fun replayedMediaProblem(record: CodeModeRecord, replayMedia: Map<String, List<JsonElement>>): String? {
+        val changed = replayMedia.keys.firstOrNull { id ->
+            record.accepted.media(id)?.let { captured -> captured != replayMedia.getValue(id) } == true
+        } ?: return null
+        return "code-mode result '$changed' is replayed with media that differ from what its record captured"
     }
 
     private fun rewriteRecord(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {

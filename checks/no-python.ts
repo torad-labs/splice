@@ -217,7 +217,7 @@ function runtimeMismatch(): string[] {
  *  FORCED BY A REAL COLLISION, 2026-09-18. splice-builder converted the 21 hook scripts to .ts
  *  and the wall went red on four of them — 10_laws.ts, 12_inflight_reanchor.ts,
  *  08_manifest_single_channel.ts, 05_campaign_inflight_note.ts — each naming
- *  `python3 .dev/campaigns/manifest.py`, because manifest.py IS still Python and V4-143 owns it.
+ *  the ledger CLI while it was still Python, which V4-143 ended on 2026-09-18.
  *  Their .py predecessors named the same string and were invisible only because the invoker
  *  census skips .py files; becoming .ts made them new invokers. So converting a caller to the
  *  right language REDDENED the wall, which is the wall punishing the work it exists to cause.
@@ -235,7 +235,7 @@ function runtimeMismatch(): string[] {
  *
  *    1. the named tool is still on the burn-down's `files` list — a list that may only shrink,
  *       so this can never excuse a NEW .py, only one already carried as debt;
- *    2. the tool still EXISTS — when V4-143 lands and manifest.py is gone, every exclusion it
+ *    2. the tool still EXISTS — V4-143 landed and the .py is gone, so every exclusion it
  *       granted evaporates in the same instant, with no edit to this file;
  *    3. stripping that tool's own invocations from the caller leaves NO python behind — a file
  *       that also shells python for its own reasons keeps its charge in full.

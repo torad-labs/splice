@@ -1050,9 +1050,12 @@ verify = "bun .dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.t
 id = "INF-05"
 phase = "W-INFRA"
 title = "Enforce fence exclusivity at CLAIM time, not only at gate time — manifest.py's cmd_claim has NO fence/overlap logic (proven 2026-07-26), so two agents can claim items whose files= fences intersect and nothing stops them writing the same file concurrently. Gate check C7 now detects it after the fact; claim-time refusal is the structural fix. Touches the VENDORED CLI, so it must be promoted upstream to torad-fleet, never hand-forked (campaign law: never fork divergent CLI logic)."
-files = [".dev/campaigns/manifest.py"]
-status = "todo"
-verify = "python3 .dev/campaigns/manifest.py .dev/campaigns/proxy-hardening.toml selftest"
+files = [".dev/campaigns/ledger.ts"]
+status = "done"
+verify = "bun .dev/campaigns/manifest.ts .dev/campaigns/proxy-hardening.toml selftest"
+# [2026-09-20] amend by=unattributed: verify was "python3 .dev/campaigns/manifest.py .dev/campaigns/proxy-hardening.toml selftest"; files were [".dev/campaigns/manifest.py"]
+# [2026-09-20] SATISFIED BY THE V4-143 CUTOVER, not by a hand-fork. The row asked for claim-time fence exclusivity and named manifest.py, which no longer exists: splice V4-143 replaced it with the VENDORED bun CLI, which is exactly the promote-upstream route this row's last sentence demanded. The guard is .dev/campaigns/ledger.ts:1738-1753 — on claim, fenceOverlap(block.item.files, other.item.files) against every OTHER row; a non-empty intersection with an in_flight row throws LedgerError and the claim is refused in words, while an overlap with a claimed-but-todo peer warns. Proven able to fail by the CLI's own selftest: ledger.ts:2452 'claim is refused on a fence that overlaps a claimed row, which is in_flight', plus ledger.ts:2499 (a sibling directory is NOT an overlap, so the guard is not a substring match) and ledger.ts:2785 (silent once the overlapping row is done). Gate check C7's after-the-fact detection stays as the second line. files= and verify= repointed off the deleted script in this same commit, because the gap between the deletion and the repoint is where the no-python wall's LEDGER VERIFY NAMES A MISSING FILE defect lives.
+# [2026-09-20] RECEIPT cmd="bun .dev/campaigns/manifest.ts .dev/campaigns/proxy-hardening.toml selftest" exit=0 tests=215 touched=.dev/campaigns/ledger.ts tail="ledger selftest / 179/179 checks passed / fleet selftest / 36/36 checks passed"
 
 [[items]]
 id = "INF-01"

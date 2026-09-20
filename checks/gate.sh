@@ -117,7 +117,7 @@ run "campaign selftest" npm run --silent gate:campaign:selftest
 run "campaign ledger floor" bun checks/campaign-ledger-floor.ts --check
 run "campaign ledger floor selftest" bash checks/campaign-ledger-floor-selftest.sh
 # DR-184: and the CLI's own suite, which nothing ran. The leg two lines up named "campaign
-# selftest" is campaign_wall_gate.py's, not manifest.py's — so every arm guarding the instrument
+# selftest" is campaign_wall_gate's, not the ledger CLI's — so every arm guarding the instrument
 # that owns campaign memory fired only when a session remembered to type it.
 run "campaign CLI selftest" bash checks/campaign-cli-selftest.sh
 run "campaign CLI selftest canary" bash checks/campaign-cli-selftest-canary.sh

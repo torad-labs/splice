@@ -2,7 +2,7 @@
  *
  *  Concept #945: agents die, sessions compact — durable state lives in
  *  .dev/campaigns/*.toml. At Stop, list items still marked in_flight so the session
- *  either (a) records what it just finished (`manifest.py set-status <ID> done` +
+ *  either (a) records what it just finished (`set-status <ID> done` +
  *  `note`), or (b) consciously confirms the item is running on a PEER session
  *  (fleet-builder) and turn-end is expected.
  *
@@ -10,9 +10,8 @@
  *  sessions and legitimately ends turns while items are in flight — a block here
  *  would fight the async workflow. The deliberate exception to block-preferred.
  *
- *  The payload names `python3 .dev/campaigns/manifest.py` because that IS still the CLI an operator
- *  types (V4-143 owns converting it). The instruction is therefore correct as written, and this
- *  file stays in the no-python invoker census until that row lands.
+ *  The payload names the bun ledger CLI. It named the Python one until V4-143 deleted that file
+ *  (2026-09-18). This text is read as an INSTRUCTION at turn end, so it must name a live command.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -59,7 +58,7 @@ export function run(data: HookEvent): HookResult | null {
     "warn",
     "§campaign-inflight — items still in_flight at turn end:\n  - " +
       inflight.join("\n  - ") +
-      "\n  If YOU finished one: python3 .dev/campaigns/manifest.py set-status <ID> done " +
+      "\n  If YOU finished one: bun .dev/campaigns/manifest.ts set-status <ID> done " +
       "(+ note the evidence). If it runs on a peer (fleet-builder), this is expected.",
     MODULE_NAME,
   );

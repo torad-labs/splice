@@ -4,10 +4,9 @@
  *  into the seat. Otherwise, surface the current in-flight campaign items with the
  *  same short report-back contract used at turn end.
  *
- *  The guidance text names `python3 .dev/campaigns/manifest.py` because that is still the CLI an
- *  operator types (V4-143 owns converting it), so this file stays in the no-python invoker census
- *  until that row lands. The instruction is correct as written; changing it now would teach a
- *  command that does not exist yet.
+ *  The guidance text names the bun ledger CLI. It named the Python one until V4-143 deleted that
+ *  file (2026-09-18); the rule then and now is the same — this text is READ AS AN INSTRUCTION by
+ *  every seat at session start, so it must name a command that exists.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -19,9 +18,9 @@ export const MODULE_NAME = "12_inflight_reanchor";
 const SESSIONSTART_SOURCES: ReadonlySet<string> = new Set(["startup", "resume", "clear", "compact"]);
 const LINE_ONE = "§in-flight re-anchor — in_flight at session start:";
 const GUIDANCE =
-  "If YOURS: note progress via python3 .dev/campaigns/manifest.py <path> note <ID> ...; " +
+  "If YOURS: note progress via bun .dev/campaigns/manifest.ts <path> note <ID> ...; " +
   "set-status done only after its verify passes; then reply ONE line: <ID> done — see ledger. " +
-  "Laws: manifest.py laws";
+  "Laws: bun .dev/campaigns/manifest.ts laws";
 const MAX_PAYLOAD_CHARS = 500;
 const MAX_ITEMS = 3;
 const TITLE_LIMIT = 60;

@@ -42,7 +42,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  coexistsWithPython,
   findBlock,
   headerLines,
   isItemStatus,
@@ -1067,21 +1066,13 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
     );
   }
 
-  // VENDORING DELTA 5 (splice V4-143, orchestrator ruling 2026-09-18): ONE CLAIM MODEL WHILE TWO
-  // CLIS EXIST. manifest.py records a claim as a dated CLAIM note and refuses one whose fence meets a
-  // live row's; this CLI records claimed_by/claimed_at and has no such guard. Each is blind to the
-  // other's claims — measured: a py claim landed on top of a claim made here. So on a ledger
-  // manifest.py also writes, ownership stays with manifest.py; the refusal expires with the .py.
-  // The cutover ports the disjointness guard here and migrates in-flight CLAIM notes to fields.
-  const CLAIM_VERBS = new Set(["claim", "release", "release-stale"]);
-  const claimsHere = CLAIM_VERBS.has(command) || (command === "next" && rest.includes("--claim"));
-  if (claimsHere && coexistsWithPython(ledgerPath)) {
-    throw new LedgerError(
-      `${command} is refused on ${ledgerPath} while .dev/campaigns/manifest.py still writes it: ` +
-        `the two CLIs record claims differently and cannot see each other's. Claim with ` +
-        `\`python3 .dev/campaigns/manifest.py ${ledgerPath} claim <ID> --session <seat>\` until the cutover.`,
-    );
-  }
+  // VENDORING DELTA 5, CLOSED 2026-09-18 (splice V4-143). While two CLIs existed this verb refused
+  // every claim on a ledger the Python one also wrote: that CLI recorded a claim as a dated note and
+  // refused a fence meeting a live row's, this one records claimed_by/claimed_at, and each was blind
+  // to the other's — measured, a claim landed on top of a claim made here. The refusal was written to
+  // expire with the .py and it has: the file is deleted, and the disjointness guard it was protecting
+  // now lives in this CLI's own claim (see fenceOverlap against in_flight rows below), so the two
+  // halves of the delta are both discharged rather than one of them quietly dropped.
   const READ_ONLY = new Set(["list", "get", "next", "laws", "packet", "phase-status", "touched", "validate"]);
   const attested = rest.includes("--attested") || command === "snapshot";
   if (command === "init") {

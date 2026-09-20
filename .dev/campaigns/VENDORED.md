@@ -26,7 +26,10 @@ Vendored 2026-09-18 by V4-143 into `.dev/campaigns/` from:
 | `fleet.ts` | — | — | splice-only: the fleet journal and manifest.py's ported verbs |
 
 Not vendored: `idle-watch.ts` (this repo has its own), `hydrate.ts`, the matrix plane, and the source
-repo's hooks. `manifest.py` stays until the cutover (V4-143 phase D) deletes it.
+repo's hooks. `manifest.py` IS GONE: V4-143 phase D deleted it 2026-09-20, and with it deltas 1, 2,
+3 and 5 retired themselves — `coexistsWithPython` in `ledger-core.ts` is false for every ledger now,
+so the flock-through-ffi, the write-in-place, the suppressed `.cli-sha256` and the claims-stay-on-py
+rules are dead code paths by construction rather than by an edit. Every caller runs `bun manifest.ts`.
 
 ## Deltas — every one recorded, every one proved
 

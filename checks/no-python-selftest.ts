@@ -342,7 +342,7 @@ arm("a COMMENT quoting the wrong-runtime form", "green", (r) => {
 
 // ---- THE THIRD DISPOSITION: a caller excused ONLY because the tool it calls is still Python. ----
 // Forced by a real collision: converting the 21 hook scripts to .ts made four of them NEW invokers,
-// purely because they name `python3 .dev/campaigns/manifest.py` — a tool V4-143 has not converted
+// purely because they named the Python ledger CLI — a tool V4-143 converted on 2026-09-18
 // yet. The .py originals named the same string and were invisible only because the invoker census
 // skips .py files. So doing the work reddened the wall.
 //

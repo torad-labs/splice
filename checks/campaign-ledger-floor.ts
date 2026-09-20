@@ -73,7 +73,7 @@ const LEDGER_DIR = resolve(ROOT, "dev", "campaigns");
 const FLOOR = resolve(ROOT, "checks", "config", "campaign-ledger-floor.json");
 const SELF = "bun checks/campaign-ledger-floor.ts";
 
-// The same shape manifest.py's own HDR matches, so this counts what the CLI calls an item.
+// The same shape the ledger CLI's own HDR matches, so this counts what the CLI calls an item.
 const HDR = /^\[\[items?\]\]\s*$/;
 
 const USAGE = `usage: ${SELF} --check | --record [--allow-shrink]`;

@@ -67,7 +67,7 @@ function ledgerPath() {
 // V4-143: the bun CLI's machine shapes. Its human `list` leads each line with a status glyph and its
 // human `get` is a rendered view, so without --plain/--raw the parser below reads ZERO rows and this
 // check stops at its zero-rows guard (DID NOT RUN, exit 2; measured). Both flags are byte-identical
-// to manifest.py's output.
+// to the ledger CLI's output.
 const MACHINE = { list: '--plain', get: '--raw' };
 const manifest = (args) => execFileSync('bun', ['.dev/campaigns/manifest.ts', ledgerPath(), ...args, MACHINE[args[0]]], { cwd: ROOT, encoding: 'utf8' });
 

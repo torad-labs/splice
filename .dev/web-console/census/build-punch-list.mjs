@@ -27,7 +27,7 @@ const read = (name) => readFileSync(join(ROOT, '.dev/web-console/census', name),
 
 /** Every in-flight row's fence, from the ledger. */
 function liveFences() {
-  // V4-143: --plain and --raw are the bun CLI's machine shapes, byte-identical to manifest.py's; its
+  // V4-143: --plain and --raw are the bun CLI's machine shapes, byte-identical to the Python CLI's; that file
   // human list leads with a status glyph, which the id filter below would drop to zero rows.
   const list = execFileSync('bun', ['.dev/campaigns/manifest.ts', LEDGER, 'list', '--status', 'in_flight', '--plain'], { cwd: ROOT, encoding: 'utf8' });
   const ids = list.split('\n').map((line) => (line.trim().split(/\s+/)[0] ?? '')).filter((id) => /^[A-Z]+\d+-\d+$/.test(id));

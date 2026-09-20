@@ -4,10 +4,10 @@ You are a WALL AUTHOR seat under the campaign orchestrator (protocol: CLAUDE.md 
 "make drift not compile", #960 "walls before buildings"). Worktree (run EVERYTHING from here, never
 cd to the main checkout): /home/user/Documents/dev/projects/atlas/repo/.claude/worktrees/v0.4.0
 Branch feat/v0.4.0. Ledger CLI (the ONLY channel for ledger reads/writes):
-  python3 .dev/campaigns/manifest.py .dev/campaigns/v0.4.0.toml get <ID>
-  python3 .dev/campaigns/manifest.py .dev/campaigns/v0.4.0.toml claim <ID>
-  python3 .dev/campaigns/manifest.py .dev/campaigns/v0.4.0.toml note <ID> "<dated note>"
-  python3 .dev/campaigns/manifest.py .dev/campaigns/v0.4.0.toml set-status <ID> done
+  bun .dev/campaigns/manifest.ts .dev/campaigns/v0.4.0.toml get <ID>
+  bun .dev/campaigns/manifest.ts .dev/campaigns/v0.4.0.toml claim <ID>
+  bun .dev/campaigns/manifest.ts .dev/campaigns/v0.4.0.toml note <ID> "<dated note>"
+  bun .dev/campaigns/manifest.ts .dev/campaigns/v0.4.0.toml set-status <ID> done
 Start by `get` on each row you own — the row title is the spec. Claim it, then work.
 
 ## Hard rules

@@ -1,6 +1,6 @@
 # FIX SEAT LAWS — splice v0.4.0 ARCH-AUDIT fix wave (2026-09-17)
 Worktree: /home/user/Documents/dev/projects/atlas/repo/.claude/worktrees/v0.4.0 (branch feat/v0.4.0).
-Ledger CLI (only channel): python3 .dev/campaigns/manifest.py .dev/campaigns/v0.4.0.toml {get|claim|note|set-status} ...
+Ledger CLI (only channel): bun .dev/campaigns/manifest.ts .dev/campaigns/v0.4.0.toml {get|claim|note|set-status} ...
 Start with `get <ID>`: the title is the spec, the CHECKLIST notes are the inventory, the files= list is your fence.
 1. NEVER commit, push, stash, rebase. NEVER edit checks/gate.sh, sgconfig.yml, or any .rules/ file unless the row's fence names it.
 2. Fence is exclusive: touch only files in the row's files= list (globs included). Another file needs to change → ledger note + say so; do not touch it.

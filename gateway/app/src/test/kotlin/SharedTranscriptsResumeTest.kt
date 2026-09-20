@@ -1,27 +1,34 @@
-// NEW: V4-115 cross-head resume, end to end through the REAL launch entry (2026-09-17). The
-// operator story is unchanged — run out of credits on one account, switch head, resume the same
-// session — but the mechanism is. V4-64 bought it by making every head's projects/ one symlink into
-// the operator's vanilla ~/.claude/projects; measured 2026-09-17, 95 transcripts carrying head model
-// ids sat in the vanilla tree and the vanilla client printed "Session model deepseek-flash could not
-// be restored" on every restore. OPERATOR RULING: head configurations and details must NEVER leak
-// into other heads, their wrappers, or the core claude binary sessions.
+// NEW: cross-head resume, end to end through the REAL launch entry. The operator story: run out of
+// credits on one account, switch head, resume the same session. Claude Code finds a session by
+// listing $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<id>.jsonl, so the join is filesystem IDENTITY:
+// head B's spelling of the transcript must resolve to the SAME real file head A wrote.
 //
-// So the three properties pinned here, all through LaunchService over one ClaudeConfigMaterializer
-// (the object ControlPlane wires):
-//   BOUNDED     a foreign session is INVISIBLE to this head's picker — its projects tree holds it
-//               only after an explicit `-r SESSION_ID` adoption, and a plain launch never copies;
-//   ON DEMAND   `-r SESSION_ID` finds it in the other head's tree and COPIES it in (no link, source
-//               byte-identical), and a `-r` naming an id no head holds copies nothing;
-//   MODEL       the copy's assistant rows name THIS head's pinned model, which is what keeps Claude
-//               Code's resume restore from refusing the session.
+// V4-64/V4-65 (2026-09-16) built and proved that through one shared tree. V4-115 (2026-09-17) read
+// the config-isolation ruling as covering transcripts, gave every head a private tree, kept only an
+// explicit `-r SESSION_ID` copy, and rewrote this file around it. V4-168 (2026-09-19) puts the join
+// back after the operator named its removal a regression — and keeps V4-115's copy path for the
+// one policy that still wants it. So this file pins BOTH contracts, each under the policy that
+// selects it, all through LaunchService over one ClaudeConfigMaterializer (the object ControlPlane
+// wires):
+//   SHARED    (share names projects — the operator's own policy) two heads' projects/ ARE the global
+//             tree, a transcript written through A is the same file on B, a head whose projects/ was
+//             a real dir has it migrated in and linked, and SessionProject resolves the cwd from it;
+//   ISOLATED  (isolate names projects) a foreign session is INVISIBLE to this head's picker until an
+//             explicit `-r SESSION_ID` COPIES it in with the assistant rows rewritten to THIS head's
+//             model, and a `-r` naming an id no head holds copies nothing.
+//
+// The LINK is asserted BEFORE any transcript is written, on purpose: a change that stops sharing
+// projects must red on "projects is not a symlink" — the contract — and never on a missing file
+// further down, which would be the same red for a dozen unrelated causes (mutation duty, V4-65).
 //
 // LaunchSpecFactory needs the daemon's Topology/SignInPlanner/HeadBuildInputs wiring, so the
-// LaunchSpec is built here the way LaunchServiceTest builds it — with HeadTrees spelled
-// explicitly, exactly as LaunchSpecFactory derives them from the topology.
+// LaunchSpec is built here the way LaunchServiceTest builds it — with HeadTrees spelled explicitly,
+// exactly as LaunchSpecFactory derives them from the topology.
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -30,6 +37,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.control.HeadTrees
 import splice.control.LaunchService
 import splice.control.LaunchSpec
+import splice.core.compaction.SessionProject
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.util.JsonScalars
@@ -40,40 +48,128 @@ import kotlin.io.path.isSymbolicLink
 
 class SharedTranscriptsResumeTest {
 
-    /** config/splice.example.toml's own share list. `projects` is NOT in it any more (V4-115) and a
-     *  policy that names it must change nothing — that is the second test's subject. */
+    /** config/splice.example.toml's share list, `projects` included — the operator's real policy
+     *  (their splice.toml carries the same list). The mutation (drop "projects") must turn the
+     *  shared cells red on the LINK. */
     private val sharing = ClaudePolicy(
         share = setOf(
-            "settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions",
+            "settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps",
+            "sessions", "projects",
         ),
         isolate = emptySet(),
     )
 
+    /** The same list with projects ISOLATED: the one policy under which a head keeps a private tree. */
+    private val isolating = ClaudePolicy(share = sharing.share, isolate = setOf("projects"))
+
     private val sessionId = "0f6b1c2e-7d3a-4b8e-9c1d-2a5f6e7b8c9d"
     private val headModel = "gpt-5.6-sol"
 
+    // ───────────────────────────── SHARED: the join ─────────────────────────────
+
     @Test
-    fun `a foreign session is invisible to the picker until -r copies it in, models and all`(@TempDir home: Path) {
+    fun `a transcript written through head A is the same real file on head B and resolves to its cwd`(
+        @TempDir home: Path,
+    ) {
+        seedGlobal(home)
+        val service = LaunchService(ClaudeConfigMaterializer(home))
+        val headA = launch(service, home, "a", sharing, siblings = emptyList())
+        val headB = launch(service, home, "b", sharing, siblings = listOf(headA))
+        val global = home.resolve(".claude/projects")
+        // THE CONTRACT — asserted first (see header): both heads' projects/ ARE the global dir.
+        assertLinkedToGlobal(headA, global)
+        assertLinkedToGlobal(headB, global)
+
+        val cwd = home.resolve("work/repo")
+        val onA = headA.resolve("projects").resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")
+        Files.createDirectories(onA.parent)
+        Files.writeString(onA, transcript(cwd, model = "deepseek-flash"))
+
+        val onB = headB.resolve("projects").resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")
+        assertTrue(Files.isRegularFile(onB), "head B must see the transcript head A wrote at $onB")
+        assertEquals(onA.toRealPath(), onB.toRealPath(), "--resume on head B needs the SAME file, not a copy")
+        assertArrayEquals(Files.readAllBytes(onA), Files.readAllBytes(onB))
+        // compaction follows the session too: no registry entry, resolved from the global transcript
+        val project = SessionProject(home.resolve(".claude/sessions"), global).projectFor(sessionId)
+        assertEquals(cwd.toAbsolutePath().normalize(), project)
+        // `-r SESSION_ID` on head B finds it in its own (shared) tree: nothing is copied or rewritten,
+        // and the transcript keeps the model the other head wrote — the recorded cost of the join.
+        service.launch(
+            spec(headB, "b", sharing, listOf(headA)),
+            listOf("-r", sessionId),
+            dangerouslySkipPermissions = false,
+        )
+        assertEquals("deepseek-flash", modelOf(Files.readString(onB)), "a shared transcript is never rewritten")
+    }
+
+    // The migration case, which is EVERY head on the operator machine after V4-115: projects/ is a
+    // real directory holding transcripts. Naming `projects` in the share list alone would silently
+    // do nothing (linkOneShared never replaces a real dir), so ProjectsLink migrates the contents —
+    // per encoded-cwd subdir, <id>.jsonl files and <id>/ subagent dirs alike — and links.
+    @Test
+    fun `a head whose projects is a real dir has its transcripts migrated into the global and linked`(
+        @TempDir home: Path,
+    ) {
         seedGlobal(home)
         val service = LaunchService(ClaudeConfigMaterializer(home))
         val cwd = home.resolve("work/repo")
-        val headA = launch(service, home, "a", sharing, siblings = emptyList())
+        val headA = home.resolve(".claude-a")
+        val headProject = headA.resolve("projects").resolve(encodedCwd(cwd))
+        Files.createDirectories(headProject.resolve(sessionId))
+        val mainBytes = transcript(cwd, model = headModel).toByteArray()
+        val subagentBytes = """{"type":"user","sessionId":"$sessionId","cwd":"$cwd","isSidechain":true}""".toByteArray()
+        Files.write(headProject.resolve("$sessionId.jsonl"), mainBytes)
+        Files.write(headProject.resolve(sessionId).resolve("subagent.jsonl"), subagentBytes)
+
+        launch(service, home, "a", sharing, siblings = emptyList())
+
+        val global = home.resolve(".claude/projects")
+        assertLinkedToGlobal(headA, global)
+        val globalProject = global.resolve(encodedCwd(cwd))
+        assertArrayEquals(mainBytes, Files.readAllBytes(globalProject.resolve("$sessionId.jsonl")))
+        assertArrayEquals(subagentBytes, Files.readAllBytes(globalProject.resolve(sessionId).resolve("subagent.jsonl")))
+
+        // and head B, launched after, sees them by real path — the resume on the other account
+        val headB = launch(service, home, "b", sharing, siblings = listOf(headA))
+        val onB = headB.resolve("projects").resolve(encodedCwd(cwd))
+        assertEquals(
+            globalProject.resolve("$sessionId.jsonl").toRealPath(),
+            onB.resolve("$sessionId.jsonl").toRealPath(),
+        )
+        assertEquals(
+            globalProject.resolve(sessionId).resolve("subagent.jsonl").toRealPath(),
+            onB.resolve(sessionId).resolve("subagent.jsonl").toRealPath(),
+        )
+        // head A's own spelling still reaches the migrated file: a live session on A keeps working
+        assertEquals(
+            globalProject.resolve("$sessionId.jsonl").toRealPath(),
+            headProject.resolve("$sessionId.jsonl").toRealPath(),
+        )
+    }
+
+    // ───────────────────────────── ISOLATED: the copy ─────────────────────────────
+
+    @Test
+    fun `under an isolating policy a foreign session is invisible until -r copies it in, models and all`(
+        @TempDir home: Path,
+    ) {
+        seedGlobal(home)
+        val service = LaunchService(ClaudeConfigMaterializer(home))
+        val cwd = home.resolve("work/repo")
+        val headA = launch(service, home, "a", isolating, siblings = emptyList())
         val onA = headA.resolve("projects").resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")
         Files.createDirectories(onA.parent)
         Files.writeString(onA, transcript(cwd, model = "deepseek-flash"))
         val sourceBytes = Files.readString(onA)
 
-        val headB = launch(service, home, "b", sharing, siblings = listOf(headA))
+        val headB = launch(service, home, "b", isolating, siblings = listOf(headA))
         val onB = headB.resolve("projects").resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")
         assertFalse(Files.exists(onB, NOFOLLOW_LINKS), "a plain launch must not pull another head's session in")
-        assertTrue(Files.isDirectory(headB.resolve("projects"), NOFOLLOW_LINKS), "each head owns a REAL projects tree")
-        assertFalse(
-            Files.isSymbolicLink(headB.resolve("projects")),
-            "the vanilla-link design is gone: a head's projects dir is never a symlink",
-        )
+        assertTrue(Files.isDirectory(headB.resolve("projects"), NOFOLLOW_LINKS), "an isolating head owns a REAL tree")
+        assertFalse(headB.resolve("projects").isSymbolicLink(), "isolate wins over share: no link")
 
         service.launch(
-            spec(headB, "b", sharing, listOf(headA)),
+            spec(headB, "b", isolating, listOf(headA)),
             listOf("-r", sessionId),
             dangerouslySkipPermissions = false,
         )
@@ -93,10 +189,10 @@ class SharedTranscriptsResumeTest {
     fun `a resume that names an id no head holds copies nothing`(@TempDir home: Path) {
         seedGlobal(home)
         val service = LaunchService(ClaudeConfigMaterializer(home))
-        val headA = launch(service, home, "a", sharing, siblings = emptyList())
+        val headA = launch(service, home, "a", isolating, siblings = emptyList())
 
         val recipe = service.launch(
-            spec(headA, "a", sharing, emptyList()),
+            spec(headA, "a", isolating, emptyList()),
             listOf("-r", "11111111-2222-3333-4444-555555555555"),
             dangerouslySkipPermissions = false,
         )
@@ -106,38 +202,16 @@ class SharedTranscriptsResumeTest {
             Files.list(headA.resolve("projects")).use { it.toList() }.map { it.fileName.toString() },
             "the head's tree stays empty: nothing is invented for an id that exists nowhere",
         )
-        assertFalse(
-            Files.exists(home.resolve(".claude/projects"), NOFOLLOW_LINKS),
-            "the vanilla tree gains no projects dir",
-        )
         assertTrue(
             recipe.warning.orEmpty().contains("is in no transcript tree"),
             "the refusal is said out loud, not left to the client: ${recipe.warning}",
         )
     }
 
-    @Test
-    fun `the -r picker is head-bounded and a policy naming projects changes nothing`(@TempDir home: Path) {
-        seedGlobal(home)
-        val service = LaunchService(ClaudeConfigMaterializer(home))
-        val cwd = home.resolve("work/repo")
-        val namingProjects = ClaudePolicy(share = sharing.share + "projects", isolate = emptySet())
-        val headA = launch(service, home, "a", namingProjects, siblings = emptyList())
-        val mine = headA.resolve("projects").resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")
-        Files.createDirectories(mine.parent)
-        Files.writeString(mine, transcript(cwd, "x"))
-
-        // `-r` with NO id is the picker: it opens THIS head's tree and must touch nothing else.
-        service.launch(spec(headA, "a", namingProjects, emptyList()), listOf("-r"), dangerouslySkipPermissions = false)
-        service.launch(spec(headA, "a", namingProjects, emptyList()), listOf("-c"), dangerouslySkipPermissions = false)
-
-        val headProjects = headA.resolve("projects")
-        assertFalse(headProjects.isSymbolicLink(), "a policy naming projects must not resurrect the link")
-        assertTrue(Files.isRegularFile(headProjects.resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")))
-        assertFalse(
-            Files.exists(home.resolve(".claude/projects"), NOFOLLOW_LINKS),
-            "the vanilla projects tree is never created, under any policy",
-        )
+    private fun assertLinkedToGlobal(configDir: Path, global: Path) {
+        val projects = configDir.resolve("projects")
+        assertTrue(Files.isSymbolicLink(projects), "$projects must be a symlink to the global projects dir")
+        assertEquals(global.toRealPath(), projects.toRealPath(), "$projects must resolve to the global projects dir")
     }
 
     /** One head, launched the way the daemon launches it: the REAL LaunchService materialize. */
@@ -182,6 +256,7 @@ class SharedTranscriptsResumeTest {
      *  replaced by `-` (`/home/me/repo` -> `-home-me-repo`). */
     private fun encodedCwd(cwd: Path): String = cwd.toAbsolutePath().toString().replace(Regex("[^A-Za-z0-9]"), "-")
 
+    /** Two transcript rows carrying the cwd exactly as SessionProject reads them back. */
     private fun transcript(cwd: Path, model: String): String =
         """{"type":"user","sessionId":"$sessionId","cwd":"$cwd","message":{"role":"user","content":"hi"}}
 {"type":"assistant","sessionId":"$sessionId","cwd":"$cwd","message":{"model":"$model","content":[]}}

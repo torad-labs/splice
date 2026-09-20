@@ -44,6 +44,16 @@ internal class SessionRegistryLink(
     private val fs: SessionRegistryFs = ProcessSessionRegistryFs,
 ) {
 
+    /** [link] as the materializer's share loop calls it: link() logs its own declines, this catches what
+     *  it THROWS mid-flight (DR-39) so a registry failure never aborts the rest of the head's
+     *  materialize. The same shape as ProjectsLink.linkOrLog — the two generated trees share one idiom. */
+    fun linkOrLog(globalSessions: Path, dst: Path, log: LogSink) {
+        Cancellables.runCatchingCancellable { link(globalSessions, dst, log) }.exceptionOrNull()?.let { cause ->
+            // SAFE-RENDER-EXEMPT[2026-08-31]: link does path work only — the failure names a directory, never its content
+            log("[materialize] sessions registry NOT linked into ${dst.parent} (${cause.message})\n")
+        }
+    }
+
     /** Point [dst] (a head's sessions dir) at [globalSessions], CREATING the global registry when it
      *  does not exist yet. Unlike every other shared item, missing is not a reason to skip: the
      *  registry is generated state, and a machine that never ran plain `claude` is exactly the fresh

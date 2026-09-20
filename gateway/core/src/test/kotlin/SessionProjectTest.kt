@@ -1,6 +1,5 @@
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -138,14 +137,12 @@ class SessionProjectTest {
         assertEquals(cwd.normalize(), resolver.projectFor("cached"))
     }
 
-    // V4-115 (head isolation): a head's transcripts stay in the head's OWN projects tree, and the
-    // resolver compaction builds reads that tree. This replaces the V4-64 pin, which asserted the
-    // opposite — the head's real tree migrated into ~/.claude/projects and replaced by a symlink —
-    // and whose consequence was 95 head transcripts in the vanilla tree and a vanilla client that
-    // could not restore its own sessions. The `projects` share entry is inert now and must change
-    // nothing: the tree is real either way, and materialize creates no vanilla projects dir at all.
+    // V4-168 (2026-09-19), restoring the V4-64 pin that V4-115 had inverted: a head whose policy
+    // shares `projects` has its real tree migrated into ~/.claude/projects and replaced by a
+    // symlink, and the resolver reads the transcript through BOTH spellings — the head's own (a
+    // live session keeps writing there) and the vanilla one (every other head's picker lists it).
     @Test
-    fun `a head transcript stays in the head's own tree, and materialize creates no vanilla projects dir`() {
+    fun `a head transcript is reachable through the head tree and the vanilla tree after materialize`() {
         val home = tmp
         val cwd = home.resolve("work/repo").toAbsolutePath()
         val encoded = cwd.toString().replace(Regex("[^A-Za-z0-9]"), "-")
@@ -164,12 +161,12 @@ class SessionProjectTest {
             MaterializeSpec(head, policy, listOf("m1"), "m1", buildJsonObject { }, "statusline"),
         )
 
-        assertTrue(Files.isDirectory(head.resolve("projects"), NOFOLLOW_LINKS), "the head keeps a REAL projects tree")
-        assertTrue(Files.isRegularFile(transcript), "the head's own transcript is never moved")
-        assertFalse(
-            Files.exists(home.resolve(".claude/projects"), NOFOLLOW_LINKS),
-            "materialize must not create the vanilla projects tree this fix removes",
-        )
+        assertTrue(Files.isSymbolicLink(head.resolve("projects")), "the head's projects dir is the shared tree")
+        assertTrue(Files.isRegularFile(transcript), "the head's own spelling still reaches its transcript")
+        val vanilla = home.resolve(".claude/projects").resolve(encoded).resolve("mine-1.jsonl")
+        assertTrue(Files.isRegularFile(vanilla, NOFOLLOW_LINKS), "and the vanilla tree now holds it too")
         assertEquals(cwd.normalize(), SessionProject(headSessions, head.resolve("projects")).projectFor("mine-1"))
+        val vanillaTree = home.resolve(".claude/projects")
+        assertEquals(cwd.normalize(), SessionProject(headSessions, vanillaTree).projectFor("mine-1"))
     }
 }

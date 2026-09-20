@@ -204,16 +204,6 @@ const DISPOSITIONS = {
       '(layout in vw, type in px) is now carried by the legs that do judge: FRAMES puts 3840x2160 ' +
       'into comp-check and look',
   },
-  'census/tonal-census.mjs': {
-    kind: TOOL,
-    why: 'the mid-tone census over captured frames, comp measured by the same code. A distribution ' +
-      'is not a verdict — there is no threshold anyone has agreed to fail a build on',
-  },
-  'census/build-punch-list.mjs': {
-    kind: TOOL,
-    why: 'assembles the punch list from artefacts other runs produced. It orders findings for people; ' +
-      'the findings themselves are gated where they are measured',
-  },
 };
 
 // ---------------------------------------------------------------- law 23

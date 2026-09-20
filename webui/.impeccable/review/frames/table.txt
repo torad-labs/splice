@@ -1,6 +1,0 @@
-M1-62 frames table. Theme: DARK. Method: content area = right of the rail (10%% of width) and below the rule (7%% of height); pale = L>150, mid = 30<=L<=150, floor = L<30, sampled every 2 rows and 4 columns. Content depth = the last row with any sample above L30, as a percent of frame height.
-page-frame                     paper%     mid%  coverage%       depth%
-compaction-dark-1536            33.71     7.42      41.12         99.1
-compaction-dark-3840            34.36     4.79      39.16         99.6
-
-compaction dark  1536 -> 3840: coverage 41.12 -> 39.16 (-1.96 points), depth 99.1% -> 99.6%

@@ -12,7 +12,6 @@
     "CHANGELOG.md",
     "README.md",
     "bin/splice-launch",
-    "checks/e2e/README.md",
     "checks/e2e/docker/Dockerfile",
     "checks/e2e/docker/inside.sh",
     "checks/e2e/docker/run.sh",
@@ -57,7 +56,6 @@
     "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt",
     "gateway/provider-spi/src/test/kotlin/UpstreamFailurePolicyRefusalTest.kt",
     "install.sh",
-    "webui/.impeccable/review/light-room.md",
     "webui/.impeccable/review/material-spec.md"
   ],
   "pendingTools": []

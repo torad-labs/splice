@@ -30,7 +30,6 @@ include(
     ":gateway",
     ":control",
     ":app",
-    ":spikes",
     ":arch-tests",
     ":fir-checks",
 )

@@ -32,5 +32,5 @@ dependencies:
   - changed-files:
       - any-glob-to-any-file:
           - 'package.json'
-          - 'package-lock.json'
+          - 'bun.lock'
           - 'gateway/gradle/**'

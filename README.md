@@ -449,23 +449,19 @@ Opaque replay also ships off. Set `CLAUDEX_REPLAY_REASONING=1` only if you delib
 
 ## The cache-replay experiment
 
-`experiments/cache-replay/` is a self-contained A/B that probes one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** It runs a fixed multi-turn conversation twice, once carrying the encrypted reasoning items forward and once dropping them, and reports cached vs. uncached input tokens per turn.
+An A/B run in July 2026 asked one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** Two isolated real Claude Code sessions ran the same fixed multi-turn workload on a side port, only the replay toggled, and a captured, sanitized transcript replayed it without live credentials. Its harness was retired with the Node proxy it drove; the result is what matters:
 
-- `real-ab.sh`: two isolated real Claude-Code sessions on a side-port, same turns, only the replay toggled.
-- `run.mjs` / `replay-captured.mjs`: dependency-free Node harnesses; `replay-captured.mjs` replays a captured, sanitized transcript so the A/B is reproducible without live credentials.
-
-The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin. Read `experiments/cache-replay/README.md` for the caveats and run it yourself.
+The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin.
 
 ## Layout
 
 ```
 gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
 config/        splice.example.toml — the sample multi-provider topology
-bin/           splice-launch (the installed wrapper) + claudex / claude-muse (in-repo head entries)
+bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 checks/        the local gate and the live harnesses (docker e2e, local models, MCP hosting bench)
 webui/         React 19 + Vite + Zustand dashboard, single-file build
-experiments/   cache-replay A/B reproducer
 .rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)
 ```
 
@@ -478,7 +474,7 @@ established survives as 11 byte-exact fixtures in the migration oracle
 ## Development
 
 ```bash
-npm ci
+bun install --frozen-lockfile
 npm run gate   # Gradle, walls/hooks, server, webui, release acceptance, OSS checks
 ```
 

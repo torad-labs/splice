@@ -29,7 +29,8 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
-private const val TRANSCRIPT_SUFFIX = ".jsonl"
+/** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
+internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
 private const val TRANSCRIPT_TYPE = "type"
 private const val TRANSCRIPT_MESSAGE = "message"
 private const val ASSISTANT_TYPE = "assistant"

@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.control.LogSafe
 import splice.control.ManagedHead
+import splice.core.launch.RESUME_SOURCE
 import splice.core.launch.TranscriptModelRewrite
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -32,7 +33,6 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 private const val PROJECTS_DIR = "projects"
-private const val RESUME_SOURCE = "resume"
 
 /** The same shape ResumeAcrossHeads admits as a session id: a path component and a log word. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")

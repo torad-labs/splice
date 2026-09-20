@@ -53,7 +53,6 @@ internal object LoginInterception {
     private const val KEYSETUP_HOOK_SH = "splice-keysetup-hook.sh"
     private const val LOGIN_SENTINEL = "SPLICE_CODEX_LOGIN"
     private const val USER_PROMPT_SUBMIT = "UserPromptSubmit"
-    private const val SESSION_START = "SessionStart"
 
     /**
      * Materialize the /login command + hooks. [signInLabel] names the provider for the UX text;
@@ -148,7 +147,10 @@ internal object LoginInterception {
                 LoginHookScripts.keySetupScript(spec, loginCommand),
                 chmod,
             )
-            mapOf(SESSION_START to listOf(HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)))
+            mapOf(
+                HookScriptFiles.SESSION_START to
+                    listOf(HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)),
+            )
         }
         if (leg.isFailure) {
             log(

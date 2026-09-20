@@ -44,6 +44,9 @@ internal fun interface HookExecProbe {
 internal object HookScriptFiles {
     const val HOOK_TIMEOUT_SECONDS: Int = 15
 
+    /** The hook event both installers register on (the key-setup advertiser and the resume hook). */
+    const val SESSION_START: String = "SessionStart"
+
     /** The real [HookExecProbe]: write a throwaway owner-only `exit 0` script beside the hooks and
      *  RUN it through [exec]. Executability is a property of the mount + mode + uid, not of content,
      *  so a sibling probe file proves exactly what the hook needs without executing any hook logic.

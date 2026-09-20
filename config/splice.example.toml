@@ -422,14 +422,16 @@ context_window = 1000000
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
-# `projects` is NOT here and never comes back: a head's transcripts are head-private, so `-c` and the
-# `-r` PICKER only ever see the sessions this head started. Cross-head resume survives as an explicit
-# act on ONE named session — `<wrapper> -r SESSION_ID` resolves the id across the other heads' own
-# projects trees, COPIES SESSION_ID.jsonl and its SESSION_ID/ subdir into the calling head's tree
-# (never a link; the source is left byte-identical), rewrites every assistant row's model to this
-# head's pinned model so the resume notice cannot fire, and launches; an id that exists nowhere is
-# reported and nothing is copied.
-share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions"]
+# `projects` shares the transcript tree, so a session started on ANY head (or in plain `claude`) shows
+# in every head's `-r` picker and resumes there — switch head when an account runs dry and carry on.
+# A head's existing private transcripts are merged into ~/.claude/projects (same files, never copies)
+# the first time it launches with this on. The one cost: a transcript carries the model id of the
+# head that wrote it, so resuming it elsewhere prints Claude Code's "Session model X could not be
+# restored" once and continues on the resuming head's default. Isolate `projects` on a head to keep
+# its transcripts private; that head then reaches a foreign session only by name — `<wrapper> -r
+# SESSION_ID` finds the id in the other heads' trees, COPIES it in with every assistant row's model
+# rewritten to this head's, and launches; an id that exists nowhere is reported and nothing is copied.
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions", "projects"]
 
 # ── per-head system prompt: standing instructions every turn of a head carries ──
 # Set under [heads.<key>]. Either inline text or a file, NEVER both — both present is a config

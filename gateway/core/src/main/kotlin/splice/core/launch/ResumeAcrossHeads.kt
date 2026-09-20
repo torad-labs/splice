@@ -5,9 +5,12 @@
 // deepseek-flash could not be restored" on every restore.
 //
 // OPERATOR RULING: head configurations and details must NEVER leak into other heads, their wrappers,
-// or the core claude binary sessions. So the shared tree is gone (each head owns a REAL projects
-// tree; ClaudeConfigKeys.sharedLinkItems no longer lists projects) and cross-head resume becomes
-// what it always was underneath: an on-demand act with a moment and an actor.
+// or the core claude binary sessions. V4-115 read that as covering transcripts and removed the shared
+// tree; V4-168 (2026-09-19) put it back after the operator named the removal a regression — the ruling
+// covers CONFIGURATION, and transcripts are shared session state (ProjectsLink's header). So this
+// class is now the path for a head whose policy ISOLATES projects, and for an id that lives only in
+// another head's private tree: an on-demand act with a moment and an actor. On a head that shares
+// the tree, every foreign id is HeadOwned through the link and nothing here copies.
 //
 // (A) BOUNDED BY HEAD. Nothing here runs unless the launch asked for one specific session id. The
 //     whole point of a head-private tree is that `-c` and the `-r` PICKER see only this head's

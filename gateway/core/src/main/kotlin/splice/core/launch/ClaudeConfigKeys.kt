@@ -5,19 +5,17 @@ package splice.core.launch
 
 /** On-disk items a head may share by symlinking into the operator's global ~/.claude/<item>.
  *  `sessions` is the cross-session-messaging peer registry: sharing it is what lets every head's
- *  ListAgents see every other head's sessions (the message sockets are already machine-global). It is
- *  the ONE dispositioned escape from head isolation — Claude Code's live-session registry, not head
- *  configuration, carrying no model id and no conversation.
+ *  ListAgents see every other head's sessions (the message sockets are already machine-global).
  *
- *  `projects` is deliberately NOT here, and must never come back (V4-115, 2026-09-17). The transcript
- *  tree `--resume` lists WAS shared through 91d68f3e so a session could resume on another head;
- *  measured 2026-09-17 that put 95 transcripts carrying head model ids in the operator's vanilla
- *  ~/.claude tree and broke the vanilla client's own resume. OPERATOR RULING: head configurations
- *  and details must NEVER leak into other heads, their wrappers, or the core claude binary sessions.
- *  Each head now owns a REAL projects tree (ProjectsLink guarantees it), the picker stays bounded by
- *  head, and cross-head `-r SESSION_ID` is an explicit COPY made at launch (ResumeAcrossHeads). */
+ *  `projects` is the transcript tree, and the SECOND dispositioned escape from head isolation (V4-64,
+ *  re-landed by V4-168 on 2026-09-19 after V4-115 removed it): a session started on one head resumes
+ *  on any other because every head's picker lists the same tree. The isolation ruling of 2026-09-17
+ *  covers head CONFIGURATION (settings, rosters, hooks, MCP); transcripts are shared session state,
+ *  and the operator named their removal a regression. Whether a head shares them is the operator's
+ *  share/isolate policy, never a forced link or a forced un-link (ProjectsLink's header). */
 public val sharedLinkItems: List<String> = listOf(
     Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS, Keys.SESSIONS,
+    Keys.PROJECTS,
 )
 
 /** ~/.claude.json keys carried into a head's isolated state (only when absent locally). */

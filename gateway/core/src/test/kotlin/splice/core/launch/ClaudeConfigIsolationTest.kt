@@ -1,26 +1,32 @@
-// NEW: V4-115 head isolation (2026-09-17) — the wall for the operator ruling that head
-// configurations and details must NEVER leak into other heads, their wrappers, or the core claude
-// binary sessions. Commit 91d68f3e pointed every head's CLAUDE_CONFIG_DIR/projects at the operator's
-// vanilla ~/.claude/projects so a session could resume on another head; measured 2026-09-17, 95
-// transcripts carrying head model ids sat in the vanilla tree and the vanilla client printed
-// "Session model deepseek-flash could not be restored" on every restore.
+// NEW: V4-115 head isolation (2026-09-17), re-drawn by V4-168 (2026-09-19) — the wall for the
+// operator ruling that head CONFIGURATIONS and details must NEVER leak into other heads, their
+// wrappers, or the core claude binary sessions, with exactly TWO dispositioned escapes.
+//
+// V4-115 drew this wall with one escape (the session registry) and un-linked every head's projects
+// tree to a real private one. Two days later the operator named that a regression: "we implemented
+// a way for any head to join any session from other heads, that's now gone" — V4-64 had built the
+// join on the operator's own words, and the operator's splice.toml still said share = [..., "projects"]
+// while the code read the spelling as inert. So the ruling covers configuration; transcripts are
+// shared session state, and whether a head shares them is the operator's policy (ProjectsLink).
 //
 // Two assertions, both about GENERATED state (the operator's own shared items — agents, skills,
 // hooks, CLAUDE.md — are shared by design and are not this wall's subject):
-//   (a) every symlink under the materialized head dir stays INSIDE that head dir, and every regular
-//       file under it has nlink 1 (a hardlink is a second name for the same bytes, so its content is
-//       reachable from wherever the other name lives);
-//   (b) materialization creates nothing under the fake vanilla dir outside the ONE dispositioned
-//       escape, and modifies nothing that was already there.
+//   (a) every symlink under the materialized head dir stays INSIDE that head dir or names one of the
+//       two escapes, and every regular file under it has nlink 1 (a hardlink is a second name for
+//       the same bytes, so its content is reachable from wherever the other name lives);
+//   (b) materialization creates nothing under the fake vanilla dir outside the escapes the POLICY
+//       opened, and modifies nothing that was already there.
 //
-// THE ONE DISPOSITIONED ESCAPE, asserted explicitly and by name below: <home>/.claude/sessions, the
-// live-session registry SessionRegistryLink points at. It is Claude Code's peer registry — a
-// per-pid registration json plus a key file, machine-global by construction (the message sockets
-// live in $XDG_RUNTIME_DIR/cc-socks), and cross-session messaging plus the daemon's pid-to-head
-// attribution (ControlPlane's SessionRegistry) depend on every head seeing the same one. It is not
-// head configuration and it is not a transcript: it carries no model id and no conversation. Any
-// OTHER path under the vanilla tree — projects/ above all — is a hole, and both assertions fail on
-// it by name.
+// THE TWO DISPOSITIONED ESCAPES, asserted explicitly and by name below:
+//   sessions — <home>/.claude/sessions, the live-session registry SessionRegistryLink points at:
+//              Claude Code's peer registry, machine-global by construction (the message sockets live
+//              in $XDG_RUNTIME_DIR/cc-socks); cross-session messaging and the daemon's pid-to-head
+//              attribution depend on every head seeing the same one. No model id, no conversation.
+//   projects — <home>/.claude/projects, the transcript tree ProjectsLink merges into and links at,
+//              ONLY when the head's policy shares projects: it is what makes a session started on
+//              one head resumable from every other. A head that does not share projects keeps a
+//              real private tree, and for that head the vanilla projects path is a hole by name.
+// Any OTHER path under the vanilla tree is a hole, and both assertions fail on it by name.
 package splice.core.launch
 
 import kotlinx.serialization.json.buildJsonObject
@@ -33,10 +39,15 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.isSymbolicLink
 
-/** The one dispositioned escape, named ONCE so both assertions and their messages say the same word. */
+/** The two dispositioned escapes, named ONCE so the assertions and their messages say the same words. */
 private const val REGISTRY_DIR = "sessions"
+private const val TRANSCRIPTS_DIR = "projects"
+
+private const val TRANSCRIPT = """{"type":"user","sessionId":"abc","cwd":"/work/repo","message":{"role":"user","content":"hi"}}
+"""
 
 class ClaudeConfigIsolationTest {
 
@@ -50,8 +61,7 @@ class ClaudeConfigIsolationTest {
         return Files.writeString(path, text)
     }
 
-    /** The ONE dispositioned escape: the machine-global live-session registry. */
-    private fun registryEscape(home: Path): Path = home.resolve(".claude").resolve("sessions")
+    private fun vanilla(home: Path): Path = home.resolve(".claude")
 
     private fun materialize(home: Path, configDir: Path, share: Set<String>) {
         Files.createDirectories(configDir)
@@ -86,22 +96,21 @@ class ClaudeConfigIsolationTest {
         }
     }
 
-    /** (a) Nothing under [head] may resolve outside it except the named registry escape. */
-    private fun assertHeadPrivate(head: Path, allowedEscape: Path) {
+    /** (a) Nothing under [head] may resolve outside it except the named escapes. */
+    private fun assertHeadPrivate(head: Path, escapes: Set<Path>) {
         val realHead = head.toRealPath()
         Files.walk(head).use { stream ->
-            stream.forEach { entry -> assertEntryPrivate(entry, realHead, allowedEscape) }
+            stream.forEach { entry -> assertEntryPrivate(entry, realHead, escapes) }
         }
     }
 
-    private fun assertEntryPrivate(entry: Path, realHead: Path, allowedEscape: Path) {
+    private fun assertEntryPrivate(entry: Path, realHead: Path, escapes: Set<Path>) {
         if (Files.isSymbolicLink(entry)) {
             val target = Files.readSymbolicLink(entry)
             val resolved = (if (target.isAbsolute) target else entry.parent.resolve(target)).normalize()
             assertTrue(
-                resolved.startsWith(realHead) || resolved == allowedEscape,
-                "$entry points at $resolved, outside the head dir — the ONLY allowed escape is " +
-                    "$allowedEscape (Claude Code's machine-global live-session registry)",
+                resolved.startsWith(realHead) || resolved in escapes,
+                "$entry points at $resolved, outside the head dir — the only allowed escapes are $escapes",
             )
         } else if (Files.isRegularFile(entry, NOFOLLOW_LINKS)) {
             assertEquals(
@@ -112,14 +121,14 @@ class ClaudeConfigIsolationTest {
         }
     }
 
-    /** (b) Every difference under the vanilla dir must be the registry escape, whose name RELATIVE
-     *  TO the vanilla dir is exactly [REGISTRY_DIR] — the snapshot's own frame. */
-    private fun assertVanillaUntouched(before: Map<String, String>, after: Map<String, String>) {
+    /** (b) Every difference under the vanilla dir must be one of [opened] escapes, whose names
+     *  RELATIVE TO the vanilla dir are the snapshot's own frame. */
+    private fun assertVanillaUntouched(before: Map<String, String>, after: Map<String, String>, opened: Set<String>) {
         (after.keys - before.keys).forEach { added ->
             assertTrue(
-                added == REGISTRY_DIR || added.startsWith("$REGISTRY_DIR/"),
-                "$added appeared under the vanilla config dir — materialize created it, and only the " +
-                    "session registry ($REGISTRY_DIR) may be created there",
+                opened.any { added == it || added.startsWith("$it/") },
+                "$added appeared under the vanilla config dir — materialize created it, and only $opened " +
+                    "may be created there under this policy",
             )
         }
         (after.keys intersect before.keys).forEach { kept ->
@@ -128,92 +137,119 @@ class ClaudeConfigIsolationTest {
     }
 
     @Test
-    fun `materialize keeps every head path inside the head dir, and touches only the session registry in vanilla`(
+    fun `a head that does not share projects keeps every path inside itself and touches only the registry in vanilla`(
         @TempDir home: Path,
     ) {
         val cwd = home.resolve("work/repo").toAbsolutePath()
         val head = home.resolve(".claude-codex")
-        val transcript = write(
-            head.resolve("projects").resolve(encodedCwd(cwd)).resolve("abc.jsonl"),
-            """{"type":"user","sessionId":"abc","cwd":"$cwd","message":{"role":"user","content":"hi"}}
-""",
-        )
-        Files.createDirectories(home.resolve(".claude"))
-        val before = snapshot(home.resolve(".claude"))
+        val transcript = write(head.resolve(TRANSCRIPTS_DIR).resolve(encodedCwd(cwd)).resolve("abc.jsonl"), TRANSCRIPT)
+        Files.createDirectories(vanilla(home))
+        val before = snapshot(vanilla(home))
 
-        materialize(home, head, setOf("projects", "sessions"))
+        materialize(home, head, setOf(REGISTRY_DIR))
 
-        assertHeadPrivate(head, registryEscape(home))
-        assertVanillaUntouched(before, snapshot(home.resolve(".claude")))
+        assertHeadPrivate(head, setOf(vanilla(home).resolve(REGISTRY_DIR)))
+        assertVanillaUntouched(before, snapshot(vanilla(home)), setOf(REGISTRY_DIR))
         assertFalse(
-            Files.exists(home.resolve(".claude").resolve("projects"), NOFOLLOW_LINKS),
-            "the vanilla projects tree must not exist: the head's transcripts are head-private",
+            Files.exists(vanilla(home).resolve(TRANSCRIPTS_DIR), NOFOLLOW_LINKS),
+            "the vanilla projects tree must not exist: this head's policy keeps its transcripts private",
         )
-        assertFalse(head.resolve("projects").isSymbolicLink(), "the head projects dir must be REAL, not a link")
-        assertEquals(
-            """{"type":"user","sessionId":"abc","cwd":"$cwd","message":{"role":"user","content":"hi"}}
+        assertFalse(head.resolve(TRANSCRIPTS_DIR).isSymbolicLink(), "the head projects dir must be REAL, not a link")
+        assertEquals(TRANSCRIPT, Files.readString(transcript), "the head's own transcript survives byte-identical")
+    }
+
+    // V4-168, the join itself: a head whose policy shares projects has its real tree merged into the
+    // vanilla one — SAME inode, so a live writer keeps appending — and its projects path becomes the
+    // link. Everything else under the head stays private and everything else under vanilla stays as
+    // it was. Mutant: drop projects from sharedLinkItems, or make ProjectsLink un-link again — the
+    // symlink assertion and the same-file assertion both go red by name.
+    @Test
+    fun `a head that shares projects joins the vanilla transcript tree and leaks nothing else`(@TempDir home: Path) {
+        val cwd = home.resolve("work/repo").toAbsolutePath()
+        val head = home.resolve(".claude-codex")
+        val mine = write(head.resolve(TRANSCRIPTS_DIR).resolve(encodedCwd(cwd)).resolve("abc.jsonl"), TRANSCRIPT)
+        val foreign = write(
+            vanilla(home).resolve(TRANSCRIPTS_DIR).resolve(encodedCwd(cwd)).resolve("other-head.jsonl"),
+            """{"type":"assistant","sessionId":"other-head","message":{"model":"gpt-6-astra"}}
 """,
-            Files.readString(transcript),
-            "the head's own transcript must survive materialize byte-identical",
+        )
+        write(vanilla(home).resolve("settings.json"), """{"theme":"dark"}""")
+        // The inode BEFORE the swap: afterwards `mine` resolves through the link, so only the key
+        // captured now can prove the merge was a hardlink and not a copy.
+        val inode = Files.readAttributes(mine, BasicFileAttributes::class.java).fileKey()
+        val before = snapshot(vanilla(home))
+
+        materialize(home, head, setOf(REGISTRY_DIR, TRANSCRIPTS_DIR))
+
+        val escapes = setOf(vanilla(home).resolve(REGISTRY_DIR), vanilla(home).resolve(TRANSCRIPTS_DIR))
+        assertTrue(head.resolve(TRANSCRIPTS_DIR).isSymbolicLink(), "the head's projects dir must be the link")
+        assertEquals(vanilla(home).resolve(TRANSCRIPTS_DIR), Files.readSymbolicLink(head.resolve(TRANSCRIPTS_DIR)))
+        assertHeadPrivate(head, escapes)
+        assertVanillaUntouched(before, snapshot(vanilla(home)), setOf(REGISTRY_DIR, TRANSCRIPTS_DIR))
+        // The merge: the head's transcript is reachable at the vanilla name, and it is the SAME file.
+        val merged = vanilla(home).resolve(TRANSCRIPTS_DIR).resolve(encodedCwd(cwd)).resolve("abc.jsonl")
+        assertTrue(Files.isRegularFile(merged, NOFOLLOW_LINKS), "the head's transcript now lives in the shared tree")
+        assertEquals(
+            inode,
+            Files.readAttributes(merged, BasicFileAttributes::class.java).fileKey(),
+            "merged by hardlink — the same inode — so a live append lands in both names",
+        )
+        assertEquals(TRANSCRIPT, Files.readString(merged))
+        // ...and the foreign transcript already there is neither moved, copied nor rewritten.
+        assertEquals(1, Files.getAttribute(foreign, "unix:nlink") as Int, "the foreign transcript gains no second name")
+        assertTrue(Files.isRegularFile(foreign), "the foreign transcript must not be deleted or moved")
+        assertTrue(
+            Files.isRegularFile(head.resolve(TRANSCRIPTS_DIR).resolve(encodedCwd(cwd)).resolve("other-head.jsonl")),
+            "and THROUGH the link this head now lists the other head's session — the join",
         )
     }
 
     @Test
-    fun `a head whose projects dir is the old vanilla link is un-linked to a real dir, vanilla content untouched`(
-        @TempDir home: Path,
-    ) {
+    fun `a head already linked to the vanilla tree stays linked, vanilla content untouched`(@TempDir home: Path) {
         val cwd = home.resolve("work/repo").toAbsolutePath()
-        val vanillaProjects = Files.createDirectories(home.resolve(".claude").resolve("projects"))
+        val vanillaProjects = Files.createDirectories(vanilla(home).resolve(TRANSCRIPTS_DIR))
         val foreign = write(
             vanillaProjects.resolve(encodedCwd(cwd)).resolve("other-head.jsonl"),
             """{"type":"assistant","sessionId":"other-head","message":{"model":"gpt-6-astra"}}
 """,
         )
         val head = Files.createDirectories(home.resolve(".claude-codex"))
-        Files.createSymbolicLink(head.resolve("projects"), vanillaProjects)
-        val before = snapshot(home.resolve(".claude"))
+        Files.createSymbolicLink(head.resolve(TRANSCRIPTS_DIR), vanillaProjects)
+        val before = snapshot(vanilla(home))
 
-        materialize(home, head, setOf("projects", "sessions"))
+        materialize(home, head, setOf(REGISTRY_DIR, TRANSCRIPTS_DIR))
 
-        val headProjects = head.resolve("projects")
-        assertFalse(headProjects.isSymbolicLink(), "the vanilla link must be gone")
-        assertTrue(Files.isDirectory(headProjects, NOFOLLOW_LINKS), "a real head projects dir must take its place")
-        assertEquals(
-            emptySet<String>(),
-            Files.newDirectoryStream(headProjects).use { it.toList() }.map { it.fileName.toString() }.toSet(),
-            "the replacement dir starts EMPTY: nobody's history is moved into this fix",
-        )
-        assertHeadPrivate(head, registryEscape(home))
-        assertVanillaUntouched(before, snapshot(home.resolve(".claude")))
-        assertEquals(1, Files.getAttribute(foreign, "unix:nlink") as Int, "no hardlink into the vanilla tree")
+        assertTrue(head.resolve(TRANSCRIPTS_DIR).isSymbolicLink(), "the link is the desired state and stays")
+        assertEquals(vanillaProjects, Files.readSymbolicLink(head.resolve(TRANSCRIPTS_DIR)))
+        assertVanillaUntouched(before, snapshot(vanilla(home)), setOf(REGISTRY_DIR))
+        assertEquals(1, Files.getAttribute(foreign, "unix:nlink") as Int, "no second name for the vanilla transcript")
         assertTrue(Files.isRegularFile(foreign), "the vanilla transcript must not be deleted or moved")
     }
 
     @Test
-    fun `the operator share vocabulary still leaves a head projects tree real and the vanilla one absent`(
+    fun `the operator share vocabulary links projects and still delivers the operator's shared items`(
         @TempDir home: Path,
     ) {
         // The example TOML's own share list, friendly spellings and all — the policy a head really
-        // materializes with. `projects` is inert there now, but a policy naming it must not resurrect
-        // the link, and the shared operator items must still arrive.
+        // materializes with, and the one the operator's own splice.toml carries.
         val head = home.resolve(".claude-codex")
-        val shared = write(home.resolve(".claude/CLAUDE.md"), "# global rules")
-        Files.createDirectories(home.resolve(".claude/agents"))
-        val before = snapshot(home.resolve(".claude"))
+        val shared = write(vanilla(home).resolve("CLAUDE.md"), "# global rules")
+        Files.createDirectories(vanilla(home).resolve("agents"))
+        val before = snapshot(vanilla(home))
 
         val share = setOf(
             "settings", "agents", "commands", "skills", "hooks",
-            "plugins", "claude_md", "mcps", "sessions", "projects",
+            "plugins", "claude_md", "mcps", REGISTRY_DIR, TRANSCRIPTS_DIR,
         )
         materialize(home, head, share)
 
         assertTrue(head.resolve("CLAUDE.md").isSymbolicLink(), "the operator's shared CLAUDE.md must still arrive")
         assertEquals(shared.toRealPath(), head.resolve("CLAUDE.md").toRealPath())
-        assertFalse(head.resolve("projects").isSymbolicLink(), "the head projects dir must be REAL under any policy")
-        assertFalse(
-            Files.exists(home.resolve(".claude").resolve("projects"), NOFOLLOW_LINKS),
-            "no policy may cause materialize to create the vanilla projects tree",
+        assertTrue(head.resolve(TRANSCRIPTS_DIR).isSymbolicLink(), "projects in the share list means the link")
+        assertTrue(
+            Files.isDirectory(vanilla(home).resolve(TRANSCRIPTS_DIR), NOFOLLOW_LINKS),
+            "the vanilla projects tree is created when absent: a fresh machine is where the join is wanted most",
         )
-        assertVanillaUntouched(before, snapshot(home.resolve(".claude")))
+        assertVanillaUntouched(before, snapshot(vanilla(home)), setOf(REGISTRY_DIR, TRANSCRIPTS_DIR))
     }
 }

@@ -7,10 +7,11 @@
 //     machine-generated, so SessionRegistryLink migrates its entries into the global registry and
 //     replaces the dir with the link — cross-head session VISIBILITY, the one dispositioned escape
 //     from head isolation, and it is Claude Code's peer registry rather than head configuration);
-//   - projects/ is NOT a shared item (V4-115, 2026-09-17): a head's transcripts are head-private by
-//     the operator ruling, so ProjectsLink guarantees a REAL projects dir inside each head and
-//     un-links one an earlier launch pointed elsewhere. Cross-head resume is an explicit COPY made
-//     at launch time (ResumeAcrossHeads), never a shared tree;
+//   - projects/ is the SECOND dispositioned escape (V4-64, re-landed by V4-168 on 2026-09-19 after
+//     V4-115 had un-linked it): a head whose policy shares projects has its real tree hardlink-merged
+//     into the global one and replaced by the link, so every head's picker lists every session —
+//     transcripts are shared session state, not head configuration. A head whose policy ISOLATES
+//     projects keeps a real tree and reaches foreign sessions by explicit COPY (ResumeAcrossHeads);
 //   - settings.json is ALWAYS a real merged file (never a symlink through which we'd clobber the
 //     operator's global): global settings + availableModels allowlist + enforceAvailableModels +
 //     preserved model choice (when still allowed) + the statusline command. A pre-existing symlink
@@ -70,7 +71,6 @@ public class ClaudeConfigMaterializer(
         prettyPrint = true
     }
     private val sessionRegistry = SessionRegistryLink()
-    private val projectsLink = ProjectsLink()
     private val jsonReads = JsonStateReads(json, log)
     private val hookExecProbe: HookExecProbe? = hookExec?.let { exec ->
         HookExecProbe { dir, chmod -> HookScriptFiles.probeExecutability(dir, chmod, exec) }
@@ -94,7 +94,7 @@ public class ClaudeConfigMaterializer(
         // here and writeSettings can change what this read observes.
         val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
         Files.createDirectories(spec.configDir)
-        linkShared(spec.configDir, spec.policy)
+        linkShared(spec.configDir, spec.policy, spec.headKey)
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 spec.configDir,
@@ -174,27 +174,26 @@ public class ClaudeConfigMaterializer(
     }
 
     // settings is merged (not linked); mcps arrive via .claude.json. Everything else that the
-    // policy shares is symlinked from the operator's global dir. projects is not decided by the
-    // policy at all — see the call below and ProjectsLink's header.
-    private fun linkShared(configDir: Path, policy: ClaudePolicy) {
-        // Head-private transcripts (V4-115): guaranteed real for EVERY head, whatever its policy
-        // says. The migration must run even for a head whose splice.toml still names `projects` in
-        // share — that spelling is inert now, and a policy must not be able to resurrect the link.
-        projectsLink.ensurePrivateOrLog(configDir.resolve(Keys.PROJECTS), log)
+    // policy shares is symlinked from the operator's global dir — the two machine-generated trees
+    // (sessions, projects) by migrate-then-link, everything operator-authored by a plain link.
+    private fun linkShared(configDir: Path, policy: ClaudePolicy, headKey: String) {
         // settings is merged (not linked) and mcps arrive via .claude.json, so both are skipped here.
-        for (item in sharedLinkItems) {
-            if (item in MERGED_ITEMS || !shares(policy, item)) continue
-            if (item == Keys.SESSIONS) {
-                // The peer registry migrates rather than links: see SessionRegistryLink's header.
-                // link() logs its own declines; this catches what it THROWS mid-flight (DR-39).
-                Cancellables.runCatchingCancellable {
-                    sessionRegistry.link(globalDir().resolve(item), configDir.resolve(item))
-                }.exceptionOrNull()?.let { cause ->
-                    // SAFE-RENDER-EXEMPT[2026-08-31]: SessionRegistryLink.link does path work only — the failure names a directory, never its content
-                    log("[materialize] sessions registry NOT linked into $configDir (${cause.message})\n")
+        // ONE dispatcher over sharedLinkItems, so that list stays the single source of what a head can
+        // share: an item missing from it is not shared, whatever the policy says.
+        for (item in sharedLinkItems.filter { it !in MERGED_ITEMS }) {
+            val shared = shares(policy, item)
+            val dst = configDir.resolve(item)
+            when (item) {
+                // The transcript tree is the one item with a behaviour when NOT shared: the head still
+                // owns a real tree from launch one. Shared, it migrates then links (ProjectsLink's header).
+                Keys.PROJECTS -> if (shared) {
+                    ProjectsLink(headKey).linkOrLog(globalDir().resolve(item), dst, log)
+                } else {
+                    ProjectsLink(headKey).ensureOwn(dst, log)
                 }
-            } else {
-                linkOneShared(configDir, item)
+                // The peer registry migrates rather than links: see SessionRegistryLink's header.
+                Keys.SESSIONS -> if (shared) sessionRegistry.linkOrLog(globalDir().resolve(item), dst, log)
+                else -> if (shared) linkOneShared(configDir, item)
             }
         }
     }

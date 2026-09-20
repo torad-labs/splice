@@ -64,6 +64,15 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: setup bun
+        # The gate's Bun legs and the arch tests spawn `bun`; it comes from this pinned action
+        # (SHA + version, as in ci.yml), not from an npm package. No cache: a release job
+        # downloads its own toolchain.
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+          no-cache: true
+
       - name: resolve release version
         id: version
         env:

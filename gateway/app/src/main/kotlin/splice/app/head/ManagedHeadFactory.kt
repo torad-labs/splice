@@ -21,11 +21,9 @@ import splice.app.quota.QuotaProbe
 import splice.app.quota.QuotaProbes
 import splice.app.quota.UsageFields
 import splice.control.ManagedHead
-import splice.core.activity.ActivityDays
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.Knob
-import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.util.LogSink
@@ -34,7 +32,6 @@ import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
-import splice.gateway.wire.TraceStore
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider
@@ -66,6 +63,7 @@ internal class ManagedHeadFactory(
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
+    private val traceStores = HeadTraceStores(statePaths)
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
@@ -77,7 +75,7 @@ internal class ManagedHeadFactory(
             ?.let { accountQuotas.getValue(it.label) }
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         onPrimaryQuota(primaryQuota)
-        val stores = headStores(key, cfg, wired, primaryQuota, accountQuotas)
+        val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
         startQuotaPollers(ctx, wired, stores, cfg.quotaPollOff)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
@@ -125,30 +123,21 @@ internal class ManagedHeadFactory(
      *  in-memory copy. (The economics store pushed assembleHead past detekt's LongMethod ceiling,
      *  which is the same pressure that made this a separate declaration in the original commit.) */
     private fun headStores(
-        key: String,
-        cfg: SpliceConfig,
+        ctx: ProviderBuild,
         wired: Wired,
         primaryQuota: QuotaTracker,
         accountQuotas: Map<String, QuotaTracker>,
     ): HeadStores = HeadStores(
-        usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
-        compactStats = CompactStats(statePaths.compactStatsFile(key)),
-        perfStats = PerfStats(statePaths.perfStatsFile(key)),
-        economics = EconomicsStore(statePaths.economicsFile(key)),
+        usageStore = UsageStore(statePaths.usageFile(ctx.key), statePaths.ratelimitFile(ctx.key)),
+        compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
+        perfStats = PerfStats(statePaths.perfStatsFile(ctx.key)),
+        economics = EconomicsStore(statePaths.economicsFile(ctx.key)),
         quota = primaryQuota,
         accountPool = accountPools.build(wired, accountQuotas),
         accountQuotas = accountQuotas,
-        clientWindows = ClientWindows(store = statePaths.clientWindowsFile(key), log = log),
-        trace = traceStore(key, cfg),
+        clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
+        trace = traceStores.forHead(ctx.key, ctx.cfg),
     )
-
-    /** V4-174: built ONLY for a head whose own cfg says `trace = true` (keyed, never the global view):
-     *  day files named after the head under the owner-only trace directory, the head's retention. */
-    private fun traceStore(key: String, cfg: SpliceConfig): TraceStore? {
-        if (!cfg.trace) return null
-        val days = ActivityDays(statePaths.traceDir, key, cfg.traceRetentionDays, ownerOnly = true)
-        return TraceStore(days, key, cfg.traceMaxBodyChars)
-    }
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a

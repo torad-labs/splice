@@ -2,7 +2,7 @@
   "_note": "AUTHORED BY checks/silent-constants.ts --record, MEASURED never estimated. Every entry is a numeric `const val` in main sources with no adjacent reason comment (see that file's WHAT COUNTS AS A REASON). The gate fails on GROWTH and on a STALE entry held above the measurement, so lowering an entry is how a fix is recorded. This file is a debt inventory with a one-way valve; it is meant to shrink to nothing.",
   "recorded": "2026-09-17",
   "denominator": 566,
-  "total": 415,
+  "total": 414,
   "files": {
     "gateway/app/src/main/kotlin/splice/app/AuthHttpClientFactory.kt": 3,
     "gateway/app/src/main/kotlin/splice/app/AuthProbeLoop.kt": 3,
@@ -138,7 +138,6 @@
     "gateway/gateway/src/main/kotlin/splice/gateway/usage/EconomicsStore.kt": 2,
     "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt": 1,
     "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageRing.kt": 1,
-    "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt": 1,
     "gateway/gateway/src/main/kotlin/splice/gateway/wire/JsonStringEscaper.kt": 6,
     "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodeModeInterruption.kt": 2,
     "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt": 2,

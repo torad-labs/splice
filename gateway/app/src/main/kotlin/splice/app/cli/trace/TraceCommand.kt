@@ -16,6 +16,7 @@ import java.nio.file.Path
 internal const val TRACE_USAGE =
     "usage: splice trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]"
 
+// why: a screenful of turns when no --last is given; the whole day is a jq job, not a table
 private const val DEFAULT_LAST = 20
 
 internal data class TraceOpts(

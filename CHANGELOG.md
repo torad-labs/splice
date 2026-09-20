@@ -3,6 +3,23 @@
 ## Unreleased
 
 ### Added
+- **Claude head mode: wrap the default `claude` command, and several Claude logins on the
+  splice-owned head (V4-129).** `GET /api/claude-head` reports which of the two modes is active
+  (Separate, the default: `claude-splice` stays a splice-owned head with its own config dir; Wrap:
+  the operator's plain `claude` becomes a splice launcher over the vanilla `~/.claude`), what
+  `claude` on PATH resolves to right now, and the shim path. `POST /api/claude-head/wrap` installs
+  the shim at `claude`, preserving the shadowed symlink's exact target for byte-identical restore,
+  and materializes `~/.claude/settings.json` + `~/.claude/.claude.json` through a deliberately
+  narrow door that never bypasses `ClaudeConfigMaterializer`'s DR-102 guard (that guard still
+  refuses `~/.claude` on its general entry point); both files are backed up first. `POST
+  /api/claude-head/unwrap` restores both. Every OTHER head's launch is protected too: LaunchService
+  now plants the real absolute claude binary instead of the bare `"claude"` string whenever wrap is
+  active, because every head shares one `claude`-on-PATH argv[0] and a wrapped `claude` would
+  otherwise resolve straight back to the shim mid-launch. Several of Claude Code's own
+  `.credentials.json` files can be stored under a label; the selected one materializes into
+  `claude-splice`'s config dir at session launch only — no mid-session switch, one login per head at
+  a time; splice never reads the bytes or calls Anthropic with them. `splice doctor` reports the
+  mode.
 - **A llama-server head keeps each conversation on its own slot (V4-165).** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,
   so a new session sharing Claude Code's ~30K preamble took an idle conversation's slot and that

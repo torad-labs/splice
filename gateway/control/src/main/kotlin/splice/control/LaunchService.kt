@@ -13,9 +13,12 @@
 package splice.control
 
 import splice.core.launch.ClaudeConfigMaterializer
+import splice.core.launch.ClaudeLogins
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.ResumeAcrossHeads
 import splice.core.launch.SessionAdoption
+import splice.core.launch.WrapStateRead
+import splice.core.launch.WrapStateStore
 import splice.core.util.EnvReader
 import kotlin.math.max
 
@@ -35,6 +38,20 @@ public class LaunchService(
      *  composition root (ControlPlane) constructs LaunchService with a materializer alone, and a
      *  cross-head resume needs no daemon state — only the sibling config dirs the spec carries. */
     private val resumeAcrossHeads: ResumeAcrossHeads = ResumeAcrossHeads(),
+    /** V4-129: the real absolute claude binary when the default `claude` command is WRAPPED —
+     *  bin/splice-launch execs argv[0] by resolving it through PATH, and a wrapped `claude` on PATH
+     *  IS the shim, so planting the bare [claudeBinary] string there would make EVERY head's launch
+     *  (not only a wrapped one) recurse into itself. Defaulted to a REAL reader (not a no-op) so this
+     *  self-protection holds from day one without ControlPlane needing to wire anything: the state
+     *  file this reads simply does not exist until wrap is used, at which point it reads null exactly
+     *  like today. Read PER LAUNCH, never cached — wrap/unwrap can flip between two requests. */
+    private val wrapState: WrapStateRead = WrapStateRead { WrapStateStore().read()?.realBinaryPath },
+    /** V4-129 (FEATURES.md 4.5): the splice-owned Claude head's selected login, materialized into its
+     *  own config dir right before this launch's materialize() — launch-time selection, no mid-
+     *  session switch. Gated on [LaunchSpec.forwardClientAuth] (the STRUCTURAL client-auth signal
+     *  this file already uses elsewhere, never a hardcoded head-key string): every other head is a
+     *  silent no-op, unchanged. */
+    private val claudeLogins: ClaudeLogins = ClaudeLogins(),
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning.
@@ -69,6 +86,10 @@ public class LaunchService(
                 headKey = effective.headKey,
             ),
         )
+        // V4-129 (FEATURES.md 4.5): AFTER materialize (so the config dir exists) and BEFORE the
+        // client ever reads it. A no-op on every head but the splice-owned Claude one — see
+        // [claudeLogins]'s KDoc for the gate.
+        if (effective.forwardClientAuth) claudeLogins.materializeSelected(effective.trees.own)
         // V4-115 AFTER the materialize, never before: the materializer is what guarantees
         // <configDir>/projects is a REAL head-owned directory (ProjectsLink un-links one an earlier
         // launch pointed elsewhere). Copying first would write through the very link this row removes.
@@ -76,7 +97,10 @@ public class LaunchService(
         val env = buildEnv(effective, slots)
         val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
-            add(claudeBinary)
+            // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
+            // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
+            // before this row.
+            add(wrapState.realBinaryPath() ?: claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.

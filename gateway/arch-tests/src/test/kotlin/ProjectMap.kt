@@ -61,10 +61,9 @@ internal class ProjectMap private constructor(
      *  lines. The other half of the silent-loss pair: a source tree the build never included is a
      *  tree every law walks past, and nothing in the tree says so. */
     fun unmappedProductionDirViolations(): List<String> =
-        root.walkTopDown()
-            .onEnter { it.name !in notSwept }
+        swept(root)
             .filter { it.isDirectory && it.invariantSeparatorsPath.endsWith(MAIN_SOURCES) }
-            .filter { main -> main.walkTopDown().any { it.isFile && it.extension == "kt" } }
+            .filter { main -> swept(main).any { it.isFile && it.extension == "kt" } }
             .map { it.parentFile.parentFile.parentFile.relativeTo(root).invariantSeparatorsPath }
             .filterNot { it in directories.values }
             .sorted()
@@ -75,6 +74,12 @@ internal class ProjectMap private constructor(
                     "silently ungoverned."
             }
             .toList()
+
+    /** THE ONE TRAVERSAL both walks use — never below a directory whose name is on the list. It is
+     *  the same bound the build's census input applies, so a file the build cannot see (Kotlin under
+     *  a `build/` inside a source root, say) cannot decide this sweep's verdict either: an
+     *  incremental run and a forced run must agree about every file. */
+    private fun swept(from: File): Sequence<File> = from.walkTopDown().onEnter { it.name !in notSwept }
 
     internal companion object {
         /** The channel: `:path=directory` pairs, `;`-separated, written by arch-tests/build.gradle.kts. */

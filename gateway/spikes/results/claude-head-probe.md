@@ -68,6 +68,9 @@ Record here afterwards: model served, whether `/login` behaved, `cache_creation_
 preserves `cache_control`), whether thinking blocks rendered, and whether
 `anthropic-ratelimit-*` headers reached the statusline.
 
-If any of that misbehaves, the wiring to suspect first is the forwarding allowlist in
-`HeadServer.FORWARDED_CLIENT_HEADERS` — it is the one place a header the vendor needs could be
-missing.
+If any of that misbehaves, the wiring to suspect first is the forwarding allowlist, which HD-24
+moved out of `HeadServer.kt` into `gateway/gateway/src/main/kotlin/splice/gateway/head/ClientAuth.kt`
+(`FORWARDED_CLIENT_HEADERS` and `forwardedClientHeaders`) — it is the one place a header the vendor
+needs could be missing. One defect there is already fixed: until HD-5 (2026-09-20) the allowlist was
+read with `headers[name]`, which keeps only the FIRST field line, so repeated `anthropic-beta` lines
+lost every flag but one. It now rejoins them per RFC 9110 5.3.

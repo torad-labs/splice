@@ -47,6 +47,7 @@ import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
@@ -168,7 +169,40 @@ class HeadServerClientAuthTest {
         client.close()
     }
 
-    private fun turn(port: Int, headers: Map<String, String> = emptyMap()) = runBlocking {
+    private fun turn(port: Int, headers: Map<String, String> = emptyMap()) =
+        turnWithLines(port, headers.map { (k, v) -> k to v })
+
+    /** A turn written straight onto the socket, so the request reaches the head with the EXACT
+     *  header lines given — repeats included.
+     *
+     *  The Ktor client cannot express this: `header(name, v)` twice arrives at the server as ONE
+     *  comma-joined line, which would make a repeated-header test pass no matter what the server
+     *  does with repeats. Raw bytes are the only way this assertion can fail. */
+    private fun rawTurn(port: Int, headers: List<Pair<String, String>>): String {
+        val body = """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
+            """"messages":[{"role":"user","content":"hi"}],"stream":true}"""
+        val request = buildString {
+            append("POST /v1/messages HTTP/1.1\r\n")
+            append("Host: 127.0.0.1:$port\r\n")
+            append("Content-Type: application/json\r\n")
+            append("Content-Length: ${body.toByteArray().size}\r\n")
+            headers.forEach { (name, value) -> append("$name: $value\r\n") }
+            append("Connection: close\r\n\r\n")
+            append(body)
+        }
+        return Socket("127.0.0.1", port).use { socket ->
+            socket.soTimeout = 10_000
+            socket.getOutputStream().apply {
+                write(request.toByteArray())
+                flush()
+            }
+            socket.getInputStream().readBytes().decodeToString()
+        }
+    }
+
+    /** A turn whose headers are a LIST of lines, so the same name can appear more than once —
+     *  the shape Claude Code actually sends its beta flags in, which a Map cannot express. */
+    private fun turnWithLines(port: Int, headers: List<Pair<String, String>>) = runBlocking {
         val response = client.post("http://127.0.0.1:$port/v1/messages") {
             headers.forEach { (k, v) -> header(k, v) }
             header("Content-Type", "application/json")
@@ -210,6 +244,55 @@ class HeadServerClientAuthTest {
         assertEquals(listOf("2099-01-01"), sent["anthropic-version"].orEmpty())
         // splice holds no credential on this head, so nothing of its own is written
         assertFalse(sent["authorization"].orEmpty().any { it.contains("splice-held-secret") })
+    }
+
+    @Test
+    fun `repeated anthropic-beta lines ALL ride, rejoined - not just the first`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+
+        val response = rawTurn(
+            port,
+            listOf(
+                "Authorization" to "Bearer caller-own-token",
+                "anthropic-beta" to "oauth-2025-04-20",
+                "anthropic-beta" to "fine-grained-tool-streaming-2025-05-14",
+                "anthropic-beta" to "context-1m-2025-08-07",
+            ),
+        )
+
+        assertTrue(response.startsWith("HTTP/1.1 200"), response.take(120))
+        assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
+        // RFC 9110 5.3: repeated list-valued field lines are ONE value. Reading the field with
+        // `headers[name]` returned only the FIRST line, so a caller asking for three betas told the
+        // vendor about one. Every flag the caller chose must arrive, however it was split.
+        val flags = upstream.requests[before]["anthropic-beta"].orEmpty()
+            .flatMap { it.split(",") }.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        assertEquals(
+            setOf("oauth-2025-04-20", "fine-grained-tool-streaming-2025-05-14", "context-1m-2025-08-07"),
+            flags,
+        )
+    }
+
+    @Test
+    fun `a repeated SINGLETON header keeps the first line - a credential is never rejoined`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+
+        val response = rawTurn(
+            port,
+            listOf(
+                "Authorization" to "Bearer caller-own-token",
+                "anthropic-version" to "2099-01-01",
+                "anthropic-version" to "1999-01-01",
+            ),
+        )
+
+        assertTrue(response.startsWith("HTTP/1.1 200"), response.take(120))
+        // Joining a singleton field would forge a value the caller never sent as one value, so the
+        // first line wins. anthropic-version is the safe singleton to prove this on: the head's own
+        // admission path reads Authorization, and a repeat there is a different question.
+        assertEquals(listOf("2099-01-01"), upstream.requests[before]["anthropic-version"].orEmpty())
     }
 
     @Test

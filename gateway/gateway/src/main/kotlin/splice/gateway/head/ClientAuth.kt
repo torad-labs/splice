@@ -22,6 +22,18 @@ private val FORWARDED_CLIENT_HEADERS: List<String> = listOf(
     "anthropic-beta",
 )
 
+/** The allowlisted names whose value is a COMMA-SEPARATED LIST, so repeated field lines are one
+ *  value split across lines and must be rejoined rather than have all but the first dropped.
+ *
+ *  Only `anthropic-beta` qualifies. `Authorization` and `x-api-key` are singleton credentials and
+ *  `anthropic-version` is a single token: joining a repeat of any of those would forge a value the
+ *  caller never sent, so for them the first line wins, which is what a singleton field means. */
+private val LIST_VALUED_CLIENT_HEADERS: Set<String> = setOf("anthropic-beta")
+
+// why: RFC 9110 5.3 joins repeated list-valued field lines with a comma and OWS; the vendor parses
+// the beta flags off exactly this separator, so it is the wire form, not a formatting choice.
+private const val FIELD_LINE_SEPARATOR = ", "
+
 /** The head's client-auth seam: who may call this listener, and what of theirs rides upstream. */
 internal class ClientAuth(
     private val deps: HeadDeps,
@@ -125,6 +137,23 @@ internal class ClientAuth(
      *  chose — exactly what Claude Code would have sent had it called the vendor directly. */
     fun forwardedClientHeaders(call: ApplicationCall): Map<String, String> =
         FORWARDED_CLIENT_HEADERS.mapNotNull { name ->
-            call.request.headers[name]?.let { name to it }
+            forwardedValue(call, name)?.let { name to it }
         }.toMap()
+
+    /** One allowlisted header's value as it should ride upstream.
+     *
+     *  Claude Code sends its beta flags as REPEATED `anthropic-beta` lines, and `headers[name]`
+     *  returns only the first, so reading it that way silently dropped every flag but one — the
+     *  caller asked for four betas and the vendor was told about one. Read every line and, for a
+     *  list-valued field, rejoin them; for a singleton field keep the first, which is the only
+     *  reading that cannot invent a value. */
+    private fun forwardedValue(call: ApplicationCall, name: String): String? {
+        val lines = call.request.headers.getAll(name)?.filter { it.isNotBlank() }.orEmpty()
+        if (lines.isEmpty()) return null
+        return if (name in LIST_VALUED_CLIENT_HEADERS) {
+            lines.joinToString(FIELD_LINE_SEPARATOR)
+        } else {
+            lines.first()
+        }
+    }
 }

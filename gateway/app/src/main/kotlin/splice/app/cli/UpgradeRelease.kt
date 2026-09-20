@@ -12,8 +12,13 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 
 internal const val SUMS_ASSET = "sha256sums.txt"
-private const val REPO = "torad-labs/splice"
-private const val RELEASES = "https://github.com/$REPO/releases"
+
+// why: the GitHub owner/name slug releases and attestations are fetched from. Named GITHUB_REPO
+// rather than the bare noun: a different value of the same bare name lives in
+// McpDispositionReasons, and const-single-source matches bare names across namespaces because
+// one name carrying two meanings is a reading hazard whether or not the compiler minds.
+private const val GITHUB_REPO = "torad-labs/splice"
+private const val RELEASES = "https://github.com/$GITHUB_REPO/releases"
 private const val SHIM_MODE = "rwxr-xr-x"
 
 /** `doctor --json` shipped in 0.4.0. */
@@ -77,7 +82,7 @@ internal class UpgradeRelease(
     }
 
     private fun attest(file: Path, asset: String) {
-        val verify = process(listOf("gh", "attestation", "verify", file.toString(), "--repo", REPO), false)
+        val verify = process(listOf("gh", "attestation", "verify", file.toString(), "--repo", GITHUB_REPO), false)
         if (verify.code != 0) refuse("attestation verification FAILED for $asset")
     }
 

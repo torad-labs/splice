@@ -1,9 +1,9 @@
 // `gate rules [--prove-coverage]` — the ast-grep walls, and the proof that they are all routed.
 //
-// The three legs below reproduce `npm run gate:rules` (package.json:15) exactly, in order, with
-// `&&` semantics: scan the tree, run the routed rules' red/green cases, then run the dormant
-// Kotlin pack's own cases through its own config. The third leg exists because a rule-test for a
-// rule that is not in a root ruleDir is SILENTLY SKIPPED — see .rules/kotlin/ast-grep/sgconfig.yml.
+// The two legs below reproduce `npm run gate:rules` (package.json:15) exactly, in order, with
+// `&&` semantics: scan the tree, then run the routed rules' red/green cases. (A third leg used to
+// run the dormant .rules/kotlin pack's own cases through its own config; that pack held 0
+// rule-tests, so the leg tested nothing, and PR 1 of the restructure deleted both.)
 //
 // `--prove-coverage` adds P1: `ast-grep scan` reports matches, so it is structurally blind to a
 // glob that selects nothing, or one that still matches one module while the others lost
@@ -16,15 +16,14 @@ import { layout } from "../lib/repo.ts";
 
 export const usage = "rules [--prove-coverage]             the ast-grep walls (= npm run gate:rules), + P1 coverage";
 
-/** The two ast-grep configs `gate:rules` names. PR 2 moves both under quality/rules/. */
+/** The ast-grep config `gate:rules` runs against — implicit in the npm script, because `ast-grep
+ *  scan` with no --config walks up to it. PR 2 moves it under quality/rules/. */
 export const ROUTED_CONFIG = "sgconfig.yml";
-export const DORMANT_CONFIG = ".rules/kotlin/ast-grep/sgconfig.yml";
 export const EXCLUSIONS = "tools/gate/config/rule-coverage-exclusions.toml";
 
 const LEGS: readonly (readonly string[])[] = [
   ["scan"],
   ["test", "--skip-snapshot-tests"],
-  ["test", "--config", DORMANT_CONFIG, "--skip-snapshot-tests"],
 ];
 
 export async function rules(argv: readonly string[]): Promise<number> {
@@ -38,13 +37,10 @@ export async function rules(argv: readonly string[]): Promise<number> {
   }
 
   const { repoRoot, buildRoot } = layout();
-  // A config that is not there would make its leg a silent no-op, which is the exact defect the
-  // dormant pack's own header records. Name it instead.
-  for (const config of [ROUTED_CONFIG, DORMANT_CONFIG]) {
-    if (!existsSync(join(repoRoot, config))) {
-      console.error(`gate rules: ${config} is missing — a leg with no config passes without checking anything`);
-      return 2;
-    }
+  // A config that is not there would make both legs a silent no-op. Name it instead.
+  if (!existsSync(join(repoRoot, ROUTED_CONFIG))) {
+    console.error(`gate rules: ${ROUTED_CONFIG} is missing — a leg with no config passes without checking anything`);
+    return 2;
   }
 
   for (const leg of LEGS) {

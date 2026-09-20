@@ -58,11 +58,10 @@ jobs:
           cache: gradle
 
       - name: setup node
-        # Cache derives from reviewed main code; the attestation chain is the integrity control.
+        # No `cache:` input, so nothing is cached here; zizmor flags the action by name.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0 # zizmor: ignore[cache-poisoning]
         with:
           node-version: 24
-          cache: npm
 
       - name: setup bun
         # The gate's Bun legs and the arch tests spawn `bun`; it comes from this pinned action
@@ -108,7 +107,7 @@ jobs:
           echo "release version: ${version}"
 
       - name: install workspaces
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: repository gates
         run: npm run gate

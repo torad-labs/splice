@@ -94,15 +94,8 @@ let DISPOSITIONS: Record<string, [string, number]> = {
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is
 // the disposition; cite where the decision lives.
-let MODULE_DISPOSITIONS: Record<string, string> = {
-  spikes:
-    "its test task is DISABLED by configuration, so no XML can exist: " +
-    "gateway/spikes/build.gradle.kts sets `enabled = providers.gradleProperty('runSpikes')" +
-    ".isPresent` and says in its own comment that spikes are experiments with receipts, not " +
-    "CI tests, run explicitly with -PrunSpikes. The six spike classes are consequently " +
-    "UNOBSERVED by this wall by design — a decision recorded here rather than an absence " +
-    "waved through",
-};
+// Empty since the spikes module was deleted (restructure PR 1): every declared module runs its tests.
+let MODULE_DISPOSITIONS: Record<string, string> = {};
 
 const CLASS_DECL = /\bclass\s+(\w+)/g;
 const MEMBER_ITEM_SOURCE = "@(Test|ParameterizedTest)\\b|\\bfun\\s+(`[^`]+`|\\w+)\\s*\\(";

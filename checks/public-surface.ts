@@ -21,7 +21,7 @@
  * THE DENOMINATOR COMES FROM THE SOURCE, never a hand list (§24). Two files are parsed:
  *   · gateway/settings.gradle.kts — every include()d module path. That is the universe.
  *   · gateway/build-logic/.../splice.module-law.gradle.kts — `nonLibrary`, the set the build
- *     itself exempts from explicitApi (:app, :spikes, :arch-tests, :fir-checks). A module in
+ *     itself exempts from explicitApi (:app, :arch-tests, :fir-checks). A module in
  *     that set has no explicit `public` to read and is not a library, so it is GRADED as a
  *     consumer and never as a producer. This is the row's "each non-:app module" read off
  *     the build rather than retyped: a module added to settings.gradle.kts tomorrow is in

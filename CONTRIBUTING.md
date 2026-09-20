@@ -12,7 +12,7 @@
 Run before opening a PR — these are the same checks CI runs:
 
 ```bash
-npm ci
+bun install --frozen-lockfile
 npm run gate              # the complete local/CI gate
 npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
 npm run test:hooks        # orchestrator hook test suite
@@ -89,9 +89,9 @@ migration oracle), the `/api/*` payload shapes (`WebuiContractTest`), the state-
 The `prod` branch is the release line, and **merging the `main -> prod` PR is the release
 action** — GitHub does the rest, no local command involved:
 
-1. Land a version-bump PR on `main` (all four sites move together: `Versions.kt`
-   `GATEWAY_VERSION`, `bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`,
-   `package-lock.json`), with the `CHANGELOG.md` cut for the release.
+1. Land a version-bump PR on `main` (all three sites move together: `Versions.kt`
+   `GATEWAY_VERSION`, `bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`), with
+   the `CHANGELOG.md` cut for the release.
 2. Open the promotion PR, base `prod`, head `main` — in the UI, or `npm run promote` which
    opens the same PR after a courtesy version preflight. `promotion-check` fails the PR before
    merge if the promoted version is already tagged (a promotion that would release nothing).

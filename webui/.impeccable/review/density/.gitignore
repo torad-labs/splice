@@ -1,9 +1,0 @@
-# THE RUN OUTPUT IS NOT THE RECORD (M1-111).
-#
-# density.md is the human record of what this instrument found and it is TRACKED, deliberately.
-# density.json is what the last run happened to write: every `density.mjs` run rewrites it, so
-# tracking it means the file is modified by anyone who runs the instrument's own verify -- which
-# surfaced on a stage with no seat's name on it, because a verify line that writes a tracked file
-# outside every fence is the same shape as a stale receipt. The artifact is not evidence about a
-# build; the run is. So the run output is ignored and the report beside it is not.
-density.json

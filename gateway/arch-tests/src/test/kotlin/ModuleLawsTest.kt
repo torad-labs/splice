@@ -61,7 +61,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are
  *  harnesses rather than product layers — the same set splice.module-law.gradle.kts calls `nonLibrary`. */
-private val UNRESTRICTED_MODULES = setOf(":app", ":spikes", ":arch-tests", ":fir-checks")
+private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
  *  PROCESS and OPENING A NETWORK CONNECTION.

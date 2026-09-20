@@ -108,13 +108,6 @@
 #   proof-of-absence (no continuation round was POSTed) are the other two shapes above.
 #     gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt          (9)
 #
-#   2026-09-18 · MEASUREMENT EXPERIMENTS, NOT CI TESTS. The spikes module disables its tests unless
-#   -PrunSpikes is passed (spikes/build.gradle.kts), and its header says spikes are experiments with
-#   receipts. Wall-clock behaviour IS their subject: a 50 ms drip server, fd counts after a
-#   keep-alive settle, SSE arrival timings.
-#     gateway/spikes/src/test/kotlin/PoolCancelSpike.kt                           (5)
-#     gateway/spikes/src/test/kotlin/SseFlushSpike.kt                             (1)
-#
 # SUPERSEDED — the 2026-09-17 census, kept for its reasons, burned down by V4-139:
 #
 #   2026-09-17 · ENGINE WARM-UP AND PORT REUSE. `Thread.sleep(700) // Netty warmup` between tests
@@ -198,9 +191,6 @@ ignores:
   - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt
   # a deliberately paced test double
   - gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt
-  # measurement experiments, not CI tests (disabled without -PrunSpikes)
-  - gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
-  - gateway/spikes/src/test/kotlin/SseFlushSpike.kt
 rule:
   any:
     # Thread.sleep blocks a real thread whatever encloses it — no runTest exemption, by design.

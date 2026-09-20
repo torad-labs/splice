@@ -31,7 +31,7 @@ jobs:
             exit 1
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
-            echo "::error::tag v${version} already exists — this promotion would release nothing. Bump the version on main first (Versions.kt, bin/splice-launch, package.json, package-lock.json move together)."
+            echo "::error::tag v${version} already exists — this promotion would release nothing. Bump the version on main first (Versions.kt, bin/splice-launch, package.json move together)."
             exit 1
           fi
           echo "promotion releases v${version} on merge"

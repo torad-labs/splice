@@ -4,6 +4,7 @@
 // an adj that did not land reads as success unless something goes back and looks.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -15,6 +16,7 @@ import splice.control.mcp.SliceMemoryCap
 import splice.control.mcp.StdioProcessLauncher
 import splice.core.launch.McpServerSpec
 import splice.core.util.LogSink
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -73,18 +75,48 @@ class McpContainmentTest {
         assumeTrue(Files.exists(ours), "oom_score_adj is a Linux mechanism; there is nothing to assert without it")
         val before = Files.readString(ours).trim()
 
+        val lowering = loweringPermitted()
+
         val child = StdioProcessLauncher(dir, containment { "infinity" })
             .invoke(McpServerSpec("sleeper", "sleep", listOf("30"), emptyMap()))
         try {
-            assertEquals(
-                HOSTED_ADJ.toString(),
-                Files.readString(Path.of("/proc/${child.pid()}/oom_score_adj")).trim(),
-                "read back from the child itself, never from the value we asked for",
-            )
+            val landed = Files.readString(Path.of("/proc/${child.pid()}/oom_score_adj")).trim()
+            if (lowering) {
+                assertEquals(HOSTED_ADJ.toString(), landed, "read back from the child itself, never from the value we asked for")
+                assertFalse(logged().contains("oom_score_adj is"), logged())
+            } else {
+                // The other half of McpContainment.protect, which nothing reached before: a box that
+                // refuses the write must leave splice SAYING the raise did not land. Silence here
+                // would be the uncapped-looks-capped failure this file exists to catch, one level up.
+                assertNotEquals(HOSTED_ADJ.toString(), landed, "the kernel refused the write; a value that landed anyway means the probe is wrong")
+                assertTrue(logged().contains("oom_score_adj is"), "a raise that could not land must be said out loud: ${logged()}")
+            }
             assertEquals(before, Files.readString(ours).trim(), "splice's own protection is never written")
-            assertFalse(logged().contains("oom_score_adj is"), logged())
         } finally {
             child.destroyForcibly().waitFor(10, TimeUnit.SECONDS)
+        }
+    }
+
+    /** Can THIS process lower a child's oom_score_adj to [HOSTED_ADJ]? Some environments refuse the
+     *  write and there is then nothing for splice to land. MEASURED, not predicted: on the GitHub
+     *  runner this arm read 500 where the value was never written, while here the same write lands
+     *  at -100 — that gap is the whole CI-only red ("expected: <-100> but was: <500>"). The kernel
+     *  rule usually quoted for this is CAP_SYS_RESOURCE, but that does not reproduce on this host,
+     *  which lowers a child from 500 to -100 with an empty CapEff, so the precondition is left
+     *  UNNAMED on purpose and simply attempted.
+     *
+     *  Probed on a THROWAWAY child with the test's own hands, never by looking at what splice did:
+     *  choosing the branch from the outcome under test would pass whatever the code does. */
+    private fun loweringPermitted(): Boolean {
+        val probe = ProcessBuilder("sleep", "30").start()
+        return try {
+            val adj = Path.of("/proc/${probe.pid()}/oom_score_adj")
+            Files.writeString(adj, HOSTED_ADJ.toString())
+            Files.readString(adj).trim() == HOSTED_ADJ.toString()
+        } catch (_: IOException) {
+            false
+        } finally {
+            probe.destroyForcibly().waitFor(10, TimeUnit.SECONDS)
         }
     }
 

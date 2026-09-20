@@ -53,6 +53,23 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
     "2026-09-15 management key persist",
   "gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt":
     "2026-09-15 Claude Code config and state materializer",
+  "gateway/core/src/main/kotlin/splice/core/launch/ClaudeLogins.kt":
+    "2026-09-20 V4-129 splice-owned Claude logins. THIS ONE DOES WRITE A CREDENTIAL and the " +
+      "disposition says so rather than claiming otherwise: it copies Claude Code's own " +
+      ".credentials.json WHOLE (readString then writeAtomic0600, lines 67 and 93) between the " +
+      "store and a head's config dir, and writes a one-line label file for the selection. A " +
+      "whole-file copy is not the hazard this wall guards — that is reading a credential OBJECT, " +
+      "mutating part of it and writing the partial back, which is how a rotation gets dropped. " +
+      "Nothing here parses or merges the object, so no field can be lost.",
+  "gateway/core/src/main/kotlin/splice/core/launch/WrappedHead.kt":
+    "2026-09-20 V4-129 wrap-state persist (real binary path, shadowed symlink target, shim path, " +
+      "backup paths, wrapped-at millis); never a credential",
+  "gateway/core/src/main/kotlin/splice/core/alert/AlertStore.kt":
+    "2026-09-20 V4-133 alert settings persist and its .bak sibling; thresholds and a webhook URL, " +
+      "never a credential",
+  "gateway/core/src/main/kotlin/splice/core/budget/BudgetStore.kt":
+    "2026-09-20 V4-133 budgets.json persist and its .bak sibling; spend ceilings and actions, " +
+      "never a credential",
   "gateway/core/src/main/kotlin/splice/core/launch/HeadCommandsDir.kt":
     "2026-09-15 per-head command wrapper persist",
   "gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt":

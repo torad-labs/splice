@@ -46,6 +46,8 @@ internal class SseRoundPost(
                 rateLimitCooldown = account?.cooldown,
                 remainingTurnWait = drive.remainingTurnWait,
                 authRefreshObserver = AuthRefreshObserver { selection?.markCredentialRefreshSucceeded() },
+                // V4-174: the trace hears every send of this round from inside the retry loop.
+                wire = drive.trace,
             ),
             inputs.bodyJson,
         ) { resp ->

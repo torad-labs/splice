@@ -15,6 +15,7 @@ import splice.gateway.round.RunnerSignals
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
+import splice.gateway.wire.TurnTrace
 import splice.spi.AccountSelection
 import splice.spi.InflightGate
 import splice.spi.RemainingTurnWait
@@ -39,7 +40,10 @@ internal data class TurnDrive(
     val slot: InflightGate.Slot,
     val pipeline: TurnPipeline,
     val t0: Long,
-    val upstreamModel: String,
+    /** V4-174: the turn's trace when the head's is on; null records nothing. Took the slot of the
+     *  former `upstreamModel` field, which every construction set to `meta.upstreamModel` and is
+     *  now the property below — so the constructor-width ratchet's 17 stays 17. */
+    val trace: TurnTrace?,
     val perf: TurnPerf,
     /** Per-turn upstream headers from BuiltTurn (e.g. grok conv-id affinity). */
     val turnHeaders: Map<String, String>,
@@ -110,6 +114,9 @@ internal data class TurnDrive(
     }
 
     private val claims = TurnClaims()
+
+    /** The model the upstream is asked for: the meta's, read rather than copied. */
+    val upstreamModel: String get() = meta.upstreamModel
 
     // `internal`, not `private`: TurnDrive is an internal type and TurnDriver (a different class)
     // reads this — a private member would be unreachable. Reads only this drive's own `perf`.

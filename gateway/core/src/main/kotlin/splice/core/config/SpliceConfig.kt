@@ -57,6 +57,16 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     /** V4-173: how many upstream request bodies this head keeps in memory; 0 (the default) keeps none. */
     public val wireTap: Int get() = long(Knob.WIRE_TAP).toInt().coerceAtLeast(0)
 
+    /** V4-174: whether this head writes its full request/response trace; off unless the head opted in. */
+    public val trace: Boolean get() = bool(Knob.TRACE)
+
+    /** V4-174: how many UTC days of trace files a traced head keeps; at least one. */
+    public val traceRetentionDays: Int get() = long(Knob.TRACE_RETENTION_DAYS).toInt().coerceAtLeast(1)
+
+    /** V4-174: the longest body a trace record keeps whole, in characters; at least one. */
+    public val traceMaxBodyChars: Int
+        get() = long(Knob.TRACE_MAX_BODY_CHARS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+
     // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
     public val statuslineGitRoots: List<String>
         get() = string(Knob.STATUSLINE_GIT_ROOTS).orEmpty()

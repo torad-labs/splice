@@ -153,9 +153,9 @@ internal class TurnDriver(
     /** V4-99 item 4: ONE entry for every locally-refused turn (no account selectable, or the
      *  admission rate limit). Local admission, not an upstream failure, so it must not colour
      *  upstream health — and it must be VISIBLE: see TurnTelemetry.recordLocalRefusal. */
-    fun recordLocalRefusal(meta: TurnMeta, perf: TurnPerf, t0: Long, tag: String, detail: String) {
+    fun recordLocalRefusal(meta: TurnMeta, perf: TurnPerf, t0: Long, refusal: LocalRefusal) {
         health.local()
-        telemetry.recordLocalRefusal(meta, perf, t0, tag, detail)
+        telemetry.recordLocalRefusal(meta, perf, t0, refusal)
     }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the

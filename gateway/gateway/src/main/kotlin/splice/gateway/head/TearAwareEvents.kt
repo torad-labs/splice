@@ -52,7 +52,13 @@ internal class TearAwareEvents(
                 }
                 capture.malformedLogged = true
             },
-            onRawText = { text -> capture.appendRaw(text) },
+            // V4-174: the trace takes the WHOLE response text, so the observer stays subscribed
+            // past the point the zero-event capture has seen enough (it returns false from there).
+            onRawText = { text ->
+                val captureWants = capture.appendRaw(text)
+                drive.trace?.responseText(text)
+                captureWants || drive.trace != null
+            },
         ).onEach {
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)

@@ -9,6 +9,7 @@ import splice.gateway.perf.PerfStats
 import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.TraceStore
 import splice.spi.AccountPool
 
 internal data class HeadStores(
@@ -25,4 +26,7 @@ internal data class HeadStores(
     /** Per-session client windows (ClientWindows): written by the control plane's statusline
      *  route, read by the head's usage payload — one instance so both see the same sessions. */
     val clientWindows: ClientWindows = ClientWindows(),
+    /** V4-174: the head's opt-in full trace; null is off. No default (the V4-105 law on the gateway
+     *  twin): the one construction site decides from the head's own config, never by omission. */
+    val trace: TraceStore?,
 )

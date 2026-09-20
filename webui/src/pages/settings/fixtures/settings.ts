@@ -31,6 +31,8 @@ const EFFECTIVE = {
   activityRetentionDays: 90, activityStoreHeads: '*',
   // V4-173: Knob.kt's default — off.
   wireTap: 0,
+  // V4-174: Knob.kt's defaults — off, a week, 4 MiB of characters.
+  trace: false, traceRetentionDays: 7, traceMaxBodyChars: 4194304,
 };
 
 export const fixtureConfig: ConfigPayload = {

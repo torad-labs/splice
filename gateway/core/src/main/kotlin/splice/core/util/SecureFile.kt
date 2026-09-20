@@ -15,6 +15,27 @@ import java.nio.file.attribute.PosixFilePermissions
 
 public object SecureFile {
     private val OWNER_ONLY = PosixFilePermissions.fromString("rw-------")
+    private val OWNER_ONLY_DIR = PosixFilePermissions.fromString("rwx------")
+
+    /**
+     * V4-174: the DIRECTORY form of the same law, for a store whose every file carries private
+     * content (a head's request/response trace). Owner-only (0700) from the instant the directory
+     * exists, and re-asserted on every call, so a directory an operator recreated by hand, or that
+     * a sweep emptied and a later write recreated, is never left at the umask's default. The files
+     * inside need no mode of their own: a directory nobody else can traverse is the boundary. On a
+     * non-POSIX filesystem the mode is best-effort and the directory still exists.
+     */
+    public fun ownerOnlyDirectory(dir: Path) {
+        try {
+            Files.createDirectories(dir, PosixFilePermissions.asFileAttribute(OWNER_ONLY_DIR))
+        } catch (_: UnsupportedOperationException) {
+            Files.createDirectories(dir)
+        }
+        Cancellables.discard(
+            runCatching { Files.setPosixFilePermissions(dir, OWNER_ONLY_DIR) },
+            "POSIX perms unsupported on this filesystem — nothing to lock down",
+        )
+    }
 
     /**
      * Write [content] to [path] with owner-only (0600) perms from the instant the file exists — no

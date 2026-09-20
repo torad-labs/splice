@@ -44,6 +44,9 @@ public data class PostContext(
     /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
     val remainingTurnWait: RemainingTurnWait? = null,
     val authRefreshObserver: AuthRefreshObserver = AuthRefreshObserver {},
+    /** V4-174: hears every send of this post after it ends (headers redacted, body exact). Null —
+     *  the default and every head that did not opt in — records nothing and allocates nothing. */
+    val wire: WireObserver? = null,
 ) {
     internal fun markRetry() {
         perf?.add(PerfKeys.RETRIES, 1)

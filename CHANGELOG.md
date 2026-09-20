@@ -362,6 +362,21 @@
   at load. Nothing is stripped unless an operator writes a strip layer, splice ships no pattern
   list, and `splice doctor` WARNs on every strip layer as it does on replace: the client's
   instructions are being edited, and what a pattern removes is the operator's to own.
+- **The full request/response trace, opt-in per head (V4-174).** What Portkey and LiteLLM do:
+  `[heads.KEY.overrides] trace = true` makes that head write everything it does to
+  `<state>/trace/KEY-YYYY-MM-DD.jsonl` — every request it receives (method, path, headers, exact
+  body), every upstream attempt as it actually left (the body byte for byte, the headers with every
+  credential-class value redacted, the status and headers that came back or the transport failure
+  that ended it, the raw response text), every frame it streamed back, the outcome, the round and
+  attempt counts and the perf marks. The trace sits INSIDE the retry loop, so a backoff retry, a
+  refresh's free retry, a torn-stream reissue and an amended resend are each their own record; a
+  WebSocket round is one too. `splice trace <head>` reads the files with no daemon (a table per
+  turn; `--turn ID` for one turn in full; `--session`, `--last`, `--json`; `--purge` deletes them
+  and says what went). Off by default, opt-in per head for the reason V4-173 gives; the directory
+  is owner-only, whole day files older than `traceRetentionDays` (7) are deleted, a body past
+  `traceMaxBodyChars` is cut and flagged, and `splice doctor` warns on every run naming the head,
+  the directory, the retention and the purge verb while it is on. Nothing is written for a head
+  that did not opt in.
 - **See what splice sent upstream, once you ask it to keep it (V4-173).** A proxy that cannot show
   the request it sent cannot be audited — and nothing kept one: the perf row records how many bytes
   went upstream, never which. `[heads.KEY.overrides] wireTap = N` now makes that head keep its last

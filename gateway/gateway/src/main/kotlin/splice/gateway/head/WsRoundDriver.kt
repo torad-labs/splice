@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onEach
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.spi.HeaderRedaction
 import splice.spi.Provider
 import splice.spi.WsRoundRunner
 
@@ -53,6 +54,10 @@ internal class WsRoundDriver(
         var reported = false
         var poller: Job? = null
         var roundJob: CompletableJob? = null
+        // V4-174: the trace's WebSocket round, opened once the runner accepted the send and closed
+        // in the finally with whatever ended it; a bypassed round (SSE serves it) is never opened.
+        var traced = false
+        var ending: String? = null
         try {
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
@@ -66,10 +71,15 @@ internal class WsRoundDriver(
                 return null
             }
             drive.slot.touch()
+            drive.trace?.wsRoundStarted()
+            traced = true
             // Start the client while the acquired cold flow is being collected, not before: if the
             // start write throws or is cancelled, the exception unwinds through the transport flow's
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
-            val startingEvents = accepted.events.onEach { drive.emitter.ensureStarted() }
+            val startingEvents = accepted.events.onEach { event ->
+                drive.emitter.ensureStarted()
+                drive.trace?.responseText(event.toString() + "\n")
+            }
             drive.watchdog.resetRound()
             // DR-7 round 2: the idle watchdog reaps THIS ROUND here too, the same way
             // SseRoundConsume does. It used to cancel inputs.turnJob, so a WS stall killed the
@@ -124,18 +134,30 @@ internal class WsRoundDriver(
             // report, so an exception still leaves it false and the finally clears the chain.
             val outcome = when (val result = roundDrive.drive(inputs, runner, startingEvents)) {
                 is WsRoundResult.Streamed -> result.outcome
-                is WsRoundResult.NeedsSse -> bypassToSse(runner, drive, result.detail)
+                is WsRoundResult.NeedsSse -> {
+                    ending = result.detail
+                    bypassToSse(runner, drive, result.detail)
+                }
             }
             reported = true
             return outcome
         } finally {
             if (!reported) runner.roundEnded(drive.meta, ok = false)
+            if (traced) closeTrace(drive, inputs, ending, reported)
             poller?.cancel()
             // Completes with no cause on every ordinary exit, so the handler above leaves a healthy
             // connection alone; a no-op if the watchdog already cancelled it. Without this the job
             // stays an incomplete child of turnJob and the turn cannot finish.
             roundJob?.complete()
         }
+    }
+
+    /** V4-174: the trace's WebSocket round closes with whatever ended it — the NeedsSse detail, an
+     *  unwind before the report (a cancellation or a throw, which the finally cannot name), or
+     *  nothing for a clean terminal. Headers redacted by name class like the SSE path's. */
+    private fun closeTrace(drive: TurnDrive, inputs: WsRoundInputs, ending: String?, reported: Boolean) {
+        val failure = ending ?: if (reported) null else "round unwound before it reported (cancelled or thrown)"
+        drive.trace?.wsAttempt(inputs.bodyJson, HeaderRedaction.redact(drive.turnHeaders), failure)
     }
 
     /** The round failed while the client had seen nothing, so it can still be RE-SERVED with the

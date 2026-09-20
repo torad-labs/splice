@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
 import splice.core.util.WallClock
+import splice.gateway.wire.TurnTrace
 import splice.spi.AccountResetText
 import splice.spi.InflightGate
 import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
@@ -141,6 +142,7 @@ internal class HeadAdmission(
         call: ApplicationCall,
         prepared: Preparation.Ready,
         admitted: Admitted,
+        trace: TurnTrace?,
     ): Boolean {
         val armedMs = deps.upstream.rateLimitedForMs
         if (armedMs <= 0L) return false
@@ -164,8 +166,11 @@ internal class HeadAdmission(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            OutcomeTag.RATE_LIMITED.wire,
-            "provider_reset=${AccountResetText.format(windowResetEpochSeconds)} gateway_hold=${armedMs}ms",
+            LocalRefusal(
+                OutcomeTag.RATE_LIMITED.wire,
+                "provider_reset=${AccountResetText.format(windowResetEpochSeconds)} gateway_hold=${armedMs}ms",
+                trace,
+            ),
         )
         responses.respondRateLimited(call, rateLimitedMessage(armedMs, windowResetEpochSeconds), retryEpochSeconds)
         return true
@@ -223,13 +228,17 @@ internal class HeadAdmission(
         prepared: Preparation.Ready,
         admitted: Admitted,
         exhausted: Selection.Exhausted,
+        trace: TurnTrace?,
     ) {
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire,
-            "earliest_reset=${AccountResetText.format(exhausted.earliestResetEpochSeconds)}",
+            LocalRefusal(
+                OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire,
+                "earliest_reset=${AccountResetText.format(exhausted.earliestResetEpochSeconds)}",
+                trace,
+            ),
         )
         val now = wallClock()
         // normalizedInstant is the same four-digit-year clamp AdmissionResponses formats through,
@@ -252,12 +261,16 @@ internal class HeadAdmission(
         // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so
         // announcing them would leave the console a start with no end.
         deps.seams.events.turnStarted(prepared.built.meta.sessionId)
-        if (refuseIfRateLimited(call, prepared, admitted)) return
+        // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
+        // request the head received and answered — a trace that skipped it would show a client
+        // retrying for no visible reason. Null for every head whose trace is off.
+        val trace = prepared.inbound?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
+        if (refuseIfRateLimited(call, prepared, admitted, trace)) return
         val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {
-                refuseExhausted(call, prepared, admitted, selection)
+                refuseExhausted(call, prepared, admitted, selection, trace)
                 return
             }
         }
@@ -268,6 +281,7 @@ internal class HeadAdmission(
                 admitted.t0,
                 admitted.perf,
                 markHandedOff = { admitted.markHandedOff() },
+                trace = trace,
                 account = account,
                 quota = deps.turnQuota.forSession(prepared.built.meta.sessionId, account),
             )

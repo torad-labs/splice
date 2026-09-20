@@ -43,6 +43,9 @@ import splice.core.wire.HttpStatus
 internal data class RequestBody(val json: String, val zstd: Boolean = false) {
     val bytes: ByteArray =
         json.toByteArray(Charsets.UTF_8).let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+
+    /** The content-encoding the bytes ride under, for the trace; null when they are the JSON itself. */
+    val encoding: String? get() = if (zstd) "zstd" else null
 }
 
 /** The header half of a request: what the credential writes, and the case-insensitive merge
@@ -89,12 +92,16 @@ internal class UpstreamRequest(
         creds: Credentials,
         extraHeaders: CredentialHeaders,
         bodyBytes: ByteArray,
+        recorder: AttemptRecorder? = null,
     ): HttpStatement {
-        val allHeaders = applyAuth(creds, extraHeaders(creds))
+        val allHeaders = headerRules.dedupeCaseInsensitive(applyAuth(creds, extraHeaders(creds)))
+        // V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the
+        // way in (AttemptRecorder.request), so the credential never leaves this assembly.
+        recorder?.request(allHeaders)
         return client.preparePost(url) {
             contentType(ContentType.Application.Json)
             headers {
-                headerRules.dedupeCaseInsensitive(allHeaders).forEach { (k, v) -> append(k, v) }
+                allHeaders.forEach { (k, v) -> append(k, v) }
                 if (zstdRequestBody) append("Content-Encoding", "zstd")
             }
             setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
@@ -112,16 +119,19 @@ internal class UpstreamRequest(
         creds: Credentials,
         onStreamStart: StreamStart,
         block: UpstreamHandler<T>,
+        recorder: AttemptRecorder? = null,
     ): RetryOutcome<T> {
-        val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes)
+        val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes, recorder)
         return statement.execute { resp ->
             ctx.markHeaders()
+            recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
             if (resp.status.isSuccess()) {
                 onStreamStart()
                 RetryOutcome.Done(block(UpstreamResponse(resp)))
             } else {
                 val realStatus = resp.status.value
                 val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
+                recorder?.errorText(text)
                 RetryOutcome.Failed(
                     quotaExhaustedStatus(realStatus, text, ctx),
                     text,

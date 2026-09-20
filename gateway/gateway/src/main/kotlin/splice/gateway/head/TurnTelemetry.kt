@@ -56,6 +56,9 @@ internal class TurnTelemetry(
     ) {
         drive.perf.mark(PerfKeys.TOTAL)
         val snap = drive.perf.snapshot()
+        // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
+        // of a drive goes through here, so the trace never has a turn without its outcome.
+        drive.trace?.finish(outcomeTag, snap)
         val session = drive.sessionTag()
         val account = drive.account
         val rowTs = perfStats.record(
@@ -132,16 +135,12 @@ internal class TurnTelemetry(
      *  limit, because provider_reset is when the quota returns and gateway_hold is how long splice is
      *  holding its own retries, and a line carrying only the second reads as "back in two minutes"
      *  against an 88-minute reset. */
-    fun recordLocalRefusal(
-        meta: TurnMeta,
-        perf: TurnPerf,
-        t0: Long,
-        tag: String,
-        detail: String,
-    ) {
+    fun recordLocalRefusal(meta: TurnMeta, perf: TurnPerf, t0: Long, refusal: LocalRefusal) {
+        val (tag, detail, trace) = refusal
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
         val snap = perf.snapshot()
+        trace?.finish(tag, snap)
         val rowTs = perfStats.record(PerfRowMeta(meta.upstreamModel, tag, meta.compact, session), snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
         events.turnEnded(rowTs.toString(), tag)

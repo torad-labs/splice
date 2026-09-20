@@ -3,7 +3,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
@@ -342,22 +342,23 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `turn builder rejects nontext result content`() {
+    fun `turn builder admits an image result as an announced marker, never a refusal`() {
+        // V4-178: this was `assertThrows(IllegalArgumentException)` — the refusal that wedged a
+        // live session on a screenshot (the image stays in history, so it refused every turn).
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok"))))
         val builder = CodexCodeModeTurnBuilder(bridge(runtime))
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            builder.prepare(nonTextResultBody(), false, "s", built("gpt-6-astra", lite = true))
-        }
-        assertTrue(error.message.orEmpty().contains("unsupported non-text content"))
+        val imageOnly = builder.toolResults(nonTextResultBody()).single().output
+        val marker = "[image omitted by splice code-mode from tool_result toolu_splice_test: image/png, 4 base64 chars"
+        assertEquals(marker, imageOnly.substringBefore(" — "))
+        assertTrue(imageOnly.contains("text only"), imageOnly)
+        // The whole turn still prepares: the interceptor is armed, nothing throws.
+        val prepared = builder.prepare(nonTextResultBody(), false, "s", built("gpt-6-astra", lite = true))
+        assertNotNull(prepared.roundInterceptor)
 
-        // V4-114: text FOLLOWED by an image refuses too. The cast that used to read this content
-        // (`(it as TextBlock).text`, guarded by a separate `all {}` require) is now a per-part
-        // `require(part is TextBlock)` smart-cast — same type, same message, and the refusal cannot
-        // decay into a silent `filterIsInstance` that ships the text half as the whole result.
-        val mixed = assertThrows(IllegalArgumentException::class.java) {
-            builder.prepare(mixedResultBody(), false, "s", built("gpt-6-astra", lite = true))
-        }
-        assertTrue(mixed.message.orEmpty().contains("unsupported non-text content"), mixed.message)
+        // Text FOLLOWED by an image keeps the text AND announces the image, in order — the silent
+        // `filterIsInstance` V4-114 refused to ship is still refused; the announcement is the point.
+        val mixed = builder.toolResults(mixedResultBody()).single().output
+        assertTrue(mixed.startsWith("ok[image omitted by splice code-mode"), mixed)
     }
 
     @Test

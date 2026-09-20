@@ -50,21 +50,39 @@ public object DeviceLoginFlow {
      *
      *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
      *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
-     *  constructor; the default is the production behaviour, and LoginCommand passes nothing. */
-    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean =
-        run(spec, waiter, LoginIo())
+     *  constructor; the default is the production behaviour, and LoginCommand passes nothing.
+     *
+     *  [observer], V4-132: the console's login-id/poll seam (POST/GET /api/auth/{head}/login[/{id}]),
+     *  null for the CLI. Present means this call is being WATCHED off-request, so [announce] skips
+     *  its local println/openBrowser and reports through the observer instead — a daemon process has
+     *  no terminal to print to and no operator desktop to open a browser on. */
+    public suspend fun run(
+        spec: DeviceLoginSpec,
+        waiter: Waiter = ProcessWaiter(),
+        observer: LoginObserver? = null,
+    ): Boolean = run(spec, waiter, LoginIo(), observer)
 
     /** Per-call I/O keeps tests off the real browser without mutating the shared flow object. */
-    internal suspend fun run(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Boolean = try {
-        runAttempts(spec, waiter, loginIo)
+    internal suspend fun run(
+        spec: DeviceLoginSpec,
+        waiter: Waiter,
+        loginIo: LoginIo,
+        observer: LoginObserver? = null,
+    ): Boolean = try {
+        runAttempts(spec, waiter, loginIo, observer)
     } finally {
         spec.account?.releaseReservation()
     }
 
-    private suspend fun runAttempts(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Boolean {
+    private suspend fun runAttempts(
+        spec: DeviceLoginSpec,
+        waiter: Waiter,
+        loginIo: LoginIo,
+        observer: LoginObserver?,
+    ): Boolean {
         var restarts = 0
         while (true) {
-            when (attempt(spec, waiter, loginIo)) {
+            when (attempt(spec, waiter, loginIo, observer)) {
                 Outcome.SUCCESS -> return true
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
@@ -78,12 +96,17 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, loginIo: LoginIo): Outcome {
+    private suspend fun attempt(
+        spec: DeviceLoginSpec,
+        waiter: Waiter,
+        loginIo: LoginIo,
+        observer: LoginObserver?,
+    ): Outcome {
         val client = authClients.create()
         return try {
             Cancellables.runCatchingBestEffort {
                 val auth = requestDeviceAuth(client, spec, loginIo) ?: return@runCatchingBestEffort Outcome.ABORT
-                announce(spec, auth, loginIo)
+                announce(spec, auth, loginIo, observer)
                 poll(client, spec, auth, waiter, loginIo)
             }.getOrElse { e ->
                 println("splice: login error: ${SafeFailureText.render(e)}")
@@ -111,8 +134,14 @@ public object DeviceLoginFlow {
         return spec.parseDeviceAuth(body)
     }
 
-    private fun announce(spec: DeviceLoginSpec, auth: DeviceAuthorization, loginIo: LoginIo) {
+    private fun announce(spec: DeviceLoginSpec, auth: DeviceAuthorization, loginIo: LoginIo, observer: LoginObserver?) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
+        if (observer != null) {
+            // Off-request (the console started this): report the code/link through the poll seam
+            // instead of a terminal nobody reads and a browser on the DAEMON's own desktop.
+            observer.announced(LoginAnnouncement(userCode = auth.userCode, verificationUri = url))
+            return
+        }
         println("")
         println("  splice: sign in to ${spec.head} — enter this code in your browser:")
         println("")

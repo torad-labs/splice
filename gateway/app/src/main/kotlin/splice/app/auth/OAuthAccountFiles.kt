@@ -113,7 +113,7 @@ public class OAuthAccountRefused(public val reason: String) : IllegalArgumentExc
 
 /** Finds the in-place legacy primary and validated labeled accounts for one OAuth kind. */
 public class OAuthAccountFiles(
-    json: Json = Json { ignoreUnknownKeys = true },
+    private val json: Json = Json { ignoreUnknownKeys = true },
     log: LogSink = LogSink(System.err::print),
 ) {
     private val validation = OAuthAccountValidation(json, log)
@@ -200,6 +200,48 @@ public class OAuthAccountFiles(
         providerJson: JsonObject,
         identity: OAuthAccountIdentity? = null,
     ): OAuthAccountWrite = writes.writeTokenDerived(kind, poolDir(kind, primaryFile), label, providerJson, identity)
+
+    /** DELETE /api/auth/{head}/accounts/{label} (FEATURES.md §6): the credential and any retained
+     *  quota file. True when a credential existed to remove. The primary is refused — it is not a
+     *  labeled file under [poolDir], there is nothing here to delete for it. */
+    public fun remove(kind: AuthKind.OAuth, primaryFile: Path, label: String): Boolean {
+        if (label == PRIMARY) refuse("the primary account cannot be removed; delete its credential file directly")
+        val dir = poolDir(kind, primaryFile)
+        val existed = Files.deleteIfExists(dir.resolve("$label$JSON_SUFFIX"))
+        Files.deleteIfExists(dir.resolve("$label-quota$JSON_SUFFIX"))
+        return existed
+    }
+
+    /** PATCH /api/auth/{head}/accounts/{label} (FEATURES.md §6): renames a labeled account's
+     *  credential (and any retained quota) in place, re-embedding the new label — [validatedLabel]
+     *  requires the file's `splice_account_label` to match its own filename, so a rename that only
+     *  moved the file would make discovery throw on the very next boot. Reuses [decorated] (via
+     *  [writes]) for that re-embedding and its label-syntax check, rather than re-deriving them. */
+    public fun relabel(kind: AuthKind.OAuth, primaryFile: Path, label: String, newLabel: String): Path {
+        if (label == PRIMARY) refuse("the primary account cannot be relabeled")
+        val dir = poolDir(kind, primaryFile)
+        val credential = dir.resolve("$label$JSON_SUFFIX")
+        if (!Files.isRegularFile(credential, LinkOption.NOFOLLOW_LINKS)) {
+            refuse("no OAuth account labeled '$label'")
+        }
+        // writeLabeled's own retainedQuota guard only refuses an ORPHANED quota with no credential
+        // at the destination; a destination that already has its OWN credential would otherwise be
+        // silently overwritten, so that collision is checked here first.
+        if (label != newLabel && Files.exists(dir.resolve("$newLabel$JSON_SUFFIX"), LinkOption.NOFOLLOW_LINKS)) {
+            refuse("an OAuth account is already labeled '$newLabel'")
+        }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable and unparseable both refuse() below by the same name; no second failure mode to classify separately here
+        val parsed = Cancellables.runCatchingCancellable {
+            json.parseToJsonElement(Files.readString(credential)) as? JsonObject
+        }.getOrNull() ?: refuse("credential for '$label' is not valid JSON")
+        val destination = writes.writeLabeled(kind, dir, newLabel, parsed)
+        if (destination != credential) Files.delete(credential)
+        val quota = dir.resolve("$label-quota$JSON_SUFFIX")
+        if (label != newLabel && Files.isRegularFile(quota, LinkOption.NOFOLLOW_LINKS)) {
+            Files.move(quota, dir.resolve("$newLabel-quota$JSON_SUFFIX"))
+        }
+        return destination
+    }
 
     private fun account(label: String, path: Path, poolDir: Path, primary: Boolean): OAuthAccountFile =
         OAuthAccountFile(

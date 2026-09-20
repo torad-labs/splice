@@ -42,6 +42,26 @@ internal fun interface BrowserOpener {
     fun open(url: String): Boolean
 }
 
+/** V4-132: the console's login-id/poll seam over [DeviceLoginFlow] and [OAuthLoginFlow] — what
+ *  each flow reports the moment it has something externally visible to show (the device code and
+ *  its verification link, or the OAuth authorize URL), so LoginSessions can answer
+ *  GET /api/auth/{head}/login/{id} before the flow itself has finished. A NULL observer (every CLI
+ *  call site) means "print to this terminal and open this desktop's browser", exactly as before;
+ *  a non-null one means the flow is being watched off-request, so it reports through here instead.
+ *  Public (not internal): it rides [DeviceLoginFlow.run]/[OAuthLoginFlow.run]'s own public
+ *  signature, and explicit-API mode refuses a public function that exposes an internal type. */
+public fun interface LoginObserver {
+    public fun announced(detail: LoginAnnouncement)
+}
+
+/** One flow's externally-visible progress. [userCode]/[verificationUri] are the device flow's;
+ *  [browserUrl] is the OAuth flow's — a flow fills only the pair it has. */
+public data class LoginAnnouncement(
+    val userCode: String? = null,
+    val verificationUri: String? = null,
+    val browserUrl: String? = null,
+)
+
 private class SystemBrowserOpener : BrowserOpener {
 
     /** WALL (2026-09-16). A TEST must never launch the operator's browser. SetupCommandTest

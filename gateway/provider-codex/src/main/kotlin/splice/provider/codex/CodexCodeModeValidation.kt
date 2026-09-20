@@ -48,9 +48,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
     ): String? {
         val relevant = turn.toolResults.filter { it.id in record.clientIds() }
         val duplicateIds = relevant.groupingBy(CodeModeResult::id).eachCount().filterValues { it > 1 }.keys
-        val conflict = relevant.firstOrNull { prior ->
-            record.results[prior.id]?.let { it != prior } == true
-        }
+        val conflict = relevant.firstOrNull { prior -> conflicts(record, turn, prior) }
         val missing = (exposed - record.results.keys - current.keys)
             .takeIf { mode == CodeModeResultMode.RESUME }.orEmpty()
         val oversized = current.values.firstOrNull { !fitsOutput(it.output) }
@@ -66,6 +64,14 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
             else -> pendingFrameProblem(record, current)
         }
     }
+
+    /** An accepted result replayed as something else. V4-179: identity includes the media — a replay
+     *  carrying different pixels under an accepted id with the same text is a different result — and
+     *  a LEGACY id (accepted before media was captured, no entry) is compared on text alone, as it
+     *  always was. */
+    private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean =
+        record.results[prior.id]?.let { it != prior } == true ||
+            record.media[prior.id]?.let { it != turn.toolMedia[prior.id].orEmpty() } == true
 
     private fun pendingFrameProblem(record: CodeModeRecord, current: Map<String, CodeModeResult>): String? {
         // Lost continuations preserve partial evidence; they never send a frame to a worker.

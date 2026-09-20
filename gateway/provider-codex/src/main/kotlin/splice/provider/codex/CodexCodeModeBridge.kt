@@ -2,6 +2,7 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
@@ -46,6 +47,10 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
         val model: String,
         val tools: Set<String>,
         val toolResults: List<CodeModeResult> = emptyList(),
+        /** V4-179: per code-mode result id, the follow-up wire items its images render to (the
+         *  ordinary dialect policy, rendered once by CodexCodeModeTurnBuilder). The script never
+         *  sees these; the record persists them and the history replays them. */
+        val toolMedia: Map<String, List<JsonElement>> = emptyMap(),
     )
 
     private val json = Json { encodeDefaults = true }

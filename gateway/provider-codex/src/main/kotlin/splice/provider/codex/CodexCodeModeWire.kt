@@ -46,8 +46,13 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
 
     fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = history.inputBoundary(bodyJson)
 
-    fun hasExtraContent(bodyJson: String, record: CodeModeRecord): Boolean =
-        history.hasExtraContent(bodyJson, record)
+    /** [candidateMedia]: this turn's rendered follow-ups for result ids the record does not hold
+     *  yet — owned on sight, so a screenshot arriving for a parked script resumes it. */
+    fun hasExtraContent(
+        bodyJson: String,
+        record: CodeModeRecord,
+        candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
+    ): Boolean = history.hasExtraContent(bodyJson, record, candidateMedia)
 
     fun canonicalize(bodyJson: String, records: List<CodeModeRecord>): CodeModeRewrite {
         val rewrite = history.canonicalize(bodyJson, records)

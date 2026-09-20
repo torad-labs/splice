@@ -82,9 +82,19 @@ must_report=(
   "78:  AWS${S}_ACCESS${K}${EQ}\"canary00000000000000000000000000000000000\" # rotate me"
   "79:export GITHUB_TOKEN=\"ghp_canary0000000000000000000000000000\""
 )
-# MUST be exempted — the one declaration this allowlist exists for.
+# MUST be exempted — every declaration this allowlist exists for, one arm each. An exemption with
+# no arm here is an exemption nothing notices going stale: edit the fixture it names and the entry
+# keeps sitting in the .txt, exempting a line that no longer exists, which is the burn-down growing
+# room for a future credential to hide in. Same reason the no-python wall fails on a stale line.
+# `user:hunter2` and `pw@` are split for the same reason K/S/EQ are: the assembled string is
+# byte-identical to the source line the scan reads, while this file never spells the userinfo.
+UIT='pw@'
 must_exempt=(
   "42:    const val CUSTOM_API${K}_RESPONSES${EQ}\"customApiKeyResponses\""
+  "48:        base_url${EQ}\"https://user:hunter2${UIT}chatgpt.example.invalid/backend-api/codex\""
+  "312:                \"runtime at https://user:hunter2${UIT}chatgpt.example.invalid/backend-api/codex answered; \" +"
+  "26:        val secret${EQ}\"API${K}=\".toByteArray() + junk + \"!\".toByteArray()"
+  "55:private const val UPSTREAM${S}${EQ}\"splice-held-upstream-secret\""
 )
 
 for hit in "${must_report[@]}"; do
@@ -154,6 +164,6 @@ else
 fi
 
 if [ "$fail" -eq 0 ]; then
-  note "secret-scan allowlist: ${#must_report[@]} canaries still reported, ${#must_exempt[@]} exemption intact, generator contracts held"
+  note "secret-scan allowlist: ${#must_report[@]} canaries still reported, ${#must_exempt[@]} exemptions intact, generator contracts held"
 fi
 exit "$fail"

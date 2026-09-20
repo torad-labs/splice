@@ -2,26 +2,23 @@
 // rendering. The client helper carries the key, the 401 lockout and the error envelope, and
 // `pendingOf` carries the "route not built yet" mapping (CONTRACTS.md 8), so nothing here
 // re-implements either.
-import { pendingOf, request } from '@shared/api';
+import { request } from '@shared/api';
 import { poll } from '@shared/lib';
 import { claudeHeadStore } from '../model/store';
-import { PENDING_CLAUDE_HEAD } from '../model/types';
 import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '../model/types';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** No `pendingOf` here since V4-175: the route is served (V4-129), so a failure reading it is a
+ *  failure, and mapping a 404 to "not built yet" would hide a daemon that stopped answering behind
+ *  a row id that closed. */
 export async function fetchClaudeHead(): Promise<void> {
   claudeHeadStore.startLoading();
   try {
     claudeHeadStore.setData(await request<ClaudeHeadPayload>('/api/claude-head'));
   } catch (err) {
-    const pending = pendingOf(err, PENDING_CLAUDE_HEAD);
-    if (pending !== null) {
-      claudeHeadStore.setData(pending);
-      return;
-    }
     claudeHeadStore.setError(messageOf(err));
   }
 }
@@ -33,8 +30,10 @@ export async function fetchClaudeHead(): Promise<void> {
  * guess which of the two the operator meant. Both re-read the card afterwards, since the mode on
  * screen must be the daemon's, not the one the click hoped for.
  *
- * A pending route throws: there is no honest empty for an ACTION. The page shows the exact CLI
- * command that stands in today, which it can only do if it is told the route is absent.
+ * A REFUSAL throws, and that is the point: the daemon answers 409 with the reason in words
+ * ("claude is not currently wrapped", "the 'claude-splice' head is not configured — wrap needs its
+ * catalog to materialize"), and the sentence is the whole content of the answer. There is no
+ * honest empty for an action, so the page must be told, and must print what it was told.
  */
 export async function wrapClaudeHead(): Promise<ClaudeHeadActionResult> {
   const result = await request<ClaudeHeadActionResult>('/api/claude-head/wrap', { method: 'POST' });

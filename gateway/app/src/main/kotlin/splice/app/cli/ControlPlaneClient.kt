@@ -8,6 +8,9 @@ import splice.core.util.Cancellables
 import java.net.HttpURLConnection
 import java.net.URI
 
+/** One control-plane answer: the status line and the body that came with it. */
+internal data class ControlReply(val status: Int, val body: String)
+
 internal object ControlPlaneClient {
 
     /** The raw HTTP status of a request, or null if it never connected. Unlike the 2xx-gated
@@ -36,6 +39,39 @@ internal object ControlPlaneClient {
             connection.disconnect()
         }
     }.getOrNull()
+
+    /** V4-175: status AND body, for the calls whose ANSWER IS A SENTENCE. The control plane writes
+     *  every refusal as `{"error": "<reason>"}` — "claude is not currently wrapped", "the
+     *  'claude-splice' head is not configured — wrap needs its catalog to materialize" — and a
+     *  caller that printed only the code would be hiding the one thing the operator can act on.
+     *  Null when it never connected, the same contract [statusOf] carries. */
+    internal fun send(
+        url: String,
+        method: String,
+        bearer: String?,
+        readTimeoutMs: Int = STATUS_TIMEOUT_MS,
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-175): declared 'null if it never connected', same as statusOf above; a closed control port is the normal case and the caller branches on the null.
+    ): ControlReply? = Cancellables.runCatchingCancellable {
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+            connection.connectTimeout = PROBE_TIMEOUT_MS
+            connection.readTimeout = readTimeoutMs
+            val status = connection.responseCode
+            // A non-2xx puts the body on the ERROR stream and leaves inputStream throwing, which is
+            // exactly the half that carries the reason.
+            val stream = if (status in OK_RANGE) connection.inputStream else connection.errorStream
+            ControlReply(status, stream?.readBytes()?.decodeToString().orEmpty())
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrNull()
+
+    /** What both halves of a control-plane call agree a success is: the sender picks the stream to
+     *  read from it, and [SetupClaudeLane] picks the sentence to print from it. Two spellings of
+     *  "2xx" in two files is one rename away from a refusal being reported as a success. */
+    internal val OK_RANGE = HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE
 
     private const val PROBE_TIMEOUT_MS = 400
 

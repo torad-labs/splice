@@ -61,6 +61,23 @@ describe('control client', () => {
     await expect(control.config()).rejects.toThrow('unknown key');
   });
 
+  // V4-175. THIS is the envelope the control plane actually writes — every refusal in
+  // splice.control.api is one `buildJsonObject { put("error", message) }` — and the client only
+  // read the proxy's nested one, so a string `error` has no `.message` and every daemon sentence
+  // became `HTTP 409` on screen. Found on POST /api/claude-head/wrap, where the reason IS the
+  // answer; the fix is shared, so the arm is here and not in the claude-head tests.
+  test('non-ok surfaces the control plane flat error string', async () => {
+    storeKey('k');
+    fetchMock.mockResolvedValueOnce(jsonResponse(409, { error: 'claude is not currently wrapped' }));
+    await expect(control.config()).rejects.toThrow('claude is not currently wrapped');
+  });
+
+  test('a body with no usable message falls back to the status', async () => {
+    storeKey('k');
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: '   ' }));
+    await expect(control.config()).rejects.toThrow('HTTP 503');
+  });
+
   test('PATCH serializes the patch body', async () => {
     storeKey('k');
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { applied: { effort: 'low' }, rejected: {}, restart_required: [], targets: [], persisted: 'runtime+file' }));

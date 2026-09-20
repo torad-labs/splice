@@ -49,6 +49,22 @@ export function noteUnauthorized(): void {
   onUnauthorized?.();
 }
 
+/** BOTH envelopes, because both are real and this client sees both. The PROXY ports answer
+ *  Anthropic-shaped (`{"error": {"message": …}}`); the control plane this client actually talks to
+ *  answers `{"error": "<sentence>"}` — one `buildJsonObject { put("error", message) }` at every
+ *  refusal site in `splice.control.api`. */
+type ErrorBody = { error?: string | { message?: string } };
+
+/** V4-175: reading only `error.message` dropped every control-plane refusal on the floor — a string
+ *  has no `.message`, so the sentence the daemon wrote became `HTTP 409` on screen for all of them.
+ *  Found on POST /api/claude-head/wrap, where "claude is not currently wrapped" and "the
+ *  'claude-splice' head is not configured" ARE the whole answer; it was never claude-head's bug. */
+function errorMessage(body: unknown, status: number): string {
+  const error = (body as ErrorBody | null)?.error;
+  const sentence = typeof error === 'string' ? error : error?.message;
+  return sentence !== undefined && sentence.trim() !== '' ? sentence : `HTTP ${status}`;
+}
+
 // Exported for entity api segments (entities/*/api), which own their routes and payload types
 // locally (CONTRACTS.md section 8); the key, the 401 lockout and the error envelope stay here.
 // `control` below keeps the routes that predate the console rebuild.
@@ -67,10 +83,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     onUnauthorized?.();
     throw new MgmtError(401, 'management key required');
   }
-  const body = (await res.json().catch(() => null)) as T | { error?: { message?: string } } | null;
+  const body = (await res.json().catch(() => null)) as T | ErrorBody | null;
   if (!res.ok) {
-    const message = (body as { error?: { message?: string } } | null)?.error?.message ?? `HTTP ${res.status}`;
-    throw new MgmtError(res.status, message);
+    throw new MgmtError(res.status, errorMessage(body, res.status));
   }
   return body as T;
 }

@@ -687,8 +687,19 @@ pinned_model = "claude-fable-5"
 models = [{ id = "claude-fable-5", slot = "fable" }, { id = "claude-opus-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
 context_window = 200000
 [heads.claude-splice.claude]
-# MUST NOT be `claude`: that is the real binary this head launches, and shadowing it on PATH
-# would make the wrapper invoke itself.
+# The SEPARATE lane: a command of its own, beside the `claude` you already run. Nothing in
+# ~/.claude is touched, and this is what `splice setup` preselects.
+#
+# The other lane is WRAP, and it is not spelled here — do not set `command = "claude"` to get it.
+# Wrapping is an ACTION, not a config value: `splice setup` offers it, and the console's Settings
+# page posts it to /api/claude-head/wrap. The daemon then shadows `claude` with a shim and carries
+# your settings.json and .claude.json across, backing both up first, so there is a way back.
+#
+# The recursion this comment used to warn about is handled in code since V4-129: a wrapped `claude`
+# ON PATH *is* the shim, so a head launching the bare string would invoke itself — LaunchService.kt:103
+# execs `wrapState.realBinaryPath() ?: claudeBinary`, the real binary the wrap recorded. Setting
+# `command = "claude"` by hand still gets you a second command named `claude` with none of that
+# bookkeeping: no backups, no recorded real binary, nothing for an unwrap to restore.
 command = "claude-splice"
 
 # ── KNOB REFERENCE: every key the config layers accept ──────────────────────────

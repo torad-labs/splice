@@ -15,6 +15,11 @@ import splice.app.cli.prompt.Spinner
 import splice.app.cli.prompt.TerminalMode
 import splice.app.cli.prompt.WizardCancelled
 import splice.app.cli.prompt.WizardFrame
+import splice.app.cli.setup.CLAUDE_PROFILE
+import splice.app.cli.setup.ClaudeWrap
+import splice.app.cli.setup.DaemonClaudeWrap
+import splice.app.cli.setup.LanePicker
+import splice.app.cli.setup.SetupClaudeLane
 import splice.app.cli.setup.SetupSignIn
 import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
@@ -57,6 +62,16 @@ internal class SetupCommand(
     },
     private val restart: DaemonRestart = DaemonRestart { RestartCommand().restart() },
     private val hasConsole: ConsolePresence = ConsolePresence { System.console() != null },
+    /** V4-175: the Claude lane question. Its two seams are constructed here for the same reason
+     *  every other prompt is — production paints a menu and speaks HTTP, a test hands over neither. */
+    private val pickLane: LanePicker = LanePicker { options, initialIndex ->
+        SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out).ask(
+            "Claude lane",
+            options,
+            initialIndex,
+        )
+    },
+    private val wrapClaude: ClaudeWrap = DaemonClaudeWrap(),
 ) {
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead)
@@ -75,9 +90,11 @@ internal class SetupCommand(
         val start = chosenStart(choose(options, initialIndex(facts, options)))
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
+        val lanes = SetupClaudeLane(pickLane, wrapClaude)
         val picker = SetupHeads(profiles, pickHeads, addProfile, restart, hasConsole, env, frame)
         val heads = picker.offer(facts, path)
-        frame.note("Summary", summaryLines(start, path, bin, heads))
+        val lane = lanes.ask(heads)
+        frame.note("Summary", summaryLines(start, path, bin, heads, lanes.summaryLine(lane)))
         if (!frame.confirm("Install now?", true)) frame.cancel("not installing")
         spinner.start("Installing")
         val result = Cancellables.runCatchingBestEffort { runInstall() }
@@ -85,7 +102,7 @@ internal class SetupCommand(
         spinner.stop(if (installed) "Installed wrappers" else "Install failed")
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
-        picker.addAll(heads)
+        lanes.apply(lane, picker.addAll(heads))?.let { println(it) }
         val topology = TopologyLoader.loadOrMaterialize(path)
         val ok = signIn.signInPendingHeads(topology)
         signIn.printNextSteps(topology)
@@ -125,7 +142,13 @@ internal class SetupCommand(
         SelectOutcome.Cancelled -> frame.cancel("cancelled")
     }
 
-    private fun summaryLines(start: SetupStart, path: Path, bin: Path, heads: List<String>): List<String> {
+    private fun summaryLines(
+        start: SetupStart,
+        path: Path,
+        bin: Path,
+        heads: List<String>,
+        claudeLane: String,
+    ): List<String> {
         val starter = if (Files.exists(path)) {
             "No starter will be written because one is already present"
         } else {
@@ -147,7 +170,10 @@ internal class SetupCommand(
         } else {
             emptyList()
         }
-        return listOf(starter, wrappers) + extra + adding + keys
+        // The lane line only when the Claude head is actually being added: a summary that answered
+        // a question nobody was asked is noise the operator has to parse past.
+        val lane = if (CLAUDE_PROFILE in heads) listOf(claudeLane) else emptyList()
+        return listOf(starter, wrappers) + extra + adding + lane + keys
     }
 
     private fun runInstall(): Boolean {

@@ -1,7 +1,8 @@
 // PORT-OF: the launcher's EADDRINUSE quiet-exit intent @ pre-public-port-baseline, adapted for the single
 // daemon (P4-SUP slot): one process binds control_port AND every head port, so the per-port
-// trick doesn't compose. A flock on ~/.claude-codex/state/daemon.lock is the single-flight
-// startup gate — the loser waits briefly, health-checks the winner, exits 0 LOUD (never a loop).
+// trick doesn't compose. A flock on the state dir's daemon.lock (StatePaths.daemonLockFile) is
+// the single-flight startup gate — the loser waits briefly, health-checks the winner, exits 0
+// LOUD (never a loop).
 //
 // DR-162 — THE ONE RULE THIS FILE EXISTS TO KEEP: once this process holds the lock, NOTHING in it
 // may open another descriptor for that file. A `FileLock` is fcntl on Linux, and POSIX drops every

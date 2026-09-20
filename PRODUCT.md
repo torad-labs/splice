@@ -49,7 +49,7 @@ unsupported by those vendors; the console carries that honesty without shouting 
   install, uninstall, version), and the per-tick status line inside Claude Code showing model,
   context used, cache hit rate, plan windows and cost.
 - The console runs at http://127.0.0.1:3096, bearer-guarded with a key pasted once from
-  `~/.claude-codex/state/mgmt-key`, served as one inlined HTML file from the daemon jar. It makes
+  `~/.splice/state/mgmt-key`, served as one inlined HTML file from the daemon jar. It makes
   no external requests and polls the daemon's `/api/*` routes.
 - Files of record: `~/.config/splice/splice.toml` (topology, boot-only except a model's context
   window), `keys.toml`, `auth/<kind>/<label>.json` account pools, the state `config.json`,

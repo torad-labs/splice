@@ -34,9 +34,13 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 ## External contracts (must not change)
 
-- State paths byte-identical: `~/.claude-codex/state/*` and
-  `~/.claude-codex/claudex-compact-stats.jsonl` (an out-of-repo HUD reads them).
-- Config dirs keep their names: `~/.claude-codex`, `~/.claude-splice`.
+- State FILENAMES are byte-identical: `<state>/codex-usage.json`,
+  `<state>/codex-ratelimit.json`, `<root>/claudex-compact-stats.jsonl`. The state ROOT is not a
+  frozen contract any more — V4-177 moved it to `~/.splice/state` and adopts a pre-0.4
+  `~/.claude-codex/state` in place when that is the only one on the box. Resolve it through
+  `StatePaths`, never by spelling either root (ast-grep wall: kt-state-paths-single-source).
+- Head CONFIG dirs keep their names, and are a different contract from the state root even where
+  they collide: `~/.claude-<headKey>` — `~/.claude-codex`, `~/.claude-splice`.
 - Ports: claudex 3099, control 3096. `/health` keeps `version`.
 - Discovery prefix `claude-codex--`; the pinned model is excluded from
   `/v1/models` (it rides `ANTHROPIC_CUSTOM_MODEL_OPTION`).
@@ -61,7 +65,8 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
-Bearer-guarded (`Authorization: Bearer $(cat ~/.claude-codex/state/mgmt-key)`),
+Bearer-guarded (`Authorization: Bearer <key>`, which `splice dashboard` prints — the state root
+it lives under is install-dependent since V4-177),
 loopback-only, both proxies:
 
 | route | purpose |
@@ -72,7 +77,7 @@ loopback-only, both proxies:
 | GET /mgmt/usage | 5h output-token window + persisted ratelimit headers |
 | GET /mgmt/compact | compact outcomes + shadow-classifier tail |
 | GET /mgmt/auth, POST /mgmt/auth/refresh | token introspection (masked), refresh |
-| GET /mgmt/logs?tail=N | proxy log tail from ~/.claude-codex/logs/ |
+| GET /mgmt/logs?tail=N | proxy log tail from the state root's `logs/` |
 | GET /mgmt/models | catalog, windows, pinned, discovery ids |
 
 Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←

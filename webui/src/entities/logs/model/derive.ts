@@ -9,7 +9,7 @@
 // this window still continue the one I was showing?
 //
 // LINE SHAPE, read off the daemon's own log on this machine (2026-09-18):
-// ~/.claude-codex/logs/daemon.log (2.3 MB) and the rotated daemon.log.1 (67 MB), both
+// the state root's logs/daemon.log (2.3 MB) and the rotated daemon.log.1 (67 MB), both
 // `[<YYYY-MM-DD HH:MM:SS>] [<tag>] <message>`, e.g.
 //   [2026-09-18 01:14:01] [claude-deepseek] cache: input=182346 cached=181248 hit=99% output=252
 //   [2026-09-18 00:27:10] [claude-deepseek] turn ERROR cancelled compact=false latency=900031ms

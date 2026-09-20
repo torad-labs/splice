@@ -1,6 +1,6 @@
 // NEW: (JW-17, split from DoctorCommand.kt — the file sits at detekt's function budget) the
 // state/log writability probe. Three subsystems (daemon.log, config persistence, usage/perf/
-// compact appends) degrade silently on an unwritable ~/.claude-codex; doctor printed the path
+// compact appends) degrade silently on an unwritable state root; doctor printed the path
 // but never touched it.
 package splice.app.cli
 

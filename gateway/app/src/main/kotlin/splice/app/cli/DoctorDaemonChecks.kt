@@ -1,7 +1,8 @@
 // NEW: (split from DoctorCommand.kt, which sits at detekt's 14-function file budget) the doctor
 // DAEMON section — is something listening, is it this version, is the running topology still the
 // file on disk (JW-04), is the mgmt-key there, and are the state and log dirs actually writable
-// (JW-08 names the logs dir, JW-17 proves it rather than printing it).
+// (JW-08 names the logs dir, JW-17 proves it rather than printing it), and WHICH state root is
+// live (V4-177).
 package splice.app.cli
 
 import splice.core.config.StatePaths
@@ -17,6 +18,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
 
     private val probeWrite = DoctorProbeWrite()
     private val clientVersion = DoctorClientVersion()
+    private val stateLayout = DoctorStateLayout()
 
     internal fun daemonChecks(
         snapshot: DaemonSnapshot,
@@ -40,8 +42,8 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
         // daemon.lock is a flock advisory gate whose FILE persists after the daemon exits, so its mere
         // presence proves nothing about liveness (DaemonLock.kt) — report the path only, never a
         // fabricated staleness WARN. The state dir path is the same kind of orientation detail.
-        val stateInfo = listOf(
-            // JW-17: PROVE writability, don't just print the path — an unwritable ~/.claude-codex
+        val stateInfo = listOfNotNull(stateLayout.check(statePaths)) + listOf(
+            // JW-17: PROVE writability, don't just print the path — an unwritable state root
             // degrades daemon.log, config persistence, and usage/perf/compact appends all silently.
             probeWrite.writableProbe("state dir", statePaths.stateDir),
             // JW-08: daemon.log lives in the SIBLING logs dir, not state/ — printing only the state

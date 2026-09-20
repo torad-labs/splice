@@ -2,8 +2,8 @@
 // network. Importable solely from entity api segments (lint-enforced boundary;
 // an ast-grep wall additionally forbids fetch() anywhere else in webui/src).
 // Served same-origin by the control server (spliced), which also hosts this
-// dashboard at /; the bearer key comes from ~/.claude-codex/state/mgmt-key,
-// pasted once by the operator.
+// dashboard at /; the bearer key comes from the state root's mgmt-key
+// (`splice dashboard` prints it), pasted once by the operator.
 
 const KEY_STORAGE = 'myx-mgmt-key';
 

@@ -5,13 +5,26 @@
 // N), in memory, and serves them on its own port under the management key (GET /wire), so this
 // verb needs the daemon up and the key file readable, unlike `splice logs`. Each record prints one
 // header line and then the body string verbatim; --json prints the head's payload as served.
-package splice.app.cli
+//
+// IN A SUBPACKAGE (splice.app.cli.wire), not beside the other verbs: splice.app.cli is the repo's
+// most crowded package and the concentration ratchet gates its file count (the gate went red at 85
+// files, baseline 84, when this file first landed there) — the same reason V4-156 put the doctor's
+// project checks under splice.app.cli.doctor.
+package splice.app.cli.wire
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.app.TopologyLoader
+import splice.app.cli.AddHttp
+import splice.app.cli.AddHttpReply
+import splice.app.cli.AdminSupport
+import splice.app.cli.BOLD
+import splice.app.cli.DIM
+import splice.app.cli.JdkAddHttp
+import splice.app.cli.MgmtKeyRead
+import splice.app.cli.RESET
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars

@@ -29,6 +29,8 @@ const EFFECTIVE = {
   // 90 days, every head — and both are restart-required, which the derived list below gets right
   // without an edit here.
   activityRetentionDays: 90, activityStoreHeads: '*',
+  // V4-173: Knob.kt's default — off.
+  wireTap: 0,
 };
 
 export const fixtureConfig: ConfigPayload = {

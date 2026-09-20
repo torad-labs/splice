@@ -24,10 +24,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
+/** The SessionStart `source` value Claude Code sends for --resume, --continue and /resume — the one
+ *  declaration, read by the hook installer here and by the control route that receives the call. */
+public const val RESUME_SOURCE: String = "resume"
+
 internal object ResumeHook {
     const val RESUME_HOOK_SH: String = "splice-resume-hook.sh"
-    private const val SESSION_START = "SessionStart"
-    private const val RESUME_SOURCE = "resume"
 
     // why: the hook is one loopback POST; five seconds is far above a daemon on the same box and far
     // below the hook timeout, so a stalled daemon costs a resume five seconds, never fifteen.
@@ -65,7 +67,7 @@ internal object ResumeHook {
             }
             val script = HookScriptFiles.writeHookScript(configDir, RESUME_HOOK_SH, script(controlPort, headKey), chmod)
             mapOf(
-                SESSION_START to listOf(
+                HookScriptFiles.SESSION_START to listOf(
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = RESUME_SOURCE),
                 ),
             )

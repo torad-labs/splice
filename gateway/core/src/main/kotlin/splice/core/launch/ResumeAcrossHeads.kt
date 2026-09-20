@@ -56,8 +56,6 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
-private const val TRANSCRIPT_SUFFIX = ".jsonl"
-
 /** A Claude Code session id, and the only shape allowed to become a path component or a message. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
 

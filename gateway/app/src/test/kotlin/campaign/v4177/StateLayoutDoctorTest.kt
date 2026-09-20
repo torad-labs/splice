@@ -10,10 +10,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.CheckStatus
 import splice.app.cli.DoctorStateLayout
-import splice.core.config.LEGACY_STATE_DIR_ENV
-import splice.core.config.LEGACY_STATE_HOME
-import splice.core.config.SPLICE_STATE_HOME
-import splice.core.config.STATE_DIR_ENV
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -23,6 +19,18 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
 
 private val NO_ENV = EnvReader { null }
+
+// The two roots and the two variable names, spelled HERE rather than imported. They are
+// :core-internal — the public-surface ratchet gates declarations no other module's MAIN sources
+// consume, and nothing outside :core resolves a state root — so importing them into an :app test
+// would be a test claiming an exemption from the module law. `the four names in this file are the
+// ones StatePaths actually resolves` is what keeps the duplication honest: it fails loudly if :core
+// moves a root or renames a variable, instead of leaving this file exercising a shape production
+// abandoned.
+private const val SPLICE_ROOT = ".splice"
+private const val LEGACY_ROOT = ".claude-codex"
+private const val STATE_DIR_ENV = "SPLICE_STATE_DIR"
+private const val LEGACY_STATE_DIR_ENV = "CLAUDEX_STATE_DIR"
 
 private fun makeState(home: Path, root: String): Path = Files.createDirectories(home.resolve(root).resolve("state"))
 
@@ -39,7 +47,7 @@ class StateLayoutDoctorTest {
 
     @Test
     fun `an adopted pre-0_4 root is named, and says nothing was moved`(@TempDir home: Path) {
-        val legacy = makeState(home, LEGACY_STATE_HOME)
+        val legacy = makeState(home, LEGACY_ROOT)
 
         val check = DoctorStateLayout().check(StatePaths(envReader = NO_ENV, homeDir = home))
 
@@ -54,8 +62,8 @@ class StateLayoutDoctorTest {
     // operator is the only one who can decide what to carry over.
     @Test
     fun `a leftover pre-0_4 root is a WARN that names both paths and what to do`(@TempDir home: Path) {
-        val legacy = makeState(home, LEGACY_STATE_HOME)
-        val current = makeState(home, SPLICE_STATE_HOME)
+        val legacy = makeState(home, LEGACY_ROOT)
+        val current = makeState(home, SPLICE_ROOT)
 
         val check = DoctorStateLayout().check(StatePaths(envReader = NO_ENV, homeDir = home))
 
@@ -69,20 +77,37 @@ class StateLayoutDoctorTest {
     // line operators learn to scroll past, which costs the two arms above the attention they need.
     @Test
     fun `a box on the current layout alone says nothing`(@TempDir home: Path) {
-        makeState(home, SPLICE_STATE_HOME)
+        makeState(home, SPLICE_ROOT)
 
         assertNull(DoctorStateLayout().check(StatePaths(envReader = NO_ENV, homeDir = home)))
     }
 
     @Test
     fun `a state dir named by the environment says nothing about either root`(@TempDir home: Path) {
-        makeState(home, LEGACY_STATE_HOME)
+        makeState(home, LEGACY_ROOT)
         val env = EnvReader { name -> home.resolve("elsewhere").toString().takeIf { name == STATE_DIR_ENV } }
 
         assertNull(
             DoctorStateLayout().check(StatePaths(envReader = env, homeDir = home)),
             "a root the operator pointed past is not unmigrated history",
         )
+    }
+
+    // The duplication guard for this file's four local names — every one of them, driven through
+    // production. Without it, a :core rename leaves every arm above green while testing nothing.
+    @Test
+    fun `the four names in this file are the ones StatePaths actually resolves`(@TempDir home: Path) {
+        fun pointedAt(variable: String, at: Path) =
+            StatePaths(envReader = EnvReader { n -> at.toString().takeIf { n == variable } }, homeDir = home).stateDir
+
+        val onAClearBox = StatePaths(envReader = NO_ENV, homeDir = home).stateDir
+        assertEquals(home.resolve(SPLICE_ROOT).resolve("state"), onAClearBox)
+
+        val legacy = makeState(home, LEGACY_ROOT)
+        assertEquals(legacy, StatePaths(envReader = NO_ENV, homeDir = home).stateDir)
+
+        assertEquals(home.resolve("by-new"), pointedAt(STATE_DIR_ENV, home.resolve("by-new")))
+        assertEquals(home.resolve("by-old"), pointedAt(LEGACY_STATE_DIR_ENV, home.resolve("by-old")))
     }
 }
 
@@ -155,15 +180,15 @@ class StateDirAgreementTest {
         for ((name, env) in cases) {
             val home = Files.createDirectories(root.resolve(name))
             when (name) {
-                "legacy-only", "env-legacy", "env-both" -> makeState(home, LEGACY_STATE_HOME)
+                "legacy-only", "env-legacy", "env-both" -> makeState(home, LEGACY_ROOT)
                 "both" -> {
-                    makeState(home, LEGACY_STATE_HOME)
-                    makeState(home, SPLICE_STATE_HOME)
+                    makeState(home, LEGACY_ROOT)
+                    makeState(home, SPLICE_ROOT)
                 }
                 // The collision shape: `~/.claude-codex` present as the codex head's CLAUDE_CONFIG_DIR,
                 // with no `state` leaf. Both implementations must decline to adopt it.
                 "legacy-root-without-state-leaf" ->
-                    Files.createDirectories(home.resolve(LEGACY_STATE_HOME).resolve("projects"))
+                    Files.createDirectories(home.resolve(LEGACY_ROOT).resolve("projects"))
                 else -> Unit
             }
             val expected = StatePaths(
@@ -188,14 +213,14 @@ class StateDirAgreementTest {
     @Test
     fun `the harness would catch a shell copy that resolved the wrong root`(@TempDir root: Path) {
         val home = Files.createDirectories(root.resolve("home"))
-        makeState(home, LEGACY_STATE_HOME)
+        makeState(home, LEGACY_ROOT)
         val wrong = root.resolve("wrong.sh")
-        val body = "  printf '%s\\n' \"\$HOME/" + SPLICE_STATE_HOME + "/state\""
+        val body = "  printf '%s\\n' \"\$HOME/" + SPLICE_ROOT + "/state\""
         Files.writeString(wrong, "#!/usr/bin/env bash\nresolve_state_dir() {\n$body\n}\n")
 
         val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
 
-        assertEquals(home.resolve(LEGACY_STATE_HOME).resolve("state").toString(), expected)
+        assertEquals(home.resolve(LEGACY_ROOT).resolve("state").toString(), expected)
         assertTrue(
             resolveWith(wrong, home, emptyMap()) != expected,
             "a resolver that ignores the pre-0.4 root must not compare equal — the harness is not running the script",

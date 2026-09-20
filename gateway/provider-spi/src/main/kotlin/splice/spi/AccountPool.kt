@@ -2,14 +2,13 @@
 package splice.spi
 
 import splice.core.usage.QuotaWindow
+import splice.core.util.LruSizing
 import splice.core.util.WallClock
 import java.util.concurrent.atomic.AtomicReference
 
 private const val FULLY_USED = 100.0
 private const val MS_PER_SECOND = 1_000L
 private const val MAX_TRACKED_SESSIONS = 4_096
-private const val SESSION_MAP_CAPACITY = 16
-private const val SESSION_MAP_LOAD = 0.75f
 
 /** The answer [AccountPool.select] returns: an account was chosen for the turn, or every account is
  *  exhausted and the turn is refused before admission. The exhaustion is a VALUE on the return type,
@@ -45,7 +44,11 @@ public class AccountPool(
 
     // Access order keeps active sessions sticky without retaining every session the daemon ever saw.
     // Reads reorder the map too, so selection, views and reset share its monitor.
-    private val sessions = LinkedHashMap<String, SessionAccount>(SESSION_MAP_CAPACITY, SESSION_MAP_LOAD, true)
+    private val sessions = LinkedHashMap<String, SessionAccount>(
+        LruSizing.INITIAL_CAPACITY,
+        LruSizing.LOAD_FACTOR,
+        true,
+    )
     private val headLastSwitch = AtomicReference<AccountSwitch?>(null)
     private val statelessLock = Any()
     private var statelessPrevious: SessionAccount? = null

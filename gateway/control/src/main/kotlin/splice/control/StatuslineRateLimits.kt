@@ -26,6 +26,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.util.JsonScalars
+import splice.core.util.LruSizing
 
 internal class StatuslineRateLimits(private val capacity: Int = RATE_LIMIT_CAPACITY) {
     private val lock = Any()
@@ -36,8 +37,8 @@ internal class StatuslineRateLimits(private val capacity: Int = RATE_LIMIT_CAPAC
     // LinkedHashMap, the same eviction shape ClientWindows.kt uses for the same reason — sessions
     // and accounts come and go for the daemon's whole life.
     private fun boundedRateLimitMap(): LinkedHashMap<String, RateLimitCapture> {
-        val initial = RATE_LIMIT_MAP_INITIAL_CAPACITY
-        val load = RATE_LIMIT_MAP_LOAD_FACTOR
+        val initial = LruSizing.INITIAL_CAPACITY
+        val load = LruSizing.LOAD_FACTOR
         return object : LinkedHashMap<String, RateLimitCapture>(initial, load, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RateLimitCapture>?) = size > capacity
         }
@@ -99,5 +100,3 @@ internal data class RateLimitCapture(
 // keeps the same shape of thing (one entry per live session, plus one per pooled account) for the
 // same daemon lifetime, so it is bounded the same way rather than picking a fresh number.
 private const val RATE_LIMIT_CAPACITY = 512
-private const val RATE_LIMIT_MAP_INITIAL_CAPACITY = 16
-private const val RATE_LIMIT_MAP_LOAD_FACTOR = 0.75f

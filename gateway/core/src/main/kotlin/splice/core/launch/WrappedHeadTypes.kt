@@ -11,12 +11,6 @@ public fun interface WrapStateRead {
     public fun realBinaryPath(): String?
 }
 
-/** `now()` as a seam (Kotlin style law: no bare `System.currentTimeMillis()` call sites scattered
- *  through a class that tests want to pin). */
-public fun interface NowMillis {
-    public fun nowEpochMillis(): Long
-}
-
 /** The one fact [splice.control.LaunchService] must read on every launch (see WrappedHead.kt's
  *  header) — written to and read from a file by [WrapStateStore], never held in memory. */
 public data class WrapState(

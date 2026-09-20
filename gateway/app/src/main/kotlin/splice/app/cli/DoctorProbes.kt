@@ -7,6 +7,7 @@
 // [safePath]. :app is wall-exempt for println.
 package splice.app.cli
 
+import splice.core.launch.WrappedHead
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -21,7 +22,11 @@ import java.util.concurrent.TimeUnit
 /** Doctor's prerequisite probes as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). DoctorCommand builds one and asks it for the
  *  prerequisites section; every member keeps the old function's name. */
-internal class DoctorProbes {
+internal class DoctorProbes(
+    /** V4-129 (FEATURES.md 4.12): read fresh per report — wrap/unwrap can flip between two `splice
+     *  doctor` runs, and a cached mode would report a stale one. */
+    private val wrappedHead: WrappedHead = WrappedHead(Paths.get(System.getProperty("user.home"))),
+) {
 
     private val path = DoctorPathCheck(this)
     private val install = DoctorInstallProbes(this)
@@ -32,7 +37,20 @@ internal class DoctorProbes {
         // every probe concurrently; runProbes preserves this list's order regardless of finish order.
         val tasks = binaries.map { spec -> Callable { binaryCheck(spec, envReader) } } +
             Callable { install.ghCheck(envReader) }
-        return listOf(java) + runProbes(tasks)
+        return listOf(java, claudeHeadModeCheck()) + runProbes(tasks)
+    }
+
+    /** V4-129: which of the two Claude head modes (FEATURES.md 4.12) is active right now, so
+     *  `splice doctor` answers "why does `claude` behave like this" without a separate command.
+     *  Internal (not private) so a test can pin it without paying for the real java/claude/gh
+     *  probes [prerequisiteChecks] also runs. */
+    internal fun claudeHeadModeCheck(): DoctorCheck {
+        val status = wrappedHead.status()
+        val detail = buildString {
+            append(status.mode)
+            status.resolvesTo?.let { append(" — claude on PATH resolves to $it") }
+        }
+        return DoctorCheck("claude-head", CheckStatus.INFO, detail)
     }
 
     private fun binaryCheck(spec: BinarySpec, envReader: EnvReader): DoctorCheck {

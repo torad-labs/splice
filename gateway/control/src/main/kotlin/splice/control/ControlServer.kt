@@ -33,6 +33,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.control.api.ActivitySource
 import splice.control.api.AuthRoutes
+import splice.control.api.ClaudeHeadRoutes
 import splice.control.api.CompactPayloads
 import splice.control.api.CompactionInstructionsRoute
 import splice.control.api.ConfigRoutes
@@ -166,6 +167,7 @@ public class ControlServer(
     private val economicsPayloads = EconomicsPayloads(heads)
     private val compactPayloads = CompactPayloads(heads)
     private val authRoutes = AuthRoutes(heads, resolver)
+    private val claudeHeadRoutes = ClaudeHeadRoutes(heads)
     private val headRoutes = HeadRoutes(resolver, payloads, audit)
     private val launchRoutes = LaunchRoutes(heads, resolver, launchService, payloads, audit, jsonBody)
     private val statuslineRoute = StatuslineRoute(resolver, config, clientVersions)
@@ -315,6 +317,9 @@ public class ControlServer(
         route.get("/api/models") { guarded(call) { modelsRoute.models(call, ports.declaredHeads) } }
         route.get("/api/doctor") { guarded(call) { doctorRoute.doctorJson(call, ports.doctor) } }
         route.get("/api/upgrade") { guarded(call) { upgradeRoute.upgradeJson(call, ports.upgrade) } }
+        route.get("/api/claude-head") { guarded(call) { claudeHeadRoutes.status(call) } }
+        route.post("/api/claude-head/wrap") { guarded(call) { claudeHeadRoutes.wrap(call) } }
+        route.post("/api/claude-head/unwrap") { guarded(call) { claudeHeadRoutes.unwrap(call) } }
         // The same drain POST /api/daemon/shutdown requests, offered as a restart because the host
         // unit brings the daemon back. REFUSED when nothing would, and the refusal takes no drain.
         route.post("/api/daemon/restart") {

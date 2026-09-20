@@ -137,6 +137,31 @@ public class ClaudeConfigMaterializer(
         return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
     }
 
+    /** V4-129: WRAP's narrow materialization — writes ONLY settings.json + .claude.json into
+     *  [spec.configDir], reusing the exact shape [materialize] produces for those two files (model
+     *  allowlist, enforceAvailableModels, the statusline block, carried hooks) so a wrapped `claude`
+     *  looks like any other splice head from Claude Code's point of view. Deliberately narrow: no
+     *  [requireIsolatedDir] — this path exists PRECISELY to write into the operator's real
+     *  `~/.claude`, which that guard refuses for [materialize]'s general entry point; this is not a
+     *  bypass of DR-102, it is the one caller the guard was never meant to cover — no linkShared, no
+     *  hook SCRIPT files, no sessions/projects migration. WrappedHead backs up whatever already sits
+     *  at these two paths before calling this, and [spec.policy] deciding whether settings.json's
+     *  "global" layer (here, the very file about to be overwritten) is carried forward is the
+     *  caller's call, not this method's. */
+    public fun materializeWrap(spec: MaterializeSpec): MaterializeResult {
+        val localClaudeJson = jsonReads.strict(spec.configDir.resolve(Keys.CLAUDE_JSON))
+        val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
+        Files.createDirectories(spec.configDir)
+        writeSettings(spec, emptyMap(), existingSettings)
+        val mcpCount = writeClaudeJson(
+            spec.configDir,
+            spec.modelOptionsCache,
+            shareMcp = false,
+            local = localClaudeJson,
+        )
+        return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
+    }
+
     // Guard the operator's REAL global config: the dir must look like an isolated .claude* dir AND
     // must not resolve to ~/.claude itself. `contains("claude")` let ~/.claude (and
     // ~/Documents/claude-notes, /tmp/claude) through — this closes both.
@@ -313,7 +338,14 @@ public class ClaudeConfigMaterializer(
             putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
             put("enforceAvailableModels", true)
             put(Keys.MODEL, model)
-            put(Keys.STATUS_LINE, statusLineBlock(spec.statuslineCommand))
+            put(
+                Keys.STATUS_LINE,
+                buildJsonObject {
+                    put("type", "command")
+                    put("command", spec.statuslineCommand)
+                    put("padding", 0)
+                },
+            )
             if (hooks != null) put(Keys.HOOKS, hooks)
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
@@ -349,12 +381,6 @@ public class ClaudeConfigMaterializer(
 
     private fun isCarriedGlobalKey(key: String): Boolean =
         key != Keys.MODEL && key != Keys.AVAILABLE_MODELS && key != Keys.STATUS_LINE && key != Keys.HOOKS
-
-    private fun statusLineBlock(command: String): JsonObject = buildJsonObject {
-        put("type", "command")
-        put("command", command)
-        put("padding", 0)
-    }
 
     private fun writeClaudeJson(
         configDir: Path,

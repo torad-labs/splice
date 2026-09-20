@@ -7,6 +7,8 @@
  *
  *  Usage:
  *    bench.ts --control-port 3196 --mgmt-key-file ~/.splice/state/mgmt-key \
+ *      (a pre-0.4 install still keeps its key at ~/.claude-codex/state/mgmt-key — splice
+ *       adopts that root in place, so pass the one `splice doctor` names)
  *             --servers ast-grep,remotion-docs,torad-fleet,figma-comments --sessions 4 \
  *             --out checks/e2e/receipts/mcp-host-bench.json
  *

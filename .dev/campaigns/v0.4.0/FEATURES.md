@@ -257,7 +257,8 @@ losing configuration or credentials. Verification failure prevents activation of
 
 **Resolved 2026-09-13:**
 - Layout is the one `install.sh` already writes: jar and assets under
-  `~/.local/share/splice/`, wrappers in `~/.local/bin/`, state in `~/.claude-codex/state/`,
+  `~/.local/share/splice/`, wrappers in `~/.local/bin/`, state in `~/.splice/state/` (a pre-0.4
+  install keeps `~/.claude-codex/state/`, adopted in place — V4-177),
   config and credentials in `~/.config/splice/`. Upgrade keeps each release in its own
   versioned directory under the share dir and points the wrapper at the current one; config and
   credentials are never touched because they live elsewhere.

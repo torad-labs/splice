@@ -20,13 +20,17 @@
 // does not learn what wrapping is; it asks the daemon that already knows.
 package splice.app.cli.setup
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import splice.app.cli.AdminSupport
 import splice.app.cli.ControlPlaneClient
 import splice.app.cli.ControlReply
 import splice.app.cli.MgmtKeyRead
 import splice.app.cli.prompt.SelectOption
 import splice.app.cli.prompt.SelectOutcome
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
 
 /** The catalogue row this question is about (AddProfileCatalog's `claude`). */
 internal const val CLAUDE_PROFILE: String = "claude"
@@ -42,6 +46,14 @@ internal const val SEPARATE_HINT: String =
 
 /** Where to do it by hand. There is no `splice wrap` verb — the console's Settings page is the
  *  other caller of this route, so it is what the operator is actually sent to. */
+/** The wrap POST's own read budget. ControlPlaneClient's 3s default was sized for the shutdown
+ *  route, which answers 202 BEFORE it tears down; wrap answers only AFTER WrappedHead creates
+ *  directories, takes two backups, materializes the config and atomically moves the shim — and the
+ *  wizard fires it seconds after restarting the daemon, the coldest moment of the run. A budget
+ *  that expires mid-wrap is not a slow answer, it is a wrong report about a changed machine.
+ *  Matched to the restart drain rather than to a liveness probe. */
+internal const val WRAP_TIMEOUT_MS: Int = 30_000
+
 internal const val WRAP_LATER: String = "wrap it from splice dashboard, Settings"
 
 /** Which lane the operator put the Claude head in. SEPARATE is the default everywhere a choice is
@@ -108,10 +120,32 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
     }
 
     private fun post(key: String): String {
-        val url = "http://127.0.0.1:${AdminSupport.controlPort(env)}/api/claude-head/wrap"
-        val reply = ControlPlaneClient.send(url, "POST", key)
-            ?: return "not wrapping: the daemon did not answer — $WRAP_LATER"
+        val base = "http://127.0.0.1:${AdminSupport.controlPort(env)}/api/claude-head"
+        val reply = ControlPlaneClient.send("$base/wrap", "POST", key, readTimeoutMs = WRAP_TIMEOUT_MS)
+            ?: return unconfirmed(base, key)
         return replyLine(reply)
+    }
+
+    /** THE POST MAY HAVE LANDED. [ControlPlaneClient.send]'s null means "never connected" OR
+     *  "connected, got a status, and reading the body failed" — and wrap is not a read: the route
+     *  answers only AFTER WrappedHead has created directories, taken two backups, materialized the
+     *  config and atomically moved the shim into place. Reporting that as a flat "the daemon did not
+     *  answer, nothing happened" is the wizard telling the operator the opposite of what is on disk.
+     *
+     *  So: ask. GET /api/claude-head is a plain read and reports the mode actually in force. Only
+     *  when THAT is unreachable too is the outcome genuinely unknown, and then it says so in those
+     *  words rather than asserting a state it never observed. */
+    private fun unconfirmed(base: String, key: String): String {
+        val mode = ControlPlaneClient.send(base, "GET", key)
+            ?.takeIf { it.status in ControlPlaneClient.OK_RANGE }
+            ?.let { fieldOf(it.body, "mode") }
+        return when (mode) {
+            "wrapped" -> "wrapped: claude now runs through splice — undo it from splice dashboard, Settings"
+            "separate" -> "not wrapping: the wrap did not take effect — $WRAP_LATER"
+            else ->
+                "could not confirm the wrap: the daemon stopped answering mid-request, so it may " +
+                    "have completed — check splice dashboard, Settings before running it again"
+        }
     }
 
     /** Internal, not private: the three branches are what a test can reach without standing up a
@@ -125,7 +159,19 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
         else -> "not wrapping: ${reasonOf(reply)}"
     }
 
+    /** PARSED, not pattern-matched. The regex this replaces truncated any reason containing an
+     *  escaped quote at the backslash and printed \n and \uXXXX literally at the terminal — and the
+     *  module has kotlinx.serialization on the classpath and JsonScalars beside it. A body that is
+     *  not JSON, or carries no string `error`, falls back to the status exactly as before. */
     private fun reasonOf(reply: ControlReply): String =
-        Regex("\"error\"\\s*:\\s*\"(.*?)\"").find(reply.body)?.groupValues?.get(1)
-            ?: "the daemon answered ${reply.status}"
+        fieldOf(reply.body, "error") ?: "the daemon answered ${reply.status}"
+
+    /** One string field out of a control-plane body, PARSED. The regex this replaces truncated any
+     *  reason containing an escaped quote at the backslash and printed \n and \uXXXX literally at
+     *  the terminal, while kotlinx.serialization and JsonScalars sat on the classpath. */
+    private fun fieldOf(body: String, key: String): String? =
+        Cancellables.runCatchingCancellable { Json.parseToJsonElement(body).jsonObject }
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-177 review): a body that is not a JSON object is a real, expected shape here (an HTML error page from something else bound to the port), and every caller CONSUMES the null with a named fallback — the status sentence, or "could not confirm".
+            .getOrNull()
+            ?.let { JsonScalars.str(it, key) }
 }

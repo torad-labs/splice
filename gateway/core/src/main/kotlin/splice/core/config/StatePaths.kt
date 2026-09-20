@@ -29,7 +29,10 @@
 package splice.core.config
 
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
+import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -76,6 +79,38 @@ public enum class StateDirOrigin {
     ADOPTED_LEGACY,
 }
 
+/**
+ * What a probe of a candidate state root actually found — THREE answers, not two.
+ *
+ * `Files.exists` is two-valued by its own contract: "if this method returns false then the file
+ * does not exist OR ITS EXISTENCE CANNOT BE DETERMINED". Adoption keyed off that, so a legacy root
+ * holding the entire install's history but sitting behind a non-traversable parent (a `sudo` run
+ * that left it root-owned, a stale NFS handle, a unit that sets a different HOME) read as ABSENT —
+ * and the daemon minted a fresh mgmt-key in a new root while every head's history read as empty.
+ * Worse, [StatePaths.unmigratedLegacyDir] gated on the same failing probe, so doctor's state-layout
+ * row went silent in precisely the case it was built to speak in, and the box told a clean-install
+ * story about an install that was not clean.
+ *
+ * This is the proven-absence law the module already follows one directory away — `MgmtKeyRead`
+ * exists because `String?` conflated absent with unreadable for the mgmt-key, and WrappedHead names
+ * it. The decision that picks where the whole product's state lives now follows it too: only
+ * [NoSuchFileException] is positive evidence of absence.
+ *
+ * [Unusable] also covers a NON-DIRECTORY at a root path, which `Files.exists` called true and the
+ * shell copies' `[ -d ]` called false — a divergence with no arm in any table until it had one.
+ */
+internal sealed class RootProbe {
+    /** A real directory: usable as a state root. */
+    data object Directory : RootProbe()
+
+    /** Proven absent. The only answer that may trigger adoption or a clean start. */
+    data object Absent : RootProbe()
+
+    /** There, and not usable — a regular file at the root path, or a probe that failed. NEVER
+     *  read as absent, because the difference is the operator's whole history. */
+    data class Unusable(val reason: String) : RootProbe()
+}
+
 public class StatePaths(
     baseOverride: Path? = null,
     envReader: EnvReader = EnvReader(System::getenv),
@@ -88,8 +123,19 @@ public class StatePaths(
 
     private val legacyDir: Path = homeDir.resolve(LEGACY_STATE_HOME).resolve(STATE_LEAF)
 
+    /** Probed only when the answer can matter: an explicit path or an environment variable settles
+     *  the root without touching the filesystem, which is what keeps hermetic callers at zero stats. */
+    private val probed: Boolean = baseOverride == null && fromEnv == null
+
+    private val defaultProbe: RootProbe? = if (probed) probeRoot(defaultDir) else null
+
+    private val legacyProbe: RootProbe? = if (probed) probeRoot(legacyDir) else null
+
+    /** Adoption needs POSITIVE evidence on both sides: the current root proven absent, and the
+     *  pre-0.4 one proven to be a directory. An unreadable or non-directory root satisfies neither,
+     *  so it can no longer be silently treated as "not there" — it surfaces as [rootProbeFault]. */
     private val adoptLegacy: Boolean =
-        baseOverride == null && fromEnv == null && !Files.exists(defaultDir) && Files.exists(legacyDir)
+        defaultProbe is RootProbe.Absent && legacyProbe is RootProbe.Directory
 
     public val origin: StateDirOrigin = when {
         baseOverride != null -> StateDirOrigin.OVERRIDE
@@ -105,8 +151,21 @@ public class StatePaths(
      *  one ([origin] says so), or a caller pointed the state dir somewhere explicitly, in which case
      *  the old root is not "unmigrated", it is simply not theirs. */
     public val unmigratedLegacyDir: Path? = legacyDir.takeIf {
-        origin == StateDirOrigin.DEFAULT && Files.exists(it)
+        origin == StateDirOrigin.DEFAULT && legacyProbe is RootProbe.Directory
     }
+
+    /** V4-177: a candidate root that could not be RULED OUT, as a sentence naming the path and what
+     *  was wrong — null when both roots gave a definite answer, and null whenever a caller named the
+     *  state dir itself (nothing was probed, so there is nothing to report).
+     *
+     *  This exists because the dangerous case is silent by nature: a daemon that cannot READ the
+     *  pre-0.4 root looks exactly like a daemon on a fresh box, and the remedy an operator reaches
+     *  for when history appears lost is to delete and re-init, which destroys what was never gone.
+     *  Doctor turns this into a WARN naming the path. */
+    public val rootProbeFault: String? = listOfNotNull(
+        (defaultProbe as? RootProbe.Unusable)?.let { "$defaultDir ${it.reason}" },
+        (legacyProbe as? RootProbe.Unusable)?.let { "$legacyDir ${it.reason}" },
+    ).joinToString("; ").takeIf { it.isNotEmpty() }
 
     public val rootDir: Path = stateDir.parent ?: stateDir
 
@@ -173,4 +232,18 @@ public class StatePaths(
      *  mgmt-key and every head's history wherever the daemon happened to start. Fall through to the
      *  next source, exactly as an unset variable does. */
     private fun pathOrNull(raw: String?): Path? = raw?.takeIf { it.isNotBlank() }?.let { Paths.get(it) }
+
+    /** One stat, three answers. A typed catch rather than `runCatching(...).getOrNull()` precisely
+     *  because the whole point is to KEEP the distinction the collapse would throw away. */
+    private fun probeRoot(dir: Path): RootProbe = try {
+        // The ATTRIBUTE-NAME overload, not `BasicFileAttributes::class.java`: a class literal is
+        // reflection to kt-no-reflection-in-production, and the string form is the same single stat
+        // with the same typed failures — which are the whole point of this function.
+        val isDirectory = Files.readAttributes(dir, "basic:isDirectory")["isDirectory"] == true
+        if (isDirectory) RootProbe.Directory else RootProbe.Unusable("is not a directory")
+    } catch (_: NoSuchFileException) {
+        RootProbe.Absent
+    } catch (failure: IOException) {
+        RootProbe.Unusable("could not be read — ${SafeFailureText.render(failure)}")
+    }
 }

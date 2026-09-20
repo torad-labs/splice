@@ -50,9 +50,22 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that
 # is the only root on the box.
 resolve_state_dir() {
-  if [ -n "${SPLICE_STATE_DIR:-}" ]; then printf '%s\n' "$SPLICE_STATE_DIR"; return 0; fi
-  if [ -n "${CLAUDEX_STATE_DIR:-}" ]; then printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0; fi
-  if [ ! -d "$HOME/.splice/state" ] && [ -d "$HOME/.claude-codex/state" ]; then
+  # A variable holding only whitespace is NOT an answer. `-n` calls " " set; Kotlin's isNotBlank
+  # does not, and StatePaths blank-checks PER VARIABLE. Without this, SPLICE_STATE_DIR=" " in a unit
+  # file makes this read " /mgmt-key" relative to CWD and report "mgmt-key not found" on a perfectly
+  # healthy install, while the daemon resolves the real root. The pattern IS isNotBlank: at least
+  # one non-whitespace character. Per variable, so an empty SPLICE_STATE_DIR falls through to
+  # CLAUDEX_STATE_DIR instead of skipping it.
+  case "${SPLICE_STATE_DIR:-}" in *[![:space:]]*) printf '%s\n' "$SPLICE_STATE_DIR"; return 0 ;; esac
+  case "${CLAUDEX_STATE_DIR:-}" in *[![:space:]]*) printf '%s\n' "$CLAUDEX_STATE_DIR"; return 0 ;; esac
+  # Adoption needs POSITIVE evidence on both sides, the rule StatePaths' three-valued probe follows:
+  # only proven absence may start a fresh root. `[ ! -d ]` is ALSO true for a path that cannot be
+  # stat-ed, so an unreadable ~/.splice would adopt the pre-0.4 root here while the daemon declines
+  # and warns. Believe "absent" only when the parent is traversable, or absent itself.
+  # `-e`, not `-d`: a REGULAR FILE at the current root is not proven absence either, and `[ ! -d ]`
+  # called it adoptable while StatePaths declines and reports it as a fault.
+  if [ ! -e "$HOME/.splice/state" ] && { [ ! -e "$HOME/.splice" ] || [ -x "$HOME/.splice" ]; } &&
+     [ -d "$HOME/.claude-codex/state" ]; then
     printf '%s\n' "$HOME/.claude-codex/state"
   else
     printf '%s\n' "$HOME/.splice/state"

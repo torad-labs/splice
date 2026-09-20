@@ -9,15 +9,45 @@
 // Factored out of capture.mjs on 2026-09-18 so gate.mjs renders its contact sheets through the
 // same path: one browser launch, one protocol client, one place the key is read.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The management bearer key. Read here, passed into the page, and never logged. */
+/** The management bearer key. Read here, passed into the page, and never logged.
+ *
+ *  V4-177: the state root is install-dependent — SPLICE_STATE_DIR, then the pre-0.4
+ *  CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that is
+ *  the only root on the box. This file hardcoded the pre-0.4 path, which reads a file that does not
+ *  exist on any install made after 0.4. Blank-checked per variable, and adoption needs the current
+ *  root PROVEN absent and the pre-0.4 one proven to be a directory — the same rule StatePaths.kt,
+ *  bin/splice-launch and the two e2e harnesses follow. */
 export function mgmtKey(home = process.env.HOME) {
-  return readFileSync(join(home, '.claude-codex/state/mgmt-key'), 'utf8').trim();
+  return readFileSync(join(liveStateDir(home), 'mgmt-key'), 'utf8').trim();
+}
+
+/** Exported under the SAME NAME as checks/e2e/console-wire-keys.ts's copy so one wall can drive
+ *  both: StateDirAgreementTest imports `liveStateDir` from every JS/TS copy it finds. */
+export function liveStateDir(home = process.env.HOME, env = process.env) {
+  for (const name of ['SPLICE_STATE_DIR', 'CLAUDEX_STATE_DIR']) {
+    const value = env[name];
+    if (value !== undefined && value.trim() !== '') return value;
+  }
+  // One stat, three answers — the same shape as StatePaths.probeRoot. `throwIfNoEntry: false`
+  // covers ENOENT; EACCES on the parent still THROWS, and "cannot determine" is not "absent".
+  const probe = (dir) => {
+    try {
+      const found = statSync(dir, { throwIfNoEntry: false });
+      if (found === undefined) return 'absent';
+      return found.isDirectory() ? 'dir' : 'unusable';
+    } catch {
+      return 'unusable';
+    }
+  };
+  const current = join(home, '.splice', 'state');
+  const legacy = join(home, '.claude-codex', 'state');
+  return probe(current) === 'absent' && probe(legacy) === 'dir' ? legacy : current;
 }
 
 /**

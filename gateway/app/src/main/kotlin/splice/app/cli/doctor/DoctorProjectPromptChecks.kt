@@ -70,20 +70,26 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String) {
             missing + layers.mapNotNull { (name, mode, source) -> source?.let { layerRow(name, mode, it) } }
         }
 
-    private fun layerRow(name: String, mode: SystemPromptMode?, source: String): DoctorCheck {
-        val effective = mode ?: SystemPromptMode.APPEND
-        return if (effective == SystemPromptMode.REPLACE) {
-            DoctorCheck(
-                "project-prompt:$name",
-                CheckStatus.WARN,
-                "$name sets system_prompt_mode = \"replace\" ($source): the client's own system field and every " +
-                    "earlier layer are substituted, and Claude Code ships its entire operating instruction set in " +
-                    "that field, so sessions in this project run as a bare model with tools attached",
-                replaceFix,
-            )
-        } else {
-            DoctorCheck("project-prompt:$name", CheckStatus.OK, "$name ${effective.wire} ($source)")
-        }
+    private fun layerRow(name: String, mode: SystemPromptMode?, source: String): DoctorCheck = when (mode) {
+        SystemPromptMode.REPLACE -> DoctorCheck(
+            "project-prompt:$name",
+            CheckStatus.WARN,
+            "$name sets system_prompt_mode = \"replace\" ($source): the client's own system field and every " +
+                "earlier layer are substituted, and Claude Code ships its entire operating instruction set in " +
+                "that field, so sessions in this project run as a bare model with tools attached",
+            replaceFix,
+        )
+        // V4-171: the same row for strip — the client's instructions are edited, and what a pattern
+        // removes is the operator's to own; splice ships no pattern list.
+        SystemPromptMode.STRIP -> DoctorCheck(
+            "project-prompt:$name",
+            CheckStatus.WARN,
+            "$name sets system_prompt_mode = \"strip\" ($source): the client's own system field is edited on " +
+                "every turn in this project — each paragraph a pattern matches is removed, and what is removed " +
+                "is yours to own",
+            replaceFix,
+        )
+        SystemPromptMode.APPEND, null -> DoctorCheck("project-prompt:$name", CheckStatus.OK, "$name append ($source)")
     }
 
     /** Where a layer's text comes from, or null when it configures none (empty is no prompt). */

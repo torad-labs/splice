@@ -24,6 +24,18 @@ class DoctorSystemPromptCheckTest {
         assertTrue(requireNotNull(row.fix).contains("append"), row.fix.orEmpty())
     }
 
+    /** V4-171: strip edits the client's field too, so it gets the same row — the repo ships no
+     *  pattern list; the stance lives in this warning. */
+    @Test
+    fun `a strip-mode head warns that the client field is edited and what is removed is the operator's`() {
+        val row = promptRows(head("one", "\"^# Context management\"", "\"strip\"")).single()
+        assertEquals("system-prompt:one", row.name)
+        assertEquals(CheckStatus.WARN, row.status)
+        assertTrue(row.detail.contains("system_prompt_mode = \"strip\""), row.detail)
+        assertTrue(row.detail.contains("yours to own"), row.detail)
+        assertTrue(requireNotNull(row.fix).contains("append"), row.fix.orEmpty())
+    }
+
     @Test
     fun `a replace-mode head named by file warns too`() {
         val toml = head("one", null, "\"replace\"", file = "\"~/prompts/one.md\"")

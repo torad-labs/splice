@@ -48,17 +48,18 @@ class DoctorConfigChecksTest {
         assertTrue(row.detail.contains("bare model with tools attached"), row.detail)
     }
 
-    /** V4-170: the strip mode decodes from TOML through the daemon's own loader and reads as an OK
-     *  row naming the mode — an operator sees "strip" where the layer sits, never a warning for
-     *  keeping the client's field. */
+    /** V4-170: the strip mode decodes from TOML through the daemon's own loader. V4-171: it WARNs
+     *  like replace — the client's instructions are edited, and what a pattern removes is the
+     *  operator's to own. */
     @Test
-    fun `a strip layer parses from TOML and gets an OK row naming the mode`(@TempDir tmp: Path) {
+    fun `a strip layer parses from TOML and warns that the client field is edited`(@TempDir tmp: Path) {
         val topology = TopologyLoader.parse(toml(tmp, projectMode = "\"strip\""))
         val row = projectRows(toml(tmp, projectMode = "\"strip\"")).first()
 
         assertEquals(SystemPromptMode.STRIP, topology.projects.values.single().systemPromptMode)
-        assertEquals(CheckStatus.OK, row.status)
-        assertEquals("project:$tmp strip (inline)", row.detail)
+        assertEquals(CheckStatus.WARN, row.status)
+        assertTrue(row.detail.contains("system_prompt_mode = \"strip\" (inline)"), row.detail)
+        assertTrue(row.detail.contains("yours to own"), row.detail)
     }
 
     @Test

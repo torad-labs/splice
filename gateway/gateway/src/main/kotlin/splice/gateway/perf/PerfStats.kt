@@ -4,6 +4,15 @@
 // Reads are TAIL-BOUNDED (readJsonlTail) so the control-plane aggregation never heap-loads an
 // unbounded history; the file is additive state (a new `<head>-perf.jsonl` beside the HUD
 // contract files, not part of the frozen name set).
+//
+// V4-133, FEATURES.md §6 ("a perf retention design belongs in the same change"): JsonlSink's
+// 64 MB one-generation rotate keeps exactly one rolled `.1` and DISCARDS the generation before it
+// — `claudex-perf.jsonl.1` was already 67 MB of history one rotate away from gone on the operator's
+// own machine. [archiveDir] is OPT-IN (null = today's exact behaviour, the NEVER-BELOW-STATUS-QUO
+// default) and, when set, copies each about-to-be-discarded `.1` into it before JsonlSink
+// overwrites it, timestamped so two rotates in one process never collide, and sweeps archived files
+// past [archiveRetentionDays]. Team and project tracking then reads a directory of whole rolled
+// generations instead of one that is always about to lose its oldest.
 package splice.gateway.perf
 
 import kotlinx.serialization.json.Json
@@ -13,16 +22,22 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import splice.core.config.Knob
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
+import splice.core.util.RotationArchive
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /** The string facts a perf row carries beside the numeric snapshot. */
 public data class PerfRowMeta(
@@ -50,11 +65,29 @@ private const val DEFAULT_TAIL = 200
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
 
+// why: one rotate is rare (64 MB of turns) and per-second is unique enough that two rotates of the
+// same file in one process cannot collide on the archived name.
+private val ARCHIVE_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+
+// why: archiveRetentionDays is a day count; the sweep compares epoch millis against a millis window.
+private const val DAY_MS = 86_400_000L
+
 public class PerfStats(
     private val file: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
+    /** V4-133: where rolled-out generations are archived before JsonlSink overwrites them. Null
+     *  (every construction site before this row, and every one this row did not touch) is today's
+     *  exact behaviour — one generation, then discard. */
+    private val archiveDir: Path? = null,
+    private val archiveRetentionDays: Int = (Knob.PERF_ARCHIVE_RETENTION_DAYS.default as Long).toInt(),
+    /** V4-133: the rotate threshold [record] appends against — JsonlSink's own default for every
+     *  construction site this row did not touch, injectable so a test can force a rotation (and
+     *  therefore the archive hook) without writing 64 MB of turns. */
+    private val maxBytes: Long = JsonlSink.DEFAULT_MAX_BYTES,
 ) {
+    private val archive: RotationArchive =
+        if (archiveDir == null) JsonlSink.NO_ARCHIVE else RotationArchive { rolled -> archiveRolled(rolled) }
 
     private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -102,7 +135,7 @@ public class PerfStats(
         AsyncFileIo.submit {
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
-                JsonlSink.appendLine(file, row)
+                JsonlSink.appendLine(file, row, maxBytes = maxBytes, archive = archive)
             }
         }
         return ts
@@ -184,6 +217,33 @@ public class PerfStats(
     private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {
         row.forEach { (k, v) ->
             (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
+        }
+    }
+
+    /** [JsonlSink.RotationArchive]'s hook: copy the generation JsonlSink is about to overwrite into
+     *  [archiveDir], named so two rotates of the same file never collide, then sweep archived files
+     *  past [archiveRetentionDays]. Runs on the file-IO lane already inside [Cancellables]'s guard
+     *  (JsonlSink.rotateIfOver), so a failure here is silent by the SAME contract every other write
+     *  in this class already accepts — the append it rides is never blocked by it. */
+    private fun archiveRolled(rolled: Path) {
+        val dir = archiveDir ?: return
+        Files.createDirectories(dir)
+        val stamp = ARCHIVE_STAMP.format(Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC))
+        val target = dir.resolve("${file.fileName}-$stamp")
+        Files.copy(rolled, target, StandardCopyOption.REPLACE_EXISTING)
+        sweepArchive(dir)
+    }
+
+    /** Deletes archived generations older than [archiveRetentionDays], relative to now. Today
+     *  counts as one of the kept days, the same convention [splice.core.activity.ActivityDays]
+     *  uses for the console's stores. */
+    private fun sweepArchive(dir: Path) {
+        val oldest = clock() - archiveRetentionDays.coerceAtLeast(1) * DAY_MS
+        Files.newDirectoryStream(dir).use { entries ->
+            entries.filter { entry -> entry.fileName.toString().startsWith("${file.fileName}-") }
+                .forEach { entry ->
+                    if (Files.getLastModifiedTime(entry).toMillis() < oldest) Files.deleteIfExists(entry)
+                }
         }
     }
 }

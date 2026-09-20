@@ -485,4 +485,27 @@ public enum class Knob(
         default = 4L shl 20,
         restartRequired = true,
     ),
+
+    // V4-133, FEATURES.md §5/§6: PUT /api/budgets lets an operator create a budget with no
+    // explicit action; this is what it gets. Hot (read per PUT, never snapshotted) so an operator
+    // can tighten the default without a restart.
+    BUDGET_DEFAULT_ACTION(
+        "budgetDefaultAction",
+        KnobKind.STRING,
+        listOf("SPLICE_BUDGET_DEFAULT_ACTION"),
+        "warn",
+    ),
+
+    // V4-133: how many days of rolled-out perf generations PerfStats.archiveDir keeps (see its
+    // header) once an operator points a head's PerfStats at one. Same shape as
+    // activityRetentionDays: whole archived files older than the window are swept on the next
+    // rotation. Inert until PerfStats is constructed with a non-null archiveDir (ManagedHeadFactory,
+    // outside this row's fence — see the row's report for the exact wiring line).
+    PERF_ARCHIVE_RETENTION_DAYS(
+        "perfArchiveRetentionDays",
+        KnobKind.NUMBER,
+        listOf("SPLICE_PERF_ARCHIVE_RETENTION_DAYS"),
+        default = 90L,
+        restartRequired = true,
+    ),
 }

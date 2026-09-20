@@ -40,10 +40,15 @@ import splice.control.DoctorReport
 import splice.control.UpgradeStatus
 import splice.control.api.ConsoleEvent
 import splice.control.api.EventBus
+import splice.control.api.PlaygroundProbe
 import splice.core.activity.ACTIVITY_DIRECTORY
 import splice.core.activity.ALL_HEADS
 import splice.core.activity.ActivityStores
 import splice.core.activity.MessageEdge
+import splice.core.alert.ALERTS_FILE
+import splice.core.alert.AlertStore
+import splice.core.budget.BUDGETS_FILE
+import splice.core.budget.BudgetStore
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
@@ -85,6 +90,15 @@ internal object ConsoleWiring {
         srv.ports.topology = topology.path?.let { TopologyWriter(it, TopologyParse(TopologyLoader::parse)) }
     }
 
+    /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out
+     *  of ControlPlane.start() (LongMethod, the same reason these ports moved here in V4-161) — the
+     *  same settable-after-construction shape [wire] uses for its four, assigned right after it. */
+    internal fun wireV4133(srv: ControlServer, budgets: BudgetStore, alerts: AlertStore, playground: PlaygroundProbe) {
+        srv.ports.budgets = budgets
+        srv.ports.alerts = alerts
+        srv.ports.playground = playground
+    }
+
     /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with
      *  the two knobs read once (both restartRequired). A retention below one day would keep nothing,
      *  including today, so it is read as one. */
@@ -97,6 +111,14 @@ internal object ConsoleWiring {
 
     /** V4-131: the daemon's ONE team store, `teams.json` under the state dir. */
     internal fun teamStore(statePaths: StatePaths): TeamStore = TeamStore(statePaths.stateDir.resolve(TEAMS_FILE))
+
+    /** V4-133: the daemon's ONE budget store, `budgets.json` under the state dir. */
+    internal fun budgetStore(statePaths: StatePaths): BudgetStore =
+        BudgetStore(statePaths.stateDir.resolve(BUDGETS_FILE))
+
+    /** V4-133: the daemon's ONE alert-settings store, `alerts.json` under the state dir. */
+    internal fun alertStore(statePaths: StatePaths): AlertStore =
+        AlertStore(statePaths.stateDir.resolve(ALERTS_FILE))
 
     /** V4-131: a session id to its SendMessage address, from the same registry /api/sessions reads (the
      *  home the state dir lives under, as ControlPlane.start derives it), for the slot text's lead line. */

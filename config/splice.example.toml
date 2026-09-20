@@ -780,6 +780,8 @@ command = "claude-splice"
 # materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits
 # activityRetentionDays = 90                                # days; message edges and activity labels kept, whole days
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
+# budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
+# perfArchiveRetentionDays = 90                              # days; archived perf generations kept, once archiveDir is set
 
 # ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
 # Precedence for every name below is env > TOML > default: an environment variable beats the TOML
@@ -819,6 +821,7 @@ command = "claude-splice"
 #   SPLICE_MAX_REQUEST_BYTES maxRequestBytes          SPLICE_REQUEST_READ_TIMEOUT_MS requestReadTimeoutMs
 #   SPLICE_MATERIALIZATION_PERMITS materializationPermits
 #   SPLICE_ACTIVITY_RETENTION_DAYS activityRetentionDays  SPLICE_ACTIVITY_STORE_HEADS activityStoreHeads
+#   SPLICE_BUDGET_DEFAULT_ACTION budgetDefaultAction      SPLICE_PERF_ARCHIVE_RETENTION_DAYS perfArchiveRetentionDays
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup

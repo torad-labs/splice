@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Added
+- **Shared MCP hosting's census now covers all five places a server can be declared, not one
+  (V4-146).** McpGlobalRead read exactly `<home>/.claude.json`'s top-level `mcpServers` and
+  nothing else, so `/api/mcp` — and the benchmark V4-08 shipped against — could see under a
+  tenth of what a box actually runs: measured here, 10 servers in that one file against 139
+  registrations once every project-scoped override nested inside `.claude.json`, every repo's
+  own `.mcp.json`, and every plugin's `.mcp.json` or inline `plugin.json` `mcpServers` are
+  counted too. `/api/mcp`'s new `sources` section reports a per-kind scan (roots looked at,
+  files scanned, registrations found — a kind given nowhere to look refuses construction rather
+  than reporting a quiet zero) and a disposition for every server found: `migrated` when
+  McpSharing's own plan already hosts it, `excluded` with a written reason (a different Claude
+  identity's file, or a plugin-owned manifest — Claude Code's plugin precedence matches by
+  endpoint, so a user-scope override pointed at the daemon would add a process rather than
+  replace one), or `pending` for a project or repo override the census can now see but the
+  rewrite pipeline does not yet touch. The pipeline that actually hosts a server is unchanged —
+  only the canonical home's global entries are rewritten, exactly as before.
 - **A llama-server head keeps each conversation on its own slot (V4-165).** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,
   so a new session sharing Claude Code's ~30K preamble took an idle conversation's slot and that

@@ -2249,7 +2249,7 @@ def _hydrate_traces(path: str, _hydrate_script: str | None = None) -> None:
     script = Path(_hydrate_script) if _hydrate_script is not None else Path(__file__).resolve().parents[2] / "scripts" / "hydrate-traces.py"
     if not script.is_file():
         return
-    out_path = Path("dev") / "campaigns" / "traces" / f"{Path(path).stem}.jsonl"
+    out_path = Path(".dev") / "campaigns" / "traces" / f"{Path(path).stem}.jsonl"
     try:
         proc = subprocess.run(
             [sys.executable, str(script), path, "--out", str(out_path)],
@@ -6157,12 +6157,12 @@ def _cmd_selftest_body(path):
             ["git", "-C", str(git_repo), "config", "user.name", "Manifest Selftest"],
             check=True,
         )
-        fixture_manifest = git_repo / "dev" / "campaigns" / "orchestration-product.toml"
+        fixture_manifest = git_repo / ".dev" / "campaigns" / "orchestration-product.toml"
         fixture_manifest.parent.mkdir(parents=True, exist_ok=True)
         _selftest_fixture_copy(path, fixture_manifest)
-        fixture_script = git_repo / "dev" / "campaigns" / "manifest.py"
+        fixture_script = git_repo / ".dev" / "campaigns" / "manifest.py"
         shutil.copy(__file__, fixture_script)
-        fixture_toml = git_repo / "dev" / "campaigns" / "fixture.toml"
+        fixture_toml = git_repo / ".dev" / "campaigns" / "fixture.toml"
         fixture_toml.write_text("base fixture\n", encoding="utf-8")
         subprocess.run(
             [
@@ -6275,7 +6275,7 @@ def _cmd_selftest_body(path):
         # automatically wherever the script lands. (The broken-hydrate error path below provides its
         # OWN script, so it stays portable and always runs.)
         hydrate_script = Path(__file__).resolve().parents[2] / "scripts" / "hydrate-traces.py"
-        trace_path = git_repo / "dev" / "campaigns" / "traces" / f"{fixture_manifest.stem}.jsonl"
+        trace_path = git_repo / ".dev" / "campaigns" / "traces" / f"{fixture_manifest.stem}.jsonl"
         if hydrate_script.is_file():
             assert trace_path.exists(), trace_path
             trace_records = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -6339,7 +6339,7 @@ def _cmd_selftest_body(path):
     # this exact fixture_root/fixture_script/fixture_ledger.
     fixture_root = Path(tempfile.mkdtemp(prefix="manifest-notify-fixture-"))
     subprocess.run(["git", "-C", str(fixture_root), "init", "-q"], check=True)
-    fixture_campaigns_dir = fixture_root / "dev" / "campaigns"
+    fixture_campaigns_dir = fixture_root / ".dev" / "campaigns"
     fixture_campaigns_dir.mkdir(parents=True)
     fixture_script = fixture_campaigns_dir / "manifest.py"
     shutil.copy(__file__, fixture_script)

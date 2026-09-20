@@ -5,7 +5,10 @@ package splice.control
 
 import splice.control.api.DaemonSupervised
 import splice.control.api.EventBus
+import splice.control.api.PlaygroundProbe
 import splice.core.activity.ActivityStores
+import splice.core.alert.AlertStore
+import splice.core.budget.BudgetStore
 import splice.core.compaction.CompactionInstructions
 import splice.core.teams.TeamStore
 import splice.core.topology.TopologyWriter
@@ -102,4 +105,16 @@ public class ConsolePorts {
      *  is a port at all. Assigned by ConsoleWiring after construction like every port above; null
      *  answers those four routes with a named 503, never a payload that reads as "no accounts". */
     public var accounts: ConsoleAccounts? = null
+    /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget store, assigned by ControlPlane after
+     *  construction like [teams]. Null answers GET/PUT /api/budgets with a named 503 — an
+     *  unwired store must never read as "nothing budgeted". */
+    public var budgets: BudgetStore? = null
+
+    /** V4-133: the daemon's ONE alert-settings store, assigned like [budgets]. Null answers
+     *  GET/PUT /api/alerts and POST /api/alerts/test with a named 503. */
+    public var alerts: AlertStore? = null
+
+    /** V4-133: the daemon's ONE upstream probe for POST /api/playground, assigned like [budgets].
+     *  Null answers with a named 503 — never a payload that reads as a completed run. */
+    public var playground: PlaygroundProbe? = null
 }

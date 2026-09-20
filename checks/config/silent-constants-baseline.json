@@ -2,7 +2,7 @@
   "_note": "AUTHORED BY checks/silent-constants.ts --record, MEASURED never estimated. Every entry is a numeric `const val` in main sources with no adjacent reason comment (see that file's WHAT COUNTS AS A REASON). The gate fails on GROWTH and on a STALE entry held above the measurement, so lowering an entry is how a fix is recorded. This file is a debt inventory with a one-way valve; it is meant to shrink to nothing.",
   "recorded": "2026-09-17",
   "denominator": 566,
-  "total": 410,
+  "total": 409,
   "files": {
     "gateway/app/src/main/kotlin/splice/app/AuthHttpClientFactory.kt": 3,
     "gateway/app/src/main/kotlin/splice/app/AuthProbeLoop.kt": 3,
@@ -103,7 +103,7 @@
     "gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt": 2,
     "gateway/core/src/main/kotlin/splice/core/util/AsyncFileIo.kt": 2,
     "gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt": 2,
-    "gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt": 2,
+    "gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt": 1,
     "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughEffortLadder.kt": 2,
     "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/ToolNameShortener.kt": 4,
     "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt": 3,

@@ -74,6 +74,16 @@ internal class ControlPlane(
     /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */
     internal val teams = ConsoleWiring.teamStore(statePaths)
 
+    /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget and alert-settings stores. */
+    internal val budgets = ConsoleWiring.budgetStore(statePaths)
+    internal val alerts = ConsoleWiring.alertStore(statePaths)
+
+    /** V4-133: POST /api/playground's ONE upstream probe. Built from [topology]'s booted path (not
+     *  the Topology object itself — see UpstreamPlaygroundProbe's header for why it re-parses fresh
+     *  per call) so a null path (a daemon booted without a config file) degrades the same way
+     *  [ConsoleWiring.wire]'s topology writer does. */
+    internal val playground = UpstreamPlaygroundProbe(topology.path)
+
     /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held
      *  here, like [probeScope], because both sides of it hang off this class: Daemon hands [console]
      *  to HeadServerFactory before any head exists, and [start] hands its bus to the ControlServer. */
@@ -146,23 +156,7 @@ internal class ControlPlane(
             ),
             clientVersions = clientVersions,
         )
-        // V4-136: assigned HERE, immediately after construction, because a constructor parameter
-        // would widen ControlServer to 18 and the width ratchet forbids it. The compiler therefore
-        // cannot check this line, which is exactly why a pin exists: removing it must fail a test,
-        // not just leave the route answering its named 5xx in production.
-        srv.ports.compaction = compactionInstructions
-        // V4-127/V4-137: the console's four ports, assigned for the same reason [compaction] is and
-        // carrying the same hazard. They live in ConsoleWiring.kt (V4-156, concentration); this call
-        // is pinned by ConsoleWiringPinTest, because deleting it would unwire all four at once.
-        ConsoleWiring.wire(srv, topology)
-        // V4-134: THE SAME bus the heads publish to. ControlServer has no bus of its own and answers
-        // /api/events with a named 503 until this line runs; OneEventBusPinTest fails if the route's
-        // bus and a head's are ever different instances.
-        srv.ports.events = console.bus
-        // V4-130: the SAME stores the heads write through [console], read by the sessions routes.
-        srv.ports.activity = console.stores
-        // V4-131: the SAME team store the heads' slot resolver reads, so an edit applies on the next turn.
-        srv.ports.teams = teams
+        wireConsolePorts(srv)
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes
@@ -171,6 +165,29 @@ internal class ControlPlane(
             }
             .isSuccess
         return if (controlBound) srv else null
+    }
+
+    /** Every port [srv] takes after construction, extracted out of [start] (LongMethod — the same
+     *  reason ControlServer's own route table split into [ControlServer.consoleRoutes]).
+     *
+     *  V4-136: [compactionInstructions] is assigned HERE, immediately after construction, because a
+     *  constructor parameter would widen ControlServer to 18 and the width ratchet forbids it. The
+     *  compiler therefore cannot check this line, which is exactly why a pin exists: removing it
+     *  must fail a test, not just leave the route answering its named 5xx in production.
+     *
+     *  V4-127/V4-137: [ConsoleWiring.wire]'s four ports carry the same hazard and the same pin
+     *  (ConsoleWiringPinTest). V4-134: [console].bus is THE SAME bus the heads publish to —
+     *  OneEventBusPinTest fails if the route's bus and a head's are ever different instances. V4-130/
+     *  V4-131: the SAME stores/team store the heads already write through. V4-133:
+     *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
+     *  playground probe. */
+    private fun wireConsolePorts(srv: ControlServer) {
+        srv.ports.compaction = compactionInstructions
+        ConsoleWiring.wire(srv, topology)
+        srv.ports.events = console.bus
+        srv.ports.activity = console.stores
+        srv.ports.teams = teams
+        ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
     }
 
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */

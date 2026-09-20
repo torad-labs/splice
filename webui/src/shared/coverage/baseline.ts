@@ -144,6 +144,7 @@ const PENDING: readonly PendingGroup[] = [
       // prompt/HeadSystemPrompt.kt — SystemPromptMode
       'append',
       'replace',
+      'strip',
       // model/TokenCost.kt — ModelRates
       'cache_read',
       'cache_write',

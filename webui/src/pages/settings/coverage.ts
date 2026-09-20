@@ -84,12 +84,12 @@ const EDITABLE_TOPOLOGY = [
 
 /**
  * The denominator's topology names that are not keys at all: the three `Dialect` values and the
- * two `SystemPromptMode` values are what a field may BE, not fields the file carries. The forms
+ * three `SystemPromptMode` values are what a field may BE, not fields the file carries. The forms
  * offer them as choices inside `dialect` and `system_prompt_mode`; there is nothing to set by
  * their own name, which is exactly what read-only means here.
  */
 const DIALECT_VALUES = ['openai-responses', 'openai-chat', 'anthropic-passthrough'] as const;
-const MODE_VALUES = ['append', 'replace'] as const;
+const MODE_VALUES = ['append', 'replace', 'strip'] as const;
 
 /** Retired in code (2026-09-05) but still PARSED, so a config carrying it fails loudly at load.
  *  The daemon's `QuirksConfig.init` refuses it by name; the console must not offer it. */

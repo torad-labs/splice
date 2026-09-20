@@ -82,14 +82,25 @@ class McpContainmentTest {
         try {
             val landed = Files.readString(Path.of("/proc/${child.pid()}/oom_score_adj")).trim()
             if (lowering) {
-                assertEquals(HOSTED_ADJ.toString(), landed, "read back from the child itself, never from the value we asked for")
+                assertEquals(
+                    HOSTED_ADJ.toString(),
+                    landed,
+                    "read back from the child itself, never from the value we asked for",
+                )
                 assertFalse(logged().contains("oom_score_adj is"), logged())
             } else {
                 // The other half of McpContainment.protect, which nothing reached before: a box that
                 // refuses the write must leave splice SAYING the raise did not land. Silence here
                 // would be the uncapped-looks-capped failure this file exists to catch, one level up.
-                assertNotEquals(HOSTED_ADJ.toString(), landed, "the kernel refused the write; a value that landed anyway means the probe is wrong")
-                assertTrue(logged().contains("oom_score_adj is"), "a raise that could not land must be said out loud: ${logged()}")
+                assertNotEquals(
+                    HOSTED_ADJ.toString(),
+                    landed,
+                    "the write was refused, so a value that landed anyway means the probe is wrong",
+                )
+                assertTrue(
+                    logged().contains("oom_score_adj is"),
+                    "a raise that could not land must be said out loud: ${logged()}",
+                )
             }
             assertEquals(before, Files.readString(ours).trim(), "splice's own protection is never written")
         } finally {

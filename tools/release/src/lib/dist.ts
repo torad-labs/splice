@@ -90,7 +90,7 @@ export function enumerationProblem(
   }
   const publishedSet = new Set(published);
   const actual = new Set(readdirSync(distDir)); // dirs too: EVERY entry needs a disposition
-  const unaccounted = [...actual].filter((name) => !publishedSet.has(name) && !(name in excluded)).sort();
+  const unaccounted = [...actual].filter((name) => !publishedSet.has(name) && !Object.hasOwn(excluded, name)).sort();
   const missing = [...publishedSet].filter((name) => !actual.has(name)).sort();
   if (unaccounted.length > 0) {
     return `release verify: dist/ files with NO disposition (publish or exclude-with-reason): ${asList(unaccounted)}`;

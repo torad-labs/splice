@@ -82,7 +82,7 @@ rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "provider-openai", "daemon-head", "app", "fir-checks",
+  "providers-openai", "daemon-head", "app", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -122,7 +122,7 @@ adding `client/src/main/**/*.kt` to the rule, fixing those two, and deleting `cl
 rule = "kt-no-exception-as-outcome"
 modules = [
   "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
-  "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "provider-openai",
+  "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai",
   "daemon-head", "daemon-control", "app", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -148,7 +148,7 @@ rule = "kt-no-runblocking-exported-bridge"
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "provider-openai", "daemon-head", "daemon-control", "fir-checks",
+  "providers-openai", "daemon-head", "daemon-control", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -164,7 +164,7 @@ names no coroutine at all.
 
 [[exclusion]]
 rule = "kt-no-runcatching-in-coroutine"
-modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "provider-openai", "fir-checks"]
+modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai", "fir-checks"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -223,7 +223,7 @@ rule = "kt-no-vanilla-config-dir"
 modules = [
   "core", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "provider-openai", "daemon-head", "fir-checks",
+  "providers-openai", "daemon-head", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -242,7 +242,7 @@ rule = "kt-outcome-tag-single-source"
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "provider-openai", "app", "fir-checks",
+  "providers-openai", "app", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -260,7 +260,7 @@ rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", 
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "provider-openai", "daemon-control", "app", "fir-checks",
+  "providers-openai", "daemon-control", "app", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"

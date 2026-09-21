@@ -157,7 +157,7 @@
     "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt": 1,
     "providers/muse/src/main/kotlin/splice/provider/muse/MuseAuthProvider.kt": 2,
     "providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt": 3,
-    "gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt": 2,
+    "providers/openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt": 2,
     "upstream/src/main/kotlin/splice/upstream/credentials/AccountCredentialEligibility.kt": 3,
     "upstream/src/main/kotlin/splice/upstream/credentials/AccountPool.kt": 3,
     "upstream/src/main/kotlin/splice/upstream/codemode/CodeModeLimits.kt": 7,

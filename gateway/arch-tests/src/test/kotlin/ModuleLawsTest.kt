@@ -55,7 +55,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":providers-grok" to ADAPTER_BASE + ":dialects-openai-responses",
     ":providers-kimi" to ADAPTER_BASE + ":dialects-anthropic",
     ":providers-muse" to ADAPTER_BASE,
-    ":provider-openai" to ADAPTER_BASE + setOf(":dialects-openai-responses", ":dialects-openai-chat"),
+    ":providers-openai" to ADAPTER_BASE + setOf(":dialects-openai-responses", ":dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":daemon-head" to ADAPTER_BASE + DIALECTS,
     // the management plane reads the domain, and the client side it assembles a launch spec for.
@@ -69,7 +69,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":provider-openai", ":app", ":arch-tests", ":fir-checks",
+    ":app", ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -420,7 +420,7 @@ private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
     (":providers-grok" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — grok's tests drive a real gateway server " +
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
-    (":provider-openai" to ":daemon-head") to
+    (":providers-openai" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as provider-grok.",
     (":daemon-head" to ":providers-codex") to
         "pre-existing, 2026-08-16, tracked for removal — two :daemon-head tests still compile " +

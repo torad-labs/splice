@@ -21,7 +21,7 @@ import java.io.File
  *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
     ":core", ":client", ":upstream", ":dialects-openai-responses", ":dialects-openai-chat",
-    ":dialects-anthropic", ":providers-codex", ":providers-grok", ":provider-openai",
+    ":dialects-anthropic", ":providers-codex", ":providers-grok", ":providers-openai",
     ":providers-kimi", ":providers-muse", ":daemon-head", ":daemon-control", ":app", ":fir-checks",
 )
 

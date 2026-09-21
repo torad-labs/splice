@@ -28,7 +28,7 @@ dependencies {
     implementation(project(":providers-grok"))
     implementation(project(":providers-kimi"))
     implementation(project(":providers-muse"))
-    implementation(project(":provider-openai"))
+    implementation(project(":providers-openai"))
     implementation(project(":daemon-head"))
     implementation(project(":daemon-control"))
     implementation(libs.kotlinx.serialization.json)

@@ -1,7 +1,7 @@
 // NEW: openai-platform provider — proves the openai-responses dialect is reused across a THIRD
 // auth/quirk profile (api-key, no account header, summary supported). A real turn through a
 // HeadServer wired with OpenAiResponsesProvider against the shared Responses mock upstream.
-package openai
+package splice.provider.openai
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -32,8 +32,6 @@ import splice.head.compact.ShadowClassifier
 import splice.head.freshPort
 import splice.head.perf.PerfStats
 import splice.head.usage.UsageStore
-import splice.provider.openai.ApiKeyAuthProvider
-import splice.provider.openai.OpenAiResponsesProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient

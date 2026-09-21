@@ -1,7 +1,7 @@
 // NEW: the openai-chat dialect proof — a HeadServer wired with OpenAiChatProvider against a mock
 // Chat Completions upstream serves a real turn (text + reasoning_content + tool_calls + finish),
 // proving "any OpenAI-compatible vendor, zero new translator code". Request-builder shape pinned.
-package openai
+package splice.provider.openai
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -39,8 +39,6 @@ import splice.head.compact.ShadowClassifier
 import splice.head.freshPort
 import splice.head.perf.PerfStats
 import splice.head.usage.UsageStore
-import splice.provider.openai.ApiKeyAuthProvider
-import splice.provider.openai.OpenAiChatProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient

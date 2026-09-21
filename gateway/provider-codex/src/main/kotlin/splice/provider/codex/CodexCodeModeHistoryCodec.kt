@@ -108,4 +108,4 @@ private const val FIELD_ROLE = "role"
 private const val ROLE_DEVELOPER = "developer"
 private const val FIELD_CALL_ID = CODE_MODE_FIELD_CALL_ID
 private const val FIELD_TYPE = CODE_MODE_FIELD_TYPE
-private const val TYPE_CUSTOM_OUTPUT = "custom_tool_call_output"
+internal const val TYPE_CUSTOM_OUTPUT = "custom_tool_call_output"

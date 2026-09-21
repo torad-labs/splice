@@ -1,6 +1,7 @@
 // NEW: validates and resumes active or lost code-mode records from client tool results.
 package splice.provider.codex
 
+import kotlinx.serialization.json.JsonElement
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -43,7 +44,7 @@ internal class CodexCodeModeResume(
         val detail = record.error ?: "code-mode process state was lost; source was not rerun"
         val supplied = suppliedResults(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
         supplied.error?.let { return failure(it) }
-        registry.acceptResults(record, context.digest, supplied.results)
+        registry.acceptResults(record, context.digest, supplied.results, context.turn.toolMedia)
         val interrupted = machine.interrupt(record, detail)
         return if (interrupted is TurnOutcome.Failure) interrupted else continueUpstream(record, context, bodyJson)
     }
@@ -53,11 +54,11 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        val hasExtraContent = wire.hasExtraContent(bodyJson, record)
+        val hasExtraContent = wire.hasExtraContent(bodyJson, record, candidateMedia(record, context.turn))
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
         val supplied = suppliedResults(record, context.turn, mode)
         supplied.error?.let { return failure(it) }
-        registry.acceptResults(record, context.digest, supplied.results)
+        registry.acceptResults(record, context.digest, supplied.results, context.turn.toolMedia)
         record.pending.firstOrNull { it.name !in context.turn.tools }?.let { pending ->
             val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
             return reject(record, context, bodyJson, hasExtraContent, message)
@@ -123,7 +124,7 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        val rewritten = wire.canonicalize(bodyJson, registry.completed(record.key))
+        val rewritten = wire.canonicalize(bodyJson, registry.completed(record.key), context.turn.toolMedia)
         rewritten.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(rewritten.bodyJson)
         return driver.drive(context, null, canonicalBody, context.post(canonicalBody))
@@ -155,6 +156,13 @@ internal class CodexCodeModeResume(
             error = validation.results(record, turn, exposed, current, mode),
         )
     }
+
+    /** V4-179: the follow-ups of results this record has NOT accepted yet. A result already in the
+     *  record without a media entry is legacy and stays that way — it never gains media here. */
+    private fun candidateMedia(
+        record: CodeModeRecord,
+        turn: CodexCodeModeBridge.Turn,
+    ): Map<String, List<JsonElement>> = turn.toolMedia.filterKeys { it !in record.results }
 
     private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.pending.map { pending ->
         val result = record.results.getValue(pending.clientId)

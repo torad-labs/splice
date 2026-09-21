@@ -322,7 +322,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     @Test
     fun `turn builder arms only canonical noncompact lite requests`() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
-        val builder = CodexCodeModeTurnBuilder(manager)
+        val builder = CodexCodeModeTurnBuilder(manager, media())
         listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-astra[1m]", "GPT-6-SOL[500K]").forEach { model ->
             val prepared = builder.prepare(toolBody(), false, "s", built(model, lite = true))
             assertTrue(prepared.roundInterceptor != null, model)
@@ -345,26 +345,38 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     fun `turn builder admits an image result as an announced marker, never a refusal`() {
         // V4-178: this was `assertThrows(IllegalArgumentException)` — the refusal that wedged a
         // live session on a screenshot (the image stays in history, so it refused every turn).
+        // V4-179: the marker tells the truth about where the pixels went — a readable image is
+        // DELIVERED beside the script's output; an unreadable one is omitted with the renderer's reason.
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok"))))
-        val builder = CodexCodeModeTurnBuilder(bridge(runtime))
-        val imageOnly = builder.toolResults(nonTextResultBody()).single().output
-        val marker = "[image omitted by splice code-mode from tool_result toolu_splice_test: image/png, 4 base64 chars"
-        assertEquals(marker, imageOnly.substringBefore(" — "))
-        assertTrue(imageOnly.contains("text only"), imageOnly)
+        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media())
+        val delivered = builder.toolResults(nonTextResultBody()).single().output
+        assertEquals(
+            "[image from tool_result toolu_splice_test: image/png, 4 base64 chars",
+            delivered.substringBefore(" — "),
+        )
+        assertTrue(delivered.contains("delivered to the model beside this script's output"), delivered)
+        assertTrue(delivered.contains("text only"), delivered)
         // The whole turn still prepares: the interceptor is armed, nothing throws.
         val prepared = builder.prepare(nonTextResultBody(), false, "s", built("gpt-6-astra", lite = true))
         assertNotNull(prepared.roundInterceptor)
 
+        val omitted = builder.toolResults(unreadableResultBody()).single().output
+        assertEquals(
+            "[image omitted by splice code-mode from tool_result toolu_splice_test: image/png, 0 base64 chars",
+            omitted.substringBefore(" — "),
+        )
+        assertTrue(omitted.contains("unsupported source"), omitted)
+
         // Text FOLLOWED by an image keeps the text AND announces the image, in order — the silent
         // `filterIsInstance` V4-114 refused to ship is still refused; the announcement is the point.
         val mixed = builder.toolResults(mixedResultBody()).single().output
-        assertTrue(mixed.startsWith("ok[image omitted by splice code-mode"), mixed)
+        assertTrue(mixed.startsWith("ok[image from tool_result toolu_splice_test"), mixed)
     }
 
     @Test
     fun `historical nonbridge image result passes without bridge conversion`() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
-        val built = CodexCodeModeTurnBuilder(manager).prepare(
+        val built = CodexCodeModeTurnBuilder(manager, media()).prepare(
             historicalImageResultBody(),
             compact = false,
             sessionId = "s",

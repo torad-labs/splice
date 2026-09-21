@@ -58,10 +58,12 @@ credentials.json
 .claude/commands/
 .claude/mcp.json
 /torad.json
-/goals/924-enforcement.md
-/dev/session-review-2026-07-18.md
+/.dev/research/924-enforcement.md
+/.dev/session-review-2026-07-18.md
 /.dev/research/gateway-best-practices-2026-07-18.md
 /.dev/research/gateway-gaps-tracker.md
+# release media projects (a node tree per release video)
+/.dev/media/
 # --- end OSS-K entries ---
 
 # transient operator wall grant (/grant) — never committed
@@ -72,6 +74,10 @@ credentials.json
 /.gradle-slot.lock*
 # A host build wrapper's per-project lock. checks/gradle-slot.sh runs gradle through whatever
 # memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
-# lock here. A machine artifact, never source, and the pattern is the SHAPE rather than one tool's
-# name so a box with a differently-named wrapper needs no edit to this file.
+# lock beside the tree it builds — the repository root, where the build is rooted. A machine
+# artifact, never source, and the pattern is the SHAPE rather than one tool's name so a box with a
+# differently-named wrapper needs no edit to this file.
 .*-build.lock
+# per-machine agent tooling installs: skills and hook mirrors for the other seats
+/.agents/
+/.codex/

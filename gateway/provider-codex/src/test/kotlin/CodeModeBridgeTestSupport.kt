@@ -12,8 +12,10 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
+import splice.dialect.responses.ResponsesToolResultMedia
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.CodexQuirks
 import splice.spi.BuiltTurn
 import splice.spi.CodeModeCall
 import splice.spi.CodeModeCell
@@ -55,6 +57,9 @@ abstract class CodeModeBridgeTestSupport {
         ),
     )
 
+    /** The dialect's tool_result image renderer with codex's own quirks — the one production uses. */
+    protected fun media() = ResponsesToolResultMedia(CodexQuirks().defaultQuirks())
+
     protected fun built(model: String, lite: Boolean): BuiltTurn {
         val prefix = if (lite) {
             """{"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"function","name":"Read"}]},{"role":"developer","content":""}]}"""
@@ -81,6 +86,11 @@ abstract class CodeModeBridgeTestSupport {
 
     protected fun nonTextResultBody() = parseBody(
         """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
+    )
+
+    /** V4-179: an image the renderer cannot map (empty payload) — omitted, with DR-164's reason. */
+    protected fun unreadableResultBody() = parseBody(
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}]}]}]}""",
     )
 
     /** V4-114 / V4-178: a bridge tool result whose content is text AND then an image.

@@ -12,7 +12,7 @@ documentation:
   - changed-files:
       - any-glob-to-any-file:
           - '**/*.md'
-          - 'docs/**'
+          - '.docs/**'
 
 ci:
   - changed-files:

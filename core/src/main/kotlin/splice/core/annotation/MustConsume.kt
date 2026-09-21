@@ -1,7 +1,7 @@
-// NEW: (discipline L4, 2026-07-19) the must-use marker enforced by the :fir-checks compiler plugin.
+// NEW: (discipline L4, 2026-07-19) the must-use marker enforced by the :quality-compiler-plugin compiler plugin.
 // Shape borrowed from Rust's #[must_use]: a value the caller MUST consume — dropping it on the floor
 // is a COMPILE ERROR, not a lint. Lives in :core (framework-free) so every producer module can wear
-// it without a new dependency; the wall that reads it is MustConsumeDiscardChecker in :fir-checks.
+// it without a new dependency; the wall that reads it is MustConsumeDiscardChecker in :quality-compiler-plugin.
 //
 // Retention is BINARY (not SOURCE): the marker must survive into Kotlin metadata so a cross-module
 // FIR checker resolving a callee from :core's jar can still see the annotation at :app/:daemon-head

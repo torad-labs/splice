@@ -90,7 +90,7 @@
  *   · SEMANTIC DEADNESS ONE LEVEL DOWN. A key read into a variable that is then never used, or
  *     threaded into a field nothing consults, passes. Only the first hop is checked on the schema
  *     plane and two on the knob plane; a full reachability answer needs the compiler
- *     (:fir-checks), not a regex.
+ *     (:quality-compiler-plugin), not a regex.
  *
  * SELFTEST. `--selftest` builds temp trees and proves BOTH directions plus the boring cases:
  * GREEN on a key read in another file, on one read only by its own file's projection, on one

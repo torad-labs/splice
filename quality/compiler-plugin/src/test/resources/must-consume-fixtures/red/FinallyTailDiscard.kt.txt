@@ -1,4 +1,4 @@
-// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). The enclosing `try`
+// RED fixture (.kt.txt so it is NOT part of :quality-compiler-plugin' own src/test compile). The enclosing `try`
 // IS consumed (assigned to a val), but a `finally` block never yields a value — the @MustConsume
 // call at its tail is discarded regardless. Must stay a COMPILATION_ERROR.
 package fixtures.red

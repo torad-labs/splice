@@ -1,4 +1,4 @@
-// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). A bare
+// RED fixture (.kt.txt so it is NOT part of :quality-compiler-plugin' own src/test compile). A bare
 // `produceOrNull() ?: 0` statement: the call sits under FirElvisExpression's lhs, and the elvis
 // value itself flows nowhere — the @MustConsume result is discarded. Must be a COMPILATION_ERROR.
 package fixtures.red

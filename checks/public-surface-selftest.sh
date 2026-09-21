@@ -121,10 +121,10 @@ KT
 bun -e "$(cat <<'JS'
 const [path, mod] = process.argv.slice(1);
 const text = await Bun.file(path).text();
-const needle = '    ":fir-checks",\n';
-if (!text.includes(needle)) throw new Error("settings.gradle.kts no longer includes :fir-checks - the injection point moved");
-const dirNeedle = 'project(":fir-checks").projectDir = file("gateway/fir-checks")\n';
-if (!text.includes(dirNeedle)) throw new Error("settings.gradle.kts no longer states :fir-checks' projectDir - the injection point moved");
+const needle = '    ":quality-compiler-plugin",\n';
+if (!text.includes(needle)) throw new Error("settings.gradle.kts no longer includes :quality-compiler-plugin - the injection point moved");
+const dirNeedle = 'project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")\n';
+if (!text.includes(dirNeedle)) throw new Error("settings.gradle.kts no longer states :quality-compiler-plugin' projectDir - the injection point moved");
 await Bun.write(
   path,
   text.replace(needle, needle + `    ":${mod}",\n`)

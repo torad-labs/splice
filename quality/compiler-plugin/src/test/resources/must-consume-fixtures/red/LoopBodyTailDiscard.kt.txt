@@ -1,4 +1,4 @@
-// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). The @MustConsume
+// RED fixture (.kt.txt so it is NOT part of :quality-compiler-plugin' own src/test compile). The @MustConsume
 // call is the TAIL statement of a while-loop body: loop bodies never yield a value, so the tail is
 // a discard (the walk's FirLoop terminal, not the non-tail-statement one). COMPILATION_ERROR.
 package fixtures.red

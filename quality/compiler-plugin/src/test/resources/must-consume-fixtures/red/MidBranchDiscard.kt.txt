@@ -1,4 +1,4 @@
-// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). The enclosing `if`
+// RED fixture (.kt.txt so it is NOT part of :quality-compiler-plugin' own src/test compile). The enclosing `if`
 // IS consumed (assigned to a val), but the @MustConsume call is a NON-TAIL statement inside the
 // branch block — its value flows nowhere regardless of the if's fate. Must stay a COMPILATION_ERROR.
 package fixtures.red

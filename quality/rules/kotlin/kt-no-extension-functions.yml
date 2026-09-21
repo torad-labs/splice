@@ -27,7 +27,7 @@
 # regex was approximate. Both matchers agreed at 28 on the pre-HD-20 tree, so the strengthening
 # changed no census number here; it removes a class of future blindness, not a current finding.
 #
-# CARVE-OUT — `override`. Two declarations in gateway/fir-checks CANNOT be written any other way:
+# CARVE-OUT — `override`. Two declarations in quality/compiler-plugin CANNOT be written any other way:
 # the Kotlin compiler plugin API declares
 #   `abstract fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration)`
 #   `protected abstract fun ExtensionRegistrarContext.configurePlugin()`

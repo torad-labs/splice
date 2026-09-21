@@ -64,6 +64,18 @@ tasks.withType<Test>().configureEach {
     val testHome = layout.buildDirectory.dir("test-home").get().asFile
     doFirst { testHome.resolve("config").mkdirs() }
     environment("XDG_CONFIG_HOME", testHome.resolve("config").absolutePath)
+    // HERMETIC ENVIRONMENT — the other half of HERMETIC HOME, and the half that was still open.
+    // ApiKeyAuthProvider.readKey reads the ENV VAR FIRST, then the key file, then the store
+    // (splice/provider/openai/ApiKeyAuthProvider.kt:74-80), so pointing the store at the rig leaves
+    // the FIRST source of the operator's real credentials inherited straight from the shell that
+    // ran gradle. Measured 2026-09-21 on the consolidated tip with OPENROUTER_API_KEY exported
+    // here: MultiProviderDaemonTest's DR-81 arm read the live key where its own fixture had just
+    // deleted the key file (so the advertiser never re-armed), and the openrouter turn arm sent
+    // that real key to the in-process mock upstream instead of the fixture's. Both were green in
+    // CI, where nothing is exported — a suite that measures the developer's shell is red somewhere
+    // else, and it walks a genuine credential into a test's own recording. A test that needs a key
+    // env var injects its own EnvReader; none may inherit one.
+    setEnvironment(environment.filterKeys { !it.endsWith("_API_KEY") && !it.endsWith("_API_TOKEN") })
     // NO REAL BROWSER. SystemBrowserOpener refuses while this is set, so a test that reaches a real
     // OAuth sign-in fails by name instead of opening a login page on the operator's desktop and
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.

@@ -9,5 +9,6 @@ test "$("$resolved/bin/java" -version 2>&1 | awk -F'"' '/ version "/ { print $2;
 test -s gradle/verification-metadata.xml
 grep -q '<verify-metadata>true</verify-metadata>' gradle/verification-metadata.xml
 grep -q '<sha256 value=' gradle/verification-metadata.xml
-./gradlew -q :core:compileKotlin --dependency-verification=strict
+# Through the slot (see verify-OSS-B.sh).
+bash checks/gradle-slot.sh oss-j -q :core:compileKotlin --dependency-verification=strict
 echo "VERIFY OSS-J: OK"

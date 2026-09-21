@@ -75,11 +75,24 @@ internal class ProjectMap private constructor(
             }
             .toList()
 
-    /** THE ONE TRAVERSAL both walks use — never below a directory whose name is on the list. It is
-     *  the same bound the build's census input applies, so a file the build cannot see (Kotlin under
-     *  a `build/` inside a source root, say) cannot decide this sweep's verdict either: an
-     *  incremental run and a forced run must agree about every file. */
-    private fun swept(from: File): Sequence<File> = from.walkTopDown().onEnter { it.name !in notSwept }
+    /** THE ONE TRAVERSAL both walks use — never below a directory whose name is on the list, and
+     *  never into another repository's tree. It is the same bound the build's census input applies,
+     *  so a file the build cannot see (Kotlin under a `build/` inside a source root, say) cannot
+     *  decide this sweep's verdict either: an incremental run and a forced run must agree about
+     *  every file.
+     *
+     *  THE `.git` RULE (PR 2 review). A directory BELOW [from] that carries a `.git` entry — a FILE
+     *  reading `gitdir: …` for a worktree, a DIRECTORY for a submodule or a vendored clone — is
+     *  where another repository starts, and its sources are not this build's to grade. With the
+     *  Gradle root at the repository root this sweep reaches the whole checkout, and the real one
+     *  carries `.claude/worktrees/<name>/` with a complete gateway/core/src/main/kotlin inside it:
+     *  the law named `.claude/worktrees/v0.4.0/gateway/core` against mapped `gateway/core`. [from]
+     *  itself is exempt because the repository root carries `.git` too, and pruning it would blank
+     *  the sweep — a law that reports nothing is the fail-open shape this file exists against.
+     *  gateway/arch-tests/build.gradle.kts applies the same rule to the task's census fingerprint;
+     *  a tree one of them reads and the other does not is an UP-TO-DATE green over an unrun sweep. */
+    private fun swept(from: File): Sequence<File> =
+        from.walkTopDown().onEnter { it.name !in notSwept && (it == from || !File(it, ".git").exists()) }
 
     internal companion object {
         /** The channel: `:path=directory` pairs, `;`-separated, written by arch-tests/build.gradle.kts. */

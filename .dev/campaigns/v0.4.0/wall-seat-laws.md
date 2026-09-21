@@ -58,7 +58,7 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    inactive/failed, AND this probe must be empty:
      for p in $(pgrep -u marcos -x java); do tr '\0' ' ' </proc/$p/cmdline | grep -qE 'GradleWrapperMain|GradleDaemon' && echo busy $p; done
    (`pgrep -f` self-matches — never use it). Then run inside the memory slice:
-     buildgate ./gradlew --offline --no-daemon <tasks>
+     bash checks/gradle-slot.sh <seat-label> <tasks>
    Wait with a bounded loop (sleep 30; recheck), never a spin. Never kill a java process.
 6. A compaction is NOT a stop: your session compacts and continues; re-read your rows with `get`
    and carry on. Never hand work back citing context.

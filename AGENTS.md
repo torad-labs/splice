@@ -148,7 +148,7 @@ npm test -w webui     # vitest
 npm run build -w webui# tsc strict + single-file dist (commit dist/index.html)
 ```
 
-The Kotlin gateway tier runs under `./gradlew check` (from `gateway/`, JDK 21): module-law
+The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law
 (config-time), detekt (`maxIssues:0`), the Konsist arch-tests, every unit test, and the
 1000-stream load test. It runs in CI (`gateway-gradle` job) and inside `npm run gate`. Before this
 existed it was authored but NEVER executed by automation — only the ast-grep walls ran.

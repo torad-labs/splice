@@ -31,6 +31,26 @@ val moduleDirectories: Map<String, String> = rootProject.subprojects
 // than the sweep walks.
 val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modules")
 
+// THE `.git` RULE (PR 2 review), the Gradle half of ProjectMap.swept(). A directory BELOW the root
+// carrying a `.git` entry — a FILE reading `gitdir: …` for a worktree, a DIRECTORY for a submodule
+// or a vendored clone — is where another repository starts. Now that the Gradle root IS the
+// repository root, the census below reaches the whole checkout, and the real one carries
+// `.claude/worktrees/<name>/` with a complete gateway/core/src/main/kotlin inside it. Fingerprinting
+// that tree would re-run these laws on another repository's edits; sweeping it made the law report
+// `.claude/worktrees/v0.4.0/gateway/core` as unclaimed. The root itself is never tested — it carries
+// `.git` too, and excluding it would empty the census. ProjectMap.kt is the twin: a tree one of them
+// reads and the other does not is an UP-TO-DATE green over a sweep that never ran. The walk RECORDS
+// a nested repository and never enters it — descending would read a whole second checkout at
+// configuration time, on every invocation, to reach directories this list is about to exclude.
+fun nestedRepositoriesBelow(dir: File): List<File> =
+    dir.listFiles().orEmpty()
+        .filter { it.isDirectory && it.name !in censusNotSwept }
+        .flatMap { child -> if (File(child, ".git").exists()) listOf(child) else nestedRepositoriesBelow(child) }
+
+val nestedRepositories: List<String> = nestedRepositoriesBelow(repoRoot.asFile)
+    .map { it.relativeTo(repoRoot.asFile).invariantSeparatorsPath }
+    .sorted()
+
 tasks.withType<Test>().configureEach {
     systemProperty("splice.root", repoRoot.asFile.absolutePath)
     // THE CHANNEL: `:path=directory` pairs, ';'-separated, parsed by ProjectMap.kt and nowhere
@@ -60,6 +80,7 @@ tasks.withType<Test>().configureEach {
         repoRoot.asFileTree.matching {
             include("**/src/main/kotlin/**/*.kt")
             censusNotSwept.forEach { name -> exclude("**/$name/**") }
+            nestedRepositories.forEach { dir -> exclude("$dir/**") }
         },
     ).withPropertyName("productionSourceCensus")
     // Same lesson, second input set (HD-11): the module-dependency-direction law reads the BUILD

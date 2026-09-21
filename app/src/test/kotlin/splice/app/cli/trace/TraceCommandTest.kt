@@ -7,6 +7,7 @@ package splice.app.cli.trace
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -27,6 +28,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
 
@@ -107,6 +109,15 @@ class TraceCommandTest {
             System.setErr(prevErr)
         }
         return Triple(ok, out.toString(), err.toString())
+    }
+
+    /** A line the writer did not produce, appended to the day file TraceStore just wrote. The
+     *  glob skips JsonlSink's `.lock` sibling, and names the day file from the directory rather
+     *  than from DAY_ONE's spelling. */
+    private fun appendForeign(env: EnvReader, line: String) {
+        val dir = StatePaths(envReader = env).traceDir
+        val day = Files.newDirectoryStream(dir, "openrouter-*.jsonl").use { it.single() }
+        Files.writeString(day, "$line\n", StandardOpenOption.APPEND)
     }
 
     @Test
@@ -199,6 +210,46 @@ class TraceCommandTest {
         assertFalse(Files.exists(dayFile))
         val (_, again, _) = capture { TraceCommand().trace(listOf("openrouter", "--purge"), env) }
         assertTrue(again.contains("nothing to purge"), again)
+    }
+
+    @Test
+    fun `a line with a turn id but no kind this reader places is counted, never a turn`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        // TraceStore writes neither of these, which is the point: a torn append that still parses,
+        // and a record kind a newer daemon writes into a file this older CLI reads. Both carry a
+        // turn id, and neither puts a record under it.
+        appendForeign(env, """{"kind":"frame","turn":"turn-3","ts":$DAY_ONE,"session":"gamma-session"}""")
+        appendForeign(env, """{"turn":"turn-4","ts":$DAY_ONE}""")
+
+        val (ok, out, _) = capture { TraceCommand().trace(listOf("openrouter"), env) }
+
+        assertTrue(ok, out)
+        assertTrue(out.contains("2 of 2 turn(s) on disk"), out)
+        assertTrue(out.contains("2 line(s) skipped"), out)
+        assertFalse(out.contains("turn-3") || out.contains("turn-4"), "no turn was invented for them: $out")
+    }
+
+    @Test
+    fun `an id only a skipped line named is no turn - --turn and --session say so`(@TempDir tmp: Path) {
+        val env = env(tmp)
+        writeTrace(env)
+        appendForeign(env, """{"kind":"frame","turn":"turn-3","ts":$DAY_ONE,"session":"gamma-session"}""")
+
+        val (okTurn, _, errTurn) = capture { TraceCommand().trace(listOf("openrouter", "--turn", "turn-3"), env) }
+        assertFalse(okTurn)
+        assertTrue(errTurn.contains("no turn turn-3 in openrouter's trace"), errTurn)
+
+        // --session reads EVERY turn's session, so it reaches a recordless turn before the table does.
+        val (okSession, out, _) = capture { TraceCommand().trace(listOf("openrouter", "--session", "gamma"), env) }
+        assertTrue(okSession, out)
+        assertTrue(out.contains("0 of 2 turn(s) on disk"), out)
+    }
+
+    @Test
+    fun `a turn holding no records is refused at construction, not at the first column`() {
+        val empty = assertThrows(IllegalArgumentException::class.java) { TracedTurn("turn-0", emptyList(), null) }
+        assertTrue(empty.message.orEmpty().contains("turn-0"), empty.message.orEmpty())
     }
 
     @Test

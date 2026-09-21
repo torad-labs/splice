@@ -2,8 +2,8 @@
 // retained day, parsed and grouped by turn, oldest first. Reads the SAME day files the daemon's
 // TraceStore writes (StatePaths.traceDir, `<head>-YYYY-MM-DD.jsonl`) through the same ActivityDays,
 // so the CLI needs no daemon — the perf/logs idiom — and can never disagree with the writer about
-// where a head's trace lives. A line that is not JSON is counted, not fatal: a torn append heals on
-// the next write (JsonlSink) and the operator is told how many lines were skipped.
+// where a head's trace lives. A line this reader cannot place is counted, not fatal: a torn
+// append heals on the next write (JsonlSink) and the operator is told how many were skipped.
 package splice.app.cli.trace
 
 import kotlinx.serialization.json.Json
@@ -18,6 +18,13 @@ import java.nio.file.Path
 /** Every record of one turn, in the order they were written: the attempts, then the turn record
  *  (null when the turn has not ended yet, or its ending was lost to the file lane). */
 internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, val turn: JsonObject?) {
+    init {
+        // `first` is the record every column is read off, so a turn holding neither an attempt
+        // nor a turn record has nothing to show. TraceRows groups only records it placed under
+        // an id; this is that contract, stated where a future producer has to meet it.
+        require(turn != null || attempts.isNotEmpty()) { "traced turn $id holds no records" }
+    }
+
     val first: JsonObject get() = turn ?: attempts.first()
     val ts: Long get() = JsonScalars.long(first, "ts") ?: 0L
     val session: String? get() = JsonScalars.str(first, "session")
@@ -45,18 +52,25 @@ internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = tru
                 skipped += 1
                 continue
             }
+            // A turn is created only by a kind that puts a record IN it. A line carrying a turn
+            // id under a kind this reader has no branch for — a foreign line, or a record kind a
+            // newer writer has — used to create the turn here and then fall to `else`, leaving a
+            // turn that holds nothing for TracedTurn.first to read a column off.
+            val kind = JsonScalars.str(record, "kind")
+            if (!placed(kind)) {
+                skipped += 1
+                continue
+            }
             // The attempt list is shared by reference across the pair rewrite below, so an attempt
             // that lands after the turn record (a late file-lane write) still joins its turn.
             val (attempts, _) = byTurn.getOrPut(id) { mutableListOf<JsonObject>() to null }
-            when (JsonScalars.str(record, "kind")) {
-                TraceKinds.ATTEMPT -> attempts += record
-                TraceKinds.TURN -> byTurn[id] = attempts to record
-                else -> skipped += 1
-            }
+            if (kind == TraceKinds.TURN) byTurn[id] = attempts to record else attempts += record
         }
         val turns = byTurn.map { (id, records) -> TracedTurn(id, records.first, records.second) }
         return TraceRead(turns, skipped)
     }
+
+    private fun placed(kind: String?): Boolean = kind == TraceKinds.ATTEMPT || kind == TraceKinds.TURN
 
     private fun parse(line: String): JsonObject? =
         // ast-grep-ignore: kt-no-silent-result-collapse -- V4-174: a torn or foreign line is counted as skipped by the caller and shown to the operator

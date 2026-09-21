@@ -220,7 +220,7 @@ run "schema keys consumed selftest" bash checks/schema-keys-consumed-selftest.sh
 # because that leg PRODUCES the XML they read, and they must read it in the same pass. The results
 # directory is a shared, mutually-destructive observation — any scoped run of one test class in a
 # module wipes every other class's XML in that module, which is measured, not hypothetical (a
-# scoped :gateway:test run by another seat during this row's own development deleted 62 of the 63
+# scoped :daemon-head:test run by another seat during this row's own development deleted 62 of the 63
 # XML files mid-run). Moved above the gradle leg this wall would compare fresh source against
 # absent or stale results and red the whole tree for the wrong reason.
 run "tests are discovered" bun checks/config/tests-are-discovered.ts check .

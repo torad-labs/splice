@@ -82,7 +82,7 @@ rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
   "core", "client", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "gateway", "app", "fir-checks",
+  "provider-openai", "daemon-head", "app", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -102,7 +102,7 @@ would find 28 — local filesystem paths in daemon-log lines, not HTTP-supplied 
 rule = "kt-json-scalars-single-source"
 modules = [
   "core", "client", "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat",
-  "gateway", "fir-checks",
+  "daemon-head", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -123,7 +123,7 @@ rule = "kt-no-exception-as-outcome"
 modules = [
   "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat",
   "provider-codex", "provider-grok", "provider-kimi", "provider-muse", "provider-openai",
-  "gateway", "control", "app", "fir-checks",
+  "daemon-head", "control", "app", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -148,7 +148,7 @@ rule = "kt-no-runblocking-exported-bridge"
 modules = [
   "core", "client", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "gateway", "control", "fir-checks",
+  "provider-openai", "daemon-head", "control", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -168,7 +168,7 @@ modules = ["core", "client", "provider-codex", "provider-grok", "provider-kimi",
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-Declared scope is the turn/stream path: :upstream, the three dialects, :gateway, :control and
+Declared scope is the turn/stream path: :upstream, the three dialects, :daemon-head, :control and
 :app. :core is framework-free vocabulary, the five provider modules are auth/quirk adapters outside
 that path, and :fir-checks is a compiler plugin.
 2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
@@ -223,7 +223,7 @@ rule = "kt-no-vanilla-config-dir"
 modules = [
   "core", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "gateway", "fir-checks",
+  "provider-openai", "daemon-head", "fir-checks",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -267,7 +267,7 @@ date = "2026-09-20"
 reason = """
 Three head-local laws: which QuotaTracker a turn reads, the one sanctioned turn-cleanup flush
 (DR-93), and the paired IOException/IllegalStateException catch on the client socket. All three
-name structures that exist only inside :gateway.
+name structures that exist only inside :daemon-head.
 2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
 the :client extraction, and :core is already excused above for the reason stated — the module
 boundary moved, the wall's declared scope did not. Measured in :client: 0, 0, and 1
@@ -302,13 +302,13 @@ reason = "The sole append-only JSONL sink; re-deriving writeString(CREATE, APPEN
 
 [[exclusion]]
 rule = "kt-l2-single-mirror-definition"
-files = ["gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt"]
+files = ["daemon/head/src/main/kotlin/**/reasoning/Mirror.kt"]
 date = "2026-09-20"
 reason = "L2: mirrorInto is defined exactly once, and this is that file."
 
 [[exclusion]]
 rules = ["kt-l3-end-turn-literal", "kt-l3-sole-wire-terminals"]
-files = ["gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt"]
+files = ["daemon/head/src/main/kotlin/**/wire/SseEmitter.kt"]
 date = "2026-09-20"
 reason = "L3: SseEmitter is the only file allowed to hold the end_turn / message_stop / message_delta literals."
 
@@ -346,7 +346,7 @@ dirname rather than a state root.
 
 [[exclusion]]
 rule = "kt-quota-tracker-single-resolution"
-files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt"]
+files = ["daemon/head/src/main/kotlin/splice/head/admission/TurnQuota.kt"]
 date = "2026-09-20"
 reason = "The sole resolver, created by fix row V4-104."
 
@@ -405,19 +405,19 @@ can export a bridge to it).
 
 [[exclusion]]
 rule = "kt-turn-finally-flush-quietly"
-files = ["gateway/gateway/src/main/kotlin/**/*.kt"]
+files = ["daemon/head/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
 reason = """
-Inside :gateway the wall binds head/*.kt, the directory that owns turn cleanup. wire/, reasoning/
+Inside :daemon-head the wall binds head/*.kt, the directory that owns turn cleanup. wire/, reasoning/
 and the compaction files run no turn-finally block, so there is no flush for them to get wrong.
 """
 
 [[exclusion]]
 rule = "kt-wire-catch-ioexception-alone"
-files = ["gateway/gateway/src/main/kotlin/**/*.kt"]
+files = ["daemon/head/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
 reason = """
-Inside :gateway the wall binds wire/**, the client socket. A CLOSED channel's IllegalStateException
+Inside :daemon-head the wall binds wire/**, the client socket. A CLOSED channel's IllegalStateException
 is only reachable where the socket is written, and that is wire/.
 """
 
@@ -426,8 +426,8 @@ rule = "kt-tests-no-wall-clock"
 files = [
   "client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt",
   "gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt",
-  "gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt",
-  "gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt",
+  "daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt",
+  "daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt",
 ]
 date = "2026-09-20"
 reason = """

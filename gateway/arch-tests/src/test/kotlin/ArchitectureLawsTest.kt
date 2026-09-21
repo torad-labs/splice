@@ -22,7 +22,7 @@ import java.io.File
 private val PORT_SCOPE_MODULES = listOf(
     ":core", ":client", ":upstream", ":dialect-openai-responses", ":dialect-openai-chat",
     ":dialect-anthropic-passthrough", ":provider-codex", ":provider-grok", ":provider-openai",
-    ":provider-kimi", ":provider-muse", ":gateway", ":control", ":app", ":fir-checks",
+    ":provider-kimi", ":provider-muse", ":daemon-head", ":control", ":app", ":fir-checks",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
@@ -368,7 +368,7 @@ class ArchitectureLawsTest {
         // root moved to the repository root and every module's directory gained its `gateway/`.
         val ownModule = map.relativeDir(":dialect-anthropic-passthrough")
         val headAssembly = map.relativeDir(":app")
-        val headModule = map.relativeDir(":gateway")
+        val headModule = map.relativeDir(":daemon-head")
         assertEquals(
             emptyList<String>(),
             passthroughQuirksConstructionViolations(
@@ -389,14 +389,14 @@ class ArchitectureLawsTest {
         )
         assertEquals(
             listOf(
-                "$headModule/src/main/kotlin/splice/gateway/head/HeadServer.kt:2 constructs PassthroughQuirks " +
+                "$headModule/src/main/kotlin/splice/head/HeadServer.kt:2 constructs PassthroughQuirks " +
                     "outside its allowed sites (${allowedPrefixes.joinToString()}) — a provider's " +
                     "deformation profile belongs to the module that owns the provider or to head " +
                     "assembly, not to whichever file happens to need it.",
             ),
             passthroughQuirksConstructionViolations(
-                "$headModule/src/main/kotlin/splice/gateway/head/HeadServer.kt",
-                "package splice.gateway.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
+                "$headModule/src/main/kotlin/splice/head/HeadServer.kt",
+                "package splice.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
                 allowedPrefixes,
             ),
             "a construction outside the allowed sites must fail BY NAME, naming the exact line",

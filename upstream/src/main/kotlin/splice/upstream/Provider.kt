@@ -1,6 +1,6 @@
-// NEW: the Provider SPI (plan). The generic head hosting in :gateway consumes THIS; concrete
+// NEW: the Provider SPI (plan). The generic head hosting in :daemon-head consumes THIS; concrete
 // providers (:provider-codex/grok/openai) implement it by wiring their dialect translators +
-// auth + quirks. This is why :gateway never sees a concrete dialect — the module law forces it.
+// auth + quirks. This is why :daemon-head never sees a concrete dialect — the module law forces it.
 package splice.upstream
 
 import kotlinx.coroutines.flow.Flow
@@ -36,7 +36,7 @@ public interface ProviderIdentity {
     public val watchdog: WatchdogBudget
 
     /** The per-head `<command> login` instruction (empty when the provider has no OAuth login
-     *  flow, e.g. api-key-only heads) — surfaced by [splice.gateway.head.TurnDriver] as an
+     *  flow, e.g. api-key-only heads) — surfaced by [splice.head.turn.TurnDriver] as an
      *  operator hint on AUTHENTICATION-classified failures. */
     public val loginCommand: String
 }

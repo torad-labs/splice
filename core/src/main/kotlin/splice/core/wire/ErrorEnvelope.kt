@@ -6,7 +6,7 @@
 // convention, so a change to one was invisible to the others, which is the class the
 // kt-error-envelope-single-source wall exists to catch.
 //
-// WHY IT LIVES IN CORE, WHICH IS THE WHOLE DESIGN CONSTRAINT: :upstream cannot import :gateway,
+// WHY IT LIVES IN CORE, WHICH IS THE WHOLE DESIGN CONSTRAINT: :upstream cannot import :daemon-head,
 // so a builder in the gateway's wire package is unreachable from the one site that most needs
 // it — our own synthesized failure body, the one the operator saw as braces in his transcript.
 // Core is the lowest module all four can reach.

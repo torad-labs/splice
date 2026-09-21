@@ -8,7 +8,7 @@ dependencies {
     implementation(project(":upstream"))
     implementation(project(":dialect-openai-responses"))
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(project(":gateway"))
+    testImplementation(project(":daemon-head"))
     testImplementation(libs.ktor.client.cio)
-    testImplementation(testFixtures(project(":gateway")))
+    testImplementation(testFixtures(project(":daemon-head")))
 }

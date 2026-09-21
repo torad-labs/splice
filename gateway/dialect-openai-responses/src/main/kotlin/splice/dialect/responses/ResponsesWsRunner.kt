@@ -1,5 +1,5 @@
 // NEW: (ws-transport WS-3, 2026-08-01) the Responses side of the WS seam — everything
-// :gateway is forbidden to know (module law: :gateway may name only :core and :upstream).
+// :daemon-head is forbidden to know (module law: :daemon-head may name only :core and :upstream).
 // It owns the round-terminal vocabulary, the chaining frame, the connection identity, and the
 // commit/clear of chaining state.
 //

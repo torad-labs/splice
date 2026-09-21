@@ -10,6 +10,6 @@ dependencies {
     implementation(project(":dialect-openai-chat"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
-    testImplementation(project(":gateway"))
-    testImplementation(testFixtures(project(":gateway")))
+    testImplementation(project(":daemon-head"))
+    testImplementation(testFixtures(project(":daemon-head")))
 }

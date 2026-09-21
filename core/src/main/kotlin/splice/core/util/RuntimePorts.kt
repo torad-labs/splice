@@ -84,7 +84,7 @@ public fun interface EnvReader {
  * Production wires `System::currentTimeMillis` at every one of its 9 sites. Required wherever the
  * reading CROSSES A BOUNDARY and is therefore read by something that does not share this JVM's
  * arbitrary origin:
- *  - persisted — [splice.gateway.perf.PerfStats] and `CompactStats` write it as the `ts` of a JSONL
+ *  - persisted — [splice.head.perf.PerfStats] and `CompactStats` write it as the `ts` of a JSONL
  *    row, `UsageHud` as `updated_at`, and both are read back after a restart and plotted;
  *  - minted — `MgmtKey.mintedAtMs`, which doctor/status compare against daemon uptime;
  *  - compared against a foreign epoch — the codex/grok/kimi providers weigh it against a token's

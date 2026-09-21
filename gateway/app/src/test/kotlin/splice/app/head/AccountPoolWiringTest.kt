@@ -16,7 +16,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.dialect.chat.ChatQuirks
-import splice.gateway.usage.QuotaTracker
+import splice.head.usage.QuotaTracker
 import splice.provider.openai.OpenAiChatProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool

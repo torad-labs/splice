@@ -28,7 +28,7 @@ private const val HEADS = "heads"
 
 // V4-122: this was 192 with a comment claiming it mirrored EconomicsStore's RETENTION_MS — an
 // equality asserted in PROSE, which nothing enforced and which :control could not import even if it
-// wanted to, having no dependency edge to :gateway. Both spellings of the window now come from
+// wanted to, having no dependency edge to :daemon-head. Both spellings of the window now come from
 // splice.core.perf, which is the lowest module both reach.
 
 internal class EconomicsPayloads(

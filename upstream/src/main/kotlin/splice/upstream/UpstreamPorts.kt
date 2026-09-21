@@ -3,7 +3,7 @@
 // The roles UpstreamClient itself takes (HD-25) — two backoff curves and the handoff notification.
 //
 // THE CRITERION, so the split from TurnPorts.kt is legible rather than arbitrary: TurnPorts.kt
-// holds the turn-path roles that CROSS A MODULE BOUNDARY (a dialect or :gateway wires them), and
+// holds the turn-path roles that CROSS A MODULE BOUNDARY (a dialect or :daemon-head wires them), and
 // its header makes a point of what is deliberately not there. These three are wired by nobody
 // outside :upstream — they are the upstream POST's own vocabulary — so they get their own
 // declaration file rather than diluting that one's charter. Same package either way; no import in

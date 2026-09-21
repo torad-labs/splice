@@ -6,7 +6,7 @@
 // self-referential-import confusion a route implemented beside its own port would invite.
 //
 // ONE SHOT, NO PIPELINE — see PlaygroundRoute.kt's header for the full reason (never recorded means
-// the whole turn pipeline, not only the console). This bypasses :gateway's TurnDriver and every
+// the whole turn pipeline, not only the console). This bypasses :daemon-head's TurnDriver and every
 // dialect module and builds the smallest legal request per dialect directly: no tools, no system
 // prompt, no streaming, no retry loop, no perf/trace/economics write. The credential and topology
 // are read exactly as the daemon's own turn path resolves them (ManagedHead.auth, a fresh parse of

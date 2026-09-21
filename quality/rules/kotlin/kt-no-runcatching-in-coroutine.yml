@@ -41,7 +41,7 @@ files:
   - gateway/dialect-openai-responses/src/main/**/*.kt
   - gateway/dialect-openai-chat/src/main/**/*.kt
   - gateway/dialect-anthropic-passthrough/src/main/**/*.kt
-  - gateway/gateway/src/main/**/*.kt
+  - daemon/head/src/main/**/*.kt
   - gateway/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt
 rule:

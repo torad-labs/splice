@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.activity.ActivityDays
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.gateway.wire.TraceKinds
+import splice.head.wire.TraceKinds
 import java.nio.file.Path
 
 /** Every record of one turn, in the order they were written: the attempts, then the turn record

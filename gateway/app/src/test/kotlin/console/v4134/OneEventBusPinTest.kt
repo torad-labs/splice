@@ -39,7 +39,7 @@ import splice.control.TurnPathStalled
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.gateway.head.HeadLifecycle
+import splice.head.HeadLifecycle
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path

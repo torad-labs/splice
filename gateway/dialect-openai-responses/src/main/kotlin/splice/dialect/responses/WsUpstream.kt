@@ -1,7 +1,7 @@
 // NEW: (ws-transport WS-1, 2026-07-31; moved out of :upstream 2026-08-01) the Responses
 // WebSocket transport. It lives in the DIALECT because the Responses runner is its only caller:
 // keeping it in the shared SPI exposed connection-lifecycle details no other module needs
-// (review of #72). :gateway still sees only the WsRoundRunner seam, which is all the module
+// (review of #72). :daemon-head still sees only the WsRoundRunner seam, which is all the module
 // law lets it see.
 // The Responses WebSocket transport. The ChatGPT codex
 // backend serves the Responses API over a v2 WebSocket (OpenAI-Beta: responses_websockets=…) whose

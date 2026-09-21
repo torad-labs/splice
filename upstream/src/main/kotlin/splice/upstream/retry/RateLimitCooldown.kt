@@ -27,8 +27,8 @@
 //     the very fix the message asks him to apply. One upstream request per two minutes, on a head
 //     that cannot serve him anyway, is a cheap price for noticing the moment it can.
 //
-// BLOCKED destination, recorded so it is not re-proposed: gateway/gateway/.../usage/RateLimitStore.kt
-// is in :gateway, and :upstream depends only on :core — that edge would invert.
+// BLOCKED destination, recorded so it is not re-proposed: daemon/head/.../usage/RateLimitStore.kt
+// is in :daemon-head, and :upstream depends only on :core — that edge would invert.
 package splice.upstream.retry
 
 import splice.core.util.Cancellables
@@ -193,7 +193,7 @@ public class RateLimitCooldown public constructor(
         // reader looked at, which is how our own words landed in his transcript as braces.
         // V4-102: the same envelope the gateway sends, built by the same builder in core. This is
         // the site that made the builder live in core rather than in the gateway's wire package —
-        // :upstream cannot import :gateway, so our own fail-fast body was free to drift from the
+        // :upstream cannot import :daemon-head, so our own fail-fast body was free to drift from the
         // shape the classifier reads. It no longer can.
         val body = ErrorEnvelope.of("rate_limit_error", detail).toString()
         throw UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS)
@@ -316,7 +316,7 @@ internal const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
 // V4-100: PUBLIC, and that is the point of the ceiling rather than a widening for its own sake.
 // The admission plane hands the client a deadline derived from the same number (HeadAdmission's
 // clamp on the Retry-After it writes, and the CLAMP_SECONDS both head tests pin), so the ceiling
-// is a CROSS-MODULE fact with three existing readers in :gateway. It lived private here and was
+// is a CROSS-MODULE fact with three existing readers in :daemon-head. It lived private here and was
 // re-typed there, which is the copy this export retires: one number, one declaration, and the
 // client's deadline cannot outlive the cooldown the gateway is actually holding.
 public const val MAX_RATE_LIMIT_COOLDOWN_MS: Long = 120_000L

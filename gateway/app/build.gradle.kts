@@ -29,7 +29,7 @@ dependencies {
     implementation(project(":provider-kimi"))
     implementation(project(":provider-muse"))
     implementation(project(":provider-openai"))
-    implementation(project(":gateway"))
+    implementation(project(":daemon-head"))
     implementation(project(":control"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
@@ -40,7 +40,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
-    testImplementation(testFixtures(project(":gateway")))
+    testImplementation(testFixtures(project(":daemon-head")))
     testImplementation(testFixtures(project(":dialect-openai-responses")))
     testImplementation(testFixtures(project(":dialect-anthropic-passthrough")))
 }

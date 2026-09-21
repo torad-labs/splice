@@ -7,7 +7,7 @@
  * spells its visibility out loud — and `public` is what an author types when they are not
  * thinking about the module boundary, because it is what the compiler asks for and the
  * error message that demands it says nothing about who the reader is. The result measured
- * on 2026-09-17: 31 of the 41 public TYPES in :gateway are named by no other module's main
+ * on 2026-09-17: 31 of the 41 public TYPES in :daemon-head are named by no other module's main
  * or testFixtures sources, and six public MEMBERS across the tree have only test callers.
  * A public declaration nobody outside the module consumes is not an API, it is a leak of
  * the module's internals into its ABI — the thing every architecture law above it is trying

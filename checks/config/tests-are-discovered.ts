@@ -5,7 +5,7 @@
  * WHY THIS EXISTS. A @Test method whose body returns a non-Unit value is not discovered by
  * JUnit: no failure, no skip, no warning, no line in any report. The suite is green, the
  * XML is complete-looking, and the test has never run once in its life. Measured 2026-09-16:
- * gateway/gateway/src/test/kotlin/head/HeadServerCapacityTest.kt declares four @Test methods
+ * daemon/head/src/test/kotlin/splice/head/HeadServerCapacityTest.kt declares four @Test methods
  * and TEST-head.HeadServerCapacityTest.xml reports tests=3 — the fourth ends in held.await()
  * inside `= runBlocking { ... }`, so the method returns a String, and it had never executed.
  * Nothing we own could see it: every gate reads what ran, and nothing compared that against

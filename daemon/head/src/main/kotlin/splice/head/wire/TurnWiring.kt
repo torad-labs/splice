@@ -1,0 +1,85 @@
+// PORT-OF: splice/gateway/head/TurnDriver.kt (TurnWiring, reduced to usagePayloadBuilder)
+// @ 86f1411 — invariants unchanged: the Anthropic usage payload builder, shared by the stream
+// emitter and the non-stream collector so both report tokens identically. timedClientWrite left
+// with the class' other half to ClientChannel.kt (HD-24) — kept in splice.head.wire because
+// [UsagePayloadBuilder], the fun interface this produces, is declared in this package
+// (SseEmitter.kt) and consumed by SseEmitter and CollectingTerminal.
+package splice.head.wire
+
+import splice.core.model.ModelCatalog
+import splice.core.turn.TurnMeta
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
+import splice.head.usage.TurnUsage
+import splice.head.usage.UsageHud
+
+/** A collaborator (not TurnDriver members) because TurnDriver already sits at its function-count
+ *  budget. No instance state beyond the injected log. */
+internal class TurnWiring(
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
+    private val hud = UsageHud()
+
+    /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
+     *  collector so both report tokens identically. */
+    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder =
+        usagePayloadBuilderFor(catalog, meta.originalModel, sessionWindow)
+
+    /** The same builder for a response the proxy composes without a provider build (LocalResponses):
+     *  the row id is all it ever read of the meta. */
+    fun usagePayloadBuilderFor(
+        catalog: ModelCatalog,
+        originalModel: String,
+        sessionWindow: Long? = null,
+    ): UsagePayloadBuilder {
+        var factorLogged = false
+        return { usage ->
+            // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
+            // are DISJOINT. OpenAI's input_tokens INCLUDES the cached portion, so subtract it — else
+            // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the
+            // "compaction ate my quota" class).
+            val cached = usage?.cachedTokens ?: 0
+            val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
+            // Per-model context windows are a PROXY concern. Claude Code fixes its window per PROCESS
+            // (the launch env: the pinned row's window) for every id except a "[1m]" one, so another
+            // row's real window can only be served from this side — by moving the numerator of the
+            // ratio it compacts on — and that is also what lets a TOML edit reach a running session.
+            // Scale by clientWindow/declared and the row compacts at ITS window, switchable live from
+            // /model. The client window is THIS SESSION's when it has told us (its status-line posts
+            // carry it — ClientWindows), else the pinned row's current window. Assuming anything else
+            // for a session that has not posted is how 2026-09-05 went: a constant 1e6 scaled every
+            // pre-existing session's counts 2.5-3.7x and it compacted at a third of its window, forever.
+            // Keyed on originalModel (the RAW picker id), because two rows can share one
+            // upstream id and it is the row that owns the window. Output tokens are NOT scaled: they
+            // are not part of the context total. splice's own accounting (TurnPerf, TurnCacheLine,
+            // UsageStore) reads the raw usage and never this payload, so the logs stay truthful.
+            //
+            // The STATUSLINE does not: StatuslineRenderer renders context_window_size/current_usage
+            // out of the blob Claude Code pipes back, which is Claude Code's record of THIS payload, so
+            // on a scaled row both of its context numbers are in client units. Its cache-hit segment is
+            // unaffected — read/(input+read+cache_creation) is scale-invariant when every term carries
+            // the same factor. The factor is LOGGED once per turn (DR-18) so a wrong one leaves a
+            // breadcrumb even though every displayed surface stays self-consistent. Non-launched
+            // clients (the e2e probe, a bare curl) receive scaled counts against a window they never
+            // declared — by design; the raw truth lives in splice's own accounting above.
+            val clientWindow = catalog.clientContextWindowFor(originalModel, sessionWindow)
+            val scale = catalog.usageScale(originalModel, sessionWindow)
+            if (scale != 1.0 && !factorLogged) {
+                factorLogged = true
+                log(
+                    "[usage] row '$originalModel' reports client-scaled tokens " +
+                        "(factor $scale, client window $clientWindow" +
+                        "${if (sessionWindow != null) ", the session's own" else ", the launch env"})\n",
+                )
+            }
+            hud.buildUsagePayload(
+                TurnUsage(scale(nonCachedInput, scale), usage?.outputTokens ?: 0, 0, scale(cached, scale)),
+                clientWindow,
+            )
+        }
+    }
+
+    /** Exact when the row agrees with the client, which keeps every normal head byte-identical. */
+    private fun scale(tokens: Long, factor: Double): Long =
+        if (factor == 1.0) tokens else (tokens * factor).toLong()
+}

@@ -25,8 +25,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
-import mock.awaitListening
-import mock.freshPort
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -36,6 +34,8 @@ import splice.app.Daemon
 import splice.app.TopologyLoader
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.head.awaitListening
+import splice.head.freshPort
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

@@ -41,7 +41,7 @@ class UpstreamClientForwardModeTest {
     // places outside this module own that half, and both are pinned rather than assumed —
     // TurnPreparation.kt:54 does the merge as `prepared.extraHeaders + forwardedClientHeaders`
     // (operand order named as an invariant in that file's own header), and
-    // :gateway's HeadServerClientAuthTest, `a client-auth head forwards the caller's credential and
+    // :daemon-head's HeadServerClientAuthTest, `a client-auth head forwards the caller's credential and
     // wire knobs upstream, once`, drives a real head against a real upstream and asserts the
     // caller's anthropic-version beats the provider's configured default at the wire, exactly once.
     // A second end-to-end test here would need a cross-module dependency to say the same thing.

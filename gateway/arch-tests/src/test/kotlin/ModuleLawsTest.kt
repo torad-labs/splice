@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
-/** Every dialect module — what :gateway is allowed to know about, and what a provider picks from. */
+/** Every dialect module — what :daemon-head is allowed to know about, and what a provider picks from. */
 private val DIALECTS = setOf(
     ":dialect-anthropic-passthrough",
     ":dialect-openai-responses",
@@ -28,8 +28,8 @@ private val ADAPTER_BASE = setOf(":core", ":upstream")
  *  The test plane still needs its OWN map, and that is why this one survives: the Gradle plugin
  *  deliberately exempts test configurations — "integration tests legitimately wire sibling modules"
  *  — but the exemption is blanket, and every inverted edge this repo actually has lives inside it.
- *  :gateway tests reaching a DIALECT is legitimate and stays legal here, while a provider reaching
- *  back into :gateway is an inversion whether the wire is in main or in test. The entries therefore
+ *  :daemon-head tests reaching a DIALECT is legitimate and stays legal here, while a provider reaching
+ *  back into :daemon-head is an inversion whether the wire is in main or in test. The entries therefore
  *  remain SUPERSETS of the main allowances (a main dependency is on the test compile classpath by
  *  construction), which is the third property lawDriftViolations checks.
  *
@@ -57,7 +57,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":provider-muse" to ADAPTER_BASE,
     ":provider-openai" to ADAPTER_BASE + setOf(":dialect-openai-responses", ":dialect-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
-    ":gateway" to ADAPTER_BASE + DIALECTS,
+    ":daemon-head" to ADAPTER_BASE + DIALECTS,
     // the management plane reads the domain, and the client side it assembles a launch spec for.
     ":control" to setOf(":core", ":client"),
 )
@@ -71,7 +71,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 private val ID_DERIVATION_PENDING = setOf(
     ":dialect-anthropic-passthrough", ":dialect-openai-responses", ":dialect-openai-chat",
     ":provider-codex", ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai",
-    ":gateway", ":control", ":app", ":arch-tests", ":fir-checks",
+    ":control", ":app", ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -419,13 +419,13 @@ private fun staleAllowanceViolations(
  *  inversion fails immediately, and this map is the visible worklist. Delete a line when the edge goes
  *  — a listed edge that no longer exists FAILS the law, so the list cannot rot into blanket permission. */
 private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
-    (":provider-grok" to ":gateway") to
+    (":provider-grok" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — grok's tests drive a real gateway server " +
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
-    (":provider-openai" to ":gateway") to
+    (":provider-openai" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as provider-grok.",
-    (":gateway" to ":provider-codex") to
-        "pre-existing, 2026-08-16, tracked for removal — two :gateway tests still compile " +
+    (":daemon-head" to ":provider-codex") to
+        "pre-existing, 2026-08-16, tracked for removal — two :daemon-head tests still compile " +
         "against provider-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
         "CodexCodeModeReanchorTest CodexCodeModeBridge); other gateway tests now use " +
         "TestResponsesProvider.",
@@ -491,11 +491,11 @@ private val NESTED_MODULE_LAW_SOURCE = """
 
 private val NESTED_MODULE_BUILD_FILE = """
     dependencies {
-        implementation(project(":gateway"))
+        implementation(project(":daemon-head"))
     }
 """.trimIndent()
 
-private const val NESTED_EDGE_EXPECTED = ":provider-x may not depend on :gateway in a MAIN configuration (the build's map allows [:core]). This is also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in build-logic/src/main/kotlin/splice.module-law.gradle.kts if the architecture moved."
+private const val NESTED_EDGE_EXPECTED = ":provider-x may not depend on :daemon-head in a MAIN configuration (the build's map allows [:core]). This is also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in build-logic/src/main/kotlin/splice.module-law.gradle.kts if the architecture moved."
 
 class ModuleLawsTest {
 
@@ -711,11 +711,11 @@ class ModuleLawsTest {
     fun `the id-derivation law can actually fail - P3`() {
         assertEquals(
             listOf(
-                ":gateway lives at daemon/head but its id is not :daemon-head — the id is derived from " +
+                ":daemon-head lives at daemon/head but its id is not :daemon-head — the id is derived from " +
                     "the directory (`/` → `-`), stated once in settings.gradle.kts.",
             ),
             idDerivationViolations(
-                ProjectMap.parse(File("."), ":gateway=daemon/head", fixtureNotSwept),
+                ProjectMap.parse(File("."), ":daemon-head=daemon/head", fixtureNotSwept),
                 emptySet(),
             ),
             "a moved module whose id was left behind must fail BY NAME",
@@ -795,8 +795,8 @@ class ModuleLawsTest {
             dependencies {
                 implementation(project(":core"))
                 api(project(path = ":spi"))
-                testImplementation(project( ":gateway" ))
-                testImplementation(testFixtures(project(":gateway")))
+                testImplementation(project( ":daemon-head" ))
+                testImplementation(testFixtures(project(":daemon-head")))
                 testFixturesImplementation(project(":core"))
                 implementation(project(":app", configuration = "shadow"))
                 implementation(project(  path  =  ":control"  ))
@@ -809,7 +809,7 @@ class ModuleLawsTest {
                 "api" to ":spi",
                 // The plain and the testFixtures() spelling of the same edge collapse to one pair on
                 // purpose: the plane is decided by the CONFIGURATION, and both are the test plane.
-                "testImplementation" to ":gateway",
+                "testImplementation" to ":daemon-head",
                 "testFixturesImplementation" to ":core",
                 "implementation" to ":app",
                 "implementation" to ":control",
@@ -829,14 +829,14 @@ class ModuleLawsTest {
             dependencies {
                 implementation(project(":core"))
                 api(project(path = ":spi"))
-                testImplementation(project( ":gateway" ))
+                testImplementation(project( ":daemon-head" ))
                 implementation(project(":app", configuration = "shadow"))
                 implementation(project(  path  =  ":control"  ))
                 // implementation(project(":commented-out"))
             }
         """.trimIndent()
         assertEquals(
-            setOf(":core", ":spi", ":gateway", ":app", ":control"),
+            setOf(":core", ":spi", ":daemon-head", ":app", ":control"),
             projectEdgesIn(script),
             "every Gradle spelling of a project edge must be visible to the architecture laws",
         )

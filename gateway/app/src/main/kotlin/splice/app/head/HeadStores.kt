@@ -4,12 +4,12 @@
 package splice.app.head
 
 import splice.core.model.ClientWindows
-import splice.gateway.compact.CompactStats
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.EconomicsStore
-import splice.gateway.usage.QuotaTracker
-import splice.gateway.usage.UsageStore
-import splice.gateway.wire.TraceStore
+import splice.head.compact.CompactStats
+import splice.head.perf.PerfStats
+import splice.head.usage.EconomicsStore
+import splice.head.usage.QuotaTracker
+import splice.head.usage.UsageStore
+import splice.head.wire.TraceStore
 import splice.upstream.credentials.AccountPool
 
 internal data class HeadStores(

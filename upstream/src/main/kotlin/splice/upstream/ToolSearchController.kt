@@ -2,7 +2,7 @@
 // (which continues FAILED rounds) and FoldController (which continues TRUNCATED rounds). The
 // Responses `tool_search` tool declares execution:"client", so the GATEWAY answers it, never
 // Claude Code: the model emits a tool_search_call item and blocks until a tool_search_output
-// item appears in input. Keeping the contract HERE (not in the dialect) is why :gateway can run
+// item appears in input. Keeping the contract HERE (not in the dialect) is why :daemon-head can run
 // the extra round without importing a concrete dialect — the module law again. Invariants:
 //   - request-scoped, NOT meta-scoped: the answer is a function of THIS request's deferred
 //     inventory, which TurnMeta does not and must not carry; it rides BuiltTurn and is garbage

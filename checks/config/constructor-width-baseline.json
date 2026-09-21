@@ -40,7 +40,7 @@
       "params": 14,
       "subsystems": 0
     },
-    "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDrive.kt TurnDrive": {
+    "daemon/head/src/main/kotlin/splice/head/turn/TurnDrive.kt TurnDrive": {
       "params": 17,
       "subsystems": 7
     },

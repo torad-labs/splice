@@ -94,7 +94,8 @@ zstd_request_body = true
 # Official Codex also sends false for Lite, even when model metadata advertises parallel support.
 # This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
 # A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
-# Setting true is an experiment, not demonstrated task-efficiency parity.
+# true was tried live 2026-09-20: the ChatGPT lite backend 400s every turn ("requires
+# `parallel_tool_calls` to be false"). Leave it unset; batching comes from code mode.
 # parallel_tool_calls = false
 # code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
 # adds splice's JAR-bundled JavaScript runner and orchestration instructions only to eligible turns:

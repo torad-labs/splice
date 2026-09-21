@@ -42,8 +42,9 @@ public data class QuirksConfig(
     /** openai-responses only: the VALUE sent for parallel_tool_calls on responses-lite turns (the
      *  field always rides; a lite request without it 400s). NULLABLE overlay like reasoning_cache —
      *  absent keeps the provider's own default (false), so it can't stomp a provider default the
-     *  way the non-nullable summary_field above does. true lets the model batch tool calls into one
-     *  turn instead of one per turn; UNTESTED against the live backend, see ResponsesQuirks. */
+     *  way the non-nullable summary_field above does. true was tried live on 2026-09-20 and the ChatGPT lite backend refused every turn with 400
+     *  "X-OpenAI-Internal-Codex-Responses-Lite requires `parallel_tool_calls` to be false"; leave it
+     *  unset for that provider. Batching on lite turns comes from code mode (splice_exec). */
     @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
     /** openai-responses only: serve rounds over the Responses WebSocket with previous_response_id
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so

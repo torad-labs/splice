@@ -30,11 +30,13 @@ function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') 
 }
 
 describe("the gradle slot", () => {
-  test("the lock path is the one checks/gradle-slot.sh computes", () => {
-    const script = readFileSync(join(real.repoRoot, "checks", "gradle-slot.sh"), "utf8");
-    const line = /^LOCK="\$\{GRADLE_SLOT_LOCK:-\$ROOT(\/[^"}]+)\}"$/m.exec(script);
-    expect(line, "gradle-slot.sh must still spell its default lock path the way this test reads it").not.toBeNull();
-    expect(lockPath(real, {})).toBe(real.repoRoot + line![1]!);
+  test("the lock path is the one .gitignore keeps out of the tree", () => {
+    // checks/gradle-slot.sh used to be the oracle; since PR 5 the external record of the lock's
+    // name is the ignore line — a lock the CLI wrote under any other name would be committed.
+    const ignore = readFileSync(join(real.repoRoot, ".gitignore"), "utf8");
+    const line = /^\/(\.gradle-slot\.lock)\*$/m.exec(ignore);
+    expect(line, ".gitignore must still name the slot lock the way this test reads it").not.toBeNull();
+    expect(lockPath(real, {})).toBe(join(real.repoRoot, line![1]!));
     // and the CLI derives it from the build root rather than the literal `gateway`, so it follows
     // the build root when the restructure moves it to the repository root
     expect(lockPath(real, {})).toBe(join(real.buildRoot, ".gradle-slot.lock"));

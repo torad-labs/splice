@@ -68,6 +68,7 @@
 // simply not counted; no splice package is star-imported in production today.
 package splice.quality
 
+import com.lemonappdev.konsist.api.Konsist
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -431,6 +432,30 @@ class ConstructorWidthLawTest {
             "$DETEKT_CONFIG no longer configures LongParameterList — the instrument this wall is written " +
                 "against has moved, so re-read this file's header before trusting either one."
         }
+    }
+
+    /** §24: CLASS_DECL is a REGEX, and a regex census cannot cross-check itself — a class it cannot
+     *  see is a constructor this law never measures and never reports, which reads as a green. The
+     *  denominator is taken a SECOND time from the Kotlin compiler frontend this module already
+     *  depends on, and a vacuous agreement at zero is refused. `measured` drops a match whose
+     *  parameter list is empty, so the AST side counts classes with a NON-EMPTY primary constructor
+     *  — the same subset, taken a different way. */
+    @Test
+    fun `the text census equals Konsist's independent AST census - V4-93`() {
+        val ast = map.modules
+            .filter { module -> map.mainSources(module).isDirectory }
+            .sumOf { module ->
+                Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
+                    .classes(includeNested = true)
+                    .count { it.primaryConstructor?.parameters?.isNotEmpty() == true }
+            }
+        assertTrue(ast > 0) { "the AST census found ZERO primary constructors — refusing a vacuous agreement" }
+        assertEquals(
+            ast,
+            ConstructorWidth.collect(KotlinText.kotlinFiles(map), map.root).constructors.size,
+            "the regex census and Konsist's AST census disagree — one of the two is wrong, and a " +
+                "denominator nobody can reproduce is not a denominator",
+        )
     }
 
     /** The synthetic tree the red proofs write into: one production file per arm, plus the baseline

@@ -1,7 +1,8 @@
-// The Gradle root is the REPOSITORY root (restructure plan §6.2 PR 2). The modules still live under
-// gateway/<id> until PR 3 moves them, so every include()d project names its directory explicitly
-// below — that map is also what the laws grade through (quality/architecture/build.gradle.kts reads
-// Gradle's own project model, so a module in a nested directory is graded like any other).
+// The Gradle root is the REPOSITORY root (restructure plan §6.2 PR 2) and every module lives at the
+// directory its id derives from (`:daemon-head` -> daemon/head; restructure plan §1.3, PR 3). Each
+// include()d project still names its directory explicitly below — that map is what the laws grade
+// through (quality/architecture/build.gradle.kts reads Gradle's own project model), and the
+// id-derivation law in ModuleLawsTest fails the build when an id and its directory disagree.
 // Module graph is LAW — see build-logic/src/main/kotlin/splice.module-law.gradle.kts.
 pluginManagement {
     includeBuild("build-logic")

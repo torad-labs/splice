@@ -46,7 +46,9 @@ MUTABLE_DIR="${MUTABLE_FILE%%/src/*}" # the module home the arms mutate — its 
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
 build_harness() {
-  rm -rf "$tmp/gateway" "$tmp/client" "$tmp/checks"
+  # the copied module is cleared BY ITS OWN HOME: a second build over a surviving copy nests
+  # `src/main/main` (cp -r into an existing directory) and the control reads a doubled census
+  rm -rf "$tmp/gateway" "$tmp/client" "$tmp/checks" "$tmp/$MUTABLE_DIR"
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
   cp "$ROOT/checks/silent-constants.ts" "$CHECKER"
   cp "$ROOT/checks/config/silent-constants-baseline.json" "$BASELINE"

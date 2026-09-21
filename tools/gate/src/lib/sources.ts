@@ -8,7 +8,7 @@ import { dirname, join, relative } from "node:path";
 
 export interface GradleModule {
   readonly id: string;
-  /** repo-relative directory, e.g. `gateway/core` */
+  /** repo-relative directory, e.g. `daemon/head` */
   readonly dir: string;
 }
 

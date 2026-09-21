@@ -22,7 +22,7 @@ import java.io.File
 private val PORT_SCOPE_MODULES = listOf(
     ":core", ":client", ":upstream", ":dialects-openai-responses", ":dialects-openai-chat",
     ":dialects-anthropic", ":providers-codex", ":providers-grok", ":provider-openai",
-    ":providers-kimi", ":provider-muse", ":daemon-head", ":daemon-control", ":app", ":fir-checks",
+    ":providers-kimi", ":providers-muse", ":daemon-head", ":daemon-control", ":app", ":fir-checks",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,

@@ -27,7 +27,7 @@ dependencies {
     implementation(project(":providers-codex"))
     implementation(project(":providers-grok"))
     implementation(project(":providers-kimi"))
-    implementation(project(":provider-muse"))
+    implementation(project(":providers-muse"))
     implementation(project(":provider-openai"))
     implementation(project(":daemon-head"))
     implementation(project(":daemon-control"))

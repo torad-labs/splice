@@ -6,7 +6,7 @@
   "groups": {
     "COLLISION CLIENT_ID": [
       "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+      "providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COLLISION CONNECT_TIMEOUT_MS": [
       "gateway/app/src/main/kotlin/splice/app/UpstreamPlaygroundProbe.kt",
@@ -28,7 +28,7 @@
     ],
     "COLLISION DEFAULT_EXPIRES_IN_S": [
       "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+      "providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COLLISION DEFAULT_TAIL": [
       "gateway/app/src/main/kotlin/splice/app/cli/LogsCommand.kt",
@@ -200,11 +200,11 @@
     ],
     "COPY DEFAULT_INTERVAL_S": [
       "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+      "providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COPY DEVICE_CODE_GRANT_TYPE": [
       "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+      "providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COPY DIM": [
       "gateway/app/src/main/kotlin/splice/app/cli/CliStyle.kt",
@@ -422,7 +422,7 @@
     ],
     "COPY MIN_INTERVAL_S": [
       "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
+      "providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COPY MODEL": [
       "client/src/main/kotlin/splice/client/ClaudeConfigKeys.kt",

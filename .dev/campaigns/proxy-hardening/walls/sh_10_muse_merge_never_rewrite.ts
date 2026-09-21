@@ -31,8 +31,8 @@ import * as kimi from "./sh_10_kimi_merge_never_rewrite.ts";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const CORE = resolve(ROOT, "core/src/main/kotlin/splice/core/auth/CredentialJson.kt");
-const MUSE = resolve(ROOT, "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt");
-const ALLOWED_WRITER = "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt";
+const MUSE = resolve(ROOT, "providers/muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt");
+const ALLOWED_WRITER = "providers/muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt";
 const ATOMIC_WRITE = "SecureFile.writeAtomic0600(";
 
 // 2026-09-15. Pre-existing non-muse atomic writers. Not Muse credential persists.
@@ -123,7 +123,7 @@ export const LOGIN_MUSE_DELEGATED = `
 export const LOGIN_MUSE_PATH = "gateway/app/src/main/kotlin/splice/app/cli/LoginMuse.kt";
 export const CORE_FAKE_MUSE = "core/src/main/kotlin/splice/core/MuseMintPersistence.kt";
 export const LOGIN_CODEX_PATH = "gateway/app/src/main/kotlin/splice/app/cli/LoginCodex.kt";
-export const TEST_MUSE_WRITER = "gateway/provider-muse/src/test/kotlin/muse/MuseWriterFixture.kt";
+export const TEST_MUSE_WRITER = "providers/muse/src/test/kotlin/splice/provider/muse/MuseWriterFixture.kt";
 export const TEST_CORE_WRITER = "core/src/test/kotlin/NewWriterTest.kt";
 
 /** Run the same dataflow check on Muse; comments are not credential writes or merges. */

@@ -81,7 +81,7 @@ kt-no-delay-in-production, which binds src/main.
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "provider-muse",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
   "provider-openai", "daemon-head", "app", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -122,7 +122,7 @@ adding `client/src/main/**/*.kt` to the rule, fixing those two, and deleting `cl
 rule = "kt-no-exception-as-outcome"
 modules = [
   "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
-  "providers-codex", "providers-grok", "providers-kimi", "provider-muse", "provider-openai",
+  "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "provider-openai",
   "daemon-head", "daemon-control", "app", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -147,7 +147,7 @@ Daemon LOGGING still flows through the injected log lambda."
 rule = "kt-no-runblocking-exported-bridge"
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "provider-muse",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
   "provider-openai", "daemon-head", "daemon-control", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -164,7 +164,7 @@ names no coroutine at all.
 
 [[exclusion]]
 rule = "kt-no-runcatching-in-coroutine"
-modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "provider-muse", "provider-openai", "fir-checks"]
+modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "provider-openai", "fir-checks"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -190,20 +190,20 @@ plugin.
 the :client extraction, and :core is already excused above for the reason stated — the module
 boundary moved, the wall's declared scope did not. :client consumes Result from FILESYSTEM calls, which this wall's declared
 scope never named. Measured: widening would find 16 — a recorded gap, not a narrowing, and the
-same shape as the :provider-muse row below. Close it by adding `client/src/main/**/*.kt` to the
+same shape as the :providers-muse row below. Close it by adding `client/src/main/**/*.kt` to the
 rule, burning those 16 down, and deleting `client` here.
 """
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["provider-muse"]
+modules = ["providers-muse"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-:provider-muse is the ONE provider missing from this wall's files: list, which names :upstream,
+:providers-muse is the ONE provider missing from this wall's files: list, which names :upstream,
 grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
 credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
-quality/rules/, out of this stage's fence. Close it by adding `gateway/provider-muse/src/main/**/*.kt` to
+quality/rules/, out of this stage's fence. Close it by adding `providers/muse/src/main/**/*.kt` to
 the rule and deleting this row.
 """
 
@@ -222,7 +222,7 @@ reopen the incident."
 rule = "kt-no-vanilla-config-dir"
 modules = [
   "core", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "provider-muse",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
   "provider-openai", "daemon-head", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -241,7 +241,7 @@ wall did not narrow; its subject moved module, and :client's main is covered fil
 rule = "kt-outcome-tag-single-source"
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "provider-muse",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
   "provider-openai", "app", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -259,7 +259,7 @@ Measured: 0 in :client, which writes no perf row.
 rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
-  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "provider-muse",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
   "provider-openai", "daemon-control", "app", "fir-checks",
 ]
 sourceSets = ["main"]

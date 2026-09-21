@@ -1,5 +1,5 @@
 // NEW: V4-14 Muse OAuth and subscription-key wire contract.
-package muse
+package splice.provider.muse
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.provider.muse.MuseMintAttempt
-import splice.provider.muse.MuseOAuth
-import splice.provider.muse.MuseOAuthEndpoints
 
 class MuseOAuthTest {
 

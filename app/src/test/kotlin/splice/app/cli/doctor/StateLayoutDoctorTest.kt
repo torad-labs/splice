@@ -61,6 +61,10 @@ private val CASES: List<Pair<String, Map<String, String>>> = listOf(
     // Files.exists said true for a regular file; `[ -d ]` said false.
     "legacy-state-is-a-file" to emptyMap(),
     "current-state-is-a-file" to emptyMap(),
+    // A FILE where the current ROOT belongs: stat of ~/.splice/state is ENOTDIR, which
+    // `statSync(dir, { throwIfNoEntry: false })` answered as undefined — absent — so the Node and
+    // TypeScript copies adopted the pre-0.4 root where StatePaths (FileSystemException) declines.
+    "current-root-is-a-file" to emptyMap(),
     // `[ ! -d ]` is true for "cannot stat" exactly as for "absent" — the proven-absence law.
     "current-root-unreadable" to emptyMap(),
 )
@@ -288,6 +292,10 @@ class StateDirAgreementTest {
                 makeState(home, LEGACY_ROOT)
                 Files.createDirectories(home.resolve(SPLICE_ROOT))
                 Files.writeString(home.resolve(SPLICE_ROOT).resolve("state"), "not a directory")
+            }
+            "current-root-is-a-file" -> {
+                makeState(home, LEGACY_ROOT)
+                Files.writeString(home.resolve(SPLICE_ROOT), "not a directory")
             }
             // Cannot be stat-ed. `[ ! -d ]` is true here exactly as it is for absent, so bash adopted
             // the pre-0.4 root while StatePaths declines and warns — the proven-absence law.

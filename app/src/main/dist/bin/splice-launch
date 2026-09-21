@@ -37,13 +37,13 @@ function liveStateDir(home, env) {
   // a DIRECTORY. "cannot be stat-ed" is not absence — an unreadable ~/.splice would otherwise adopt
   // the pre-0.4 root here while the daemon declines and warns — and a REGULAR FILE at either path
   // is not a state root either.
+  // ENOENT alone is absence. `throwIfNoEntry: false` would answer undefined on ENOTDIR too — a
+  // REGULAR FILE where ~/.splice belongs — and adopt the pre-0.4 root where StatePaths declines.
   const probe = (dir) => {
     try {
-      const found = fs.statSync(dir, { throwIfNoEntry: false });
-      if (found === undefined) return "absent";
-      return found.isDirectory() ? "dir" : "unusable";
-    } catch {
-      return "unusable"; // EACCES on the parent: present-or-absent is UNKNOWN, which is not absent.
+      return fs.statSync(dir).isDirectory() ? "dir" : "unusable";
+    } catch (failure) {
+      return failure.code === "ENOENT" ? "absent" : "unusable"; // EACCES, ENOTDIR: UNKNOWN is not absent.
     }
   };
   const current = path.join(home, ".splice", "state");
@@ -366,8 +366,14 @@ async function coldStart() {
     // a read-only home must degrade the redirect, never break launching (JW-01 risk note)
   }
   const daemon = spawn("java", argv, { detached: true, stdio });
-  daemon.on("error", () => {
-    // the handshake below reports a daemon that never came up, boot log included
+  daemon.on("error", (failure) => {
+    // A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used
+    // to): the handshake below shows the tail, and this line is what it has to show.
+    try {
+      fs.appendFileSync(BOOT_LOG, `splice: failed to run command 'java': ${failure.message}\n`);
+    } catch {
+      // an unwritable log was already degraded above; the handshake still names the failure
+    }
   });
   daemon.unref();
   if (Array.isArray(stdio)) fs.closeSync(stdio[1]);

@@ -1,7 +1,7 @@
 // The slot's contract, and the one property that makes the port safe to land beside the shell
 // script it ports: both take flock(2) on the SAME path, so they can never both hold the slot.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
@@ -44,6 +44,37 @@ describe("the gradle slot", () => {
 
   test("GRADLE_SLOT_LOCK overrides it, as in the script", () => {
     expect(lockPath(real, { GRADLE_SLOT_LOCK: "/tmp/elsewhere.lock" })).toBe("/tmp/elsewhere.lock");
+  });
+
+  // #170 review: `gate run` passes only JAVA_HOME as overrides, and the first cut read the lock
+  // settings from THAT map — the operator's GRADLE_SLOT_LOCK and GRADLE_SLOT_WAIT_S in the process
+  // environment were discarded, so the gate took the worktree's default lock beside a competing
+  // build. Overrides lie over the environment; they never replace it.
+  test("the environment's lock settings survive a caller that passes only overrides", async () => {
+    const fake = fakeBuildRoot('echo "ARGS:$*"\nexit 0\n');
+    mkdirSync(join(fake.dir, "elsewhere"));
+    const elsewhere = join(fake.dir, "elsewhere", "shared.lock");
+    const before = { lock: process.env.GRADLE_SLOT_LOCK, wait: process.env.GRADLE_SLOT_WAIT_S };
+    process.env.GRADLE_SLOT_LOCK = elsewhere;
+    process.env.GRADLE_SLOT_WAIT_S = "1";
+    try {
+      const code = await runUnderSlot({ layout: fake.layout, label: "overrides-only", args: ["help"], env: { CI: "1", PATH: fake.path, JAVA_HOME: "/nonexistent-jdk" } });
+      expect(code).toBe(0);
+      expect(existsSync(elsewhere), "the slot must lock GRADLE_SLOT_LOCK from the environment").toBe(true);
+      expect(existsSync(join(fake.dir, ".gradle-slot.lock")), "and never the worktree default beside it").toBe(false);
+      // and the wait comes from the environment too: a held lock gives up after 1s, not an hour
+      const held = takeExclusive(elsewhere, 1000, 50)!;
+      try {
+        const started = Date.now();
+        expect(await runUnderSlot({ layout: fake.layout, label: "busy", args: ["help"], env: { CI: "1", PATH: fake.path } })).toBe(SLOT_TIMEOUT_EXIT);
+        expect(Date.now() - started).toBeLessThan(10_000);
+      } finally {
+        held.release();
+      }
+    } finally {
+      if (before.lock === undefined) delete process.env.GRADLE_SLOT_LOCK; else process.env.GRADLE_SLOT_LOCK = before.lock;
+      if (before.wait === undefined) delete process.env.GRADLE_SLOT_WAIT_S; else process.env.GRADLE_SLOT_WAIT_S = before.wait;
+    }
   });
 
   test("an EMPTY task list is DID NOT RUN, never PASSED", async () => {

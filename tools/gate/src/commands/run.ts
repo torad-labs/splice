@@ -37,6 +37,14 @@ export const AFTER_THE_SLOT: readonly { readonly label: string; readonly command
   { label: "OSS readiness", command: ["bash", "checks/oss/run.sh"] },
 ];
 
+/** A slot phase that ended by SIGNAL (128+signum, the shell's contract in status.ts) is a cancelled
+ *  gate, not a verdict: nothing runs after it. The first cut carried a 143 into the post-slot phase,
+ *  whose scripts launch more gradle builds — so `kill <gate pid>` resumed work the operator had
+ *  just stopped (#170 review). Gradle itself exits 0 or 1; the slot's own refusals are 2 and 75. */
+export function cancelledBySignal(slotExit: number): boolean {
+  return slotExit > 128;
+}
+
 export async function run(argv: readonly string[]): Promise<number> {
   const javaHomeOnly = argv[0] === "--java-home-only" && argv.length === 1;
   if (argv.length > 0 && !javaHomeOnly) {
@@ -55,10 +63,12 @@ export async function run(argv: readonly string[]): Promise<number> {
   console.error(`══ splice gate ══  (JAVA_HOME=${jdk.javaHome})`);
   const { repoRoot } = layout();
   const verdicts: [string, number][] = [];
-  verdicts.push([
-    "gradle gateOfRecord",
-    await runUnderSlot({ layout: layout(), label: GATE_OF_RECORD_LABEL, args: [...GATE_OF_RECORD_TASKS], env: { JAVA_HOME: jdk.javaHome } }),
-  ]);
+  const slotExit = await runUnderSlot({ layout: layout(), label: GATE_OF_RECORD_LABEL, args: [...GATE_OF_RECORD_TASKS], env: { JAVA_HOME: jdk.javaHome } });
+  if (cancelledBySignal(slotExit)) {
+    console.error(`gate: cancelled — gradle gateOfRecord ended by signal (exit ${slotExit}); nothing runs after a cancellation`);
+    return slotExit;
+  }
+  verdicts.push(["gradle gateOfRecord", slotExit]);
   for (const leg of AFTER_THE_SLOT) {
     console.error(`── ${leg.label} ──`);
     const proc = Bun.spawnSync([...leg.command], {

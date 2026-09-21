@@ -162,12 +162,41 @@ if [ -n "$HEALTH_JSON" ]; then
   fi
 fi
 
+# UNIT-FIRST cold start (hostshield law, verify.sh "splice launcher must be UNIT-FIRST"). When the
+# user unit exists, the daemon is started THROUGH it and this shim only waits for health. A raw
+# spawn from here runs the daemon inside the calling agent's scope, wins the startup lock and locks
+# splice.service out of its own port: the unit then loops "another splice daemon serves on :3096"
+# (restart counter 22,463 once; three squatters on 2026-09-21 alone, each born in the seconds a
+# `systemctl restart` left the port empty, each holding a stale jar until SIGKILLed). Every
+# `splice install` used to revert the unit-first patch because it lived only in the installed
+# copy; it lives here now. The raw spawn below remains ONLY for a machine with no unit, or for a
+# shim pointed away from the unit's defaults (SPLICE_CONFIG / SPLICE_JAR / SPLICE_SHARE_DIR /
+# SPLICE_STATE_DIR / CLAUDEX_STATE_DIR set): that daemon is a harness's own, never the unit's, and
+# the unit could not serve it (release/launcher-test.sh, heads and docker e2e all run that way).
+unit_defaults() {
+  [ -z "${SPLICE_CONFIG:-}${SPLICE_JAR:-}${SPLICE_SHARE_DIR:-}${SPLICE_STATE_DIR:-}${CLAUDEX_STATE_DIR:-}" ]
+}
+if [ -z "$HEALTH_JSON" ] && unit_defaults && command -v systemctl >/dev/null 2>&1 \
+  && systemctl --user cat splice.service >/dev/null 2>&1; then
+  echo "splice: starting splice.service…" >&2
+  systemctl --user start splice.service >/dev/null 2>&1 || true
+  for ((i = 0; i < 150; i++)); do
+    HEALTH_JSON="$(health)"
+    [ -n "$HEALTH_JSON" ] && break
+    sleep 0.2
+  done
+  if [ -z "$HEALTH_JSON" ]; then
+    echo "splice: splice.service did not answer /health within 30 seconds — never starting a second daemon beside it. See: systemctl --user status splice.service; journalctl --user -u splice.service -n 50" >&2
+    exit 1
+  fi
+fi
+
 if [ -z "$HEALTH_JSON" ]; then
   if [ ! -f "$JAR" ]; then
     echo "splice: daemon jar not found at $JAR (run: splice install, or set SPLICE_JAR)" >&2
     exit 1
   fi
-  echo "splice: starting daemon…" >&2
+  echo "splice: starting daemon (no splice.service on this machine)…" >&2
   mkdir -p "$LOGS_DIR" 2>/dev/null || true
   if [ -f "$BOOT_LOG" ] && [ "$(wc -c <"$BOOT_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
     mv -f "$BOOT_LOG" "$BOOT_LOG.1" 2>/dev/null || true

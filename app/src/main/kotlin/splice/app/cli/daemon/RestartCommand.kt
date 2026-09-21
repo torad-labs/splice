@@ -47,7 +47,7 @@ internal class RestartCommand {
         val port = AdminSupport.controlPort(topology)
         if (!stopIfRunning(port, topology?.heads?.values?.map { it.port } ?: emptyList())) return false
         val started = AdminSupport.ensureDaemon(port, expectedVersion)
-        if (started) println("splice: daemon restarted with this shell's environment")
+        if (started) println("splice: daemon restarted")
         return started
     }
 

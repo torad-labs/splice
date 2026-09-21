@@ -21,5 +21,5 @@ dependencies {
 // proved the leg sound and its TRIGGER missing. Declaring the file here makes any change to it
 // invalidate the task, so the leg fires on exactly the drift it exists to catch.
 tasks.withType<Test>().configureEach {
-    inputs.file(rootProject.file("../AGENTS.md")).withPropertyName("retryMatrixTable")
+    inputs.file(rootProject.file("AGENTS.md")).withPropertyName("retryMatrixTable")
 }

@@ -17,7 +17,7 @@ npm run gate              # the complete local/CI gate
 npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
 npm run test:hooks        # orchestrator hook test suite
 bash checks/config-guard.sh   # rules that guard the rules
-cd gateway && ./gradlew check # module-law + detekt + konsist + unit tests (Kotlin gateway)
+./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
 npm run lint -w webui && npm test -w webui && npm run build -w webui
 npm run oss:verify
 ```
@@ -26,15 +26,15 @@ npm run oss:verify
 ast-grep walls, hook tests, campaign walls, config guard, webui lint/test/build
 with a committed-dist check, staged release acceptance, dependency audit, and every OSS
 readiness check. The individual commands are listed only so a contributor can run one in
-isolation while iterating. The gateway is a nested Gradle build under `gateway/` with its
-own JDK 21 toolchain, not a git submodule.
+isolation while iterating. The Gradle build is rooted at the repository root with its own
+JDK 21 toolchain; its modules live under `gateway/`.
 
 A green *diff* is not the bar — a green *merge* is.
 
 ## Walls doctrine
 
 Write-time policy (ast-grep rules) and the commit gate run the SAME checker twice — read
-`.rules/README.md` for the full rule inventory and authoring doctrine before adding or
+`quality/rules/README.md` for the full rule inventory and authoring doctrine before adding or
 changing a rule.
 
 ## PR title

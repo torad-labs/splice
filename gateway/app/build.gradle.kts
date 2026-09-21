@@ -55,7 +55,7 @@ application {
 // a real gate: touch it, the test re-runs.
 tasks.test {
     systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
-    inputs.file(rootProject.layout.projectDirectory.file("../config/splice.example.toml"))
+    inputs.file(rootProject.layout.projectDirectory.file("config/splice.example.toml"))
         .withPropertyName("spliceExampleToml")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
@@ -73,7 +73,7 @@ tasks.test {
 
 val releaseVersion = project.version.toString()
 val releaseGroup = rootProject.name
-val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
+val repositoryRoot = rootProject.layout.projectDirectory
 val rawBomDir = layout.buildDirectory.dir("reports/cyclonedx")
 val rawLicenseDir = layout.buildDirectory.dir("reports/licenses")
 val complianceDir = layout.buildDirectory.dir("reports/compliance")

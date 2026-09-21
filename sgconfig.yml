@@ -1,11 +1,14 @@
 # splice ast-grep config — the single source of truth for the architecture walls.
+# It stays at the REPOSITORY ROOT: files:, ignores: and ruleDirs: all resolve relative to THIS
+# file's directory, and `ast-grep scan` finds it by walking UP, never down — a nested config would
+# leave every anchored glob selecting nothing, silently (measured on ast-grep 0.45.2).
 # The SAME rule files run two ways (same-checker-twice):
 #   - agent hook: .claude/hooks/orchestrator.ts (PreToolUse) scans PROPOSED write
 #     content mirrored to a temp tree, so files:/ignores: globs bind identically
 #   - gate:       `npm run gate:rules` (ast-grep scan + ast-grep test) on the tree / in CI
-# Policy lives ONLY in .rules/rules/*.yml — never in per-rule Python.
+# Policy lives ONLY in quality/rules/console/*.yml — never in per-rule Python.
 ruleDirs:
-  - .rules/rules
-  - .rules/kotlin-splice
+  - quality/rules/kotlin
+  - quality/rules/console
 testConfigs:
-  - testDir: .rules/rule-tests
+  - testDir: quality/rules/rule-tests

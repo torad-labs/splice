@@ -22,7 +22,7 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOCK="${GRADLE_SLOT_LOCK:-$ROOT/gateway/.gradle-slot.lock}"
+LOCK="${GRADLE_SLOT_LOCK:-$ROOT/.gradle-slot.lock}"
 HOLDER="$LOCK.holder"
 WAIT="${GRADLE_SLOT_WAIT_S:-3600}"
 exec 9>"$LOCK"
@@ -32,7 +32,7 @@ if ! flock -w 1 9; then
 fi
 echo "$LABEL pid=$$ since=$(date -Is)" >"$HOLDER"
 trap 'rm -f "$HOLDER"' EXIT
-cd "$ROOT/gateway"
+cd "$ROOT"
 echo "gradle-slot: $LABEL holds the slot — gradle busy" >&2
 # buildgate is this MACHINE's memory-containment wrapper (~/.local/bin/buildgate, a host build-reaper
 # artifact), not a repo tool — nothing in the tree provides it. Calling it unconditionally made this

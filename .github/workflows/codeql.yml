@@ -53,7 +53,6 @@ jobs:
               - webui/dist
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
-        working-directory: gateway
         run: ./gradlew classes --no-daemon --stacktrace
       - name: analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9

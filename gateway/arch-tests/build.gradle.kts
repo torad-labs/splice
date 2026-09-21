@@ -14,10 +14,10 @@ dependencies {
 // providers/ would stop being graded, silently and green. Both the tests' map and this task's
 // inputs come from here, so the two cannot describe different trees. Sorted, so the value is a
 // stable task input rather than a set's iteration order.
-val gatewayRoot = rootProject.layout.projectDirectory
+val repoRoot = rootProject.layout.projectDirectory
 val moduleDirectories: Map<String, String> = rootProject.subprojects
     .associate { module ->
-        module.path to module.projectDir.relativeTo(gatewayRoot.asFile).invariantSeparatorsPath
+        module.path to module.projectDir.relativeTo(repoRoot.asFile).invariantSeparatorsPath
     }
     .toSortedMap()
 
@@ -32,7 +32,7 @@ val moduleDirectories: Map<String, String> = rootProject.subprojects
 val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modules")
 
 tasks.withType<Test>().configureEach {
-    systemProperty("gateway.root", gatewayRoot.asFile.absolutePath)
+    systemProperty("splice.root", repoRoot.asFile.absolutePath)
     // THE CHANNEL: `:path=directory` pairs, ';'-separated, parsed by ProjectMap.kt and nowhere
     // else, which fails BY NAME when it is absent or malformed. A system property is a declared
     // input of this task by construction, so adding, moving or removing a module re-runs the laws
@@ -51,13 +51,13 @@ tasks.withType<Test>().configureEach {
     // edit re-runs them too — `*/src/main/kotlin/**` only ever saw the root's direct children.
     inputs.files(
         moduleDirectories.values.map { dir ->
-            gatewayRoot.dir("$dir/src/main/kotlin").asFileTree.matching { include("**/*.kt") }
+            repoRoot.dir("$dir/src/main/kotlin").asFileTree.matching { include("**/*.kt") }
         },
     ).withPropertyName("scannedProductionSources")
     // The census: production Kotlin ANYWHERE under the root. A file that appears in a tree the
     // map does not claim changes this fingerprint, so the sweep that names that tree actually runs.
     inputs.files(
-        gatewayRoot.asFileTree.matching {
+        repoRoot.asFileTree.matching {
             include("**/src/main/kotlin/**/*.kt")
             censusNotSwept.forEach { name -> exclude("**/$name/**") }
         },
@@ -67,11 +67,11 @@ tasks.withType<Test>().configureEach {
     // UP-TO-DATE after a forbidden `project(":gateway")` was added — a green that never ran.
     // P0: each module's build file is named through the map, for the same reason the sources are.
     inputs.files(
-        moduleDirectories.values.map { dir -> gatewayRoot.file("$dir/build.gradle.kts") },
-        gatewayRoot.file("settings.gradle.kts"),
+        moduleDirectories.values.map { dir -> repoRoot.file("$dir/build.gradle.kts") },
+        repoRoot.file("settings.gradle.kts"),
         // V4-91 (2026-09-17): the Konsist map now READS the module law's own map out of
         // build-logic, so an edit there must re-run the laws too, or a stale allowance could
         // come back UP-TO-DATE-green.
-        gatewayRoot.dir("build-logic/src/main/kotlin").asFileTree.matching { include("**/*.kts") },
+        repoRoot.dir("build-logic/src/main/kotlin").asFileTree.matching { include("**/*.kts") },
     ).withPropertyName("scannedModuleBuildFiles")
 }

@@ -8,7 +8,7 @@
     ".github/scripts/triage/test-find-duplicates.sh",
     ".github/secret-scan-allow.README.md",
     ".github/secret-scan-allow.toml",
-    ".rules/kotlin-splice/kt-tests-no-wall-clock.yml",
+    "quality/rules/kotlin/kt-tests-no-wall-clock.yml",
     "CHANGELOG.md",
     "README.md",
     "bin/splice-launch",

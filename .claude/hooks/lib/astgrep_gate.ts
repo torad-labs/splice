@@ -48,7 +48,7 @@ export function findProjectRoot(...starts: (string | null | undefined)[]): strin
     }
     for (let cur = p; ; cur = dirname(cur)) {
       // splice adaptation 2026-07-16: root marker is sgconfig.yml
-      // (settings.gradle.kts lives under gateway/)
+      // (it sits at the repository root, where ast-grep resolves every glob from)
       if (existsSync(join(cur, "sgconfig.yml")) && statSync(join(cur, ".claude")).isDirectory()) {
         return cur;
       }
@@ -118,7 +118,7 @@ export interface GateMatch {
  *
  *  Strategy (MIRRORED SCRATCH ROOT — supersedes the proof sibling-probe pattern,
  *  D2 amendment 2026-07-02): write the content at its TRUE relative path under a
- *  temp root with sgconfig.yml + .rules/ copied in, and scan there. The sibling
+ *  temp root with sgconfig.yml + quality/rules/ copied in, and scan there. The sibling
  *  .fleet-gate-<pid>/ probe dir broke rules whose ignores: name EXACT file paths
  *  (e.g. the persistence-boundary allowlist): the inserted dir segment defeated
  *  the ignore and every edit to an allowlisted file was falsely blocked. At the
@@ -143,9 +143,9 @@ export function astgrepScanProposed(root: string, filePath: string, content: str
   const tmp = mkdtempSync(join(tmpdir(), "fleet-gate-"));
   try {
     cpSync(sgconfig, join(tmp, "sgconfig.yml"));
-    const rulesDir = join(root, ".rules");
+    const rulesDir = join(root, "quality", "rules");
     if (existsSync(rulesDir) && statSync(rulesDir).isDirectory()) {
-      cpSync(rulesDir, join(tmp, ".rules"), { recursive: true });
+      cpSync(rulesDir, join(tmp, "quality", "rules"), { recursive: true });
     }
     const probe = join(tmp, rel);
     mkdirSync(dirname(probe), { recursive: true });

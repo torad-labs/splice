@@ -19,7 +19,7 @@ ci:
       - any-glob-to-any-file:
           - '.github/**'
           - 'checks/**'
-          - '.rules/**'
+          - 'quality/**'
 
 release:
   - changed-files:
@@ -33,4 +33,4 @@ dependencies:
       - any-glob-to-any-file:
           - 'package.json'
           - 'bun.lock'
-          - 'gateway/gradle/**'
+          - 'gradle/**'

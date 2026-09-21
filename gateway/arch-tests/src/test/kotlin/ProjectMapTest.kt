@@ -27,9 +27,9 @@ private const val MISSING_BUILD_FILE_EXPECTED = "the project map places :provide
 
 private const val ABSENT_CHANNEL_EXPECTED = "no -Dsplice.projectMap: the laws grade the modules the BUILD declares, and an absent map grades nothing while every law still reports green. gateway/arch-tests/build.gradle.kts is what supplies it."
 
-private const val MALFORMED_ENTRY_EXPECTED = "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the gateway root>' — a half-read map is a map that drops modules silently."
+private const val MALFORMED_ENTRY_EXPECTED = "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
 
-private const val EMPTY_DIRECTORY_EXPECTED = "splice.projectMap entry ':core=' is not ':<gradle path>=<directory relative to the gateway root>' — a half-read map is a map that drops modules silently."
+private const val EMPTY_DIRECTORY_EXPECTED = "splice.projectMap entry ':core=' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
 
 private const val DUPLICATE_ENTRY_EXPECTED = "splice.projectMap maps :core twice ('core' and 'elsewhere') — the build cannot place one module in two directories; the channel is corrupt."
 

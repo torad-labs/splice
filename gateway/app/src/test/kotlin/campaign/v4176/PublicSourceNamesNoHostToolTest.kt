@@ -74,7 +74,7 @@ private fun scan(root: Path, roots: List<Path>): List<String> =
 class PublicSourceNamesNoHostToolTest {
 
     private val repo: Path = run {
-        // The :app module's working directory is gateway/, and the roots this row owns sit beside it.
+        // The roots this row owns are named relative to the repository root, found by walking up.
         var dir = Path.of("").toAbsolutePath()
         while (!Files.exists(dir.resolve("install.sh")) && dir.parent != null) dir = dir.parent
         dir
@@ -84,7 +84,22 @@ class PublicSourceNamesNoHostToolTest {
     fun `no public source names a host tool`() {
         assertTrue(Files.exists(repo.resolve("install.sh")), "repo root not found from ${Path.of("").toAbsolutePath()}")
 
-        val roots = listOf("gateway", "install.sh", ".gitignore").map { repo.resolve(it) }
+        // PR 2 moved the Gradle build root out of gateway/ to the repository root. These are the
+        // same files this row already owned, under their new paths — a wall whose roots stay
+        // spelled `gateway` after the move would quietly stop reading the build files.
+        val roots = listOf(
+            "gateway",
+            "build-logic",
+            "quality/detekt",
+            "gradle",
+            "settings.gradle.kts",
+            "build.gradle.kts",
+            "gradle.properties",
+            "gradlew",
+            "gradlew.bat",
+            "install.sh",
+            ".gitignore",
+        ).map { repo.resolve(it) }
         val findings = scan(repo, roots)
 
         assertEquals(

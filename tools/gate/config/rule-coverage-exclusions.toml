@@ -62,8 +62,8 @@ date = "2026-09-20"
 reason = """
 The wall binds src/main and src/test but not src/testFixtures, so a @Suppress of a detekt structural
 rule in one of the four shared fixture files is not caught. A real gap, recorded rather than closed:
-widening a rule is a change to .rules/, not to this proof. Close it by adding
-`gateway/*/src/testFixtures/**/*.kt` to the rule's files: and deleting this row.
+widening a rule is a change to quality/rules/, not to this proof. Close it by adding
+`"**/src/testFixtures/**/*.kt"` to the rule's files: and deleting this row.
 """
 
 [[exclusion]]
@@ -90,7 +90,7 @@ reason = """
 Both walls are scoped to the control plane: `guarded(call)` covers the 25 control-plane routes, and
 LogSafe escapes the operator- and HTTP-supplied values (argv, head keys) that :control interpolates
 into log lines. Only :control declares those routes. Widening either wall to the head's proxy wire
-is a separate, evidence-led change to .rules/.
+is a separate, evidence-led change to quality/rules/.
 """
 
 [[exclusion]]
@@ -127,7 +127,7 @@ modules = ["app"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-The rule's own exemption, quoted from .rules/kotlin-splice/kt-no-println.yml: ":app is the
+The rule's own exemption, quoted from quality/rules/kotlin/kt-no-println.yml: ":app is the
 wiring/entry/CLI layer — a terminal tool legitimately writes to stdout (doctor output, usage).
 Daemon LOGGING still flows through the injected log lambda."
 """
@@ -178,7 +178,7 @@ reason = """
 :provider-muse is the ONE provider missing from this wall's files: list, which names provider-spi,
 grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
 credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
-.rules/, out of this stage's fence. Close it by adding `gateway/provider-muse/src/main/**/*.kt` to
+quality/rules/, out of this stage's fence. Close it by adding `gateway/provider-muse/src/main/**/*.kt` to
 the rule and deleting this row.
 """
 

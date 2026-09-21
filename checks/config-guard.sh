@@ -9,13 +9,13 @@ cd "$ROOT" || exit 1
 fail=0
 err() { echo "  ✗ $1"; fail=1; }
 
-DETEKT=gateway/detekt.yml
+DETEKT=quality/detekt/detekt.yml
 
 # 1. No detekt baseline — a baseline.xml silently whitelists every finding present when it is created.
 if grep -qE '^[[:space:]]*baseline[[:space:]]*:' "$DETEKT"; then
   err "detekt.yml declares a baseline — remove it (it suppresses existing findings)"
 fi
-if find gateway -name 'detekt-baseline.xml' -o -name 'baseline.xml' 2>/dev/null | grep -q .; then
+if find gateway quality -name 'detekt-baseline.xml' -o -name 'baseline.xml' 2>/dev/null | grep -q .; then
   err "a detekt baseline.xml exists — delete it (findings must be fixed, not whitelisted)"
 fi
 

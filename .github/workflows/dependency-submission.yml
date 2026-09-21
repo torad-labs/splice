@@ -43,4 +43,4 @@ jobs:
       - name: submit Gradle dependency graph
         uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          build-root-directory: gateway
+          build-root-directory: .

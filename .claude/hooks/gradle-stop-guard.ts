@@ -20,7 +20,7 @@ import { dirname, join, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = pathResolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const GRADLE_DIR = join(ROOT, "gateway"); // the gradlew wrapper lives here, not at repo root
+const GRADLE_DIR = ROOT; // the gradlew wrapper is at the repository root (restructure PR 2)
 const JDK21_DEFAULT = "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home";
 const GRADLE_TIMEOUT_S = 25; // self-limit under the 30s hook budget: cold compile fail-opens, not hard-killed
 

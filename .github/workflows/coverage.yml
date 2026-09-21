@@ -32,10 +32,10 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Generate aggregated kover report
-        run: cd gateway && ./gradlew :koverXmlReport --console=plain
+        run: ./gradlew :koverXmlReport --console=plain
       - uses: mi-kas/kover-report@94d69bc9d417de89b808cd5fe846bca2840911bb # v2.7
         if: github.event.pull_request.head.repo.full_name == github.repository
         with:
-          path: ${{ github.workspace }}/gateway/build/reports/kover/report.xml
+          path: ${{ github.workspace }}/build/reports/kover/report.xml
           title: Gateway coverage report
           update-comment: true

@@ -17,7 +17,8 @@ import { layout } from "../lib/repo.ts";
 export const usage = "rules [--prove-coverage]             the ast-grep walls (= npm run gate:rules), + P1 coverage";
 
 /** The ast-grep config `gate:rules` runs against — implicit in the npm script, because `ast-grep
- *  scan` with no --config walks up to it. PR 2 moves it under quality/rules/. */
+ *  scan` with no --config walks up to it. It stays at the repository root: ruleDirs and every
+ *  files:/ignores: glob resolve relative to ITS directory. */
 export const ROUTED_CONFIG = "sgconfig.yml";
 export const EXCLUSIONS = "tools/gate/config/rule-coverage-exclusions.toml";
 

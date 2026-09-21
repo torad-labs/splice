@@ -7,9 +7,10 @@
 // earlier split in the same file established (a shared helper file would couple two classes whose
 // only relationship is that they once shared a file).
 //
-// The split's acceptance is the total: :provider-grok:test must report the same count before and
+// The split's acceptance is the total: :providers-grok:test must report the same count before and
 // after, because a dropped case leaves detekt green and the suite green and shows up in nothing else.
-package grok
+package splice.provider.grok
+
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -20,8 +21,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

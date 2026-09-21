@@ -72,7 +72,7 @@ note: >
 # cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
 files:
   - upstream/src/main/**/*.kt
-  - gateway/provider-grok/src/main/**/*.kt
+  - providers/grok/src/main/**/*.kt
   - gateway/provider-kimi/src/main/**/*.kt
   - providers/codex/src/main/**/*.kt
   - gateway/provider-openai/src/main/**/*.kt

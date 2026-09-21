@@ -1,16 +1,15 @@
 // NEW: V4-152 — split out of GrokAuthProviderTest.kt, which held SEVEN classes in one 830-line file
 // and tripped detekt's LargeClass ceiling at 400. This class is NOT new: it already existed and
 // already had its own JUnit report, so only its FILE was wrong. It arrives with its comments and its
-// body byte-for-byte, and the split's acceptance is that :provider-grok:test reports the same total
+// body byte-for-byte, and the split's acceptance is that :providers-grok:test reports the same total
 // before and after — a dropped case would leave detekt green and the suite green and show up in
 // nothing but that number.
-package grok
+package splice.provider.grok
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.RefreshAttempt
-import splice.provider.grok.GrokAuthProvider
 import java.nio.file.Files
 
 // DR-73 (invariant audit): the persist-side merge re-read is the one credential parse DR-65 did

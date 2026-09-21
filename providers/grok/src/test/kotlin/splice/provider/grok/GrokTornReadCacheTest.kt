@@ -1,15 +1,14 @@
 // NEW: V4-152 — split out of GrokAuthProviderTest.kt, which held SEVEN classes in one 830-line file
 // and tripped detekt's LargeClass ceiling at 400. This class is NOT new: it already existed and
 // already had its own JUnit report, so only its FILE was wrong. Its comment block and body arrive
-// verbatim. Acceptance: :provider-grok:test reports the same total before and after.
-package grok
+// verbatim. Acceptance: :providers-grok:test reports the same total before and after.
+package splice.provider.grok
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
-import splice.provider.grok.GrokAuthProvider
 import java.nio.file.Files
 
 // DR-148 (provider sweep F5, 2026-08-31): GrokAuthJson keyed its cache on mtime ALONE while the

@@ -24,7 +24,7 @@
     ],
     "COLLISION DEFAULT_CLIENT_ID": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION DEFAULT_EXPIRES_IN_S": [
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
@@ -72,7 +72,7 @@
     ],
     "COLLISION LOG_TAG": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
     ],
     "COLLISION LOG_TAIL_BYTES": [
@@ -97,7 +97,7 @@
     ],
     "COLLISION PKCE_VERIFIER_BYTES": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokOAuth.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokOAuth.kt"
     ],
     "COLLISION PROBE_TIMEOUT_MS": [
       "gateway/app/src/main/kotlin/splice/app/DaemonLock.kt",
@@ -112,11 +112,11 @@
     ],
     "COLLISION REDIRECT_PORT": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION REDIRECT_URI": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION RUNAWAY_GUARD_MESSAGE": [
       "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
@@ -124,7 +124,7 @@
     ],
     "COLLISION SCOPE": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION SESSION_HEADER": [
       "daemon/control/src/main/kotlin/splice/control/api/diagnostics/McpRoutes.kt",
@@ -156,15 +156,15 @@
     ],
     "COPY BUDGET_HIGH": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY BUDGET_MAX": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY BUDGET_MEDIUM": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY BYTE_MASK": [
       "core/src/main/kotlin/splice/core/media/ImageBytes.kt",
@@ -219,7 +219,7 @@
     "COPY FIELD_ACCESS_TOKEN": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_ACCOUNT_ID": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
@@ -259,7 +259,7 @@
     "COPY FIELD_LAST_REFRESH": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_NAME": [
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
@@ -278,7 +278,7 @@
     "COPY FIELD_REFRESH_TOKEN": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_ROLE": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
@@ -297,7 +297,7 @@
     "COPY FIELD_TOKENS": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_TOOLS": [
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
@@ -392,7 +392,7 @@
     ],
     "COPY MEDIUM": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY MESSAGE": [
       "client/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
@@ -418,7 +418,7 @@
     ],
     "COPY MINIMAL": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY MIN_INTERVAL_S": [
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
@@ -444,7 +444,7 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsPulse.kt",
       "daemon/head/src/main/kotlin/splice/head/turn/TurnProgressLine.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
       "upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
@@ -480,7 +480,7 @@
     ],
     "COPY PROACTIVE_WINDOW_MS": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
     ],
     "COPY READ_TAIL_BYTES": [
       "daemon/head/src/main/kotlin/splice/head/compact/Compact.kt",
@@ -498,7 +498,7 @@
     ],
     "COPY REFRESH_ERROR_SNIPPET": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt",
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"
     ],
     "COPY REMEMBERED_SESSIONS": [
@@ -546,7 +546,7 @@
     ],
     "COPY STALE_FLOOR_MS": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
     ],
     "COPY SYSTEM": [
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
@@ -605,7 +605,7 @@
     ],
     "COPY XHIGH": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt",
-      "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
+      "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY YELLOW": [
       "gateway/app/src/main/kotlin/splice/app/cli/CliStyle.kt",

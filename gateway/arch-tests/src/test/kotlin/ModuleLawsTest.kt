@@ -52,7 +52,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":dialects-openai-chat" to ADAPTER_BASE,
     // a provider speaks its own dialect(s) — never another provider, never the transport.
     ":providers-codex" to ADAPTER_BASE + ":dialects-openai-responses",
-    ":provider-grok" to ADAPTER_BASE + ":dialects-openai-responses",
+    ":providers-grok" to ADAPTER_BASE + ":dialects-openai-responses",
     ":provider-kimi" to ADAPTER_BASE + ":dialects-anthropic",
     ":provider-muse" to ADAPTER_BASE,
     ":provider-openai" to ADAPTER_BASE + setOf(":dialects-openai-responses", ":dialects-openai-chat"),
@@ -69,8 +69,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai", ":app", ":arch-tests",
-    ":fir-checks",
+    ":provider-kimi", ":provider-muse", ":provider-openai", ":app", ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -418,7 +417,7 @@ private fun staleAllowanceViolations(
  *  inversion fails immediately, and this map is the visible worklist. Delete a line when the edge goes
  *  — a listed edge that no longer exists FAILS the law, so the list cannot rot into blanket permission. */
 private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
-    (":provider-grok" to ":daemon-head") to
+    (":providers-grok" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — grok's tests drive a real gateway server " +
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
     (":provider-openai" to ":daemon-head") to

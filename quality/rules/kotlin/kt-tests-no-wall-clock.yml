@@ -129,7 +129,7 @@
 #     daemon/control/src/test/kotlin/splice/control/mcp/McpHostLifecycleTest.kt                     (4)
 #     providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt                     (3)
 #     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
-#     gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt   (1)
+#     providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt   (1)
 #     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)
 #     gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt                    (2)
 #     upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt                  (1)

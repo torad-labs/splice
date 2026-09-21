@@ -1,5 +1,5 @@
 // NEW: the grok token-refresh HTTP call (POST grant_type=refresh_token to auth.x.ai) that
-// GrokAuthProvider injects. Lives in :app so :provider-grok stays HTTP-client-agnostic and
+// GrokAuthProvider injects. Lives in :app so :providers-grok stays HTTP-client-agnostic and
 // unit-testable with a fake refreshCall (mirrors CodexRefresh). G7: classify/retry now goes
 // through the shared RefreshRetry.kt loop (same shape as kimiRefresh) instead of a single
 // attempt collapsing every non-2xx status AND any thrown exception straight to null.

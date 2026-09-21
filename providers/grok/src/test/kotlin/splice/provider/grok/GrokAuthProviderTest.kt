@@ -4,7 +4,7 @@
 // the proactive window and persists rotated tokens + the NEW `expires`; a failed refresh on a
 // not-yet-expired token still serves the current one; a fully expired token with a dead refresh
 // yields null; foreign fields the official grok CLI stores beside ours survive the merge.
-package grok
+package splice.provider.grok
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
@@ -20,8 +20,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

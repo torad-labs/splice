@@ -57,7 +57,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const GROK = resolve(ROOT, "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt");
+const GROK = resolve(ROOT, "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly.
  *

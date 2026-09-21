@@ -3,7 +3,7 @@
 // GrokAuthFile, review 2026-08-28 PR 99: codex's *AuthFile is a single-method mtime probe, so one
 // name meant two different-sized responsibilities and a reader who had learned one provider's
 // collaborator shape could not predict the next). The mtime probe rides along here rather than in a
-// second type because :provider-grok sits at detekt's 14-function ceiling — the SHAPE difference is
+// second type because :providers-grok sits at detekt's 14-function ceiling — the SHAPE difference is
 // the ceiling's consequence, only the NAME was drift. Was a file-private collaborator in
 // GrokAuthProvider.kt so that class stayed under TooManyFunctions; lifted to its own file so the
 // provider is not billed for a second type (concentration HIGH, 2026-08-19).

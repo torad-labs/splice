@@ -2,7 +2,7 @@
 // A HeadServer wired with GrokProvider + GrokAuthProvider (reading ~/.grok/auth.json) serves a real
 // turn (same dialect + machine as codex, only quirks + oauth-vs-chatgpt-oauth differ). Plus grok
 // quirks pinned (session-id cache key, effort clamp, detailed summary for full thinking) and OAuth.
-package grok
+package splice.provider.grok
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -41,9 +41,6 @@ import splice.head.compact.ShadowClassifier
 import splice.head.freshPort
 import splice.head.perf.PerfStats
 import splice.head.usage.UsageStore
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokProvider
-import splice.provider.grok.GrokRefreshedTokens
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient

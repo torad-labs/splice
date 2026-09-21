@@ -225,12 +225,12 @@ function renderList(blocks: readonly ItemBlock[], status: string | null, phase: 
 
 /**
  * VENDORING DELTA 11 (splice V4-143 Phase C, 2026-09-18): THE MACHINE SHAPES CALLERS PARSE. Three
- * callers read manifest.py's output with regexes, not through a library: law-check.mjs and
+ * callers read manifest.py's output with regexes, not through a library: tools/gate/src/lib/laws.ts and
  * build-punch-list.mjs take the FIRST whitespace token of each `list` line as the row id and match
  * `^files = [...]$` / `^status = "..."$` / `^# [date] CLAIM: owner=` against `get`. This CLI's
  * human `list` starts every line with a status glyph, so those callers would read `▸` as the id,
  * filter it out, and see ZERO rows — build-punch-list throws, and law-check stops at its own
- * zero-rows guard (DID NOT RUN, exit 2, law-check.mjs:39; measured with the flags removed). Both
+ * zero-rows guard (DID NOT RUN, exit 2, tools/gate/src/commands/ledger.ts; measured with the flags removed). Both
  * fail loud, so the cost was an outage of both callers at the cutover, not a silent pass — an
  * earlier version of this comment claimed law-check would pass, inferred from its reader without
  * reading the guard. Phase B compared parsed id and status across the CLIs, not
@@ -2346,7 +2346,7 @@ async function selftest(): Promise<number> {
   check("list --status filters", !(await run("list", "--status", "todo")).includes("H2"));
   check("get returns the item", (await run("get", "H1")).includes("first item"));
   check("get surfaces existing notes", (await run("get", "H1")).includes("must survive"));
-  // DELTA 11 ARMS: the machine shapes the repo's callers parse (law-check.mjs, build-punch-list.mjs).
+  // DELTA 11 ARMS: the machine shapes the repo's callers parse (tools/gate/src/lib/laws.ts, build-punch-list.mjs).
   // The contract is the caller's regex, so the arms assert THAT, not a look-alike.
   {
     const plain = (await run("list", "--plain")).trim().split("\n");

@@ -9,7 +9,12 @@
 // config-time-checked). Test configs are exempt from the module law, so testImplementation(:core) is legal.
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.detekt)
+    // BY ID, NO VERSION: the root project applies `splice.gate-ladder` from build-logic, which puts
+    // build-logic's whole classpath — the detekt Gradle plugin included, pinned there from the
+    // catalog — on every project's script classpath, and Gradle refuses a VERSIONED request for a
+    // plugin an ancestor already carries ("already on the classpath with an unknown version"). One
+    // version, in build-logic/build.gradle.kts, from libs.versions.toml.
+    id("io.gitlab.arturbosch.detekt")
     id("splice.module-law")
 }
 

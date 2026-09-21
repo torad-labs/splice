@@ -3,8 +3,8 @@
 ## The invariants (L1 retired; L2–L4 locked)
 
 Structural walls enforce these at write time (`quality/rules/kotlin/` for the
-gateway, `quality/rules/console/` for the console, orchestrated by
-`.claude/hooks/orchestrator.ts`) and permanent tests enforce the behavioral
+gateway, `quality/rules/console/` for the console, routed at write time by
+`bun tools/gate rules --stdin pretooluse`) and permanent tests enforce the behavioral
 half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 
@@ -162,9 +162,9 @@ Green means all of them. A wall block means fix the code, not the wall — never
 
 The org-injected PR-title gate enforces Conventional Commits on the **PR title** via a REQUIRED
 check. This repo used to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The
-allowed types live once, in `checks/pr-title.sh`.
+allowed types live once, in `tools/gate/src/lib/conventional.ts`.
 
-    bash checks/pr-title.sh "feat(scope): subject"
+    bun tools/gate title "feat(scope): subject"
 
 Scope optional (`fix(walls): ...`). Anything else fails the org check and blocks the merge.
 
@@ -203,10 +203,10 @@ this), not the clean snapshot.
 | duplicated JSONL append + tail reader (perf/compact drift; `:perf` reached into `:compact`) | T1 `core/util/JsonlSink.appendLine`/`readTail` + wall `kt-jsonl-sink-single-source` |
 | `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
 | god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
-| config weakened to hide findings | T2 `checks/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |
-| the tiers never running | T0 `gateway-gradle` CI job + `bash checks/gate.sh` — everything above actually executes |
+| config weakened to hide findings | T2 `bun tools/gate rules` config guard (no baseline, maxIssues:0, walls stay `severity:error`) |
+| the tiers never running | T0 `gateway-gradle` CI job + `bun tools/gate run` — everything above actually executes |
 
-The gate reads **real** exit codes (`checks/gate.sh` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
+The gate reads **real** exit codes (`bun tools/gate run` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
 exit masked BUILD FAILED twice — never trust one.
 
 ## Compaction doctrine

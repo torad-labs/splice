@@ -71,9 +71,9 @@ credentials.json
 .claude/state/walls-grant.json
 .claude/tmp/
 
-# gradle-slot.sh lock + holder (checks/gradle-slot.sh)
+# gradle slot lock + holder (bun tools/gate slot)
 /.gradle-slot.lock*
-# A host build wrapper's per-project lock. checks/gradle-slot.sh runs gradle through whatever
+# A host build wrapper's per-project lock. The gradle slot (tools/gate/src/lib/slot.ts) runs gradle through whatever
 # memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
 # lock beside the tree it builds — the repository root, where the build is rooted. A machine
 # artifact, never source, and the pattern is the SHAPE rather than one tool's name so a box with a

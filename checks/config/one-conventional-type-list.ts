@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * V4-30 — the conventional-type list lives in checks/pr-title.sh, once.
+ * V4-30 — the conventional-type list lives in tools/gate/src/lib/conventional.ts, once.
  *
  * THE CLASS. A second copy of the conventional-commit type vocabulary drifts.
  * This repo shipped .github/workflows/pr-title.yml allowing two types the org
  * gate rejects. The workflow is deleted; the org gate is the authority;
- * checks/pr-title.sh mirrors it. Restating the list in prose is how a stale
+ * tools/gate/src/lib/conventional.ts mirrors it. Restating the list in prose is how a stale
  * copy outlives that deletion and how a contributor titles the 0.4.0 PR with
  * a type that cannot merge.
  *
- * SCOPE. Every text file in the tree except checks/pr-title.sh, which is the
+ * SCOPE. Every text file in the tree except tools/gate/src/lib/conventional.ts, which is the
  * single allowed copy. Docs, templates, agents files, checkers, tests: if it
  * is in the tree and is text, it is in scope.
  *
@@ -20,7 +20,7 @@
  * red the gate. A second copy has to be tracked to reach main. When there
  * is no git repo the checker falls back to a tree walk so hermetic
  * selftests still run. The type vocabulary itself is parsed from the
- * TYPES assignment in checks/pr-title.sh; this checker does not restate it.
+ * TYPES export in tools/gate/src/lib/conventional.ts; this checker does not restate it.
  *
  * DISPOSITION. A file either contains a run of three or more conventional
  * types in sequence, in which case it FAILs by name with the remedy, or it
@@ -40,7 +40,7 @@
  *   only the two rejected types: a wall on those two strings as a pair.
  *
  *   git log history. Commit subjects are not a restated list. What would
- *   catch inferring the convention from history: checks/pr-title.sh itself,
+ *   catch inferring the convention from history: `gate title` itself,
  *   which already warns not to.
  *
  *   Campaign ledgers under .dev/campaigns. They quote the defect being
@@ -63,8 +63,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-const SOURCE = "checks/pr-title.sh";
-const TYPES_LINE = /^TYPES='([^']+)'/m;
+const SOURCE = "tools/gate/src/lib/conventional.ts";
+const TYPES_LINE = /^export const TYPES = "([^"]+)";$/m;
 const SKIP_DIRS = new Set([".git", "node_modules", "build", ".gradle", "dist", "out", "__pycache__", ".venv"]);
 const SKIP_PREFIXES = [".dev/campaigns/", ".dev/research/"];
 const SKIP_SUFFIXES = new Set([
@@ -173,7 +173,7 @@ function check(root: string): number {
       const name = rel(root, path);
       failures.push(
         `${name} restates 3+ conventional types; the list lives once in ${SOURCE}. ` +
-          `Remedy: delete the copy and point readers at bash ${SOURCE} ` +
+          `Remedy: delete the copy and point readers at bun tools/gate title ` +
           `"feat(scope): subject"`,
       );
     }

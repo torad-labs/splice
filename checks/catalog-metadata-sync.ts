@@ -43,7 +43,7 @@
  *     bun checks/catalog-metadata-sync.ts [catalog.toml] [verification-metadata.xml]
  *
  * THERE IS NO FLAG MODE, and that is not an oversight: the bare invocation here IS the gate (it is
- * how checks/gate.sh runs it), so there is no non-gating default to mis-invoke. Compare the checkers
+ * how the gate ladder runs it), so there is no non-gating default to mis-invoke. Compare the checkers
  * that WRITE — those grew an explicit flag precisely because their bare run was the dangerous path.
  */
 import { readFileSync } from "node:fs";

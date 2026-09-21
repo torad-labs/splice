@@ -10,7 +10,7 @@
 # (WrappingRule NPE) and, once that is skipped, emits false positives on the `context(...)` line:
 # "missing spacing after ':'" and "unused import" for a type used only as a context-parameter type.
 # These are TOOL DEFECTS on valid Kotlin 2.3 syntax, not style findings. maxIssues:0 and
-# warningsAsErrors:true are inherited unchanged; config-guard.sh's guarantees are untouched.
+# warningsAsErrors:true are inherited unchanged; tools/gate/src/lib/configguard.ts's guarantees are untouched.
 style:
   UnusedImports:
     excludes: ['**/MustConsumeDiscardChecker.kt']

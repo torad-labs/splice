@@ -23,7 +23,7 @@
  *
  *    THE PARSED PAYLOAD IS A PYTHON OBJECT. The original stores `json.loads(payload)` and later
  *    re-emits one of them with `json.dumps(data)[:300]` in the error-event message. JSON.parse
- *    would give `{"a":1}` where Python gives `{"a": 1}`, so the payload goes through pyjson's
+ *    would give `{"a":1}` where Python gives `{"a": 1}`, so the payload goes through python-json's
  *    ordered tree and comes back out with Python's bytes.
  *
  *    THE VIOLATION MESSAGES CONTAIN Python repr() OF CONTAINERS. `f"... {names[i:]}"` and
@@ -37,7 +37,7 @@
  *    falsy-coalescing and the raise, because "reports a violation" and "crashes" are different
  *    observable outcomes even when both exit non-zero.
  */
-import { dumps, loads, obj, isPyObj, isPyNum, floatRepr, type PyValue } from "./pyjson.ts";
+import { dumps, loads, obj, isPyObj, isPyNum, floatRepr, type PyValue } from "../../tools/e2e/src/compat/python-json.ts";
 
 interface Args {
   head: string;
@@ -347,7 +347,7 @@ async function main(): Promise<number> {
   // what is really a missing header. WHICH credential is the caller's decision, not this script's,
   // and the distinction is a safety boundary rather than a preference: on a splice-credentialed
   // head this is the daemon's mgmt key, but on a CLIENT-auth head the gateway forwards this exact
-  // header verbatim to the vendor, so the mgmt key must never be what lands here. heads-e2e.sh
+  // header verbatim to the vendor, so the mgmt key must never be what lands here. tools/e2e/src/commands/heads.ts
   // (probe_bearer) owns that choice and hands the result down in SPLICE_PROBE_BEARER.
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const bearer = process.env["SPLICE_PROBE_BEARER"] ?? "";

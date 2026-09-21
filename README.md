@@ -462,7 +462,7 @@ config/        splice.example.toml — the sample multi-provider topology
 bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 console/       React 19 + Vite + Zustand operator console, single-file bundle (console/tools: its look gate)
-checks/        the gate (`npm run gate`) and its legs: wall routing, the concentration ratchet,
+checks/        gate legs not yet Kotlin laws, run by the ladder (tools/gate/config/ladder.json): the concentration ratchet,
                release acceptance, the OSS ladder, the e2e harnesses
 quality/       enforcement: detekt config + the ast-grep "walls" (write-time AND at the gate)
 .claude/       the hook orchestrator that runs the walls on every agent write, and its tests

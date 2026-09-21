@@ -1,7 +1,7 @@
 // The slot's contract, and the one property that makes the port safe to land beside the shell
 // script it ports: both take flock(2) on the SAME path, so they can never both hold the slot.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
@@ -30,11 +30,13 @@ function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') 
 }
 
 describe("the gradle slot", () => {
-  test("the lock path is the one checks/gradle-slot.sh computes", () => {
-    const script = readFileSync(join(real.repoRoot, "checks", "gradle-slot.sh"), "utf8");
-    const line = /^LOCK="\$\{GRADLE_SLOT_LOCK:-\$ROOT(\/[^"}]+)\}"$/m.exec(script);
-    expect(line, "gradle-slot.sh must still spell its default lock path the way this test reads it").not.toBeNull();
-    expect(lockPath(real, {})).toBe(real.repoRoot + line![1]!);
+  test("the lock path is the one .gitignore keeps out of the tree", () => {
+    // checks/gradle-slot.sh used to be the oracle; since PR 5 the external record of the lock's
+    // name is the ignore line — a lock the CLI wrote under any other name would be committed.
+    const ignore = readFileSync(join(real.repoRoot, ".gitignore"), "utf8");
+    const line = /^\/(\.gradle-slot\.lock)\*$/m.exec(ignore);
+    expect(line, ".gitignore must still name the slot lock the way this test reads it").not.toBeNull();
+    expect(lockPath(real, {})).toBe(join(real.repoRoot, line![1]!));
     // and the CLI derives it from the build root rather than the literal `gateway`, so it follows
     // the build root when the restructure moves it to the repository root
     expect(lockPath(real, {})).toBe(join(real.buildRoot, ".gradle-slot.lock"));
@@ -42,6 +44,37 @@ describe("the gradle slot", () => {
 
   test("GRADLE_SLOT_LOCK overrides it, as in the script", () => {
     expect(lockPath(real, { GRADLE_SLOT_LOCK: "/tmp/elsewhere.lock" })).toBe("/tmp/elsewhere.lock");
+  });
+
+  // #170 review: `gate run` passes only JAVA_HOME as overrides, and the first cut read the lock
+  // settings from THAT map — the operator's GRADLE_SLOT_LOCK and GRADLE_SLOT_WAIT_S in the process
+  // environment were discarded, so the gate took the worktree's default lock beside a competing
+  // build. Overrides lie over the environment; they never replace it.
+  test("the environment's lock settings survive a caller that passes only overrides", async () => {
+    const fake = fakeBuildRoot('echo "ARGS:$*"\nexit 0\n');
+    mkdirSync(join(fake.dir, "elsewhere"));
+    const elsewhere = join(fake.dir, "elsewhere", "shared.lock");
+    const before = { lock: process.env.GRADLE_SLOT_LOCK, wait: process.env.GRADLE_SLOT_WAIT_S };
+    process.env.GRADLE_SLOT_LOCK = elsewhere;
+    process.env.GRADLE_SLOT_WAIT_S = "1";
+    try {
+      const code = await runUnderSlot({ layout: fake.layout, label: "overrides-only", args: ["help"], env: { CI: "1", PATH: fake.path, JAVA_HOME: "/nonexistent-jdk" } });
+      expect(code).toBe(0);
+      expect(existsSync(elsewhere), "the slot must lock GRADLE_SLOT_LOCK from the environment").toBe(true);
+      expect(existsSync(join(fake.dir, ".gradle-slot.lock")), "and never the worktree default beside it").toBe(false);
+      // and the wait comes from the environment too: a held lock gives up after 1s, not an hour
+      const held = takeExclusive(elsewhere, 1000, 50)!;
+      try {
+        const started = Date.now();
+        expect(await runUnderSlot({ layout: fake.layout, label: "busy", args: ["help"], env: { CI: "1", PATH: fake.path } })).toBe(SLOT_TIMEOUT_EXIT);
+        expect(Date.now() - started).toBeLessThan(10_000);
+      } finally {
+        held.release();
+      }
+    } finally {
+      if (before.lock === undefined) delete process.env.GRADLE_SLOT_LOCK; else process.env.GRADLE_SLOT_LOCK = before.lock;
+      if (before.wait === undefined) delete process.env.GRADLE_SLOT_WAIT_S; else process.env.GRADLE_SLOT_WAIT_S = before.wait;
+    }
   });
 
   test("an EMPTY task list is DID NOT RUN, never PASSED", async () => {

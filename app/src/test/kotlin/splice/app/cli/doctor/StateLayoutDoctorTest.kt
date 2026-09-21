@@ -39,7 +39,7 @@ private const val LEGACY_STATE_DIR_ENV = "CLAUDEX_STATE_DIR"
  *  tree, so it is not required here. */
 private val REQUIRED = setOf(
     "bin/splice-launch",
-    "checks/e2e/heads-e2e.sh",
+    "tools/e2e/src/commands/heads.ts",
     "checks/e2e/docker/inside.sh",
     "checks/e2e/console-wire-keys.ts",
 )
@@ -175,7 +175,7 @@ class StateDirAgreementTest {
     }
 
     private fun shellResolvers(): List<Path> =
-        listOf("bin", "checks", ".dev").map(repo::resolve).filter { Files.exists(it) }
+        listOf("bin", "checks", "tools", ".dev").map(repo::resolve).filter { Files.exists(it) }
             .flatMap { start -> Files.walk(start).use { walk -> walk.toList() } }
             .filter { it.isRegularFile() && declaresResolver(it) }
             .sorted()

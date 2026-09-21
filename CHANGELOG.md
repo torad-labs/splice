@@ -412,6 +412,10 @@
   failure contract (`Promise.allSettled`, catch), and carries a worked cell; the hedges are gone. The
   `splice_exec` tool description carries the trigger too. A client that disables parallel tool use
   gets the sequential variant from its own resource file.
+- **`parallel_tool_calls = true` is documented as refused.** Tried live on 2026-09-20 against the
+  ChatGPT lite backend: every turn answered 400 `X-OpenAI-Internal-Codex-Responses-Lite requires
+  parallel_tool_calls to be false`. The knob stays for other Responses backends; on lite turns the
+  only batching is the code-mode runner (a two-Read probe on `gpt-5.6-sol` ran in one round trip).
 
 ### Fixed
 - **Any head joins any session again (V4-168).** A session started on one head resumed on any

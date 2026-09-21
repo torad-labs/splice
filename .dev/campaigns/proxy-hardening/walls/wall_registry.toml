@@ -80,7 +80,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/sh_10_muse_merge_never_rewrite.ts"
 [[item]]
 id = "SH-11"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.ts"
+wall = ""
+retired_to = "core/src/test/kotlin/splice/core/config/KeyStoreTest.kt"
+proof = "2026-09-21: KeyStore.unset() mutated to read entries() instead of entriesStrict(); the regex wall went RED and the KeyStoreTest arm 'unreadable store aborts unset the same way and the file is byte-identical after - SH-11' FAILED on the same mutation; restored, both GREEN (18/18)"
 
 [[item]]
 id = "SH-12"

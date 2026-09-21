@@ -1,0 +1,170 @@
+// PORT-OF: ResponsesStreamTranslator.kt @ f875801 — invariants unchanged: the L3 terminal-precedence
+// decision — the `TerminalStates(...).terminalPrecedence(...)` expression and the four
+// `?:`-chained classifiers that feed it, kept together in ONE file, in ONE order, so a future L3
+// landing has nowhere to accrete except here.
+package splice.dialect.responses.stream
+
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
+import splice.core.turn.TurnOutcome
+import splice.upstream.failure.TerminalStates
+import splice.upstream.retry.WatchdogFired
+
+private const val MS_PER_S = 1000L
+
+internal class ResponsesTerminalDecision(
+    private val ctx: StreamTurnContext,
+    private val payload: ResponsesOutcomePayload,
+) {
+
+    // Ordering enforced by the shared spi.terminalPrecedence: a COMPLETED response wins over a
+    // late watchdog fire (the watchdog polls the whole enclosing coroutine, which stays suspended
+    // on the socket-EOF read AFTER response.completed was already parsed — discarding that turn
+    // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
+    fun terminalOutcome(state: ResponsesTurnState, runawayGuard: String?): TurnOutcome = TerminalStates(
+        // NF-06: a tripped runaway valve outranks everything — the buffers were truncated, so
+        // neither a late terminal nor a provider error can describe this turn honestly.
+        providerFailure = runawayGuard?.let {
+            TurnOutcome.Failure(
+                it,
+                providerReported = false,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
+            )
+        } ?: state.toolArgsInvalid?.let {
+            // CX-01: the backend sent a terminal, but a tool call's arguments are corrupt —
+            // provider-reported (the backend produced the bytes) so it retries, never a clean
+            // Success that dispatches garbage.
+            TurnOutcome.Failure(
+                "upstream: $it in tool call — retry",
+                providerReported = true,
+                cause = FailureCause.TOOL_TEAR,
+                phase = FailurePhase.MID_OUTPUT,
+            )
+        } ?: state.upstreamFailure?.let {
+            // Parsed from a response.failed/error event the backend actually sent (G20 provenance).
+            // Only an explicitly transient verdict carries re-anchor state: an unknown/policy error
+            // must not re-POST the identical full context merely because API_ERROR is a wide bucket.
+            TurnOutcome.Failure(
+                "upstream: ${it.message}",
+                providerReported = true,
+                partial = if (it.transient) payload.partialOrNull(state) else null,
+                // V4-81: the classifier's own verdict, reaching the outcome at last. It gated
+                // `partial` before this and nothing else, so a non-transient API_ERROR still went
+                // out labelled retryable and the client re-sent it — see PreContentWireType.
+                permanent = !it.transient,
+                // V4-117: the classifier's OWN cause, since it is the one holding the status, the
+                // vendor code and the body text. An earlier draft of this line re-derived the cause
+                // here from `it.status` alone — and that was WRONG in a way two tests caught: on the
+                // streaming path there is usually no status at all, so a rate limit or an overflow
+                // detected from the TEXT collapsed to UPSTREAM_REPORTED and the failure went out as
+                // API_ERROR instead of RATE_LIMIT / INVALID_REQUEST. The status is one input to the
+                // classifier, not a substitute for its verdict.
+                cause = it.cause,
+                phase = FailurePhase.MID_OUTPUT,
+            )
+        } ?: refusalFailure(state) ?: contentFilterFailure(state),
+        finished = state.finalResponse != null,
+        watchdogFired = ctx.watchdogFired(),
+    ).terminalPrecedence(
+        onFinished = { payload.successOutcome(state) },
+        onWatchdog = { watchdogOutcome(it, state) },
+        onUnfinished = { noCompletionOutcome(state) },
+    )
+
+    // W4-A (L3): the backend REFUSED. OpenAI's refusal channel arrives with status `completed`, so
+    // the incomplete-only gate below never sees it and the turn used to end as a clean Success
+    // carrying zero text — or worse, as a normal turn once the pipeline promoted the streamed chain
+    // of thought to the answer. The model's stated reason IS the verdict.
+    // Deliberately carries NO `partial`, unlike every other failure here: a refusal is
+    // deterministic, and ResponsesReanchorController re-POSTs any API_ERROR that carries salvage
+    // (RETRYABLE = {OVERLOADED, API_ERROR}), so a partial would buy an identical refusal at full
+    // upstream cost.
+    private fun refusalFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
+        state.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
+            TurnOutcome.Failure(
+                // V4-81: permanent, and this is the site the row names — the comment above already
+                // says a refusal is deterministic, and `permanent` is that sentence made load-
+                // bearing. Without it the pre-content rule relabelled the refusal overloaded_error
+                // and the client re-sent the identical bytes up to 300 times for the same refusal.
+                "upstream: model refused — $it",
+                providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
+                // V4-122 item 11: the sentence above was load-bearing and the ARGUMENT HAD BEEN
+                // LOST — the comment survived while the call passed only providerReported, so
+                // `permanent` defaulted false and the pre-content rule relabelled the refusal
+                // overloaded_error. That is the documented 300-identical-resend defect, live again.
+                // Decided from the BEHAVIOUR, not the comment: a refusal is deterministic, so a
+                // retry re-sends the identical bytes for the identical verdict and the client
+                // cannot fix it by retrying. Its siblings at :49 and :95 pass it; this one did not.
+                permanent = true,
+                cause = FailureCause.MODEL_REFUSED,
+                phase = FailurePhase.TERMINAL,
+            )
+        }
+
+    // response.incomplete with a non-max_output_tokens reason is a CENSORED turn — a clean
+    // Success(incomplete=true) would let a blocked generation masquerade as complete (the same
+    // L3 honesty invariant ChatStreamTranslator's contentFiltered branch closes). Carries NO
+    // partial for the same reason as a refusal above: this terminal is deterministic, so handing
+    // it to ResponsesReanchorController would re-POST the full context for the identical verdict.
+    private fun contentFilterFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
+        if (state.contentFiltered) {
+            TurnOutcome.Failure(
+                "upstream: generation stopped by content filter",
+                providerReported = true,
+                // V4-81: permanent, for the reason the comment above already gives — the identical
+                // prompt is filtered identically, so a retry buys the same censored turn at full
+                // price.
+                permanent = true,
+                cause = FailureCause.CONTENT_FILTERED,
+                phase = FailurePhase.TERMINAL,
+            )
+        } else {
+            null
+        }
+
+    private fun noCompletionOutcome(state: ResponsesTurnState): TurnOutcome =
+        if (ctx.clientGone()) {
+            TurnOutcome.ClientAbandoned()
+        } else {
+            TurnOutcome.Failure(
+                "splice: upstream stream ended without response.completed (truncated); retry",
+                partial = payload.partialOrNull(state),
+                cause = FailureCause.UPSTREAM_TRUNCATED,
+                phase = FailurePhase.MID_OUTPUT,
+            )
+        }
+
+    // DR-7: an IDLE tear carries the round's salvage; a TOTAL-CAP tear does not, and the split is
+    // the whole point. Idle is a STALL DETECTOR — the backend went quiet mid-part, the reasoning
+    // already streamed to the client is real, and re-anchoring on it costs one POST and keeps the
+    // turn. TotalCap is the whole-turn wall: handing it a partial would invite the continuation it
+    // exists to forbid. Before this, BOTH built a Failure with no partial, so a stalled round threw
+    // away text the client had already been shown and could not continue even in principle.
+    private fun watchdogOutcome(fired: WatchdogFired, state: ResponsesTurnState): TurnOutcome {
+        val why = when (fired) {
+            // The tier that fired is named, not assumed: before any client frame the silence was
+            // judged on the first-output cap (firstByteTimeoutMs), after it on streamIdle. An
+            // operator reading "180s idle cap" on a 300s pre-output stall was reading a lie.
+            is WatchdogFired.Idle -> if (fired.sawClientFrame) {
+                "no completion within the ${ctx.streamIdleMsForMessage / MS_PER_S}s idle cap"
+            } else {
+                "no first output within the ${fired.limitMs / MS_PER_S}s first-output cap"
+            }
+            is WatchdogFired.TotalCap ->
+                "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
+        }
+        return TurnOutcome.Failure(
+            "splice: upstream stream stalled ($why) — aborted; retry",
+            partial = when (fired) {
+                is WatchdogFired.Idle -> payload.partialOrNull(state)
+                is WatchdogFired.TotalCap -> null
+            },
+            cause = FailureCause.UPSTREAM_STALLED,
+            // MID_OUTPUT, not CONNECT/FIRST_BYTE: a watchdog fires DURING a stream, and the one
+            // fact that could narrow it further — whether a client frame actually went out — is the
+            // boundary's, which corrects this with copy(phase = ...) rather than being guessed here.
+            phase = FailurePhase.MID_OUTPUT,
+        )
+    }
+}

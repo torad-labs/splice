@@ -4,8 +4,8 @@ package splice.provider.codex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import splice.dialect.responses.ResponsesCodeModeInput
-import splice.dialect.responses.ResponsesCodeModeReplay
+import splice.dialect.responses.request.ResponsesCodeModeInput
+import splice.dialect.responses.request.ResponsesCodeModeReplay
 
 internal class CodexCodeModeHistory(json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)

@@ -12,7 +12,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.dialect.responses.ResponsesCodeModeProjection
+import splice.dialect.responses.request.ResponsesCodeModeProjection
 import java.util.concurrent.ConcurrentHashMap
 
 internal class CodexCodeModeWire(private val json: Json, private val log: LogSink) {

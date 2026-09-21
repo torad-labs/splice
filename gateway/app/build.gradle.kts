@@ -21,7 +21,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":client"))
     implementation(project(":upstream"))
-    implementation(project(":dialect-openai-responses"))
+    implementation(project(":dialects-openai-responses"))
     implementation(project(":dialect-openai-chat"))
     implementation(project(":dialects-anthropic"))
     implementation(project(":provider-codex"))
@@ -41,7 +41,7 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":daemon-head")))
-    testImplementation(testFixtures(project(":dialect-openai-responses")))
+    testImplementation(testFixtures(project(":dialects-openai-responses")))
     testImplementation(testFixtures(project(":dialects-anthropic")))
 }
 

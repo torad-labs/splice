@@ -13,10 +13,10 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.dialect.responses.BuildOptions
-import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.reasoning.InjectPriorReasoning
+import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {

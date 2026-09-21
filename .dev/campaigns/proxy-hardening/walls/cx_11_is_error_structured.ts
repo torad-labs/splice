@@ -72,7 +72,7 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 
 export const PATHS: Record<string, string> = {
   wire: "core/src/main/kotlin/splice/core/wire/ContentBlock.kt",
-  guard: "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/LoopGuard.kt",
+  guard: "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/LoopGuard.kt",
 };
 
 // key -> (token, why it is the thing that must exist)

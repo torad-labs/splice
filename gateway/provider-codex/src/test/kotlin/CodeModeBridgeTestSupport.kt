@@ -12,7 +12,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
-import splice.dialect.responses.ResponsesToolResultMedia
+import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexQuirks

@@ -11,10 +11,10 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ResponsesToolResultMedia
+import splice.dialect.responses.request.ResponsesToolResultMedia
+import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
 

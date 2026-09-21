@@ -80,7 +80,7 @@ kt-no-delay-in-production, which binds src/main.
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialect-openai-responses",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "daemon-head", "app", "fir-checks",
 ]
@@ -101,7 +101,7 @@ would find 28 — local filesystem paths in daemon-log lines, not HTTP-supplied 
 [[exclusion]]
 rule = "kt-json-scalars-single-source"
 modules = [
-  "core", "client", "dialects-anthropic", "dialect-openai-responses", "dialect-openai-chat",
+  "core", "client", "dialects-anthropic", "dialects-openai-responses", "dialect-openai-chat",
   "daemon-head", "fir-checks",
 ]
 sourceSets = ["main"]
@@ -121,7 +121,7 @@ adding `client/src/main/**/*.kt` to the rule, fixing those two, and deleting `cl
 [[exclusion]]
 rule = "kt-no-exception-as-outcome"
 modules = [
-  "dialects-anthropic", "dialect-openai-responses", "dialect-openai-chat",
+  "dialects-anthropic", "dialects-openai-responses", "dialect-openai-chat",
   "provider-codex", "provider-grok", "provider-kimi", "provider-muse", "provider-openai",
   "daemon-head", "daemon-control", "app", "fir-checks",
 ]
@@ -146,7 +146,7 @@ Daemon LOGGING still flows through the injected log lambda."
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialect-openai-responses",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "daemon-head", "daemon-control", "fir-checks",
 ]
@@ -179,7 +179,7 @@ imports no kotlinx.coroutines at all.
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["core", "client", "dialects-anthropic", "dialect-openai-responses", "dialect-openai-chat", "fir-checks"]
+modules = ["core", "client", "dialects-anthropic", "dialects-openai-responses", "dialect-openai-chat", "fir-checks"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -221,7 +221,7 @@ reopen the incident."
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 modules = [
-  "core", "upstream", "dialects-anthropic", "dialect-openai-responses",
+  "core", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "daemon-head", "fir-checks",
 ]
@@ -240,7 +240,7 @@ wall did not narrow; its subject moved module, and :client's main is covered fil
 [[exclusion]]
 rule = "kt-outcome-tag-single-source"
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialect-openai-responses",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "app", "fir-checks",
 ]
@@ -258,7 +258,7 @@ Measured: 0 in :client, which writes no perf row.
 [[exclusion]]
 rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
 modules = [
-  "core", "client", "upstream", "dialects-anthropic", "dialect-openai-responses",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "daemon-control", "app", "fir-checks",
 ]

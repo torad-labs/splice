@@ -105,10 +105,10 @@ const CHAT = [
 // The four files below are exactly the CX-01 carrier chain: entry point, accumulate+latch, parse,
 // convert-to-Failure.
 const RESP = [
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesFrameParse.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesItemFold.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesFrameParse.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt"),
 ];
 export const PATHS: Record<string, string[]> = { chat: CHAT, responses: RESP };
 

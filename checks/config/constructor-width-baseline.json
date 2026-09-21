@@ -32,11 +32,11 @@
       "params": 19,
       "subsystems": 0
     },
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesQuirks.kt ResponsesQuirks": {
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesQuirks.kt ResponsesQuirks": {
       "params": 23,
       "subsystems": 1
     },
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequest.kt ResponsesRequest": {
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequest.kt ResponsesRequest": {
       "params": 14,
       "subsystems": 0
     },

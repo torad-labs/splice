@@ -165,10 +165,10 @@ public class SharedSummaryParts(
      *  apply both constructor bounds at every [endRound].
      *
      *  PUBLIC ON PURPOSE, and narrowing it to `internal` breaks the build (2026-09-18). The caller
-     *  this exists for is in ANOTHER module — ConversationSummaryPartsTest in dialect-openai-responses
+     *  this exists for is in ANOTHER module — ConversationSummaryPartsTest in :dialects-openai-responses
      *  — so `internal` makes the declaration unreachable from the only code that uses it. 8a489694
      *  burned it to `internal` while reducing the public surface and the break did not surface until
-     *  a full `clean check` reached :dialect-openai-responses:compileTestKotlin, because no other leg
+     *  a full `clean check` reached :dialects-openai-responses:compileTestKotlin, because no other leg
      *  compiles that module's tests. It costs the public-surface ratchet nothing: that wall gates
      *  declarations with no other-module use, and this one's whole purpose is an other-module use. */
     @Synchronized

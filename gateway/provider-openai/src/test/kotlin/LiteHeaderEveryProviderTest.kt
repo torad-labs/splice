@@ -12,8 +12,8 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.WatchdogBudget
-import splice.dialect.responses.DefaultEffortVocabulary
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.request.DefaultEffortVocabulary
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
 import splice.upstream.ProviderTuning

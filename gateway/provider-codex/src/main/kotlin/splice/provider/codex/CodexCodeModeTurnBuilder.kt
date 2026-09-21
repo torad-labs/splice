@@ -12,8 +12,8 @@ import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
-import splice.dialect.responses.ImageDisposition
-import splice.dialect.responses.ResponsesToolResultMedia
+import splice.dialect.responses.request.ImageDisposition
+import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeResult
 

@@ -16,11 +16,11 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
-import splice.dialect.responses.BuildOptions
-import splice.dialect.responses.InjectPriorReasoning
-import splice.dialect.responses.ResponsesCodeModeProjection
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.reasoning.InjectPriorReasoning
+import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeStep

@@ -82,7 +82,7 @@ export const PATHS: Record<string, string> = {
   // 2026-08-25: detekt Filename fix renamed the file after its single class — ResponsesHarvest
   // now lives in ResponsesHarvest.kt, and Harvested.kt holds the (alias-free) Harvested payload
   // type that used to sit in HarvestedText.kt. Repointed at the code, same single-file resolution.
-  harvest: "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesHarvest.kt",
+  harvest: "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesHarvest.kt",
   // HD-24 (2026-08-17): UsageHud decomposed; firstNum (the delegating alias-chain call) moved to
   // UsageJson.kt (the usage-accounting owner).
   hud: "daemon/head/src/main/kotlin/splice/head/usage/UsageJson.kt",

@@ -141,6 +141,8 @@ private const val FIELD_ROLE = "role"
 private const val ROLE_ASSISTANT = "assistant"
 private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
 private const val CODE_MODE_TOOL_DESCRIPTION =
-    "Execute one bounded JavaScript cell with await and tools.call('name', args). " +
-        "Tool calls resolve to their original output strings; use console.log for final output. " +
-        "The cell persists only while awaiting its calls and has no filesystem or network access."
+    "Run several tool calls in one round trip: one bounded JavaScript cell with await and " +
+        "tools.call('name', args). Use it whenever two or more tool calls with known arguments come " +
+        "next. Calls resolve to their original output strings and reject with the tool's error text; " +
+        "use console.log for final output. The cell persists only while awaiting its calls and has " +
+        "no filesystem or network access."

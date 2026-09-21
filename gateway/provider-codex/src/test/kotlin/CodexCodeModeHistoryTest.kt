@@ -97,6 +97,35 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         assertTrue(logLines.any { "abandoned record" in it && "native discovery history was edited" in it })
     }
 
+    @Test
+    fun `an abandoned record retires with its evidence instead of being abandoned again every turn`() = runTest {
+        val runtime = ScriptedRuntime(
+            ArrayDeque(
+                listOf(
+                    CodeModeStep.Calls(listOf(call("runtime-read", "Read"))),
+                    CodeModeStep.Completed("done"),
+                ),
+            ),
+        )
+        val manager = bridge(runtime)
+        val readSink = RecordingSink()
+        manager.interceptor(turn(), null, disableParallel = false)
+            .intercept(baselineWithNativeSearch(), readSink) { outerOutcome() }
+        val readId = readSink.tools.single().id
+        var upstreamCalls = 0
+        repeat(3) {
+            val outcome = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
+                .intercept(callbackWithUnexpectedSearch(readId), RecordingSink()) {
+                    upstreamCalls++
+                    completedOutcome()
+                }
+            assertTrue(outcome is TurnOutcome.Success)
+        }
+        // 2026-09-20: one LOST record was re-found by its client ids and re-abandoned on 82 turns.
+        assertEquals(3, upstreamCalls)
+        assertEquals(1, logLines.count { "abandoned record" in it })
+    }
+
     private fun nativeSearchBody(searchId: String): String =
         """
         {

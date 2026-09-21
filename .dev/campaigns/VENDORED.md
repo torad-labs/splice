@@ -88,11 +88,11 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     over an hour old, so carrying the note's time across would make the first release-stale after the
     cutover free every live row. The original time stays in the diary, byte for byte. Five arms; four
     mutants (writes nothing, overwrites a conflict, not idempotent, note-time lease) each fail theirs.
-11. **`list --plain` and `get <ID> --raw`, the shapes callers parse.** `law-check.mjs` and
+11. **`list --plain` and `get <ID> --raw`, the shapes callers parse.** `tools/gate/src/lib/laws.ts` (`gate ledger laws`) and
     `build-punch-list.mjs` take the first whitespace token of a `list` line as the id and regex the raw
     TOML that `get` prints. The canonical human `list` leads with a status glyph, so those callers would
     see ZERO rows: build-punch-list throws, and law-check stops at its own zero-rows guard (DID NOT
-    RUN, exit 2, `law-check.mjs:39`, measured with the flags removed) — an outage of both callers at
+    RUN, exit 2, `tools/gate/src/commands/ledger.ts`, measured with the flags removed) — an outage of both callers at
     the cutover, loud rather than silent. (First reported as a silent pass; that was inferred from
     law-check's reader without reading its guard, and is corrected here.) These flags are
     additive and byte-identical to `manifest.py` (see verification). The cutover swaps each caller's argv

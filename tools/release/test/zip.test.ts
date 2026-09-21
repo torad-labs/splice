@@ -1,4 +1,4 @@
-// The zip reader that replaced python's zipfile for the jar's META-INF comparison. Both storage
+// The in-process zip reader for the jar's META-INF comparison (PR 6 retired the interpreter it used). Both storage
 // methods a JDK-built jar uses are exercised, and so is the real staged jar when one is there —
 // 31k entries and every sidecar deflated, which no hand-built fixture proves.
 import { afterAll, describe, expect, test } from "bun:test";

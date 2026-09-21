@@ -1,4 +1,4 @@
-// THE RELEASE WORKFLOW, PARSED — the three legs checks/oss/verify-OSS-D.sh ran through python+yaml.
+// THE RELEASE WORKFLOW, PARSED — the three legs checks/oss/verify-OSS-D.sh ran over the parsed YAML.
 //
 // DR-19 redo (2026-08-31, codex catch): the original legs were raw greps, so a COMMENT satisfied
 // them while the parsed step was an ungated bare command. These read the workflow as YAML instead:

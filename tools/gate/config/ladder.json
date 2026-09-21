@@ -116,8 +116,7 @@
     {
       "task": "secretScanAllowlist",
       "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
-      "command": ["bun", "checks/gen-secret-scan-allow.ts", "--check"]
-    },
-    { "task": "secretScanAllowlistSelftest", "why": "The canary over the generated allowlist.", "command": ["bash", "checks/secret-scan-allow-selftest.sh"] }
+      "command": ["bun", "tools/gate", "allowlist", "--check"]
+    }
   ]
 }

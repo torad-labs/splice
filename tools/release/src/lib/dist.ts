@@ -54,7 +54,7 @@ const PLACEHOLDER_REASONS: ReadonlySet<string> = new Set([
   "todo", "tbd", "tba", "fixme", "wip", "xxx", "n/a", "na", "none", "null", "placeholder", "?", "-", "--", "...",
 ]);
 
-/** python's `reason.strip().lower().strip(" .:;!?-")`, to the character. */
+/** `reason` trimmed, lowercased and stripped of the punctuation set " .:;!?-" at both ends, as the old checker did. */
 function normalizeReason(reason: string): string {
   return reason.trim().toLowerCase().replace(/^[ .:;!?-]+/, "").replace(/[ .:;!?-]+$/, "");
 }
@@ -64,7 +64,7 @@ function absentReason(reason: string): boolean {
   return normalized === "" || PLACEHOLDER_REASONS.has(normalized);
 }
 
-/** python's `repr` of a sorted list of names, so the message reads as it did. */
+/** A sorted list of names rendered as ['a', 'b'], so the message reads as it always did. */
 function asList(names: readonly string[]): string {
   return `[${names.map((name) => `'${name}'`).join(", ")}]`;
 }

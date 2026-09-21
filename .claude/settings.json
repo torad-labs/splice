@@ -16,7 +16,7 @@
           },
           {
             "type": "command",
-            "command": "bun $CLAUDE_PROJECT_DIR/checks/no-python-write-guard.ts",
+            "command": "bun $CLAUDE_PROJECT_DIR/tools/gate no-python --guard",
             "timeout": 10
           }
         ]

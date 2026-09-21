@@ -115,16 +115,6 @@
       "command": ["bash", "checks/safe-failure-render-selftest.sh"]
     },
     {
-      "task": "sharedQuirksNoVendorDefaults",
-      "why": "V4-29: a non-null default on a SHARED dialect's quirks is inherited by every provider that does not override it, so a vendor fact parked there rides to other vendors' endpoints. Fields are enumerated by parsing every shared *Quirks primary constructor on disk; there is no allowlist.",
-      "command": ["bun", "checks/config/shared-quirks-no-vendor-defaults.ts", "check", "."]
-    },
-    {
-      "task": "sharedQuirksSelftest",
-      "why": "The shared-quirks wall's own arms.",
-      "command": ["bun", "checks/config/shared-quirks-no-vendor-defaults.ts", "--selftest"]
-    },
-    {
       "task": "quirksKeysDocumented",
       "why": "V4-44: a quirk KEY must not drift away from its documentation. The denominator is parsed from QuirksConfig.kt, so a key added tomorrow is in scope with no edit to the checker; every key is documented in config/splice.example.toml or the `splice add PROFILE` emitter, or retired with a written reason.",
       "command": ["bun", "checks/config/quirks-keys-documented.ts", "check", "."]

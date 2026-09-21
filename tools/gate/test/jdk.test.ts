@@ -4,7 +4,8 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { majorFrom, resolveJdk21 } from "../src/lib/jdk.ts";
+import { run } from "../src/commands/run.ts";
+import { javaMajor, majorFrom, resolveJdk21 } from "../src/lib/jdk.ts";
 
 /** A `java` launcher that reports `version` and, under -XshowSettings, a java.home of `home`. */
 function fakeJava(dir: string, version: string, home: string): string {
@@ -65,5 +66,25 @@ describe("the JDK 21 resolver", () => {
     } finally {
       rmSync(box, { recursive: true, force: true });
     }
+  });
+});
+
+describe("`gate run --java-home-only`", () => {
+  test("drives the verb directly and prints a JAVA_HOME that is a real JDK 21", async () => {
+    const originalLog = console.log;
+    const lines: string[] = [];
+    console.log = (line: string): void => {
+      lines.push(line);
+    };
+    let exitCode: number;
+    try {
+      exitCode = await run(["--java-home-only"]);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(exitCode).toBe(0);
+    expect(lines).toHaveLength(1);
+    const javaHome = lines[0]!;
+    expect(javaMajor(join(javaHome, "bin", "java"))).toBe("21");
   });
 });

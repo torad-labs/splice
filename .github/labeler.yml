@@ -7,7 +7,6 @@ gateway:
       # what it means is "the Kotlin gateway", and :client is part of that.
       # Every §2.2 module home; a glob over a directory that does not exist yet matches nothing.
       - any-glob-to-any-file:
-          - 'gateway/**'
           - 'client/**'
           - 'core/**'
           - 'upstream/**'

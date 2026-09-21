@@ -169,7 +169,7 @@ tasks.withType<Test>().configureEach {
         repoRoot.file(".gitignore"),
         repoRoot.file("THIRD_PARTY_NOTICES.md"),
         repoRoot.file("package.json"),
-        repoRoot.file(".docs/PROVENANCE.md"),
+        repoRoot.file("docs/PROVENANCE.md"),
         repoRoot.file(".dev/release/history-rewrite-runbook.md"),
         repoRoot.file("gradle/verification-metadata.xml"),
         repoRoot.file("gradle/wrapper/gradle-wrapper.properties"),

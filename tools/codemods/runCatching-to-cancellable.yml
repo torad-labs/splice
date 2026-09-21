@@ -7,9 +7,9 @@
 # MODE: run-once + review the diff (NOT a blind Stop-hook auto-apply) — the rewrite is
 # semantics-CHANGING (it makes cancellation propagate) and context-dependent (a runCatching in
 # genuinely non-coroutine sync code may not want it / may not import the helper). Dry-run:
-#   npx ast-grep scan --rule checks/codemods/runCatching-to-cancellable.yml         (shows diffs)
+#   npx ast-grep scan --rule tools/codemods/runCatching-to-cancellable.yml         (shows diffs)
 # Apply after reviewing:
-#   npx ast-grep scan --rule checks/codemods/runCatching-to-cancellable.yml --update-all
+#   npx ast-grep scan --rule tools/codemods/runCatching-to-cancellable.yml --update-all
 id: codemod-runcatching-to-cancellable
 language: kotlin
 #

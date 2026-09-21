@@ -227,10 +227,81 @@ describe("the P1 coverage proof", () => {
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const stale = report.findings.filter((f) => f.kind === "exclusion-stale");
-    // EXACTLY the injected entry: the siblings it hides behind are untouched and still excuse real
-    // losses, which is precisely the condition under which the row-keyed check reported nothing.
-    expect(stale.map((f) => f.rule)).toEqual([DEAD_ENTRY]);
+    // EXACTLY the injected entry and nothing else: the siblings it hides behind are untouched and
+    // still excuse real losses, which is precisely the condition under which a row-grained key
+    // reported nothing. Asserted as a SET rather than a list because usage moved to the atom: the
+    // injected rule is reported once per scope cell the row spells for it, so a row with two
+    // sourceSets yields two findings naming the same rule. The claim is unchanged — this entry is
+    // dead, its siblings are not — only the grain it is counted at.
+    expect(stale.length).toBeGreaterThan(0);
+    expect(new Set(stale.map((f) => f.rule))).toEqual(new Set([DEAD_ENTRY]));
     expect(stale[0]?.message).toContain("excuses nothing");
+  });
+
+  // The same retirement check one dimension further in, and the reason the (row, rule) key was not
+  // enough either. A row names up to FOURTEEN modules; crediting usage to the rule let a single live
+  // module vouch for every dead one beside it.
+  test("a stale MODULE beside a live module in the same row is still a finding", async () => {
+    const real = await prove(join(repoRoot, ROUTED_CONFIG), join(repoRoot, EXCLUSIONS));
+    expect(real.ok, "the real table must be green, or this arm cannot attribute its own finding").toBe(true);
+
+    const copy = copyOfTheRealRules();
+    // :app is INSIDE kt-json-scalars-single-source's files: list, so excluding :app excuses nothing —
+    // the retirement case, not a typo. The row's seven other modules keep excusing real losses, which
+    // is exactly the masking condition.
+    edit(
+      copy.exclusions,
+      'rule = "kt-json-scalars-single-source"\nmodules = [\n  "core",',
+      'rule = "kt-json-scalars-single-source"\nmodules = [\n  "app", "core",',
+    );
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const stale = report.findings.filter((f) => f.kind === "exclusion-stale");
+    // ONE finding. The live siblings are not reported, and their silence is proven by the count
+    // rather than described: eight module cells, one dead, one finding.
+    expect(stale).toHaveLength(1);
+    expect(stale[0]!.rule).toBe("kt-json-scalars-single-source");
+    expect(stale[0]!.message).toContain("module app");
+    expect(stale[0]!.message).toContain("excuses nothing");
+  });
+
+  // A live file glob must not mask a stale sibling in the same scope.
+  test("a dead files GLOB beside a live glob in the same row is still a finding", async () => {
+    const copy = copyOfTheRealRules();
+    edit(
+      copy.exclusions,
+      'rule = "kt-error-envelope-single-source"\nfiles = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]',
+      'rule = "kt-error-envelope-single-source"\nfiles = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt", "core/src/main/kotlin/splice/core/wire/NoSuchFile.kt"]',
+    );
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const stale = report.findings.filter((f) => f.kind === "exclusion-stale");
+    expect(stale).toHaveLength(1);
+    expect(stale[0]!.rule).toBe("kt-error-envelope-single-source");
+    expect(stale[0]!.message).toContain("files glob core/src/main/kotlin/splice/core/wire/NoSuchFile.kt");
+  });
+
+  for (const scope of ['modules = ["app"]', 'sourceSets = ["test"]']) {
+    test(`a file exclusion cannot waive a file outside its ${scope}`, async () => {
+      const copy = copyOfTheRealRules();
+      const anchor = 'files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]';
+      edit(copy.exclusions, anchor, `${anchor}\n${scope}`);
+      const report = await prove(copy.sgconfig, copy.exclusions);
+      expect(report.ok).toBe(false);
+      const lost = messagesFor(report, "kt-error-envelope-single-source", "file-lost");
+      expect(lost).toHaveLength(1);
+      expect(lost[0]).toContain("core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt");
+      expect(messagesFor(report, "kt-error-envelope-single-source", "exclusion-stale")).toHaveLength(1);
+    });
+  }
+
+  test("a file exclusion credits its matching module and source-set cell", async () => {
+    const copy = copyOfTheRealRules();
+    const anchor = 'files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]';
+    edit(copy.exclusions, anchor, `${anchor}\nmodules = ["core"]\nsourceSets = ["main"]`);
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.findings).toEqual([]);
+    expect(report.ok).toBe(true);
   });
 
   test("a stale exclusion is a finding, not a default", async () => {

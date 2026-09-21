@@ -51,8 +51,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
+import { findRepoRoot } from "../../gate/src/lib/repo.ts";
 
-const REPO = resolve(dirname(import.meta.path), "../..");
+const REPO = findRepoRoot(import.meta.dir);
 const WEBUI = join(REPO, "console");
 const REQUEST_HOME = join(WEBUI, "src/shared/api/index.ts");
 const FETCH_TIMEOUT_MS = 15_000;

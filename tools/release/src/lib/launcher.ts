@@ -302,7 +302,7 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
     const base: Record<string, string> = {};
     for (const [key, value] of Object.entries(Bun.env)) {
       if (typeof value !== "string") continue;
-      if (/^(SPLICE_|CLAUDEX_|CONTROL_|LAUNCHER_)/.test(key)) continue;
+      if (SELECTORS.some((selector) => selector === key) || /^(SPLICE_|CLAUDEX_|CONTROL_|LAUNCHER_)/.test(key)) continue;
       base[key] = value;
     }
     base.HOME = join(dir, "home");

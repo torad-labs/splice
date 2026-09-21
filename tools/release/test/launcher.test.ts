@@ -59,6 +59,30 @@ describe("the launch shim", () => {
     expect(await launcherRehearsal(shipped)).toBeNull();
   }, 180_000);
 
+  test("ambient selectors cannot escape the rehearsal sandbox", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-shim-ambient-"));
+    workspaces.push(dir);
+    const script =
+      `import { launcherRehearsal } from ${JSON.stringify(join(repoRoot, "tools/release/src/lib/launcher.ts"))};\n` +
+      `const problem = await launcherRehearsal(${JSON.stringify(shipped)});\n` +
+      'if (problem) { console.error(problem); process.exit(1); }\n';
+    const child = Bun.spawn([process.execPath, "-e", script], {
+      cwd: dir,
+      env: {
+        ...Bun.env,
+        ...Object.fromEntries(SELECTORS.map((selector) => [selector, join(dir, "ambient")])),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(code, `${stdout}${stderr}`).toBe(0);
+  }, 180_000);
+
   test("a shim with no readable markers is a refusal, not a pair of blanks", async () => {
     expect(await launcherRehearsal(fixture('const VERSION = "0.0.0";\n'))).toContain("could not read version markers");
   });

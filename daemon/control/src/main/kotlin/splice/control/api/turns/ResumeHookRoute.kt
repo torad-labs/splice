@@ -144,8 +144,8 @@ internal class ResumeHookRoute(
     private fun unwrittenTranscriptInsideHead(hook: ResumeCall, configDir: Path): Path? {
         val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let(Path::of)
         val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + UNWRITTEN_TRANSCRIPT_EXT }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a parent that cannot be resolved is the refusal case, named by the caller in one sentence.
         val parent = claimed?.parent?.let { dir ->
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a parent that cannot be resolved is the refusal case, named by the caller in one sentence.
             Cancellables.runCatchingCancellable { dir.toRealPath() }.getOrNull()
         }
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a head whose projects tree cannot be resolved owns no transcript; null is the complete answer.

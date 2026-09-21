@@ -62,6 +62,7 @@ import splice.head.MockChatGptUpstream
 import splice.head.RecordingSink2
 import splice.head.TestResponsesProvider
 import splice.head.admission.RequestMaterializationGate
+import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.headDeps
 import splice.head.headStores

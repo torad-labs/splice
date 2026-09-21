@@ -3,6 +3,11 @@
 package splice.app.cli.status
 
 import splice.app.auth.LoginIo
+import splice.app.cli.CYAN
+import splice.app.cli.DIM
+import splice.app.cli.GREEN
+import splice.app.cli.RESET
+import splice.app.cli.YELLOW
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect

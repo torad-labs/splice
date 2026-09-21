@@ -11,6 +11,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.JsonScalars
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.ResponsesRequest
 import splice.dialect.responses.request.responsesRequestJson
 

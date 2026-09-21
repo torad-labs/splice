@@ -5,6 +5,7 @@
 // checks out."
 package splice.app.cli.doctor
 
+import splice.app.cli.AdminSupport
 import splice.app.daemon.DaemonProbe
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader

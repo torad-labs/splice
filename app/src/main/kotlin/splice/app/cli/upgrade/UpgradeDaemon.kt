@@ -7,6 +7,7 @@
 // the daemon lock and exited 0 while the squatter kept serving the old jar (review 2026-09-14).
 package splice.app.cli.upgrade
 
+import splice.app.cli.AdminSupport
 import splice.app.cli.daemon.RestartCommand
 import splice.app.daemon.DaemonProbe
 import java.nio.file.Path

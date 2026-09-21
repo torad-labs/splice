@@ -4,6 +4,7 @@
 // its path-anchored token.
 package splice.app.cli.daemon
 
+import splice.app.cli.AdminSupport
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText

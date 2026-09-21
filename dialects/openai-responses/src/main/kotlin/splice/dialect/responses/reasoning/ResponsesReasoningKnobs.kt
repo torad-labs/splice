@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.wire.AnthropicRequest
+import splice.dialect.responses.ResponsesLiteShape
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesEffort
 import splice.dialect.responses.request.SUMMARY_DETAILED

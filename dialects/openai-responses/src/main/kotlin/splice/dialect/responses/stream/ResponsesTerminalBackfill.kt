@@ -6,6 +6,7 @@ package splice.dialect.responses.stream
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.dialect.responses.ResponsesTurnState
 
 internal class ResponsesTerminalBackfill {
 

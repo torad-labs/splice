@@ -19,6 +19,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.control.api.HeadResolver
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionScope
 import splice.core.compaction.EffectiveCompactionInstructions

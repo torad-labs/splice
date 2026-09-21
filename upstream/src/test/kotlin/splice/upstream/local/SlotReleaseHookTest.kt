@@ -3,12 +3,12 @@
 // the provider's lease on a llama-server slot ends there instead of at each exit separately.
 package splice.upstream.local
 
-import admittedSlot
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.admittedSlot
 
 class SlotReleaseHookTest {
 

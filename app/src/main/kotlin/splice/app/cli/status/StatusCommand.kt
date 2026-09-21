@@ -4,6 +4,12 @@
 package splice.app.cli.status
 
 import splice.app.auth.LoginIo
+import splice.app.cli.AdminSupport
+import splice.app.cli.BOLD
+import splice.app.cli.DIM
+import splice.app.cli.GREEN
+import splice.app.cli.RESET
+import splice.app.cli.YELLOW
 import splice.app.cli.daemon.DaemonHealth
 import splice.app.cli.doctor.HealthView
 import splice.app.daemon.TopologyLoader

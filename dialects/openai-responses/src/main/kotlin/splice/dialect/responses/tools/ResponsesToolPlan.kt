@@ -8,6 +8,7 @@ package splice.dialect.responses.tools
 
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolDefinition
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
 import splice.upstream.ToolSearchController
 

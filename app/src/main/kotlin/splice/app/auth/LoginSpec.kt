@@ -4,6 +4,8 @@
 // keep splice.app.auth.LoginSpec.
 package splice.app.auth
 
+import splice.app.AuthJsonFromResponse
+import splice.app.ExchangeForm
 import java.nio.file.Path
 
 /** Everything the flow needs for one provider's login (built by LoginCommand per head). */

@@ -41,6 +41,7 @@ import splice.core.util.ElapsedClock
 import splice.head.MockChatGptUpstream
 import splice.head.RecordingSink2
 import splice.head.TestResponsesProvider
+import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline

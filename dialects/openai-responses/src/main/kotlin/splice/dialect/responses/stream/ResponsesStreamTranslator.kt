@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator

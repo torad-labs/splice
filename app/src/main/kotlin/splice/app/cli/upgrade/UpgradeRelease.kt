@@ -6,6 +6,8 @@
 // through two seams so the command is tested without a socket or a gh.
 package splice.app.cli.upgrade
 
+import splice.app.cli.GREEN
+import splice.app.cli.RESET
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions

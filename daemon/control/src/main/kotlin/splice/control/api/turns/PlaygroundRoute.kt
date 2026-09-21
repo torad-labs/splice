@@ -30,6 +30,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.control.ManagedHead
+import splice.control.api.HeadResolver
 import splice.control.api.sessions.JsonReply
 import splice.core.util.Cancellables
 

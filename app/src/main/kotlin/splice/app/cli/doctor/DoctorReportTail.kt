@@ -7,6 +7,7 @@ package splice.app.cli.doctor
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
+import splice.app.cli.SafeNames
 import splice.core.config.StatePaths
 
 private const val LOG_TAIL_LINES = 500

@@ -5,8 +5,6 @@
 // like a server fault, and llama-server's full KV pool reached the banner as bare text.
 package splice.dialect.chat
 
-import driveEvents
-import ev
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

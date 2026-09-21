@@ -7,6 +7,12 @@
 // :app: println-exempt.
 package splice.app.cli.upgrade
 
+import splice.app.cli.BOLD
+import splice.app.cli.DIM
+import splice.app.cli.GREEN
+import splice.app.cli.RED
+import splice.app.cli.RESET
+import splice.app.cli.YELLOW
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText

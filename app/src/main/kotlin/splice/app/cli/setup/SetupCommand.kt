@@ -4,6 +4,7 @@
 // AddProfiles and installed by calling AddCommand; the wizard never writes those tables.
 package splice.app.cli.setup
 
+import splice.app.cli.AdminSupport
 import splice.app.cli.add.AddCommand
 import splice.app.cli.add.AddProfiles
 import splice.app.cli.add.DaemonUpProbe

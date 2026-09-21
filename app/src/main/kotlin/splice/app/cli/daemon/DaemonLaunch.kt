@@ -6,6 +6,7 @@
 // because spawnDaemon and the launch shim must agree on the flag set.
 package splice.app.cli.daemon
 
+import splice.app.cli.AdminSupport
 import splice.core.GATEWAY_VERSION
 import java.nio.file.Path
 

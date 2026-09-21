@@ -3,6 +3,7 @@
 // the fix, which is why RestartCommand still exposes it.
 package splice.app.cli.daemon
 
+import splice.app.cli.AdminSupport
 import splice.app.cli.doctor.CheckStatus
 import splice.app.cli.doctor.DaemonSnapshot
 import splice.app.cli.doctor.DoctorCheck

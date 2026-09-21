@@ -13,6 +13,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.app.cli.SafeNames
 import splice.core.config.StatePaths
 import splice.core.perf.PerfKeys
 import splice.core.topology.Topology

@@ -4,6 +4,7 @@
 // Command.kt / InstallCommandTest / DoctorInstallProbes / Main.kt do not change.
 package splice.app.cli.install
 
+import splice.app.cli.Command
 import splice.app.daemon.TopologyLoader
 import splice.core.util.EnvReader
 import java.nio.file.Files

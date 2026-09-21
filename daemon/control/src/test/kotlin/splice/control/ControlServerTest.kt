@@ -40,7 +40,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-private class FakeHead(
+private class StubHead(
     override val key: String,
     override val port: Int,
     override val label: String = key,
@@ -70,7 +70,7 @@ class ControlServerTest {
     private val port = freshPort()
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
-    private val head = FakeHead("codex", 3099)
+    private val head = StubHead("codex", 3099)
     private val shutdownRequests = AtomicInteger()
     private val shutdownRequested = CountDownLatch(1)
 
@@ -169,7 +169,7 @@ class ControlServerTest {
     /** A second head whose wrapper COMMAND differs from its topology KEY (the starter's
      *  openrouter → claude-openrouter shape) and whose api-key auth is absent. */
     private fun openrouterHead(managed: ManagedHead, launchSpec: LaunchSpec): ManagedHead = managed.copy(
-        head = FakeHead("openrouter", 3101, label = "claude-openrouter"),
+        head = StubHead("openrouter", 3101, label = "claude-openrouter"),
         auth = FakeAbsentAuth(),
         authKind = "api-key",
         launchSpec = launchSpec.copy(port = 3101),
@@ -181,7 +181,7 @@ class ControlServerTest {
         launchSpec: LaunchSpec,
         key: String,
     ): ManagedHead = managed.copy(
-        head = FakeHead(key, 3200, label = "dup"),
+        head = StubHead(key, 3200, label = "dup"),
         launchSpec = launchSpec.copy(port = 3200),
     )
 

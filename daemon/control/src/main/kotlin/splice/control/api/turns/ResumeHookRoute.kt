@@ -41,6 +41,9 @@ import java.nio.file.Path
 
 private const val PROJECTS_DIR = "projects"
 
+/** Claude Code names a session's transcript `<session id>.jsonl` inside the cwd's projects dir. */
+private const val UNWRITTEN_TRANSCRIPT_EXT = ".jsonl"
+
 /** The same shape ResumeAcrossHeads admits as a session id: a path component and a log word. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
 
@@ -88,7 +91,14 @@ internal class ResumeHookRoute(
     }
 
     private fun located(managed: ManagedHead, configDir: Path, pinnedModel: String, hook: ResumeCall): String? {
+        // 2026-09-21: a startup fires before Claude Code has written the session's first row, so the
+        // transcript is a path that does not exist yet (measured: every startup hook since V4-183
+        // landed was refused here, one second after its launch, and no head ever owned a session —
+        // the bare -c crossing V4-183 was written against stayed live). A startup therefore admits
+        // the not-yet-written file: its DIRECTORY must resolve under the head's tree and its name
+        // must be the hook's own session id. A resume rewrites rows, so it still needs the file.
         val transcript = transcriptInsideHead(hook.transcriptPath, configDir)
+            ?: hook.takeIf { it.source == STARTUP_SOURCE }?.let { unwrittenTranscriptInsideHead(it, configDir) }
             ?: return "the transcript path is not a file under this head's transcript tree"
         // V4-183: ownership first, on both sources — a resume that then fails to rewrite is still
         // this head's session. A hook without a cwd records nothing (a launch resolves -c by cwd).
@@ -124,6 +134,28 @@ internal class ResumeHookRoute(
         if (real == null || tree == null) return null
         val inside = real.startsWith(tree) && Files.isRegularFile(real, NOFOLLOW_LINKS)
         return if (inside) real else null
+    }
+
+    /** A startup's transcript before its first row: the claimed path's PARENT resolved with symlinks
+     *  followed must be a directory under the head's own projects tree, the file name must be
+     *  `<session id>.jsonl` (the id already passed SESSION_ID_SHAPE), and nothing may sit at the
+     *  path yet other than a regular file. The recorded path is the resolved parent plus that name,
+     *  which is exactly what Claude Code creates on the first write. */
+    private fun unwrittenTranscriptInsideHead(hook: ResumeCall, configDir: Path): Path? {
+        val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let { raw ->
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21 (astra, PR #169): a path the filesystem cannot even spell (a NUL byte) is the refusal case, named by the caller in one sentence; the route must still answer 200.
+            Cancellables.runCatchingCancellable { Path.of(raw) }.getOrNull()
+        }
+        val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + UNWRITTEN_TRANSCRIPT_EXT }
+        val parent = claimed?.parent?.let { dir ->
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a parent that cannot be resolved is the refusal case, named by the caller in one sentence.
+            Cancellables.runCatchingCancellable { dir.toRealPath() }.getOrNull()
+        }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a head whose projects tree cannot be resolved owns no transcript; null is the complete answer.
+        val tree = Cancellables.runCatchingCancellable { configDir.resolve(PROJECTS_DIR).toRealPath() }.getOrNull()
+        val dir = parent?.takeIf { tree != null && it.startsWith(tree) && Files.isDirectory(it, NOFOLLOW_LINKS) }
+        val real = if (name != null && dir != null) dir.resolve(name) else null
+        return real?.takeIf { !Files.exists(it, NOFOLLOW_LINKS) || Files.isRegularFile(it, NOFOLLOW_LINKS) }
     }
 
     private fun parse(body: String): JsonObject? = try {

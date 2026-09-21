@@ -274,7 +274,16 @@ wall = ".dev/campaigns/proxy-hardening/walls/w4_a_refusal_honesty.ts"
 [[item]]
 id = "CX-09"
 phase = "W4-correctness-walls"
-wall = ".dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.ts"
+wall = ""
+retired_to = [
+  "quality/rules/kotlin/kt-l2-single-mirror-definition.yml",
+  "quality/rules/kotlin/kt-l2-mirror-delegates-to-predicate.yml",
+  "daemon/head/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt",
+  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesRedactedEmissionTest.kt",
+]
+proof = "2026-09-21: six legs, wall and home on the same bytes. ONE PREDICATE — mirrorInto inlining the cascade instead of delegating: wall RED and kt-l2-mirror-delegates-to-predicate RED, 1 finding; the one-definition half was already kt-l2-single-mirror-definition's and the predicate's existence is compiler-enforced by the delegation. THE HONESTY GATE — dropping the operator knob from willMirrorHere: wall RED and TurnPipelineTest 'the default pipeline keeps the reasoning mirror locked off' FAILED; dropping the emittedThinking question from nothingReachesTheClient: wall RED and TurnPipelineTest FAILED on exactly the two cells the wall pinned by name, 'a native thinking block covers the turn even though the text mirror will not fire' and 'an emitted thinking block covers the turn with the operator mirror off'. THE PER-DIALECT WIRING — passthrough latching on block-OPEN instead of on content: wall RED and PassthroughStreamTranslatorTest 'a whitespace-only thinking delta does not count as delivered content' FAILED; chat's two set-sites neutered: wall RED and ChatStreamTranslatorTest 'a whitespace-only reasoning delta still counts as delivered thinking - DR-144' FAILED. THE RESPONSES LEG FOUND A HOLE IN BOTH CHECKERS: state.emittedThinking has THREE write sites in that dialect and only ResponsesReasoningReplay.kt:22 had an arm, so neutering both ResponsesReasoningFold sites left every responses test GREEN; worse, with only ONE of the two neutered the WALL is green too, because its token is the substring `emittedThinking = true` and the surviving site satisfies it. Two arms added in 531f2b00 (the fold delta path and the fold late path, each asserting the outcome flag AND that a thinking block reached the sink) and each proven to red for its OWN site alone, which the wall cannot do. Restored: wall GREEN, ast-grep 0 findings, TurnPipelineTest 20/20, PassthroughStreamTranslatorTest 21/21, ChatStreamTranslatorTest 22/22, ResponsesRedactedEmissionTest 3/3. Not carried over: the wall's `test` key, which pinned two TurnPipelineTest cell NAMES — a wall asserting that a test exists is circular once the test IS the home, and the cells are now named in this row instead. Every --tests filter derived with arm-class.sh"
 
 [[item]]
 id = "CX-11"

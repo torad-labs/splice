@@ -50,7 +50,7 @@ class StatusTableTest {
 
     @Test
     fun `the documented kimi api-key alternative is not OpenAI either - DR-175`() {
-        // config/splice.example.toml documents MOONSHOT_API_KEY over anthropic-passthrough as the
+        // app/src/main/resources/splice.example.toml documents MOONSHOT_API_KEY over anthropic-passthrough as the
         // pay-per-token path. It is an UNREGISTERED kind, so it takes the dialect fallback — which
         // must still describe the wire rather than naming a vendor it cannot verify.
         val label = table.backendLabel(provider("api-key", Dialect.ANTHROPIC_PASSTHROUGH))

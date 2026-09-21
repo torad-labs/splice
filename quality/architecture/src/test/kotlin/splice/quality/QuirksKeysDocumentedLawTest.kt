@@ -43,7 +43,7 @@ internal object QuirksKeysDocumented {
 
     /** The two files an operator reads to write a quirk: the copyable example config (repository
      *  root) and the `splice add PROFILE` emitter (:app's main sources). */
-    const val EXAMPLE_CONFIG = "config/splice.example.toml"
+    const val EXAMPLE_CONFIG = "app/src/main/resources/splice.example.toml"
     const val PROFILE_EMITTER_IN_APP = "splice/app/cli/add/AddProfileCatalog.kt"
 
     private val DATA_CLASS = Regex("(?:public\\s+)?data class\\s+(\\w+)\\s*\\(")

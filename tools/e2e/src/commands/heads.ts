@@ -264,7 +264,7 @@ export function parseHeads(payload: string): Head[] {
 
 // The cheap tier of every dialect this harness can meet. `haiku` was the missing one and it was a
 // COST TRAP, not a cosmetic gap: the Anthropic catalog is fable/opus/sonnet/haiku
-// (config/splice.example.toml:275-289), none of which matched `mini|spark|flash|lite`, so an
+// (app/src/main/resources/splice.example.toml:275-289), none of which matched `mini|spark|flash|lite`, so an
 // anthropic-passthrough head fell through to rows[0] — claude-fable-5, simultaneously the most
 // expensive row and the head's pinned_model. Verified live: grok (grok-4.6/4.5/4.3) and kimi
 // (k3-256k/kimi-for-coding/k3[1m]) match nothing either and take that same fallback today.

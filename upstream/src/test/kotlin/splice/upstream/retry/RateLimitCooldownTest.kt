@@ -27,6 +27,7 @@ import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.UpstreamPost
 import splice.upstream.transport.fakeAuth
+import splice.upstream.transport.posted
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 

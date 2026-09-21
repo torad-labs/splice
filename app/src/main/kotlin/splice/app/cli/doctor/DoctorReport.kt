@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.app.cli.SafeNames
 import splice.core.GATEWAY_VERSION
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths

@@ -5,8 +5,6 @@
 // the "prompt is too long" line it compacts on.
 package splice.upstream.retry
 
-import clientOver
-import fakeAuth
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
@@ -16,11 +14,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import postOnce
-import posted
 import splice.upstream.RetryNotice
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.clientOver
+import splice.upstream.transport.fakeAuth
+import splice.upstream.transport.postOnce
+import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicInteger
 
 class OverflowNotRetriedTest {

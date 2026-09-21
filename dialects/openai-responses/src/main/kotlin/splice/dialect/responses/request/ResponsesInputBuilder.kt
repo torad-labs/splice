@@ -24,6 +24,7 @@ import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
 
 internal class ResponsesInputBuilder(

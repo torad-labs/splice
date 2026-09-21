@@ -6,6 +6,7 @@ package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.FIELD_EFFORT
 import splice.dialect.responses.reasoning.FIELD_REASONING
 import splice.dialect.responses.reasoning.FIELD_SUMMARY

@@ -2,6 +2,10 @@
 // Same-package; the provider keeps the SPI overrides and the WS lazy arm.
 package splice.dialect.responses.request
 
+import splice.dialect.responses.ResponsesTurnOptions
+import splice.dialect.responses.ResponsesTurnSeams
+import splice.dialect.responses.ResponsesTurnSeamsDeps
+import splice.dialect.responses.TurnOptionsDeps
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.stream.ConversationSummaryParts

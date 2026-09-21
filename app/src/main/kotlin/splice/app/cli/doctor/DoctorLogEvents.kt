@@ -3,6 +3,8 @@
 // key=value pairs). Split from DoctorRedaction.kt (concentration, 2026-09-14).
 package splice.app.cli.doctor
 
+import splice.app.cli.SafeNames
+
 private const val MAX_LINE_CHARS = 400
 
 /** The daemon's event heads: how each family of daemon.log message begins (derived from the

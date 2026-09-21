@@ -5,6 +5,8 @@ package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.StreamTurnContext
 import splice.upstream.sse.WireSink
 
 /** onItemDone's replay half: emit the encrypted reasoning IN POSITION (gated) and collect its

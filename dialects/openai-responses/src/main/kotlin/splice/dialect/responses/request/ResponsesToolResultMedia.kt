@@ -18,6 +18,7 @@ package splice.dialect.responses.request
 import kotlinx.serialization.json.JsonObject
 import splice.core.wire.ImageBlock
 import splice.core.wire.ToolResultBlock
+import splice.dialect.responses.ResponsesQuirks
 
 public class ResponsesToolResultMedia(private val quirks: ResponsesQuirks) {
 

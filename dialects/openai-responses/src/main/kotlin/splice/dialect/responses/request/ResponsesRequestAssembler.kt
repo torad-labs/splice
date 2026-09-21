@@ -12,6 +12,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoiceMapping
+import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.ResponsesClientHints
+import splice.dialect.responses.ResponsesLiteShape
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.tools.DEFAULT_SEARCH_LIMIT
 import splice.dialect.responses.tools.ResponsesToolPlan

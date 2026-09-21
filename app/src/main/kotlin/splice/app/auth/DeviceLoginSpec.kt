@@ -3,6 +3,7 @@
 // (concentration, 2026-08-19). Same-package FQCN is unchanged.
 package splice.app.auth
 
+import splice.app.AuthJsonFromResponse
 import java.nio.file.Path
 
 /** Runs after a successful credential write; the default is a no-op so kimi stays unchanged. */

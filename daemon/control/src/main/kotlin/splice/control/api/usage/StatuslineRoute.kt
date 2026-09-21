@@ -24,6 +24,8 @@ import splice.control.ManagedHead
 import splice.control.SessionCost
 import splice.control.SessionCostSource
 import splice.control.StatuslineRenderer
+import splice.control.api.HeadResolver
+import splice.control.api.RendererCache
 import splice.core.config.ConfigService
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars

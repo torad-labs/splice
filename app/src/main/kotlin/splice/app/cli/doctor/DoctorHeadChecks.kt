@@ -5,6 +5,7 @@
 // into an existing offender.
 package splice.app.cli.doctor
 
+import splice.app.cli.AdminSupport
 import splice.app.daemon.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.topology.Topology

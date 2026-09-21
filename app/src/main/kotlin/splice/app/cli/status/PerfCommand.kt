@@ -8,6 +8,11 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.app.cli.BOLD
+import splice.app.cli.DIM
+import splice.app.cli.RED
+import splice.app.cli.RESET
+import splice.app.cli.YELLOW
 import splice.app.daemon.TopologyLoader
 import splice.app.sources.PerfRowsFileSource
 import splice.control.api.usage.PerfSummary

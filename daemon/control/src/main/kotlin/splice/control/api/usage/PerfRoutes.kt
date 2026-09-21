@@ -34,6 +34,7 @@ import kotlinx.serialization.json.putJsonArray
 import splice.control.ManagedHead
 import splice.control.PerfRow
 import splice.control.PerfRowsSource
+import splice.control.api.HeadResolver
 import splice.core.util.WallClock
 
 /** The durable row key — the one field the writer puts in BOTH the header and the numeric bag. */

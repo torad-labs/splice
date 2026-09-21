@@ -4,6 +4,7 @@
 // (doctor and the launch warning both point here). :app is wall-exempt for println.
 package splice.app.cli.daemon
 
+import splice.app.cli.AdminSupport
 import splice.app.cli.doctor.DaemonSnapshot
 import splice.app.cli.doctor.DoctorCheck
 import splice.app.cli.doctor.DoctorHeadAuth

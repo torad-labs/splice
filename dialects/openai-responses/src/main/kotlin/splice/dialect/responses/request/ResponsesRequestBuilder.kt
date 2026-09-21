@@ -44,6 +44,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.stream.LoopGuard
 import splice.dialect.responses.stream.ResponsesLooseFields

@@ -29,6 +29,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.control.api.HeadResolver
 import splice.control.api.fleet.TopologySource
 import splice.control.api.sessions.JsonReply
 import splice.core.config.ConfigService

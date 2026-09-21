@@ -8,6 +8,13 @@
 // syntax — name or socket — is backslash/quote-escaped so the printed command stays valid.
 package splice.app.cli.status
 
+import splice.app.cli.BOLD
+import splice.app.cli.CYAN
+import splice.app.cli.DIM
+import splice.app.cli.GREEN
+import splice.app.cli.RED
+import splice.app.cli.RESET
+import splice.app.cli.YELLOW
 import splice.app.daemon.TopologyLoader
 import splice.core.sessions.HeadOfPid
 import splice.core.sessions.ProcessEnvironment

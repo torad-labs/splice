@@ -20,6 +20,8 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.head.HeadDeps
+import splice.head.RequestBodyRead
+import splice.head.RequestBodyReader
 import splice.head.TestResponsesProvider
 import splice.head.headStores
 import splice.head.noQuota

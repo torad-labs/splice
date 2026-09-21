@@ -2,6 +2,9 @@
 // browser. Prints the mgmt-key so the (unmodified) webui can authenticate if it asks. :app: println.
 package splice.app.cli.status
 
+import splice.app.cli.AdminSupport
+import splice.app.cli.doctor.MgmtKeyRead
+
 /** The `dashboard` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). `Command.Dashboard` constructs one per invocation; the member
  *  keeps the old function's name so the diff is a receiver insertion. */

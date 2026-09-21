@@ -4,6 +4,7 @@ package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.dialect.responses.request.BlockState

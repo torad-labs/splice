@@ -4,6 +4,7 @@ package splice.dialect.responses.request
 
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.LogSink
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ProviderTuning
 

@@ -36,6 +36,8 @@ package splice.dialect.responses.tools
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolUseBlock
+import splice.dialect.responses.ResponsesLiteShape
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
 import java.util.concurrent.atomic.AtomicBoolean
 

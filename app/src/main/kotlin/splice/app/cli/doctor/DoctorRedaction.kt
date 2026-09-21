@@ -11,6 +11,7 @@
 // e-mail addresses and UUID-shaped ids are masked, the home directory reads as ~.
 package splice.app.cli.doctor
 
+import splice.app.cli.SafeNames
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.net.URI

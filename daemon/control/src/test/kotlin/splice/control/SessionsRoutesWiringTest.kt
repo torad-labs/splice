@@ -38,7 +38,7 @@ import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val AT = 1_789_725_600_000L
+private const val SESSIONS_AT = 1_789_725_600_000L
 private const val ONE = "d4d4d4d4-0000-4000-8000-000000000004"
 private const val TWO = "e5e5e5e5-0000-4000-8000-000000000005"
 private const val TIMEOUT_MS = 10_000L
@@ -56,7 +56,7 @@ class SessionsRoutesWiringTest {
     private fun serve(stores: ActivityStores?, test: suspend (get: suspend (String) -> HttpResponse) -> Unit) {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         for ((pid, id) in listOf(1 to ONE, 2 to TWO)) {
-            val row = """{"pid":$pid,"sessionId":"$id","updatedAt":$AT,"messagingSocketPath":"/run/$pid.sock"}"""
+            val row = """{"pid":$pid,"sessionId":"$id","updatedAt":$SESSIONS_AT,"messagingSocketPath":"/run/$pid.sock"}"""
             Files.writeString(sessions.resolve("$pid.json"), row)
         }
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
@@ -69,7 +69,7 @@ class SessionsRoutesWiringTest {
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html>" },
             log = { },
-            sessions = SessionRegistry(sessionsDir = sessions, headOf = { null }, pidAlive = { true }, clock = { AT }),
+            sessions = SessionRegistry(sessionsDir = sessions, headOf = { null }, pidAlive = { true }, clock = { SESSIONS_AT }),
         )
         control.ports.activity = stores
         control.start()
@@ -91,13 +91,13 @@ class SessionsRoutesWiringTest {
 
     @Test
     fun `the three session routes are routed and answer their payloads over the wire`() {
-        val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { AT })
-        stores.edges.record(MessageEdge(ONE, "uds:/run/2.sock", AT, "toolu_1"))
+        val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { SESSIONS_AT })
+        stores.edges.record(MessageEdge(ONE, "uds:/run/2.sock", SESSIONS_AT, "toolu_1"))
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
         serve(stores) { get ->
             val board = get("/api/sessions/edges")
             assertEquals(200, board.status.value, board.bodyAsText())
-            val edge = """{"from":"$ONE","to":"uds:/run/2.sock","at":$AT"""
+            val edge = """{"from":"$ONE","to":"uds:/run/2.sock","at":$SESSIONS_AT"""
             assertEquals(
                 json("""{"sessions":{"$ONE":[$edge,"direction":"out"}],"$TWO":[$edge,"direction":"in"}]}}"""),
                 json(board.bodyAsText()),

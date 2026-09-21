@@ -7,6 +7,8 @@ package splice.dialect.responses.stream
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.StreamTurnContext
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.WatchdogFired
 

@@ -5,6 +5,8 @@ package splice.dialect.responses.stream
 
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.StreamTurnContext
 
 internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
 

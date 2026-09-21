@@ -32,7 +32,7 @@ private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 20L
 
 /** One request: method, path, body (null = none), and whether to send the mgmt key. */
-private fun interface Call {
+private fun interface TeamsCall {
     suspend operator fun invoke(method: HttpMethod, path: String, body: String?, authorized: Boolean): HttpResponse
 }
 
@@ -43,7 +43,7 @@ class TeamsRoutesWiringTest {
 
     private val rig by lazy { TeamRig(tmp) }
 
-    private fun serve(wired: Boolean, test: suspend (Call) -> Unit) {
+    private fun serve(wired: Boolean, test: suspend (TeamsCall) -> Unit) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val port = ServerSocket(0).use { it.localPort }

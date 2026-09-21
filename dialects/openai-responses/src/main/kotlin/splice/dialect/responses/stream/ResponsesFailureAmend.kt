@@ -3,6 +3,7 @@
 package splice.dialect.responses.stream
 
 import splice.core.util.LogSink
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.tools.ToolSurfaceLatch

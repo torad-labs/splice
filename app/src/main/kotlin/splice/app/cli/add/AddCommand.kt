@@ -6,6 +6,14 @@
 // stops the flow before the save leaves the previous file byte-identical. :app: println-exempt.
 package splice.app.cli.add
 
+import splice.app.cli.AdminSupport
+import splice.app.cli.BOLD
+import splice.app.cli.CYAN
+import splice.app.cli.DIM
+import splice.app.cli.GREEN
+import splice.app.cli.RED
+import splice.app.cli.RESET
+import splice.app.cli.YELLOW
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.daemon.RestartCommand
 import splice.app.cli.install.InstallCommand

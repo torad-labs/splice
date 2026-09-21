@@ -1,6 +1,7 @@
 // NEW: detect-then-preselect facts for splice setup (cli-wizard CW-6).
 package splice.app.cli.setup
 
+import splice.app.cli.AdminSupport
 import splice.app.cli.add.DaemonUpProbe
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry

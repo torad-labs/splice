@@ -10,6 +10,7 @@ import splice.app.auth.CodexRefresh
 import splice.app.auth.SignInPlanner
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
+import splice.app.daemon.TopologyLoader
 import splice.app.launch.HookProcessExec
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.HeadBuildInputs

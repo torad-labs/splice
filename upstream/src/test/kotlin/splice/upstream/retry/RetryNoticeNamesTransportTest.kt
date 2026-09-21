@@ -3,16 +3,16 @@
 // client leaves null for a refused connect, so daemon.log read "ConnectException attempt 2/10: ".
 package splice.upstream.retry
 
-import clientOver
-import fakeAuth
 import io.ktor.client.engine.mock.MockEngine
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import posted
 import splice.upstream.RetryNotice
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.clientOver
+import splice.upstream.transport.fakeAuth
+import splice.upstream.transport.posted
 import java.net.ConnectException
 import java.nio.channels.ClosedChannelException
 

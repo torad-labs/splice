@@ -7,6 +7,8 @@ package splice.dialect.responses.reasoning
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
+import splice.dialect.responses.ResponsesTurnState
+import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.stream.DELTA
 import splice.dialect.responses.stream.OUTPUT_INDEX

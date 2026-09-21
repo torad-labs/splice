@@ -6,6 +6,7 @@
 // the 14-function ceiling — hence a collaborator of its own. :app is wall-exempt for println.
 package splice.app.cli.doctor
 
+import splice.app.cli.AdminSupport
 import splice.app.cli.install.InstallCommand
 import splice.app.daemon.TopologyLoader
 import splice.core.config.InstallPaths

@@ -25,6 +25,8 @@ import splice.control.HeadRestart
 import splice.control.LoginStart
 import splice.control.LoginStatus
 import splice.control.ManagedHead
+import splice.control.api.HeadResolver
+import splice.control.api.JsonBody
 import splice.core.auth.AuthDescription
 import splice.core.auth.RefreshableAuthProvider
 

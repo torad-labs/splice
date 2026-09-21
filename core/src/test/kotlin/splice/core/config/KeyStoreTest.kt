@@ -283,6 +283,28 @@ class KeyStoreTest {
         assertTrue(Files.isSymbolicLink(link), "the dangling link must not be replaced")
     }
 
+    // SH-11, the other mutation: unset() reads strictly too. Before, unset() over an unreadable store
+    // read "empty", found nothing to remove and returned false; had it found the key it would have
+    // persisted a map missing every sibling. The refusal is the same sentence write() gives.
+    @Test
+    fun `unreadable store aborts unset the same way and the file is byte-identical after - SH-11`() {
+        val dir = Files.createTempDirectory("keys-unreadable-unset")
+        val path = dir.resolve("keys.toml")
+        val store = KeyStore(path)
+        store.write("OPENROUTER_API_KEY", "sk-a")
+        store.write("FIREWORKS_API_KEY", "sk-b")
+        val before = Files.readAllBytes(path)
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("-wx------"))
+        try {
+            val thrown = assertThrows(IllegalStateException::class.java) { store.unset("OPENROUTER_API_KEY") }
+            assertTrue(thrown.message!!.contains("refusing to write"), "got: " + thrown.message)
+        } finally {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
+        }
+        assertTrue(before.contentEquals(Files.readAllBytes(path)), "the store must be byte-identical")
+        assertEquals(setOf("OPENROUTER_API_KEY", "FIREWORKS_API_KEY"), store.names())
+    }
+
     @Test
     fun `two concurrent writers of different names both land - SH-11`() {
         val dir = Files.createTempDirectory("keys-concurrent")

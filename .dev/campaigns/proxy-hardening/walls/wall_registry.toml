@@ -34,7 +34,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.t
 [[item]]
 id = "NF-02"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.ts"
+wall = ""
+retired_to = "quality/architecture/src/test/kotlin/splice/quality/MaxInflightMeasuredLawTest.kt"
+proof = "2026-09-21: Knob MAX_INFLIGHT default mutated 12L -> 100L (the value the config's own line measures at 67% turn failure); the wall went RED and the law FAILED with the same numbers; restored, both GREEN (2/2). The ceiling is still read from the example config's measurement line, and the law REFUSES when that line is absent where the wall fell back to a hardcoded 14"
 
 [[item]]
 id = "NF-03"
@@ -44,7 +46,12 @@ wall = ".dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.ts"
 [[item]]
 id = "NF-04"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.ts"
+wall = ""
+retired_to = [
+    "upstream/src/test/kotlin/splice/upstream/retry/RetryAfterTest.kt",
+    "quality/architecture/src/test/kotlin/splice/quality/RetryAfterSingleParserLawTest.kt",
+]
+proof = "2026-09-21: (a) retryAfterMs mutated to drop the httpDateMs fallback -> wall RED and the two RetryAfterTest date arms RED; (b) a second parser (MirrorRetryAfter.kt) added under upstream main -> wall RED and RetryAfterSingleParserLawTest RED by name; restored, all GREEN (6/6 and 2/2)"
 
 [[item]]
 id = "NF-06"
@@ -54,7 +61,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.ts"
 [[item]]
 id = "SH-06"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_06_credential_lock_bounded.ts"
+wall = ""
+retired_to = "upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt"
+proof = "2026-09-21: CredentialLock.acquireBounded() mutated so budget expiry throws instead of proceeding unlocked; the wall went RED and the CredentialLockTest arm 'a peer holding the lock past the budget degrades to unlocked - SH-06' FAILED on the same mutation; restored, both GREEN (5/5)"
 
 [[item]]
 id = "SH-01"
@@ -64,12 +73,16 @@ wall = ".dev/campaigns/proxy-hardening/walls/sh_01_missing_expiry_synthesized.ts
 [[item]]
 id = "SH-02"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_02_refresh_ineffective_guard.ts"
+wall = ""
+retired_to = "providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt"
+proof = "2026-09-21: GrokAuthProvider.persistRotation() SH-02b block deleted (no backoff, no did-not-advance log, no counter); the wall went RED and the arm 'sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b' FAILED on the same mutation; restored, both GREEN (11/11); SH-02a is pinned by the two no-expires_in arms, which the wall's stale raw-text ban could no longer see"
 
 [[item]]
 id = "SH-04"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_04_auth_probe_supervised.ts"
+wall = ""
+retired_to = "app/src/test/kotlin/splice/app/auth/AuthProbeLoopTest.kt"
+proof = "2026-09-21: AuthProbeLoop.start() mutated to not attach the invokeOnCompletion supervisor; the wall went RED and three AuthProbeLoopTest arms (restart under budget - SH-04, budget exhaustion announces permanently down - SH-04, stop during restart handoff) FAILED on the same mutation; restored, both GREEN (11/11)"
 
 [[item]]
 id = "SH-10"
@@ -80,17 +93,23 @@ wall = ".dev/campaigns/proxy-hardening/walls/sh_10_muse_merge_never_rewrite.ts"
 [[item]]
 id = "SH-11"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.ts"
+wall = ""
+retired_to = "core/src/test/kotlin/splice/core/config/KeyStoreTest.kt"
+proof = "2026-09-21: KeyStore.unset() mutated to read entries() instead of entriesStrict(); the regex wall went RED and the KeyStoreTest arm 'unreadable store aborts unset the same way and the file is byte-identical after - SH-11' FAILED on the same mutation; restored, both GREEN (18/18)"
 
 [[item]]
 id = "SH-12"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_12_mgmtkey_loud_remint.ts"
+wall = ""
+retired_to = "core/src/test/kotlin/splice/core/config/MgmtKeyTest.kt"
+proof = "2026-09-21: MgmtKey.ensure() mutated back to the silent fallthrough (loud log block and mintedAtMs assignment deleted); the wall went RED and 6 of 7 MgmtKeyTest arms FAILED on the same mutation; restored, both GREEN (7/7)"
 
 [[item]]
 id = "SH-14"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_14_daemon_log_rotate_selfheals.ts"
+wall = ""
+retired_to = "app/src/test/kotlin/splice/app/DaemonLogWiringTest.kt"
+proof = "2026-09-21: persistentLogger onFailure mutated to reset writer only (reconcile and stderr announcement deleted); the wall went RED on both halves and the two DaemonLogWiringTest arms (reconcile so the next line lands; announced on stderr with the reconciled size) FAILED on the same mutation; restored, both GREEN (8/8)"
 
 [[item]]
 id = "JW-01"
@@ -170,7 +189,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.ts"
 [[item]]
 id = "CX-11"
 phase = "W4-correctness-walls"
-wall = ".dev/campaigns/proxy-hardening/walls/cx_11_is_error_structured.ts"
+wall = ""
+retired_to = "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/LoopGuardTest.kt"
+proof = "2026-09-21: LoopGuard mutated to read the <tool_use_error> marker only, ignoring is_error; the wall went RED and the LoopGuardTest arms 'is_error arms the guard with no marker text present' and 'is_error false wins over a marker the tool output happens to contain' FAILED on the same mutation; restored, both GREEN (13/13); the wire half (@SerialName is_error on ToolResultBlock) is what those arms parse through"
 
 [[item]]
 id = "CX-18"

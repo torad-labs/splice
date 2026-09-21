@@ -23,4 +23,13 @@ dependencies {
         implementation("com.fasterxml.jackson.core:jackson-core:${libs.versions.jackson.get()}")
         implementation("com.fasterxml.jackson.core:jackson-databind:${libs.versions.jackson.get()}")
     }
+
+    // build-logic's own tests: the hygiene and discovery checks are pure Kotlin with red proofs.
+    testImplementation(platform("org.junit:junit-bom:${libs.versions.junit.get()}"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

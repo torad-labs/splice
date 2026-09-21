@@ -41,7 +41,7 @@ function sse(duplicateStop = false): string {
 }
 
 /** Python json.dumps for the shapes this server emits — the separators are ", " and ": ", which is
- *  what the record file and every body carry. Kept local rather than importing pyjson because the
+ *  what the record file and every body carry. Kept local rather than importing python-json because the
  *  values here are literals of a fixed shape: no floats, no integer-like keys, no non-ASCII. */
 function dumps(v: unknown): string {
   if (v === null || v === undefined) return "null";

@@ -72,7 +72,7 @@ class Parser {
     return v;
   }
   private ws(i: number): number {
-    while (i < this.s.length && " \t\n\r".includes(this.s[i])) i++;
+    while (i < this.s.length && " \t\n\r".includes(this.s[i]!)) i++;
     return i;
   }
   private scan(i: number): [PyValue, number] {
@@ -106,7 +106,7 @@ class Parser {
     for (;;) {
       let next = end;
       for (; next < s.length; next++) {
-        const d = s[next];
+        const d = s[next]!;
         if (d === '"' || d === "\\") break;
         // strict=True: a raw control character inside a string is an error, not data.
         if (d.charCodeAt(0) <= 0x1f) throw new JSONDecodeError("Invalid control character at", s, next);
@@ -116,14 +116,14 @@ class Parser {
       if (s[next] === '"') return [out, next + 1];
       next++;
       if (next >= s.length) throw new JSONDecodeError("Unterminated string starting at", s, begin);
-      const e = s[next];
+      const e = s[next]!;
       if (e !== "u") {
         end = next + 1;
         const simple: Record<string, string> = {
           '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t",
         };
         if (!(e in simple)) throw new JSONDecodeError("Invalid \\escape", s, end - 2);
-        out += simple[e];
+        out += simple[e]!;
         continue;
       }
       next++;
@@ -161,7 +161,7 @@ class Parser {
       const [v, afterValue] = this.scan(this.ws(i + 1));
       // A repeated key is a dict assignment: the LAST value wins, at the FIRST key's position.
       const at = pairs.findIndex(([key]) => key === k);
-      if (at >= 0) pairs[at][1] = v;
+      if (at >= 0) pairs[at]![1] = v;
       else pairs.push([k, v]);
       i = this.ws(afterValue);
       if (i < s.length && s[i] === "}") return [obj(pairs), i + 1];

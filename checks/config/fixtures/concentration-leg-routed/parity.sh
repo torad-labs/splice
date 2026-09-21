@@ -13,7 +13,7 @@
 #   bash parity.sh <wall.ts>           -> any other copy (a mutant, or a proposed change)
 #   bash parity.sh <wall.ts> --first   -> stop at the first mismatch (mutation testing)
 #
-# Recorded 2026-09-18: 2664/2664 identical, re-run at landing against the committed pyshim.ts in
+# Recorded 2026-09-18: 2664/2664 identical, re-run at landing against the committed python-values.ts in
 # 2m58s; 9/9 mutants killed (comments off, any npm flag, no nesting, no heredoc skip, any
 # interpreter, many ratchets, no brace depth, split on \n only, lenient float). Not a gate leg: at
 # three minutes it is a tool for whoever changes the wall, and the wall's own selftest coverage runs
@@ -43,9 +43,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 tar -C "$tmp" -xzf "$HERE/cases.tar.gz"
 root=$tmp/root
-mkdir -p "$root/checks/config" "$root/checks/e2e"
+mkdir -p "$root/checks/config" "$root/tools/e2e/src/compat"
 cp "$wall" "$root/checks/config/concentration-leg-routed.ts"
-cp "$REPO"/checks/e2e/pyjson.ts "$REPO"/checks/e2e/pyshim.ts "$root/checks/e2e/"
+cp "$REPO"/tools/e2e/src/compat/python-json.ts "$REPO"/tools/e2e/src/compat/python-values.ts "$root/tools/e2e/src/compat/"
 fail=0
 total=0
 for case in "$tmp"/cases/*; do

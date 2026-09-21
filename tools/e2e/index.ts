@@ -3,9 +3,11 @@
 // every verb's behaviour lives in src/commands/<verb>.ts, and everything two verbs share lives in
 // src/lib/. Exit codes come back from the verb; a signalled child reports as a shell would
 // (128+signum, tools/gate/src/lib/status.ts), never `exitCode ?? 1`.
+import { codeMode, usage as codeModeUsage } from "./src/commands/code-mode.ts";
 import { oracle, usage as oracleUsage } from "./src/commands/oracle.ts";
 
 const VERBS = {
+  "code-mode": { usage: codeModeUsage, exec: (argv: string[]) => codeMode(argv) },
   oracle: { usage: oracleUsage, exec: (argv: string[]) => oracle(argv) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;
 

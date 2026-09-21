@@ -23,7 +23,7 @@
  *
  *    THE PARSED PAYLOAD IS A PYTHON OBJECT. The original stores `json.loads(payload)` and later
  *    re-emits one of them with `json.dumps(data)[:300]` in the error-event message. JSON.parse
- *    would give `{"a":1}` where Python gives `{"a": 1}`, so the payload goes through pyjson's
+ *    would give `{"a":1}` where Python gives `{"a": 1}`, so the payload goes through python-json's
  *    ordered tree and comes back out with Python's bytes.
  *
  *    THE VIOLATION MESSAGES CONTAIN Python repr() OF CONTAINERS. `f"... {names[i:]}"` and
@@ -37,7 +37,7 @@
  *    falsy-coalescing and the raise, because "reports a violation" and "crashes" are different
  *    observable outcomes even when both exit non-zero.
  */
-import { dumps, loads, obj, isPyObj, isPyNum, floatRepr, type PyValue } from "./pyjson.ts";
+import { dumps, loads, obj, isPyObj, isPyNum, floatRepr, type PyValue } from "../../tools/e2e/src/compat/python-json.ts";
 
 interface Args {
   head: string;

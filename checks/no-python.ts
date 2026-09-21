@@ -139,8 +139,21 @@ export const SELF = new Set([
  *  of them names python for a reason that survives deleting the rule's name from the
  *  text. It cannot become a dodge either: a file that actually invokes `python3` still
  *  matches on that token no matter how often it also writes "no-python". */
+/*  THE SAME NARROWING, A SECOND TIME, FOR THE SAME REASON (restructure PR 5). The Python-semantics
+ *  compat layer the ported harnesses run on is `tools/e2e/src/compat/python-{http,json,values}.ts`:
+ *  three TypeScript modules that exist so this repo does NOT shell into Python, named after the
+ *  thing they replace. A hyphen is not a word character, so `\bpython\b` matched inside each
+ *  module's own NAME and charged all sixteen files that import or copy one — the wall failing the
+ *  act of complying with it, exactly as it did for `no-python` and sweep-d7.mjs, and with the same
+ *  useless remedy (rename the port away from Python after the port away from Python).
+ *
+ *  MEASURED, because a narrowing that quietly stops charging real invokers is this campaign's own
+ *  failure: over the whole tree at PR 5's tip, stripping these three module names drops EXACTLY the
+ *  16 importers and keeps all 54 burn-down invokers charged. It cannot become a dodge: a file that
+ *  actually runs `python3` still matches on that token however often it also names python-json. */
 export function namesPython(text: string): boolean {
-  return /\bpython3?\b/.test(text.replaceAll("no-python", ""));
+  const named = ["no-python", "python-http", "python-json", "python-values"];
+  return /\bpython3?\b/.test(named.reduce((t, name) => t.replaceAll(name, ""), text));
 }
 
 /** A caller line that runs a file with the WRONG RUNTIME for its extension: `python3 wall.ts`,

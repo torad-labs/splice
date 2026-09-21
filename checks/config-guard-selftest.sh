@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # checks/config-guard-selftest.sh — mutation-proves config-guard.sh's severity wall (DR-115).
 # The wall guards the RULES; this proves the wall can actually fail. Runs the real script against
-# a mirrored tree so fixtures never touch the repo's own .rules.
+# a mirrored tree so fixtures never touch the repo's own quality/rules.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -13,7 +13,7 @@ err() { echo "  ✗ config-guard-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 # ── mirror: everything config-guard.sh and its two script legs read ──────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/gateway" "$tmp/.github"
+mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/quality/detekt" "$tmp/.github"
 cp "$ROOT/checks/config-guard.sh" "$tmp/checks/"
 cp "$ROOT/checks/config/dependabot-kotlin-scope.ts" "$ROOT/checks/config/concentration-leg-routed.ts" "$tmp/checks/config/"
 # V4-145: the routing leg is bun now and imports the Python-semantics shims beside it; without them
@@ -23,11 +23,11 @@ cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
 # would make config-guard.sh fail CLOSED on every fixture below — including the control — and a wall
 # that rejects everything because its checker is missing proves nothing about the checker.
 cp "$ROOT/checks/config/ast-grep-rule-docs.ts" "$tmp/checks/config/"
-cp "$ROOT/gateway/detekt.yml" "$tmp/gateway/"
+cp "$ROOT/quality/detekt/detekt.yml" "$tmp/quality/detekt/"
 cp "$ROOT/.github/dependabot.yml" "$tmp/.github/"
 cp "$ROOT/package.json" "$tmp/"
 cp "$ROOT/checks/gate.sh" "$tmp/checks/"
-cp -r "$ROOT/.rules" "$tmp/.rules"
+cp -r "$ROOT/quality/rules" "$tmp/quality/rules"
 
 rc=0
 guard() { bash "$tmp/checks/config-guard.sh" >"$tmp/out" 2>&1; rc=$?; }
@@ -51,7 +51,7 @@ if [ "$rc" -ne 0 ]; then
 fi
 note "✓ control: mirrored tree green"
 
-FIXTURE="$tmp/.rules/kotlin-splice/zz-dr115-fixture.yml"
+FIXTURE="$tmp/quality/rules/kotlin/zz-dr115-fixture.yml"
 
 # ── 1. DR-115: a second YAML doc downgraded to warning must fail, not hide behind doc one ────
 cat > "$FIXTURE" <<'YML'

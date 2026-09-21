@@ -67,9 +67,9 @@ elif [ -n "$JAR" ]; then
 else
   echo "run.sh: building the fat jar from this checkout"
   if command -v buildgate >/dev/null; then
-    (cd "$ROOT/gateway" && buildgate ./gradlew -q :app:shadowJar)
+    (cd "$ROOT" && buildgate ./gradlew -q :app:shadowJar)
   else
-    (cd "$ROOT/gateway" && ./gradlew -q :app:shadowJar)
+    (cd "$ROOT" && ./gradlew -q :app:shadowJar)
   fi
   cp "$ROOT/gateway/app/build/libs/app-all.jar" "$ART/splice.jar"
   cp "$ROOT/bin/splice-launch" "$ART/splice-launch"

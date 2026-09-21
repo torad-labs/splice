@@ -27,9 +27,9 @@ private const val MISSING_BUILD_FILE_EXPECTED = "the project map places :provide
 
 private const val ABSENT_CHANNEL_EXPECTED = "no -Dsplice.projectMap: the laws grade the modules the BUILD declares, and an absent map grades nothing while every law still reports green. gateway/arch-tests/build.gradle.kts is what supplies it."
 
-private const val MALFORMED_ENTRY_EXPECTED = "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the gateway root>' — a half-read map is a map that drops modules silently."
+private const val MALFORMED_ENTRY_EXPECTED = "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
 
-private const val EMPTY_DIRECTORY_EXPECTED = "splice.projectMap entry ':core=' is not ':<gradle path>=<directory relative to the gateway root>' — a half-read map is a map that drops modules silently."
+private const val EMPTY_DIRECTORY_EXPECTED = "splice.projectMap entry ':core=' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
 
 private const val DUPLICATE_ENTRY_EXPECTED = "splice.projectMap maps :core twice ('core' and 'elsewhere') — the build cannot place one module in two directories; the channel is corrupt."
 
@@ -221,6 +221,61 @@ class ProjectMapTest {
             listOf(GENERATED_DIR_EXPECTED),
             ProjectMap.parse(temp, ":core=core", setOf("node_modules")).unmappedProductionDirViolations(),
             "a name off the list is swept — the list is load-bearing, not decoration",
+        )
+    }
+
+    // REGRESSION (PR 2 review): a NESTED GIT WORKTREE inside the checkout is ANOTHER REPOSITORY'S
+    // tree, not an unclaimed module. With the build rooted at the repository, this sweep reaches
+    // every directory under the checkout, and the main checkout really carries
+    // `.claude/worktrees/<name>/` — a directory whose `.git` is a FILE reading `gitdir: …` — with a
+    // complete gateway/core/src/main/kotlin inside it. The sweep named it
+    // (`.claude/worktrees/v0.4.0/gateway/core` against mapped `gateway/core`) and the law failed on
+    // a tree the build does not own. The scratch worktrees PR 2 was built in hold no nested
+    // worktree, so the green never exercised it.
+    //
+    // THE ROOT IS EXEMPT ON PURPOSE: it carries `.git` too, and pruning it would blank the whole
+    // sweep — a law that reports nothing, which is the fail-open shape this file exists against.
+    // The Gradle twin is the `productionSourceCensus` fileTree in gateway/arch-tests/build.gradle.kts,
+    // which excludes exactly these directories from the task fingerprint.
+    @Test
+    fun `a nested git worktree is another repository's tree, not an unclaimed module - PR2`(@TempDir temp: File) {
+        val rootMarker = writeFixture(temp, ".git", "gitdir: /nowhere\n")
+        writeFixture(temp, "gateway/core/build.gradle.kts", "dependencies { }\n")
+        val claimed = writeFixture(temp, "gateway/core/src/main/kotlin/A.kt", NESTED_FIXTURE_SOURCE)
+        val worktreeMarker = writeFixture(temp, "wt/.git", "gitdir: /nowhere\n")
+        val inWorktree = writeFixture(temp, "wt/gateway/core/src/main/kotlin/B.kt", NESTED_FIXTURE_SOURCE)
+        assertTrue(rootMarker.isFile && claimed.isFile && worktreeMarker.isFile && inWorktree.isFile) {
+            "every fixture must land, or the sweep has nothing to find and the proof is vacuous"
+        }
+        assertEquals(
+            emptyList<String>(),
+            ProjectMap.parse(temp, ":core=gateway/core", fixtureNotSwept).unmappedProductionDirViolations(),
+            "a directory below the root carrying a .git entry is another repository's tree",
+        )
+        writeFixture(temp, "$NESTED_DIR/src/main/kotlin/splice/provider/x/X.kt", NESTED_FIXTURE_SOURCE)
+        assertEquals(
+            listOf(UNMAPPED_DIR_EXPECTED),
+            ProjectMap.parse(temp, ":core=gateway/core", fixtureNotSwept).unmappedProductionDirViolations(),
+            "the root's own .git must not blank the sweep, and a real unclaimed tree is still named",
+        )
+    }
+
+    // The other spelling of the same fact: a submodule or a vendored clone carries a `.git`
+    // DIRECTORY. `.git` being on the not-swept list only stops the walk descending INTO it; it says
+    // nothing about the directory that CONTAINS it, which is the tree that must not be graded.
+    @Test
+    fun `a nested git DIRECTORY marker prunes the sweep the same way - PR2`(@TempDir temp: File) {
+        writeFixture(temp, "gateway/core/src/main/kotlin/A.kt", NESTED_FIXTURE_SOURCE)
+        val vendored = writeFixture(temp, "vendor/clone/gateway/core/src/main/kotlin/B.kt", NESTED_FIXTURE_SOURCE)
+        val marker = File(temp, "vendor/clone/.git")
+        check(marker.mkdirs()) { "the .git directory fixture was not created" }
+        assertTrue(vendored.isFile && marker.isDirectory) {
+            "every fixture must land, or the sweep has nothing to find and the proof is vacuous"
+        }
+        assertEquals(
+            emptyList<String>(),
+            ProjectMap.parse(temp, ":core=gateway/core", fixtureNotSwept).unmappedProductionDirViolations(),
+            "a submodule or vendored clone is another repository's tree too",
         )
     }
 

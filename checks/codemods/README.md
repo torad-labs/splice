@@ -1,7 +1,7 @@
 # Codemods — deterministic ast-grep rewrites
 
 Codemods are a first-class tier here, not a last resort. A codemod is a *block rule + a tested,
-deterministic fix*: the detection has the same enumerability cost as any wall in `.rules/`, and the
+deterministic fix*: the detection has the same enumerability cost as any wall in `quality/rules/`, and the
 rewrite is a pure function you can dry-run and snapshot-test. It is strictly more automation for the
 same enumeration cost — and it is how mechanical refactors should be done (AST-aware, reversible,
 reviewable) instead of by-hand `sed`/string-replace.

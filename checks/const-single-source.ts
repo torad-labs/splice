@@ -71,7 +71,7 @@
  *   HTTP_TOO_MANY, all 429. Value-only matching over 619 numeric consts is mostly noise (every
  *   `= 8` in the tree would pair with every other), so the HTTP status family — the one place where
  *   that shape was dense and dangerous — gets its own structural wall instead:
- *   .rules/kotlin-splice/kt-http-status-single-source.yml. The general case stays open by choice.
+ *   quality/rules/kotlin/kt-http-status-single-source.yml. The general case stays open by choice.
  *   A same-meaning duplicate nobody has noticed yet. NAMED-SCAR is a list of the ones the audit
  *   named; a ninth one sits in the ratchet baseline until a human reads it and promotes it. That is
  *   the honest bound of a graded wall: the ratchet stops the tree growing, the list drives the fix.

@@ -1,17 +1,17 @@
 // Where the repository is, and where its Gradle build root is — both discovered, never hardcoded.
 //
 // checks/gradle-slot.sh:24-25 resolves both by position: ROOT is the script's parent and the build
-// root is literally `$ROOT/gateway`. That spelling stops being true the moment the build root moves
-// to the repository root (restructure plan P1/PR 2), and a lock file that silently changes path is
-// two gradles in one project dir — the incident the slot exists to prevent. So the build root is the
-// directory that OWNS settings.gradle.kts, found by looking.
+// root is spelled out there. That spelling stopped being true when the build root moved to the
+// repository root (restructure PR 2), and a lock file that silently changes path is two gradles in
+// one project dir — the incident the slot exists to prevent. So the build root is the directory that
+// OWNS settings.gradle.kts, found by looking.
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 export interface Layout {
   /** the repository working tree root (the directory holding `.git`) */
   readonly repoRoot: string;
-  /** the directory holding the outermost `settings.gradle.kts` — today `<repoRoot>/gateway` */
+  /** the directory holding the outermost `settings.gradle.kts` — since PR 2, `repoRoot` itself */
   readonly buildRoot: string;
 }
 
@@ -30,9 +30,9 @@ const SKIP = new Set(["node_modules", ".git", "build", ".gradle", "dist", ".cach
 
 /**
  * The SHALLOWEST `settings.gradle.kts` at or under `repoRoot` (depth <= 2) is the build root:
- * `gateway/build-logic/settings.gradle.kts` is an INCLUDED build and must never win over
- * `gateway/settings.gradle.kts`. Two candidates at the same depth is an ambiguity we refuse to
- * guess at — it names both and stops.
+ * `build-logic/settings.gradle.kts` is an INCLUDED build and must never win over the root's own
+ * `settings.gradle.kts`. Two candidates at the same depth is an ambiguity we refuse to guess at —
+ * it names both and stops.
  */
 export function findBuildRoot(repoRoot: string, maxDepth = 2): string {
   for (let depth = 0; depth <= maxDepth; depth++) {

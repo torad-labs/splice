@@ -22,7 +22,7 @@
  *  A real parser sees all four. Structure, not indentation, is the denominator.
  *
  *  Subcommands:
- *    severity <root>          every rule document under <root>/.rules carries a top-level
+ *    severity <root>          every rule document under <root>/quality/rules carries a top-level
  *                             `severity: error`; exits 1 naming each document that does not
  *    count <dir> <maxdepth>   number of files under <dir> holding at least one ast-grep document
  *                             (a doc with a top-level `id`) — the parser-derived replacement for
@@ -151,7 +151,7 @@ function rel(root: string, p: string): string {
 
 export function checkSeverity(root: string): string[] {
   const violations: string[] = [];
-  const rulesDir = resolve(root, ".rules");
+  const rulesDir = resolve(root, "quality/rules");
   let paths: string[];
   try {
     paths = walk(rulesDir, Number.MAX_SAFE_INTEGER);

@@ -29,7 +29,7 @@ note() { printf '  %s\n' "$1"; }
 
 CHECK="$tmp/checks/public-surface.ts"
 BASELINE="$tmp/checks/config/public-surface-baseline.json"
-SETTINGS="$tmp/gateway/settings.gradle.kts"
+SETTINGS="$tmp/settings.gradle.kts"
 SYNTH_MODULE="zz-selftest-surface"
 
 mkdir -p "$tmp/checks/config" "$tmp/gateway"
@@ -39,21 +39,22 @@ for main in "$ROOT"/gateway/*/src/main; do
   mod="${mod%%/*}"
   ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
 done
-# build-logic holds the nonLibrary set and ALSO has a src/main, so the loop above already linked it.
-# `ln -s` into an existing symlink-to-a-directory writes THROUGH it — that is how an earlier
-# revision of this harness created gateway/build-logic/build-logic in the working tree, the exact
-# mktemp-hygiene failure CLAUDE.md s19 records. Guarded, and the guard is the point.
-[ -e "$tmp/gateway/build-logic" ] || ln -s "$ROOT/gateway/build-logic" "$tmp/gateway/build-logic"
+# build-logic holds the nonLibrary set and lives at the ROOT since PR 2, so the module loop above
+# does not link it. `ln -s` into an existing symlink-to-a-directory writes THROUGH it — that is how
+# an earlier revision of this harness created gateway/build-logic/build-logic in the working tree,
+# the exact mktemp-hygiene failure CLAUDE.md s19 records. Guarded, and the guard is the point.
+[ -e "$tmp/build-logic" ] || ln -s "$ROOT/build-logic" "$tmp/build-logic"
 [ -e "$tmp/gateway/core" ] || { echo "  x public-surface-selftest: no gateway modules found under $ROOT"; exit 1; }
-[ -e "$tmp/gateway/build-logic/src/main/kotlin" ] || { echo "  x public-surface-selftest: the module law is unreachable from the harness"; exit 1; }
+[ -e "$tmp/build-logic/src/main/kotlin" ] || { echo "  x public-surface-selftest: the module law is unreachable from the harness"; exit 1; }
 # NOTHING MAY LAND IN THE TREE. Recorded before the arms run and re-checked at exit: a harness that
 # writes into the tree it measures has stopped being a harness.
 tree_state="$(cd "$ROOT/gateway" && ls -1A)"
+law_state="$(cd "$ROOT/build-logic" && ls -1A)"
 
 reset_all() {
   cp "$ROOT/checks/public-surface.ts" "$CHECK"
   cp "$ROOT/checks/config/public-surface-baseline.json" "$BASELINE"
-  cp "$ROOT/gateway/settings.gradle.kts" "$SETTINGS"
+  cp "$ROOT/settings.gradle.kts" "$SETTINGS"
   rm -rf "$tmp/gateway/$SYNTH_MODULE"
 }
 reset_all
@@ -167,7 +168,7 @@ bun -e "$(cat <<'JS'
 const path = process.argv[1];
 await Bun.write(path, 'rootProject.name = "splice-gateway"\ninclude(\n    ":app",\n)\n');
 JS
-)" "$tmp/gateway/settings.gradle.kts"
+)" "$SETTINGS"
 check --ratchet
 must_fail "6. a settings file whose every module is nonLibrary must REFUSE" "vacuously"
 reset_all
@@ -175,8 +176,11 @@ reset_all
 if [ "$tree_state" != "$(cd "$ROOT/gateway" && ls -1A)" ]; then
   err "the harness changed gateway/ — everything here must land in mktemp; diff: $(diff <(printf '%s\n' "$tree_state") <(cd "$ROOT/gateway" && ls -1A) | tr '\n' ' ')"
 fi
+if [ "$law_state" != "$(cd "$ROOT/build-logic" && ls -1A)" ]; then
+  err "the harness changed build-logic/ — everything here must land in mktemp; diff: $(diff <(printf '%s\n' "$law_state") <(cd "$ROOT/build-logic" && ls -1A) | tr '\n' ' ')"
+fi
 
 if [ "$fail" -eq 0 ]; then
-  note "public-surface selftest: control green over the real tree, 6 mutation arms red for their stated reasons, gateway/ untouched"
+  note "public-surface selftest: control green over the real tree, 6 mutation arms red for their stated reasons, gateway/ and build-logic/ untouched"
 fi
 exit "$fail"

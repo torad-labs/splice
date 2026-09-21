@@ -308,7 +308,7 @@ async function main() {
 
   if (!existsSync(JAR)) {
     console.error('fat jar missing — building (:app:shadowJar)…');
-    execFileSync('./gradlew', ['-q', ':app:shadowJar'], { cwd: join(ROOT, 'gateway'), stdio: 'inherit' });
+    execFileSync('./gradlew', ['-q', ':app:shadowJar'], { cwd: ROOT, stdio: 'inherit' });
   }
 
   const tmp = mkdtempSync(join(tmpdir(), 'splice-replay-'));

@@ -22,16 +22,16 @@ afterAll(() => {
 function copyOfTheRealRules(): { sgconfig: string; exclusions: string; rule(id: string): string } {
   const dir = mkdtempSync(join(tmpdir(), "gate-coverage-mutant-"));
   workspaces.push(dir);
-  cpSync(join(repoRoot, ".rules", "rules"), join(dir, "rules"), { recursive: true });
-  cpSync(join(repoRoot, ".rules", "kotlin-splice"), join(dir, "kotlin-splice"), { recursive: true });
-  writeFileSync(join(dir, "sgconfig.yml"), "ruleDirs:\n  - rules\n  - kotlin-splice\n");
+  cpSync(join(repoRoot, "quality", "rules", "console"), join(dir, "console"), { recursive: true });
+  cpSync(join(repoRoot, "quality", "rules", "kotlin"), join(dir, "kotlin"), { recursive: true });
+  writeFileSync(join(dir, "sgconfig.yml"), "ruleDirs:\n  - console\n  - kotlin\n");
   // A distinct filename per copy: the TOML reader imports by path, and Bun caches modules by path.
   const exclusions = join(dir, "exclusions.toml");
   cpSync(join(repoRoot, EXCLUSIONS), exclusions);
   return {
     sgconfig: join(dir, "sgconfig.yml"),
     exclusions,
-    rule: (id: string) => join(dir, "kotlin-splice", `${id}.yml`),
+    rule: (id: string) => join(dir, "kotlin", `${id}.yml`),
   };
 }
 
@@ -65,7 +65,7 @@ describe("the P1 coverage proof", () => {
 
   test("mutant (a): a glob that matches nothing", async () => {
     const copy = copyOfTheRealRules();
-    edit(copy.rule("kt-no-println"), "gateway/*/src/main/**/*.kt", "gateway/does-not-exist/src/main/**/*.kt");
+    edit(copy.rule("kt-no-println"), '"**/src/main/**/*.kt"', '"gateway/does-not-exist/src/main/**/*.kt"');
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const [message] = messagesFor(report, "kt-no-println", "rule-matches-nothing");
@@ -78,8 +78,8 @@ describe("the P1 coverage proof", () => {
     // :core drops out; every other module still matches, so `ast-grep scan` stays green.
     edit(
       copy.rule("kt-no-lateinit"),
-      "gateway/*/src/main/**/*.kt",
-      "gateway/{app,control,gateway,provider-spi,provider-codex,provider-grok,provider-kimi,provider-muse,provider-openai,dialect-anthropic-passthrough,dialect-openai-responses,dialect-openai-chat,fir-checks}/src/main/**/*.kt",
+      '"**/src/main/**/*.kt"',
+      '"gateway/{app,control,gateway,provider-spi,provider-codex,provider-grok,provider-kimi,provider-muse,provider-openai,dialect-anthropic-passthrough,dialect-openai-responses,dialect-openai-chat,fir-checks}/src/main/**/*.kt"',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
@@ -95,8 +95,8 @@ describe("the P1 coverage proof", () => {
     const copy = copyOfTheRealRules();
     edit(
       copy.rule("kt-no-unsafe-cast"),
-      "files:\n  - gateway/*/src/main/**/*.kt",
-      "files:\n  - gateway/*/src/main/**/*.kt\nignores:\n  - gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt",
+      'files:\n  - "**/src/main/**/*.kt"',
+      'files:\n  - "**/src/main/**/*.kt"\nignores:\n  - gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);

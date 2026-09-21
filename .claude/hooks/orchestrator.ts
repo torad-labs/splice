@@ -3,7 +3,7 @@
  * splice hook orchestrator — every write-time policy routes to ast-grep rules.
  *
  * ONE orchestrator, ZERO per-rule Python (operator design constraint, 2026-07-13):
- * policy lives only in .rules/rules/*.yml. This file owns routing, not rules.
+ * policy lives only in quality/rules/console/*.yml. This file owns routing, not rules.
  *
  *   PreToolUse (Write|Edit|MultiEdit)
  *       1. Compute the file content AS IT WOULD EXIST after the tool call
@@ -265,7 +265,7 @@ function pretooluse(data: Record<string, unknown>): number {
       formatFindings(`SPLICE WALLS: write to ${rel} blocked`, errors) +
         "\n\nFix the content. For a deliberate, justified exception add\n" +
         "`// ast-grep-ignore: <rule-id>` with a reason on the line above.\n" +
-        "Rules: .rules/rules/ (tests in .rules/rule-tests/). The gate re-runs\n" +
+        "Rules: quality/rules/console/ (tests in quality/rules/rule-tests/). The gate re-runs\n" +
         "the same rules: npm run gate:rules.",
     );
   }

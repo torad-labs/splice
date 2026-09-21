@@ -362,10 +362,17 @@ class ArchitectureLawsTest {
     @Test
     fun `the PassthroughQuirks construction guard can actually fail - HD-9`() {
         val allowedPrefixes = passthroughQuirksAllowedPrefixes(map)
+        // The synthetic paths are spelled THROUGH THE MAP, exactly like the prefixes they are
+        // graded against. A proof that hardcodes `app/src/...` silently stops being the case it
+        // claims to prove the moment a module's directory changes — which it did when the Gradle
+        // root moved to the repository root and every module's directory gained its `gateway/`.
+        val ownModule = map.relativeDir(":dialect-anthropic-passthrough")
+        val headAssembly = map.relativeDir(":app")
+        val headModule = map.relativeDir(":gateway")
         assertEquals(
             emptyList<String>(),
             passthroughQuirksConstructionViolations(
-                "dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughQuirks.kt",
+                "$ownModule/src/main/kotlin/splice/dialect/passthrough/PassthroughQuirks.kt",
                 "public data class PassthroughQuirks(\n    val providerTag: String,\n)\n",
                 allowedPrefixes,
             ),
@@ -374,7 +381,7 @@ class ArchitectureLawsTest {
         assertEquals(
             emptyList<String>(),
             passthroughQuirksConstructionViolations(
-                "app/src/main/kotlin/splice/app/provider/PassthroughArm.kt",
+                "$headAssembly/src/main/kotlin/splice/app/provider/PassthroughArm.kt",
                 "val q = PassthroughQuirks(providerTag = key)\n",
                 allowedPrefixes,
             ),
@@ -382,14 +389,13 @@ class ArchitectureLawsTest {
         )
         assertEquals(
             listOf(
-                "gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt:2 constructs PassthroughQuirks " +
-                    "outside its allowed sites (dialect-anthropic-passthrough/src/main/, " +
-                    "app/src/main/kotlin/splice/app/provider/, provider-kimi/src/main/) — a provider's " +
+                "$headModule/src/main/kotlin/splice/gateway/head/HeadServer.kt:2 constructs PassthroughQuirks " +
+                    "outside its allowed sites (${allowedPrefixes.joinToString()}) — a provider's " +
                     "deformation profile belongs to the module that owns the provider or to head " +
                     "assembly, not to whichever file happens to need it.",
             ),
             passthroughQuirksConstructionViolations(
-                "gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt",
+                "$headModule/src/main/kotlin/splice/gateway/head/HeadServer.kt",
                 "package splice.gateway.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
                 allowedPrefixes,
             ),

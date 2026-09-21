@@ -105,6 +105,13 @@ tasks.withType<Test>().configureEach {
     // sources are, or a key documented late comes back UP-TO-DATE-red and a key retired late
     // UP-TO-DATE-green.
     inputs.files(repoRoot.file("config/splice.example.toml")).withPropertyName("scannedDocumentationSurfaces")
+    // Restructure PR 6: a law's own DECLARATION FILE — role-registry.toml's written dispositions —
+    // is an input for the same reason the sources are. It arrives on the test classpath through
+    // processTestResources, but naming it here is what makes the dependency legible beside the
+    // other three: a disposition added late must not come back UP-TO-DATE-red, and one deleted
+    // late must not come back UP-TO-DATE-green.
+    inputs.files(layout.projectDirectory.dir("src/test/resources").asFileTree.matching { include("**/*.toml") })
+        .withPropertyName("scannedLawDeclarations")
     // Restructure PR 6 §4.3: the V4-92 public-surface ratchet counts a sibling module's
     // testFixtures sources as a CONSUMER — a fixture is shipped, cross-module code — so a fixture
     // that starts or stops naming a library's type moves the measured surface. Without this input a
@@ -120,4 +127,8 @@ tasks.withType<Test>().configureEach {
     inputs.files(
         layout.projectDirectory.dir("src/test/resources").asFileTree.matching { include("**/*.json") },
     ).withPropertyName("recordedRatchetBaselines")
+    // The constructor-width law re-reads its own PREMISE — that detekt's LongParameterList is still
+    // the instrument this wall was written against — so the detekt config is an input too, or
+    // deleting the rule would come back UP-TO-DATE-green on the one law that exists because of it.
+    inputs.files(repoRoot.file("quality/detekt/detekt.yml")).withPropertyName("scannedPremiseConfig")
 }

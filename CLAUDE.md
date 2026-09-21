@@ -26,10 +26,10 @@ The procedure, every time, in this order:
    readiness` shells out to git (exit 128). The export exists to BUILD the jar from a tree with no
    dirty edits, which is a different job from running the ladder. Build there, gate here.
 
-   The ladder runs the gradle tier (module-law, detekt, the architecture laws, every unit test, the load
-   test), the ast-grep walls, concentration, the campaign walls, the oracle replay, the code-mode
-   selftests, config guard, safe-failure-render, the console lint/test, OSS readiness, and the
-   pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
+   The ladder runs the gradle tier (module-law, detekt, the architecture laws — concentration,
+   safe-failure-render and release readiness among them — every unit test, the load test), the
+   ast-grep walls, the campaign walls, the oracle replay, the code-mode selftests, config guard,
+   the console lint/test, and the pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
    green three times while the oracle replay had three drifted pins. Grep the log for `GATE:` and
    `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the
    conventional types in `tools/gate/src/lib/conventional.ts` (`chore(ledger): ...`, never `ledger: ...`), because

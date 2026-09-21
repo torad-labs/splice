@@ -253,7 +253,7 @@ dialect = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
 auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 # THE TEN ROWS `splice add openrouter` SHIPS, in the roster's own order (V4-109). This list and
-# AddProfileCatalog's are compared mechanically by checks/model-catalogs-single-source.py, and THIS
+# AddProfileCatalog's are compared mechanically by ModelCatalogsSingleSourceLawTest, and THIS
 # file is the source of truth for the windows: the roster's WINDOW_* constants must agree with the
 # context_window values below, so a vendor raising a ceiling is a one-line change here plus the
 # constant. The head below slots four of the ten — declaring a row and serving it are separate

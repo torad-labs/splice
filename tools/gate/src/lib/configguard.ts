@@ -7,10 +7,11 @@
 //   2. the zero-tolerance posture (maxIssues 0, warningsAsErrors true) intact;
 //   3. every ast-grep rule document a blocking error (structure-derived, see ruledocs.ts);
 //   4. the Dependabot Kotlin ignore block scoped to the toolchain, not kotlinx
-//      (checks/config/dependabot-kotlin-scope.ts, run as it is until PR 6 moves it into build-logic);
-//   5. the concentration leg routed AND still ratcheting (checks/config/concentration-leg-routed.ts,
-//      run as it is until PR 6 makes it a law). Both are run with cwd = root, because they resolve
-//      their inputs from there and their test arms mirror the tree.
+//      (checks/config/dependabot-kotlin-scope.ts, run as it is until PR 6 moves it into build-logic).
+//      It runs with cwd = root, because it resolves its inputs from there and its test arms mirror
+//      the tree. The fifth guard, the concentration leg's routing, retired with the checker it
+//      routed: ConcentrationLawTest runs inside :quality-architecture:test, which gateOfRecord
+//      carries as a Gradle task rather than a ladder row (restructure PR 6).
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { severityViolations } from "./ruledocs.ts";
@@ -65,6 +66,5 @@ export function configGuardProblems(root: string): string[] {
   if (!/warningsAsErrors:\s*true/.test(detekt)) problems.push("detekt.yml config.warningsAsErrors must be true");
   for (const v of severityViolations(root)) problems.push(`  ✗ ${v}`);
   problems.push(...subprocess(root, "dependabot-kotlin-scope", "checks/config/dependabot-kotlin-scope.ts"));
-  problems.push(...subprocess(root, "concentration-leg-routed", "checks/config/concentration-leg-routed.ts"));
   return problems;
 }

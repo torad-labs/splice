@@ -1,6 +1,6 @@
 {
   "recorded": "2026-09-18",
-  "law": "V4-92 ratchet. Each entry is '<module> <fqn>': a public top-level declaration no other module's main or testFixtures sources name. Every line is DEBT, not permission \u2014 the gate fails when a declaration NOT listed here joins them (growth) and when a listed one stops offending (stale). Shrink it with `bun checks/public-surface.ts --write-baseline`; the diff is the record of what moved.",
+  "law": "V4-92 ratchet. Each entry is '<module> <fqn>': a public top-level declaration no other module's main or testFixtures sources name. Every line is DEBT, not permission \u2014 the gate fails when a declaration NOT listed here joins them (growth) and when a listed one stops offending (stale). The entry is edited by hand and graded by PublicSurfaceLawTest; the diff is the record of what moved.",
   "offenders": [
     ":client splice.client.portKeys",
     ":client splice.client.sharedLinkItems",

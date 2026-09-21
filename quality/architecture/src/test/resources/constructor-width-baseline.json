@@ -2,7 +2,7 @@
   "recorded": "2026-09-21",
   "max_params": 12,
   "max_subsystems": 6,
-  "law": "V4-93 ratchet. One entry per primary constructor already over a width on the recorded date, with the numbers MEASURED that day. The gate fails when an unrecorded constructor crosses 12 parameters or 6 subsystems, when a recorded one gets WIDER than its entry, when an entry is recorded ABOVE the measurement (padding), and when an entry stops offending or names a class that is gone. Re-measure with `bun checks/constructor-width.ts --write-baseline`; the diff is the record of what moved.",
+  "law": "V4-93 ratchet. One entry per primary constructor already over a width on the recorded date, with the numbers MEASURED that day. The gate fails when an unrecorded constructor crosses 12 parameters or 6 subsystems, when a recorded one gets WIDER than its entry, when an entry is recorded ABOVE the measurement (padding), and when an entry stops offending or names a class that is gone. The entry is edited by hand and graded by ConstructorWidthLawTest; the diff is the record of what moved.",
   "offenders": {
     "app/src/main/kotlin/splice/app/ControlPlane.kt ControlPlane": {
       "params": 11,

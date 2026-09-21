@@ -2,8 +2,9 @@
 // PR 6). It runs what a real release run would do, plus the mutants that prove each leg can fail.
 //
 // The legs, in order, fail-fast as the script was:
-//   1. install.sh is parseable, and shellcheck-clean WHERE SHELLCHECK EXISTS (it is not a tree
-//      dependency; a box without it reports the skip rather than passing silently);
+//   1. install.sh is parseable, and shellcheck-clean. shellcheck is not a tree dependency, but a
+//      box without it on PATH is a refusal naming the install remedy — never a skipped leg (the
+//      script this replaced exited 127 under `set -e` when the binary was missing);
 //   2. the launch shim's rehearsal (src/lib/launcher.ts);
 //   3. the release workflow, PARSED: one action-gh-release step with the version-derived
 //      `prerelease`, exactly one parsed stage step carrying the gated command and the resolved
@@ -81,12 +82,13 @@ export async function verify(argv: readonly string[], repoRoot: string): Promise
   leg("install.sh");
   const parsed = run(repoRoot, ["bash", "-n", "install.sh"]);
   if (!parsed.ok) return fail(`release verify: install.sh is not parseable by bash\n${parsed.output}`);
-  if (Bun.which("shellcheck")) {
-    const shellcheck = run(repoRoot, ["shellcheck", "-S", "error", "install.sh"]);
-    if (!shellcheck.ok) return fail(`release verify: shellcheck -S error install.sh\n${shellcheck.output}`);
-  } else {
-    console.error("release verify: shellcheck is not on PATH — skipping the install.sh lint (CI installs it)");
+  if (!Bun.which("shellcheck")) {
+    return fail(
+      "release verify: shellcheck is not on PATH — install it (`apt-get install shellcheck` on Debian/Ubuntu, `brew install shellcheck` on macOS) and re-run; the script this replaced exited 127 under `set -e` when it was missing, and this leg refuses the same way rather than skipping the lint.",
+    );
   }
+  const shellcheck = run(repoRoot, ["shellcheck", "-S", "error", "install.sh"]);
+  if (!shellcheck.ok) return fail(`release verify: shellcheck -S error install.sh\n${shellcheck.output}`);
 
   leg("the launch shim");
   const launcher = await launcherRehearsal(shimPath(repoRoot));

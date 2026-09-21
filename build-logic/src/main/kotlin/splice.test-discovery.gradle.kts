@@ -16,11 +16,11 @@
 // exact graph just produced, would read that destruction as "never ran" for classes that ran
 // perfectly well in some earlier, unrelated invocation.
 import org.gradle.api.tasks.testing.Test
-import splice.discovery.audit
-import splice.discovery.census
-import splice.discovery.scanModuleSources
-import splice.discovery.scanModuleXml
-import splice.discovery.summaryLine
+import splice.discovery.JUnitXml.scanModuleXml
+import splice.discovery.SourceScan.scanModuleSources
+import splice.discovery.TestDiscovery.audit
+import splice.discovery.TestDiscovery.census
+import splice.discovery.TestDiscovery.summaryLine
 
 /** Every Test task of every subproject. The same shape as splice.gate-ladder's own
  *  `everyTestTask` — script plugins do not share top-level vals across files, so this is

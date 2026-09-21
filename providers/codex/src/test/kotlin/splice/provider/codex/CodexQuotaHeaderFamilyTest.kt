@@ -1,10 +1,11 @@
 // NEW: x-codex header family owned by provider-codex, sorted by window length.
+package splice.provider.codex
+
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.WallClock
-import splice.provider.codex.CodexQuotaHeaderFamily
 
 class CodexQuotaHeaderFamilyTest {
 

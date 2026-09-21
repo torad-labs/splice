@@ -1,6 +1,8 @@
 // V4-179: a screenshot inside a splice_exec-owned tool_result reaches the model — persisted on the
 // record beside the script's bounded output, replayed from there, owned by exact bytes and position.
 // Each arm here is one clause of splice-astra's contract (ledger row V4-179).
+package splice.provider.codex
+
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -19,8 +21,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.transport.posted
 import java.nio.file.Files

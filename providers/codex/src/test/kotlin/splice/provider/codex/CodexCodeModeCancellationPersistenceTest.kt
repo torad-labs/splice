@@ -1,4 +1,6 @@
 // NEW: a failed cancellation-state save cannot replace the original cancellation signal.
+package splice.provider.codex
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject

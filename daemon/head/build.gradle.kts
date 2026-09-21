@@ -28,7 +28,7 @@ dependencies {
     testImplementation(libs.ktor.client.cio)
     testImplementation(project(":dialects-openai-responses"))
     testImplementation(project(":dialects-anthropic"))
-    testImplementation(project(":provider-codex"))
+    testImplementation(project(":providers-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.serialization.json)
     testFixturesImplementation(libs.zstd.jni) // CX-03: the mock decodes zstd like the real upstream

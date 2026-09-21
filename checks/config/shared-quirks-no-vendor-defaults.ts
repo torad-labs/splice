@@ -378,7 +378,7 @@ function selftest(): number {
   const tmp = mkdtemp();
   try {
     const dialect = join(tmp, "dialects/openai-responses/src/main/kotlin");
-    const vendor = join(tmp, "gateway/provider-codex/src/main/kotlin");
+    const vendor = join(tmp, "providers/codex/src/main/kotlin");
     mkdirSync(dialect, { recursive: true });
     mkdirSync(vendor, { recursive: true });
     writeFileSync(join(dialect, "ResponsesQuirks.kt"), COMPLIANT, "utf8");

@@ -19,7 +19,7 @@ internal class TestResponsesQuirks {
     fun profile(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "test-responses",
         // A neutral third-party responses provider is not lite: lite is a ChatGPT-internal
-        // input shape, pinned in :provider-codex. Explicit null so this double does not inherit
+        // input shape, pinned in :providers-codex. Explicit null so this double does not inherit
         // a dialect default and emit x-openai-internal-codex-responses-lite.
         responsesLiteModelRegex = null,
         emitEmptyLiteInstructions = true,

@@ -24,7 +24,7 @@ dependencies {
     implementation(project(":dialects-openai-responses"))
     implementation(project(":dialects-openai-chat"))
     implementation(project(":dialects-anthropic"))
-    implementation(project(":provider-codex"))
+    implementation(project(":providers-codex"))
     implementation(project(":provider-grok"))
     implementation(project(":provider-kimi"))
     implementation(project(":provider-muse"))

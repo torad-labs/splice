@@ -20,7 +20,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":dialects-anthropic" to setOf(":core", ":upstream"),
     ":dialects-openai-responses" to setOf(":core", ":upstream"),
     ":dialects-openai-chat" to setOf(":core", ":upstream"),
-    ":provider-codex" to setOf(":core", ":upstream", ":dialects-openai-responses"),
+    ":providers-codex" to setOf(":core", ":upstream", ":dialects-openai-responses"),
     ":provider-grok" to setOf(":core", ":upstream", ":dialects-openai-responses"),
     ":provider-kimi" to setOf(":core", ":upstream", ":dialects-anthropic"),
     ":provider-muse" to setOf(":core", ":upstream"),

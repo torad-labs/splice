@@ -2,6 +2,8 @@
 // authorize-URL param order + %20 (never +) encoding, JWT claim extraction, auth.json shape,
 // cached read (mtime+TTL), single-flight refresh preserving other fields + 0600, masked
 // introspection.
+package splice.provider.codex
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -25,10 +27,6 @@ import splice.core.auth.Credentials
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
-import splice.provider.codex.CodexAuthFile
-import splice.provider.codex.CodexAuthProvider
-import splice.provider.codex.CodexOAuth
-import splice.provider.codex.RefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

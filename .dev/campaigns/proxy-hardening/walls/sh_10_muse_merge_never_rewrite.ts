@@ -80,9 +80,9 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
     "2026-09-15 rate-limit file persist",
   "daemon/head/src/main/kotlin/splice/head/usage/UsageRingFile.kt":
     "2026-09-15 usage ring persist",
-  "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt":
+  "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt":
     "2026-09-15 Codex credential persist",
-  "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt":
+  "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt":
     "2026-09-15 Codex code-mode state persist",
   "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt":
     "2026-09-15 Grok credential persist",

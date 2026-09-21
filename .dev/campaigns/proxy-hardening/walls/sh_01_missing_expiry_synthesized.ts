@@ -55,7 +55,7 @@ function pyRepr(items: string[]): string {
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const CORE = resolve(ROOT, "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt");
-const CODEX = resolve(ROOT, "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt");
+const CODEX = resolve(ROOT, "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt");
 const KIMI = resolve(ROOT, "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt");
 const GROK = resolve(ROOT, "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt");
 

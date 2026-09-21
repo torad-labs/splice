@@ -114,7 +114,8 @@ grep -q "does not match package version" "$invalid_tag_log" || {
   echo "VERIFY OSS-D: mismatched tag failed for the wrong reason" >&2
   exit 1
 }
-./gradlew -q :app:shadowJar --no-daemon --no-parallel
+# Through the slot (see verify-OSS-B.sh): --no-daemon comes from the script, --no-parallel stays.
+bash checks/gradle-slot.sh oss-d -q :app:shadowJar --no-parallel
 SPLICE_RELEASE_TAG="v$VERSION" bash checks/release/stage.sh
 SPLICE_EXPECTED_VERSION="$VERSION" bash checks/release/accept.sh
 

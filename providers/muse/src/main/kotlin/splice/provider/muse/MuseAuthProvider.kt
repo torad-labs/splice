@@ -1,4 +1,9 @@
 // NEW: Muse persisted inference-key provider with bounded re-mint holds and safe persistence.
+// NO-EXPIRY-EXEMPT[2026-09-21]: the muse-oauth credential kind carries no expiry and no refresh
+// token (MuseCredentialShape reads a flat access_token). That account token is not served to a
+// backend — it is the input to key minting, and the minted inference key's lifetime is governed
+// by the mint holds below, not by a cached ceiling. There is nothing here to age out, so SH-01's
+// synthesized ceiling would force a refresh down a path that does not exist.
 package splice.provider.muse
 
 import kotlinx.coroutines.CoroutineScope

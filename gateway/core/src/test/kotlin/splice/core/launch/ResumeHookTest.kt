@@ -1,5 +1,6 @@
 // NEW: V4-169 — the SessionStart resume hook as the materializer installs it: registered for
-// `resume` only, a 0700 script that authenticates from the session's own env (no bearer literal),
+// `resume` and (V4-183) `startup`, never `compact` or `clear`, as one 0700 script that
+// authenticates from the session's own env (no bearer literal),
 // and absent — loudly — when the config dir cannot execute a hook or no daemon port was given.
 package splice.core.launch
 
@@ -46,14 +47,22 @@ class ResumeHookTest {
         settings["hooks"]?.jsonObject?.get("SessionStart")?.jsonArray
 
     @Test
-    fun `a daemon-backed materializer registers the hook for resume only, as a 0700 script`(@TempDir home: Path) {
+    fun `a daemon-backed materializer registers the hook for resume and startup only, as a 0700 script`(
+        @TempDir home: Path,
+    ) {
         val head = home.resolve(".claude-codex")
 
         val entries = sessionStart(materialize(home, head, PORT))
 
-        val entry = entries!!.single().jsonObject
-        assertEquals("resume", entry["matcher"]!!.jsonPrimitive.content, "a fresh start, /clear and compact never call")
+        val matchers = entries!!.map { it.jsonObject["matcher"]!!.jsonPrimitive.content }
+        assertEquals(listOf("resume", "startup"), matchers, "/clear and compact never call (V4-183 adds startup)")
+        val entry = entries.first().jsonObject
         val command = entry["hooks"]!!.jsonArray.single().jsonObject["command"]!!.jsonPrimitive.content
+        assertEquals(
+            command,
+            entries.last().jsonObject["hooks"]!!.jsonArray.single().jsonObject["command"]!!.jsonPrimitive.content,
+            "both matchers run the one script",
+        )
         val script = head.resolve(ResumeHook.RESUME_HOOK_SH)
         assertEquals(script.toString(), command)
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(script)))

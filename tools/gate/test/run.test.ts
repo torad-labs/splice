@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AFTER_THE_SLOT, GATE_OF_RECORD_LABEL, GATE_OF_RECORD_TASKS } from "../src/commands/run.ts";
+import { AFTER_THE_SLOT, GATE_OF_RECORD_LABEL, GATE_OF_RECORD_TASKS, cancelledBySignal } from "../src/commands/run.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -18,6 +18,18 @@ describe("gate run", () => {
   test("package.json's gate script is this verb, and checks/gate.sh is gone", () => {
     expect(scripts.gate).toBe("bun tools/gate run");
     expect(existsSync(join(repoRoot, "checks", "gate.sh"))).toBe(false);
+  });
+
+  // #170 review: a slot phase ended by `kill <gate pid>` returned 143 and the runner walked on into
+  // the OSS readiness scripts, which launch more gradle builds — a cancellation that resumed work.
+  test("a signalled slot phase cancels the run; a red or refused one is a verdict", () => {
+    expect(cancelledBySignal(143), "SIGTERM").toBe(true);
+    expect(cancelledBySignal(130), "SIGINT").toBe(true);
+    expect(cancelledBySignal(129), "SIGHUP").toBe(true);
+    expect(cancelledBySignal(1), "BUILD FAILED is a verdict the post-slot phase still follows").toBe(false);
+    expect(cancelledBySignal(2), "the slot's no-tasks refusal").toBe(false);
+    expect(cancelledBySignal(75), "the slot timeout").toBe(false);
+    expect(cancelledBySignal(0)).toBe(false);
   });
 
   test("the invocation is pinned: no build cache, clean, the whole ladder, every leg reported", () => {

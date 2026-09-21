@@ -69,7 +69,12 @@ class SessionsRoutesWiringTest {
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html>" },
             log = { },
-            sessions = SessionRegistry(sessionsDir = sessions, headOf = { null }, pidAlive = { true }, clock = { SESSIONS_AT }),
+            sessions = SessionRegistry(
+                sessionsDir = sessions,
+                headOf = { null },
+                pidAlive = { true },
+                clock = { SESSIONS_AT },
+            ),
         )
         control.ports.activity = stores
         control.start()

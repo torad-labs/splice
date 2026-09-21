@@ -75,13 +75,13 @@ run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
 # of record must never measure a mixture of two source states; the cache is the one input that can
 # make it do so, so the gate of record does not use it.
 # THROUGH THE SLOT, because the gate of record was the last caller that was not (2026-09-18). Every
-# seat routes gradle through gradle-slot.sh since the 2026-09-17 fix wave, and this line — the one
+# seat routes gradle through the slot (`bun tools/gate slot`) since the 2026-09-17 fix wave, and this line — the one
 # run whose verdict is the one that counts — still went straight to ./gradlew. Two seats' gradles in
 # one project dir clobber build/ outputs and hand each other false reds, and a gate that can be
 # false-red by a neighbour's timing is not a gate of record. Measured here the same day: a direct
 # invocation died with NoClassDefFoundError against four live daemons, and the identical tasks
 # through the lock came back clean. The label is what a waiting seat reads out of the holder file.
-run "gradle clean check" bash checks/gradle-slot.sh gate-of-record --no-build-cache clean check
+run "gradle clean check" bun tools/gate run
 run "ast-grep walls" npm run --silent gate:rules
 # The walls leg above proves the routed rules pass; it cannot prove they are ALL routed. .rules/kotlin
 # sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a

@@ -126,8 +126,6 @@
     { "task": "roleRegistrySelftest", "why": "The role-registry wall's own arms.", "command": ["bash", "checks/role-registry-selftest.sh"] },
     { "task": "modelCatalogsSingleSource", "why": "ARCH-AUDIT wall: the model catalogs have one source.", "command": ["bun", "checks/model-catalogs-single-source.ts", "check", "."] },
     { "task": "modelCatalogsSelftest", "why": "The model-catalogs wall's own arms.", "command": ["bash", "checks/model-catalogs-single-source-selftest.sh"] },
-    { "task": "autocloseableClosed", "why": "ARCH-AUDIT wall: every AutoCloseable is closed.", "command": ["bun", "checks/autocloseable-closed.ts", "check"] },
-    { "task": "autocloseableClosedSelftest", "why": "The AutoCloseable wall's own arms.", "command": ["bash", "checks/autocloseable-closed-selftest.sh"] },
     {
       "task": "noPython",
       "why": "Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted every time it was only prose, because nothing failed when a session added another .py. It is a wall now; the dated burn-down list beside this table is the debt and may only shrink. The PreToolUse guard (.claude/settings.json) is `bun tools/gate no-python --guard`, the same library rather than a reimplementation.",

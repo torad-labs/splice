@@ -23,7 +23,7 @@
 // spelling, so either satisfies this law, and the snake form is TRANSLITERATED from the key rather
 // than mapped by hand.
 //
-// DISPOSITION: documented (the key token, `key = ...`, in config/splice.example.toml in EITHER
+// DISPOSITION: documented (the key token, `key = ...`, in app/src/main/resources/splice.example.toml in EITHER
 // spelling, commented or live) or retired (`# retired: <key> — <reason>`, reason non-empty).
 // Absence is not a disposition. NOT CAUGHT: "default + unit + semantics" (only the key token is
 // machine-checkable), a key documented in the WRONG place (a section-aware scan is a different
@@ -38,7 +38,7 @@ import java.io.File
 
 internal object KnobKeysDocumented {
     const val SOURCE_IN_CORE = "splice/core/config/Knob.kt"
-    const val EXAMPLE_CONFIG = "config/splice.example.toml"
+    const val EXAMPLE_CONFIG = "app/src/main/resources/splice.example.toml"
 
     private val ENUM_DECL = Regex("\\benum\\s+class\\s+Knob\\b")
     private val ENTRY_HEAD = Regex("^\\s*([A-Z][A-Z0-9_]*)\\s*\\(", RegexOption.DOT_MATCHES_ALL)

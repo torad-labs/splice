@@ -104,7 +104,7 @@ tasks.withType<Test>().configureEach {
     // surfaces against the source — the example config is an input for the same reason the
     // sources are, or a key documented late comes back UP-TO-DATE-red and a key retired late
     // UP-TO-DATE-green.
-    inputs.files(repoRoot.file("config/splice.example.toml")).withPropertyName("scannedDocumentationSurfaces")
+    inputs.files(repoRoot.file("app/src/main/resources/splice.example.toml")).withPropertyName("scannedDocumentationSurfaces")
     // Restructure PR 6: a law's own DECLARATION FILE — role-registry.toml's written dispositions —
     // is an input for the same reason the sources are. It arrives on the test classpath through
     // processTestResources, but naming it here is what makes the dependency legible beside the

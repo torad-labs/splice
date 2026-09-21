@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.core.launch.SessionOwnership
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -323,9 +324,10 @@ class LaunchServiceTest {
 
     @Test
     fun `default recipe is safe - no skip-permissions flag, no warning`() {
-        val recipe = service.launch(spec("codex"), extraArgs = listOf("-c"), dangerouslySkipPermissions = false)
+        // V4-183: `-c` is no longer a pass-through word (HeadBoundedContinue); a plain flag stands in.
+        val recipe = service.launch(spec("codex"), extraArgs = listOf("--verbose"), dangerouslySkipPermissions = false)
         assertFalse(recipe.argv.contains("--dangerously-skip-permissions"))
-        assertTrue(recipe.argv.contains("-c"))
+        assertTrue(recipe.argv.contains("--verbose"))
         assertNull(recipe.warning)
         assertTrue(recipe.env["ANTHROPIC_AUTH_TOKEN"] == "test-inference-token")
     }
@@ -456,14 +458,39 @@ class LaunchServiceTest {
         val sibling = seedSiblingSession("abc-123")
         val mine = spec("picker").copy(trees = HeadTrees(tmp.resolve(".claude-picker"), listOf(sibling)))
 
-        listOf(emptyList(), listOf("-r"), listOf("-c")).forEach { args ->
+        listOf(emptyList(), listOf("-r")).forEach { args ->
             val recipe = service.launch(mine, extraArgs = args, dangerouslySkipPermissions = false)
             assertNull(recipe.warning, "a picker launch has nothing to report: ${recipe.warning}")
         }
+        // V4-183: a bare -c with no session of this head in the cwd is a NEW session, said once —
+        // never the sibling's, and never the client's own newest-in-tree continue.
+        val cwd = Files.createDirectories(tmp.resolve("home-x")).toString()
+        val continued = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+        assertFalse(continued.argv.contains("-c"), "the client's -c never reaches the client: ${continued.argv}")
+        assertTrue(continued.warning.orEmpty().startsWith("no session of this head in $cwd"), continued.warning)
         assertFalse(
             Files.exists(tmp.resolve(".claude-picker/projects/-home-x/abc-123.jsonl")),
             "the picker must see this head's tree only",
         )
+    }
+
+    // V4-183: the whole path — a session this head started (recorded by its SessionStart hook)
+    // is what a later bare -c in the same cwd resumes, by name, through the ordinary resume flag.
+    @Test
+    fun `a bare -c resumes this head's own newest session in the cwd, by name`() {
+        val mine = spec("owner")
+        val cwd = Files.createDirectories(tmp.resolve("owner-work")).toString()
+        val transcript = tmp.resolve(".claude-owner/projects/-owner-work/own-session.jsonl")
+        Files.createDirectories(transcript.parent)
+        Files.writeString(transcript, "")
+        SessionOwnership(mine.trees.own).record("own-session", cwd, transcript)
+
+        val recipe = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+
+        val argv = recipe.argv
+        assertEquals(listOf("--resume", "own-session"), argv.takeLast(2), argv.toString())
+        assertFalse(argv.contains("-c"))
+        assertNull(recipe.warning, "resuming one's own session is the quiet path: ${recipe.warning}")
     }
 
     @Test

@@ -53,6 +53,9 @@ public class LaunchService(
      *  silent no-op, unchanged. */
     private val claudeLogins: ClaudeLogins = ClaudeLogins(),
 ) {
+    /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
+    private val headBoundedContinue = HeadBoundedContinue()
+
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning.
      *
@@ -66,6 +69,8 @@ public class LaunchService(
         extraArgs: List<String>,
         dangerouslySkipPermissions: Boolean,
         keyPresentNow: Boolean = true,
+        /** V4-183: the shim's working directory; null from a shim older than shim-4, which leaves -c unbounded. */
+        cwd: String? = null,
     ): LaunchRecipe {
         val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
         val slots = aliasSlots(effective)
@@ -93,7 +98,10 @@ public class LaunchService(
         // V4-115 AFTER the materialize, never before: the materializer is what guarantees
         // <configDir>/projects is a REAL head-owned directory (ProjectsLink un-links one an earlier
         // launch pointed elsewhere). Copying first would write through the very link this row removes.
-        val adoption = adoptResume(effective, extraArgs)
+        // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
+        // adoptResume judges.
+        val bounded = headBoundedContinue.resolve(effective, extraArgs, cwd)
+        val adoption = adoptResume(effective, bounded.args)
         val env = buildEnv(effective, slots)
         val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
@@ -104,9 +112,10 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
-            addAll(extraArgs)
+            addAll(bounded.args)
         }
-        return LaunchRecipe(env, unset, argv, launchWarning(spec, dangerouslySkipPermissions, adoption))
+        val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning)
+        return LaunchRecipe(env, unset, argv, warning)
     }
 
     /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees (V4-115). Null
@@ -152,6 +161,7 @@ public class LaunchService(
         spec: LaunchSpec,
         dangerouslySkipPermissions: Boolean,
         adoption: SessionAdoption?,
+        continueWarning: String?,
     ): String? {
         val danger = if (dangerouslySkipPermissions) {
             "dangerouslySkipPermissions engaged for ${spec.trees.own} — Claude Code runs with " +
@@ -159,7 +169,9 @@ public class LaunchService(
         } else {
             null
         }
-        return listOfNotNull(danger, adoptionWarning(adoption)).takeIf { it.isNotEmpty() }?.joinToString("; ")
+        return listOfNotNull(danger, adoptionWarning(adoption), continueWarning)
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("; ")
     }
 
     /** THE RETRY LAW: no refusal is bare and none invents a cause. Each sentence says what happened,

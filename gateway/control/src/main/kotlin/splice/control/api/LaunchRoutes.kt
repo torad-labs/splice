@@ -13,7 +13,8 @@ import splice.control.ManagedHead
 import splice.core.topology.TopologyMessages
 import splice.core.util.JsonScalars
 
-private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean)
+/** [cwd]: V4-183, the shim's working directory, absent from a shim older than shim-4. */
+private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean, val cwd: String?)
 
 internal class LaunchRoutes(
     private val heads: Map<String, ManagedHead>,
@@ -69,6 +70,7 @@ internal class LaunchRoutes(
                 // DR-81: key presence is read per LAUNCH — the spec is boot-frozen, and a stale
                 // gate left the capture hook armed against a credential `splice key set` landed.
                 keyPresentNow = managed.keyPresence.keyPresentNow(),
+                cwd = request.cwd,
             ),
         )
         audit.launch(key, recipe.argv)
@@ -83,6 +85,6 @@ internal class LaunchRoutes(
         val dangerouslySkipPermissions = JsonScalars.str(body, "dangerouslySkipPermissions") == "true"
         val extraArgs = (body?.get("args") as? JsonArray)
             ?.mapNotNull { JsonScalars.str(it) } ?: emptyList()
-        return LaunchRequest(extraArgs, dangerouslySkipPermissions)
+        return LaunchRequest(extraArgs, dangerouslySkipPermissions, JsonScalars.str(body, "cwd"))
     }
 }

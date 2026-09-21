@@ -89,7 +89,7 @@ DANGEROUS="false"
 [ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS:-0}" = "1" ] && DANGEROUS="true"
 # Hand-paired with splice.core.SHIM_VERSION (gateway/core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-3"
+SPLICE_SHIM_VERSION="shim-4"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.3.2"
 
@@ -215,11 +215,14 @@ fi
 KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
 if [ -z "$KEY" ]; then echo "splice: mgmt-key not found at $KEY_FILE" >&2; exit 1; fi
 
-# Ask the daemon for the exec recipe (env sets/unsets + argv), passing through extra args.
+# Ask the daemon for the exec recipe (env sets/unsets + argv), passing through extra args and the
+# working directory (shim-4, V4-183): a bare -c is resolved by the daemon to this head's own newest
+# session in this cwd, so it never continues another head's session.
 ARGS_JSON="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@")"
+CWD_JSON="$(python3 -c 'import json,os; print(json.dumps(os.getcwd()))')"
 RECIPE="$(curl -sS -X POST "${CONTROL}/launch/${HEAD}" \
   -H "Authorization: Bearer ${KEY}" -H 'Content-Type: application/json' \
-  --data "{\"dangerouslySkipPermissions\":\"${DANGEROUS}\",\"args\":${ARGS_JSON}}")"
+  --data "{\"dangerouslySkipPermissions\":\"${DANGEROUS}\",\"cwd\":${CWD_JSON},\"args\":${ARGS_JSON}}")"
 
 # Parse the recipe into env/unset/argv and exec. The recipe rides in $RECIPE (env), NOT stdin —
 # the heredoc is python's stdin (the script), so piping the recipe in would be swallowed.

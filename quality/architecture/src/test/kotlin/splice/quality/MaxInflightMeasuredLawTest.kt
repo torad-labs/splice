@@ -38,7 +38,9 @@ internal object MaxInflightMeasured {
     }
 
     private fun measuredCeiling(example: String?, rel: String): Read {
-        if (example == null) return Read(null, listOf("$rel: missing — the measured ceiling lives there and nowhere else"))
+        if (example == null) {
+            return Read(null, listOf("$rel: missing — the measured ceiling lives there and nowhere else"))
+        }
         val measure = MEASURE.find(example)
             ?: return Read(
                 null,

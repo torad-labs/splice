@@ -34,6 +34,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.head.compact.ShadowClassifier
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
@@ -276,6 +277,7 @@ class HeadServerIntegrationTest {
     fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
         val before = logs.size
         val jsonl = tmp.resolve("perf.jsonl")
+        assertTrue(AsyncFileIo.drain(), "pending telemetry must finish before taking the row baseline")
         val beforeRows = if (Files.exists(jsonl)) {
             Files.readString(jsonl).trim().lines().count { it.isNotBlank() }
         } else {
@@ -291,6 +293,8 @@ class HeadServerIntegrationTest {
         for (field in expectedFields) {
             assertTrue(perfLine!!.contains(field), "perf line missing $field: $perfLine")
         }
+        // The perf log follows enqueueing, not completion of the asynchronous JSONL append.
+        assertTrue(AsyncFileIo.drain(), "this turn's telemetry must reach disk before reading it")
         val rows = Files.readString(jsonl).trim().lines().filter { it.isNotBlank() }
         val mine = rows.drop(beforeRows)
         assertTrue(mine.isNotEmpty(), "expected a new perf JSONL row after this turn")

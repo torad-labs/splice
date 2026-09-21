@@ -27,6 +27,7 @@
 // printed home, and asserts javaMajor reports 21 for its `bin/java`.
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { layout } from "../lib/repo.ts";
+import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { runUnderSlot } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
 
@@ -47,6 +48,18 @@ export function cancelledBySignal(slotExit: number): boolean {
   return slotExit > 128;
 }
 
+/** EX_TEMPFAIL, the same class as the slot's own timeout exit: no verdict was produced and the
+ *  caller should retry later. A caller acts identically on both, so they do not need distinct
+ *  numbers — only a distinct MESSAGE, which they have. */
+export const RUN_ALREADY_OPEN_EXIT = 75;
+
+/** Recorded for a human reading the sentinel, never for liveness. `head_at_start`, not `sha`: the
+ *  verdict covers the worktree, and `git status` being empty is the gate's own precondition. */
+function headAtStart(repoRoot: string): string {
+  const proc = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: repoRoot });
+  return proc.exitCode === 0 ? proc.stdout.toString().trim() : "unknown";
+}
+
 export async function run(argv: readonly string[]): Promise<number> {
   const javaHomeOnly = argv[0] === "--java-home-only" && argv.length === 1;
   if (argv.length > 0 && !javaHomeOnly) {
@@ -64,6 +77,16 @@ export async function run(argv: readonly string[]): Promise<number> {
   }
   console.error(`══ splice gate ══  (JAVA_HOME=${jdk.javaHome})`);
   const { repoRoot } = layout();
+  // THE RUN SENTINEL, taken here because this is the first line of the run that spans BOTH phases:
+  // the slot lock is released between gradle and the release rehearsal, so it can never stand for
+  // the verdict. Held by the kernel until this process ends by any means, SIGKILL included — which
+  // matters because earlyoom is built to kill exactly this process under pressure.
+  const alreadyOpen = acquireRunSentinel(headAtStart(repoRoot));
+  if (alreadyOpen) {
+    console.error(`gate: refusing — a gate of record is already open over this tree (${describeOpenRun(alreadyOpen)})`);
+    console.error("  two verdicts over one worktree cannot both be true; wait for it, or `bun tools/gate sentinel` to check.");
+    return RUN_ALREADY_OPEN_EXIT;
+  }
   const verdicts: [string, number][] = [];
   const slotExit = await runUnderSlot({ layout: layout(), label: GATE_OF_RECORD_LABEL, args: [...GATE_OF_RECORD_TASKS], env: { JAVA_HOME: jdk.javaHome } });
   if (cancelledBySignal(slotExit)) {

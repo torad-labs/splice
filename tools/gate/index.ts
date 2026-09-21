@@ -6,6 +6,7 @@ import { audit, usage as auditUsage } from "./src/commands/audit.ts";
 import { ledger, usage as ledgerUsage } from "./src/commands/ledger.ts";
 import { noPython, usage as noPythonUsage } from "./src/commands/no-python.ts";
 import { rules, usage as rulesUsage } from "./src/commands/rules.ts";
+import { sentinel, usage as sentinelUsage } from "./src/commands/sentinel.ts";
 import { run, usage as runUsage } from "./src/commands/run.ts";
 import { slot, usage as slotUsage } from "./src/commands/slot.ts";
 import { title, usage as titleUsage } from "./src/commands/title.ts";
@@ -13,6 +14,7 @@ import { title, usage as titleUsage } from "./src/commands/title.ts";
 const VERBS = {
   run: { usage: runUsage, exec: (argv: string[]) => run(argv) },
   slot: { usage: slotUsage, exec: (argv: string[]) => slot(argv) },
+  sentinel: { usage: sentinelUsage, exec: (argv: string[]) => sentinel(argv) },
   rules: { usage: rulesUsage, exec: (argv: string[]) => rules(argv) },
   title: { usage: titleUsage, exec: (argv: string[]) => title(argv) },
   "no-python": { usage: noPythonUsage, exec: (argv: string[]) => noPython(argv) },

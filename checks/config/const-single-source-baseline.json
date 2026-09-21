@@ -23,7 +23,7 @@
       "daemon/head/src/main/kotlin/splice/head/compaction/CompactionReplay.kt"
     ],
     "COLLISION DEFAULT_CLIENT_ID": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION DEFAULT_EXPIRES_IN_S": [
@@ -42,7 +42,7 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
     ],
     "COLLISION FIELD_TYPE": [
       "core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt",
@@ -54,9 +54,9 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
       "daemon/head/src/main/kotlin/splice/head/wire/CollectingBlocks.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COLLISION HIGH_BUDGET_FLOOR": [
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEffortLadder.kt",
@@ -71,7 +71,7 @@
       "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COLLISION LOG_TAG": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
     ],
@@ -96,7 +96,7 @@
       "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt"
     ],
     "COLLISION PKCE_VERIFIER_BYTES": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokOAuth.kt"
     ],
     "COLLISION PROBE_TIMEOUT_MS": [
@@ -111,11 +111,11 @@
       "gateway/app/src/main/kotlin/splice/app/provider/JdkLocalHttp.kt"
     ],
     "COLLISION REDIRECT_PORT": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION REDIRECT_URI": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION RUNAWAY_GUARD_MESSAGE": [
@@ -123,7 +123,7 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt"
     ],
     "COLLISION SCOPE": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthFile.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION SESSION_HEADER": [
@@ -217,20 +217,20 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
     ],
     "COPY FIELD_ACCESS_TOKEN": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_ACCOUNT_ID": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt"
     ],
     "COPY FIELD_CONTENT": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesHarvest.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputBuilder.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputParts.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_DEFER_LOADING": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
@@ -239,7 +239,7 @@
     "COPY FIELD_DESCRIPTION": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchIndex.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_EXECUTION": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt",
@@ -252,39 +252,39 @@
     ],
     "COPY FIELD_INPUT": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_LAST_REFRESH": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_NAME": [
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_OUTPUT": [
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
     ],
     "COPY FIELD_PROPERTIES": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchIndex.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolWireObjects.kt"
     ],
     "COPY FIELD_REFRESH_TOKEN": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_ROLE": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_SUMMARY": [
       "core/src/main/kotlin/splice/core/reasoning/Replay.kt",
@@ -295,8 +295,8 @@
       "daemon/head/src/main/kotlin/splice/head/wire/CollectingBlocks.kt"
     ],
     "COPY FIELD_TOKENS": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt"
     ],
     "COPY FIELD_TOOLS": [
@@ -304,8 +304,8 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSearchOutput.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSurfaceRecovery.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FULL_PCT": [
       "core/src/main/kotlin/splice/core/usage/UsageWarn.kt",
@@ -318,7 +318,7 @@
     ],
     "COPY HEADER_THREAD_ID": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRunner.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexRoutingHeaders.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexRoutingHeaders.kt"
     ],
     "COPY HEADS": [
       "daemon/control/src/main/kotlin/splice/control/api/ControlPayloads.kt",
@@ -371,7 +371,7 @@
       "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COPY MASK_KEEP": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt"
     ],
     "COPY MAX_LOG_BYTES": [
@@ -405,11 +405,11 @@
       "gateway/app/src/main/kotlin/splice/app/quota/CodexQuotaProbe.kt",
       "gateway/app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
       "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt"
     ],
     "COPY MILLIS_PER_MINUTE": [
       "daemon/control/src/main/kotlin/splice/control/mcp/HostedServers.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt"
     ],
     "COPY MILLIS_PER_SECOND": [
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeProcess.kt",
@@ -479,7 +479,7 @@
       "gateway/app/src/main/kotlin/splice/app/cli/DaemonStop.kt"
     ],
     "COPY PROACTIVE_WINDOW_MS": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
     ],
     "COPY READ_TAIL_BYTES": [
@@ -487,17 +487,17 @@
       "daemon/head/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
     "COPY RECORD_ID_LOG_CHARS": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurn.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurn.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY RED": [
       "gateway/app/src/main/kotlin/splice/app/cli/CliStyle.kt",
       "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
     ],
     "COPY REFRESH_ERROR_SNIPPET": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"
     ],
@@ -524,7 +524,7 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolSearchController.kt",
       "daemon/head/src/main/kotlin/splice/head/ActivityLabel.kt",
       "daemon/head/src/main/kotlin/splice/head/MessageEdges.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY SECONDS_PER_DAY": [
       "gateway/app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
@@ -537,7 +537,7 @@
     "COPY SECONDS_PER_MINUTE": [
       "gateway/app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
       "gateway/app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt",
       "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SEND_MESSAGE": [
@@ -545,7 +545,7 @@
       "daemon/head/src/main/kotlin/splice/head/MessageEdges.kt"
     ],
     "COPY STALE_FLOOR_MS": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
     ],
     "COPY SYSTEM": [
@@ -582,8 +582,8 @@
       "daemon/head/src/main/kotlin/splice/head/wire/WireBlockWriter.kt"
     ],
     "COPY TYPE_ADDITIONAL_TOOLS": [
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
-      "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt",
+      "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY TYPE_REASONING": [
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",

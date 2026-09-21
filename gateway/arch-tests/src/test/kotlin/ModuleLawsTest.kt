@@ -51,7 +51,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":dialects-openai-responses" to ADAPTER_BASE,
     ":dialects-openai-chat" to ADAPTER_BASE,
     // a provider speaks its own dialect(s) — never another provider, never the transport.
-    ":provider-codex" to ADAPTER_BASE + ":dialects-openai-responses",
+    ":providers-codex" to ADAPTER_BASE + ":dialects-openai-responses",
     ":provider-grok" to ADAPTER_BASE + ":dialects-openai-responses",
     ":provider-kimi" to ADAPTER_BASE + ":dialects-anthropic",
     ":provider-muse" to ADAPTER_BASE,
@@ -69,8 +69,8 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":provider-codex", ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai", ":app",
-    ":arch-tests", ":fir-checks",
+    ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai", ":app", ":arch-tests",
+    ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -423,7 +423,7 @@ private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
     (":provider-openai" to ":daemon-head") to
         "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as provider-grok.",
-    (":daemon-head" to ":provider-codex") to
+    (":daemon-head" to ":providers-codex") to
         "pre-existing, 2026-08-16, tracked for removal — two :daemon-head tests still compile " +
         "against provider-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
         "CodexCodeModeReanchorTest CodexCodeModeBridge); other gateway tests now use " +

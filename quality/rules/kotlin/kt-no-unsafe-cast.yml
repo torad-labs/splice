@@ -24,7 +24,7 @@
 #   daemon/head/src/main/kotlin/splice/head/round/ReanchorRunner.kt:54      outcome as TurnOutcome.Success
 #   daemon/head/src/main/kotlin/splice/head/round/ReanchorRunner.kt:93      outcome as TurnOutcome.Failure
 #   daemon/head/src/main/kotlin/splice/head/round/FoldContinuations.kt:70   outcome as TurnOutcome.Success
-#   gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt:63
+#   providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt:63
 #                                                                                 (it as TextBlock).text
 #
 # THE DENOMINATOR IS EVERY UNSAFE CAST, NOT A SPELLING (completeness law, §24). The audit row

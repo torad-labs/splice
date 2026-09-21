@@ -32,6 +32,7 @@ message: "Read JSON scalars via JsonScalars .str()/.str(key) (core/util) — a r
 note: "JsonNull is a JsonPrimitive whose content is \"null\". Use element.str() or obj.str(key) from splice.core.util (they filter JsonNull) instead of ?.jsonPrimitive?.content — the null-token-becomes-\"null\" bug the extraction closed."
 files:
   - upstream/src/main/**/*.kt
+  - providers/*/src/main/**/*.kt
   - gateway/provider-*/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt

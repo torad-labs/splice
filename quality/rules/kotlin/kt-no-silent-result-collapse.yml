@@ -74,7 +74,7 @@ files:
   - upstream/src/main/**/*.kt
   - gateway/provider-grok/src/main/**/*.kt
   - gateway/provider-kimi/src/main/**/*.kt
-  - gateway/provider-codex/src/main/**/*.kt
+  - providers/codex/src/main/**/*.kt
   - gateway/provider-openai/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt

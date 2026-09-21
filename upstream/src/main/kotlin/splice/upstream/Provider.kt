@@ -1,5 +1,5 @@
 // NEW: the Provider SPI (plan). The generic head hosting in :daemon-head consumes THIS; concrete
-// providers (:provider-codex/grok/openai) implement it by wiring their dialect translators +
+// providers (:providers-codex/grok/openai) implement it by wiring their dialect translators +
 // auth + quirks. This is why :daemon-head never sees a concrete dialect — the module law forces it.
 package splice.upstream
 

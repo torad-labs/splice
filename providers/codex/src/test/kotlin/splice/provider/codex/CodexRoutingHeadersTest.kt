@@ -1,12 +1,13 @@
 // NEW (2026-09-05): the codex routing/session headers — a reconnect must read the prompt cache warm,
 // and the set must be constant for a session so the WS connection key never churns on it.
+package splice.provider.codex
+
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.provider.codex.CodexRoutingHeaders
 
 class CodexRoutingHeadersTest {
 

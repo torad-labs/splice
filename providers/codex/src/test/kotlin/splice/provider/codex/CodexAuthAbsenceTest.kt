@@ -1,5 +1,7 @@
 // DR-59 absence-class arms for the codex auth chain, in their own class so CodexAuthTest stays
 // under detekt's LargeClass ceiling (ConfigServiceAbsenceTest precedent).
+package splice.provider.codex
+
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
@@ -10,7 +12,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.provider.codex.CodexAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions

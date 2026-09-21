@@ -1,3 +1,5 @@
+package splice.provider.codex
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -13,9 +15,6 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
 import splice.dialect.responses.request.ResponsesToolResultMedia
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.CodexQuirks
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell

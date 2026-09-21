@@ -1,4 +1,6 @@
 // NEW: failed post-runtime persistence retries captured transitions, never worker execution.
+package splice.provider.codex
+
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive

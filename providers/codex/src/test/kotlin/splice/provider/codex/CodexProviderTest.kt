@@ -2,6 +2,8 @@
 // longer adds it in applyAuth — that made account_id_header=false a no-op). This pins the gate:
 // flag=true + a Bearer with an account id => header present; flag=false => absent, even with an
 // account id available.
+package splice.provider.codex
+
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -24,8 +26,6 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.tools.ToolDeferralPolicy
-import splice.provider.codex.CodexProvider
-import splice.provider.codex.CodexQuirks
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink

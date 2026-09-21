@@ -1,5 +1,5 @@
 // NEW: the actual token-refresh HTTP call (POST grant_type=refresh_token) the CodexAuthProvider
-// injects. Lives in :app (the wiring layer) so :provider-codex stays HTTP-client-agnostic and
+// injects. Lives in :app (the wiring layer) so :providers-codex stays HTTP-client-agnostic and
 // unit-testable with a fake refreshCall. G7: classify/retry now goes through the shared
 // RefreshRetry.kt loop (same shape as kimiRefresh) instead of a single attempt collapsing every
 // non-2xx status AND any thrown exception straight to null.

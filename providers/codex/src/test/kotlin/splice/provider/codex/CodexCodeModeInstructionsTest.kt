@@ -1,3 +1,5 @@
+package splice.provider.codex
+
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -21,7 +23,6 @@ import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesRequestBuilder
-import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeStep
 

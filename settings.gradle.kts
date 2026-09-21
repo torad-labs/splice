@@ -26,7 +26,7 @@ include(
     ":dialects-anthropic",
     ":dialects-openai-responses",
     ":dialects-openai-chat",
-    ":provider-codex",
+    ":providers-codex",
     ":provider-grok",
     ":provider-kimi",
     ":provider-muse",
@@ -45,7 +45,7 @@ project(":upstream").projectDir = file("upstream")
 project(":dialects-anthropic").projectDir = file("dialects/anthropic")
 project(":dialects-openai-responses").projectDir = file("dialects/openai-responses")
 project(":dialects-openai-chat").projectDir = file("dialects/openai-chat")
-project(":provider-codex").projectDir = file("gateway/provider-codex")
+project(":providers-codex").projectDir = file("providers/codex")
 project(":provider-grok").projectDir = file("gateway/provider-grok")
 project(":provider-kimi").projectDir = file("gateway/provider-kimi")
 project(":provider-muse").projectDir = file("gateway/provider-muse")

@@ -21,4 +21,19 @@ class CommandParserTest {
         assertEquals(null, parser.parse(twice), "a second --label is refused, not dropped")
         assertEquals(null, parser.parse(arrayOf("login", "claudex", "extra")), "a second word is refused")
     }
+
+    // JW-08: `splice logs` is the answer to every remediation that used to end at "daemon.log", a
+    // path in a directory doctor printed wrongly for years. LogsCommandTest drives the command
+    // object directly, so it stays green even if the VERB is removed from the parse table and the
+    // operator can no longer reach it. This is the seam that makes the verb exist.
+    @Test
+    fun `the logs verb reaches the logs command, arguments and all - JW-08`() {
+        assertEquals(Command.Logs(emptyList()), parser.parse(arrayOf("logs")))
+        assertEquals(Command.Logs(listOf("--tail", "50")), parser.parse(arrayOf("logs", "--tail", "50")))
+        assertEquals(
+            Command.Logs(listOf("--head", "codex", "--follow")),
+            parser.parse(arrayOf("logs", "--head", "codex", "--follow")),
+            "the verb passes its arguments through untouched — the command owns their meaning",
+        )
+    }
 }

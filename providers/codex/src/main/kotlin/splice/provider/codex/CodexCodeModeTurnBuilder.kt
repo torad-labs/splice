@@ -64,8 +64,10 @@ internal class CodexCodeModeTurnBuilder(
     // (traced 2026-09-21: prefix shared for 110 KB, the tools block, then diverged), so every
     // compaction on a 200k session re-read the whole transcript uncached (perf: cached_tokens=0 or
     // ~20k on every compact=true row, 98% on the turns around it) — 5% of a 5h budget per compaction.
-    // The interceptor stays armed too: the summarizer's last message forbids tools, and a cell it
-    // calls anyway is run and answered rather than surfaced to Claude Code as a rejected tool call.
+    // The interceptor stays armed too: the summarizer's last message forbids tools; a cell the model
+    // calls anyway takes the ordinary code-mode path (a completed local cell continues upstream, a
+    // cell that reaches for client tools surfaces them as ordinary tool calls — astra, PR #169),
+    // which is exactly what an ordinary tool call on a compaction already did before this change.
     private fun eligible(body: AnthropicTurnBody, built: BuiltTurn): Boolean {
         val choice = body.typed.toolChoice
         val choiceAllowsBridge = choice == null || (choice.name == null && choice.type in setOf("auto", "any"))

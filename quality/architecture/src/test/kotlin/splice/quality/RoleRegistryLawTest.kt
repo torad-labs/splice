@@ -663,9 +663,15 @@ class RoleRegistryLawTest {
         assertTrue(RoleRegistry.sharedGroups(census.roles).isNotEmpty()) {
             "no signature is shared by 2+ names — this law would then grade nothing."
         }
-        val problems = RoleRegistry.audit(census, shipped())
+        val config = shipped()
+        val problems = RoleRegistry.audit(census, config)
         assertTrue(problems.isEmpty()) {
-            problems.joinToString(separator = "\n  - ", prefix = "ROLE REGISTRY (V4-89) violated:\n  - ")
+            // The census RIDES ON THE RED. The checker printed it from a second command
+            // (`bun checks/role-registry.ts report .`), which this PR deletes; a remedy that names a
+            // command nobody can run is an absence wearing a label, and the reader of this failure is
+            // exactly the person who needed that report. So it is the same output, in the same run.
+            problems.joinToString(separator = "\n  - ", prefix = "ROLE REGISTRY (V4-89) violated:\n  - ") +
+                RoleRegistry.census(census, config).joinToString("\n", prefix = "\n\n")
         }
     }
 

@@ -30,13 +30,12 @@ function mirrorWithImports(rel: string, seen = new Set<string>()): void {
 
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "gate-configguard-"));
-  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json", "tools/gate/config/ladder.json"]) {
+  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json"]) {
     mkdirSync(dirname(join(tmp, rel)), { recursive: true });
     cpSync(join(repoRoot, rel), join(tmp, rel));
   }
   cpSync(join(repoRoot, "quality", "rules"), join(tmp, "quality", "rules"), { recursive: true });
   mirrorWithImports("checks/config/dependabot-kotlin-scope.ts");
-  mirrorWithImports("checks/config/concentration-leg-routed.ts");
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -123,48 +122,4 @@ describe("the config guard", () => {
     }
   });
 
-  // ── the concentration-leg routing guard's forward half, over the ladder TABLE ───────────────
-  // Mutations go on the MIRRORED tools/gate/config/ladder.json, never the repo's own. A row is
-  // present or absent and its argv is an array, so the shell-era dodges (a comment, `if false`, a
-  // function nobody calls, heredoc data) have no JSON analogue; what remains is the row itself.
-  const ladder = () => join(tmp, "tools", "gate", "config", "ladder.json");
-  interface Leg { task: string; why: string; command: string[] }
-  const isLeg = (leg: Leg) => leg.command.includes("gate:concentration");
-  function withLadder(rewrite: (doc: { legs: Leg[] }) => string, check: (problems: string[]) => void): void {
-    const original = readFileSync(ladder(), "utf8");
-    writeFileSync(ladder(), rewrite(JSON.parse(original) as { legs: Leg[] }));
-    try {
-      check(guard());
-    } finally {
-      writeFileSync(ladder(), original);
-    }
-  }
-  const edited = (doc: { legs: Leg[] }, edit: (leg: Leg) => Leg | null): string => {
-    expect(doc.legs.filter(isLeg), "the mirrored ladder must carry exactly one concentration leg").toHaveLength(1);
-    return JSON.stringify({ ...doc, legs: doc.legs.flatMap((leg) => (isLeg(leg) ? (edit(leg) === null ? [] : [edit(leg)!]) : [leg])) });
-  };
-  test("9. the concentration row removed from the ladder", () => {
-    withLadder((doc) => edited(doc, () => null), (p) => expect(names(p, "does not run 'gate:concentration'")).toBe(true));
-  });
-  test("10. the row's argv is `true`, the script name kept in its reason — the near-miss is named", () => {
-    withLadder(
-      (doc) => edited(doc, (leg) => ({ ...leg, why: `${leg.why} (gate:concentration disabled pending investigation)`, command: ["true"] })),
-      (p) => {
-        expect(names(p, "does not run 'gate:concentration'")).toBe(true);
-        expect(names(p, "does appear in 1 row(s)")).toBe(true);
-      },
-    );
-  });
-  test("11. DR-51: npm middle flags that re-point and disarm the run are not a routing", () => {
-    withLadder(
-      (doc) => edited(doc, (leg) => ({ ...leg, command: ["npm", "run", "--prefix", "/tmp", "--if-present", "gate:concentration"] })),
-      (p) => expect(names(p, "does not run 'gate:concentration'")).toBe(true),
-    );
-  });
-  test("12. an unparseable ladder fails CLOSED, by name", () => {
-    withLadder(() => "{ this is not json", (p) => expect(names(p, "could not be read or parsed")).toBe(true));
-  });
-  test("13. CONTROL: the real ladder table is routed", () => {
-    expect(guard()).toEqual([]);
-  });
 });

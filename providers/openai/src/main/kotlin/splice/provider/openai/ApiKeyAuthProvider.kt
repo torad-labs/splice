@@ -2,6 +2,9 @@
 // file (bare line or {"api_key":...}), or the shared KeyStore (~/.config/splice/keys.toml) — in
 // that precedence order. No refresh (api keys don't expire like OAuth); refresh() returns the
 // same key. Shared by OpenAiChatProvider and an openai-platform Responses provider.
+// NO-EXPIRY-EXEMPT[2026-09-21]: an api key is a static secret with no expiry field and no refresh
+// endpoint — refresh() returns the same key by design, so a synthesized ceiling would expire a
+// credential that cannot be renewed and buy nothing.
 package splice.provider.openai
 
 import kotlinx.serialization.json.Json

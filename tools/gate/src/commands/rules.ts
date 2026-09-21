@@ -11,8 +11,7 @@
 //   3. rule ROUTING (src/lib/routing.ts): the walls leg proves the routed rules pass; it cannot
 //      prove they are ALL routed. Completeness, not conformance.
 //   4. the CONFIG GUARD (src/lib/configguard.ts): the surface a generator weakens next when the
-//      code is walled — detekt posture, rule severities, the dependabot scope, the concentration
-//      leg's routing.
+//      code is walled — the detekt posture, the rule severities, and the Dependabot Kotlin scope.
 // `--prove-coverage` adds P1: `ast-grep scan` reports matches, so it is structurally blind to a
 // glob that selects nothing, or one that still matches one module while the others lost
 // enforcement. See src/lib/coverage.ts.

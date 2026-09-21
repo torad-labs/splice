@@ -23,7 +23,8 @@
 // their static assertions are ReleaseReadinessLawTest, their dependency audit a ladder row.)
 //
 // `--java-home-only` prints the resolved JAVA_HOME and stops: it is the resolver's own executable
-// test (tools/gate/test/jdk.test.ts runs it with JAVA_HOME unset and expects a Java 21 back).
+// test — tools/gate/test/jdk.test.ts calls `run(["--java-home-only"])` directly, captures the
+// printed home, and asserts javaMajor reports 21 for its `bin/java`.
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { layout } from "../lib/repo.ts";
 import { runUnderSlot } from "../lib/slot.ts";

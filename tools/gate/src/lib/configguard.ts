@@ -1,7 +1,7 @@
 // Rules that guard the RULES (#924 Phase 0.5, eli C2; checks/config-guard.sh until PR 5). Once
 // inline @Suppress is walled, the generator's next drift move is to weaken the CONFIG instead of
 // the code: add a detekt baseline, raise maxIssues, drop warningsAsErrors, downgrade a wall's
-// severity, or defang the concentration leg in package.json. The config surface is a checked
+// severity, or widen the Dependabot ignore glob to swallow kotlinx. The config surface is a checked
 // boundary, not a soft one. Five guards, each failing by name:
 //   1. no detekt baseline — a baseline.xml silently whitelists every finding present when created;
 //   2. the zero-tolerance posture (maxIssues 0, warningsAsErrors true) intact;

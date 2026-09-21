@@ -10,6 +10,7 @@ package splice.app.cli.daemon
 import splice.app.cli.AdminSupport
 import splice.core.GATEWAY_VERSION
 import java.nio.file.Path
+import java.time.Duration
 
 internal class DaemonLaunch(
     private val health: DaemonHealth = DaemonHealth(),
@@ -71,10 +72,10 @@ internal class DaemonLaunch(
         println("splice: starting $unit…")
         val up = supervised.start(unit) && waitUntilUp(port, expectedVersion)
         if (!up) {
+            val budget = Duration.ofMillis(startupPolls * POLL_INTERVAL_MS).toSeconds()
             println(
-                "splice: $unit did not answer /health with $expectedVersion within " +
-                    "${startupPolls * POLL_INTERVAL_MS / MILLIS_PER_SECOND}s — never starting a second daemon " +
-                    "beside it. See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
+                "splice: $unit did not answer /health with $expectedVersion within ${budget}s — never starting " +
+                    "a second daemon beside it. See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
             )
         }
         return up
@@ -107,4 +108,3 @@ internal class DaemonLaunch(
 // the floor: a spawner that gave up first would report a failure for a restart that was working.
 internal const val STARTUP_POLLS = 248
 private const val POLL_INTERVAL_MS = 250L
-private const val MILLIS_PER_SECOND = 1_000L

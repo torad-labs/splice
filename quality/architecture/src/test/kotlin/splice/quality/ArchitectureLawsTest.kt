@@ -150,10 +150,10 @@ private fun allProductionFiles(map: ProjectMap): List<File> =
         map.mainSources(module).walkTopDown().filter { it.isFile && it.extension == "kt" }
     }
 
-/** HD-9: the dialect modules — [productionModules] filtered to the `:dialect-*` adapters. P0: the
+/** HD-9: the dialect modules — [productionModules] filtered to the `:dialects-*` adapters. P0: the
  *  filter is on the module's Gradle PATH, which survives the module moving into dialects/. */
 private fun dialectModules(map: ProjectMap): Set<String> =
-    productionModules(map).filter { it.startsWith(":dialect-") }.toSet()
+    productionModules(map).filter { it.startsWith(":dialects-") }.toSet()
 
 /** HD-9 (#924 capstone): dialects adapt ONE wire format; [splice.core.topology] is the
  *  operator-facing head/provider registry (TOML parsing, quirks-config overlays), and a dialect

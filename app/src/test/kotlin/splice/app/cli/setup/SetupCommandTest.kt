@@ -550,7 +550,7 @@ replay_reasoning = false
 # or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600 — survives restarts from
 # any shell; inside a claude-openrouter session you can also paste it as a bare message and the
 # token-capture hook stores it without it reaching the model).
-# Experimental vendor-OAuth examples remain opt-in in config/splice.example.toml.
+# Experimental vendor-OAuth examples remain opt-in in app/src/main/resources/splice.example.toml.
 [providers.openrouter]
 dialect = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"

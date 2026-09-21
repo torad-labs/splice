@@ -169,7 +169,7 @@ public enum class Knob(
 
     // Per-head admission (each head is a different backend/account). Bounded by default since the
     // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
-    // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn
+    // 12 (was 100) — splice's own perf-JSONL measurement (app/src/main/resources/splice.example.toml: 0.3% turn
     // failure at inflight<=14, 11% at 38, 67% at 100) sits INSIDE the 0.3% band with headroom
     // over kimi's proven 8. The ceiling belongs to the upstream ACCOUNT (Daemon.kt reasoning);
     // high-capacity backends (vLLM, enterprise keys) raise it per head via [heads.*.overrides]

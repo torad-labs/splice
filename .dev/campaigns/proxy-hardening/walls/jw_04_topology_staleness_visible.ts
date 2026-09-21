@@ -10,7 +10,7 @@
  *    1. /health publishes the booted topologyDigest + configPath (ControlServer);
  *    2. the daemon can answer "is the on-disk file different now" (topologyStale, recomputed
  *       per request, failing OPEN on an unreadable file);
- *    3. bin/splice-launch warns (non-fatal, names `splice restart`) on a stale topology;
+ *    3. app/src/main/dist/bin/splice-launch warns (non-fatal, names `splice restart`) on a stale topology;
  *    4. doctor renders the digest comparison (WARN + splice restart fix on mismatch).
  *
  *  EXIT 0 = staleness visible. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
@@ -56,7 +56,7 @@ function pyRepr(items: string[]): string {
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const CONTROL = resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/ControlServer.kt");
-const SHIM = resolve(ROOT, "bin/splice-launch");
+const SHIM = resolve(ROOT, "app/src/main/dist/bin/splice-launch");
 // HD-25: topologyFreshness — the declaration this wall reads — moved out of DoctorCommand.kt into
 // the daemon-section collaborator when that file was decomposed (it was the tree's worst
 // concentration row at 8.10). Re-anchored onto the ONE file that now holds it, at the same
@@ -69,7 +69,7 @@ const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorHe
 export function detect(control: string | null, shim: string | null, doctor: string | null): string[] {
   for (const [name, text] of [
     ["ControlServer.kt", control],
-    ["bin/splice-launch", shim],
+    ["app/src/main/dist/bin/splice-launch", shim],
     ["DoctorHeadChecks.kt", doctor],
   ] as [string, string | null][]) {
     if (text === null) {
@@ -107,10 +107,6 @@ export function detect(control: string | null, shim: string | null, doctor: stri
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 const LINE_COMMENT = /\/\/.*?$/gm;
 const IMPORT_LINE = /^import .*$/gm;
-// bin/splice-launch is SHELL, not Kotlin: its comment marker is `#`. Running the Kotlin stripper
-// over it would miss every `# TODO:` (and the shim's `topologyStale` token sits one line under a
-// comment that already spells it) AND eat the `//` in `http://127.0.0.1`. Same law, own marker.
-const SHELL_COMMENT = /(?:(?<=\s)|^)#.*?$/gm;
 
 /** A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
  *  a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
@@ -125,18 +121,8 @@ export function codeOnly(text: string | null): string | null {
   return stripped.replace(IMPORT_LINE, "");
 }
 
-/** code_only for the shim — the same law spoken in the shell's comment marker. */
-export function shellCodeOnly(text: string | null): string | null {
-  if (text === null) return null;
-  return text.replace(SHELL_COMMENT, "");
-}
-
 function read(p: string): string | null {
   return existsSync(p) ? codeOnly(readFileSync(p, "utf8")) : null;
-}
-
-function readShell(p: string): string | null {
-  return existsSync(p) ? shellCodeOnly(readFileSync(p, "utf8")) : null;
 }
 
 export const CONTROL_OK = 'put("topologyDigest", d)\nput("topologyStale", stale)';
@@ -148,7 +134,7 @@ export const DOCTOR_OK = "health.topologyDigest != localDigest -> WARN";
  *  sources, cx_02's derived-selftest idiom: deleting each required token from today's tree must
  *  turn detect red, or that token has rotted into always-green furniture. */
 export function derivedMutants(): string[] {
-  const live = [read(CONTROL), readShell(SHIM), read(DOCTOR)];
+  const live = [read(CONTROL), read(SHIM), read(DOCTOR)];
   if (detect(live[0], live[1], live[2]).length > 0) {
     return ["derived mutants need the live tree green; the wall is RED right now"];
   }
@@ -207,7 +193,7 @@ function selftest(): number {
 
 function main(): number {
   if (process.argv.includes("--selftest")) return selftest();
-  const problems = detect(read(CONTROL), readShell(SHIM), read(DOCTOR));
+  const problems = detect(read(CONTROL), read(SHIM), read(DOCTOR));
   if (problems.length > 0) {
     process.stdout.write("JW-04 WALL RED — an edited splice.toml is silently inert:\n");
     for (const p of problems) process.stdout.write(`  · ${p}\n`);

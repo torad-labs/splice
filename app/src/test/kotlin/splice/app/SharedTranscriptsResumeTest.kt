@@ -50,7 +50,7 @@ import kotlin.io.path.isSymbolicLink
 
 class SharedTranscriptsResumeTest {
 
-    /** config/splice.example.toml's share list, `projects` included — the operator's real policy
+    /** app/src/main/resources/splice.example.toml's share list, `projects` included — the operator's real policy
      *  (their splice.toml carries the same list). The mutation (drop "projects") must turn the
      *  shared cells red on the LINK. */
     private val sharing = ClaudePolicy(

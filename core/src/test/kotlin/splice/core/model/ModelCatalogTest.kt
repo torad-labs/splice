@@ -247,7 +247,7 @@ class ModelCatalogTest {
 
     @Test
     fun `a 1m row declaring 1024x1024 instead of 1e6 DOES scale - the config must say 1000000`() {
-        // Review finding: config/splice.example.toml shipped k3[1m] at 1048576 AND pinned the kimi
+        // Review finding: app/src/main/resources/splice.example.toml shipped k3[1m] at 1048576 AND pinned the kimi
         // head to that row, so every default turn scaled 0.9537 and compacted ~4.6% late with
         // nothing logging the factor. The first version of the test above hid this by declaring
         // 1_000_000 in the fixture while the shipped TOML said 1_048_576 — the fixture was fitted to

@@ -53,7 +53,7 @@ class DoctorShimAbsenceTest {
     @Test
     fun `an unreadable shim throws from installedShimVersion and warns UNREADABLE - DR-69`(@TempDir tmp: Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
-        Files.writeString(share.resolve("splice-launch"), "SPLICE_SHIM_VERSION=\"9.9.9\"\n")
+        Files.writeString(share.resolve("splice-launch"), "const SPLICE_SHIM_VERSION = \"9.9.9\";\n")
         val env = shareEnv(tmp)
         withDenied(share) {
             assertThrows(IOException::class.java) { InstallShim().installedShimVersion(env) }
@@ -72,7 +72,7 @@ class DoctorShimAbsenceTest {
     @Test
     fun `doctor's shim check classifies denied access as unreadable, not missing - DR-69`(@TempDir tmp: Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
-        Files.writeString(share.resolve("splice-launch"), "SPLICE_SHIM_VERSION=\"9.9.9\"\n")
+        Files.writeString(share.resolve("splice-launch"), "const SPLICE_SHIM_VERSION = \"9.9.9\";\n")
         Files.createDirectories(tmp.resolve("bin"))
         val checks = withDenied(share) {
             DoctorInstallProbes(DoctorProbes()).installationChecks(DoctorTopology.Absent, shareEnv(tmp))

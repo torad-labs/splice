@@ -354,7 +354,7 @@ class HeadServerClientAuthTest {
     // Bypass ON and the caller presents splice's OWN mgmt key. Every case above assumes the caller
     // holds either a real vendor credential or nothing; none asks what happens when the credential
     // it forwards is the local one. The launcher makes that reachable: LaunchService plants
-    // ANTHROPIC_AUTH_TOKEN=<mgmt key> for every NON-native head, bin/splice-launch execs `env`
+    // ANTHROPIC_AUTH_TOKEN=<mgmt key> for every NON-native head, app/src/main/dist/bin/splice-launch execs `env`
     // WITHOUT -i so the parent environment survives, and a native head's unset list is empty by
     // design — so a native head launched from inside another head's session inherits that bearer
     // and hands it straight to this seam. Forwarding it means splice's local key reaches the vendor

@@ -1,5 +1,5 @@
 // NEW (DR-155): the vendor minimum-edge floor on the Responses wire. This is the dialect the
-// SHIPPED config/splice.example.toml puts [providers.xai] on; the operator config behind the DR-152
+// SHIPPED app/src/main/resources/splice.example.toml puts [providers.xai] on; the operator config behind the DR-152
 // soak has it on openai-chat, so that particular failure reached xAI through ChatWireMapper. Both
 // spellings are live, which is the argument for the constraint belonging to the VENDOR rather than
 // to whichever dialect a head happens to select — GrokQuirks carries the identical floor.

@@ -142,7 +142,10 @@ internal class ResumeHookRoute(
      *  path yet other than a regular file. The recorded path is the resolved parent plus that name,
      *  which is exactly what Claude Code creates on the first write. */
     private fun unwrittenTranscriptInsideHead(hook: ResumeCall, configDir: Path): Path? {
-        val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let(Path::of)
+        val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let { raw ->
+            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21 (astra, PR #169): a path the filesystem cannot even spell (a NUL byte) is the refusal case, named by the caller in one sentence; the route must still answer 200.
+            Cancellables.runCatchingCancellable { Path.of(raw) }.getOrNull()
+        }
         val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + UNWRITTEN_TRANSCRIPT_EXT }
         val parent = claimed?.parent?.let { dir ->
             // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a parent that cannot be resolved is the refusal case, named by the caller in one sentence.

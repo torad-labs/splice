@@ -51,7 +51,12 @@ proof = "2026-09-21: Knob MAX_INFLIGHT default mutated 12L -> 100L (the value th
 [[item]]
 id = "NF-03"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.ts"
+wall = ""
+retired_to = [
+  "upstream/src/test/kotlin/splice/upstream/retry/WatchdogTest.kt",
+  "daemon/head/src/test/kotlin/splice/head/HeadServerFoldTest.kt",
+]
+proof = "2026-09-21: two homes, because the wall only ever held one of its two requirements. MECHANISM — launchTotalCap's breach threshold multiplied by 1000 (compiles clean, every symbol still used): WatchdogTest 'turn-scoped cap poller reaps with NO open stream - the NF-03 case' FAILED while the WALL STAYED GREEN; the wall is equally green with the body reduced to `if (false)` and with the whole body replaced by `scope.launch { }`, so its requirement 1 — 'samples elapsed >= totalCap independent of any open stream, setting the typed sentinel BEFORE cancelling' — is a check that the TOKEN `fun launchTotalCap(` exists, and an empty coroutine passes it. PLACEMENT — the call site's target changed from turnJob to Job() (DR-35f's own mutant shape): wall RED and HeadServerFoldTest 'totalCap reaps a turn stalled BEFORE upstream headers and frees the slot - NF-03' FAILED on the same bytes, the end-to-end 3s pre-headers stall against a 1s cap that the wall can only judge lexically. INDEPENDENCE — the placement mutation lives in daemon/head, so upstream's sources are byte-identical under it and WatchdogTest is green 14/14 on that tree: the two homes fail for different defects, which is why both are named. Restored: wall GREEN, WatchdogTest 14/14, HeadServerFoldTest 6/6. NOT retired with the guarantee: the wall's refusal clause (RED if `fun launchIn(` disappears) is a fail-closed guard on the wall's own reading of Watchdog.kt, not a behaviour — the idle tiers are owned by WatchdogTest's idle arms whatever the function is called. Both --tests filters derived with arm-class.sh, never from a filename"
 
 [[item]]
 id = "NF-04"

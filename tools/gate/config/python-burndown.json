@@ -34,7 +34,6 @@
     "checks/oss/verify-OSS-D.sh",
     "checks/release/accept.sh",
     "checks/release/launcher-test.sh",
-    "checks/silent-constants.ts",
     "client/src/main/kotlin/splice/client/login/LoginHookJson.kt",
     "client/src/main/kotlin/splice/client/login/LoginHookScripts.kt",
     "app/src/test/kotlin/splice/app/daemon/DaemonLockCrossProcessTest.kt",

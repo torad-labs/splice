@@ -1,4 +1,4 @@
-// NEW: V4-98 — the three hand-authored model rosters agree with config/splice.example.toml
+// NEW: V4-98 — the three hand-authored model rosters agree with app/src/main/resources/splice.example.toml
 // (ported from checks/model-catalogs-single-source.ts, restructure PR 6).
 //
 // WHY THIS EXISTS. splice declares its model rows THREE times, by hand, in three languages: the
@@ -493,7 +493,7 @@ internal object ModelRosters {
 }
 
 internal object ModelCatalogsSingleSource {
-    const val EXAMPLE_REL = "config/splice.example.toml"
+    const val EXAMPLE_REL = "app/src/main/resources/splice.example.toml"
     const val CATALOG_IN_APP = "splice/app/cli/add/AddProfileCatalog.kt"
     const val STARTER_IN_APP = "splice/app/daemon/TopologyLoader.kt"
 
@@ -781,7 +781,7 @@ class ModelCatalogsSingleSourceLawTest {
             write()
             assertEquals(
                 listOf(
-                    "model-catalogs-single-source: config/splice.example.toml is the SOURCE",
+                    "model-catalogs-single-source: app/src/main/resources/splice.example.toml is the SOURCE",
                     "  source   [xai         ]  2 rows  https://api.x.ai/v1",
                     "  source   [kimi        ]  1 rows  https://api.kimi.com/coding",
                     "  app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt",

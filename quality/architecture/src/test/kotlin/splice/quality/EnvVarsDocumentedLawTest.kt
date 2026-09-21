@@ -28,7 +28,7 @@
 // no name and a law cannot demand the documentation of a string that does not exist.
 //
 // DISPOSITION: documented — the name appears inside the ENVIRONMENT VARIABLES header block of
-// config/splice.example.toml (the sentinel line plus the contiguous run of comment and blank lines
+// app/src/main/resources/splice.example.toml (the sentinel line plus the contiguous run of comment and blank lines
 // after it, which must itself state the precedence chain `env > TOML > default`) — or retired
 // (`# retired: <NAME> — <reason>`, reason non-empty). Matching is CASE-SENSITIVE: `no_proxy` and
 // `NO_PROXY` are two variables and the gateway reads both. NOT CAUGHT: a var splice WRITES
@@ -44,7 +44,7 @@ import java.io.File
 
 internal object EnvVarsDocumented {
     const val KNOB_IN_CORE = "splice/core/config/Knob.kt"
-    const val EXAMPLE_CONFIG = "config/splice.example.toml"
+    const val EXAMPLE_CONFIG = "app/src/main/resources/splice.example.toml"
 
     // The header block that documents the environment layer. The sentinel tolerates the file's own
     // box-drawing decoration but nothing that carries meaning.

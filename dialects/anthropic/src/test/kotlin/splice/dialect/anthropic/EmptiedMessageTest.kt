@@ -24,7 +24,7 @@ class EmptiedMessageTest {
 
     private val json = Json
 
-    /** The shipped deepseek allowlist, verbatim from config/splice.example.toml. */
+    /** The shipped deepseek allowlist, verbatim from app/src/main/resources/splice.example.toml. */
     private val deepSeek = PassthroughQuirks(
         providerTag = "claude-deepseek",
         blockAllowlist = setOf(

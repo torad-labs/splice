@@ -14,9 +14,9 @@ Run before opening a PR — these are the same checks CI runs:
 ```bash
 bun install --frozen-lockfile
 npm run gate              # the complete local/CI gate
-npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
+npm run gate:rules        # ast-grep walls, rule routing, config guard, coverage proof
 npm run test:hooks        # orchestrator hook test suite
-bash checks/config-guard.sh   # rules that guard the rules
+bun test tools/gate           # the gate CLI's own red-green arms
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
 npm run lint -w console && npm test -w console && ./gradlew :console:build
 npm run oss:verify

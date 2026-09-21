@@ -5,7 +5,7 @@
 # turned off in 7589e19 while a second delivery path was wired to a directory sgconfig.yml never
 # referenced, so BOTH paths were dead and the gate stayed green for a month while 336 top-level
 # functions accumulated. ast-grep fails open on an unreferenced rule dir, so a wall nobody routes is
-# a wall nobody has. checks/rule-routing.sh now fails the gate on an unrouted rule dir, and this
+# a wall nobody has. tools/gate/src/lib/routing.ts now fails the gate on an unrouted rule dir, and this
 # rule lives in a ROUTED dir so `npm run gate:rules` scans the tree for it on every run.
 #
 # COMPLIANT FORMS: a member of the type that owns the behaviour; `class X { operator fun invoke() }`

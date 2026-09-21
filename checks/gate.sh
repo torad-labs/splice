@@ -82,15 +82,13 @@ run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
 # invocation died with NoClassDefFoundError against four live daemons, and the identical tasks
 # through the lock came back clean. The label is what a waiting seat reads out of the holder file.
 run "gradle clean check" bun tools/gate run
-run "ast-grep walls" npm run --silent gate:rules
-# The walls leg above proves the routed rules pass; it cannot prove they are ALL routed. .rules/kotlin
-# sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a
-# rule directory nobody named. This leg is that missing half — completeness, not conformance.
-run "rule routing"   bash checks/rule-routing.sh
-# DR-132: and the canary over that leg. rule-routing.sh shipped without a selftest, which is how its
-# forward direction ran fail-OPEN on flow-style rules — a dormant pack reported PASS, reproducing
-# the scar the leg above exists to prevent, inside the leg itself. Same pairing as config-guard.
-run "rule-routing selftest" bash checks/rule-routing-selftest.sh
+# `gate rules` (= npm run gate:rules): the ast-grep walls, then RULE ROUTING — the walls prove the
+# routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month
+# reporting zero findings, because ast-grep never errors on a rule directory nobody named — then the
+# CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot
+# scope, the concentration leg's routing), then the P1 coverage proof. Their red-green arms
+# (tools/gate/test/{routing,configguard}.test.ts) run in the tools/gate tests leg below.
+run "rules"          npm run --silent gate:rules
 # checks/concentration.py — the decomposition campaign's own oracle — was itself the thing the leg
 # above exists to catch: referenced by nothing but its ledger, so this gate printed PASS while
 # saying nothing about concentration and every ratio in the campaign was advisory. Wired 2026-08-18
@@ -137,8 +135,6 @@ run "code-mode mock selftest" bun checks/e2e/code_mode_mock.ts --selftest
 run "code-mode packaged mock" bun checks/e2e/code_mode_mock.ts \
   --artifact app/build/libs/app-all.jar \
   --receipt "checks/e2e/receipts/code-mode-mock-$(date -u +%Y%m%dT%H%M%S)-$$.json"
-run "config guard"   bash checks/config-guard.sh
-run "config-guard selftest" bash checks/config-guard-selftest.sh
 # DR-140: the DR-65 wall. Every throwable rendered into text from a source that touches files or
 # names credential/state types is routed through SafeFailureText.render or carries a dated,
 # reasoned exemption; an undispositioned sink fails BY NAME. DR-73 swept this class by hand and
@@ -196,10 +192,12 @@ run "no python" bun tools/gate no-python
 # webui commit added a fresh python3 subprocess and the branch stayed green for hours, until a
 # builder converting an unrelated checker happened to run the wall. The PreToolUse guard
 # (.claude/settings.json, Write|Edit|MultiEdit) is `bun tools/gate no-python --guard`, the same
-# library as the leg above rather than a reimplementation. The test arms below prove both halves —
-# every census RED on its mutation, and the guard still refusing a synthetic event — because a write
-# guard that silently stopped refusing would announce itself only as Python reappearing.
-run "no python selftest" bun test tools/gate/test/no-python.test.ts
+# library as the leg above rather than a reimplementation. The tools/gate tests leg proves both
+# halves — every census RED on its mutation, and the guard still refusing a synthetic event —
+# because a write guard that silently stopped refusing would announce itself only as Python
+# reappearing. That leg is every red-green arm of the CLI: the slot, the JDK resolver, the title
+# preflight, rule routing, the config guard, the no-python wall and the coverage proof.
+run "tools/gate tests" bun test tools/gate
 run "public surface" bun checks/public-surface.ts --ratchet
 run "public surface selftest" bash checks/public-surface-selftest.sh
 run "constructor width" bun checks/constructor-width.ts --ratchet

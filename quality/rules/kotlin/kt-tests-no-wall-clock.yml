@@ -23,7 +23,7 @@
 #
 # PROMOTED 2026-09-17 (V4-96) from `.rules/kotlin/ast-grep/rules/tests-no-thread-sleep.yaml`, the
 # torad-toolkit Android/Compose pack vendored 2026-07-16 and wired to NOTHING — the HD-11 scar that
-# checks/rule-routing.sh now guards. The dormant file is UNTOUCHED, by the row's instruction and by
+# tools/gate/src/lib/routing.ts now guards. The dormant file is UNTOUCHED, by the row's instruction and by
 # that wall's dated UNROUTED_ALLOWLIST entry, which exists so a dormant matcher can be red/green
 # pinned before it graduates; this is the graduation, and the pin lives in the routed
 # quality/rules/rule-tests where `ast-grep test` actually reads it. Two things changed at promotion:

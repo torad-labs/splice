@@ -19,42 +19,45 @@ import java.nio.file.attribute.PosixFilePermissions
 private const val HANG_BOUND_SECONDS = 20.0
 private const val NANOS_PER_SECOND = 1_000_000_000.0
 
+// The install fixture is file-level, not a member: DoctorCommandTest sits at detekt's
+// LargeClass ceiling, and the sibling classes below grade the same hermetic tree. One harness
+// with one contract beats a mini-harness per class, and hoisting costs no call site.
+private fun runDoctor(env: Map<String, String?>): Pair<Boolean, String> {
+    val reader: (String) -> String? = { env[it] }
+    val buffer = ByteArrayOutputStream()
+    val original = System.out
+    System.setOut(PrintStream(buffer, true, Charsets.UTF_8))
+    return try {
+        DoctorCommand().doctor(reader) to buffer.toString(Charsets.UTF_8)
+    } finally {
+        System.setOut(original)
+    }
+}
+
+private fun fakeBinaries(dir: Path, vararg names: String) {
+    names.forEach { name ->
+        val script = dir.resolve(name)
+        Files.writeString(script, "#!/bin/sh\necho fake-$name 1.0\n")
+        script.toFile().setExecutable(true)
+    }
+}
+
+private fun env(tmp: Path, bin: Path, share: Path, extra: Map<String, String?> = emptyMap()) = mapOf(
+    "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+    "SPLICE_BIN_DIR" to bin.toString(),
+    "SPLICE_SHARE_DIR" to share.toString(),
+    "PATH" to bin.toString(),
+) + extra
+
+// Pin the daemon section to an empty temp state dir and a free (nothing-listening) control port
+// so an ambient local daemon can never inject a split-brain FAIL or a real mgmt-key into a
+// hermetic run — the port resolves via the fake env, StatePaths reads CLAUDEX_STATE_DIR.
+private fun hermetic(tmp: Path, extra: Map<String, String?> = emptyMap()): Map<String, String?> = mapOf(
+    "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
+    "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+) + extra
+
 class DoctorCommandTest {
-
-    private fun runDoctor(env: Map<String, String?>): Pair<Boolean, String> {
-        val reader: (String) -> String? = { env[it] }
-        val buffer = ByteArrayOutputStream()
-        val original = System.out
-        System.setOut(PrintStream(buffer, true, Charsets.UTF_8))
-        return try {
-            DoctorCommand().doctor(reader) to buffer.toString(Charsets.UTF_8)
-        } finally {
-            System.setOut(original)
-        }
-    }
-
-    private fun fakeBinaries(dir: Path, vararg names: String) {
-        names.forEach { name ->
-            val script = dir.resolve(name)
-            Files.writeString(script, "#!/bin/sh\necho fake-$name 1.0\n")
-            script.toFile().setExecutable(true)
-        }
-    }
-
-    private fun env(tmp: Path, bin: Path, share: Path, extra: Map<String, String?> = emptyMap()) = mapOf(
-        "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
-        "SPLICE_BIN_DIR" to bin.toString(),
-        "SPLICE_SHARE_DIR" to share.toString(),
-        "PATH" to bin.toString(),
-    ) + extra
-
-    // Pin the daemon section to an empty temp state dir and a free (nothing-listening) control port
-    // so an ambient local daemon can never inject a split-brain FAIL or a real mgmt-key into a
-    // hermetic run — the port resolves via the fake env, StatePaths reads CLAUDEX_STATE_DIR.
-    private fun hermetic(tmp: Path, extra: Map<String, String?> = emptyMap()): Map<String, String?> = mapOf(
-        "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
-        "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
-    ) + extra
 
     // DR-69 redo (codex replay): the exists() pre-gate read a denied config parent as Absent,
     // and doctor said "no topology yet — splice init" over a PRESENT operator config. Only
@@ -440,6 +443,13 @@ class DoctorCommandTest {
         assertTrue(out.contains("openrouter") && out.contains("openrouter2"), out)
         assertTrue(out.contains("change one head's port"), out)
     }
+}
+
+// JW-17 (retired wall jw_17_state_dir_writable): doctor probes the dirs it will later write,
+// and an install it cannot write to is a FAILURE with a chmod fix — never a green run that
+// prints a path nobody can use. Two dirs, two arms: StatePaths puts logs BESIDE state, so a
+// state-dir-only probe blesses an install whose daemon.log can never be written.
+class DoctorWritableDirsTest {
 
     @Test
     fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up - JW-17`() {
@@ -475,25 +485,50 @@ class DoctorCommandTest {
             Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwx------"))
         }
     }
+
+    // JW-17's second dir, and the reason the wall pinned two probes rather than one: daemon.log
+    // lives in the SIBLING logs dir, so a state-dir-only probe blesses an install whose logs can
+    // never be written. The arm above proves the state dir is probed; this one proves the logs dir
+    // is too, and that it fails the run rather than printing a path nobody can write to.
+    @Test
+    fun `an unwritable logs dir is a FAIL of its own - JW-17`() {
+        val tmp = Files.createTempDirectory("doctor-unwritable-logs")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        fakeBinaries(bin, "claude", "node", "curl", "bash")
+        org.junit.jupiter.api.Assumptions.assumeFalse(System.getProperty("user.name") == "root")
+        // StatePaths puts the logs dir beside the state dir, so <root>/state and <root>/logs.
+        val state = Files.createDirectories(tmp.resolve("state"))
+        val logs = Files.createDirectories(tmp.resolve("logs"))
+        Files.setPosixFilePermissions(logs, PosixFilePermissions.fromString("r-x------"))
+        try {
+            val envMap = env(
+                tmp,
+                bin,
+                share,
+                mapOf(
+                    "CLAUDEX_STATE_DIR" to state.toString(),
+                    "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+                    "OPENROUTER_API_KEY" to "k",
+                ),
+            )
+            val (ok, out) = runDoctor(envMap)
+            assertTrue(!ok, "an unwritable logs dir must be a doctor FAILURE:\n$out")
+            assertTrue(out.contains("logs dir") && out.contains("not writable"), out)
+            assertTrue(out.contains("chmod u+rwx"), out)
+            val noProbe = Files.list(logs).use { s -> s.noneMatch { it.fileName.toString().contains("probe") } }
+            assertTrue(noProbe, "probe leaked into the logs dir")
+        } finally {
+            Files.setPosixFilePermissions(logs, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
 }
 
 // DR-92 (codex adjudication under the DR-65 law): splice.toml legally carries credential-like
 // values (extra_headers Authorization on non-client topologies), and ktoml/kotlinx parse
 // failures can quote the offending value — doctor rendered e.message verbatim into its table.
-// Sibling class (the main class sits at detekt's LargeClass ceiling) with its own mini-harness.
+// Sibling class (the main class sits at detekt's LargeClass ceiling), on the file-level fixture.
 class DoctorTopologyLeakTest {
-
-    private fun runDoctor(env: Map<String, String?>): String {
-        val buffer = ByteArrayOutputStream()
-        val original = System.out
-        System.setOut(PrintStream(buffer, true, Charsets.UTF_8))
-        return try {
-            DoctorCommand().doctor { env[it] }
-            buffer.toString(Charsets.UTF_8)
-        } finally {
-            System.setOut(original)
-        }
-    }
 
     // The sentinel IS the value the parser trips on (an invalid Dialect), so a verbatim
     // e.message render must leak it — red on the raw-message shape, green through render().
@@ -521,7 +556,7 @@ class DoctorTopologyLeakTest {
             port = 3111
             """.trimIndent(),
         )
-        val output = runDoctor(
+        val (_, output) = runDoctor(
             mapOf(
                 "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
                 "SPLICE_BIN_DIR" to Files.createDirectories(tmp.resolve("bin")).toString(),

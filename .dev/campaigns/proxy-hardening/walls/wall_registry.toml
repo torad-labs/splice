@@ -29,7 +29,12 @@ wall = ".dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.ts"
 [[item]]
 id = "NF-01"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.ts"
+wall = ""
+retired_to = [
+    "upstream/src/test/kotlin/splice/upstream/transport/UpstreamClientRateLimitTest.kt",
+    "daemon/head/src/test/kotlin/splice/head/HeadServerCapacityTest.kt",
+]
+proof = "2026-09-21: three mutations, no new law, and TWO homes because leg C proves one is not enough. (a) the ceiling removed from the arming expression (`nowMs + minOf(pushbackMs, MAX)` -> `nowMs + pushbackMs`), which is the original 2026-07-26 defect where one multi-day Retry-After poisons a head permanently through accumulateAndGet(max) -> wall RED (MAX_RATE_LIMIT_COOLDOWN_MS is declared but NOT applied in the horizon expression) and UpstreamClientRateLimitTest RED (13 tests, 2 failures, `a multi-day retry-after arms a horizon no longer than the cooldown ceiling`). (b) clear() made a no-op -> wall RED and BOTH homes RED: the unit arm `clearRateLimitCooldown drops an armed horizon immediately` (13, 1) and HeadServerCapacityTest `restart clears an armed 429 cooldown` (5, 2 -- the second is a knock-on, the armed horizon leaking into the capacity arm, which is the defect doing exactly what it does in production). (c) THE CHAIN LINK: HeadServer.startLocked() stops calling the delegate (`accountPool?.reset() ?: upstream.clearRateLimitCooldown()` -> `accountPool?.reset()`) -> wall RED (clearRateLimitCooldown() exists but HeadServer never calls it) and HeadServerCapacityTest RED (5, 2), while UpstreamClientRateLimitTest stays GREEN at 13/0 -- it calls the delegate directly and cannot see that nothing upstream of it does. That is the wall's link-by-link leg, and it is why both homes are named: the unit arm owns the clamp and the clear, the daemon arm owns the chain through a real restart over HTTP. Restored, wall GREEN, 13/13 and 5/5. Checked and NOT a defect: the elvis at HeadServer.kt:108 means a pooled head never reaches clearRateLimitCooldown, but UpstreamClient.activeCooldown() routes a pooled request to ctx.rateLimitCooldown, which accountPool.reset() does clear -- both branches are correct"
 
 [[item]]
 id = "NF-02"

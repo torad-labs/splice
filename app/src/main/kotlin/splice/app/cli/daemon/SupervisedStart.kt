@@ -1,5 +1,5 @@
-// NEW: V4-190 (2026-09-21) — the CLI's cold start is UNIT-FIRST, the same law bin/splice-launch
-// carries since V4-189. `splice dashboard` and `splice restart` (and every verb that restarts
+// NEW: V4-190 (2026-09-21) — the CLI's cold start is UNIT-FIRST, the same law the launch shim
+// (app/src/main/dist/bin/splice-launch) carries since V4-189. `splice dashboard` and `splice restart` (and every verb that restarts
 // through it: setup, add, the upgrade fallback) reach DaemonLaunch.ensureDaemon, and until this
 // file that meant a raw `nohup java … daemon` whenever /health was down — which
 // includes every second the supervisor unit spends restarting. Measured: 03:50:42 the unit's daemon
@@ -8,7 +8,7 @@
 //
 // The route is decided here so DaemonLaunch stays the composer: the unit when it exists on the box
 // and no HARNESS SELECTOR points this shell at a daemon of its own; the raw spawn otherwise. The
-// selector list is the shim's `unit_defaults()` byte for byte (SupervisedStartTest pins the two).
+// selector list is the shim's `unitDefaults()` byte for byte (SupervisedStartTest pins the two).
 package splice.app.cli.daemon
 
 import splice.app.cli.AdminSupport

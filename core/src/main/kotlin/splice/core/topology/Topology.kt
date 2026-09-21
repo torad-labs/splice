@@ -163,6 +163,11 @@ public data class ProviderConfig(
         if (quirks.codeMode == true) {
             require(codeModeShape) { codeModeRefusal() }
         }
+        quirks.codeModeModels?.let { models ->
+            require(models.isNotEmpty() && models.none(String::isBlank)) {
+                "code_mode_models must list at least one non-blank model id"
+            }
+        }
     }
 
     /** True when this provider's auth kind declares code mode on this dialect in the registry. */

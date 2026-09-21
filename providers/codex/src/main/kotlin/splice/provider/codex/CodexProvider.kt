@@ -32,9 +32,15 @@ public class CodexProvider(
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
     codeModeBridge: CodexCodeModeBridge? = null,
+    /** Upstream model ids offered the runner; null keeps [CodexCodeModeModels.DEFAULT]. */
+    codeModeModels: Collection<String>? = null,
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
-    private val codeModeTurns = CodexCodeModeTurnBuilder(codeModeBridge, ResponsesToolResultMedia(quirks))
+    private val codeModeTurns = CodexCodeModeTurnBuilder(
+        codeModeBridge,
+        ResponsesToolResultMedia(quirks),
+        codeModeModels,
+    )
     private val codeMode = codeModeBridge
 
     /** Proven against the live ChatGPT backend by the WS-0 spike

@@ -463,18 +463,34 @@ export async function oracle(argv: readonly string[]): Promise<number> {
     return HARNESS_EXIT;
   }
   const flag = (n: string) => args.includes(n);
+  // A value-taking option that is present but valueless (last on the line, or followed by another
+  // option) is refused HERE: read as absent, `--artifact` alone silently judged the default jar and
+  // `--fixtures` alone the frozen corpus, and a replay against the wrong input reads as a verdict.
+  const valueless: string[] = [];
   const opt = (n: string): string | null => {
     const i = args.indexOf(n);
-    return i >= 0 ? (args[i + 1] ?? null) : null;
+    if (i < 0) return null;
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith("-")) {
+      valueless.push(n);
+      return null;
+    }
+    return value;
   };
   const fixtures = opt("--fixtures");
   const artifact = opt("--artifact");
+  const only = opt("--scenario");
+  const jsonOut = opt("--json");
+  if (valueless.length > 0) {
+    console.error(`e2e oracle: ${valueless.join(", ")} ${valueless.length === 1 ? "takes" : "take"} a value — a bare option is refused, never read as the default`);
+    return HARNESS_EXIT;
+  }
   const options: ReplayOptions = {
     oracleDir: fixtures ? resolve(fixtures) : ORACLE_DIR,
     jar: artifact ? resolve(artifact) : join(layout().buildRoot, DEFAULT_JAR),
-    only: opt("--scenario"),
+    only,
     keep: flag("--keep"),
-    jsonOut: opt("--json"),
+    jsonOut,
   };
   try {
     return await replay(options);
@@ -503,7 +519,7 @@ async function replay({ oracleDir, jar, only, keep, jsonOut }: ReplayOptions): P
   // The jar is an input. The gate builds it (clean check runs :app:shadowJar) and holds the gradle
   // slot while this runs, so building it from here would be a nested gradle under a held slot.
   if (!existsSync(jar)) {
-    throw new HarnessError(`fat jar missing at ${jar} — build it first (bash checks/gradle-slot.sh <tag> :app:shadowJar) or pass --artifact`);
+    throw new HarnessError(`fat jar missing at ${jar} — build it first (bun tools/gate slot <label> -- :app:shadowJar) or pass --artifact`);
   }
 
   const tmp = mkdtempSync(join(tmpdir(), "splice-replay-"));

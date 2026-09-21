@@ -579,7 +579,7 @@ describe("reasoning-cache probe", () => {
     const r = runArm({ RCP_JAR: "/nonexistent/app-all.jar" }, ["reasoning-cache"]);
     expect(r.status).toBe(HARNESS_EXIT);
     expect(r.stderr).toContain("fat jar missing at /nonexistent/app-all.jar");
-    expect(r.stderr).toContain("bash checks/gradle-slot.sh <tag> :app:shadowJar");
+    expect(r.stderr).toContain("bun tools/gate slot <label> -- :app:shadowJar");
     expect(r.stderr).not.toContain("gradlew");
   });
 

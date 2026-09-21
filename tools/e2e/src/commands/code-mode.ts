@@ -2361,7 +2361,7 @@ function artifactPresent(artifact: string): boolean {
   if (existsSync(artifact)) return true;
   process.stderr.write(
     `HARNESS FAILURE: fat jar missing at ${artifact} — build it first ` +
-      "(bash checks/gradle-slot.sh <tag> :app:shadowJar) or pass --artifact\n",
+      "(bun tools/gate slot <label> -- :app:shadowJar) or pass --artifact\n",
   );
   return false;
 }

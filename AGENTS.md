@@ -3,7 +3,7 @@
 ## The invariants (L1 retired; L2–L4 locked)
 
 Structural walls enforce these at write time (`quality/rules/kotlin/` for the
-gateway, `quality/rules/console/` for the webui, orchestrated by
+gateway, `quality/rules/console/` for the console, orchestrated by
 `.claude/hooks/orchestrator.ts`) and permanent tests enforce the behavioral
 half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
@@ -114,7 +114,7 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
-`:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded
+`:3096`, `controlPort`) hosts the single console at `/` and a bearer-guarded
 `/api/*` that AGGREGATES every head (same mgmt-key). It reads file-based truth
 (auth, usage, compact) directly so a DOWN head is still visible, and talks to
 RUNNING heads over `/mgmt` for live status + config.
@@ -140,12 +140,12 @@ RUNNING heads over `/mgmt` for live status + config.
 ## Gates
 
 ```
-npm run gate          # all Kotlin/Node/webui/release/OSS checks, ONE PASS/FAIL
+npm run gate          # all Kotlin/Node/console/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
-npm run lint -w webui # FSD boundaries — the architecture is lint-enforced
-npm test -w webui     # vitest
-npm run build -w webui# tsc strict + single-file dist (commit dist/index.html)
+npm run lint -w console # FSD boundaries — the architecture is lint-enforced
+npm test -w console   # vitest
+./gradlew :console:build # the single-file bundle, :console:bundle's OUTPUT (never committed)
 ```
 
 The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law

@@ -6,13 +6,13 @@
  *  WHY THIS EXISTS. Every console capture to date was fixture-fed, and the fixtures were written to
  *  match the console's own types, so the two agreed with each other and neither was checked against
  *  the wire. The defect that exposed it: the models page read `context_window_source`, declared
- *  NON-OPTIONAL in webui/src/entities/model/model/types.ts, while the daemon emitted
+ *  NON-OPTIONAL in console/src/entities/model/model/types.ts, while the daemon emitted
  *  `window_source`. TypeScript cannot see across the wire, so nothing fired, and the column
  *  rendered `undefined` against a live daemon while every fixture looked right.
  *
  *  THE DENOMINATOR COMES FROM THE SOURCE, NEVER FROM A LIST IN THIS FILE (law 24):
- *   - the ROUTES are every `request<T>(...)` call in webui/src, found by the TypeScript compiler
- *     over webui/tsconfig.json, so a route the console starts reading is checked with no edit here;
+ *   - the ROUTES are every `request<T>(...)` call in console/src, found by the TypeScript compiler
+ *     over console/tsconfig.json, so a route the console starts reading is checked with no edit here;
  *   - the KEYS are T's properties as the type checker resolves them (interfaces, extends, aliases,
  *     unions, arrays, Record values), so a field the console starts declaring is checked too.
  *  What IS listed here is only INPUT, never the denominator: the values that fill a templated path
@@ -53,7 +53,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
 
 const REPO = resolve(dirname(import.meta.path), "../..");
-const WEBUI = join(REPO, "webui");
+const WEBUI = join(REPO, "console");
 const REQUEST_HOME = join(WEBUI, "src/shared/api/index.ts");
 const FETCH_TIMEOUT_MS = 15_000;
 const BOOT_TIMEOUT_MS = 90_000;
@@ -100,7 +100,7 @@ const DISPOSITIONED: Record<string, string> = {
     "settle<T>() is the transport of the five auth WRITES; its T is generic here and each write " +
     "is a POST, so there is no read payload at this call site",
 };
-/** Non-request fetch() sites in webui/src, which the same scan enumerates. */
+/** Non-request fetch() sites in console/src, which the same scan enumerates. */
 const FETCH_DISPOSITIONED: Record<string, string> = {
   "shared/api/index.ts|path":
     "the transport inside request<T>() itself; every call of request<T>() is its own call site above",
@@ -111,7 +111,7 @@ const FETCH_DISPOSITIONED: Record<string, string> = {
     "by splice.app.ConsoleEventProducersTest",
 };
 
-// ── the denominator: every request<T> call in webui/src ────────────────────────────────────────
+// ── the denominator: every request<T> call in console/src ────────────────────────────────────────
 
 interface CallSite {
   id: string;
@@ -779,7 +779,7 @@ async function run(checker: ts.TypeChecker, calls: CallSite[], fetches: FetchSit
       for (const key of result.undeclared) lines.push(`  UNDECLARED ${key}: sent by the daemon, not declared by the console`);
     }
   }
-  if (calls.length === 0) failLine("no request<T>() call site found in webui/src: the scan itself is broken");
+  if (calls.length === 0) failLine("no request<T>() call site found in console/src: the scan itself is broken");
   if (checked.length === 0) failLine("no route was checked: a run that reads nothing is not a pass");
   return { lines, failed, failSlots, checked };
 }

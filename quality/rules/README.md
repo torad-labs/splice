@@ -21,9 +21,9 @@ design constraint, 2026-07-13).
 
 | rule | scope | wall |
 |---|---|---|
-| webui-fetch-only-in-api(-tsx) | webui/src | FSD: UI strictly via state |
-| webui-no-emdash-ui-text | webui/src *.tsx | locked copy gate |
-| webui-css-tokens-only | webui/src *.css | --space/--text token scales only |
+| webui-fetch-only-in-api(-tsx) | console/src | FSD: UI strictly via state |
+| webui-no-emdash-ui-text | console/src *.tsx | locked copy gate |
+| webui-css-tokens-only | console/src *.css | --space/--text token scales only |
 
 Kotlin walls (`quality/rules/kotlin/`) mirror the above for the gateway port. The 2026-07-18
 additions are the **preventive walls** distilled from that day's incidents:

@@ -22,7 +22,7 @@ import java.nio.file.Path
 /** The state-dir file the alert settings live in. */
 public const val ALERTS_FILE: String = "alerts.json"
 
-/** Wire-identical to `webui/src/entities/alert/model/types.ts`. */
+/** Wire-identical to `console/src/entities/alert/model/types.ts`. */
 @Serializable
 public data class AlertSettings(
     val desktop: Boolean = false,

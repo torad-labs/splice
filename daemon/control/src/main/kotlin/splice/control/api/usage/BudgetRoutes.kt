@@ -2,7 +2,7 @@
 // warn and block", one of the table-stakes items the operator kept in.
 //
 //   GET /api/budgets   {budgets: Budget[]}
-//   PUT /api/budgets   body {budgets: Budget[]} -> the set as SAVED (webui/src/entities/budget/api:
+//   PUT /api/budgets   body {budgets: Budget[]} -> the set as SAVED (console/src/entities/budget/api:
 //                       "the store takes what the daemon now holds, rather than the request: a
 //                       value the daemon clamped or refused must not read as applied")
 //

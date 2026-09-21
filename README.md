@@ -461,7 +461,7 @@ build-logic/   Gradle convention plugins; the build itself is rooted at the repo
 config/        splice.example.toml — the sample multi-provider topology
 bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
-webui/         React 19 + Vite + Zustand dashboard, single-file build
+console/       React 19 + Vite + Zustand operator console, single-file bundle (console/tools: its look gate)
 checks/        the gate (`npm run gate`) and its legs: wall routing, the concentration ratchet,
                release acceptance, the OSS ladder, the e2e harnesses
 quality/       enforcement: detekt config + the ast-grep "walls" (write-time AND at the gate)
@@ -481,7 +481,7 @@ established survives as 11 byte-exact fixtures in the migration oracle
 
 ```bash
 bun install --frozen-lockfile
-npm run gate   # Gradle, walls/hooks, server, webui, release acceptance, OSS checks
+npm run gate   # Gradle, walls/hooks, server, console, release acceptance, OSS checks
 ```
 
 Contracts and invariants live in `AGENTS.md`; the change log in `CHANGELOG.md`; the wall doctrine in `quality/rules/README.md`.

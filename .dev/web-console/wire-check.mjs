@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // wire-check — every field the console DECLARES, against what the daemon actually EMITS (M1-37).
 //
-// WHY THIS EXISTS. `webui/src/entities/model/model/types.ts` declared `context_window_source` and
+// WHY THIS EXISTS. `console/src/entities/model/model/types.ts` declared `context_window_source` and
 // the control route shipped `window_source`; the column rendered `undefined` against a route that
 // was already built. Nobody caught it for a reason that is mechanical rather than careless: the
 // fixture files spell it the CONSOLE's way, so the fixtures confirm the console's belief about the
@@ -10,13 +10,13 @@
 // this campaign has produced came off fixture-fed renders, so not one of them could have caught it.
 //
 // THERE IS A THIRD LIST, found while building this, and it is why the check is shaped the way it
-// is. `webui/src/**/coverage.ts` disposes of each route the console calls, and it is hand-authored
+// is. `console/src/**/coverage.ts` disposes of each route the console calls, and it is hand-authored
 // too. It calls `/api/alerts` and `/api/budgets` EDITABLE and `/api/accounts` READ-ONLY — live, in
 // other words — and the control server serves none of the three. So the comparison cannot start at
 // the field: a field on a route that does not exist is not a spelling problem, and reporting it as
 // one buries the missing routes under three hundred field rows.
 //
-//   LEVEL 1, ROUTES.  every `request<T>(path)` in `webui/src/entities/*/api/**` against every path
+//   LEVEL 1, ROUTES.  every `request<T>(path)` in `console/src/entities/*/api/**` against every path
 //                     the control server actually serves.
 //   LEVEL 2, FIELDS.  for a payload on a route that IS served, every field the console declares
 //                     against every key the daemon emits.
@@ -77,7 +77,7 @@ import { join, relative } from 'node:path';
 import process from 'node:process';
 
 const ROOT = process.cwd();
-const ENTITIES = join(ROOT, 'webui/src/entities');
+const ENTITIES = join(ROOT, 'console/src/entities');
 const GATEWAY = join(ROOT, 'gateway');
 const CONTROL = '/control/src/main/';
 
@@ -219,7 +219,7 @@ function fetchSites(dirs) {
  */
 function coverageRoutes() {
   const out = new Map();
-  for (const root of [join(ROOT, 'webui/src/pages'), join(ROOT, 'webui/src/shared')]) {
+  for (const root of [join(ROOT, 'console/src/pages'), join(ROOT, 'console/src/shared')]) {
     if (!existsSync(root)) continue;
     for (const file of walk(root).filter((p) => /coverage\.ts$|baseline\.ts$/.test(p))) {
       const rel = relative(ROOT, file);
@@ -731,7 +731,7 @@ async function selftest() {
   ok('a real field is not called a near spelling of something else', nearSpellings('pinned', keys), []);
   ok('a one-word field with no wire key raises no false near spelling', nearSpellings('nonesuch', keys), []);
 
-  const tmp = join(ROOT, 'webui/src/entities/.wire-check-selftest.ts');
+  const tmp = join(ROOT, 'console/src/entities/.wire-check-selftest.ts');
   writeFileSync(tmp, [
     'export interface Probe {',
     '  plain: string;',
@@ -773,9 +773,9 @@ async function selftest() {
     writeFileSync(join(bare, path), body);
   };
   ok('a tree with no entities directory is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('webui/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
+  put('console/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
   ok('entity types but no api segment is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('webui/src/entities/probe/api/index.ts', "const x = request<P>('/api/probe');\n");
+  put('console/src/entities/probe/api/index.ts', "const x = request<P>('/api/probe');\n");
   ok('a console side but no gateway tree is DID NOT RUN, not a pass', exit(bare) !== 0, true);
   put('daemon/control/src/main/kotlin/Empty.kt', '// no keys and no routes here\n');
   ok('control kotlin that emits no keys at all is DID NOT RUN, not a pass', exit(bare) !== 0, true);
@@ -783,13 +783,13 @@ async function selftest() {
   ok('keys but no served route is DID NOT RUN, not a pass', exit(bare) !== 0, true);
   put('daemon/control/src/main/kotlin/Empty.kt', 'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { put("a", 1) }\n');
   ok('a console and a daemon that AGREE come back clean', exit(bare), 0);
-  put('webui/src/entities/probe/model/types.ts', 'export interface P { a_typo: string }\n');
+  put('console/src/entities/probe/model/types.ts', 'export interface P { a_typo: string }\n');
   ok('a planted MISMATCH is red', exit(bare) !== 0, true);
 
   // THE EXIT RULE ITSELF (M1-45). Every case above proves the check can FAIL; not one proves WHICH
   // rule fired, and this row changes exactly that. Both cases run on the same bare tree, one
   // condition apart, so the difference between them IS the rule.
-  put('webui/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
+  put('console/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
   // `if (` on the put's own line is what marks the key conditional, so `a` is a non-optional
   // declaration against a key the wire may omit: a Level 3a AND 3b entry, and nothing else wrong.
   put('daemon/control/src/main/kotlin/Empty.kt',
@@ -801,8 +801,8 @@ async function selftest() {
   ok('and it still printed that census, loudly, on the way to exit 0',
     census.out.includes('LEVEL 3b') && census.out.includes('PRINTED, NOT GATED'), true);
 
-  put('webui/src/entities/probe/model/types.ts', 'export interface P { a: string }\nexport interface Q { }\n');
-  put('webui/src/entities/probe/api/index.ts',
+  put('console/src/entities/probe/model/types.ts', 'export interface P { a: string }\nexport interface Q { }\n');
+  put('console/src/entities/probe/api/index.ts',
     "const x = request<P>('/api/probe');\nconst y = request<Q>('/api/nope');\n");
   const undisposed = runIn(bare);
   // Q declares no fields, so the ONLY thing wrong with this tree is the route — the red cannot come

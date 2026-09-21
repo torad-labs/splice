@@ -160,10 +160,10 @@ test("inline suppression is honored", () => {
 test("tsx and css rules route", () => {
   const tsx = runHook(
     "pretooluse",
-    writeEvent("webui/src/widgets/UsageMeter/ui.tsx", "export const L = () => <span>usage — live</span>;\n"),
+    writeEvent("console/src/widgets/UsageMeter/ui.tsx", "export const L = () => <span>usage — live</span>;\n"),
   );
   assertContains(expectBlock(tsx).reason, "webui-no-emdash-ui-text");
-  const css = runHook("pretooluse", writeEvent("webui/src/app/app.css", ".myx-panel { font-size: 13px; }\n"));
+  const css = runHook("pretooluse", writeEvent("console/src/app/app.css", ".myx-panel { font-size: 13px; }\n"));
   assertContains(expectBlock(css).reason, "webui-css-tokens-only");
 });
 

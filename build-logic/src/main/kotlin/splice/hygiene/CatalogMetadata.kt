@@ -87,7 +87,13 @@ object CatalogMetadata {
         if (tags.length == 0) {
             throw UnreadableMetadata("$where: no <component> elements found — an unread metadata file must not read as empty")
         }
-        return (0 until tags.length).map { index -> component(tags.item(index) as Element, where) }.toSet()
+        // A NodeList hands back Node, and the narrowing is total rather than asserted: every node
+        // this list holds is accounted for, and a shortfall is named instead of silently dropped.
+        val elements = (0 until tags.length).mapNotNull { index -> tags.item(index) as? Element }
+        if (elements.size != tags.length) {
+            throw UnreadableMetadata("$where: ${tags.length - elements.size} <component> node(s) are not elements — unreadable metadata shape")
+        }
+        return elements.map { element -> component(element, where) }.toSet()
     }
 
     private fun component(element: Element, where: String): Component {

@@ -137,10 +137,26 @@ internal object MiniToml {
         else -> throw ParseError("line ${at + 1}: `$raw` is not a shape this reader accepts")
     }
 
-    /** The body of the basic string starting at index 0 of [raw], escapes still in place. */
+    /** The body of the basic string starting at index 0 of [raw], escapes still in place.
+     *
+     *  THE REMAINDER IS CHECKED, and that is the whole of PR 6 review F5. Taking the first closing
+     *  quote and dropping whatever followed turns a malformed edit into a GREEN: a name added to an
+     *  array without its comma —
+     *      "ShutdownHookRemove"
+     *      "SelftestVanishedRole",
+     *  splits into ONE item, the second name vanishes from the denominator, and the law that grades
+     *  against it passes over a file it half-read. A real TOML parser threw there. Anything after
+     *  the closing quote but a `#` comment is that shape, and it fails BY NAME. */
     private fun quotedBody(raw: String, at: Int): String {
         val end = quotedEnd(raw, 0)
         if (end < 0) throw ParseError("line ${at + 1}: unterminated string `$raw`")
+        val rest = raw.substring(end + 1).trim()
+        if (rest.isNotEmpty() && !rest.startsWith("#")) {
+            throw ParseError(
+                "line ${at + 1}: `$rest` follows a closing quote — a missing comma or an unread value, " +
+                    "never a silently dropped one",
+            )
+        }
         return raw.substring(1, end)
     }
 

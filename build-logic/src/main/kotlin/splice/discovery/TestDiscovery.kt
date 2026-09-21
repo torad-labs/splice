@@ -144,6 +144,9 @@ object SourceScan {
     // The same shape read from the ORIGINAL text, where a backtick name is still spelled out.
     private val UNMASKED_FUN_PATTERN: Pattern = Pattern.compile("""\bfun\s+(`[^`\n]+`|\w+)\s*\(""")
 
+    // The one annotation of the three whose expansion factor is no number anyone could write down.
+    private const val FACTORY_ANNOTATION = "TestFactory"
+
     // Where a declaration ENDS without a body: a blank line, or a line at COLUMN 0 that starts another
     // declaration. Column 0 is load-bearing — an indented `val`/`var` is a constructor parameter of
     // the very class being scanned, and treating it as a boundary would hide that class and its tests
@@ -305,6 +308,11 @@ object SourceScan {
         return null
     }
 
+    /** One test method declared at member depth: its [name], and whether the annotation that made
+     *  it count was `@TestFactory` — THE THIRD SHAPE in the file header, decided where it is read
+     *  rather than re-derived later from the same source a second time. */
+    data class Member(val name: String, val dynamic: Boolean)
+
     /** The names of the test methods declared at MEMBER depth of a class body.
      *
      *  A method counts when a @Test/@ParameterizedTest annotation precedes it at member depth: the
@@ -321,11 +329,12 @@ object SourceScan {
      *  whole input — which would let `\bfun` match the "fun" inside an identifier like "myFunction"
      *  once the scan walks past its first letter. `useTransparentBounds(true)` restores the real
      *  surrounding characters for that check, matching what the sticky regex sees natively. */
-    internal fun memberItems(original: String, masked: String): List<String> {
-        val items = mutableListOf<String>()
+    internal fun memberItems(original: String, masked: String): List<Member> {
+        val items = mutableListOf<Member>()
         var depth = 0
         var i = 0
         var pending = 0
+        var pendingFactory = false
         val memberMatcher = MEMBER_ITEM_PATTERN.matcher(masked).apply { useTransparentBounds(true) }
         val unmaskedMatcher = UNMASKED_FUN_PATTERN.matcher(original).apply { useTransparentBounds(true) }
         while (i < masked.length) {
@@ -353,6 +362,9 @@ object SourceScan {
             }
             if (memberMatcher.group(1) != null) {
                 pending += 1
+                // group(1) is the annotation NAME, which is the whole reason the pattern captures
+                // it: the factory answer is read here, not by a second pass over the same text.
+                if (memberMatcher.group(1) == FACTORY_ANNOTATION) pendingFactory = true
             } else {
                 unmaskedMatcher.region(i, original.length)
                 // Both alternations of MEMBER_ITEM_PATTERN carry the name in a group and group(1) was
@@ -363,8 +375,9 @@ object SourceScan {
                     ?: error("member scan matched a declaration with no name at offset $i")
                 val name = raw.trim('`')
                 if (pending > 0) {
-                    items.add(name)
+                    items.add(Member(name, pendingFactory))
                     pending = 0
+                    pendingFactory = false
                 }
             }
             i = memberMatcher.end()
@@ -397,8 +410,18 @@ object SourceScan {
                 if (otherOpen < openAt && closeAt < otherClose) outer = otherName
             }
             val qualified = if (outer != null) "$outer\$$name" else name
-            val methods = memberItems(source.substring(openAt + 1, closeAt), masked.substring(openAt + 1, closeAt))
-            if (methods.isNotEmpty()) found.add(TestClass(module, qualified, path, methods))
+            val members = memberItems(source.substring(openAt + 1, closeAt), masked.substring(openAt + 1, closeAt))
+            if (members.isNotEmpty()) {
+                found.add(
+                    TestClass(
+                        module = module,
+                        name = qualified,
+                        path = path,
+                        methods = members.map { it.name },
+                        dynamicMethods = members.filter { it.dynamic }.map { it.name }.toSet(),
+                    ),
+                )
+            }
         }
         return found
     }
@@ -577,7 +600,15 @@ object TestDiscovery {
                         (if (missing.isNotEmpty()) "; never ran: ${missing.joinToString(", ")}" else "") +
                         " (${testClass.path})",
                 )
-                observed > testClass.count -> {
+                // THE THIRD SHAPE (file header, SHAPES): a class holding a @TestFactory expands by
+                // a factor nobody can write down — the factory returns one DynamicTest per item in
+                // a list that is EXPECTED to grow — so any count AT OR ABOVE declared is its
+                // expected shape and it is never asked for a disposition. Measured 2026-09-21:
+                // ReleaseReadinessLawTest ran 49 the day this was decided and 56 two days later,
+                // for the healthiest possible reason. Observed BELOW declared still reds, in the
+                // branch above and unconditionally: the factory method never running, or its
+                // expansion collapsing to nothing, is exactly the hazard this wall exists to catch.
+                observed > testClass.count && testClass.dynamicMethods.isEmpty() -> {
                     val entry = dispositions[testClass.name]
                     when {
                         entry == null -> problems.add(
@@ -619,7 +650,8 @@ object TestDiscovery {
             val mark = when {
                 observed == null -> "NO-XML"
                 observed < testClass.count -> "SHORT"
-                observed > testClass.count -> dispositions[testClass.name]?.reason ?: "HIGHER-NO-REASON"
+                observed > testClass.count -> dispositions[testClass.name]?.reason
+                    ?: if (testClass.dynamicMethods.isEmpty()) "HIGHER-NO-REASON" else "DYNAMIC"
                 else -> "OK"
             }
             out.append(

@@ -89,13 +89,6 @@
       "why": "Every red-green arm of the gate CLI: the slot, the JDK resolver, the title preflight, rule routing, the config guard, the no-python wall (every census RED on its mutation, and the write guard still refusing a synthetic event), the write-time hook, the ledger checks and the coverage proof.",
       "command": ["bun", "test", "tools/gate"]
     },
-    {
-      "task": "verifyTestDiscovery",
-      "why": "V4-68: a @Test method JUnit never DISCOVERED is a green suite with a hole in it. The denominator is parsed from the SOURCE (@Test/@ParameterizedTest per class, member depth only) and the observation is the JUnit XML. POSITION IS LOAD-BEARING: it depends on every Test task, because they PRODUCE the XML it reads and it must read it in the same pass — the results directory is a shared, mutually-destructive observation (a scoped run of one test class wipes every other class's XML in that module; 62 of 63 files deleted mid-run, measured).",
-      "command": ["bun", "checks/config/tests-are-discovered.ts", "check", "."],
-      "afterAllTests": true
-    },
-    { "task": "verifyTestDiscoverySelftest", "why": "The discovery wall's own arms.", "command": ["bun", "checks/config/tests-are-discovered.ts", "--selftest"] },
     { "task": "prTitle", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {
       "task": "secretScanAllowlist",

@@ -4,11 +4,13 @@
 import { rules, usage as rulesUsage } from "./src/commands/rules.ts";
 import { run, usage as runUsage } from "./src/commands/run.ts";
 import { slot, usage as slotUsage } from "./src/commands/slot.ts";
+import { title, usage as titleUsage } from "./src/commands/title.ts";
 
 const VERBS = {
   run: { usage: runUsage, exec: (argv: string[]) => run(argv) },
   slot: { usage: slotUsage, exec: (argv: string[]) => slot(argv) },
   rules: { usage: rulesUsage, exec: (argv: string[]) => rules(argv) },
+  title: { usage: titleUsage, exec: (argv: string[]) => title(argv) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;
 
 const [verb, ...argv] = process.argv.slice(2);

@@ -32,7 +32,7 @@ The procedure, every time, in this order:
    pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
    green three times while the oracle replay had three drifted pins. Grep the log for `GATE:` and
    `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the
-   conventional types in `checks/pr-title.sh` (`chore(ledger): ...`, never `ledger: ...`), because
+   conventional types in `tools/gate/src/lib/conventional.ts` (`chore(ledger): ...`, never `ledger: ...`), because
    the ladder lints HEAD's subject.
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.

@@ -78,6 +78,32 @@ describe('control client', () => {
     await expect(control.config()).rejects.toThrow('HTTP 503');
   });
 
+  // JW-06: the per-head view is reachable only if the selected head reaches the QUERY STRING. The
+  // control plane folds `[heads.<key>.overrides]` into the effective view when /api/config carries
+  // ?head=, which is what makes "why is kimi's maxInflight 8 when the panel says 100" answerable.
+  // Every other config arm here calls control.config() with no head, so the parameter could be
+  // dropped from the client and nothing on this side would notice.
+  test('config carries the selected head to the query string - JW-06', async () => {
+    storeKey('k');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { effective: {}, layers: {} }));
+    await control.config('kimi');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/config?head=kimi');
+  });
+
+  test('config with no head asks for the global view - JW-06 bound', async () => {
+    storeKey('k');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { effective: {}, layers: {} }));
+    await control.config();
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/config');
+  });
+
+  test('a head name is encoded, never interpolated raw - JW-06', async () => {
+    storeKey('k');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { effective: {}, layers: {} }));
+    await control.config('a head/with?chars');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/config?head=a%20head%2Fwith%3Fchars');
+  });
+
   test('PATCH serializes the patch body', async () => {
     storeKey('k');
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { applied: { effort: 'low' }, rejected: {}, restart_required: [], targets: [], persisted: 'runtime+file' }));

@@ -3,9 +3,9 @@
 # file's directory, and `ast-grep scan` finds it by walking UP, never down — a nested config would
 # leave every anchored glob selecting nothing, silently (measured on ast-grep 0.45.2).
 # The SAME rule files run two ways (same-checker-twice):
-#   - agent hook: .claude/hooks/orchestrator.ts (PreToolUse) scans PROPOSED write
-#     content mirrored to a temp tree, so files:/ignores: globs bind identically
-#   - gate:       `npm run gate:rules` (ast-grep scan + ast-grep test) on the tree / in CI
+#   - agent hook: `bun tools/gate rules --stdin pretooluse` (.claude/settings.json) scans PROPOSED
+#     write content mirrored to a temp tree, so files:/ignores: globs bind identically
+#   - gate:       `bun tools/gate rules` (= npm run gate:rules) on the tree / in CI
 # Policy lives ONLY in quality/rules/console/*.yml — never in per-rule Python.
 ruleDirs:
   - quality/rules/kotlin

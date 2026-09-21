@@ -34,7 +34,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.t
 [[item]]
 id = "NF-02"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.ts"
+wall = ""
+retired_to = "quality/architecture/src/test/kotlin/splice/quality/MaxInflightMeasuredLawTest.kt"
+proof = "2026-09-21: Knob MAX_INFLIGHT default mutated 12L -> 100L (the value the config's own line measures at 67% turn failure); the wall went RED and the law FAILED with the same numbers; restored, both GREEN (2/2). The ceiling is still read from the example config's measurement line, and the law REFUSES when that line is absent where the wall fell back to a hardcoded 14"
 
 [[item]]
 id = "NF-03"

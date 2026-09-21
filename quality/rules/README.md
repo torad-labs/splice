@@ -1,7 +1,7 @@
 # splice architecture walls
 
 All write-time policy is ast-grep rules in `console/`. There are NO per-rule
-Python hooks — `.claude/hooks/orchestrator.ts` is the single router (operator
+Python hooks — `bun tools/gate rules --stdin pretooluse` (tools/gate/src/lib/hook.ts) is the single router (operator
 design constraint, 2026-07-13).
 
 ## How the same rule runs twice (same-checker-twice)

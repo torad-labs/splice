@@ -17,7 +17,7 @@
     "gate:campaign": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts",
     "gate:campaign:census": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --no-run",
     "gate:campaign:selftest": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --selftest",
-    "test:hooks": "bun .claude/hooks/tests/test_orchestrator.ts && bun .claude/hooks/tests/test_one_committer.ts",
+    "test:hooks": "bun test tools/gate/test/hook.test.ts && bun .claude/hooks/tests/test_one_committer.ts",
     "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",

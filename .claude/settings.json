@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.ts pretooluse",
+            "command": "bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin pretooluse",
             "timeout": 30
           },
           {
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.ts stop",
+            "command": "bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin stop",
             "timeout": 30
           },
           {
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.ts stop",
+            "command": "bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin stop",
             "timeout": 30
           }
         ]

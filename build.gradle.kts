@@ -18,6 +18,11 @@ plugins {
     // The gate ladder (gateOfRecord and one Exec task per row of tools/gate/config/ladder.json) —
     // build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts, entered through `bun tools/gate run`.
     id("splice.gate-ladder")
+    // V4-68, the wall that compares DECLARED @Test/@ParameterizedTest/@TestFactory methods against
+    // the JUnit XML that says what RAN — build-logic/src/main/kotlin/splice.test-discovery.gradle.kts,
+    // which registers verifyTestDiscovery and attaches it to gateOfRecord. It replaces the two
+    // `bun checks/config/tests-are-discovered.ts` rows the ladder carried until now.
+    id("splice.test-discovery")
 }
 
 // The plugin jar's path is derived from :quality-compiler-plugin' build layout (default archive name

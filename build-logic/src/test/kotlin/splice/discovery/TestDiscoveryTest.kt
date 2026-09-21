@@ -94,6 +94,47 @@ private const val XML_HIGHER = """<?xml version="1.0" encoding="UTF-8"?>
 </testsuite>
 """
 
+// THE THIRD SHAPE (TestDiscovery.kt's header, SHAPES): a @TestFactory declares ONE method and runs
+// one child per row of a list that is EXPECTED to grow, so its expansion is not a number anyone
+// could write down and re-earn. Modelled on the real ReleaseReadinessLawTest, which ran 49 children
+// the day the rule was decided and 56 two days later, for the healthiest possible reason.
+private val SOURCE_FACTORY = """
+package head
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
+
+class FactoryTest {
+    @Test
+    fun `a plain test`() {
+        check(true)
+    }
+
+    @TestFactory
+    fun `one child per mutation`() = mutations.map { dynamicTest(it.name) { check(true) } }
+}
+""".trimIndent()
+
+private const val XML_FACTORY_HIGHER = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="FactoryTest" tests="7" skipped="0" failures="0" errors="0">
+  <testcase name="a plain test()" classname="head.FactoryTest"/>
+  <testcase name="one child per mutation()[1]" classname="head.FactoryTest"/>
+  <testcase name="one child per mutation()[2]" classname="head.FactoryTest"/>
+  <testcase name="one child per mutation()[3]" classname="head.FactoryTest"/>
+  <testcase name="one child per mutation()[4]" classname="head.FactoryTest"/>
+  <testcase name="one child per mutation()[5]" classname="head.FactoryTest"/>
+  <testcase name="one child per mutation()[6]" classname="head.FactoryTest"/>
+</testsuite>
+"""
+
+// The factory method itself never ran: one plain test, and nothing the factory was supposed to
+// expand into. This is the hazard the wall exists for, and no annotation exempts it.
+private const val XML_FACTORY_SHORT = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="FactoryTest" tests="1" skipped="0" failures="0" errors="0">
+  <testcase name="a plain test()" classname="head.FactoryTest"/>
+</testsuite>
+"""
+
 class TestDiscoveryTest {
 
     private fun classes(source: String): List<TestClass> = classesIn(source, MODULE, PATH)
@@ -143,6 +184,47 @@ class TestDiscoveryTest {
             mapOf("SampleTest" to Disposition("one @ParameterizedTest expands to two extra cases", 4))
         val problems = audit(classes(SOURCE_OK), mapOf(MODULE to row(XML_HIGHER)), dispositions = dispositions)
         assertTrue(problems.isEmpty(), "expected green, got: $problems")
+    }
+
+    // ── THE THIRD SHAPE: @TestFactory, whose expansion no disposition could pin ──
+
+    @Test
+    fun `a @TestFactory class needs no disposition for a count above its declared one`() {
+        val problems = audit(classes(SOURCE_FACTORY), mapOf(MODULE to row(XML_FACTORY_HIGHER)))
+        assertTrue(problems.isEmpty(), "expected green, got: $problems")
+    }
+
+    /** The vacuity guard on the arm above: the exemption is the FACTORY's, not every class's. The
+     *  identical XML against a class whose methods are all plain @Test is still red. */
+    @Test
+    fun `the same higher count without a factory is still red`() {
+        val plain = SOURCE_FACTORY.replace("@TestFactory", "@Test")
+        val problems = audit(classes(plain), mapOf(MODULE to row(XML_FACTORY_HIGHER)))
+        assertTrue(problems.any { "HIGHER COUNT" in it }, "expected a HIGHER COUNT problem, got: $problems")
+    }
+
+    @Test
+    fun `a @TestFactory class whose XML is SHORT is red and names the factory method`() {
+        val problems = audit(classes(SOURCE_FACTORY), mapOf(MODULE to row(XML_FACTORY_SHORT)))
+        assertTrue(problems.any { "NOT DISCOVERED" in it }, "expected a NOT DISCOVERED problem, got: $problems")
+        assertTrue(
+            problems.any { "one child per mutation" in it },
+            "the factory method that never ran must be named, got: $problems",
+        )
+    }
+
+    @Test
+    fun `the scanner reports WHICH method the factory annotation marked`() {
+        val parsed = classes(SOURCE_FACTORY).single()
+        assertEquals(listOf("a plain test", "one child per mutation"), parsed.methods)
+        assertEquals(setOf("one child per mutation"), parsed.dynamicMethods)
+    }
+
+    @Test
+    fun `the census marks a factory class DYNAMIC rather than HIGHER-NO-REASON`() {
+        val text = census(classes(SOURCE_FACTORY), mapOf(MODULE to row(XML_FACTORY_HIGHER)))
+        assertTrue("DYNAMIC" in text, text)
+        assertTrue("HIGHER-NO-REASON" !in text, text)
     }
 
     @Test

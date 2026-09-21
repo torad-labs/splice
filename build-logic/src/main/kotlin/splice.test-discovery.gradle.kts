@@ -3,9 +3,10 @@
 // TestDiscovery.kt) — pure Kotlin, no Gradle types, proved against fixtures and @TempDir files by
 // TestDiscoveryTest. This script is the other half: it resolves the Gradle project model into the
 // File/String arguments TestDiscovery's functions take, and registers the task that runs them.
-// Applied at the ROOT project only — like splice.gate-ladder, which is what wires
-// verifyTestDiscovery into gateOfRecord itself (this file never touches gateOfRecord or
-// ladder.json).
+// Applied at the ROOT project only. It attaches its own leg to gateOfRecord (see the bottom of this
+// file): until 2026-09-21 the wiring was a ladder.json ROW running `bun checks/config/
+// tests-are-discovered.ts`, and the row is gone with the script it named, so a leg that attached
+// itself to nothing would be a wall nobody runs. ladder.json is still not this file's business.
 //
 // POSITION IS LOAD-BEARING (measured against the original bun checker, carried into this port
 // unchanged): verifyTestDiscovery depends on EVERY Test task because they PRODUCE the XML it
@@ -52,7 +53,7 @@ private fun observedXml() = xmlDirsByModule.get().mapValues { (_, dirs) -> scanM
 
 tasks.register("verifyTestDiscovery") {
     group = "gate"
-    description = "V4-68: every @Test/@ParameterizedTest method declared under a subproject's " +
+    description = "V4-68: every @Test/@ParameterizedTest/@TestFactory method declared under a subproject's " +
         "src/test/kotlin must appear in that class's own JUnit XML. Depends on every Test task " +
         "of every subproject — see this file's header for why position is load-bearing."
     dependsOn(everyTestTask)
@@ -70,6 +71,11 @@ tasks.register("verifyTestDiscovery") {
         println(summaryLine(classes, xmlByModule))
     }
 }
+
+// THE LEG IS ONLY A LEG IF THE GATE RUNS IT. gateOfRecord depends on every subproject's `check`,
+// the console, and every ladder row; this task is the ROOT project's own, in none of those sets.
+// verifyLadder proves the ROWS are attached and would never have noticed this one missing.
+tasks.named("gateOfRecord") { dependsOn("verifyTestDiscovery") }
 
 tasks.register("testDiscoveryReport") {
     group = "gate"

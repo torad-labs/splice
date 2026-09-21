@@ -119,8 +119,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
 // denominator that shrinks in silence, which is the one failure every ratchet here exists to
-// prevent — so the list names every module home and is extended by each module move.
-const SOURCE_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const SOURCE_GLOBS = [
+  "gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt", "core/src/main/**/*.kt", "upstream/src/main/**/*.kt",
+  "dialects/*/src/main/**/*.kt", "providers/*/src/main/**/*.kt", "daemon/*/src/main/**/*.kt", "app/src/main/**/*.kt",
+  "quality/*/src/main/**/*.kt",
+];
 const CONFIG_REL = "checks/config/role-registry.toml";
 
 const DECL = /\bfun\s+interface\s+(\w+)/g;
@@ -738,7 +744,7 @@ function report(root: string, configRel = CONFIG_REL): void {
 
 // ── selftest ──────────────────────────────────────────────────────────────────────────────────────
 
-const MODULE = "gateway/core/src/main/kotlin/splice/core";
+const MODULE = "core/src/main/kotlin/splice/core";
 
 const COMPLIANT_SOURCE = `package splice.core
 

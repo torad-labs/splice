@@ -42,7 +42,7 @@ const BUN = process.execPath;
 // has nothing to do with L3. Only the body differs between the two.
 const VIOLATION = 'class Probe {\n    fun endTurn(out: Writer) {\n        out.write("message_stop")\n    }\n}\n';
 const CLEAN = "class Probe {\n    fun endTurn(out: Writer) {\n        out.close()\n    }\n}\n";
-const L3_TARGET = "gateway/core/src/main/kotlin/splice/core/Probe.kt"; // in scope, NOT the emitter
+const L3_TARGET = "core/src/main/kotlin/splice/core/Probe.kt"; // in scope, NOT the emitter
 const L3_EXEMPT = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt"; // the sole emitter
 const L3_RULE = "kt-l3-sole-wire-terminals";
 

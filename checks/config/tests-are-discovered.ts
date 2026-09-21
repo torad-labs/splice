@@ -71,8 +71,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // LIST of module homes. A test root this wall stops globbing has its classes leave the DENOMINATOR
 // entirely — the wall then proves that every test it can still see ran, which is the exact shape
 // of the failure it was written against.
-const TEST_SOURCES = ["gateway/*/src/test/kotlin/**/*.kt", "client/src/test/kotlin/**/*.kt"];
-const TEST_RESULTS = ["gateway/*/build/test-results/test/*.xml", "client/build/test-results/test/*.xml"];
+// Every §2.2 module home, the ones that exist and the ones the next module commits create (a glob
+// over an absent directory matches nothing, so the denominator can only grow as modules land).
+const MODULE_HOMES = [
+  "gateway/*", "client", "core", "upstream", "dialects/*", "providers/*", "daemon/*", "app", "quality/*",
+];
+const TEST_SOURCES = MODULE_HOMES.map((home) => `${home}/src/test/kotlin/**/*.kt`);
+const TEST_RESULTS = MODULE_HOMES.map((home) => `${home}/build/test-results/test/*.xml`);
 
 // Classes whose XML count is legitimately HIGHER than the source denominator. Every entry
 // needs a written reason — the reason is the disposition, and an empty one fails the wall.
@@ -322,13 +327,13 @@ function classesIn(path: string, module: string): TestClass[] {
   return found;
 }
 
-/** The module segment of a path: `gateway/<module>/...`, or the top directory for a module that
- *  lives at the root (restructure PR 3: client/). Stated rather than left to indexOf returning -1. */
+/** The module DIRECTORY of a path — everything before its `/src/` or `/build/` segment (`gateway/app`,
+ *  `client`, `daemon/head`), so two modules under one parent never share a key. A path with neither
+ *  segment is outside every module home and fails by name rather than defaulting. */
 function moduleOf(path: string): string {
-  const parts = path.split("/");
-  const at = parts.indexOf("gateway");
-  if (at < 0) return parts[0];
-  return parts[at + 1];
+  const cuts = ["/src/", "/build/"].map((segment) => path.indexOf(segment)).filter((at) => at >= 0);
+  if (cuts.length === 0) throw new Error(`${path} has no /src/ or /build/ segment — it is under no module home`);
+  return path.slice(0, Math.min(...cuts));
 }
 
 function scanSources(root: string): TestClass[] {
@@ -609,12 +614,12 @@ function selftest(): number {
     if (!problems.some((p) => p.includes("silentmodule") && p.includes("NO XML at all"))) {
       failures.push(`a module with no XML must be RED by module name, got: ${pyReprList(problems)}`);
     }
-    MODULE_DISPOSITIONS = { silentmodule: "" };
+    MODULE_DISPOSITIONS = { "gateway/silentmodule": "" };
     problems = audit(root);
     if (!problems.some((p) => p.includes("NO reason"))) {
       failures.push(`a blank module reason must be RED, got: ${pyReprList(problems)}`);
     }
-    MODULE_DISPOSITIONS = { silentmodule: "test task disabled by configuration unless -PrunX" };
+    MODULE_DISPOSITIONS = { "gateway/silentmodule": "test task disabled by configuration unless -PrunX" };
     problems = audit(root);
     if (problems.length > 0) {
       failures.push(`a reasoned module disposition must be GREEN, got: ${pyReprList(problems)}`);

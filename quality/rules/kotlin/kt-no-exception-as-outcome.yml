@@ -38,7 +38,7 @@
 #   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
 #   gateway/provider-spi/src/main/kotlin/splice/spi/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
 #   gateway/provider-spi/src/main/kotlin/splice/spi/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
-# gateway/core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
+# core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
 # matcher over the same glob reports the nine above, so :core's emptiness is measured against a
 # denominator that demonstrably produces findings ("empty" and "empty in X" are different
 # sentences, §24).
@@ -130,7 +130,7 @@ note: >
   `// ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>`.
 files:
   - gateway/provider-spi/src/main/**/*.kt
-  - gateway/core/src/main/**/*.kt
+  - core/src/main/**/*.kt
   # restructure PR 3: 32 of :core's main sources became the :client module. The wall is pinned
   # where refusal types are DECLARED, and moving the declarations must not move them out of it.
   - client/src/main/**/*.kt

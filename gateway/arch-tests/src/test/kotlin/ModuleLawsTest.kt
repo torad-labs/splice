@@ -66,6 +66,14 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
  *  harnesses rather than product layers — the same set splice.module-law.gradle.kts calls `nonLibrary`. */
 private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 
+/** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
+ *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
+private val ID_DERIVATION_PENDING = setOf(
+    ":provider-spi", ":dialect-anthropic-passthrough", ":dialect-openai-responses", ":dialect-openai-chat",
+    ":provider-codex", ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai",
+    ":gateway", ":control", ":app", ":arch-tests", ":fir-checks",
+)
+
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
  *  PROCESS and OPENING A NETWORK CONNECTION.
  *
@@ -312,6 +320,35 @@ private class ModuleLawFile(text: String) {
             return text.substring(open + 1, close)
         }
     }
+}
+
+/** P3 (restructure plan §1.3): a module's Gradle id is DERIVED from its directory — `/` → `-` — so
+ *  `daemon/head` is `:daemon-head` and nothing else, stated once in settings.gradle.kts (include +
+ *  explicit projectDir) and asserted here. PURE over the map the build supplies.
+ *
+ *  [pending] is the ratchet of modules that have not yet moved to their §2.2 directory: PR 3 moves
+ *  one module per commit, and this set loses that module in the same commit. It fails in BOTH
+ *  directions — a pending module that already derives is a stale row, and a non-pending module
+ *  that does not derive is a moved module whose id was left behind — so the set can only shrink,
+ *  and its last member leaves with the last move. */
+private fun idDerivationViolations(map: ProjectMap, pending: Set<String>): List<String> {
+    val violations = mutableListOf<String>()
+    map.modules.sorted().forEach { module ->
+        val directory = map.relativeDir(module)
+        val derived = ":" + directory.replace('/', '-')
+        when {
+            module in pending && derived == module ->
+                violations += "$module already derives from its directory ($directory) — drop it from " +
+                    "ID_DERIVATION_PENDING; a stale row is how a ratchet stops ratcheting."
+            module !in pending && derived != module ->
+                violations += "$module lives at $directory but its id is not $derived — the id is derived " +
+                    "from the directory (`/` → `-`), stated once in settings.gradle.kts."
+        }
+    }
+    (pending - map.modules).sorted().forEach { module ->
+        violations += "$module is in ID_DERIVATION_PENDING but the build declares no such module."
+    }
+    return violations
 }
 
 /** V4-91: drift between the Gradle main law and the Konsist test plane, as violation lines. PURE.
@@ -658,6 +695,44 @@ class ModuleLawsTest {
     // V4-91 (audit C row 4): a main-plane allowance no build file declares. RED on this tree today
     // by design — `:provider-muse -> :dialect-anthropic-passthrough` is the row's own example, and
     // the fix row either drops the allowance or makes the edge real. The wall's job is to name it.
+    // P3 (restructure §1.3): id ↔ directory, from the build's map. See idDerivationViolations for
+    // the two-way ratchet; ID_DERIVATION_PENDING shrinks by one module per PR 3 commit.
+    @Test
+    fun `every module id derives from its directory - P3`() {
+        assertEquals(
+            emptyList<String>(),
+            idDerivationViolations(map, ID_DERIVATION_PENDING),
+            "a module's id is its directory with `/` → `-`; a module that moved keeps no old id, and a " +
+                "module that has not moved yet is named in ID_DERIVATION_PENDING",
+        )
+    }
+
+    @Test
+    fun `the id-derivation law can actually fail - P3`() {
+        assertEquals(
+            listOf(
+                ":gateway lives at daemon/head but its id is not :daemon-head — the id is derived from " +
+                    "the directory (`/` → `-`), stated once in settings.gradle.kts.",
+            ),
+            idDerivationViolations(
+                ProjectMap.parse(File("."), ":gateway=daemon/head", fixtureNotSwept),
+                emptySet(),
+            ),
+            "a moved module whose id was left behind must fail BY NAME",
+        )
+        assertEquals(
+            listOf(
+                ":daemon-head already derives from its directory (daemon/head) — drop it from " +
+                    "ID_DERIVATION_PENDING; a stale row is how a ratchet stops ratcheting.",
+            ),
+            idDerivationViolations(
+                ProjectMap.parse(File("."), ":daemon-head=daemon/head", fixtureNotSwept),
+                setOf(":daemon-head"),
+            ),
+            "a pending row for a module that already derives must fail BY NAME — the set can only shrink",
+        )
+    }
+
     @Test
     fun `no main-plane allowance is stale - V4-91`() {
         val law = moduleLaw()

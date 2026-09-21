@@ -16,7 +16,7 @@ note: "PerfStats/CompactStats append one JSON line per record and tail-read a bo
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt
+  - core/src/main/kotlin/splice/core/util/JsonlSink.kt
 rule:
   any:
     - pattern: Files.writeString($$$)

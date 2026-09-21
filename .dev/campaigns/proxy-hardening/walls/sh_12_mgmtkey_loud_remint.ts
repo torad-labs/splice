@@ -56,7 +56,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const KEY = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt");
+const KEY = resolve(ROOT, "core/src/main/kotlin/splice/core/config/MgmtKey.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly.
  *

@@ -36,17 +36,18 @@ BASELINE="$tmp/checks/config/constructor-width-baseline.json"
 SYNTH="$tmp/gateway/zz-selftest-width/src/main/kotlin/splice/selftest"
 
 mkdir -p "$tmp/checks/config" "$tmp/gateway"
-for main in "$ROOT"/gateway/*/src/main; do
-  [ -d "$main" ] || continue
-  mod="${main#"$ROOT"/gateway/}"
-  mod="${mod%%/*}"
-  ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+# THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
+# modules out of gateway/ one commit at a time): a harness that measures a tree with a module
+# missing hands its control a red that reads exactly like a real regression — or, worse, a green
+# over a smaller tree. Every module home the build declares is linked; none is spelled here.
+module_dirs="$(grep -oE 'projectDir = file\("[^"]+"\)' "$ROOT/settings.gradle.kts" | sed -E 's/.*file\("([^"]+)"\)/\1/' | sort -u)"
+[ -n "$module_dirs" ] || { echo "  x constructor-width-selftest: settings.gradle.kts states no projectDir — nothing to link"; exit 1; }
+for dir in $module_dirs; do
+  [ -d "$ROOT/$dir/src/main" ] || continue
+  mkdir -p "$tmp/$(dirname "$dir")"
+  [ -e "$tmp/$dir" ] || ln -s "$ROOT/$dir" "$tmp/$dir"
 done
-# restructure PR 3: :client is the first module to live outside gateway/, so the loop above
-# cannot reach it. A harness that measures a tree with one module missing hands its control a
-# red that reads exactly like a real regression (or, worse, a green over a smaller tree).
-[ -e "$tmp/client" ] || ln -s "$ROOT/client" "$tmp/client"
-[ -e "$tmp/gateway/core" ] || { echo "  x constructor-width-selftest: no gateway modules found under $ROOT"; exit 1; }
+[ -e "$tmp/core/src/main" ] || { echo "  x constructor-width-selftest: :core is not linked — the harness lost the first module that moved out of gateway/"; exit 1; }
 [ -e "$tmp/client/src/main" ] || { echo "  x constructor-width-selftest: :client is not linked — the harness lost a module home"; exit 1; }
 
 reset_all() {
@@ -167,7 +168,7 @@ bun -e '
 const fs = require("fs");
 const path = process.argv[1];
 const data = JSON.parse(fs.readFileSync(path, "utf8"));
-data.offenders["gateway/core/src/main/kotlin/splice/core/Nope.kt WasWideOnce"] = { params: 30, subsystems: 0 };
+data.offenders["core/src/main/kotlin/splice/core/Nope.kt WasWideOnce"] = { params: 30, subsystems: 0 };
 fs.writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
 ' "$BASELINE"
 check --ratchet

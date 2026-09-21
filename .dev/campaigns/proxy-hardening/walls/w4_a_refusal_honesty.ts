@@ -68,7 +68,7 @@ const PATHS: Record<string, string | string[]> = { passthrough: PASS, chat: CHAT
 
 /** The far end of the chain. A SECOND, INDEPENDENT pair from the arm tokens in REQUIRED — the pair is
  *  what makes this a chain check rather than two greps. */
-const WIRE = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/turn/WireType.kt");
+const WIRE = resolve(ROOT, "core/src/main/kotlin/splice/core/turn/WireType.kt");
 const WIRE_REQUIRED = [
   "FailureCause.MODEL_REFUSED to ErrorType.API_ERROR",
   "FailureCause.UPSTREAM_STATUS_5XX to ErrorType.OVERLOADED",

@@ -30,7 +30,7 @@ import { resolve } from "node:path";
 import * as kimi from "./sh_10_kimi_merge_never_rewrite.ts";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const CORE = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/auth/CredentialJson.kt");
+const CORE = resolve(ROOT, "core/src/main/kotlin/splice/core/auth/CredentialJson.kt");
 const MUSE = resolve(ROOT, "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt");
 const ALLOWED_WRITER = "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseMintPersistence.kt";
 const ATOMIC_WRITE = "SecureFile.writeAtomic0600(";
@@ -39,17 +39,17 @@ const ATOMIC_WRITE = "SecureFile.writeAtomic0600(";
 export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
   "gateway/gateway/src/main/kotlin/splice/gateway/usage/EconomicsStore.kt":
     "2026-09-17 V4-75 hourly token-economics rollup persist; never a credential",
-  "gateway/core/src/main/kotlin/splice/core/teams/TeamStore.kt":
+  "core/src/main/kotlin/splice/core/teams/TeamStore.kt":
     "2026-09-18 V4-131 teams.json persist and its .bak sibling; team rows and slot text, never a credential",
   "gateway/app/src/main/kotlin/splice/app/LoginIo.kt":
     "2026-09-15 shared login credential write used by every vendor flow",
   "gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountWrites.kt":
     "2026-09-15 labeled OAuth pool writes for every kind",
-  "gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt":
+  "core/src/main/kotlin/splice/core/config/ConfigService.kt":
     "2026-09-15 daemon config.json persist",
-  "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt":
+  "core/src/main/kotlin/splice/core/config/KeyStore.kt":
     "2026-09-15 api-key store persist",
-  "gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt":
+  "core/src/main/kotlin/splice/core/config/MgmtKey.kt":
     "2026-09-15 management key persist",
   "client/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt":
     "2026-09-15 Claude Code config and state materializer",
@@ -64,10 +64,10 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
   "client/src/main/kotlin/splice/client/wrap/WrappedHead.kt":
     "2026-09-20 V4-129 wrap-state persist (real binary path, shadowed symlink target, shim path, " +
       "backup paths, wrapped-at millis); never a credential",
-  "gateway/core/src/main/kotlin/splice/core/alert/AlertStore.kt":
+  "core/src/main/kotlin/splice/core/alert/AlertStore.kt":
     "2026-09-20 V4-133 alert settings persist and its .bak sibling; thresholds and a webhook URL, " +
       "never a credential",
-  "gateway/core/src/main/kotlin/splice/core/budget/BudgetStore.kt":
+  "core/src/main/kotlin/splice/core/budget/BudgetStore.kt":
     "2026-09-20 V4-133 budgets.json persist and its .bak sibling; spend ceilings and actions, " +
       "never a credential",
   "client/src/main/kotlin/splice/client/wrap/HeadCommandsDir.kt":
@@ -121,10 +121,10 @@ export const LOGIN_MUSE_DELEGATED = `
     `;
 
 export const LOGIN_MUSE_PATH = "gateway/app/src/main/kotlin/splice/app/cli/LoginMuse.kt";
-export const CORE_FAKE_MUSE = "gateway/core/src/main/kotlin/splice/core/MuseMintPersistence.kt";
+export const CORE_FAKE_MUSE = "core/src/main/kotlin/splice/core/MuseMintPersistence.kt";
 export const LOGIN_CODEX_PATH = "gateway/app/src/main/kotlin/splice/app/cli/LoginCodex.kt";
 export const TEST_MUSE_WRITER = "gateway/provider-muse/src/test/kotlin/muse/MuseWriterFixture.kt";
-export const TEST_CORE_WRITER = "gateway/core/src/test/kotlin/NewWriterTest.kt";
+export const TEST_CORE_WRITER = "core/src/test/kotlin/NewWriterTest.kt";
 
 /** Run the same dataflow check on Muse; comments are not credential writes or merges. */
 export function detect(core: string | null, muse: string | null): string[] {
@@ -201,21 +201,25 @@ export function staleDispositions(files: Record<string, string>): string[] {
   return hits;
 }
 
-/** Every module's src/main directory: one level below gateway/, plus each module home that sits at
- *  the repository root. Restructure PR 3 moved :client to client/, and a denominator that only
- *  walks gateway/ reads five of this wall's own dispositioned atomic writers as MISSING — which
- *  reds the wall for a staleness that is really the scan having stopped looking. */
+/** Every §2.2 module home's src/main directory — the homes that exist and the ones the next
+ *  restructure PR 3 module commits create (a parent that is absent contributes nothing). A
+ *  denominator that only walked gateway/ read this wall's own dispositioned atomic writers as
+ *  MISSING once :client, then :core, moved out — which reds the wall for a staleness that is really
+ *  the scan having stopped looking. So the list is every home, never one directory. */
+const MODULE_PARENTS = ["gateway", "dialects", "providers", "daemon", "quality"];
+const MODULE_HOMES = ["client", "core", "upstream", "app"];
 function mainRoots(root: string): string[] {
   const roots: string[] = [];
-  const gateway = resolve(root, "gateway");
-  if (existsSync(gateway)) {
-    for (const mod of readdirSync(gateway, { withFileTypes: true })) {
+  for (const parent of MODULE_PARENTS) {
+    const dir = resolve(root, parent);
+    if (!existsSync(dir)) continue;
+    for (const mod of readdirSync(dir, { withFileTypes: true })) {
       if (!mod.isDirectory()) continue;
-      const main = resolve(gateway, mod.name, "src/main");
+      const main = resolve(dir, mod.name, "src/main");
       if (existsSync(main)) roots.push(main);
     }
   }
-  for (const home of ["client"]) {
+  for (const home of MODULE_HOMES) {
     const main = resolve(root, home, "src/main");
     if (existsSync(main)) roots.push(main);
   }
@@ -319,7 +323,7 @@ export function selftest(): number {
   }
   if (
     undisposedWriters({
-      "gateway/core/src/main/kotlin/splice/core/NewWriter.kt": PRE_V4_23_LOGIN_MUSE,
+      "core/src/main/kotlin/splice/core/NewWriter.kt": PRE_V4_23_LOGIN_MUSE,
     }).length === 0
   ) {
     failures.push("W2 widen roots: undisposed atomic writer outside provider-muse and app/cli must be RED");

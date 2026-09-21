@@ -83,7 +83,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // The denominator. Fixed path on purpose: a checker that silently loses its source is a
 // checker that passes.
-const SOURCE_REL = "gateway/core/src/main/kotlin/splice/core/topology/QuirksConfig.kt";
+const SOURCE_REL = "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt";
 
 // The two files an operator reads to write a quirk: the copyable example config and the
 // `splice add PROFILE` emitter. See NOT CAUGHT for what a third surface would mean.

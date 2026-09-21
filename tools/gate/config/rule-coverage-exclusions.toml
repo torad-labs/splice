@@ -278,25 +278,25 @@ boundary moved, the wall's declared scope did not. Measured in :client: 0, 0, an
 
 [[exclusion]]
 rule = "kt-error-envelope-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
+files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
 date = "2026-09-20"
 reason = "The sole builder of the Anthropic error envelope — exempt BY PATH so no other file can claim it."
 
 [[exclusion]]
 rule = "kt-form-encoding-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt"]
+files = ["core/src/main/kotlin/splice/core/util/FormEncoding.kt"]
 date = "2026-09-20"
 reason = "The sole percent-encoder; every other file calls it."
 
 [[exclusion]]
 rule = "kt-http-status-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]
+files = ["core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]
 date = "2026-09-20"
 reason = "The sole declaration site of HTTP status numbers — exempt BY PATH, per the rule's own comment."
 
 [[exclusion]]
 rule = "kt-jsonl-sink-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt"]
+files = ["core/src/main/kotlin/splice/core/util/JsonlSink.kt"]
 date = "2026-09-20"
 reason = "The sole append-only JSONL sink; re-deriving writeString(CREATE, APPEND) elsewhere is what the rule bans."
 
@@ -320,20 +320,20 @@ reason = "The process runtime edge — the single main-source file allowed to na
 
 [[exclusion]]
 rule = "kt-secure-file-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/util/SecureFile.kt"]
+files = ["core/src/main/kotlin/splice/core/util/SecureFile.kt"]
 date = "2026-09-20"
 reason = "The sole 0600 atomic-write primitive; re-deriving it is exactly what the wall bans."
 
 [[exclusion]]
 rule = "kt-shared-summary-parts-single-source"
-files = ["gateway/core/src/main/kotlin/**/turn/Turn.kt"]
+files = ["core/src/main/kotlin/**/turn/Turn.kt"]
 date = "2026-09-20"
 reason = "TurnMeta's default constructs SharedSummaryParts once per turn; this is that declaration."
 
 [[exclusion]]
 rule = "kt-state-paths-single-source"
 files = [
-  "gateway/core/src/main/kotlin/**/config/StatePaths.kt",
+  "core/src/main/kotlin/**/config/StatePaths.kt",
   "gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
   "client/src/main/kotlin/splice/client/mcp/McpSources.kt",
 ]
@@ -352,7 +352,7 @@ reason = "The sole resolver, created by fix row V4-104."
 
 [[exclusion]]
 rule = "kt-no-system-getenv"
-files = ["gateway/core/src/main/kotlin/**/config/**"]
+files = ["core/src/main/kotlin/**/config/**"]
 date = "2026-09-20"
 reason = "System.getenv is allowed only inside core/config, which is the layered ConfigService everything else reads."
 
@@ -378,7 +378,7 @@ date = "2026-09-20"
 reason = """
 The rule's own single dated ignore, re-keyed by restructure PR 3: Keys.CLAUDE / Keys.CLAUDE_DIR is
 the ONE declaration of the vanilla dir's name, and every legitimate reader reaches it through that
-constant. It used to be excused by the `gateway/core/src/main/kotlin/**/*.kt` row above, which
+constant. It used to be excused by the `core/src/main/kotlin/**/*.kt` row above, which
 covered :core wholesale; now that the wall binds :client's whole main source set, the one exempt
 file needs its own row — which is the stricter statement, since nothing else in :client can hide
 behind it.

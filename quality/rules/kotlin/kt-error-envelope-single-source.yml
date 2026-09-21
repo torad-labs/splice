@@ -90,7 +90,7 @@ files:
   - "**/src/main/**/*.kt"
 ignores:
   # The sole builder, created by fix row V4-103. Inert until the file exists; live with no edit here.
-  - gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt
+  - core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt
 rule:
   kind: call_expression
   all:

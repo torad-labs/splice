@@ -109,7 +109,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // The denominator. Fixed path on purpose: a checker that silently loses its source is a
 // checker that passes.
-const SOURCE_REL = "gateway/core/src/main/kotlin/splice/core/config/Knob.kt";
+const SOURCE_REL = "core/src/main/kotlin/splice/core/config/Knob.kt";
 
 // The one file an operator copies to write a config. See NOT CAUGHT for what a second
 // surface would mean.

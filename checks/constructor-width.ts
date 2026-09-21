@@ -121,7 +121,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is a LIST of module homes. A source root this scan stops walking takes its offenders
 // out of the baseline as STALE, which reads exactly like debt that was paid.
-const SRC_GLOBS = ["gateway/*/src/main", "client/src/main"];
+// ONE line on purpose: the selftest proves the vacuity guard by patching this exact line.
+const SRC_GLOBS = ["gateway/*/src/main", "client/src/main", "core/src/main", "upstream/src/main", "dialects/*/src/main", "providers/*/src/main", "daemon/*/src/main", "app/src/main", "quality/*/src/main"];
 const BASELINE_REL = "checks/config/constructor-width-baseline.json";
 
 // The two widths. Deliberately visible constants: a threshold nobody can read is the same

@@ -53,7 +53,7 @@ done
 # an earlier revision of this harness created gateway/build-logic/build-logic in the working tree,
 # the exact mktemp-hygiene failure CLAUDE.md s19 records. Guarded, and the guard is the point.
 [ -e "$tmp/build-logic" ] || ln -s "$ROOT/build-logic" "$tmp/build-logic"
-[ -e "$tmp/gateway/core" ] || { echo "  x public-surface-selftest: no gateway modules found under $ROOT"; exit 1; }
+[ -e "$tmp/core" ] || { echo "  x public-surface-selftest: :core is not linked — the link set lost the first module that moved out of gateway/"; exit 1; }
 [ -e "$tmp/client" ] || { echo "  x public-surface-selftest: :client is not linked — the link set lost a module that lives outside gateway/"; exit 1; }
 [ -e "$tmp/build-logic/src/main/kotlin" ] || { echo "  x public-surface-selftest: the module law is unreachable from the harness"; exit 1; }
 # NOTHING MAY LAND IN THE TREE. Recorded before the arms run and re-checked at exit: a harness that

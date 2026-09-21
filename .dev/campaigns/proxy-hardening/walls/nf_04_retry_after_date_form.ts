@@ -146,7 +146,10 @@ export function detect(clientText: string | null): string[] {
 // --- the WIDENED leg (V4-100) ------------------------------------------------------------------
 // Detection stays pure (path -> code text) so the selftest can feed a second parser synthetically
 // instead of having to write one to disk.
-const MAIN_SOURCE = "gateway";
+// Every §2.2 module home, walked whole exactly as gateway/ was (restructure PR 3 moves the modules
+// out of gateway/ one commit at a time; an absent home contributes nothing, so the second-parser
+// prohibition can only widen as modules land, never shrink).
+const MAIN_SOURCES = ["gateway", "client", "core", "upstream", "dialects", "providers", "daemon", "app", "quality"];
 const HEADER_MENTION_RE = /Retry-After|retry_after|retryAfter/i;
 // Tokens ONLY a parser carries: the RFC 7231 date format, the digit-only seconds guard (either
 // polarity — `all { it in '0'..'9' }` accepts it, `any { it !in '0'..'9' }` rejects non-digits), and
@@ -180,15 +183,14 @@ export function detectSecondParser(sources: Record<string, string>): string[] {
   return problems;
 }
 
-/** Every main-source Kotlin file under gateway/ that is not the one allowed parser, code-only and
+/** Every main-source Kotlin file under every module home that is not the one allowed parser, code-only and
  *  keyed by repo-relative path. The allowed file is excluded because its markers are the POINT —
  *  detect() is what judges it. */
 export function mainSourceFiles(): Record<string, string> {
   const allowed = CLIENT;
   const out: Record<string, string> = {};
-  const base = resolve(ROOT, MAIN_SOURCE);
   const found: string[] = [];
-  const stack = [base];
+  const stack = MAIN_SOURCES.map((home) => resolve(ROOT, home)).filter((dir) => existsSync(dir));
   while (stack.length > 0) {
     const cur = stack.pop() as string;
     for (const e of readdirSync(cur, { withFileTypes: true })) {

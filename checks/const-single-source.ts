@@ -128,9 +128,15 @@ const THIS_FILE = "const-single-source.ts";
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
 // denominator that shrinks in silence, which is the one failure every ratchet here exists to
-// prevent — so the list names every module home and is extended by each module move.
-const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
-const KNOB_REL = "gateway/core/src/main/kotlin/splice/core/config/Knob.kt";
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const MAIN_GLOBS = [
+  "gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt", "core/src/main/**/*.kt", "upstream/src/main/**/*.kt",
+  "dialects/*/src/main/**/*.kt", "providers/*/src/main/**/*.kt", "daemon/*/src/main/**/*.kt", "app/src/main/**/*.kt",
+  "quality/*/src/main/**/*.kt",
+];
+const KNOB_REL = "core/src/main/kotlin/splice/core/config/Knob.kt";
 const BASELINE_REL = "checks/config/const-single-source-baseline.json";
 
 // THE NAMED SCARS — the duplicated names the 2026-09-17 audit identified as ONE meaning, each with
@@ -1002,8 +1008,12 @@ private const val RETRY_SLOTS = 80
 `;
 
 const A_KT = "gateway/app/src/main/kotlin/splice/A.kt";
-const B_KT = "gateway/core/src/main/kotlin/splice/B.kt";
+const B_KT = "core/src/main/kotlin/splice/B.kt";
 const C_KT = "gateway/control/src/main/kotlin/splice/C.kt";
+/** A fixture file's spelling in the arms -> the tree path it lands at. The paths carry the module
+ *  homes (restructure PR 3 moves the modules out of gateway/ one by one, and the re-key that follows
+ *  each move keeps A_KT/B_KT/C_KT true), so the writer never composes `gateway/<module>` itself. */
+const FIXTURE_PATHS: Record<string, string> = { "app/A.kt": A_KT, "core/B.kt": B_KT, "control/C.kt": C_KT };
 
 function mkdtempSync(): string {
   const dir = join(
@@ -1020,18 +1030,16 @@ function writeTree(
   baseline: Record<string, unknown> | null,
   knob = true,
 ): void {
-  const gateway = join(root, "gateway");
-  if (existsSync(gateway)) {
-    for (const rel of [...new Bun.Glob("**/*.kt").scanSync({ cwd: gateway, followSymlinks: true })]) {
-      rmSync(join(gateway, rel));
-    }
+  // every file an earlier arm may have written is removed first, wherever its module lives
+  for (const rel of [...Object.values(FIXTURE_PATHS), KNOB_REL]) {
+    const stale = join(root, rel);
+    if (existsSync(stale)) rmSync(stale);
   }
   for (const rel of Object.keys(files).sort()) {
     const body = files[rel];
-    const cut = rel.indexOf("/");
-    const module = rel.slice(0, cut);
-    const name = rel.slice(cut + 1);
-    const target = join(root, "gateway", module, "src/main/kotlin/splice", name);
+    const known = FIXTURE_PATHS[rel];
+    if (known === undefined) throw new Error(`selftest fixture ${rel} has no tree path in FIXTURE_PATHS`);
+    const target = join(root, known);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, body, "utf8");
   }

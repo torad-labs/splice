@@ -33,7 +33,7 @@
 # 112 `synchronized(` blocks in scope; of those, 3 lexical blocking-IO hits, all in one function,
 # ALL EXEMPT by the dated entry below, 0 RED. Measured with the exemption arm removed, to prove the
 # 3 are exempted and not merely unmatched:
-#   gateway/core/src/main/kotlin/splice/core/model/ClientWindows.kt:91,:93,:94 — inside
+#   core/src/main/kotlin/splice/core/model/ClientWindows.kt:91,:93,:94 — inside
 #   `persist(path) = synchronized(ioLock) { … }`.
 # A wall landing at 0 red is the intended state for this one: the instance it was written for is
 # transitive and invisible here, so its whole job is to stop the next DIRECT one. It is red-proven

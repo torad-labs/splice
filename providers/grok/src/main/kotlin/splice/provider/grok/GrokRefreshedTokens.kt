@@ -8,4 +8,12 @@ public data class GrokRefreshedTokens(
     val refreshToken: String?,
     /** Seconds until the new access token expires; null when the endpoint omits it. */
     val expiresIn: Long? = null,
-)
+) {
+    /** Both tokens are secrets; the expiry is not, and neither is whether a token came back at all. */
+    override fun toString(): String =
+        "GrokRefreshedTokens(accessToken=${held(accessToken)}, refreshToken=${held(refreshToken)}, " +
+            "expiresIn=$expiresIn)"
+
+    /** `null` or `<redacted>` — never the value. */
+    private fun held(value: String?): String = if (value == null) "null" else "<redacted>"
+}

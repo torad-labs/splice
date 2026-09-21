@@ -48,7 +48,10 @@ internal class GrokAuthJson(
     // in this tree already carried the defence and nothing explained why these two did not.
     internal data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
 
-    internal data class Snapshot(val access: String, val expiresAtMs: Long?)
+    internal data class Snapshot(val access: String, val expiresAtMs: Long?) {
+        /** `access` is a live token; the expiry is not a secret and stays readable. */
+        override fun toString(): String = "Snapshot(access=<redacted>, expiresAtMs=$expiresAtMs)"
+    }
 
     internal fun cachedAccess(): String? = cache?.snapshot?.access
 

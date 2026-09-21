@@ -28,7 +28,13 @@ public data class KimiRefreshedTokens(
     val expiresIn: Long,
     val scope: String = "",
     val tokenType: String = "Bearer",
-)
+) {
+    /** Both tokens are secrets. The expiry, the granted scope and the token TYPE are wire shape, not
+     *  credential material, and they are what makes a refusal readable in a log. */
+    override fun toString(): String =
+        "KimiRefreshedTokens(accessToken=<redacted>, refreshToken=<redacted>, " +
+            "expiresIn=$expiresIn, scope=$scope, tokenType=$tokenType)"
+}
 
 internal class KimiAuthStore(
     private val authPath: Path,
@@ -62,7 +68,13 @@ internal class KimiAuthStore(
         val sizeBytes: Long,
     )
 
-    internal data class Snapshot(val access: String, val refresh: String?, val expiresAtS: Long, val expiresInS: Long)
+    internal data class Snapshot(val access: String, val refresh: String?, val expiresAtS: Long, val expiresInS: Long) {
+        /** Both tokens are secrets; the expiries are not. Whether a refresh token is held at all is
+         *  diagnostic rather than secret, so absence survives the redaction. */
+        override fun toString(): String =
+            "Snapshot(access=<redacted>, refresh=${if (refresh == null) "null" else "<redacted>"}, " +
+                "expiresAtS=$expiresAtS, expiresInS=$expiresInS)"
+    }
 
     internal fun cachedAccess(): String? = cache?.snapshot?.access
 

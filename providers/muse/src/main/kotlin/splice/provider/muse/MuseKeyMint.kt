@@ -42,4 +42,8 @@ public sealed class MuseMintAttempt {
 public data class MuseSubscriptionKey(
     public val apiKey: String,
     public val fields: JsonObject,
-)
+) {
+    /** Public, and both properties are credential material: the minted inference key, and the
+     *  response body retained to persist it. Only the field COUNT survives. */
+    override fun toString(): String = "MuseSubscriptionKey(apiKey=<redacted>, fields=<redacted:${fields.size} key(s)>)"
+}

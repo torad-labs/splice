@@ -17,7 +17,16 @@ internal data class MuseCredentialSnapshot(
     val apiKey: String?,
     val fields: JsonObject,
     val identity: CredentialFileIdentity?,
-)
+) {
+    /** [fields] is the retained credential-file body, so it is secret WHOLE rather than field by
+     *  field — its size is the only part kept, because "how much was parsed" is the diagnostic. */
+    override fun toString(): String =
+        "MuseCredentialSnapshot(accessToken=${held(accessToken)}, apiKey=${held(apiKey)}, " +
+            "fields=<redacted:${fields.size} key(s)>, identity=$identity)"
+
+    /** `null` or `<redacted>` — never the value. */
+    private fun held(value: String?): String = if (value == null) "null" else "<redacted>"
+}
 
 internal class MuseCredentialStore(
     private val authPath: Path,

@@ -266,6 +266,10 @@ private data class MintFlightResult(
     val identity: CredentialFileIdentity?,
     val attempt: MuseMintAttempt?,
 ) {
+    /** The token is the single-flight KEY, so this type holds one by construction. */
+    override fun toString(): String =
+        "MintFlightResult(accessToken=<redacted>, identity=$identity, attempt=$attempt)"
+
     fun forToken(token: String, snapshot: MuseCredentialSnapshot): Boolean =
         accessToken == token && identity == snapshot.identity
 }

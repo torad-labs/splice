@@ -46,7 +46,11 @@ internal class CodexAuthJson(
 
     internal data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
 
-    internal data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?)
+    internal data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?) {
+        /** `access` is a live token; the account and the expiry are not secrets and stay readable. */
+        override fun toString(): String =
+            "Snapshot(access=<redacted>, accountId=$accountId, expiresAtMs=$expiresAtMs)"
+    }
 
     /** Merge the freshly refreshed tokens onto the existing auth.json, preserving every field the
      *  refresh response didn't replace (id_token/refresh_token only overwritten when present). */

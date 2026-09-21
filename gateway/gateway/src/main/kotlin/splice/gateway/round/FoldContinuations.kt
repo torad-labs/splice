@@ -5,10 +5,10 @@ package splice.gateway.round
 
 import splice.core.turn.TurnOutcome
 import splice.gateway.wire.BufferingWireSink
-import splice.spi.FoldController
-import splice.spi.FoldRound
-import splice.spi.RetryNotice
-import splice.spi.ToolSearchController
+import splice.upstream.FoldController
+import splice.upstream.FoldRound
+import splice.upstream.RetryNotice
+import splice.upstream.ToolSearchController
 
 internal class FoldContinuations(
     private val key: String,

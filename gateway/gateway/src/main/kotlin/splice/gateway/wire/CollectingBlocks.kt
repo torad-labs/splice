@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.util.Cancellables
-import splice.spi.BufferCapacity
+import splice.upstream.transport.BufferCapacity
 
 private const val FIELD_TYPE = "type"
 private const val FIELD_TEXT = "text"

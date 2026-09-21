@@ -17,7 +17,7 @@ import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
     @Test

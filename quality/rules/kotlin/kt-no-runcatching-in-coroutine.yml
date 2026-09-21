@@ -37,7 +37,7 @@ note: >
   CancellationException so a cancelled coroutine actually stops. A swallowed cancellation here is how
   a cancelled turn kept spinning upstream (the 600%-CPU incident).
 files:
-  - gateway/provider-spi/src/main/**/*.kt
+  - upstream/src/main/**/*.kt
   - gateway/dialect-openai-responses/src/main/**/*.kt
   - gateway/dialect-openai-chat/src/main/**/*.kt
   - gateway/dialect-anthropic-passthrough/src/main/**/*.kt

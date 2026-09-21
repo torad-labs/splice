@@ -10,7 +10,7 @@ import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
-import splice.spi.Ticker
+import splice.upstream.Ticker
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 

@@ -8,13 +8,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.TurnOutcome
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeInfrastructureCategory
-import splice.spi.CodeModeInfrastructureClass
-import splice.spi.CodeModeInfrastructureException
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeRuntime
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeInfrastructureCategory
+import splice.upstream.failure.CodeModeInfrastructureClass
+import splice.upstream.failure.CodeModeInfrastructureException
 import java.nio.file.Files
 
 class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {

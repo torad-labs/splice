@@ -2,7 +2,7 @@
 // cannot hold a worker slot for the rest of the day.
 package splice.provider.codex
 
-import splice.spi.CodeModeCell
+import splice.upstream.codemode.CodeModeCell
 
 /** Runs under the registry's monitor; it mutates the registry's own collections in place. */
 internal class CodexCodeModeSweeper(

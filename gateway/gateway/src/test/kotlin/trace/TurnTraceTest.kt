@@ -26,7 +26,7 @@ import splice.gateway.wire.ClientAnswer
 import splice.gateway.wire.ClientInbound
 import splice.gateway.wire.TraceStore
 import splice.gateway.wire.TurnIdMint
-import splice.spi.WireAttempt
+import splice.upstream.sse.WireAttempt
 import java.nio.file.Files
 import java.nio.file.Path
 

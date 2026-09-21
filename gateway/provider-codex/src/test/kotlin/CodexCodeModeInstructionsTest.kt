@@ -22,8 +22,8 @@ import splice.dialect.responses.ResponsesCodeModeProjection
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.provider.codex.CodexCodeModeTurnBuilder
-import splice.spi.BuiltTurn
-import splice.spi.CodeModeStep
+import splice.upstream.BuiltTurn
+import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
     @Test

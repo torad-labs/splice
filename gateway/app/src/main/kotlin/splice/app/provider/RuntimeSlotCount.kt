@@ -19,10 +19,10 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import splice.dialect.chat.SlotAffinity
-import splice.spi.LocalHttp
-import splice.spi.ProcessDispatchers
-import splice.spi.local.LlamaServerSlots
-import splice.spi.local.SlotsReading
+import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.local.LlamaServerSlots
+import splice.upstream.local.SlotsReading
+import splice.upstream.transport.LocalHttp
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference

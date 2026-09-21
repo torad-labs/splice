@@ -3,10 +3,10 @@ package splice.app.codemode
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun interface ReleaseCodeModeCell {

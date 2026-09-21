@@ -1,12 +1,12 @@
-// NEW: typealias to splice.spi.RefreshedTokens plus the Codex quirk profile. The data class moved
-// to provider-spi in V4-18 so TokenUrlRefreshCall is not typed on one vendor; CodexQuirks stays
+// NEW: typealias to splice.upstream.credentials.RefreshedTokens plus the Codex quirk profile. The data class moved
+// to :upstream in V4-18 so TokenUrlRefreshCall is not typed on one vendor; CodexQuirks stays
 // here so in-module call sites do not move.
 package splice.provider.codex
 
 import splice.dialect.responses.ResponsesQuirks
 
-/** Same shape as splice.spi.RefreshedTokens; kept so in-module call sites do not move this row. */
-public typealias RefreshedTokens = splice.spi.RefreshedTokens
+/** Same shape as splice.upstream.credentials.RefreshedTokens; kept so in-module call sites do not move this row. */
+public typealias RefreshedTokens = splice.upstream.credentials.RefreshedTokens
 
 /** Holder for the codex quirk profile. Split from CodexProvider.kt (concentration, 2026-08-19)
  *  so the provider is not billed for a second column-0 type. Same-package. */

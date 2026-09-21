@@ -42,9 +42,9 @@ import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket

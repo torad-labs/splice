@@ -7,7 +7,7 @@ package splice.app.cli
 import splice.control.HeadAccountPoolView
 import splice.control.HeadAccountView
 import splice.core.util.WallClock
-import splice.spi.AccountLabelPolicy
+import splice.upstream.credentials.AccountLabelPolicy
 import java.time.Instant
 import kotlin.math.roundToInt
 

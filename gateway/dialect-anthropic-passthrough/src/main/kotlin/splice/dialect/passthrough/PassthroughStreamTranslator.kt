@@ -29,16 +29,16 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.BufferCapacity
-import splice.spi.FIRST_OUTPUT_TIER
-import splice.spi.MID_OUTPUT_TIER
-import splice.spi.MS_PER_S
-import splice.spi.SseFrameTooLargeException
-import splice.spi.StreamTornBeforeClient
-import splice.spi.StreamTranslator
-import splice.spi.TerminalStates
-import splice.spi.WatchdogFired
-import splice.spi.WireSink
+import splice.upstream.StreamTranslator
+import splice.upstream.failure.SseFrameTooLargeException
+import splice.upstream.failure.TerminalStates
+import splice.upstream.retry.FIRST_OUTPUT_TIER
+import splice.upstream.retry.MID_OUTPUT_TIER
+import splice.upstream.retry.MS_PER_S
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
+import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -141,7 +141,7 @@ public class PassthroughStreamTranslator(
     /** V4-116 (1): A STALL CARRIES THE SAME SALVAGE A TRUNCATION DOES.
      *
      *  This is the whole scar. The watchdog branch used to build a Failure with no `partial`, so
-     *  [splice.spi.ReanchorController.continuationForFailure]'s first line (`round.failure.partial
+     *  [splice.upstream.ReanchorController.continuationForFailure]'s first line (`round.failure.partial
      *  ?: return null`) answered before any eligibility rule was even read — a stalled round was
      *  unrecoverable BY CONSTRUCTION, on every head, even one measured to continue from a prefill
      *  and even mid-answer with real text already in the client's hands. Measured: claude-deepseek

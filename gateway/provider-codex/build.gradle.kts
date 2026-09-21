@@ -5,7 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":provider-spi"))
+    implementation(project(":upstream"))
     implementation(project(":dialect-openai-responses"))
     implementation(libs.ktor.client.core)
     implementation(libs.kotlinx.coroutines.core)

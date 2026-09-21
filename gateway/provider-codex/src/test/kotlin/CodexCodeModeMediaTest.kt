@@ -21,7 +21,8 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeTurnBuilder
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.transport.posted
 import java.nio.file.Files
 
 class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {

@@ -34,9 +34,9 @@ import splice.gateway.wire.FrameRecording
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.SseEmitterFactory
 import splice.gateway.wire.TurnWiring
-import splice.spi.LifecycleScope
-import splice.spi.ProcessDispatchers
-import splice.spi.Provider
+import splice.upstream.LifecycleScope
+import splice.upstream.Provider
+import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class TurnStreamer(

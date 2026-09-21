@@ -10,9 +10,9 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
-import splice.spi.InflightGate
-import splice.spi.Provider
-import splice.spi.SseSpuriousWakeupException
+import splice.upstream.Provider
+import splice.upstream.failure.SseSpuriousWakeupException
+import splice.upstream.retry.InflightGate
 
 internal class AdmissionGate(
     private val provider: Provider,

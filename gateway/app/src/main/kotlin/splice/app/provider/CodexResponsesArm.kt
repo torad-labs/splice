@@ -20,7 +20,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import java.nio.file.Paths
 

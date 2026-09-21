@@ -10,10 +10,10 @@ import kotlinx.coroutines.flow.onEach
 import splice.core.perf.PerfKeys
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
-import splice.spi.ClientFrameEmitted
-import splice.spi.Provider
-import splice.spi.SseReader
-import splice.spi.StreamTornBeforeClient
+import splice.upstream.ClientFrameEmitted
+import splice.upstream.Provider
+import splice.upstream.sse.SseReader
+import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 
 internal class TearAwareEvents(

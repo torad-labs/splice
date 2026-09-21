@@ -47,11 +47,11 @@ import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.usage.UsageStore
-import splice.spi.InflightGate
-import splice.spi.ProcessWaiter
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
-import splice.spi.Waiter
+import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path

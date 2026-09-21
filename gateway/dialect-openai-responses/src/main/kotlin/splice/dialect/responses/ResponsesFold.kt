@@ -15,8 +15,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.Knob
-import splice.spi.FoldController
-import splice.spi.FoldRound
+import splice.upstream.FoldController
+import splice.upstream.FoldRound
 
 /** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
 public data class FoldConfig(

@@ -7,14 +7,14 @@ import kotlinx.coroutines.flow.emptyFlow
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.gateway.usage.UsageStore
-import splice.spi.AuthRefreshObserver
-import splice.spi.PostContext
-import splice.spi.Provider
-import splice.spi.RetryNotice
-import splice.spi.TurnSignals
-import splice.spi.UpstreamClient
-import splice.spi.UpstreamPost
-import splice.spi.WatchdogFired
+import splice.upstream.Provider
+import splice.upstream.RetryNotice
+import splice.upstream.TurnSignals
+import splice.upstream.retry.WatchdogFired
+import splice.upstream.transport.AuthRefreshObserver
+import splice.upstream.transport.PostContext
+import splice.upstream.transport.UpstreamClient
+import splice.upstream.transport.UpstreamPost
 
 internal class SseRoundPost(
     private val provider: Provider,

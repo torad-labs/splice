@@ -80,7 +80,7 @@ kt-no-delay-in-production, which binds src/main.
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
-  "core", "client", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "core", "client", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "gateway", "app", "fir-checks",
 ]
@@ -128,7 +128,7 @@ modules = [
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-The sealed-outcome law is pinned where refusal types are DECLARED — :core and :provider-spi. Every
+The sealed-outcome law is pinned where refusal types are DECLARED — :core and :upstream. Every
 other module consumes those sealed hierarchies rather than declaring its own exception-as-outcome.
 """
 
@@ -146,7 +146,7 @@ Daemon LOGGING still flows through the injected log lambda."
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
 modules = [
-  "core", "client", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "core", "client", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "gateway", "control", "fir-checks",
 ]
@@ -168,7 +168,7 @@ modules = ["core", "client", "provider-codex", "provider-grok", "provider-kimi",
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-Declared scope is the turn/stream path: :provider-spi, the three dialects, :gateway, :control and
+Declared scope is the turn/stream path: :upstream, the three dialects, :gateway, :control and
 :app. :core is framework-free vocabulary, the five provider modules are auth/quirk adapters outside
 that path, and :fir-checks is a compiler plugin.
 2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
@@ -200,7 +200,7 @@ modules = ["provider-muse"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-:provider-muse is the ONE provider missing from this wall's files: list, which names provider-spi,
+:provider-muse is the ONE provider missing from this wall's files: list, which names :upstream,
 grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
 credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
 quality/rules/, out of this stage's fence. Close it by adding `gateway/provider-muse/src/main/**/*.kt` to
@@ -221,7 +221,7 @@ reopen the incident."
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 modules = [
-  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "core", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "gateway", "fir-checks",
 ]
@@ -240,7 +240,7 @@ wall did not narrow; its subject moved module, and :client's main is covered fil
 [[exclusion]]
 rule = "kt-outcome-tag-single-source"
 modules = [
-  "core", "client", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "core", "client", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "app", "fir-checks",
 ]
@@ -258,7 +258,7 @@ Measured: 0 in :client, which writes no perf row.
 [[exclusion]]
 rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
 modules = [
-  "core", "client", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
+  "core", "client", "upstream", "dialect-anthropic-passthrough", "dialect-openai-responses",
   "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
   "provider-openai", "control", "app", "fir-checks",
 ]
@@ -314,7 +314,7 @@ reason = "L3: SseEmitter is the only file allowed to hold the end_turn / message
 
 [[exclusion]]
 rules = ["kt-no-delay-in-production", "kt-no-hardcoded-dispatchers"]
-files = ["gateway/provider-spi/src/main/kotlin/splice/spi/ProcessRuntime.kt"]
+files = ["upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt"]
 date = "2026-09-20"
 reason = "The process runtime edge — the single main-source file allowed to name the global clock and the global dispatchers."
 

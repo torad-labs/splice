@@ -22,8 +22,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ToolSearchCall
 import splice.core.wire.ToolDefinition
-import splice.spi.ToolSearchController
-import splice.spi.ToolSearchRound
+import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchRound
 
 /** Per-TURN answering policy. Holds the turn's deferred inventory and nothing else; allocated by
  *  the request builder, garbage-collected with the turn. No cross-turn state exists anywhere. */

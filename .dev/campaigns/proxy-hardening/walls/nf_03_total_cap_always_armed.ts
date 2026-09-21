@@ -61,7 +61,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const WATCHDOG = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt");
+const WATCHDOG = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt");
 // 2026-08-23: the launchTotalCap call site lives in TurnOneDrive.kt after the
 // drive split. Watchdog.kt still owns the declaration.
 const DRIVER = resolve(ROOT, "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnOneDrive.kt");

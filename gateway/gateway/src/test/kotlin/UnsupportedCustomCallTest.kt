@@ -9,7 +9,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.round.RoundStrategy
 import splice.gateway.round.RunnerSignals
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 class UnsupportedCustomCallTest {
     @Test

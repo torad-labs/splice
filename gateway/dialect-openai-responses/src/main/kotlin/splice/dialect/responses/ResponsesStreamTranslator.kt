@@ -31,11 +31,11 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
-import splice.spi.BufferCapacity
-import splice.spi.SseFrameTooLargeException
-import splice.spi.StreamTornBeforeClient
-import splice.spi.StreamTranslator
-import splice.spi.WireSink
+import splice.upstream.StreamTranslator
+import splice.upstream.failure.SseFrameTooLargeException
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.BufferCapacity
+import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 import java.util.concurrent.CancellationException
 

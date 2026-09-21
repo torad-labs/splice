@@ -20,8 +20,8 @@ import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesReanchorController
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
-import splice.spi.ReanchorRound
-import splice.spi.WireSink
+import splice.upstream.ReanchorRound
+import splice.upstream.sse.WireSink
 
 private class CutoffSink : WireSink {
     val out = mutableListOf<String>()

@@ -20,8 +20,8 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
-import splice.spi.Provider
-import splice.spi.RetryNotice
+import splice.upstream.Provider
+import splice.upstream.RetryNotice
 
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
 internal class TurnDriver(

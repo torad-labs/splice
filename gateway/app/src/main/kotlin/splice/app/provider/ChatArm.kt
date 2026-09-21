@@ -15,8 +15,8 @@ import splice.core.util.LogSink
 import splice.dialect.chat.SlotAffinity
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
-import splice.spi.Provider
-import splice.spi.ProviderTuning
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
 internal class ChatArm(

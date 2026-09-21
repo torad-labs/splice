@@ -21,8 +21,8 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.perf.PerfSnapshot
 import splice.core.turn.TurnMeta
 import splice.core.util.WallClock
-import splice.spi.WireAttempt
-import splice.spi.WireObserver
+import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireObserver
 
 /** What a collect turn answered: the collect path registers it before driving, and the turn record
  *  reads it at the end, because the buffered JSON body exists only once the terminal has closed. */

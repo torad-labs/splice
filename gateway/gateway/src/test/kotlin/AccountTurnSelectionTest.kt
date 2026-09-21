@@ -34,16 +34,16 @@ import splice.gateway.head.HeadServer
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
-import splice.spi.AccountPool
-import splice.spi.AccountQuotaSource
-import splice.spi.AccountResetText
-import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
-import splice.spi.PoolAccount
-import splice.spi.ProcessElapsedNow
-import splice.spi.ProviderTuning
-import splice.spi.RateLimitCooldown
-import splice.spi.Selection
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.codemode.ProcessElapsedNow
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.AccountResetText
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
+import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
+import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.time.Instant
 import java.time.ZonedDateTime
@@ -529,7 +529,7 @@ private const val SESSION = "session-1"
 private const val MS_PER_SECOND = 1_000L
 
 // V4-61's ceiling on the CLIENT-FACING deadline. V4-100: READS the one declaration
-// (splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS, public as of this row) instead of restating 120 here. The
+// (splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS, public as of this row) instead of restating 120 here. The
 // point of the row is that the production ceiling and the two pins asserting against it are ONE
 // number; the comment this replaces ("both are private to their files, so the pin states the number
 // the law states") was the copy admitting it could not see its own source.

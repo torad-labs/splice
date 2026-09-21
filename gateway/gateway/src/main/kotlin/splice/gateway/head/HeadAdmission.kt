@@ -14,10 +14,10 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.TurnPerf
 import splice.core.util.WallClock
 import splice.gateway.wire.TurnTrace
-import splice.spi.AccountResetText
-import splice.spi.InflightGate
-import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
-import splice.spi.Selection
+import splice.upstream.credentials.AccountResetText
+import splice.upstream.credentials.Selection
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class HeadAdmission(

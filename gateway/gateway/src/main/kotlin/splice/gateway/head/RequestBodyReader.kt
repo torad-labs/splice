@@ -11,7 +11,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveChannel
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.withTimeout
-import splice.spi.ChannelReads
+import splice.upstream.transport.ChannelReads
 import java.io.ByteArrayOutputStream
 
 private const val READ_BUFFER_BYTES = 16 * 1024

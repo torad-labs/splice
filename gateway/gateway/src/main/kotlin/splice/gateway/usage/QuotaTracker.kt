@@ -16,7 +16,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
-import splice.spi.QuotaHeaderFamily
+import splice.upstream.retry.QuotaHeaderFamily
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference

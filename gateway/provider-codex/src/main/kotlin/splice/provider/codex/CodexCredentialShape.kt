@@ -4,8 +4,8 @@ package splice.provider.codex
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.CredentialExpiry
 import splice.core.util.JsonScalars
-import splice.spi.CredentialShape
-import splice.spi.CredentialTokens
+import splice.upstream.credentials.CredentialShape
+import splice.upstream.credentials.CredentialTokens
 
 public class CodexCredentialShape : CredentialShape {
     private val jwt = CodexOAuth()

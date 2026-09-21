@@ -5,10 +5,10 @@ package splice.dialect.responses
 
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
-import splice.spi.FoldController
-import splice.spi.ReanchorController
-import splice.spi.StreamTranslator
-import splice.spi.TurnSignals
+import splice.upstream.FoldController
+import splice.upstream.ReanchorController
+import splice.upstream.StreamTranslator
+import splice.upstream.TurnSignals
 
 internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call

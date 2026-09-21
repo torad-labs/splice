@@ -5,7 +5,7 @@
 # `.getOrDefault(...)` on a catching chain MUST either consume the failure first (`.onFailure {…}`)
 # or carry an explicit reviewed exemption (`// ast-grep-ignore: kt-no-silent-result-collapse`
 # with the reason on the same comment). Compiler half: -Xreturn-value-checker flags bare discards;
-# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + provider-spi for now —
+# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + :upstream for now —
 # widening to app/core/control tracked in .dev/research/gateway-gaps-tracker.md.
 #
 # WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :control and :app sat outside most walls'
@@ -71,7 +71,7 @@ note: >
 # return-position gap is therefore left OPEN and named here rather than closed with a rule that
 # cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
 files:
-  - gateway/provider-spi/src/main/**/*.kt
+  - upstream/src/main/**/*.kt
   - gateway/provider-grok/src/main/**/*.kt
   - gateway/provider-kimi/src/main/**/*.kt
   - gateway/provider-codex/src/main/**/*.kt

@@ -20,7 +20,7 @@ import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintMode
 import splice.provider.muse.MuseSubscriptionKey
-import splice.spi.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger

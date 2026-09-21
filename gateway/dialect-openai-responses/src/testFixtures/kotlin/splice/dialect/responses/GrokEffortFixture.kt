@@ -2,7 +2,7 @@
 // importing provider-grok. :app GrokEffortFixtureTest pins this equal to GrokEffortVocabulary.
 package splice.dialect.responses
 
-import splice.spi.EffortVocabulary
+import splice.upstream.EffortVocabulary
 
 public class GrokEffortFixture : EffortVocabulary {
     override fun normalize(raw: String): String? = when (raw) {

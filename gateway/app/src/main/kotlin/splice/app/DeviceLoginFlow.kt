@@ -18,8 +18,8 @@ import splice.core.auth.CredentialExpiry
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
-import splice.spi.ProcessWaiter
-import splice.spi.Waiter
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 
 // DeviceLoginSpec lives in DeviceLoginSpec.kt (concentration, 2026-08-19).
 

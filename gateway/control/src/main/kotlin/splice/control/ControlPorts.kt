@@ -7,7 +7,7 @@
 // nothing but a shared parameter name to say they were the same question.
 //
 // WHY BY ROLE AND NEVER BY SHAPE, here: [FailedHeads] is `() -> Int`, as is
-// [splice.spi.LiveLimit] one module over, and they are opposites — one REPORTS what already went
+// [splice.upstream.retry.LiveLimit] one module over, and they are opposites — one REPORTS what already went
 // wrong, the other BOUNDS what may happen next. [TopologyStale] and a liveness probe are both
 // `() -> Boolean`. Naming the question is the only thing that keeps them apart.
 package splice.control

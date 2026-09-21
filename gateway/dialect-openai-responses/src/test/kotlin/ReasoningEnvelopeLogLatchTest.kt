@@ -19,7 +19,7 @@ import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
 private object LatchProbeAuth : RefreshableAuthProvider {

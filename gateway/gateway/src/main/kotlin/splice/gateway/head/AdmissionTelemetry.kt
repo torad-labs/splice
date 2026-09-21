@@ -9,7 +9,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
-import splice.spi.InflightGate
+import splice.upstream.retry.InflightGate
 
 internal class AdmissionTelemetry(
     private val gate: InflightGate,

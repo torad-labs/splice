@@ -30,7 +30,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
-import splice.spi.BuiltTurn
+import splice.upstream.BuiltTurn
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds

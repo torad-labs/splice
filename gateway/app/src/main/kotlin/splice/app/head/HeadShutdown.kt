@@ -19,7 +19,7 @@ import splice.app.StopControl
 import splice.core.head.Head
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
-import splice.spi.ProcessDispatchers
+import splice.upstream.codemode.ProcessDispatchers
 
 // The whole head-stop phase's deadline (see [HeadShutdown.stopHeads]). Kept below Main's
 // STOP_DEADLINE_MS so the graceful stop + control shutdown finish before Main's hard halt

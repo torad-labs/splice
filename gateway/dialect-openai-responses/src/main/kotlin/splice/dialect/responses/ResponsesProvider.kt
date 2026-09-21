@@ -13,15 +13,15 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.spi.BuiltTurn
-import splice.spi.FoldController
-import splice.spi.Provider
-import splice.spi.ProviderIdentity
-import splice.spi.ProviderTuning
-import splice.spi.ReanchorController
-import splice.spi.StreamTranslator
-import splice.spi.TurnSignals
-import splice.spi.WsRoundRunner
+import splice.upstream.BuiltTurn
+import splice.upstream.FoldController
+import splice.upstream.Provider
+import splice.upstream.ProviderIdentity
+import splice.upstream.ProviderTuning
+import splice.upstream.ReanchorController
+import splice.upstream.StreamTranslator
+import splice.upstream.TurnSignals
+import splice.upstream.WsRoundRunner
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,

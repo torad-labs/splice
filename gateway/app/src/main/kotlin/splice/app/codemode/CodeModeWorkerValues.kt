@@ -5,7 +5,7 @@
 package splice.app.codemode
 
 import kotlinx.serialization.json.Json
-import splice.spi.CodeModeCall
+import splice.upstream.codemode.CodeModeCall
 
 internal object CodeModeJson {
     val codec: Json = Json { explicitNulls = true }

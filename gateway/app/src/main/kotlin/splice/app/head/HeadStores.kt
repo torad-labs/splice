@@ -10,7 +10,7 @@ import splice.gateway.usage.EconomicsStore
 import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.gateway.wire.TraceStore
-import splice.spi.AccountPool
+import splice.upstream.credentials.AccountPool
 
 internal data class HeadStores(
     val usageStore: UsageStore,

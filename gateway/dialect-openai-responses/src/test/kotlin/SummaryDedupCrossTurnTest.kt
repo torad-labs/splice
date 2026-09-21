@@ -19,7 +19,7 @@ import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.SummaryRoundScope
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 private class ThinkingRecordingSink : WireSink {
     val calls = mutableListOf<String>()

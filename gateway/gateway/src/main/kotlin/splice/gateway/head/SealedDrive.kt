@@ -15,8 +15,8 @@
 package splice.gateway.head
 
 import io.ktor.http.HttpStatusCode
-import splice.spi.UpstreamAuthMissing
-import splice.spi.UpstreamFailed
+import splice.upstream.transport.UpstreamAuthMissing
+import splice.upstream.transport.UpstreamFailed
 import java.util.concurrent.CancellationException
 
 internal class SealedDrive(

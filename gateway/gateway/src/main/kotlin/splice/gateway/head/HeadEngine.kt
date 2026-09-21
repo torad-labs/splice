@@ -23,7 +23,7 @@ import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
 import splice.core.util.LogSink
-import splice.spi.Provider
+import splice.upstream.Provider
 import java.util.concurrent.atomic.AtomicBoolean
 
 // Grace/timeout for Netty engine.stop after HeadServer's drain window.

@@ -8,7 +8,7 @@ package splice.dialect.passthrough
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.UpstreamFailureClassifier
+import splice.upstream.failure.UpstreamFailureClassifier
 
 private const val CONTEXT_EXCEEDED_MESSAGE =
     "generation stopped: the model context window was exceeded (stop_reason=model_context_window_exceeded)"

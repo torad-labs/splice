@@ -20,7 +20,7 @@ import splice.provider.muse.MuseMintAttempt
 import splice.provider.muse.MuseMintMode
 import splice.provider.muse.MuseOAuth
 import splice.provider.muse.MuseOAuthEndpoints
-import splice.spi.RetryAfter
+import splice.upstream.retry.RetryAfter
 
 private val museRefreshClient: HttpClient by lazy { AuthHttpClientFactory().create() }
 private const val MAX_MINT_RETRY_AFTER_MS = 3_600_000L
@@ -29,7 +29,7 @@ private const val MAX_MINT_RETRY_AFTER_MS = 3_600_000L
 public class MuseRefresh(private val clock: WallClock = WallClock(System::currentTimeMillis)) : MuseKeyMintCall {
     private val oauth = MuseOAuth()
 
-    // V4-100: the ONE Retry-After parser is splice.spi.RetryAfter. This file used to carry its own
+    // V4-100: the ONE Retry-After parser is splice.upstream.retry.RetryAfter. This file used to carry its own
     // copy of both RFC 7231 forms (`retryAfterMs`, deleted here) — the mirror nf_04's widened wall
     // now refuses, and the reason it mattered: only THIS copy bounded the value to the mint's hour,
     // so a second parser was a second set of ordering and clamping rules for the same header.

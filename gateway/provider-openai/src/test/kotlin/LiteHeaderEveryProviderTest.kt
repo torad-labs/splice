@@ -16,7 +16,7 @@ import splice.dialect.responses.DefaultEffortVocabulary
 import splice.dialect.responses.ResponsesQuirks
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
-import splice.spi.ProviderTuning
+import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
 class LiteHeaderEveryProviderTest {

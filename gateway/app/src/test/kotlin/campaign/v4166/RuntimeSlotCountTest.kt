@@ -15,9 +15,9 @@ import splice.app.provider.RuntimeSlotCount
 import splice.app.provider.SlotTables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
-import splice.spi.LocalHttp
-import splice.spi.LocalHttpReply
-import splice.spi.local.LlamaServerSlots
+import splice.upstream.local.LlamaServerSlots
+import splice.upstream.transport.LocalHttp
+import splice.upstream.transport.LocalHttpReply
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch

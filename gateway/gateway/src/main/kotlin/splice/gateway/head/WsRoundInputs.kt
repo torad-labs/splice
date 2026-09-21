@@ -4,8 +4,8 @@ package splice.gateway.head
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import splice.spi.ClientFrameEmitted
-import splice.spi.WireSink
+import splice.upstream.ClientFrameEmitted
+import splice.upstream.sse.WireSink
 
 internal data class WsRoundInputs(
     val drive: TurnDrive,

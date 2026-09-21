@@ -18,7 +18,7 @@ import splice.core.turn.SharedSummaryParts
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 private class Sink : WireSink {
     val calls = mutableListOf<String>()

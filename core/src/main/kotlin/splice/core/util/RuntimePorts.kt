@@ -37,7 +37,7 @@
 // — the win is the named port and the testability, not a rename storm through the call graph.
 //
 // WHY :core. All four are pure kotlin-stdlib signatures, and :core is the one module every other
-// module may reach (module law). HD-19's Waiter/Ticker went to :provider-spi instead because they
+// module may reach (module law). HD-19's Waiter/Ticker went to :upstream instead because they
 // are kotlinx.coroutines-typed and `production :core stays framework-free`; these carry no such
 // dependency, so the concept lives at the bottom where its consumers already look.
 //

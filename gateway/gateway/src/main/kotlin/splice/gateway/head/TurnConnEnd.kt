@@ -8,9 +8,9 @@ import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
-import splice.spi.Provider
-import splice.spi.SseFrameTooLargeException
-import splice.spi.StreamTornBeforeClient
+import splice.upstream.Provider
+import splice.upstream.failure.SseFrameTooLargeException
+import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 
 internal class TurnConnEnd(

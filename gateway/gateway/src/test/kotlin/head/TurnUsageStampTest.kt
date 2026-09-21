@@ -43,9 +43,9 @@ import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.UsagePayloadBuilder
-import splice.spi.InflightGate
-import splice.spi.LiveLimit
-import splice.spi.TurnWatchdog
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.TurnWatchdog
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean

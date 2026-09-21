@@ -9,7 +9,7 @@
 package splice.gateway.wire
 
 import splice.core.index.WireBlockIndex
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 internal class BufferingWireSink(private val real: WireSink) : WireSink {
 

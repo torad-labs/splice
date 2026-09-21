@@ -40,8 +40,8 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.spi.LifecycleScope
-import splice.spi.ProcessDispatchers
+import splice.upstream.LifecycleScope
+import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

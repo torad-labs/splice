@@ -5,9 +5,9 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.FailureSource
-import splice.spi.UpstreamFailureClassifier
-import splice.spi.WireSink
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
+import splice.upstream.sse.WireSink
 
 private const val INCOMPLETE_REASON_MAX_TOKENS = "max_output_tokens"
 private const val KEY_RESPONSE = "response"

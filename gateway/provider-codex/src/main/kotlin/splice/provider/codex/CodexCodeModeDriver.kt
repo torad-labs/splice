@@ -6,9 +6,9 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
-import splice.spi.CodeModeCapacityException
-import splice.spi.CodeModeInfrastructureException
-import splice.spi.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeCapacityException
+import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeTimeoutException
 import java.io.IOException
 import java.util.UUID
 

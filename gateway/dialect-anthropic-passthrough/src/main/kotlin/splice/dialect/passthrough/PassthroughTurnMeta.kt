@@ -1,6 +1,6 @@
 // NEW: mapping the client request to gateway turn metadata — split out of
 // PassthroughRequestBuilder.kt (2026-08-17, concentration campaign). Different output (TurnMeta,
-// not a JsonObject), different consumer (splice.spi.BuiltTurn) than JSON-request building. Every
+// not a JsonObject), different consumer (splice.upstream.BuiltTurn) than JSON-request building. Every
 // relocated member kept its identical name and argument list.
 package splice.dialect.passthrough
 

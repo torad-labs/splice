@@ -9,7 +9,7 @@ import splice.core.util.LogSink
 import splice.gateway.round.RoundInterception
 import splice.gateway.round.RoundStrategy
 import splice.gateway.wire.WireTap
-import splice.spi.Provider
+import splice.upstream.Provider
 
 internal class TurnRoundRun(
     private val provider: Provider,

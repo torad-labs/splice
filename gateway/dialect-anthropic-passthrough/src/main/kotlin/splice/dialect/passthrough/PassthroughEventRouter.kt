@@ -7,7 +7,7 @@ package splice.dialect.passthrough
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Dispatches one upstream Anthropic SSE frame to its owning collaborators. This translator only

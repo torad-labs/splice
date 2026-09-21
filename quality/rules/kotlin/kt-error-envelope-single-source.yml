@@ -51,9 +51,9 @@
 #                                                       constants, plus an optional `usage` member
 #   gateway/gateway/wire/SseEmitter.kt:199-205          inline in `emitError` — TYPE/MESSAGE
 #                                                       constants + `putJsonObject("error")`
-#   gateway/provider-spi/spi/RateLimitCooldown.kt:192-198  inline in the cooldown refusal — THE
+#   upstream/spi/RateLimitCooldown.kt:192-198  inline in the cooldown refusal — THE
 #       FOURTH SITE, NOT IN THE ROW'S CENSUS, and the one with an architectural consequence:
-#       provider-spi is a DEPENDENCY of gateway/gateway, so it cannot import
+#       :upstream is a DEPENDENCY of gateway/gateway, so it cannot import
 #       `splice.gateway.wire.ErrorEnvelope`. Either the builder lands lower (core) or this site
 #       earns a written exemption. That is the fix row's design call; this wall's job is to make
 #       the site impossible to miss, so it is RED BY NAME rather than scoped away.

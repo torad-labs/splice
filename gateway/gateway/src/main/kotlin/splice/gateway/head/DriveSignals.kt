@@ -8,9 +8,9 @@ import splice.core.perf.TurnPerf
 import splice.core.util.LogSink
 import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.ClientChannel
-import splice.spi.Provider
-import splice.spi.TurnWatchdog
-import splice.spi.WatchdogFired
+import splice.upstream.Provider
+import splice.upstream.retry.TurnWatchdog
+import splice.upstream.retry.WatchdogFired
 
 private const val ROUND_FAILURE_SNIPPET = 160
 

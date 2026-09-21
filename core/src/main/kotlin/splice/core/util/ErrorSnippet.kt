@@ -2,7 +2,7 @@
 // a failure can reach it.
 //
 // WHY IT MOVED HERE: three files declared `ERR_SNIPPET` — WsLogKeys.kt (160) in the responses
-// dialect, UpstreamClient.kt (160) in provider-spi, and TurnTelemetry.kt (200) in the gateway — and
+// dialect, UpstreamClient.kt (160) in :upstream, and TurnTelemetry.kt (200) in the gateway — and
 // the checker's NAMED_SCARS list held the name as a scar precisely because two widths for one
 // meaning is a defect, not a preference: the ws, turn-telemetry and upstream surfaces are read
 // TOGETHER when a turn fails, so the same upstream message would appear at two lengths in one

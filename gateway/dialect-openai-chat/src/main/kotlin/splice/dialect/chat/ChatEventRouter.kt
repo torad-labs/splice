@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 /** Dispatches one OpenAI chat SSE frame to its owning collaborators. [applyDelta] and
  *  [applyFinalMessage] keep their exact statement ORDER (reasoning, then content, then tool_calls,

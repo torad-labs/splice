@@ -8,9 +8,9 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
-import splice.spi.CodeModeResult
-import splice.spi.InterceptedRoundPost
-import splice.spi.WireSink
+import splice.upstream.InterceptedRoundPost
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.sse.WireSink
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 

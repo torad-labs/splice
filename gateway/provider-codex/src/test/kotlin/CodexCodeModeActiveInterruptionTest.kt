@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import splice.core.turn.TurnOutcome
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeActiveInterruptionTest : CodeModeBridgeTestSupport() {
     @ParameterizedTest

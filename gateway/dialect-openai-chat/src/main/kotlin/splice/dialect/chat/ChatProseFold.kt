@@ -5,7 +5,7 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.BufferCapacity
+import splice.upstream.transport.BufferCapacity
 
 // FILE SCOPE ON PURPOSE: one shared key list walked per delta; as a member it would be rebuilt per
 // translator instance (one per turn).

@@ -18,10 +18,10 @@ import splice.core.usage.QuotaWindow
 import splice.dialect.chat.ChatQuirks
 import splice.gateway.usage.QuotaTracker
 import splice.provider.openai.OpenAiChatProvider
-import splice.spi.AccountPool
-import splice.spi.PoolAccount
-import splice.spi.ProviderTuning
-import splice.spi.Selection
+import splice.upstream.ProviderTuning
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

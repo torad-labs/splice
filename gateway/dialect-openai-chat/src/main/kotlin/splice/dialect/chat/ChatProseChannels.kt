@@ -5,7 +5,7 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonScalars
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 /** The chat dialect's prose channels: text and thinking blocks, their buffers, and the fold rules
  *  that decide what a delta or a final message still needs to emit. */

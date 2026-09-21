@@ -1,5 +1,5 @@
 {
-  "_note": "AUTHORED BY checks/const-single-source.py --record, MEASURED never estimated. One entry per duplicated const NAME, keyed '<CLASS> <NAME>' with the sorted files that declare it. COPY = same normalised value in 2+ files; COLLISION = one name, different values. These are the LOW-certainty classes: the 2026-09-17 review established that most of them are file-local names for different wires whose values coincide, and that making one import the other would ADD coupling. So they are held, not failed: --ratchet fails on a group that is NOT here, on a group that has SPREAD to a new file, and on a STALE entry. The high-certainty classes (EQUAL-BY-COMMENT, KNOB-SHADOW, NAMED-SCAR) are STRICT and no entry here can reach them \u2014 a NAMED_SCARS name recorded here is itself an error.\n\n[2026-09-18] Six groups extended or added, all from the console milestone's splits and rows, each under the policy above rather than as an exception to it. CONTENT and MESSAGE gained splice.core.sessions: V4-160 split one transcript reader into several files and each half carried its own copy, so the package now declares each key ONCE, in TranscriptTypes.kt \u2014 the dedupe was done, and what is recorded here is the one remaining declaration a fifth package legitimately needs. ROLE gained splice.control.api and ROLE_ASSISTANT gained splice.gateway.head on the same reading: 'role' and 'assistant' are wire spellings each layer reads off its own wire. REMEMBERED_SESSIONS and SEND_MESSAGE are new entries. REMEMBERED_SESSIONS is 4096 in two independent caches \u2014 the console publisher's session memory and the slot resolver's \u2014 sized by the same reasoning (well above the sessions one daemon serves) and free to move apart; MessageEdges holds a third at the same size under a different name, which is the shape of the thing. SEND_MESSAGE is the literal tool name, read in :core from a transcript record and in :gateway from a live event; sharing it would make :gateway depend on a transcript-reader constant to name a tool.\n\n[2026-09-20] V4-133 (console daemon row) added one file to an existing group and one new group, both under the same policy. CONNECT_TIMEOUT_MS gained UpstreamPlaygroundProbe.kt (:app): a fourth independent HttpClient(Java) construction with the same 10s budget as the other three, matching the established per-client convention rather than importing one of the existing private consts across a module boundary. DAY_MS is new: TeamsReads.kt (:control, team-activity day windows) and PerfStats.kt (:gateway, perf-archive retention sweep) both need 'one day in epoch millis' for unrelated windows; the two literals were spelled differently (24L*60*60*1000 vs 86_400_000L) and PerfStats.kt's was aligned to TeamsReads.kt's spelling so the group reads as one value (COPY), not two. REDACTED (UpstreamPlaygroundProbe.kt's header echo vs provider-spi's HeaderRedaction) was NOT added here: :app already depends on :provider-spi and HeaderRedaction.REDACTED is public, so the probe now imports it instead of declaring its own \u2014 true single source, no new entry.",
+  "_note": "AUTHORED BY checks/const-single-source.py --record, MEASURED never estimated. One entry per duplicated const NAME, keyed '<CLASS> <NAME>' with the sorted files that declare it. COPY = same normalised value in 2+ files; COLLISION = one name, different values. These are the LOW-certainty classes: the 2026-09-17 review established that most of them are file-local names for different wires whose values coincide, and that making one import the other would ADD coupling. So they are held, not failed: --ratchet fails on a group that is NOT here, on a group that has SPREAD to a new file, and on a STALE entry. The high-certainty classes (EQUAL-BY-COMMENT, KNOB-SHADOW, NAMED-SCAR) are STRICT and no entry here can reach them \u2014 a NAMED_SCARS name recorded here is itself an error.\n\n[2026-09-18] Six groups extended or added, all from the console milestone's splits and rows, each under the policy above rather than as an exception to it. CONTENT and MESSAGE gained splice.core.sessions: V4-160 split one transcript reader into several files and each half carried its own copy, so the package now declares each key ONCE, in TranscriptTypes.kt \u2014 the dedupe was done, and what is recorded here is the one remaining declaration a fifth package legitimately needs. ROLE gained splice.control.api and ROLE_ASSISTANT gained splice.gateway.head on the same reading: 'role' and 'assistant' are wire spellings each layer reads off its own wire. REMEMBERED_SESSIONS and SEND_MESSAGE are new entries. REMEMBERED_SESSIONS is 4096 in two independent caches \u2014 the console publisher's session memory and the slot resolver's \u2014 sized by the same reasoning (well above the sessions one daemon serves) and free to move apart; MessageEdges holds a third at the same size under a different name, which is the shape of the thing. SEND_MESSAGE is the literal tool name, read in :core from a transcript record and in :gateway from a live event; sharing it would make :gateway depend on a transcript-reader constant to name a tool.\n\n[2026-09-20] V4-133 (console daemon row) added one file to an existing group and one new group, both under the same policy. CONNECT_TIMEOUT_MS gained UpstreamPlaygroundProbe.kt (:app): a fourth independent HttpClient(Java) construction with the same 10s budget as the other three, matching the established per-client convention rather than importing one of the existing private consts across a module boundary. DAY_MS is new: TeamsReads.kt (:control, team-activity day windows) and PerfStats.kt (:gateway, perf-archive retention sweep) both need 'one day in epoch millis' for unrelated windows; the two literals were spelled differently (24L*60*60*1000 vs 86_400_000L) and PerfStats.kt's was aligned to TeamsReads.kt's spelling so the group reads as one value (COPY), not two. REDACTED (UpstreamPlaygroundProbe.kt's header echo vs :upstream's HeaderRedaction) was NOT added here: :app already depends on :upstream and HeaderRedaction.REDACTED is public, so the probe now imports it instead of declaring its own \u2014 true single source, no new entry.",
   "recorded": "2026-09-17",
   "denominator": 1295,
   "total": 127,
@@ -12,7 +12,7 @@
       "gateway/app/src/main/kotlin/splice/app/UpstreamPlaygroundProbe.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeInflight.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamTransport.kt"
+      "upstream/src/main/kotlin/splice/upstream/transport/UpstreamTransport.kt"
     ],
     "COLLISION CRITICAL_PCT": [
       "gateway/control/src/main/kotlin/splice/control/StatuslineBars.kt",
@@ -64,7 +64,7 @@
     ],
     "COLLISION LIVE_MAX_TOKENS": [
       "gateway/app/src/main/kotlin/splice/app/cli/AddChecks.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalRuntimeProbe.kt"
+      "upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
     ],
     "COLLISION LOCK_WAIT_MS": [
       "core/src/main/kotlin/splice/core/config/KeyStore.kt",
@@ -344,8 +344,8 @@
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeInflight.kt",
       "gateway/app/src/main/kotlin/splice/app/quota/QuotaProbes.kt",
       "gateway/control/src/main/kotlin/splice/control/mcp/McpHost.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalLiveReading.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalRuntimeProbe.kt"
+      "upstream/src/main/kotlin/splice/upstream/local/LocalLiveReading.kt",
+      "upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt"
     ],
     "COPY INACTIVE_PAD": [
       "gateway/app/src/main/kotlin/splice/app/cli/prompt/MultiSelectPrompt.kt",
@@ -446,8 +446,8 @@
       "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnProgressLine.kt",
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
       "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt"
+      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
+      "upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
     ],
     "COPY NAME": [
       "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",
@@ -455,7 +455,7 @@
     ],
     "COPY NANOS_PER_MS": [
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeDaemon.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/CredentialLock.kt"
+      "upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt"
     ],
     "COPY NEWLINE_BYTE": [
       "gateway/app/src/main/kotlin/splice/app/LogFileSource.kt",
@@ -528,17 +528,17 @@
     ],
     "COPY SECONDS_PER_DAY": [
       "gateway/app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"
+      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SECONDS_PER_HOUR": [
       "gateway/app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"
+      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SECONDS_PER_MINUTE": [
       "gateway/app/src/main/kotlin/splice/app/quota/KimiQuotaProbe.kt",
       "gateway/app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt",
-      "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"
+      "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt"
     ],
     "COPY SEND_MESSAGE": [
       "client/src/main/kotlin/splice/client/transcript/TranscriptReader.kt",

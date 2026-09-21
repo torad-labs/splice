@@ -47,7 +47,7 @@ public object JsonlSink {
      * IO-001: the [locks] map only serializes writers within THIS JVM; two head PROCESSES writing
      * the same file coordinate not at all otherwise, so both can read a stale size and overshoot
      * the cap. A cross-process [FileLock] on a sibling `.lock` file (the CredentialLock shape,
-     * provider-spi/CredentialLock.kt) closes that gap.
+     * upstream/CredentialLock.kt) closes that gap.
      *
      * DR-178: that gap used to be closed with a plain blocking `channel.lock()`, justified here by
      * "the critical section is a stat + maybe-rename + append, held for microseconds". The hold is

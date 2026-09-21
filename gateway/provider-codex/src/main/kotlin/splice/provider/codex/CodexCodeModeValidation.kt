@@ -2,10 +2,10 @@
 package splice.provider.codex
 
 import splice.core.turn.GatewayCustomCall
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeLimits
-import splice.spi.CodeModeProtocol
-import splice.spi.CodeModeResult
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeLimits
+import splice.upstream.codemode.CodeModeProtocol
+import splice.upstream.codemode.CodeModeResult
 
 internal enum class CodeModeResultMode { RESUME, INTERRUPT }
 

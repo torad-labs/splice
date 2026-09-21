@@ -156,7 +156,7 @@ internal class CollectingTerminal(
     // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()
     // fallback has none to give) — only the malformed-tool-use path in emitTerminal has a real
     // turn usage in scope, so it is the only caller that passes one.
-    // V4-102: the shape lives in core now (splice.core.wire.ErrorEnvelope), because provider-spi
+    // V4-102: the shape lives in core now (splice.core.wire.ErrorEnvelope), because :upstream
     // cannot import :gateway and its own fail-fast body is the same envelope. Kept as a named
     // delegate so the three call sites above read unchanged.
     private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =

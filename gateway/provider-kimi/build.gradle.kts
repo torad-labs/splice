@@ -5,7 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":provider-spi"))
+    implementation(project(":upstream"))
     implementation(project(":dialect-anthropic-passthrough"))
     testImplementation(libs.kotlinx.coroutines.test)
 }

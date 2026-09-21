@@ -7,9 +7,9 @@ package splice.dialect.chat
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.spi.ClassifiedFailure
-import splice.spi.FailureSource
-import splice.spi.UpstreamFailureClassifier
+import splice.upstream.failure.ClassifiedFailure
+import splice.upstream.failure.FailureSource
+import splice.upstream.failure.UpstreamFailureClassifier
 
 /** The chat dialect's honesty state machine: the flags that decide whether a turn's terminal is an
  *  honest Failure instead of a clean Success, and the finish_reason classification that feeds them.

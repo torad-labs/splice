@@ -29,10 +29,10 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.Ticker
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.Ticker
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.io.IOException
 import java.io.InputStream
 import java.net.Socket

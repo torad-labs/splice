@@ -5,9 +5,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.spi.CodeModeInfrastructureCategory
-import splice.spi.CodeModeInfrastructureClass
-import splice.spi.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeInfrastructureCategory
+import splice.upstream.failure.CodeModeInfrastructureClass
+import splice.upstream.failure.CodeModeInfrastructureException
 import java.io.IOException
 
 internal const val CODE_MODE_FATAL_FRAME_TYPE: String = "fatal"

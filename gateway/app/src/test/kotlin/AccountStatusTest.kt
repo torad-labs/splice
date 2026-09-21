@@ -19,11 +19,11 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
-import splice.spi.AccountPool
-import splice.spi.AccountQuotaSource
-import splice.spi.PoolAccount
-import splice.spi.RateLimitCooldown
-import splice.spi.Selection
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
+import splice.upstream.retry.RateLimitCooldown
 import java.time.Instant
 
 class AccountStatusTest {

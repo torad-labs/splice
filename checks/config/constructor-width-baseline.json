@@ -52,7 +52,7 @@
       "params": 22,
       "subsystems": 0
     },
-    "gateway/provider-spi/src/main/kotlin/splice/spi/AccountSelection.kt AccountView": {
+    "upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt AccountView": {
       "params": 14,
       "subsystems": 0
     }

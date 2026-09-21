@@ -8,7 +8,7 @@ package splice.dialect.responses
 
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolDefinition
-import splice.spi.ToolSearchController
+import splice.upstream.ToolSearchController
 
 internal class ResponsesToolPlan(private val quirks: ResponsesQuirks) {
 

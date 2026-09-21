@@ -2,7 +2,7 @@
 // dialect calls EffortVocabulary; it does not know Grok rungs.
 package splice.provider.grok
 
-import splice.spi.EffortVocabulary
+import splice.upstream.EffortVocabulary
 
 public class GrokEffortVocabulary : EffortVocabulary {
     override fun normalize(raw: String): String? = when (raw) {

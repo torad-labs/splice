@@ -160,7 +160,7 @@ internal class AccountsRoute(private val heads: Map<String, ManagedHead>) {
 }
 
 /** One quota window's percent, reset and (V4-132) its own reported LENGTH — [AccountPool]'s own
- *  [splice.spi.AccountView] carries the same three fields; this is the console-payload copy of
+ *  [splice.upstream.credentials.AccountView] carries the same three fields; this is the console-payload copy of
  *  that shape, grouped so [JoinedAccount] stays under checks/constructor-width.ts's 12-param
  *  ceiling with five-hour and seven-day as ONE field each instead of three. */
 private data class QuotaWindowView(val usedPercent: Double?, val resetEpochSeconds: Long?, val windowSeconds: Long?)

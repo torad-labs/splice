@@ -89,7 +89,7 @@ const PRE_TURN_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/head/Admis
 const PRE_TURN_MARK = "AdmissionResponses";
 const PRE_TURN_REASON = "2026-09-17: the PRE-TURN admission plane. Every verdict here is decided before";
 
-const POOLED_FILE = "gateway/provider-spi/src/main/kotlin/splice/spi/RateLimitCooldown.kt";
+const POOLED_FILE = "upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt";
 const POOLED_MARK = "RateLimitCooldown";
 const POOLED_REASON = "2026-09-17: the POOLED-REFUSAL fail-fast body, synthesized by the cooldown itself";
 

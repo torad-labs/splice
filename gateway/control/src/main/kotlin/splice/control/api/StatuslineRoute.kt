@@ -37,7 +37,7 @@ private const val STATUSLINE_READ_TIMEOUT_MS = 2_000L
 
 // A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups means
 // the client is broken — end the read honestly rather than pin a core. Mirrors SseReader's bound
-// (the constant there is file-private to :provider-spi, which :control does not depend on).
+// (the constant there is file-private to :upstream, which :control does not depend on).
 private const val MAX_STATUSLINE_SPURIOUS_WAKEUPS = 1024
 
 internal class StatuslineRoute(
@@ -146,7 +146,7 @@ internal class StatuslineRoute(
     /**
      * Read the next chunk; returns byte count (> 0) or -1 at end of stream.
      *
-     * The same guarded shape as [splice.spi.SseReader]'s readChunk, for the same reason. On a
+     * The same guarded shape as [splice.upstream.sse.SseReader]'s readChunk, for the same reason. On a
      * healthy channel `readAvailable` suspends inside `awaitContent` when the buffer is empty and
      * neither guard is reached. They exist for the TORN case — a half-closed / degenerate peer where
      * `readAvailable` returns 0 WITHOUT suspending and `awaitContent` keeps claiming content it
@@ -176,7 +176,7 @@ internal class StatuslineRoute(
 private class StatuslineBodyTooLarge : RuntimeException()
 
 /** The exhaustion end of [readAvailableOrEof]'s spurious-wakeup bound — a half-open client that kept
- *  CLAIMING content without ever delivering a byte. Local (not :provider-spi's
+ *  CLAIMING content without ever delivering a byte. Local (not :upstream's
  *  SseSpuriousWakeupException) because :control depends on :core alone, and reaching for that type
  *  would mean a new module edge for one exception. Deliberately NOT reported as a clean read: a torn
  *  body must never render a statusline as though the client had sent one. */

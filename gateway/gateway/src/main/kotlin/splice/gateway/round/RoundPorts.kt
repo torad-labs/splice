@@ -11,8 +11,8 @@
 // splice.gateway.head.DrivePorts.kt: their consumers (WsRoundDriver, RequestMaterializationGate)
 // stayed in head, so the port stays with its consumer.
 //
-// WHY [WatchdogTripped] IS NOT [splice.spi.WatchdogProbe]. They ask different questions and return
-// different types: the SPI's probe returns the [splice.spi.WatchdogFired] REASON, because a
+// WHY [WatchdogTripped] IS NOT [splice.upstream.WatchdogProbe]. They ask different questions and return
+// different types: the SPI's probe returns the [splice.upstream.retry.WatchdogFired] REASON, because a
 // translator has to end the stream with the specific budget that blew; this one is a plain boolean
 // gate on whether a runner may start another SUCCESS-side round, and on that question no reason it
 // could carry would change the answer. Same word in the parameter name, two roles, so two types —
@@ -27,8 +27,8 @@
 package splice.gateway.round
 
 import splice.core.turn.TurnOutcome
-import splice.spi.ClientGone
-import splice.spi.WireSink
+import splice.upstream.ClientGone
+import splice.upstream.sse.WireSink
 
 /**
  * POSTs one round of the turn and returns its honest outcome — the FoldRunner variant, which also

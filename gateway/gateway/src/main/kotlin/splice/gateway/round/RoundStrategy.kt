@@ -11,13 +11,13 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
-import splice.spi.FoldController
-import splice.spi.InterceptedRoundPost
-import splice.spi.ReanchorController
-import splice.spi.RetryNotice
-import splice.spi.RoundInterceptor
-import splice.spi.ToolSearchController
-import splice.spi.WireSink
+import splice.upstream.FoldController
+import splice.upstream.InterceptedRoundPost
+import splice.upstream.ReanchorController
+import splice.upstream.RetryNotice
+import splice.upstream.RoundInterceptor
+import splice.upstream.ToolSearchController
+import splice.upstream.sse.WireSink
 
 /** Receives terminal outcomes from raw code-mode posts before the interceptor can expand them. */
 internal fun interface RawRoundObserver {

@@ -41,9 +41,9 @@ import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.Executors

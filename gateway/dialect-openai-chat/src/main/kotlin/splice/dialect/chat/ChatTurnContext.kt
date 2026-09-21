@@ -2,8 +2,8 @@
 // behavioural coupling to the translator (it is only a ctor parameter).
 package splice.dialect.chat
 
-import splice.spi.ClientGone
-import splice.spi.WatchdogProbe
+import splice.upstream.ClientGone
+import splice.upstream.WatchdogProbe
 
 public data class ChatTurnContext(
     val clientGone: ClientGone,

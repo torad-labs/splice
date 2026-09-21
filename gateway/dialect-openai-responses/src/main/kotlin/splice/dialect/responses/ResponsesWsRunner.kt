@@ -1,5 +1,5 @@
 // NEW: (ws-transport WS-3, 2026-08-01) the Responses side of the WS seam — everything
-// :gateway is forbidden to know (module law: :gateway may name only :core and :provider-spi).
+// :gateway is forbidden to know (module law: :gateway may name only :core and :upstream).
 // It owns the round-terminal vocabulary, the chaining frame, the connection identity, and the
 // commit/clear of chaining state.
 //
@@ -30,11 +30,11 @@ import splice.core.auth.Credentials
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.spi.NEVER_PINGED_MS
-import splice.spi.WsPathPulse
-import splice.spi.WsRound
-import splice.spi.WsRoundAbort
-import splice.spi.WsRoundRunner
+import splice.upstream.NEVER_PINGED_MS
+import splice.upstream.WsPathPulse
+import splice.upstream.WsRound
+import splice.upstream.WsRoundAbort
+import splice.upstream.WsRoundRunner
 
 // ResponsesRoundEnd + HandshakeHeaders live in ResponsesRoundEnd.kt (concentration, 2026-08-19).
 // Identity + terminal observation live in ResponsesWsIdentity.kt (concentration, 2026-08-19).

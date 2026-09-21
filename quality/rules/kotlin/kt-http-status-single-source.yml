@@ -6,13 +6,13 @@
 # SCAR: 429 and 529 were each declared five times under five different names, and nothing kept them
 # in agreement. The 2026-09-17 architecture audit census (verified with ast-grep, not the prose list
 # it arrived as — see the ledger note on V4-88 for the four name corrections):
-#   429  provider-spi/RateLimitCooldown.kt:304        internal const val RATE_LIMITED
-#        provider-spi/UpstreamFailureClassifier.kt:291 private const val RATE_LIMIT_STATUS
+#   429  upstream/RateLimitCooldown.kt:304        internal const val RATE_LIMITED
+#        upstream/UpstreamFailureClassifier.kt:291 private const val RATE_LIMIT_STATUS
 #        app/RefreshRetry.kt:25                        private const val HTTP_TOO_MANY
 #        app/cli/UpgradeFetch.kt:24                    private const val HTTP_TOO_MANY
 #        gateway/head/AdmissionResponses.kt:26         private const val RATE_LIMITED_STATUS
 #        gateway/wire/CollectingTerminal.kt:24         private const val STATUS_RATE_LIMIT
-#   529  provider-spi/UpstreamFailureClassifier.kt:296 private const val OVERLOADED_STATUS
+#   529  upstream/UpstreamFailureClassifier.kt:296 private const val OVERLOADED_STATUS
 #        gateway/head/AdmissionResponses.kt:24         private const val GATEWAY_CAPACITY_STATUS
 #        gateway/wire/CollectingTerminal.kt:25         private const val STATUS_OVERLOADED
 # Six spellings of one number is how a retry classifier and an admission responder come to disagree

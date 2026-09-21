@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
-import splice.spi.CodeModeLimits
-import splice.spi.CodeModeStep
+import splice.upstream.codemode.CodeModeLimits
+import splice.upstream.codemode.CodeModeStep
 import java.nio.file.Files
 
 class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {

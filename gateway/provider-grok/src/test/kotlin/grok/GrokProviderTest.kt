@@ -44,9 +44,9 @@ import splice.gateway.usage.UsageStore
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokRefreshedTokens
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions

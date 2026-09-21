@@ -43,15 +43,15 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.gateway.head.HeadServer
 import splice.gateway.usage.QuotaTracker
-import splice.spi.AccountPool
-import splice.spi.AccountQuotaSource
-import splice.spi.InflightGate
-import splice.spi.MAX_RATE_LIMIT_COOLDOWN_MS
-import splice.spi.PoolAccount
-import splice.spi.ProcessElapsedNow
-import splice.spi.ProviderTuning
-import splice.spi.RateLimitCooldown
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.codemode.ProcessElapsedNow
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
+import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.transport.UpstreamClient
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.time.ZonedDateTime
@@ -78,7 +78,7 @@ class HeadServerCapacityTest {
     private lateinit var head: HeadServer
 
     // maxRetries = 1: V4-61 makes a 429 with budget left wait the 15s floor in REAL time before
-    // retrying; these tests need the ARM that follows exhaustion, not the schedule (provider-spi
+    // retrying; these tests need the ARM that follows exhaustion, not the schedule (:upstream
     // pins the schedule), so the budget is a single attempt and the arm is immediate.
     private val upstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1)
     private val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })

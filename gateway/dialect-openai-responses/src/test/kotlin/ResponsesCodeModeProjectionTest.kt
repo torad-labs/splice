@@ -16,7 +16,7 @@ import splice.dialect.responses.ResponsesCodeModeProjection
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.dialect.responses.ToolDeferralPolicy
-import splice.spi.ToolSearchRound
+import splice.upstream.ToolSearchRound
 
 class ResponsesCodeModeProjectionTest {
     @Test

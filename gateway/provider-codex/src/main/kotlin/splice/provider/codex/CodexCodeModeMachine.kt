@@ -6,13 +6,13 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.spi.CodeModeCall
-import splice.spi.CodeModeCell
-import splice.spi.CodeModeInfrastructureException
-import splice.spi.CodeModeResult
-import splice.spi.CodeModeStep
-import splice.spi.CodeModeTimeoutException
-import splice.spi.WireSink
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeTimeoutException
+import splice.upstream.sse.WireSink
 import java.io.IOException
 import java.util.UUID
 

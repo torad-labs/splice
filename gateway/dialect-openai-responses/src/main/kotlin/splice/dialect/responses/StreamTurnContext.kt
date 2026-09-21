@@ -6,8 +6,8 @@ package splice.dialect.responses
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.turn.SharedSummaryParts
-import splice.spi.ClientGone
-import splice.spi.WatchdogProbe
+import splice.upstream.ClientGone
+import splice.upstream.WatchdogProbe
 
 /** Work executed under one summary round's lease and coroutine mutex. */
 public fun interface SummaryRoundTask<T> {

@@ -31,8 +31,8 @@ import splice.provider.codex.CodexAuthProvider
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity
-import splice.spi.AccountCredentialIdentitySource
-import splice.spi.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.AccountCredentialIdentitySource
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64

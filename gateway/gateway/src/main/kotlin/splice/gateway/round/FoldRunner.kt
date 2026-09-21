@@ -11,14 +11,14 @@ package splice.gateway.round
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.gateway.wire.BufferingWireSink
-import splice.spi.FoldController
-import splice.spi.ProcessWaiter
-import splice.spi.ReanchorController
-import splice.spi.RetryBackoff
-import splice.spi.RetryNotice
-import splice.spi.ToolSearchController
-import splice.spi.UpstreamTransport
-import splice.spi.WireSink
+import splice.upstream.FoldController
+import splice.upstream.ReanchorController
+import splice.upstream.RetryBackoff
+import splice.upstream.RetryNotice
+import splice.upstream.ToolSearchController
+import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamTransport
 
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).

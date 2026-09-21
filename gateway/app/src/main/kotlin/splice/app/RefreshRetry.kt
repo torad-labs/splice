@@ -3,7 +3,7 @@
 // correct shape — grok/codex previously collapsed every non-2xx status AND any thrown exception
 // (DNS blip, connect timeout) straight to null, indistinguishable from a dead refresh token.
 // Invariants preserved from Kimi: 3 attempts, exponential backoff (now with ±10% jitter, same
-// shape as provider-spi/UpstreamClient.kt's JITTER_LO/JITTER_HI); 401/403/invalid_grant are
+// shape as upstream/UpstreamClient.kt's JITTER_LO/JITTER_HI); 401/403/invalid_grant are
 // terminal; 429/500/502/503/504 are retryable; a thrown exception during a single attempt is
 // treated as retryable, not a permanent failure.
 package splice.app
@@ -13,8 +13,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
-import splice.spi.ProcessWaiter
-import splice.spi.Waiter
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 import kotlin.random.Random
 
 internal const val REFRESH_MAX_ATTEMPTS = 3

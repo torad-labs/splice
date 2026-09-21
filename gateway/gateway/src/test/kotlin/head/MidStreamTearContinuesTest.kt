@@ -55,9 +55,9 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.gateway.head.HeadServer
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress

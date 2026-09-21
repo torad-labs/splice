@@ -5,7 +5,7 @@
 package splice.dialect.passthrough
 
 import splice.core.index.WireBlockIndex
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 
 /** The passthrough dialect's prose channels: the text and thinking buffers, the two content flags
  *  the empty-turn honesty gate reads, and the two delta writes that fill them. */

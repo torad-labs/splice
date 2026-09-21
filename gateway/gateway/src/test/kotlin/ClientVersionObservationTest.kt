@@ -27,9 +27,9 @@ import splice.gateway.head.ClientAuth
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.RequestBodyReader
 import splice.gateway.head.TurnPreparation
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

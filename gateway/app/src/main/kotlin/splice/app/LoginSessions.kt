@@ -28,8 +28,8 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
-import splice.spi.LifecycleScope
-import splice.spi.ProcessDispatchers
+import splice.upstream.LifecycleScope
+import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference

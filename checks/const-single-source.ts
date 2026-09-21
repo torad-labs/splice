@@ -983,7 +983,7 @@ const EQUAL_COMMENT = `package splice.a
 
 private const val MAX_RATE_LIMIT_COOLDOWN_MS = 120_000L
 
-// Mirrors :provider-spi's MAX_RATE_LIMIT_COOLDOWN_MS, which is private to that module.
+// Mirrors :upstream's MAX_RATE_LIMIT_COOLDOWN_MS, which is private to that module.
 // The two must stay equal — the cooldown ceiling is when this gateway next lets a request through.
 private const val MAX_CLIENT_HOLD_MS = 120_000L
 `;

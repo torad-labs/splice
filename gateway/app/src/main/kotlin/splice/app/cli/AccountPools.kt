@@ -16,7 +16,7 @@ import splice.control.HeadAccountView
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
-import splice.spi.AccountLabelPolicy
+import splice.upstream.credentials.AccountLabelPolicy
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest

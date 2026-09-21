@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
-import splice.spi.Provider
+import splice.upstream.Provider
 import java.io.IOException
 
 internal class CancellationSeal(

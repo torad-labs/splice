@@ -7,7 +7,7 @@ package splice.dialect.responses
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.spi.ToolSearchController
+import splice.upstream.ToolSearchController
 
 public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchController? = null)
 

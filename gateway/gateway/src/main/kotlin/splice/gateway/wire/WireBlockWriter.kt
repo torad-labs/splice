@@ -10,7 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
-import splice.spi.WireSink
+import splice.upstream.sse.WireSink
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val TYPE = "type"

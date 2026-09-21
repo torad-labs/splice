@@ -50,9 +50,9 @@ import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.DEFAULT_REQUEST_READ_TIMEOUT_MS
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
-import splice.spi.Provider
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
+import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -72,7 +72,7 @@ private class BranchFakeAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
-/** No credential and nothing to refresh — the shape that raises [splice.spi.UpstreamAuthMissing]
+/** No credential and nothing to refresh — the shape that raises [splice.upstream.transport.UpstreamAuthMissing]
  *  inside the transport, before any upstream request is attempted. */
 private class CredentiallessAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials? = null

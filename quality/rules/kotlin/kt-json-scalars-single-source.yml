@@ -31,6 +31,7 @@ severity: error
 message: "Read JSON scalars via JsonScalars .str()/.str(key) (core/util) — a raw jsonPrimitive.content leaks a JSON null as the string \"null\"."
 note: "JsonNull is a JsonPrimitive whose content is \"null\". Use element.str() or obj.str(key) from splice.core.util (they filter JsonNull) instead of ?.jsonPrimitive?.content — the null-token-becomes-\"null\" bug the extraction closed."
 files:
+  - upstream/src/main/**/*.kt
   - gateway/provider-*/src/main/**/*.kt
   - gateway/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt

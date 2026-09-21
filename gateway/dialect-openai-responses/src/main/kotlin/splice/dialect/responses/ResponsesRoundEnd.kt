@@ -20,7 +20,7 @@ internal object ResponsesRoundEnd {
  * `Authorization` plus the `OpenAI-Beta: responses_websockets=…` opt-in the v2 backend gates on.
  *
  * Read ONCE per connection and not per round, which is what separates it from
- * [splice.spi.CredentialHeaders] despite the shape: those are rebuilt per ATTEMPT so a post-401
+ * [splice.upstream.CredentialHeaders] despite the shape: those are rebuilt per ATTEMPT so a post-401
  * refresh reaches the wire, while a WebSocket's handshake cannot be re-run without dropping the
  * connection and the per-connection server context that is the whole point of reusing it.
  * Non-suspending for the same reason — there is no refresh to await here.

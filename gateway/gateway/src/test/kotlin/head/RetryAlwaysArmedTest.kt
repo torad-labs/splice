@@ -69,9 +69,9 @@ import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.head.HeadServer
-import splice.spi.InflightGate
-import splice.spi.ProviderTuning
-import splice.spi.UpstreamClient
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
 import java.net.ServerSocket
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
@@ -152,7 +152,7 @@ class RetryAlwaysArmedTest {
 
     // maxRetries = 1 (V4-61): a 429 with budget left now waits the 15s floor in REAL time before
     // retrying, which outlived this test client's request timeout. The sweep needs the ARM that
-    // follows exhaustion (provider-spi pins the schedule), so the budget is a single attempt.
+    // follows exhaustion (:upstream pins the schedule), so the budget is a single attempt.
     private val upstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 1)
     private lateinit var tmp: java.nio.file.Path
 

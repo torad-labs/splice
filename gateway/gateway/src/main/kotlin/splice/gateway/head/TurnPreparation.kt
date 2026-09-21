@@ -38,9 +38,9 @@ import splice.core.wire.AnthropicRequest
 import splice.gateway.compact.CompactClassifier
 import splice.gateway.wire.ClientInbound
 import splice.gateway.wire.FrameRecording
-import splice.spi.BuiltTurn
-import splice.spi.HeaderRedaction
-import splice.spi.Provider
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
+import splice.upstream.transport.HeaderRedaction
 
 internal sealed class Preparation {
     /** [inbound] is the request as it arrived, kept ONLY for a head whose trace is on (V4-174):

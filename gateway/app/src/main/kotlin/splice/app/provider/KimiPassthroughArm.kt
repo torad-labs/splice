@@ -10,7 +10,7 @@ import splice.dialect.passthrough.IdentityHeaders
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiQuirks
 import splice.provider.openai.ApiKeyAuthProvider
-import splice.spi.CredentialHeaders
+import splice.upstream.CredentialHeaders
 import java.nio.file.Paths
 
 /** Kimi /coding 403s an unrecognized UA; the Anthropic wire needs its version on every request. */

@@ -1,11 +1,11 @@
 // NEW: V4-117 (error taxonomy, 2026-09-18) — the retry class the client keys on, chosen from
 // (cause, phase) so that NOBODY hand-picks it at a failure site.
 //
-// WHY IT LIVES IN CORE AND NOT BESIDE THE LAYERS MATRIX: the layers matrix is in provider-spi
+// WHY IT LIVES IN CORE AND NOT BESIDE THE LAYERS MATRIX: the layers matrix is in :upstream
 // because its consumer (the retry loop) is there, but the WIRE TYPE has to be readable by
-// TurnOutcome.Failure itself, which is in core — and core cannot see provider-spi (the dependency
+// TurnOutcome.Failure itself, which is in core — and core cannot see :upstream (the dependency
 // runs the other way). This is a pure function of two core enums and needs nothing from the layer
-// ladder, so core is where it belongs, and provider-spi's matrix delegates here rather than keeping
+// ladder, so core is where it belongs, and :upstream's matrix delegates here rather than keeping
 // a second copy that could drift.
 //
 // THE PHASE EARNS ITS PLACE IN THE SIGNATURE, and this is the one case where it changes the answer:

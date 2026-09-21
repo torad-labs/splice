@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { proveCoverage, type CoverageReport } from "../src/lib/coverage.ts";
 import { layout } from "../src/lib/repo.ts";
+import { readGradleModules } from "../src/lib/sources.ts";
 import { EXCLUSIONS, ROUTED_CONFIG } from "../src/commands/rules.ts";
 
 const { repoRoot, buildRoot } = layout();
@@ -75,17 +76,20 @@ describe("the P1 coverage proof", () => {
 
   test("mutant (b): a glob that loses one module while the others still match", async () => {
     const copy = copyOfTheRealRules();
-    // :core drops out; every other module still matches, so `ast-grep scan` stays green.
-    edit(
-      copy.rule("kt-no-lateinit"),
-      '"**/src/main/**/*.kt"',
-      '"gateway/{app,control,gateway,provider-spi,provider-codex,provider-grok,provider-kimi,provider-muse,provider-openai,dialect-anthropic-passthrough,dialect-openai-responses,dialect-openai-chat,fir-checks}/src/main/**/*.kt"',
-    );
+    // :core drops out; every other module still matches, so `ast-grep scan` stays green. The
+    // "every other module" list is READ FROM THE BUILD (settings.gradle.kts), never retyped: a
+    // hand-kept brace list lost :client, then :upstream, as the restructure moved them out of
+    // gateway/, and the mutant then lost three roots instead of the one it claims to.
+    const others = readGradleModules(repoRoot, buildRoot)
+      .filter((m) => m.id !== "core")
+      .map((m) => m.dir);
+    edit(copy.rule("kt-no-lateinit"), '"**/src/main/**/*.kt"', `"{${others.join(",")}}/src/main/**/*.kt"`);
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-lateinit", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("kt-no-lateinit reaches 0 of 135 files in core/src/main/kotlin");
+    // the file count is the tree's, not the test's: it moved 135 -> 103 when :client left :core
+    expect(lost[0]).toMatch(/kt-no-lateinit reaches 0 of \d+ files in core\/src\/main\/kotlin/);
     expect(lost[0]).toContain("no dated exclusion covers it");
     // the loss is invisible to the scan: the other thirteen modules are still enforced
     expect(report.coveredPairs).toBeGreaterThan(700);

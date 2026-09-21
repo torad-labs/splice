@@ -36,7 +36,7 @@ import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.spi.HeaderRedaction
+import splice.upstream.transport.HeaderRedaction
 import java.nio.file.Files
 import java.nio.file.Path
 

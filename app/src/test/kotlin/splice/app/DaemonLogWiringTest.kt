@@ -159,4 +159,28 @@ class DaemonLogWiringTest {
             "the logger self-healed and wrote the third line, got: $content",
         )
     }
+
+    // SH-14, second half: a wedged logger must not be silent about being wedged. stderr is the one
+    // lane still alive inside the logger's own failure branch, so the announcement lands there,
+    // naming the failure and the size it reconciled to.
+    @Test
+    fun `a failed rotate is announced on stderr with the reconciled size - SH-14`(@TempDir logs: Path) {
+        val log = process.persistentLogger(logs, maxBytes = 64L)
+        log("first line long enough that written now sits at or past the cap")
+        drainToDisk()
+        Files.delete(logs.resolve("daemon.log")) // external logrotate removed the file
+
+        val captured = java.io.ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(java.io.PrintStream(captured, true))
+        try {
+            log("second line whose rotate now fails because the source is gone")
+            drainToDisk()
+        } finally {
+            System.setErr(realErr)
+        }
+        val stderr = captured.toString()
+        assertTrue(stderr.contains("[daemon-log] write/rotate failed"), "the failure is announced, got: $stderr")
+        assertTrue(stderr.contains("size reconciled to 0"), "the reconciled size is named, got: $stderr")
+    }
 }

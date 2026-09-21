@@ -665,13 +665,24 @@ class RoleRegistryLawTest {
         }
         val config = shipped()
         val problems = RoleRegistry.audit(census, config)
+        // THE CENSUS RUNS ON THE GREEN PATH. Below it rides on the failure text, which means that
+        // on every green run the port executes nothing and nobody would learn it had rotted until
+        // the day someone needed it to read a red. So it is computed here, and its own header is
+        // checked against the denominator the audit just read: a census that disagrees with the
+        // audit reds now instead of printing a wrong number into a failure someone is already
+        // struggling with.
+        val report = RoleRegistry.census(census, config)
+        assertTrue(report.first().startsWith("role-registry: ${census.roles.size} `fun interface`")) {
+            "the census header disagrees with the denominator the audit read " +
+                "(${census.roles.size} roles):\n${report.first()}"
+        }
         assertTrue(problems.isEmpty()) {
-            // The census RIDES ON THE RED. The checker printed it from a second command
-            // (`bun checks/role-registry.ts report .`), which this PR deletes; a remedy that names a
-            // command nobody can run is an absence wearing a label, and the reader of this failure is
-            // exactly the person who needed that report. So it is the same output, in the same run.
+            // AND IT RIDES ON THE RED. The bun checker printed it from a second command
+            // (`bun checks/role-registry.ts report .`) that the port deleted; a remedy naming a
+            // command nobody can run is an absence wearing a label, and the reader of this failure
+            // is exactly the person who needed that report. So it is the same output, same run.
             problems.joinToString(separator = "\n  - ", prefix = "ROLE REGISTRY (V4-89) violated:\n  - ") +
-                RoleRegistry.census(census, config).joinToString("\n", prefix = "\n\n")
+                report.joinToString("\n", prefix = "\n\n")
         }
     }
 

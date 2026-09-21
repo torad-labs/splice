@@ -26,7 +26,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":provider-muse" to setOf(":core", ":upstream"),
     ":provider-openai" to setOf(":core", ":upstream", ":dialect-openai-responses", ":dialect-openai-chat"),
     ":daemon-head" to setOf(":core", ":upstream"),
-    ":control" to setOf(":core", ":client"),
+    ":daemon-control" to setOf(":core", ":client"),
     ":arch-tests" to emptySet(),
     // :fir-checks is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).

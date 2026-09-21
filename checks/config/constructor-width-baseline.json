@@ -8,19 +8,19 @@
       "params": 13,
       "subsystems": 1
     },
-    "gateway/control/src/main/kotlin/splice/control/ControlServer.kt ControlServer": {
+    "daemon/control/src/main/kotlin/splice/control/ControlServer.kt ControlServer": {
       "params": 17,
       "subsystems": 5
     },
-    "gateway/control/src/main/kotlin/splice/control/HeadAccountPool.kt HeadAccountView": {
+    "daemon/control/src/main/kotlin/splice/control/HeadAccountPool.kt HeadAccountView": {
       "params": 14,
       "subsystems": 0
     },
-    "gateway/control/src/main/kotlin/splice/control/LaunchTypes.kt LaunchSpec": {
+    "daemon/control/src/main/kotlin/splice/control/LaunchTypes.kt LaunchSpec": {
       "params": 21,
       "subsystems": 2
     },
-    "gateway/control/src/main/kotlin/splice/control/ManagedHead.kt ManagedHead": {
+    "daemon/control/src/main/kotlin/splice/control/ManagedHead.kt ManagedHead": {
       "params": 17,
       "subsystems": 3
     },

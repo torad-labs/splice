@@ -1,4 +1,4 @@
-// NEW: the Head contract (:control depends on THIS, never on :daemon-head's implementation —
+// NEW: the Head contract (:daemon-control depends on THIS, never on :daemon-head's implementation —
 // preserving the separation the old process boundary gave for free; :app wires the map).
 package splice.core.head
 

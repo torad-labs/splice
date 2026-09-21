@@ -8,7 +8,7 @@
 # Result.discard(why) is the sanctioned full-drop. Scope is provider-* + :upstream for now —
 # widening to app/core/control tracked in .dev/research/gateway-gaps-tracker.md.
 #
-# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :control and :app sat outside most walls'
+# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
 # `files:` globs). The 2026-07-18 scar this rule was written for — "auth failures identical to
 # missing files" — is an OPERATOR-DIAGNOSIS scar, and :app is where the operator looks: `doctor`,
 # `setup`, `upgrade`, `restart`, the login flows, the daemon lock. Scoping the rule to the five
@@ -22,7 +22,7 @@
 # 58, cli/{LoginMuse 103/173, ControlPlaneClient 26, DoctorProbes 86, AdminSupport 79/146/175,
 # RestartCommand 26, DoctorProbeWrite 94, UninstallCommand 56, AccountPools 43, AddCredentialFile 27,
 # AddSeams 21, DoctorInstallProbes 125/153, AddCommand 91, AddHttp 22, DoctorReportPerf 109,
-# SetupCommand 81, DoctorRedaction 77}; :control StatuslineRenderer 61/71/93/203/236, api/JsonBody 19,
+# SetupCommand 81, DoctorRedaction 77}; :daemon-control StatuslineRenderer 61/71/93/203/236, api/JsonBody 19,
 # api/StatuslineRoute 94.
 # The return-position gap named below is UNCHANGED by the widening and still open.
 #
@@ -76,7 +76,7 @@ files:
   - gateway/provider-kimi/src/main/**/*.kt
   - gateway/provider-codex/src/main/**/*.kt
   - gateway/provider-openai/src/main/**/*.kt
-  - gateway/control/src/main/**/*.kt
+  - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt
 rule:

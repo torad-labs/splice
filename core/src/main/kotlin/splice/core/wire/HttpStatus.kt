@@ -15,7 +15,7 @@
 // exactly one hit, and the reference carries where the number's authority comes from.
 //
 // WHY CORE: the same constraint ErrorEnvelope.of records one file over. The sites are spread over
-// :upstream, :provider-grok, :dialect-openai-responses, :daemon-head, :control and :app, and
+// :upstream, :provider-grok, :dialect-openai-responses, :daemon-head, :daemon-control and :app, and
 // :upstream cannot import :daemon-head — so any module below the top of that fan-in is the only
 // place all of them can reach. Core is the floor they share.
 //

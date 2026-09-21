@@ -1,4 +1,4 @@
-// NEW: V4-133 — UpstreamPlaygroundProbe against a REAL TopologyLoader.parse (unlike :control, :app
+// NEW: V4-133 — UpstreamPlaygroundProbe against a REAL TopologyLoader.parse (unlike :daemon-control, :app
 // carries the real ktoml parser), so a head/provider lookup that only works against a hand-built
 // Topology object would still be a lie about production. Covers the three dialects' URL and body
 // shape, the auth header being redacted in the echoed request, and every failure named by
@@ -29,8 +29,8 @@ import splice.control.HeadUsageSource
 import splice.control.ManagedHead
 import splice.control.RateLimitView
 import splice.control.UsageView
-import splice.control.api.PlaygroundFailure
-import splice.control.api.PlaygroundResult
+import splice.control.api.turns.PlaygroundFailure
+import splice.control.api.turns.PlaygroundResult
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials

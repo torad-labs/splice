@@ -16,12 +16,12 @@
 # route that genuinely must stay open takes a DATED entry in the allowlist regex below, which turns
 # "someone forgot" into "someone decided, on this date, for this reason".
 #
-# THE CENSUS (measured 2026-09-17, gateway/control/src/main). Denominator from the source: 25 route
+# THE CENSUS (measured 2026-09-17, daemon/control/src/main). Denominator from the source: 25 route
 # registrations, 20 carrying `guarded(`, 5 bare, 1 of those allowlisted, 4 RED:
-#   gateway/control/src/main/kotlin/splice/control/ControlServer.kt:128  get("/")
-#   gateway/control/src/main/kotlin/splice/control/ControlServer.kt:129  get("/dashboard")
-#   gateway/control/src/main/kotlin/splice/control/ControlServer.kt:158  post("/statusline/{head}")
-#   gateway/control/src/main/kotlin/splice/control/ControlServer.kt:159  get("/statusline/{head}")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:128  get("/")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:129  get("/dashboard")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:158  post("/statusline/{head}")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:159  get("/statusline/{head}")
 #
 # `/` AND `/dashboard` ARE A PREMISE CORRECTION, not a widening: the audit row named `/statusline`
 # as the only unguarded route and allowlisted only `/health`. The matcher finds two more, both
@@ -61,7 +61,7 @@ note: >
   every tool in this repo. Compliant form: `post("/api/x") { guarded(call) { handler(call) } }`, or
   `guarded(call, mcp = true) { … }` for the MCP access key.
 files:
-  - gateway/control/src/main/**/*.kt
+  - daemon/control/src/main/**/*.kt
 rule:
   all:
     # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path

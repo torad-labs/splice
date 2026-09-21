@@ -1,6 +1,6 @@
 // NEW: V4-133, FEATURES.md §5/§6 — GET/PUT /api/alerts. "alerts as desktop notifications and an
 // optional webhook", one of the table-stakes items the operator kept in. Test send lives on the
-// route (POST /api/alerts/test, splice.control.api.AlertRoutes) — this file holds only the
+// route (POST /api/alerts/test, splice.control.api.usage.AlertRoutes) — this file holds only the
 // settings, never a delivery history: FEATURES.md §5 draws that line explicitly ("a 'last fired'
 // store is not in the route's purpose").
 //

@@ -59,7 +59,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":daemon-head" to ADAPTER_BASE + DIALECTS,
     // the management plane reads the domain, and the client side it assembles a launch spec for.
-    ":control" to setOf(":core", ":client"),
+    ":daemon-control" to setOf(":core", ":client"),
 )
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are
@@ -70,8 +70,8 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
     ":dialect-anthropic-passthrough", ":dialect-openai-responses", ":dialect-openai-chat",
-    ":provider-codex", ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai",
-    ":control", ":app", ":arch-tests", ":fir-checks",
+    ":provider-codex", ":provider-grok", ":provider-kimi", ":provider-muse", ":provider-openai", ":app",
+    ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -799,7 +799,7 @@ class ModuleLawsTest {
                 testImplementation(testFixtures(project(":daemon-head")))
                 testFixturesImplementation(project(":core"))
                 implementation(project(":app", configuration = "shadow"))
-                implementation(project(  path  =  ":control"  ))
+                implementation(project(  path  =  ":daemon-control"  ))
                 // implementation(project(":commented-out"))
             }
         """.trimIndent()
@@ -812,7 +812,7 @@ class ModuleLawsTest {
                 "testImplementation" to ":daemon-head",
                 "testFixturesImplementation" to ":core",
                 "implementation" to ":app",
-                "implementation" to ":control",
+                "implementation" to ":daemon-control",
             ),
             configuredEdgesIn(script),
             "every Gradle spelling must be seen WITH the configuration that decides its plane",
@@ -831,12 +831,12 @@ class ModuleLawsTest {
                 api(project(path = ":spi"))
                 testImplementation(project( ":daemon-head" ))
                 implementation(project(":app", configuration = "shadow"))
-                implementation(project(  path  =  ":control"  ))
+                implementation(project(  path  =  ":daemon-control"  ))
                 // implementation(project(":commented-out"))
             }
         """.trimIndent()
         assertEquals(
-            setOf(":core", ":spi", ":daemon-head", ":app", ":control"),
+            setOf(":core", ":spi", ":daemon-head", ":app", ":daemon-control"),
             projectEdgesIn(script),
             "every Gradle spelling of a project edge must be visible to the architecture laws",
         )

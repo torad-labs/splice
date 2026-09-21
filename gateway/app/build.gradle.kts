@@ -30,7 +30,7 @@ dependencies {
     implementation(project(":provider-muse"))
     implementation(project(":provider-openai"))
     implementation(project(":daemon-head"))
-    implementation(project(":control"))
+    implementation(project(":daemon-control"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.graaljs.polyglot)

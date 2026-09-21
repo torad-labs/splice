@@ -1,5 +1,5 @@
 // NEW: V4-133, FEATURES.md §5/§6 — the :app-side implementation of
-// splice.control.api.PlaygroundProbe: POST /api/playground's ONE independent upstream call.
+// splice.control.api.turns.PlaygroundProbe: POST /api/playground's ONE independent upstream call.
 //
 // NAMED UpstreamPlaygroundProbe, NOT PlaygroundProbe: the fun interface it implements already owns
 // that name in splice.control.api, and a same-named concrete class one package over is exactly the
@@ -35,10 +35,10 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.control.ManagedHead
-import splice.control.api.PlaygroundFailure
-import splice.control.api.PlaygroundOutcome
-import splice.control.api.PlaygroundProbe
-import splice.control.api.PlaygroundResult
+import splice.control.api.turns.PlaygroundFailure
+import splice.control.api.turns.PlaygroundOutcome
+import splice.control.api.turns.PlaygroundProbe
+import splice.control.api.turns.PlaygroundResult
 import splice.core.auth.Credentials
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig

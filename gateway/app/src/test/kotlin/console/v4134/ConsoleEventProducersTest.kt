@@ -8,7 +8,7 @@
 // dispositioned here as deferred until V4-130 landed its wire observation (MessageEdges), and the
 // disposition was removed with it rather than left to excuse a family that now has a producer.
 //
-// Through the route, not through EventBus.subscribe: that method is internal to :control, which is
+// Through the route, not through EventBus.subscribe: that method is internal to :daemon-control, which is
 // the point — :app reaches the bus only by publishing, and the console only by the stream.
 package console.v4134
 

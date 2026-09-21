@@ -71,7 +71,7 @@ const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorD
 // assertion, so the file that would carry the violation need not exist yet. Scoped to the
 // NEIGHBOURHOOD instead — every .kt under the control plane, recursively — the same remedy CX-18
 // uses for its ban, so a new route file is covered the moment it is written, with no wall edit.
-const CONTROL_DIR = resolve(ROOT, "gateway/control/src/main/kotlin/splice/control");
+const CONTROL_DIR = resolve(ROOT, "daemon/control/src/main/kotlin/splice/control");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(command: string | null, doctor: string | null, control: string | null): string[] {

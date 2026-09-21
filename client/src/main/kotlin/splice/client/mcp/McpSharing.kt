@@ -1,7 +1,7 @@
 // NEW: v0.4.0 FEATURES.md §8 — decides which of the operator's MCP servers splice may host ONCE
 // for every session, and rewrites their entries so each head's Claude Code connects to the host
 // over HTTP instead of spawning its own copy. Framework-free on purpose: the host itself lives in
-// :control; this planner is the single source of truth both the materializer (what to rewrite)
+// :daemon-control; this planner is the single source of truth both the materializer (what to rewrite)
 // and the host (what to spawn) read, so the two can never disagree about a server's identity.
 //
 // Eligibility is deliberately conservative — a server that is NOT rewritten keeps today's

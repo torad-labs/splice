@@ -1009,7 +1009,7 @@ private const val RETRY_SLOTS = 80
 
 const A_KT = "gateway/app/src/main/kotlin/splice/A.kt";
 const B_KT = "core/src/main/kotlin/splice/B.kt";
-const C_KT = "gateway/control/src/main/kotlin/splice/C.kt";
+const C_KT = "daemon/control/src/main/kotlin/splice/C.kt";
 /** A fixture file's spelling in the arms -> the tree path it lands at. The paths carry the module
  *  homes (restructure PR 3 moves the modules out of gateway/ one by one, and the re-key that follows
  *  each move keeps A_KT/B_KT/C_KT true), so the writer never composes `gateway/<module>` itself. */

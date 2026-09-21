@@ -49,7 +49,7 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
 }
 
 /** The hourly quota rollup, projected onto the control plane's row type. A straight field-for-field
- *  copy on purpose: [EconomicsRow] is :control's own vocabulary and :control may not see :daemon-head,
+ *  copy on purpose: [EconomicsRow] is :daemon-control's own vocabulary and :daemon-control may not see :daemon-head,
  *  so the translation belongs here, in the composition root, and nowhere else. */
 public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEconomicsSource {
     override fun buckets(): List<EconomicsRow> = store.read().map {

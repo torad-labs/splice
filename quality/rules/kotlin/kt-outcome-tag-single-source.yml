@@ -26,7 +26,7 @@
 # CENSUS AT AUTHORING (2026-09-17, derived from the tree with this rule, never hand-listed — 18
 # sites in gateway + control main sources; the ARCH-AUDIT row named 9, so 9 more were found by
 # scanning rather than by reading the audit):
-#   gateway/control/api/PerfSummary.kt:32                "ok"              (the reader's own copy)
+#   daemon/control/api/PerfSummary.kt:32                "ok"              (the reader's own copy)
 #   gateway/pipeline/TurnPipeline.kt:73                  "failure:${outcome.type.wireName}"
 #   gateway/pipeline/TurnPipeline.kt:77                  "client_abort"
 #   gateway/pipeline/StreamPromote.kt:15                 "ok"              (PromoteVerdict default)
@@ -80,7 +80,7 @@ message: "Perf-row outcome tags have ONE declaration: name the tag from splice.c
 note: "The tag is a wire contract compared by string identity in PerfRowsFileSource, PerfSummary (`it != OK`) and PerfSnapshot — three readers that never see this writer. A drifted spelling still compiles and silently reclassifies the turn. Use OutcomeTag.OK / CLIENT_ABORT / EMPTY_MODEL / EMPTY_COMPACT / EMPTY_MESSAGE, or OutcomeTag.error(kind) / OutcomeTag.failure(wireName) for the prefix families. A JSON field name in FIRST argument position (`put(\"ok\", true)`) is exempt — that is a key, not a tag."
 files:
   - daemon/head/src/main/**/*.kt
-  - gateway/control/src/main/**/*.kt
+  - daemon/control/src/main/**/*.kt
 rule:
   kind: string_literal
   any:

@@ -55,7 +55,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const CONTROL = resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/ControlServer.kt");
+const CONTROL = resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/ControlServer.kt");
 const SHIM = resolve(ROOT, "bin/splice-launch");
 // HD-25: topologyFreshness — the declaration this wall reads — moved out of DoctorCommand.kt into
 // the daemon-section collaborator when that file was decomposed (it was the tree's worst

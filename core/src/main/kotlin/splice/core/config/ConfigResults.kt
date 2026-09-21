@@ -5,7 +5,7 @@
 // [PatchResult.effective] is the POST-patch view, read after the runtime layer is applied.
 // STAYS IN :core (HD-25, 2026-08-18): the only real consumer is the control-plane dashboard and the
 // instinct is to move these to splice.control.api. That destination is CLOSED — the module
-// direction law forbids :core depending on :control (splice.module-law.gradle.kts), and these are
+// direction law forbids :core depending on :daemon-control (splice.module-law.gradle.kts), and these are
 // what :core hands out, not what it reads back.
 package splice.core.config
 

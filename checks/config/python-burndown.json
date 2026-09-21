@@ -10,7 +10,7 @@
     ".dev/campaigns/kotlin-gateway.toml",
     ".dev/campaigns/oss-release.toml",
     ".dev/campaigns/proxy-hardening.toml",
-    ".dev/campaigns/proxy-hardening/oracle/expectations.toml",
+    "tools/e2e/fixtures/oracle/expectations.toml",
     ".dev/campaigns/proxy-hardening/research/proxy-landscape-improvements-2026-07-26.md",
     ".dev/campaigns/reasoning-cache.toml",
     ".dev/campaigns/v0.4.0.toml",

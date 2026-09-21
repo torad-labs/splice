@@ -124,7 +124,7 @@ run "campaign CLI selftest canary" bash checks/campaign-cli-selftest-canary.sh
 # Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the
 # captured Node oracle. Keeping the replay as a package script without a gate leg left the parity
 # claim entirely opt-in: every other check could pass while none of these fixtures ran.
-run "oracle replay" npm run --silent oracle:replay
+run "oracle replay" bun tools/e2e oracle
 # Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head.
 # The live `e2e:heads` lane is billed and stays out of this ladder.
 run "heads-e2e selftest" bash checks/e2e/heads-e2e-selftest.sh

@@ -47,27 +47,29 @@ internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = tru
         val byTurn = LinkedHashMap<String, Pair<MutableList<JsonObject>, JsonObject?>>()
         for (line in days(traceDir, head).lines()) {
             val record = parse(line)
-            val id = record?.let { JsonScalars.str(it, "turn") }
-            if (record == null || id == null) {
-                skipped += 1
-                continue
-            }
-            // A turn is created only by a kind that puts a record IN it. A line carrying a turn
-            // id under a kind this reader has no branch for — a foreign line, or a record kind a
-            // newer writer has — used to create the turn here and then fall to `else`, leaving a
-            // turn that holds nothing for TracedTurn.first to read a column off.
-            val kind = JsonScalars.str(record, "kind")
-            if (!placed(kind)) {
-                skipped += 1
-                continue
-            }
-            // The attempt list is shared by reference across the pair rewrite below, so an attempt
-            // that lands after the turn record (a late file-lane write) still joins its turn.
-            val (attempts, _) = byTurn.getOrPut(id) { mutableListOf<JsonObject>() to null }
-            if (kind == TraceKinds.TURN) byTurn[id] = attempts to record else attempts += record
+            if (record == null || !place(record, byTurn)) skipped += 1
         }
         val turns = byTurn.map { (id, records) -> TracedTurn(id, records.first, records.second) }
         return TraceRead(turns, skipped)
+    }
+
+    /** Files [record] under its turn, or false when this reader has no place for it: no turn id,
+     *  or a kind with no branch here. A turn is created ONLY by a kind that puts a record IN it —
+     *  a line carrying a turn id under a kind this reader has no branch for (a foreign line, or a
+     *  record kind a newer writer has) must be counted and dropped, never left as a turn holding
+     *  nothing for TracedTurn.first to read a column off. */
+    private fun place(
+        record: JsonObject,
+        byTurn: MutableMap<String, Pair<MutableList<JsonObject>, JsonObject?>>,
+    ): Boolean {
+        val id = JsonScalars.str(record, "turn") ?: return false
+        val kind = JsonScalars.str(record, "kind")
+        if (!placed(kind)) return false
+        // The attempt list is shared by reference across the pair rewrite below, so an attempt
+        // that lands after the turn record (a late file-lane write) still joins its turn.
+        val (attempts, _) = byTurn.getOrPut(id) { mutableListOf<JsonObject>() to null }
+        if (kind == TraceKinds.TURN) byTurn[id] = attempts to record else attempts += record
+        return true
     }
 
     private fun placed(kind: String?): Boolean = kind == TraceKinds.ATTEMPT || kind == TraceKinds.TURN

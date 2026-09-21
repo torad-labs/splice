@@ -28,9 +28,16 @@ internal class CodexCodeModeTurnBuilder(
 ) {
     private val models: Set<String> = CodexCodeModeModels.normalize(models ?: CodexCodeModeModels.DEFAULT)
 
-    fun prepare(body: AnthropicTurnBody, compact: Boolean, sessionId: String?, built: BuiltTurn): BuiltTurn {
+    /** [compact] is part of the provider's buildTurn contract and deliberately not read: the bridge
+     *  rides compactions exactly as it rides turns (see [eligible]). */
+    fun prepare(
+        body: AnthropicTurnBody,
+        @Suppress("UNUSED_PARAMETER") compact: Boolean,
+        sessionId: String?,
+        built: BuiltTurn,
+    ): BuiltTurn {
         val manager = bridge ?: return built
-        if (!eligible(body, compact, built)) return built
+        if (!eligible(body, built)) return built
         require(body.typed.tools.none { it.name == CODE_MODE_TOOL_NAME }) {
             "client tool name '$CODE_MODE_TOOL_NAME' collides with splice's code-mode bridge"
         }
@@ -51,11 +58,18 @@ internal class CodexCodeModeTurnBuilder(
         )
     }
 
-    private fun eligible(body: AnthropicTurnBody, compact: Boolean, built: BuiltTurn): Boolean {
+    // 2026-09-21 (cache law, QuirksConfig.compactEffort): a compaction is built EXACTLY like a turn.
+    // This used to refuse compact turns, which dropped the splice_exec declaration and the guidance
+    // paragraph from the compaction's request — the ONE byte-level difference from the turn before it
+    // (traced 2026-09-21: prefix shared for 110 KB, the tools block, then diverged), so every
+    // compaction on a 200k session re-read the whole transcript uncached (perf: cached_tokens=0 or
+    // ~20k on every compact=true row, 98% on the turns around it) — 5% of a 5h budget per compaction.
+    // The interceptor stays armed too: the summarizer's last message forbids tools, and a cell it
+    // calls anyway is run and answered rather than surfaced to Claude Code as a rejected tool call.
+    private fun eligible(body: AnthropicTurnBody, built: BuiltTurn): Boolean {
         val choice = body.typed.toolChoice
         val choiceAllowsBridge = choice == null || (choice.name == null && choice.type in setOf("auto", "any"))
-        return !compact &&
-            body.typed.tools.isNotEmpty() &&
+        return body.typed.tools.isNotEmpty() &&
             choiceAllowsBridge &&
             CodexCodeModeModels.eligible(built.meta.upstreamModel, models) &&
             isLiteRequest(built.requestBody)

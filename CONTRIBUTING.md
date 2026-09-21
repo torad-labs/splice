@@ -14,15 +14,15 @@ Run before opening a PR — these are the same checks CI runs:
 ```bash
 bun install --frozen-lockfile
 npm run gate              # the complete local/CI gate
-npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
+npm run gate:rules        # ast-grep walls, rule routing, config guard, coverage proof
 npm run test:hooks        # orchestrator hook test suite
-bash checks/config-guard.sh   # rules that guard the rules
+bun test tools/gate           # the gate CLI's own red-green arms
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
 npm run lint -w console && npm test -w console && ./gradlew :console:build
 npm run oss:verify
 ```
 
-`npm run gate` (`checks/gate.sh`) runs the complete list: Gradle module-law/detekt/tests,
+`npm run gate` (`bun tools/gate run`: the Gradle ladder of tools/gate/config/ladder.json, then the OSS readiness scripts) runs the complete list: Gradle module-law/detekt/tests,
 ast-grep walls, hook tests, campaign walls, config guard, console lint/test (the bundle builds in the gradle tier)
 with a committed-dist check, staged release acceptance, dependency audit, and every OSS
 readiness check. The individual commands are listed only so a contributor can run one in
@@ -42,17 +42,17 @@ changing a rule.
 The org-injected PR-title gate (check name `title`) enforces Conventional Commits on the **PR
 title** — it is the squash-merge subject, so it becomes `main`'s history verbatim. This repo used
 to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The allowed types live once,
-in `checks/pr-title.sh`, mirroring the org gate. A second copy is how two types the org gate
+in `tools/gate/src/lib/conventional.ts`, mirroring the org gate. A second copy is how two types the org gate
 rejects survived here after that deletion.
 
 Check a title before opening the PR, the same way the PR template tells you to:
 
-    bash checks/pr-title.sh "feat(scope): subject"
+    bun tools/gate title "feat(scope): subject"
 
 Scope is optional: `fix(walls): …`. Anything else fails the org check, which is a required check,
 so the PR cannot merge.
 
-**That script is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
+**That file is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
 `verify(x):` — fails the check.
 
 **Use an allowed type in your branch commit subject as well.** Only the title is linted, but the

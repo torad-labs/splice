@@ -16,7 +16,7 @@
  * Nothing was measuring it. detekt has no such rule, the module law governs GRADLE edges and
  * not visibility, and Konsist's laws read packages rather than the consumer set. So the
  * surface grew for the whole campaign under a green gate, which is the same shape as the
- * 2026-07-16 style pack that sat unrouted for a month (see checks/rule-routing.sh).
+ * 2026-07-16 style pack that sat unrouted for a month (see tools/gate/src/lib/routing.ts).
  *
  * THE DENOMINATOR COMES FROM THE SOURCE, never a hand list (§24). Two files are parsed:
  *   · settings.gradle.kts — every include()d module path. That is the universe.

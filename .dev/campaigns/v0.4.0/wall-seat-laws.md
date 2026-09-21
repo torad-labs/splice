@@ -11,7 +11,7 @@ Branch feat/v0.4.0. Ledger CLI (the ONLY channel for ledger reads/writes):
 Start by `get` on each row you own — the row title is the spec. Claim it, then work.
 
 ## Hard rules
-1. NEVER commit, push, stash, rebase, or edit git state. NEVER edit checks/gate.sh (the orchestrator
+1. NEVER commit, push, stash, rebase, or edit git state. NEVER edit the gate ladder (tools/gate/config/ladder.json, build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts) (the orchestrator
    wires gate legs); instead put the exact `run "<name>" <command>` line(s) in a ledger note.
 2. Fence: touch ONLY the files your rows list (plus new files under the same directories that the
    row implies: your rule YAML, its rule-test, your python check, its selftest, its baseline).
@@ -36,10 +36,10 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    header that states the law, the scar, the census and the remedy):
    - ast-grep rule: quality/rules/kotlin/kt-no-lambda-seam.yml, quality/rules/kotlin/kt-no-extension-functions.yml
    - rule-test: quality/rules/rule-tests/kt-catch-swallows-cancellation-test.yml (ast-grep test format;
-     `npm run --silent gate:rules` runs scan + test); routing: sgconfig.yml, checks/rule-routing-selftest.sh;
+     `npm run --silent gate:rules` runs scan + test); routing: sgconfig.yml, `bun tools/gate rules` + tools/gate/test/routing.test.ts;
      rule docs wall: checks/config/ast-grep-rule-docs.py (a new rule may need a doc entry — run it).
    - bun wall with an IN-FILE --selftest: checks/config/shared-quirks-no-vendor-defaults.ts;
-     bun wall with a SEPARATE red-green selftest: checks/no-python.ts + checks/no-python-selftest.ts
+     bun wall with a SEPARATE red-green selftest: tools/gate/src/lib/no-python.ts + tools/gate/test/no-python.test.ts
      (19 arms, each asserting its own SETUP before it grades — copy that shape, an arm that grades a
      mutation it did not make is the failure the whole wall family exists to catch);
      bash red-green selftest: checks/concentration-selftest.sh.
@@ -47,7 +47,7 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
      made the campaign's own law file a live instruction to write Python — found 2026-09-18 by
      splice-builder while censusing callers for its conversion, and it is the worst of the eighteen
      sites it turned up: every other one teaches the next session by accident, this one taught it on
-     purpose. Any .py still named elsewhere in this repo is burn-down debt (checks/no-python.ts),
+     purpose. Any .py still named elsewhere in this repo is burn-down debt (`gate no-python`),
      never an example to follow.
    - Konsist arch tests: gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt.
    - Use ast-grep (`npx ast-grep` / sg) for Kotlin structure, not regex, wherever the node kind is
@@ -58,7 +58,7 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    inactive/failed, AND this probe must be empty:
      for p in $(pgrep -u marcos -x java); do tr '\0' ' ' </proc/$p/cmdline | grep -qE 'GradleWrapperMain|GradleDaemon' && echo busy $p; done
    (`pgrep -f` self-matches — never use it). Then run inside the memory slice:
-     bash checks/gradle-slot.sh <seat-label> <tasks>
+     bun tools/gate slot <seat-label> -- <tasks>
    Wait with a bounded loop (sleep 30; recheck), never a spin. Never kill a java process.
 6. A compaction is NOT a stop: your session compacts and continues; re-read your rows with `get`
    and carry on. Never hand work back citing context.

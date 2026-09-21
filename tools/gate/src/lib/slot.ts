@@ -27,6 +27,10 @@ export interface SlotOptions {
   readonly layout: Layout;
   readonly label: string;
   readonly args: readonly string[];
+  /** Overrides laid OVER the process environment — for the lock (GRADLE_SLOT_LOCK, GRADLE_SLOT_WAIT_S)
+   *  and the child alike. Never a replacement: `gate run` passes only JAVA_HOME here, and the first
+   *  cut read the lock settings from that one-key map, so an operator's GRADLE_SLOT_LOCK was
+   *  discarded and the gate took the worktree's default lock beside a competing build (#170 review). */
   readonly env?: Record<string, string | undefined>;
   /** overridable so the tests can wait milliseconds instead of an hour */
   readonly pollMs?: number;
@@ -58,7 +62,7 @@ function holderOf(holderPath: string): string {
 
 /** Run gradle under the slot. Returns the exit code to propagate — it never calls process.exit. */
 export async function runUnderSlot(options: SlotOptions): Promise<number> {
-  const env = options.env ?? Bun.env;
+  const env: Record<string, string | undefined> = { ...Bun.env, ...(options.env ?? {}) };
   const { label, args } = options;
 
   if (args.length === 0) {
@@ -141,9 +145,9 @@ function spawnGradle(
   env: Record<string, string | undefined>,
 ): Bun.Subprocess {
   // The child inherits the caller's environment, as it does under bash — gradle needs JAVA_HOME,
-  // HOME and PATH, and `buildgate` refuses without HOME. `env` only ADDS to it.
+  // HOME and PATH, and `buildgate` refuses without HOME. `env` is already that merge (runUnderSlot).
   const childEnv: Record<string, string> = {};
-  for (const [key, value] of Object.entries({ ...Bun.env, ...env })) {
+  for (const [key, value] of Object.entries(env)) {
     if (typeof value === "string") childEnv[key] = value;
   }
   // `-n "${CI:-}"` in the script: an empty CI is not CI.

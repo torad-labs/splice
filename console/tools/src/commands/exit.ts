@@ -191,14 +191,16 @@ const LEGS = [
   {
     name: 'law-check',
     why: 'laws 25 and 27 over the whole ledger — the one property no other leg observes',
-    // REPORTS, DOES NOT GATE. law-check.mjs exits 1 on the violations that are history (M1-08/09/10
-    // carry the negation shape and are done; the CSS rows predate law 25), and whether that blocks
-    // the milestone is the orchestrator's call — so this leg runs --report, which always exits 0 and
-    // prints the violations and their row ids. The proof requires the row count, so a run that read
-    // no ledger is DID NOT RUN rather than a clean report.
-    probe: () => sh('node', ['.dev/web-console/law-check.mjs', '--selftest'], ROOT),
-    probeProof: /selftest \d+\/\d+ PASS/,
-    run: () => sh('node', ['.dev/web-console/law-check.mjs', '--report'], ROOT),
+    // REPORTS, DOES NOT GATE. `gate ledger laws` exits 1 on the violations that are history
+    // (M1-08/09/10 carry the negation shape and are done; the CSS rows predate law 25), and whether
+    // that blocks the milestone is the orchestrator's call — so this leg runs --report, which always
+    // exits 0 and prints the violations and their row ids. The proof requires the row count, so a
+    // run that read no ledger is DID NOT RUN rather than a clean report. The probe is the check's
+    // own red-green arms (tools/gate/test/laws.test.ts): both laws both ways, the unreadable fence,
+    // the empty ledger.
+    probe: () => sh('bun', ['test', 'tools/gate/test/laws.test.ts'], ROOT),
+    probeProof: /\d+ pass/,
+    run: () => sh('bun', ['tools/gate', 'ledger', 'laws', '--report'], ROOT),
     proof: /law-check: [1-9]\d* row\(s\) read from the ledger/,
     // The leg passes and still says the number, because the number is the deliverable.
     note: (out) => out.split('\n').filter((line) => /dispositions|narrow reading|done rows|law 2[57]:/.test(line)).map((l) => l.trim()).join('\n'),
@@ -325,9 +327,9 @@ const LEGS = [
     // is the last thing to be true.
     name: 'landed',
     why: 'every done row\'s receipted bytes reachable from HEAD — the row that claims a landing it does not have',
-    probe: () => sh('node', ['.dev/web-console/landed.mjs', '--selftest'], ROOT),
-    probeProof: /selftest \d+\/\d+ PASS/,
-    run: () => sh('node', ['.dev/web-console/landed.mjs'], ROOT),
+    probe: () => sh('bun', ['test', 'tools/gate/test/landed.test.ts'], ROOT),
+    probeProof: /\d+ pass/,
+    run: () => sh('bun', ['tools/gate', 'ledger', 'landed'], ROOT),
     // rows read and objects walked both non-zero: a run against an empty ledger or an unborn
     // repository would otherwise report a clean history it never looked at
     proof: /landed: [1-9]\d* row\(s\) read from .+, \d+ receipted file\(s\) checked against [1-9]\d* object\(s\)/,

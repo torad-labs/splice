@@ -1059,11 +1059,13 @@ verify = "bun .dev/campaigns/proxy-hardening/walls/inf_02_every_law_walled.ts"
 id = "INF-03"
 phase = "W-INFRA"
 title = "The three excluded oracle scenarios (idle, drip, refresh) become capturable — idle/drip are timing-dependent (CLAUDEX_STREAM_IDLE_MS, chunk pacing) so a byte-exact fixture is unstable without a virtual clock; refresh mutates auth state across runs so capture is order-dependent and needs a stateful fixture shape recording the refresh call sequence. They are recorded in expectations.toml's [[excluded]] rows with recovery notes but NO item owned making them capturable. URGENT relative to the rest: capture is only possible while server/ still exists."
-files = [".dev/campaigns/proxy-hardening/walls/../oracle/expectations.toml", ".dev/campaigns/proxy-hardening/walls/../oracle/capture.mjs"]
+files = ["tools/e2e/fixtures/oracle/expectations.toml", "tools/e2e/src/commands/oracle.ts"]
 status = "blocked"
-verify = "node .dev/campaigns/proxy-hardening/oracle/capture.mjs --check"
+verify = "npm run --silent oracle:check"
 # [2026-09-20] RETIRED — its subject is gone. server/ (the legacy Node stack) was deleted 2026-08-13 at sha 3fd1cb32 — confirmed absent at the tip — and oracle/capture.mjs self-documents as inoperable since 2026-08-10 BY DESIGN. The oracle now grades the Kotlin gateway directly via replay, so there are no 'three excluded capture scenarios' left to make capturable.
 # [2026-09-20] STATUS = blocked, not cancelled: this CLI's vocabulary is todo|in_flight|blocked|done|verified and has no 'cancelled'. 'done' would be a lie — nothing shipped under this id — so 'blocked' is the honest state for a retired row. Not adding a status to the CLI for seven rows; mechanism follows an incident that proved it load-bearing.
+# [2026-09-21] amend by=orchestrator: verify was "node .dev/campaigns/proxy-hardening/oracle/capture.mjs --check"; files were [".dev/campaigns/proxy-hardening/walls/../oracle/expectations.toml", ".dev/campaigns/proxy-hardening/walls/../oracle/capture.mjs"]
+# [2026-09-21] restructure PR 5 (2026-09-21): the oracle moved to tools/e2e (fixtures flat under tools/e2e/fixtures/oracle/, replay ported to bun tools/e2e oracle); capture.mjs is deleted from the tree and lives at git show a0ae88c3:.dev/campaigns/proxy-hardening/oracle/capture.mjs. verify now spells npm run oracle:check, which exits 2 with the provenance explanation - the row stays blocked for the same reason as before.
 
 [[items]]
 id = "INF-04"

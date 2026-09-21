@@ -1,7 +1,6 @@
-// `gate rules` must be the SAME ast-grep invocations `npm run gate:rules` runs — not an
-// equivalent set. package.json:15 is the oracle, read here rather than copied, so that editing the
-// npm script and not the CLI (or the reverse) turns this red instead of producing two checkers that
-// drift and then agree with each other while disagreeing with the tree.
+// `gate rules` is the ONE entry for the ast-grep walls: package.json's gate:rules is this verb, so
+// there is no second spelling of the legs to drift from. The two ast-grep invocations the npm script
+// used to spell are pinned here literally — the oracle is the recorded contract, not a copy.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,18 +14,20 @@ const script = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"))
   .scripts["gate:rules"]!;
 
 describe("gate rules", () => {
-  test("runs exactly the legs package.json:15 runs, in order", async () => {
-    const { LEGS } = (await import("../src/commands/rules.ts")) as unknown as { LEGS?: string[][] };
-    const legs = LEGS ?? legsFromSource();
-    const fromNpm = script.split("&&").map((leg) => leg.trim().split(/\s+/));
-    expect(fromNpm.every((leg) => leg[0] === "ast-grep")).toBe(true);
-    expect(legs).toEqual(fromNpm.map((leg) => leg.slice(1)));
+  test("package.json's gate:rules is this verb, coverage proof included", () => {
+    expect(script.trim()).toBe("bun tools/gate rules --prove-coverage");
   });
 
-  test("the config the npm script implies exists, and it names no other", () => {
-    // the routed config is the implicit one: `ast-grep scan` with no --config walks up to it
+  test("runs the two ast-grep invocations the npm script used to spell, in order", () => {
+    expect(legsFromSource()).toEqual([["scan"], ["test", "--skip-snapshot-tests"]]);
+  });
+
+  test("the implicit config exists at the root, and the verb names no other", () => {
+    // `ast-grep scan` with no --config walks up to it; a nested config would leave every anchored
+    // glob selecting nothing, silently (measured on ast-grep 0.45.2).
     expect(existsSync(join(repoRoot, ROUTED_CONFIG))).toBe(true);
-    expect(script).not.toContain("--config");
+    expect(ROUTED_CONFIG).toBe("sgconfig.yml");
+    expect(legsFromSource().flat()).not.toContain("--config");
   });
 
   test("prefers the pinned node_modules ast-grep, as npm's PATH does", () => {

@@ -2,7 +2,7 @@
 # checks/autocloseable-closed-selftest.sh — mutation-proves checks/autocloseable-closed.ts.
 #
 # V4-95. The checker guards the tree; this canary guards the CHECKER. Same defence-in-depth idiom as
-# checks/rule-routing-selftest.sh and checks/concentration-selftest.sh, and written for the same
+# tools/gate/test/routing.test.ts and checks/concentration-selftest.sh, and written for the same
 # reason those exist: the leg that ran fail-OPEN for a month reported PASS the whole time, and
 # nothing re-ran the hand transcripts that would have caught it.
 #

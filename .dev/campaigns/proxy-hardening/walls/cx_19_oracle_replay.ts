@@ -78,9 +78,9 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const ORACLE = resolve(ROOT, ".dev/campaigns/proxy-hardening/oracle");
+const ORACLE = resolve(ROOT, "tools/e2e/fixtures/oracle"); // moved by restructure PR 5; the corpus is flat
 const EXPECT = resolve(ORACLE, "expectations.toml");
-const FIXTURES = resolve(ORACLE, "fixtures");
+const FIXTURES = ORACLE;
 const SERVER = resolve(ROOT, "server");
 
 const UNREPLAYED = "not-yet-replayed";

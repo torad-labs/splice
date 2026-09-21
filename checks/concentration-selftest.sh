@@ -10,10 +10,11 @@
 # defeated by a single `#`:
 #
 #     "gate:concentration": "true # bun checks/concentration.ts --ratchet --max-ratio 1.8"
-#     run "concentration"  true  # gate:concentration disabled pending investigation
+#     run "concentration"  true  # gate:concentration disabled pending investigation   (gate.sh, until PR 5)
 #
 # Both kept every required substring while executing `true`. A transcript in a ledger cannot notice
-# that; a fixture in the gate can. Items 4, 5 and 6 below are those exact bypasses, wired.
+# that; a fixture in the gate can. Items 4, 5 and 6 below are those exact bypasses, wired — 6 on
+# the ladder TABLE (tools/gate/config/ladder.json) that replaced gate.sh's `run` lines.
 #
 # WHAT IT ENCODES — six fixtures, each of which MUST exit non-zero, and each of which asserts the
 # REASON as well as the exit code. A fixture that goes red for the wrong reason is a fixture that
@@ -24,7 +25,7 @@
 #   3  a ceiling recorded above its file's measured ratio       -> PADDED CEILING arm, in every mode
 #   4  gate:concentration rewritten to `true`                   -> routing guard, inverse half
 #   5  gate:concentration defanged by a shell comment           -> routing guard, inverse half
-#   6  the concentration leg removed from / commented out of gate.sh -> routing guard, forward half
+#   6  the concentration leg removed from / defanged in the ladder table -> routing guard, forward half
 #  13  85 band-low files in ONE package, file census green      -> PACKAGE REGRESSION arm (V4-93)
 #  14  PACKAGE_MAX_FILES held above the measured worst package   -> PACKAGE SLACK arm (V4-93)
 #  16  SRC_GLOBS pointed at nothing                             -> empty-census refusal (V4-93)
@@ -34,7 +35,7 @@
 # package). A refusal-only selftest proves a wall can fail and never that it measures anything.
 #
 # EVERYTHING RUNS OUT OF TREE. The harness is a mktemp -d containing COPIES of the two checkers and
-# of package.json / checks/gate.sh, plus one SYMLINK per gateway module — so the oracle measures the
+# of package.json / tools/gate/config/ladder.json, plus one SYMLINK per gateway module — so the oracle measures the
 # real source (ROOT is derived from its own import.meta.path, so a copy under $tmp/checks measures $tmp)
 # while every mutation lands on a throwaway. Nothing is ever written into gateway/, and the working
 # tree is not touched at all.
@@ -57,10 +58,10 @@ ROUTING="$tmp/checks/config/concentration-leg-routed.ts"
 SYNTH="$tmp/gateway/zz-selftest-synthetic/src/main/kotlin/splice/selftest"
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/gateway"
+mkdir -p "$tmp/checks/config" "$tmp/tools/e2e/src/compat" "$tmp/gateway" "$tmp/tools/gate/config"
 # The routing wall (V4-145) and the oracle (V4-158) are bun, and both import the Python-semantics
-# shims from ../e2e/.
-cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
+# shims from tools/e2e/src/compat/.
+cp "$ROOT/tools/e2e/src/compat/python-json.ts" "$ROOT/tools/e2e/src/compat/python-values.ts" "$tmp/tools/e2e/src/compat/"
 # THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
 # modules out of gateway/ one commit at a time): a harness that measures a tree with a module
 # missing hands its control a red that reads exactly like a real regression — or, worse, a green
@@ -78,7 +79,7 @@ done
 reset_oracle() { cp "$ROOT/checks/concentration.ts" "$ORACLE"; }
 reset_config() {
   cp "$ROOT/package.json" "$tmp/package.json"
-  cp "$ROOT/checks/gate.sh" "$tmp/checks/gate.sh"
+  cp "$ROOT/tools/gate/config/ladder.json" "$tmp/tools/gate/config/ladder.json"
   cp "$ROOT/checks/config/concentration-leg-routed.ts" "$ROUTING"
 }
 reset_oracle
@@ -124,7 +125,7 @@ if [ "$rc" -ne 0 ]; then
 fi
 routing
 if [ "$rc" -ne 0 ]; then
-  err "CONTROL: the unmutated package.json + gate.sh must be GREEN (exit $rc): $(tail -3 "$tmp/out" | tr '\n' ' ')"
+  err "CONTROL: the unmutated package.json + ladder.json must be GREEN (exit $rc): $(tail -3 "$tmp/out" | tr '\n' ' ')"
 fi
 if [ "$fail" -ne 0 ]; then
   echo "  ✗ concentration-selftest: control failed — the six fixtures below are UNPROVEN, not passing"
@@ -270,54 +271,53 @@ reset_config
 oracle --ratchet --since HEAD --max-ratio 1.8
 must_fail "5d. --since cannot silently override --ratchet" "--ratchet and --since are mutually exclusive"
 
-# ── 6. routing guard, forward half: gate.sh stops running the leg ─────────────────────────────
-# rewrite_leg <mode> — the gate.sh mutations of 6, 6b, 6c and 10, on the harness copy.
-#   delete  every line naming gate:concentration goes
-#   true    the `run` leg becomes `true`, the script name kept in a trailing comment
-#   dead    the `run` leg is wrapped in `if false; then ... fi`
-#   hijack  the `run` leg gains npm middle flags that re-point and disarm it
-# Each asserts the leg it rewrites exists exactly once, so a fixture that finds nothing to mutate
-# fails to build instead of running the unmutated gate.sh.
+# ── 6. routing guard, forward half: the ladder stops running the leg ──────────────────────────
+# rewrite_leg <mode> — the ladder-table mutations of 6, 6b, 6c and 10, on the harness copy.
+#   delete   the row whose argv names gate:concentration goes
+#   true     the row's argv becomes ["true"], the script name kept in its reason
+#   repoint  the row's argv calls the oracle directly, without --ratchet, bypassing package.json
+#   hijack   the row's argv gains npm middle flags that re-point and disarm it
+# Each asserts the row it rewrites exists exactly once, so a fixture that finds nothing to mutate
+# fails to build instead of running the unmutated table.
 rewrite_leg() {
-  step "$tmp/checks/gate.sh" "$1" <<'TS'
+  step "$tmp/tools/gate/config/ladder.json" "$1" <<'TS'
 import { readFileSync, writeFileSync } from "node:fs";
 
 const [path, mode] = process.argv.slice(2);
-const lines = readFileSync(path, "utf8").split(/(?<=\n)/);
-const isLeg = (line: string) => line.includes("gate:concentration") && line.trimStart().startsWith("run ");
+type Leg = { task: string; why: string; command: string[] };
+const doc = JSON.parse(readFileSync(path, "utf8")) as { legs: Leg[] };
+const isLeg = (leg: Leg) => leg.command.includes("gate:concentration");
+if (doc.legs.filter(isLeg).length !== 1) throw new Error("ladder.json has no single leg whose argv names gate:concentration");
 if (mode === "delete") {
-  const kept = lines.filter((line) => !line.includes("gate:concentration"));
-  if (kept.length === lines.length) throw new Error("gate.sh has no concentration leg to remove");
-  writeFileSync(path, kept.join(""));
+  doc.legs = doc.legs.filter((leg) => !isLeg(leg));
 } else {
-  if (lines.filter(isLeg).length !== 1) throw new Error("gate.sh has no single `run` leg naming gate:concentration");
-  const replace: Record<string, (line: string) => string> = {
-    true: () => 'run "concentration"  true  # gate:concentration disabled pending investigation\n',
-    dead: (line) => `if false; then\n${line}fi\n`,
-    hijack: () => 'run "concentration"  npm run --prefix /tmp --if-present gate:concentration\n',
+  const replace: Record<string, (leg: Leg) => Leg> = {
+    true: (leg) => ({ ...leg, why: `${leg.why} (gate:concentration disabled pending investigation)`, command: ["true"] }),
+    repoint: (leg) => ({ ...leg, command: ["bun", "checks/concentration.ts", "--top", "5"] }),
+    hijack: (leg) => ({ ...leg, command: ["npm", "run", "--prefix", "/tmp", "--if-present", "gate:concentration"] }),
   };
-  writeFileSync(path, lines.map((line) => (isLeg(line) ? replace[mode](line) : line)).join(""));
+  doc.legs = doc.legs.map((leg) => (isLeg(leg) ? replace[mode](leg) : leg));
 }
+writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
 TS
 }
 
 rewrite_leg delete
 routing
-must_fail "6. the concentration leg removed from gate.sh entirely" "does not run 'gate:concentration'"
+must_fail "6. the concentration leg removed from the ladder entirely" "does not run 'gate:concentration'"
 reset_config
 
-# The forward half of the blocker: the leg still LOOKS routed, and runs `true`.
+# The forward half of the blocker: the row still LOOKS routed, and runs `true`.
 rewrite_leg true
 routing
-must_fail "6b. the gate.sh leg replaced by 'true', script name left in a trailing comment" "does not run 'gate:concentration'"
+must_fail "6b. the ladder row's argv replaced by 'true', script name kept in its reason" "does not run 'gate:concentration'"
 reset_config
 
-# DR-114: the reachability half. Wrapping the leg in dead control flow keeps every token of the
-# line intact — the guard's line-by-line tokenizer saw a perfect `run` leg while bash never
-# executes it. Deletion (6), replacement (6b) and flag-hijack (10) all leave this hole open.
-rewrite_leg dead
+# The row calls the oracle itself, bypassing the package.json script the inverse half validates —
+# every word of the oracle present, the ratchet gone.
+rewrite_leg repoint
 routing
-must_fail "6c. the gate.sh leg wrapped in 'if false; then ... fi' (dead but token-identical)" "control structure"
+must_fail "6c. the ladder row re-pointed at the oracle directly, without the ratchet" "does not run 'gate:concentration'"
 reset_config
 
 # ── 7. census: every Kotlin type spelling is counted, nested types reported (DR-51) ──────────
@@ -430,9 +430,9 @@ reset_config
 # pre-DR-51 oracle: the intersection loop dropped the added and deleted rows entirely, and abs()
 # shares could not go negative, so an own-C FALL during a ratio RISE read as a positive share.
 G="$tmp/since-repo"
-mkdir -p "$G/checks/e2e" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
+mkdir -p "$G/checks" "$G/tools/e2e/src/compat" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
 cp "$ROOT/checks/concentration.ts" "$G/checks/concentration.ts"
-cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$G/checks/e2e/"
+cp "$ROOT/tools/e2e/src/compat/python-json.ts" "$ROOT/tools/e2e/src/compat/python-values.ts" "$G/tools/e2e/src/compat/"
 { printf 'package splice.a\nimport splice.b.SelftestMarkerB\nclass A0(val v: Int)\n'; for i in $(seq 1 40); do printf 'class AF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m1/src/main/kotlin/splice/a/A.kt"
 { printf 'package splice.b\nclass SelftestMarkerB(val v: Int)\n'; for i in $(seq 1 200); do printf 'class BF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m2/src/main/kotlin/splice/b/B.kt"
 printf 'package splice.b\nclass Doomed(val v: Int)\n' > "$G/gateway/m2/src/main/kotlin/splice/b/Doomed.kt"

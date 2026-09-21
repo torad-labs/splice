@@ -6,11 +6,11 @@
  * change in the working tree, a self-timeout (cold daemon), a missing JDK 21, or any gradle-infra
  * hiccup all PASS silently — a Stop hook that spuriously wedges a turn is worse than none. The full
  * ./gradlew check (detekt + the 1000-stream load test) is impractical per-Stop; that lives in
- * `bash checks/gate.sh` and the gateway-gradle CI job. This arm catches only the one thing you must
+ * `bun tools/gate run` and the gateway-gradle CI job. This arm catches only the one thing you must
  * never end a turn on: code that does not compile.
  *
  * THE FAIL-OPEN CHOICE IS THE DESIGN AND IS STATED HERE RATHER THAN IMPLIED: this hook is the THIRD
- * of three instruments — the write-time walls and `checks/gate.sh` are the other two — so a
+ * of three instruments — the write-time walls and `bun tools/gate run` are the other two — so a
  * failed-open here costs a delayed signal, never an unguarded tree. A hook that is the ONLY
  * enforcement of its rule must fail closed instead; this one is not.
  */
@@ -123,7 +123,7 @@ function main(): void {
 
   const reason =
     "Kotlin main source does not compile — a turn must not end on a red tree (#924 0c, light " +
-    "Stop arm). Fix these, then `bash checks/gate.sh` for the full gate:\n" +
+    "Stop arm). Fix these, then `bun tools/gate run` for the full gate:\n" +
     errs.slice(0, 6).join("\n");
   process.stdout.write(pyJsonDumps({ decision: "block", reason }) + "\n");
   process.exit(0);

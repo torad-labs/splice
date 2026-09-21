@@ -166,16 +166,16 @@ class Report {
 // UPSTREAM request bytes the head sent, checked against sha256(builderOutput) so a blind
 // golden-regenerate can't go green — needs a head-side upstream-request tap that does NOT exist yet
 // (the head doesn't surface the bytes its RequestBuilder produced). Until that lands, this records
-// what IS observable client-side and marks contract_bound=false. See .docs/architecture/request-byte-contracts.md for the
+// what IS observable client-side and marks contract_bound=false. See docs/architecture/request-byte-contracts.md for the
 // tap + the enforcement it unlocks. This makes the receipt file + emission point real, not the
 // binding — so wiring the tap is a localized change.
 // DR-111: E2E_RECEIPT_DIR redirects emission for harness selftests — a loopback run against a
 // real head KEY must never fabricate that head's in-repo receipt (the binding would grade fakes).
 export const RECEIPT_NOTE =
-  "upstream-request-bytes tap not wired; sha256(builderOutput)==receipt.hash inactive — see .docs/architecture/request-byte-contracts.md";
+  "upstream-request-bytes tap not wired; sha256(builderOutput)==receipt.hash inactive — see docs/architecture/request-byte-contracts.md";
 
 function receiptDir(root: string): string {
-  return process.env.E2E_RECEIPT_DIR || join(root, "checks/e2e/receipts");
+  return process.env.E2E_RECEIPT_DIR || join(root, "tools/e2e/receipts");
 }
 
 function emitReceipt(dir: string, key: string, model: string, httpStatus: number): void {
@@ -196,7 +196,7 @@ function emitReceipt(dir: string, key: string, model: string, httpStatus: number
       2,
     ) + "\n",
   );
-  note(`    receipt: ${path} (contract_bound=false — see .docs/architecture/request-byte-contracts.md)`);
+  note(`    receipt: ${path} (contract_bound=false — see docs/architecture/request-byte-contracts.md)`);
 }
 
 // ── HTTP, with the credential off argv ───────────────────────────────────────
@@ -473,7 +473,7 @@ function perfGate(report: Report, stateDir: string, key: string, since: number, 
 // THE NAME IS COMPOSED, NOT DECLARED. Claude Code spells an MCP tool mcp__<server key>__<tool>,
 // so the 68 characters come from the .mcp.json KEY plus the name the server advertises in its
 // tools/list — never from a string anybody writes out in full. Both halves live here; the server
-// owns only its short half (checks/e2e/mcp_overlong_tool_server.ts).
+// owns only its short half (tools/e2e/fixtures/mcp_overlong_tool_server.ts).
 //
 // REDO 2026-09-17 — the first version of this arm was inert. It planted an INLINE `-c` one-liner
 // that exits before the first byte of the stdio handshake, and it wrote no settings, so the
@@ -484,7 +484,7 @@ export const OVERLONG_MCP_SERVER = "plugin_desktop-commander_desktop-commander";
 export const OVERLONG_MCP_TOOL = "read_process_output";
 export const OVERLONG_TOOL_NAME = `mcp__${OVERLONG_MCP_SERVER}__${OVERLONG_MCP_TOOL}`;
 export const OVERLONG_MCP_LOG_NAME = "mcp-handshake.jsonl";
-export const OVERLONG_MCP_SERVER_SCRIPT = "checks/e2e/mcp_overlong_tool_server.ts";
+export const OVERLONG_MCP_SERVER_SCRIPT = "tools/e2e/fixtures/mcp_overlong_tool_server.ts";
 
 /**
  * Plants the server AND enables it. A project-scoped .mcp.json is INERT on its own: Claude Code
@@ -539,7 +539,7 @@ export function plantOverlongMcp(scratch: string, root: string): void {
  * session's tool surface — the surface the operator's muse turn carried when it 400d.
  *
  * WHY NOT THE WIRE BYTES. The stronger receipt — the exact request the head sent upstream — needs
- * the head-side tap .docs/architecture/request-byte-contracts.md describes and that does not exist yet (the same gap
+ * the head-side tap docs/architecture/request-byte-contracts.md describes and that does not exist yet (the same gap
  * emitReceipt marks contract_bound=false for), and a perf row carries no tool names at all
  * (PerfStats.kt writes ts/model/outcome/marks/counters). So this gate asserts the name entered
  * the session and the turn assertions assert the head answered anyway: an unshortened over-cap
@@ -660,7 +660,7 @@ async function tier1(ctx: Context, head: Head): Promise<void> {
   const probe = Bun.spawnSync(
     [
       process.execPath,
-      join(ctx.root, "checks/e2e/stream_probe.ts"),
+      join(ctx.root, "tools/e2e/probes/stream_probe.ts"),
       "--head", key,
       "--port", port,
       "--model", model,

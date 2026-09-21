@@ -741,7 +741,7 @@ Return only the requested JSON object, without markdown fences. Stop once suffic
 // different file (restructure PR 5 moved it two directories deeper).
 export const GUIDANCE_PATH = join(
   findRepoRoot(import.meta.dir),
-  "providers/codex/src/main/resources",
+  "integrations/providers/codex/src/main/resources",
   "splice/provider/codex/code-mode-orchestration.txt",
 );
 // read_text() decodes UTF-8 with universal newlines.

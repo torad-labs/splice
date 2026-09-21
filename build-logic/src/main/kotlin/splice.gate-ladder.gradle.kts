@@ -4,9 +4,11 @@
 //
 // THE LEGS ARE DATA: tools/gate/config/ladder.json names each leg's task, its argv and WHY it
 // exists, and this plugin registers one Exec task per row. The table is data rather than Kotlin so
-// that a checker can read the same rows without running Gradle — checks/config/concentration-leg-
-// routed.ts's forward half asks that file whether the concentration leg is routed, as it used to
-// ask gate.sh — and `verifyLadder` proves the registration: every row is an Exec task with that
+// that a checker can read the same rows without running Gradle — tools/gate/test/run.test.ts does
+// exactly that, proving every row is a real leg with a reason and an argv whose target exists (it
+// caught two legs still pointing into checks/ on 2026-09-21, after the move). The concentration
+// leg's own routing check retired with the checker it routed, for the reason configguard.ts:11-13
+// records — and `verifyLadder` proves the registration: every row is an Exec task with that
 // argv inside gateOfRecord's dependency closure, so a row the plugin dropped or a dependsOn somebody
 // removed is a red leg, not a silently narrower gate.
 //

@@ -172,7 +172,7 @@ class UsageSingleAliasReaderLawTest {
 
     private companion object {
         const val CHAIN = "core/src/main/kotlin/splice/core/util/JsonScalars.kt"
-        const val CHAT = "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt"
+        const val CHAT = "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt"
         const val HUD = "daemon/head/src/main/kotlin/splice/head/usage/UsageJson.kt"
         const val FAR = "upstream/src/main/kotlin/splice/upstream/retry/RetryAfter.kt"
 

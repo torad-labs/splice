@@ -14,6 +14,8 @@ import kotlinx.serialization.json.putJsonArray
 import splice.control.api.ControlAudit
 import splice.control.api.ControlPayloads
 import splice.control.api.HeadResolver
+import splice.heads.start.StartHead
+import splice.heads.start.StartHeadAudit
 
 private const val KEY = "key"
 
@@ -22,12 +24,19 @@ internal class HeadRoutes(
     private val payloads: ControlPayloads,
     private val audit: ControlAudit,
 ) {
+    private val startHead = StartHead(HeadStartAdapter(resolver), StartHeadAudit { name ->
+        audit.headAction(name, "start")
+    })
+
     suspend fun headAction(call: ApplicationCall) {
-        val key = call.parameters["head"].orEmpty()
         val action = call.parameters["action"].orEmpty()
+        if (action == "start") {
+            startHead.handle(call)
+            return
+        }
+        val key = call.parameters["head"].orEmpty()
         val managed = resolver.resolveHeadOrRespond(call, key) ?: return
         when (action) {
-            "start" -> managed.head.start()
             "stop" -> managed.head.stop()
             "restart" -> managed.head.restart()
             else -> {

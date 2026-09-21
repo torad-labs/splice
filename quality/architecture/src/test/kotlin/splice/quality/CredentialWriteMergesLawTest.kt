@@ -23,11 +23,11 @@
 // denominator is every provider file that calls the write, found by sweeping, and each one must
 // either merge or say in its own source why it is not a credential write.
 //
-// SCOPED TO providers/. The atomic write is the tree's one credential-write primitive and about
-// twenty files outside providers/ use it — config.json, teams.json, the key store, the usage ring,
+// SCOPED TO integrations/providers/. The atomic write is the tree's one credential-write primitive and about
+// twenty files outside integrations/providers/ use it — config.json, teams.json, the key store, the usage ring,
 // Claude Code's own materializer. None of them persists a PROVIDER credential, which is what SH-10
 // is about, and the wall listed them by name purely to exclude them. Excluding them by scope is the
-// same exclusion with nothing to maintain. A credential write added outside providers/ is not
+// same exclusion with nothing to maintain. A credential write added outside integrations/providers/ is not
 // covered here, exactly as it was not covered there.
 package splice.quality
 
@@ -42,7 +42,7 @@ internal object CredentialWriteMerges {
 
     /** The shared primitive, or a provider-local merge built on the same rule (grok, codex). */
     private val MERGE = Regex("merged[A-Za-z]*Json\\s*\\(")
-    private val PROVIDER_FILE = Regex("^providers/([^/]+)/src/main/.*\\.kt$")
+    private val PROVIDER_FILE = Regex("^integrations/providers/([^/]+)/src/main/.*\\.kt$")
     private val EXEMPT = Regex("//\\s*CREDENTIAL-WRITE-EXEMPT\\[(\\d{4}-\\d{2}-\\d{2})]:(.*)")
 
     /** Pure: repo-relative path -> source text. */
@@ -57,7 +57,7 @@ internal object CredentialWriteMerges {
             .filterValues { KotlinText.stripComments(it).contains(WRITE) }
             .keys.sorted()
         if (writers.isEmpty()) {
-            problems += "no file under providers/ calls $WRITE — the credential writers are this law's " +
+            problems += "no file under integrations/providers/ calls $WRITE — the credential writers are this law's " +
                 "denominator, so an empty sweep means the extractor or the project map broke, not that the " +
                 "tree complies"
         }
@@ -160,8 +160,8 @@ class CredentialWriteMergesLawTest {
         ) + files.toMap()
 
     private companion object {
-        const val NEW = "providers/new/src/main/kotlin/splice/provider/new/NewPersistence.kt"
-        const val BASE = "providers/base/src/main/kotlin/splice/provider/base/BasePersistence.kt"
+        const val NEW = "integrations/providers/new/src/main/kotlin/splice/provider/new/NewPersistence.kt"
+        const val BASE = "integrations/providers/base/src/main/kotlin/splice/provider/base/BasePersistence.kt"
         const val PRIMITIVE = "public fun mergedCredentialJson(onDisk: JsonObject?, replacements: JsonObject)\n"
         const val REWRITES = "SecureFile.writeAtomic0600(path, newAuthJson(tokens).toString())\n"
         const val MERGES =

@@ -82,7 +82,15 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
     }
   }
 
-  const used = new Set<number>();
+  // Staleness is keyed on (row, RULE), never on the row alone. A row listing several rules used to
+  // be marked used the moment ONE of them genuinely excused a lost source root, which made every
+  // sibling entry in that row permanently invisible to the retirement check below — 70 of this
+  // table's rule entries live in multi-rule rows. Measured 2026-09-21: six rules were widened to
+  // reach a newly extracted module, the row excusing them went stale in six places, and this proof
+  // stayed GREEN. The mutation arm that was supposed to catch that only ever mutated a
+  // single-rule row, so the row shape that hides dead exclusions was the one shape never tested.
+  const used = new Set<string>();
+  const usedKey = (rowIndex: number, ruleId: string): string => `${rowIndex}\u0000${ruleId}`;
   let coveredPairs = 0;
 
   for (const rule of rules) {
@@ -109,7 +117,7 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
       const matched = expected.filter((f) => selects(rule, f));
       if (matched.length === 0) {
         const row = unitRows.find((r) => coversUnit(r, unit));
-        if (row) used.add(row.index);
+        if (row) used.add(usedKey(row.index, rule.id));
         else {
           findings.push({
             kind: "source-root-lost",
@@ -126,7 +134,7 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
       const orphans: string[] = [];
       for (const file of lost) {
         const row = fileRows.find((r) => r.files.some((glob) => globMatch(glob, file)));
-        if (row) used.add(row.index);
+        if (row) used.add(usedKey(row.index, rule.id));
         else orphans.push(file);
       }
       if (orphans.length > 0) {
@@ -142,14 +150,19 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
   }
 
   for (const row of table.rows) {
-    if (used.has(row.index)) continue;
-    findings.push({
-      kind: "exclusion-stale",
-      rule: row.rules[0],
-      message:
-        `exclusion ${describe(row)} excuses nothing — every source root and file it names is already ` +
-        `covered, or the rule does not exist. A stale disposition is a finding, not a default.`,
-    });
+    for (const id of row.rules) {
+      // an id no rule declares is already reported by name as exclusion-invalid above; reporting it
+      // a second time here would say nothing the reader does not have.
+      if (!ruleIds.has(id) || used.has(usedKey(row.index, id))) continue;
+      findings.push({
+        kind: "exclusion-stale",
+        rule: id,
+        message:
+          `exclusion ${describe(row)} lists "${id}", which excuses nothing — every source root and ` +
+          `file that row names is already covered for that rule. A stale disposition is a finding, ` +
+          `not a default.`,
+      });
+    }
   }
 
   let crossChecked = 0;

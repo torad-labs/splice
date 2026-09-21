@@ -47,6 +47,10 @@
     "lines": 122,
     "rows": 6
   },
+  "repository-layout.toml": {
+    "lines": 15,
+    "rows": 1
+  },
   "v0.4.0.toml": {
     "lines": 5995,
     "rows": 185

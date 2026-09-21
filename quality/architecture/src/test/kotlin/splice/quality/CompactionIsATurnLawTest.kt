@@ -17,7 +17,7 @@
 //
 // THE DENOMINATOR IS THE TREE. The wall this replaces carried two hand-written maps: five builder
 // paths and three canary paths. A fourth dialect is green in both on the day it lands. Here, every
-// *RequestBuilder.kt under dialects/ is found by sweeping, and each one's module must carry a test
+// *RequestBuilder.kt under integrations/dialects/ is found by sweeping, and each one's module must carry a test
 // containing the canary sentence. Add a dialect, and the law names it.
 //
 // THE TOKEN BAN IS SECONDARY AND SAYS SO. Naming a compact-shaping symbol in a builder is the early
@@ -25,7 +25,7 @@
 // carry long comments ABOUT compact shaping explaining why they no longer do it, and a scanner that
 // could not tell prose from code would red the very files that document the law.
 //
-// SCOPED TO BUILDERS, NOT TO dialects/. Widening the ban to every dialect source was measured and
+// SCOPED TO BUILDERS, NOT TO integrations/dialects/. Widening the ban to every dialect source was measured and
 // rejected: seven reads of the compact flag live in the RESPONSE path and the cache policy —
 // ResponsesTurnSeams.kt:57-77, ReasoningCachePolicy.kt:23, ResponsesOutcomePayload.kt:41 — where
 // consulting it is correct. A law that reds correct code teaches readers to ignore it.
@@ -38,8 +38,8 @@ import org.junit.jupiter.api.Test
 internal object CompactionIsATurn {
     const val CANARY: String = "compaction is built byte-identical to a turn"
 
-    private val BUILDER = Regex("^dialects/([^/]+)/src/main/.*/[A-Za-z]*RequestBuilder\\.kt$")
-    private val TEST_OF_MODULE = Regex("^dialects/([^/]+)/src/test/.*\\.kt$")
+    private val BUILDER = Regex("^integrations/dialects/([^/]+)/src/main/.*/[A-Za-z]*RequestBuilder\\.kt$")
+    private val TEST_OF_MODULE = Regex("^integrations/dialects/([^/]+)/src/test/.*\\.kt$")
 
     /** A compact-only reshaping of the request, by name. */
     private val FORBIDDEN = listOf(
@@ -62,7 +62,7 @@ internal object CompactionIsATurn {
         val builders = main.keys.filter { BUILDER.matches(it) }.sorted()
         if (builders.isEmpty()) {
             return listOf(
-                "no *RequestBuilder.kt under dialects/ was swept — this law's denominator is the tree, so an " +
+                "no *RequestBuilder.kt under integrations/dialects/ was swept — this law's denominator is the tree, so an " +
                     "empty sweep means the extractor or the project map broke, not that every dialect complies",
             )
         }
@@ -83,7 +83,7 @@ internal object CompactionIsATurn {
             emptyList()
         } else {
             listOf(
-                "dialects/$module ships $builderPath with no byte-identity canary: no test in that module " +
+                "integrations/dialects/$module ships $builderPath with no byte-identity canary: no test in that module " +
                     "contains \"$CANARY\". The canary is what actually proves a compaction is built like a turn — " +
                     "it compares the two request bodies byte for byte, so it catches a reshaping anywhere in the " +
                     "builder's call graph. Without it this dialect's prompt cache can go to zero with every test green",
@@ -135,7 +135,7 @@ class CompactionIsATurnLawTest {
         ) { "a test file that exists but does not carry the canary sentence is not coverage" }
         assertHit(
             CompactionIsATurn.audit(MAIN + (OTHER_BUILDER to "class OtherRequestBuilder"), TESTS),
-            "dialects/newdialect",
+            "integrations/dialects/newdialect",
         ) { "a NEW dialect's builder is named the day it lands, which no hand-written map can do" }
     }
 
@@ -170,9 +170,9 @@ class CompactionIsATurnLawTest {
     }
 
     private companion object {
-        const val BUILDER_PATH = "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt"
-        const val TEST_PATH = "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatRequestBuilderTest.kt"
-        const val OTHER_BUILDER = "dialects/newdialect/src/main/kotlin/splice/dialect/new/NewRequestBuilder.kt"
+        const val BUILDER_PATH = "integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt"
+        const val TEST_PATH = "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatRequestBuilderTest.kt"
+        const val OTHER_BUILDER = "integrations/dialects/newdialect/src/main/kotlin/splice/dialect/new/NewRequestBuilder.kt"
         const val PROSE =
             "// every compact-only reshaping (withCompactDirective, if (opts.compact) ...) moved the prefix\n" +
                 "val x = 1\n"

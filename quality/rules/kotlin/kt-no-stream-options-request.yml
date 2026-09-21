@@ -24,10 +24,10 @@ files:
 # and different full text, so it walked straight through while producing the identical banned
 # runtime string. Anchored against the inner string_content node instead, which is delimiter-
 # agnostic: it matches the content of both `"include_usage"` and `"""include_usage"""` alike. The
-# `dialects/openai-chat/**` exemption is unaffected and still discriminates against the 2
+# `integrations/dialects/openai-chat/**` exemption is unaffected and still discriminates against the 2
 # real files there that legitimately carry the string.
 ignores:
-  - dialects/openai-chat/**
+  - integrations/dialects/openai-chat/**
 rule:
   kind: string_literal
   has:

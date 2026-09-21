@@ -195,7 +195,7 @@ names = [
 ]
 reason = """Three codecs on different sides of the OAuth wire, plus one unrelated reader. ExchangeForm builds the x-www-form-urlencoded token-EXCHANGE body for a real authorization code, per-provider because codex and grok disagree on which of client_id, code_verifier and redirect_uri they require, and the ENCODING happens inside it — an unencoded `code` on the wire is an opaque 400 to the operator. DeviceAuthForm builds the RFC 8628 device-authorization REQUEST body. AuthJsonFromResponse runs the other way entirely: a token RESPONSE in, the credential JSON out, and the result is written through SecureFile.writeAtomic0600 — what comes out of one of these is a credential at rest. Two request builders and one response parser sharing a type would let a credential-shaped string be posted upstream, or a form body be written to auth.json. GitBranchReader reads the current git branch for a working directory and shares this shape by coincidence, which is the hazard the naming answers."""
 
-# ── 4 names, (String) -> Unit ─────────────────────────────────────────────────────────────────────
+# ── 5 names, (String) -> Unit ─────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "(String)->Unit"
 dated = "2026-09-17"
@@ -204,8 +204,9 @@ names = [
     "MalformedLine",
     "RawSseWrite",
     "RetryNotice",
+    "StartHeadAudit",
 ]
-reason = """Four destinations for one string, and the split that must not compile is diagnostic plane versus client wire. LogSink writes a DIAGNOSTIC to the daemon log and stderr, head-scoped so every line carries its `[<headKey>]` prefix. MalformedLine reports one unparseable upstream SSE line, and its contract is that it is "a REPORT and not a throw" — a malformed frame must never crash the stream. RawSseWrite puts BYTES ON THE CLIENT SOCKET (the bottom rung of the write-port ladder). RetryNotice is client- and operator-facing text about a retry already decided — "a NOTICE, not a decision", and the only account an operator gets of a 429 cooldown or a stream re-issue. A LogSink wired where RawSseWrite was meant sends the client nothing and the turn hangs; the inverse writes daemon diagnostics into a transcript."""
+reason = """Four destinations for one string, and the split that must not compile is diagnostic plane versus client wire. LogSink writes a DIAGNOSTIC to the daemon log and stderr, head-scoped so every line carries its `[<headKey>]` prefix. MalformedLine reports one unparseable upstream SSE line, and its contract is that it is "a REPORT and not a throw" — a malformed frame must never crash the stream. RawSseWrite puts BYTES ON THE CLIENT SOCKET (the bottom rung of the write-port ladder). RetryNotice is client- and operator-facing text about a retry already decided — "a NOTICE, not a decision", and the only account an operator gets of a 429 cooldown or a stream re-issue. A LogSink wired where RawSseWrite was meant sends the client nothing and the turn hangs; the inverse writes daemon diagnostics into a transcript. StartHeadAudit (2026-09-21, the features/heads extraction) is a THIRD plane again: it records that an operator successfully started a head, keyed by the name the caller supplied, and it is neither diagnostic nor client-facing — it is the control plane's account of an action someone took. A LogSink wired in its place loses the audit trail while every log line still looks healthy, which is the failure that is invisible until someone asks who started this head; RawSseWrite in its place puts a head name on a client socket."""
 
 # ── 4 names, suspend () -> T ──────────────────────────────────────────────────────────────────────
 [[groups]]

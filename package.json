@@ -21,7 +21,7 @@
     "e2e:heads": "bun tools/e2e heads",
     "e2e:heads:wire": "bun tools/e2e heads --tier 1",
     "e2e:heads:selftest": "bun tools/e2e heads --selftest",
-    "e2e:docker": "bash checks/e2e/docker/run.sh",
+    "e2e:docker": "bash tools/e2e/docker/run.sh",
     "oracle:capture": "bun tools/e2e oracle capture",
     "oracle:check": "bun tools/e2e oracle check",
     "oracle:replay": "bun tools/e2e oracle",

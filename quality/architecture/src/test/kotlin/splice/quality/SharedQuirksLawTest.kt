@@ -54,7 +54,7 @@ internal object SharedQuirks {
     data class Field(val name: String, val typeText: String, val default: String?)
 
     fun dialectModules(map: ProjectMap): List<String> =
-        map.modules.filter { it.startsWith(":dialects-") }.sorted()
+        map.modules.filter { it.startsWith(":integrations-dialects-") }.sorted()
 
     /** Every .kt under src/main of every dialect module, in path order. */
     fun dialectQuirkFiles(map: ProjectMap): List<File> =
@@ -211,11 +211,11 @@ class SharedQuirksLawTest {
     // The scope asymmetry: a dialect's shared class is graded, a provider's own class is not.
     @Test
     fun `providers are out of scope and dialects are in - through the build's map`(@TempDir root: File) {
-        val dialect = File(root, "dialects/openai-responses/src/main/kotlin").apply { mkdirs() }
-        val vendor = File(root, "providers/codex/src/main/kotlin").apply { mkdirs() }
+        val dialect = File(root, "integrations/dialects/openai-responses/src/main/kotlin").apply { mkdirs() }
+        val vendor = File(root, "integrations/providers/codex/src/main/kotlin").apply { mkdirs() }
         val synthetic = ProjectMap.parse(
             root,
-            ":dialects-openai-responses=dialects/openai-responses;:providers-codex=providers/codex",
+            ":integrations-dialects-openai-responses=integrations/dialects/openai-responses;:providers-codex=integrations/providers/codex",
             setOf("build"),
         )
         File(dialect, "ResponsesQuirks.kt").writeText(COMPLIANT)
@@ -228,7 +228,7 @@ class SharedQuirksLawTest {
         File(dialect, "ResponsesQuirks.kt").writeText(REGEX_VIOLATION)
         assertEquals(
             listOf(
-                "dialects/openai-responses/src/main/kotlin/ResponsesQuirks.kt: ResponsesQuirks.effortMaxRejectModelRegex model-id default: Regex(\"mini\", RegexOption.IGNORE_CASE)",
+                "integrations/dialects/openai-responses/src/main/kotlin/ResponsesQuirks.kt: ResponsesQuirks.effortMaxRejectModelRegex model-id default: Regex(\"mini\", RegexOption.IGNORE_CASE)",
             ),
             SharedQuirks.checkTree(synthetic),
             "the dialect's Regex default must be RED by file and field",

@@ -73,9 +73,9 @@ id = "NF-06"
 phase = "W1-bounded-failure"
 wall = ""
 retired_to = [
-    "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
-    "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
-    "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+    "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+    "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+    "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
     "quality/architecture/src/test/kotlin/splice/quality/ConstSingleSourceLawTest.kt",
 ]
 proof = "2026-09-21: four mutations, no new law — requirement 3 turned out to be homed already, and the wall turned out to be BLIND to it. Legs A-C neuter each translator's live guard (`val withinCapacity = !BufferCapacity.over(...)` -> `= true`, which keeps the `if (!withinCapacity)` branch and simply never trips it): chat -> wall RED and ChatRunawayGuardTest 3/3 RED; responses -> wall RED and ResponsesRunawayGuardTest 3/3 RED; passthrough -> wall RED and PassthroughStreamTranslatorTest 21 tests 1 failure. Leg D is requirement 3, `the chat translator no longer carries its own private MAX_BUFFERED_CHARS`: re-declaring `private const val MAX_BUFFERED_CHARS: Int = 20_000_000` in ChatStreamTranslator.kt left the WALL GREEN while ConstSingleSourceLawTest went RED (7 tests, 1 failure, `every duplicated const name is strict-free and at or under its recorded ratchet`). So the wall states requirement 3 but does not enforce it, and the guarantee is already carried generically by the COPY ratchet — the same const NAME in two files with the same normalised value — which needs no knowledge of this constant at all. Restored, wall GREEN, 3/3, 3/3, 21/21. FILTER NOTE, fifth occurrence in this migration and the first where the resolver existed and was not used: chat's arms are in ChatRunawayGuardTest and responses' in ResponsesRunawayGuardTest, both SIBLING classes inside the *StreamTranslatorTest.kt files; filtering on the file's main class ran 22 unrelated tests and reported a false GREEN under a mutation the wall had already reddened"
@@ -93,9 +93,9 @@ phase = "W2-auth-lifecycle"
 wall = ""
 retired_to = [
     "quality/architecture/src/test/kotlin/splice/quality/OneMissingExpiryPolicyLawTest.kt",
-    "providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt",
-    "providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthProviderTest.kt",
-    "providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt",
+    "integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt",
+    "integrations/providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthProviderTest.kt",
+    "integrations/providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt",
 ]
 proof = "2026-09-21: five mutations. Three behavioural, each red on both sides: grok's synthesizeExpiry -> Long.MAX_VALUE (the never-expiring credential SH-01 abolishes) reds the wall (grok no longer synthesizes at all - G18 regression) and GrokAuthProviderTest (11 tests, 2 failures); kimi's -> 0L (the pre-fix floor, a refresh per call) reds the wall and KimiSynthesizedExpiryTest (3, 1); codex's -> Long.MAX_VALUE reds the wall and the codex suite. Two structural, where the WALL STAYED GREEN: removing muse's disposition, and planting a second SYNTHETIC_EXPIRY_TTL_MS in kimi, each red only in OneMissingExpiryPolicyLawTest (4 tests, 1 failure, the live sweep). Neither is visible to the wall, which opens three provider files by path and bans a private TTL in grok alone -- there are FIVE provider modules on disk, and muse and openai were never looked at. The law takes its denominator from the swept tree and gives every *AuthProvider.kt a disposition: it routes through CredentialExpiry, or it carries a dated NO-EXPIRY-EXEMPT marker with a written reason. Restored, wall GREEN and 4/4"
 
@@ -103,7 +103,7 @@ proof = "2026-09-21: five mutations. Three behavioural, each red on both sides: 
 id = "SH-02"
 phase = "W2-auth-lifecycle"
 wall = ""
-retired_to = "providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt"
+retired_to = "integrations/providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt"
 proof = "2026-09-21: GrokAuthProvider.persistRotation() SH-02b block deleted (no backoff, no did-not-advance log, no counter); the wall went RED and the arm 'sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b' FAILED on the same mutation; restored, both GREEN (11/11); SH-02a is pinned by the two no-expires_in arms, which the wall's stale raw-text ban could no longer see"
 
 [[item]]
@@ -119,11 +119,11 @@ phase = "W2-auth-lifecycle"
 wall = ""
 retired_to = [
     "quality/architecture/src/test/kotlin/splice/quality/CredentialWriteMergesLawTest.kt",
-    "providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt",
-    "providers/muse/src/test/kotlin/splice/provider/muse/MuseAuthProviderFixesTest.kt",
-    "providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt",
+    "integrations/providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt",
+    "integrations/providers/muse/src/test/kotlin/splice/provider/muse/MuseAuthProviderFixesTest.kt",
+    "integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt",
 ]
-proof = "2026-09-21: THIS WALL WAS SOUND, and the row says so rather than claiming otherwise. Three hypotheses that its detection was weaker than its text were each tested and each was WRONG: its denominator is already derived from the tree (every .kt under a gateway module's src/main), a planted from-scratch writer at providers/grok/.../GrokPeerWrite.kt reds it by name (undisposed atomic writer -- add a dated disposition; absence is not one), and staleDispositions() already fails an entry whose file is gone or no longer writes. It is retired because its two claims have better homes, not because it was blind. (a) THE MERGE CLAIM: kimi rebuilding the credential object from scratch (mergedCredentialJson dropped) reds the wall, the law, AND KimiSynthesizedExpiryTest `refresh merges onto the on-disk file - foreign fields survive rotation - SH-10` (3 tests, 1 failure); muse persisting only its replacements reds the wall, the law and MuseAuthProviderFixesTest `unknown mint-body fields drop while on-disk unknowns survive` (11, 1). The behavioural arms are strictly stronger than the wall's value trace: the trace proves the merge result reaches the write syntactically, the arms write a foreign field, refresh, and read the file back. (b) THE SECOND-WRITER CLAIM, which no behavioural arm can make because each drives the provider it knows about: the planted writer reds the wall and the law EQUALLY. The law does not beat it there; it carries the guarantee that would otherwise be dropped when the wall goes, and it moves the dispositions out of a map inside the wall into the files themselves, where a rename cannot strand one. A blank disposition reds the law (4 tests, 1 failure). Restored, both walls GREEN, law 4/4, kimi 3/3. The kimi wall file goes with it: nothing imported it but the muse wall"
+proof = "2026-09-21: THIS WALL WAS SOUND, and the row says so rather than claiming otherwise. Three hypotheses that its detection was weaker than its text were each tested and each was WRONG: its denominator is already derived from the tree (every .kt under a gateway module's src/main), a planted from-scratch writer at integrations/providers/grok/.../GrokPeerWrite.kt reds it by name (undisposed atomic writer -- add a dated disposition; absence is not one), and staleDispositions() already fails an entry whose file is gone or no longer writes. It is retired because its two claims have better homes, not because it was blind. (a) THE MERGE CLAIM: kimi rebuilding the credential object from scratch (mergedCredentialJson dropped) reds the wall, the law, AND KimiSynthesizedExpiryTest `refresh merges onto the on-disk file - foreign fields survive rotation - SH-10` (3 tests, 1 failure); muse persisting only its replacements reds the wall, the law and MuseAuthProviderFixesTest `unknown mint-body fields drop while on-disk unknowns survive` (11, 1). The behavioural arms are strictly stronger than the wall's value trace: the trace proves the merge result reaches the write syntactically, the arms write a foreign field, refresh, and read the file back. (b) THE SECOND-WRITER CLAIM, which no behavioural arm can make because each drives the provider it knows about: the planted writer reds the wall and the law EQUALLY. The law does not beat it there; it carries the guarantee that would otherwise be dropped when the wall goes, and it moves the dispositions out of a map inside the wall into the files themselves, where a rename cannot strand one. A blank disposition reds the law (4 tests, 1 failure). Restored, both walls GREEN, law 4/4, kimi 3/3. The kimi wall file goes with it: nothing imported it but the muse wall"
 
 [[item]]
 id = "SH-11"
@@ -239,8 +239,8 @@ id = "CX-01"
 phase = "W4-correctness-walls"
 wall = ""
 retired_to = [
-    "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatToolFoldTest.kt",
-    "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+    "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatToolFoldTest.kt",
+    "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
 ]
 proof = "2026-09-21: three mutations, each red on both sides, and NO new law — this wall's three claims are already pinned behaviourally in both dialects, so inventing a structural law here would be an element that earns nothing. (a) the chat latch neutered (toolArgsInvalid never assigned) -> wall RED (chat translator never latches toolArgsInvalid at terminal) and ChatToolFoldTest `under-delivered stream args echoed by id are caught as a Failure - CX-01` RED (6 tests, 1 failure). (b) both responses latch sites neutered -> wall RED and ResponsesToolArgsValidationTest `truncated tool arguments plus a terminal is a Failure, not corrupt Success - CX-01` RED (3, 2). (c) the chat terminal's `toolArgsInvalid != null -> Failure` arm made unreachable, which is the half-fix the wall was REPAIRED in 2026-08-17 to catch -> wall RED and the same chat arm RED. Restored, wall GREEN, 6/6 and 3/3. The arms assert the OUTCOME (a truncated tool call closes as Failure, never a Success carrying corrupt tool_use) where the wall checks the call sites that produce it, so they hold even if the latch is spelled differently. Unlike sh_01 and cx_02 there is no fourth-implementation case to guard: the wall covers the two OpenAI-family translators and there are exactly two, with anthropic passthrough forwarding tool args untouched. NOTE the filter trap: the responses arm lives in ResponsesToolArgsValidationTest, a sibling class in ResponsesStreamTranslatorTest.kt — filtering on the file's main class runs none of it"
 
@@ -250,11 +250,11 @@ phase = "W4-correctness-walls"
 wall = ""
 retired_to = [
     "quality/architecture/src/test/kotlin/splice/quality/CompactionIsATurnLawTest.kt",
-    "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatRequestBuilderTest.kt",
-    "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/request/ResponsesRequestBuilderTest.kt",
-    "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughRequestBuilderTest.kt",
+    "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatRequestBuilderTest.kt",
+    "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/request/ResponsesRequestBuilderTest.kt",
+    "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughRequestBuilderTest.kt",
 ]
-proof = "2026-09-21: two mutations. (a) openai-chat's canary sentence renamed away -> wall RED (the byte-identity canary test is gone for openai-chat) and CompactionIsATurnLawTest RED (4 tests, 1 failure). (b) the chat builder pinned an effort on compact (`val effort = if (compact) \"compact-pin\" else ...`) -> wall RED (openai-chat reads the compact flag while building the request), the law RED, AND the byte-identity canary itself RED (ChatRequestBuilderTest 19 tests, 1 failure) on that one mutation. Restored, wall GREEN and 19/19. The canary is the real guarantee and stays where it is: it compares the two request bodies byte for byte, so it catches a reshaping anywhere in the builder's call graph. What the law adds is the thing a canary cannot do for itself -- every *RequestBuilder.kt found by sweeping must have a canary in its module, so a fourth dialect cannot ship without one, where the wall carried two hand-written maps of five and three paths. Its token ban is scoped to builders on purpose: widening it to dialects/ was measured and reds correct code, since seven compact reads live in the response path and the cache policy (ResponsesTurnSeams.kt:57-77, ReasoningCachePolicy.kt:23, ResponsesOutcomePayload.kt:41) where consulting the flag is right"
+proof = "2026-09-21: two mutations. (a) openai-chat's canary sentence renamed away -> wall RED (the byte-identity canary test is gone for openai-chat) and CompactionIsATurnLawTest RED (4 tests, 1 failure). (b) the chat builder pinned an effort on compact (`val effort = if (compact) \"compact-pin\" else ...`) -> wall RED (openai-chat reads the compact flag while building the request), the law RED, AND the byte-identity canary itself RED (ChatRequestBuilderTest 19 tests, 1 failure) on that one mutation. Restored, wall GREEN and 19/19. The canary is the real guarantee and stays where it is: it compares the two request bodies byte for byte, so it catches a reshaping anywhere in the builder's call graph. What the law adds is the thing a canary cannot do for itself -- every *RequestBuilder.kt found by sweeping must have a canary in its module, so a fourth dialect cannot ship without one, where the wall carried two hand-written maps of five and three paths. Its token ban is scoped to builders on purpose: widening it to integrations/dialects/ was measured and reds correct code, since seven compact reads live in the response path and the cache policy (ResponsesTurnSeams.kt:57-77, ReasoningCachePolicy.kt:23, ResponsesOutcomePayload.kt:41) where consulting the flag is right"
 
 [[item]]
 id = "CX-04"
@@ -266,9 +266,9 @@ id = "CX-07"
 phase = "W4-correctness-walls"
 wall = ""
 retired_to = [
-  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
-  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
-  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+  "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+  "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
   "upstream/src/test/kotlin/splice/upstream/retry/RetryMatrixCoverageTest.kt",
 ]
 proof = "2026-09-21: W4-A checked ONE chain at BOTH ends and only one end was homed. THE ARM END, each dialect reading the signal into a FailureCause, wall and home on the same bytes: passthrough's `\"refusal\" -> FailureCause.MODEL_REFUSED` disabled — wall RED and PassthroughStopReasonHonestyTest 'stop_reason refusal is an honest provider-reported failure, never a clean success' FAILED (8 arms, 1 failure); chat's `strIfString(obj[\"refusal\"])` disabled — wall RED and ChatRefusalHonestyTest FAILED on 8 of 13 arms; responses' refusal event routing disabled — wall RED and ResponsesRefusalHonestyTest FAILED on 5 of 12. THE WIRE END was held by nothing but the wall's two source substrings, PROVEN TWICE: MODEL_REFUSED remapped to INVALID_REQUEST and UPSTREAM_STATUS_5XX remapped to API_ERROR each red the wall, and each left RetryMatrixCoverageTest's nine pre-existing arms GREEN (9 tests, 0 failures) — its exhaustiveness arm only asserts every (cause, phase) pair is non-null, and its value arms pin INTERNAL, UPSTREAM_REPORTED and the INVALID_REQUEST group, never these two. A tenth arm pins them at every phase, asserting the RESOLVED value rather than a source substring, so a pre-content rule that grew to cover a refusal is visible where the wall's literal was not; both mutations red it. Restored: wall GREEN, RetryMatrixCoverageTest 10/10. Every --tests filter derived with arm-class.sh — all three dialect arms live in SIBLING classes (PassthroughStopReasonHonestyTest, ChatRefusalHonestyTest, ResponsesRefusalHonestyTest), not in the class their file is named after, so filenames would have voided three of five legs"
@@ -278,9 +278,9 @@ id = "CX-08"
 phase = "W4-correctness-walls"
 wall = ""
 retired_to = [
-  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
-  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
-  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+  "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+  "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
   "upstream/src/test/kotlin/splice/upstream/retry/RetryMatrixCoverageTest.kt",
 ]
 proof = "2026-09-21: W4-A checked ONE chain at BOTH ends and only one end was homed. THE ARM END, each dialect reading the signal into a FailureCause, wall and home on the same bytes: passthrough's `\"refusal\" -> FailureCause.MODEL_REFUSED` disabled — wall RED and PassthroughStopReasonHonestyTest 'stop_reason refusal is an honest provider-reported failure, never a clean success' FAILED (8 arms, 1 failure); chat's `strIfString(obj[\"refusal\"])` disabled — wall RED and ChatRefusalHonestyTest FAILED on 8 of 13 arms; responses' refusal event routing disabled — wall RED and ResponsesRefusalHonestyTest FAILED on 5 of 12. THE WIRE END was held by nothing but the wall's two source substrings, PROVEN TWICE: MODEL_REFUSED remapped to INVALID_REQUEST and UPSTREAM_STATUS_5XX remapped to API_ERROR each red the wall, and each left RetryMatrixCoverageTest's nine pre-existing arms GREEN (9 tests, 0 failures) — its exhaustiveness arm only asserts every (cause, phase) pair is non-null, and its value arms pin INTERNAL, UPSTREAM_REPORTED and the INVALID_REQUEST group, never these two. A tenth arm pins them at every phase, asserting the RESOLVED value rather than a source substring, so a pre-content rule that grew to cover a refusal is visible where the wall's literal was not; both mutations red it. Restored: wall GREEN, RetryMatrixCoverageTest 10/10. Every --tests filter derived with arm-class.sh — all three dialect arms live in SIBLING classes (PassthroughStopReasonHonestyTest, ChatRefusalHonestyTest, ResponsesRefusalHonestyTest), not in the class their file is named after, so filenames would have voided three of five legs"
@@ -293,9 +293,9 @@ retired_to = [
   "quality/rules/kotlin/kt-l2-single-mirror-definition.yml",
   "quality/rules/kotlin/kt-l2-mirror-delegates-to-predicate.yml",
   "daemon/head/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt",
-  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
-  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
-  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesRedactedEmissionTest.kt",
+  "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+  "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesRedactedEmissionTest.kt",
 ]
 proof = "2026-09-21: six legs, wall and home on the same bytes. ONE PREDICATE — mirrorInto inlining the cascade instead of delegating: wall RED and kt-l2-mirror-delegates-to-predicate RED, 1 finding; the one-definition half was already kt-l2-single-mirror-definition's and the predicate's existence is compiler-enforced by the delegation. THE HONESTY GATE — dropping the operator knob from willMirrorHere: wall RED and TurnPipelineTest 'the default pipeline keeps the reasoning mirror locked off' FAILED; dropping the emittedThinking question from nothingReachesTheClient: wall RED and TurnPipelineTest FAILED on exactly the two cells the wall pinned by name, 'a native thinking block covers the turn even though the text mirror will not fire' and 'an emitted thinking block covers the turn with the operator mirror off'. THE PER-DIALECT WIRING — passthrough latching on block-OPEN instead of on content: wall RED and PassthroughStreamTranslatorTest 'a whitespace-only thinking delta does not count as delivered content' FAILED; chat's two set-sites neutered: wall RED and ChatStreamTranslatorTest 'a whitespace-only reasoning delta still counts as delivered thinking - DR-144' FAILED. THE RESPONSES LEG FOUND A HOLE IN BOTH CHECKERS: state.emittedThinking has THREE write sites in that dialect and only ResponsesReasoningReplay.kt:22 had an arm, so neutering both ResponsesReasoningFold sites left every responses test GREEN; worse, with only ONE of the two neutered the WALL is green too, because its token is the substring `emittedThinking = true` and the surviving site satisfies it. Two arms added in 531f2b00 (the fold delta path and the fold late path, each asserting the outcome flag AND that a thinking block reached the sink) and each proven to red for its OWN site alone, which the wall cannot do. Restored: wall GREEN, ast-grep 0 findings, TurnPipelineTest 20/20, PassthroughStreamTranslatorTest 21/21, ChatStreamTranslatorTest 22/22, ResponsesRedactedEmissionTest 3/3. Not carried over: the wall's `test` key, which pinned two TurnPipelineTest cell NAMES — a wall asserting that a test exists is circular once the test IS the home, and the cells are now named in this row instead. Every --tests filter derived with arm-class.sh"
 
@@ -303,7 +303,7 @@ proof = "2026-09-21: six legs, wall and home on the same bytes. ONE PREDICATE �
 id = "CX-11"
 phase = "W4-correctness-walls"
 wall = ""
-retired_to = "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/LoopGuardTest.kt"
+retired_to = "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/LoopGuardTest.kt"
 proof = "2026-09-21: LoopGuard mutated to read the <tool_use_error> marker only, ignoring is_error; the wall went RED and the LoopGuardTest arms 'is_error arms the guard with no marker text present' and 'is_error false wins over a marker the tool output happens to contain' FAILED on the same mutation; restored, both GREEN (13/13); the wire half (@SerialName is_error on ToolResultBlock) is what those arms parse through"
 
 [[item]]
@@ -312,9 +312,9 @@ phase = "W4-correctness-walls"
 wall = ""
 retired_to = [
   "quality/architecture/src/test/kotlin/splice/quality/UsageSingleAliasReaderLawTest.kt",
-  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatUsageTest.kt",
-  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/HarvestedTest.kt",
-  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatUsageTest.kt",
+  "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/HarvestedTest.kt",
+  "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
 ]
 proof = "2026-09-21: both halves, every leg wall-and-home on the same bytes. POSITIVE — chat's input bucket loses its alias: wall RED and ChatUsageTest 'usage reads the input_tokens output_tokens alias shape' FAILED; the Responses harvest loses its alias: wall RED and HarvestedTest 'usage alias chain reads prompt_tokens and completion_tokens spellings' FAILED; the nested TTL buckets stop being SUMMED (parts.sum() -> parts.firstOrNull()): wall RED and PassthroughStreamTranslatorTest 'nested cache_creation buckets sum into the input total' FAILED; the shared chain renamed away: wall RED and the law RED by name. NEGATIVE — the wall's forbidden-reader ban is the regex /fun\\s+num\\s*\\([^)]*vararg\\s+keys/ over five package directories, and it is GREEN on two shapes its own sentence forbids: `fun firstOf(obj: JsonObject, vararg keys: String): Long` appended to ChatUsage.kt (a banned directory, another name) and `fun num(obj: JsonObject, vararg keys: String): Long` appended to upstream/.../RetryAfter.kt (its exact banned spelling, one package outside the swept set). UsageSingleAliasReaderLawTest reds on both, naming file and function; the wall's own control (`fun num(` inside ChatUsage.kt) reds on both sides, so the wall could fire and it was the scope that was short. The law's denominator is every production Kotlin file the BUILD declares, its in-scope shape is name-independent (vararg String keys in, a number out), and a second declaration is legal only when its own body calls firstLong — which keeps UsageJson.firstNum, the real thin wrapper, green, while a firstNum that stops delegating reds on both sides. Restored: wall GREEN, law 2/2, ChatUsageTest 6/6, HarvestedTest 8/8, PassthroughStreamTranslatorTest 21/21. Every --tests filter derived with arm-class.sh"
 

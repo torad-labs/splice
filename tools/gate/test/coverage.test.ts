@@ -55,6 +55,13 @@ function copyOfTheRealRules(): { sgconfig: string; exclusions: string; rule(id: 
   };
 }
 
+// The deterministic stale mutant: its files: glob spans every Kotlin source set, it carries no
+// ignores:, and no row in the table names it — so it reaches every source root and ANY row listing
+// it is stale by construction. The arm below asserts that last property against the real table
+// rather than trusting it: a future row naming this rule would make the mutation a no-op and leave
+// the arm silently vacuous.
+const DEAD_ENTRY = "kt-l2-mirror-delegates-to-predicate";
+
 const prove = (sgconfigPath: string, exclusionsPath: string): Promise<CoverageReport> =>
   proveCoverage({ repoRoot, buildRoot, sgconfigPath, exclusionsPath });
 
@@ -195,6 +202,35 @@ describe("the P1 coverage proof", () => {
     expect(lost).toHaveLength(1);
     expect(lost[0]).toContain("splice/core/wire/HttpStatus.kt");
     expect(messagesFor(report, "kt-http-status-single-source", "source-root-lost")).toEqual([]);
+  });
+
+  // The same retirement check, on the row shape that actually hides things. `used` was keyed on the
+  // ROW, so a row listing several rules stayed "used" the moment ONE of them excused a real loss —
+  // and the arm below it only ever mutates a SINGLE-rule row. A dead entry sitting beside a live
+  // sibling was therefore the one shape never tested, and 70 of this table's rule entries live in
+  // multi-rule rows. Measured 2026-09-21: six rules were widened to reach a newly extracted module,
+  // the row excusing them went stale in six places, and this proof stayed green.
+  test("a dead entry beside a LIVE sibling is still a finding", async () => {
+    const real = await prove(join(repoRoot, ROUTED_CONFIG), join(repoRoot, EXCLUSIONS));
+    expect(real.ok, "the real table must be green, or this arm cannot attribute its own finding").toBe(true);
+    expect(
+      readFileSync(join(repoRoot, EXCLUSIONS), "utf8"),
+      `${DEAD_ENTRY} must be named by NO row, or injecting it proves nothing`,
+    ).not.toContain(DEAD_ENTRY);
+
+    const copy = copyOfTheRealRules();
+    const before = readFileSync(copy.exclusions, "utf8");
+    const anchor = "rules = [\n";
+    expect(before, "the table must still carry a multi-rule row for this arm to mutate").toContain(anchor);
+    writeFileSync(copy.exclusions, before.replace(anchor, `${anchor}  "${DEAD_ENTRY}",\n`));
+
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const stale = report.findings.filter((f) => f.kind === "exclusion-stale");
+    // EXACTLY the injected entry: the siblings it hides behind are untouched and still excuse real
+    // losses, which is precisely the condition under which the row-keyed check reported nothing.
+    expect(stale.map((f) => f.rule)).toEqual([DEAD_ENTRY]);
+    expect(stale[0]?.message).toContain("excuses nothing");
   });
 
   test("a stale exclusion is a finding, not a default", async () => {

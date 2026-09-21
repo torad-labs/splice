@@ -18,7 +18,7 @@ ChatGPT · Grok · Kimi · Muse · API backends · native Claude
 ```text
 splice puts Claude Code in front of the backend you choose.
 
-  The bytes are exactly right for every backend.        dialects/ providers/  (.docs/architecture)
+  The bytes are exactly right for every backend.        integrations/        (docs/architecture)
   A turn is never lost.                                 daemon/head
   It never runs away, and never corrupts a credential.  upstream/  core/config
   Your Claude Code stays yours.                         client/
@@ -246,7 +246,7 @@ they stream, the failure share by outcome, retries, cache hit ratio and peak con
 When a session's Claude Code is newer than the version this splice release was tested with,
 doctor, `splice status` and the status line say so once; equal or older is silent.
 
-<img src=".docs/assets/doctor.svg" alt="splice doctor output: every failing check prints its fix" width="760">
+<img src="docs/assets/doctor.svg" alt="splice doctor output: every failing check prints its fix" width="760">
 
 The daemon reads API-key env vars from **its own** environment. Export a key *after* the daemon
 has started and the shell sees it but the daemon does not: launches warn, requests fail upstream. `splice restart` restarts the daemon with your current
@@ -334,7 +334,7 @@ to force it elsewhere. A local head also asks its runtime for token counts, whic
 Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
 field takes `quirks = { stream_usage = false }`. A local head also asks its runtime for token counts, which is what makes
 Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
-field takes `quirks = { stream_usage = false }`. See [`checks/local-models/README.md`](checks/local-models/README.md) for
+field takes `quirks = { stream_usage = false }`. See [`tools/e2e/local-models/README.md`](tools/e2e/local-models/README.md) for
 what each runtime reports and how it was tested.
 
 ### Shared MCP hosting
@@ -473,8 +473,8 @@ core/          :core — the vocabulary: config, topology, auth, sessions, turn,
                persistence primitives state lives in (framework-free by module law)
 client/        :client — the Claude Code side: login, mcp, wrap, resume, transcript
 upstream/      :upstream — the backend side: contracts, transport, retry, credentials
-dialects/      anthropic, openai-responses, openai-chat — one request-byte contract each
-providers/     codex, grok, kimi, muse, openai
+integrations/  reusable external adapters: dialects/ (wire contracts) and providers/ (vendor adapters)
+features/      capability projects, with use-case slices inside conventional Kotlin source sets
 daemon/        head/ (:daemon-head, the proxy between client and upstream) and
                control/ (:daemon-control, the control plane and MCP host)
 app/           :app — assembly, the `splice` CLI, the fat jar, the launch shim and the sample topology
@@ -484,12 +484,12 @@ console/       React 19 + Vite + Zustand operator console, single-file bundle (c
 quality/       enforcement: architecture/ (the Kotlin laws), compiler-plugin/, rules/ (the ast-grep
                walls, write-time AND at the gate), detekt/
 build-logic/   Gradle convention plugins; the build itself is rooted at the repository root
-tools/         the operational Bun CLIs: gate/ (the ladder, tools/gate/config/ladder.json), e2e/, release/
-checks/        gate legs not yet Kotlin laws or CLI verbs, run by the ladder — shrinking
+tools/         engineering tools: gate/ (the ladder and its selftests), e2e/ (fixtures, probes and Docker),
+               release/ (release validation and licenses), codemods/ (source migrations)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 .claude/       the write-time hook wiring (settings.json) and its tests
 .dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`), research notes
-.docs/         architecture and design docs (PROVENANCE.md, the request-byte contract), README assets
+docs/         architecture and design docs (PROVENANCE.md, the request-byte contract), README assets
 .github/       workflows, the community health files, issue and PR templates
 ```
 

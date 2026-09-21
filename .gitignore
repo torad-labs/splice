@@ -32,7 +32,7 @@ build/
 dev/media/
 
 # #924 Phase 1: live contract receipts are per-run artifacts, not source
-checks/e2e/receipts/
+tools/e2e/receipts/
 
 # secrets / credential stores (OSS-A defensive baseline)
 .env

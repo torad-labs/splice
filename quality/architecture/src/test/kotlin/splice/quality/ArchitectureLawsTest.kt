@@ -19,12 +19,13 @@ import java.io.File
  *  neither this law nor the contract-coverage law had ever looked at it.
  *
  *  P0: modules are named by GRADLE PATH, not by directory name — the path is the stable identity
- *  when a module moves under dialects/ or providers/, and [ProjectMap] is what turns it into a
+ *  when a module moves under integrations/dialects/ or integrations/providers/, and [ProjectMap] is what turns it into a
  *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
-    ":core", ":client", ":upstream", ":dialects-openai-responses", ":dialects-openai-chat",
-    ":dialects-anthropic", ":providers-codex", ":providers-grok", ":providers-openai",
-    ":providers-kimi", ":providers-muse", ":daemon-head", ":daemon-control", ":app", ":quality-compiler-plugin",
+    ":core", ":client", ":upstream", ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
+    ":integrations-dialects-anthropic", ":integrations-providers-codex", ":integrations-providers-grok", ":integrations-providers-openai",
+    ":integrations-providers-kimi", ":integrations-providers-muse", ":daemon-head", ":daemon-control",
+    ":features-heads", ":app", ":quality-compiler-plugin",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
@@ -41,7 +42,7 @@ private val SLOT_HEADER_EXEMPT: Map<String, String> = emptyMap()
  *
  *  P0: the modules come from the PROJECT MAP and their sources from the directory the map gives,
  *  not from the root's immediate child directories. The old walk could only ever see a module that
- *  is a direct child of the Gradle root, so a module under providers/ would drop out of the
+ *  is a direct child of the Gradle root, so a module under integrations/providers/ would drop out of the
  *  denominator and stop being graded with nothing going red. */
 private fun productionModules(map: ProjectMap): Set<String> =
     map.modules
@@ -104,13 +105,13 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
  *  (`grep -rn "PassthroughQuirks(" gateway/PROJECT/src/main` over every module): the three live
  *  call sites are `app/.../provider/PassthroughArm.kt` (client + unregistered API-key heads),
  *  `app/.../provider/MusePassthroughArm.kt` (Muse's tool-name-cap profile) and
- *  `providers/kimi/.../KimiQuirks.kt` (Kimi's own deformation set) — the head-assembly provider
+ *  `integrations/providers/kimi/.../KimiQuirks.kt` (Kimi's own deformation set) — the head-assembly provider
  *  package, plus the one provider module that builds its own profile rather than taking the
  *  neutral one. */
 private val PASSTHROUGH_QUIRKS_ALLOWED_SITES = mapOf(
-    ":dialects-anthropic" to "src/main/", // the class's own module
+    ":integrations-dialects-anthropic" to "src/main/", // the class's own module
     ":app" to "src/main/kotlin/splice/app/provider/", // head assembly: ProviderAssembly + its arms
-    ":providers-kimi" to "src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
+    ":integrations-providers-kimi" to "src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
 )
 
 /** P0: the allowed sites as root-relative path prefixes, resolved through the project map — the
@@ -151,9 +152,9 @@ private fun allProductionFiles(map: ProjectMap): List<File> =
     }
 
 /** HD-9: the dialect modules — [productionModules] filtered to the `:dialects-*` adapters. P0: the
- *  filter is on the module's Gradle PATH, which survives the module moving into dialects/. */
+ *  filter is on the module's Gradle PATH, which survives the module moving into integrations/dialects/. */
 private fun dialectModules(map: ProjectMap): Set<String> =
-    productionModules(map).filter { it.startsWith(":dialects-") }.toSet()
+    productionModules(map).filter { it.startsWith(":integrations-dialects-") }.toSet()
 
 /** HD-9 (#924 capstone): dialects adapt ONE wire format; [splice.core.topology] is the
  *  operator-facing head/provider registry (TOML parsing, quirks-config overlays), and a dialect
@@ -295,7 +296,7 @@ class ArchitectureLawsTest {
     // ships a *RequestBuilder must also ship at least one contract/<name>.json golden — so a new
     // dialect arrives WITH its exact-request-bytes fixture (the stream_options / gzip incident class
     // becomes a failing unit test) rather than un-pinned. The receipt-binding half (a changed golden
-    // must match a live-200 receipt) activates on traffic; see .docs/architecture/request-byte-contracts.md.
+    // must match a live-200 receipt) activates on traffic; see docs/architecture/request-byte-contracts.md.
     // DR-165: the builder modules come from the SOURCE TREE, not from PORT_SCOPE_MODULES. Derived
     // from the allowlist, this law could be switched off for a whole dialect by deleting one string
     // — codex-splice's mutant removed dialect-openai-responses and the suite stayed green 16/16,
@@ -327,7 +328,7 @@ class ArchitectureLawsTest {
             violations.joinToString(
                 separator = "\n  - ",
                 prefix = "REQUEST-BYTE CONTRACT COVERAGE (#924 Phase 1, DR-165) violated:\n  - ",
-                postfix = "\nSee .docs/architecture/request-byte-contracts.md.",
+                postfix = "\nSee docs/architecture/request-byte-contracts.md.",
             )
         }
     }
@@ -368,7 +369,7 @@ class ArchitectureLawsTest {
         // graded against. A proof that hardcodes `app/src/...` silently stops being the case it
         // claims to prove the moment a module's directory changes — which it did when the Gradle
         // root moved to the repository root and every module's directory gained its `gateway/`.
-        val ownModule = map.relativeDir(":dialects-anthropic")
+        val ownModule = map.relativeDir(":integrations-dialects-anthropic")
         val headAssembly = map.relativeDir(":app")
         val headModule = map.relativeDir(":daemon-head")
         assertEquals(

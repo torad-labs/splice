@@ -10,6 +10,7 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
@@ -43,11 +44,12 @@ private class GateFakeHead(
     private val limit: Int,
 ) : Head {
     override val label: String = key
-    override suspend fun start() = Unit
-    override suspend fun stop() = Unit
+    private var running = true
+    override suspend fun start() { running = true }
+    override suspend fun stop() { running = false }
     override fun healthSnapshot() = HeadHealth(
-        ok = true,
-        running = true,
+        ok = running,
+        running = running,
         port = port,
         version = "kt-1",
         gateInflight = inflight,
@@ -87,6 +89,47 @@ class ControlServerGateTest {
                 header("Authorization", "bearer wrong-key")
             }
             assertEquals(HttpStatusCode.Unauthorized, wrong.status)
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun `an unauthorized start never reaches the extracted feature`() = runTest {
+        val paths = StatePaths(baseOverride = Files.createTempDirectory("control-start-guard").resolve("state"))
+        val mgmt = MgmtKey(paths)
+        val port = freshPort()
+        val server = ControlServer(
+            port = port,
+            heads = mapOf("codex" to gateHead("codex", 3099, inflight = 0, queued = 0, limit = 0)),
+            config = ConfigService(paths),
+            mgmtKey = mgmt,
+            dashboardHtml = { "" },
+            log = {},
+        )
+        server.start()
+        try {
+            val stopped = client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
+                header("Authorization", "Bearer ${mgmt.get()}")
+            }
+            assertEquals(HttpStatusCode.OK, stopped.status)
+            val stoppedHead = json.parseToJsonElement(stopped.bodyAsText()).jsonObject
+            assertEquals("false", stoppedHead["running"]?.jsonPrimitive?.content)
+
+            val response = client.post("http://127.0.0.1:$port/api/heads/codex/start")
+            assertEquals(HttpStatusCode.Unauthorized, response.status)
+            val heads = client.get("http://127.0.0.1:$port/api/heads") {
+                header("Authorization", "Bearer ${mgmt.get()}")
+            }
+            val head = json.parseToJsonElement(heads.bodyAsText()).jsonObject["heads"]!!.jsonArray.first().jsonObject
+            assertEquals("false", head["running"]?.jsonPrimitive?.content)
+
+            val started = client.post("http://127.0.0.1:$port/api/heads/codex/start") {
+                header("Authorization", "Bearer ${mgmt.get()}")
+            }
+            assertEquals(HttpStatusCode.OK, started.status)
+            val startedHead = json.parseToJsonElement(started.bodyAsText()).jsonObject
+            assertEquals("true", startedHead["running"]?.jsonPrimitive?.content)
         } finally {
             server.stop()
         }

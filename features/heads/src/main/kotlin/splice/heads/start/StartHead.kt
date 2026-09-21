@@ -31,7 +31,7 @@ public class StartHead(
     private val resolver: StartHeadResolver,
     private val audit: StartHeadAudit,
 ) {
-    public suspend fun handle(call: ApplicationCall): Unit {
+    public suspend fun handle(call: ApplicationCall) {
         val name = call.parameters["head"].orEmpty()
         val target = resolver.resolveOrRespond(call, name) ?: return
         target.start()

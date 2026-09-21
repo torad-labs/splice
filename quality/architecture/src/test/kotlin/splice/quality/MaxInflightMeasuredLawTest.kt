@@ -110,6 +110,18 @@ class MaxInflightMeasuredLawTest {
         }
     }
 
+    // d80f0fa3 read BOTH sides before judging either, to bring the return count under detekt's
+    // ceiling. That is a behaviour change and it arrived ungraded: before it, a tree missing both
+    // inputs reported only whichever was tested first, so a second absence could be fixed while the
+    // law still named only one. The arm is the grade.
+    @Test
+    fun `neither side readable names BOTH absences, not whichever was read first`() {
+        val hits = audit(null, null)
+        assertEquals(2, hits.size, "both sides unreadable is two problems, got: $hits")
+        assertHit(hits, "Knob.kt", "missing") { "the knob source must be named" }
+        assertHit(hits, "splice.example.toml", "missing") { "the example config must be named" }
+    }
+
     private fun audit(knob: String?, example: String?) =
         MaxInflightMeasured.audit(
             knob,

@@ -181,12 +181,23 @@ proof = "2026-09-21: three mutations, each red on both sides. (a) the `logs` Com
 [[item]]
 id = "JW-13"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_13_port_collision_preflight.ts"
+wall = ""
+retired_to = [
+    "app/src/test/kotlin/splice/app/head/HeadBootPortCollisionTest.kt",
+    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+    "core/src/test/kotlin/splice/core/config/ConfigHonestyPinsTest.kt",
+]
+proof = "2026-09-21: the claim fails in three independent places, so it is graded in three. (a) HeadBoot's collision pre-check deleted -> wall RED (assembleDaemonHeads does not name the sibling) and the new HeadBootPortCollisionTest RED on 2 of 3 arms; restored 3/3. (b) doctor's collision rows filtered away with the call and types left standing (portCollisions().filter { false }.map { ... }) -> the WALL STAYED GREEN while the DoctorCommandTest JW-13 arm went RED (14 tests, 1 failure), both measured on that one mutation: the wall greps for the tokens portCollisions/portCollisionMessage, which a filter leaves in place, so doctor could stop emitting every collision row without the wall noticing. (c) Topology.portCollisions() itself stays pinned in core by ConfigHonestyPinsTest. The daemon-side home grades the collaborator: a colliding head must be FAILED with a message naming the sibling and must never reach assembly, which an assembly that throws when called states without standing up two servers"
 
 [[item]]
 id = "JW-17"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.ts"
+wall = ""
+retired_to = [
+    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+    "app/src/test/kotlin/splice/app/cli/doctor/DoctorProbeWriteTest.kt",
+]
+proof = "2026-09-21: the logs-dir probe replaced by a plain INFO row that still prints the path (probeWrite.writableProbe(\"logs dir\", ...) -> DoctorCheck(\"logs dir\", INFO, ...)) -> wall RED (doctor never probes the LOGS dir for writability) and the DoctorWritableDirsTest arm RED (2 tests, 1 failure) on the same mutation; restored, wall GREEN and 2/2. Re-taken after the arm moved: the first proof graded it inside DoctorCommandTest, and the LargeClass split moved it to the sibling class, so the proof was retaken where the arm now lives rather than carried across the move. The probe's own refusals (symlinks, cleanup) stay pinned by DoctorProbeWriteTest"
 
 [[item]]
 id = "CX-01"

@@ -19,9 +19,9 @@ import org.junit.jupiter.api.TestInstance
 import splice.core.turn.ErrorType
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
-import splice.dialect.responses.EmitEncryptedReasoning
-import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.sse.SseReader
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

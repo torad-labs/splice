@@ -38,7 +38,7 @@ note: >
   a cancelled turn kept spinning upstream (the 600%-CPU incident).
 files:
   - upstream/src/main/**/*.kt
-  - gateway/dialect-openai-responses/src/main/**/*.kt
+  - dialects/openai-responses/src/main/**/*.kt
   - gateway/dialect-openai-chat/src/main/**/*.kt
   - dialects/anthropic/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt

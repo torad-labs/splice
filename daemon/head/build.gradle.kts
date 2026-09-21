@@ -26,7 +26,7 @@ dependencies {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.ktor.client.cio)
-    testImplementation(project(":dialect-openai-responses"))
+    testImplementation(project(":dialects-openai-responses"))
     testImplementation(project(":dialects-anthropic"))
     testImplementation(project(":provider-codex"))
     testImplementation(libs.kotlinx.coroutines.test)

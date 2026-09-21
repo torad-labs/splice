@@ -6,7 +6,7 @@ plugins {
 dependencies {
     implementation(project(":core"))
     implementation(project(":upstream"))
-    implementation(project(":dialect-openai-responses"))
+    implementation(project(":dialects-openai-responses"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(project(":daemon-head"))
     testImplementation(libs.ktor.client.cio)

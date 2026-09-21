@@ -18,13 +18,13 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":client" to setOf(":core"),
     ":upstream" to setOf(":core"),
     ":dialects-anthropic" to setOf(":core", ":upstream"),
-    ":dialect-openai-responses" to setOf(":core", ":upstream"),
+    ":dialects-openai-responses" to setOf(":core", ":upstream"),
     ":dialect-openai-chat" to setOf(":core", ":upstream"),
-    ":provider-codex" to setOf(":core", ":upstream", ":dialect-openai-responses"),
-    ":provider-grok" to setOf(":core", ":upstream", ":dialect-openai-responses"),
+    ":provider-codex" to setOf(":core", ":upstream", ":dialects-openai-responses"),
+    ":provider-grok" to setOf(":core", ":upstream", ":dialects-openai-responses"),
     ":provider-kimi" to setOf(":core", ":upstream", ":dialects-anthropic"),
     ":provider-muse" to setOf(":core", ":upstream"),
-    ":provider-openai" to setOf(":core", ":upstream", ":dialect-openai-responses", ":dialect-openai-chat"),
+    ":provider-openai" to setOf(":core", ":upstream", ":dialects-openai-responses", ":dialect-openai-chat"),
     ":daemon-head" to setOf(":core", ":upstream"),
     ":daemon-control" to setOf(":core", ":client"),
     ":arch-tests" to emptySet(),
@@ -41,7 +41,7 @@ val nonLibrary = setOf(":app", ":arch-tests", ":fir-checks")
 
 // The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
 // integration tests legitimately wire sibling modules (e.g. :daemon-head tests use
-// :dialect-openai-responses), and the one genuinely-illegal test dep — a cycle — is already a
+// :dialects-openai-responses), and the one genuinely-illegal test dep — a cycle — is already a
 // Gradle build error. (The plan's "cover test configs" was reverted for this reason.)
 val lawChecked = setOf("api", "implementation", "compileOnly", "runtimeOnly")
 

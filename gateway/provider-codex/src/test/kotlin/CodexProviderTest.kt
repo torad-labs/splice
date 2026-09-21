@@ -23,7 +23,7 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.dialect.responses.ToolDeferralPolicy
+import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.upstream.ProviderTuning

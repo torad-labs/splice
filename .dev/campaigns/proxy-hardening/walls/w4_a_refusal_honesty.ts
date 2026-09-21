@@ -59,10 +59,10 @@ const CHAT = [
   resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
 ];
 const RESP = [
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesEventReducer.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalBackfill.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalBackfill.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt"),
 ];
 const PATHS: Record<string, string | string[]> = { passthrough: PASS, chat: CHAT, responses: RESP };
 

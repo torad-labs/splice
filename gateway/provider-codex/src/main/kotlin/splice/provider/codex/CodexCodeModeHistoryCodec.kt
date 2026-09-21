@@ -8,8 +8,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
-import splice.dialect.responses.ResponsesCodeModeInput
-import splice.dialect.responses.ResponsesCodeModeProjection
+import splice.dialect.responses.request.ResponsesCodeModeInput
+import splice.dialect.responses.request.ResponsesCodeModeProjection
 import java.security.MessageDigest
 
 /**

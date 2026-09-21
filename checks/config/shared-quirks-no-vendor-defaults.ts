@@ -377,7 +377,7 @@ function selftest(): number {
 
   const tmp = mkdtemp();
   try {
-    const dialect = join(tmp, "gateway/dialect-openai-responses/src/main/kotlin");
+    const dialect = join(tmp, "dialects/openai-responses/src/main/kotlin");
     const vendor = join(tmp, "gateway/provider-codex/src/main/kotlin");
     mkdirSync(dialect, { recursive: true });
     mkdirSync(vendor, { recursive: true });

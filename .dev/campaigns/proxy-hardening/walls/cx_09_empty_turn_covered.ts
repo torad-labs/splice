@@ -107,9 +107,9 @@ export const PATHS: Record<string, string[]> = {
   // HD-24 (2026-08-17): ResponsesStreamTranslator decomposed; emittedThinking's set-site and its
   // read-into-the-outcome site moved to these two siblings.
   responses: [
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningFold.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesOutcomePayload.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReasoningFold.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesOutcomePayload.kt",
   ],
   test: ["daemon/head/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt"],
 };

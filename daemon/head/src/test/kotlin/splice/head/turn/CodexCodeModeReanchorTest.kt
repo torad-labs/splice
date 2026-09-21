@@ -16,7 +16,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.dialect.responses.ResponsesReanchorController
+import splice.dialect.responses.reasoning.ResponsesReanchorController
 import splice.head.round.RoundInterception
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals

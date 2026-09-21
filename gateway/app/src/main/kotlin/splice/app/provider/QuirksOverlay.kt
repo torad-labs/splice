@@ -10,10 +10,10 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.ToolSurfaceConfig
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.chat.ChatQuirks
-import splice.dialect.responses.DEFAULT_MARKER_TEXT
-import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ToolDeferralPolicy
+import splice.dialect.responses.stream.DEFAULT_MARKER_TEXT
+import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.provider.grok.GrokQuirks
 
 private const val MIN_TOOL_SURFACE_FLOOR = 1

@@ -14,7 +14,7 @@ import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.provider.kimi.KimiQuirks
 
 private fun provider(quirks: QuirksConfig) = ProviderConfig(

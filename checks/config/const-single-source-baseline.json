@@ -35,7 +35,7 @@
       "daemon/head/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
     "COLLISION DIGEST_BYTES": [
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/ToolNameShortener.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsIdentity.kt"
     ],
     "COLLISION FIELD_CALL_ID": [
@@ -59,7 +59,7 @@
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COLLISION HIGH_BUDGET_FLOOR": [
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughEffortLadder.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEffortLadder.kt",
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt"
     ],
     "COLLISION LIVE_MAX_TOKENS": [
@@ -84,7 +84,7 @@
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsSession.kt"
     ],
     "COLLISION MAX_ENTRIES": [
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/ToolNameShortener.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ReasoningCache.kt"
     ],
     "COLLISION PERCENT": [
@@ -169,12 +169,12 @@
     "COPY BYTE_MASK": [
       "core/src/main/kotlin/splice/core/media/ImageBytes.kt",
       "core/src/main/kotlin/splice/core/util/FormEncoding.kt",
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/ToolNameShortener.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStableIds.kt"
     ],
     "COPY CONTENT": [
       "client/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesSystemPrompt.kt"
     ],
@@ -426,7 +426,7 @@
     ],
     "COPY MODEL": [
       "client/src/main/kotlin/splice/client/ClaudeConfigKeys.kt",
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt"
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt"
     ],
     "COPY MS_PER_MIN": [
       "gateway/app/src/main/kotlin/splice/app/AuthProbeLoop.kt",
@@ -450,7 +450,7 @@
       "upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
     ],
     "COPY NAME": [
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
     "COPY NANOS_PER_MS": [
@@ -549,7 +549,7 @@
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"
     ],
     "COPY SYSTEM": [
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt"
     ],
     "COPY S_PER_MIN": [
@@ -561,7 +561,7 @@
       "core/src/main/kotlin/splice/core/media/WebpChunks.kt"
     ],
     "COPY TEXT": [
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
     "COPY TOKEN_BYTES": [
@@ -574,8 +574,8 @@
     ],
     "COPY TYPE": [
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeFatalFrame.kt",
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/MfjsSanitizer.kt",
-      "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/MfjsSanitizer.kt",
+      "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
       "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "daemon/head/src/main/kotlin/splice/head/wire/MessageStart.kt",
       "daemon/head/src/main/kotlin/splice/head/wire/SseEmitter.kt",

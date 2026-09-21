@@ -35,8 +35,8 @@ import splice.core.teams.Team
 import splice.core.teams.TeamSlot
 import splice.core.teams.TeamStore
 import splice.core.turn.WatchdogBudget
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps

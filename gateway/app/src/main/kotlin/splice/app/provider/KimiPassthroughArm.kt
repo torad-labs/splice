@@ -6,7 +6,7 @@ import splice.app.KimiRefresh
 import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
-import splice.dialect.passthrough.IdentityHeaders
+import splice.dialect.anthropic.IdentityHeaders
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiQuirks
 import splice.provider.openai.ApiKeyAuthProvider

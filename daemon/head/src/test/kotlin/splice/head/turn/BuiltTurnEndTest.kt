@@ -27,8 +27,8 @@ import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.WatchdogBudget
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps

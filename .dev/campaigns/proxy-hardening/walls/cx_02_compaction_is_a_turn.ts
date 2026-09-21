@@ -75,8 +75,8 @@ export const PATHS: Record<string, string[]> = {
     "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
   ],
   "anthropic-passthrough": [
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughRequestBuilder.kt",
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughThinking.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughRequestBuilder.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughThinking.kt",
   ],
 };
 
@@ -101,7 +101,7 @@ export const CANARY_TESTS: Record<string, string> = {
   "openai-responses": "gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt",
   "openai-chat": "gateway/dialect-openai-chat/src/test/kotlin/ChatRequestBuilderTest.kt",
   "anthropic-passthrough":
-    "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughRequestBuilderTest.kt",
+    "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughRequestBuilderTest.kt",
 };
 export const CANARY_TOKEN = "compaction is built byte-identical to a turn";
 

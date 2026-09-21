@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.MuseRefresh
 import splice.core.GATEWAY_VERSION
 import splice.core.util.LogSink
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
 

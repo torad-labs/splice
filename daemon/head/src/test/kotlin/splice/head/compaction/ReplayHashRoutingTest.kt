@@ -17,8 +17,8 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.TurnPerf
 import splice.core.turn.WatchdogBudget
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.AnthropicBodyParse
 import splice.head.headDeps
 import splice.head.turn.ProviderTurnBuild

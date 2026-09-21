@@ -34,7 +34,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
-import splice.dialect.passthrough.PassthroughProvider
+import splice.dialect.anthropic.PassthroughProvider
 import splice.provider.muse.MuseKeyMintCall
 import splice.provider.muse.MuseMintAttempt
 import splice.provider.openai.ApiKeyAuthProvider

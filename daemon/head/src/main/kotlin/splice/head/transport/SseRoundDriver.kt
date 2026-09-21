@@ -102,7 +102,7 @@ internal class SseRoundDriver(
      * NEVER BELOW STATUS QUO holds by construction: this only produces a Failure, and a Failure
      * with no controller, no budget or a declining controller is finished as the honest error the
      * turn would have ended with anyway. muse never sees a prefill here — an empty partial takes
-     * the restart branch of [splice.dialect.passthrough.PassthroughReanchorController] before the
+     * the restart branch of [splice.dialect.anthropic.PassthroughReanchorController] before the
      * quirk is ever read.
      *
      * CANCELLATION IS NOT A TEAR and cannot reach this method: CancellationException is an

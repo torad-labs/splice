@@ -34,8 +34,8 @@ import splice.core.prompt.SystemPromptMode
 import splice.core.topology.ProjectConfig
 import splice.core.topology.ProjectHeadPrompt
 import splice.core.turn.WatchdogBudget
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps

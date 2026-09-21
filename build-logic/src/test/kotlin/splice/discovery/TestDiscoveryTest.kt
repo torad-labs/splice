@@ -16,6 +16,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.discovery.JUnitXml.parseJUnitXml
+import splice.discovery.JUnitXml.scanModuleXml
+import splice.discovery.JUnitXml.xmlRowFrom
+import splice.discovery.SourceScan.classesIn
+import splice.discovery.SourceScan.scanModuleSources
+import splice.discovery.TestDiscovery.audit
+import splice.discovery.TestDiscovery.census
+import splice.discovery.TestDiscovery.summaryLine
 import java.io.File
 
 private const val MODULE = ":daemon-head"

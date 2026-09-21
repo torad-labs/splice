@@ -10,4 +10,9 @@ package splice.core.auth
 /** A PKCE (RFC 7636) verifier and its S256 challenge — both base64url, no padding. Produced by a
  *  provider's own `makePkce`; the verifier is replayed on the code exchange, the challenge on the
  *  authorize URL. Carries no vendor content, so there is exactly one of these. */
-public data class Pkce(val verifier: String, val challenge: String)
+public data class Pkce(val verifier: String, val challenge: String) {
+    /** The VERIFIER is the secret — it is replayed on the code exchange, so anything holding it can
+     *  complete the flow. The challenge is its S256 digest and rides the authorize URL in the clear,
+     *  so it stays readable: redacting it would hide the half that is public by construction. */
+    override fun toString(): String = "Pkce(verifier=<redacted>, challenge=$challenge)"
+}

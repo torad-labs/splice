@@ -463,15 +463,15 @@ export async function oracle(argv: readonly string[]): Promise<number> {
     return HARNESS_EXIT;
   }
   const flag = (n: string) => args.includes(n);
-  // A value-taking option that is present but valueless (last on the line, or followed by another
-  // option) is refused HERE: read as absent, `--artifact` alone silently judged the default jar and
+  // A value-taking option that is present but valueless (last on the line, followed by another
+  // option, or an empty string) is refused HERE: read as absent, `--artifact` alone silently judged the default jar and
   // `--fixtures` alone the frozen corpus, and a replay against the wrong input reads as a verdict.
   const valueless: string[] = [];
   const opt = (n: string): string | null => {
     const i = args.indexOf(n);
     if (i < 0) return null;
     const value = args[i + 1];
-    if (value === undefined || value.startsWith("-")) {
+    if (value === undefined || value.length === 0 || value.startsWith("-")) {
       valueless.push(n);
       return null;
     }
@@ -482,12 +482,12 @@ export async function oracle(argv: readonly string[]): Promise<number> {
   const only = opt("--scenario");
   const jsonOut = opt("--json");
   if (valueless.length > 0) {
-    console.error(`e2e oracle: ${valueless.join(", ")} ${valueless.length === 1 ? "takes" : "take"} a value — a bare option is refused, never read as the default`);
+    console.error(`e2e oracle: ${valueless.join(", ")} ${valueless.length === 1 ? "takes" : "take"} a value — a bare or empty option is refused, never read as the default`);
     return HARNESS_EXIT;
   }
   const options: ReplayOptions = {
-    oracleDir: fixtures ? resolve(fixtures) : ORACLE_DIR,
-    jar: artifact ? resolve(artifact) : join(layout().buildRoot, DEFAULT_JAR),
+    oracleDir: fixtures !== null ? resolve(fixtures) : ORACLE_DIR,
+    jar: artifact !== null ? resolve(artifact) : join(layout().buildRoot, DEFAULT_JAR),
     only,
     keep: flag("--keep"),
     jsonOut,

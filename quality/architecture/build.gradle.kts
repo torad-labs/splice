@@ -95,4 +95,9 @@ tasks.withType<Test>().configureEach {
         // come back UP-TO-DATE-green.
         repoRoot.dir("build-logic/src/main/kotlin").asFileTree.matching { include("**/*.kts") },
     ).withPropertyName("scannedModuleBuildFiles")
+    // Restructure PR 6: the documentation laws (quirk keys, knob keys, env vars) grade the operator
+    // surfaces against the source — the example config is an input for the same reason the
+    // sources are, or a key documented late comes back UP-TO-DATE-red and a key retired late
+    // UP-TO-DATE-green.
+    inputs.files(repoRoot.file("config/splice.example.toml")).withPropertyName("scannedDocumentationSurfaces")
 }

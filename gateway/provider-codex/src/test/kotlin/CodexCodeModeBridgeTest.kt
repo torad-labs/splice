@@ -320,7 +320,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `turn builder arms only canonical noncompact lite requests`() {
+    fun `turn builder arms canonical lite requests, compactions included`() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
         val builder = CodexCodeModeTurnBuilder(manager, media())
         listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-astra[1m]", "GPT-6-SOL[500K]").forEach { model ->
@@ -335,7 +335,11 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val toolless = builder.prepare(toollessBody(), false, "s", built("gpt-6-astra", lite = true))
         val nonLite = builder.prepare(toolBody(), false, "s", built("gpt-6-astra", lite = false))
         val named = builder.prepare(namedChoiceBody(), false, "s", built("gpt-6-astra", lite = true))
-        assertTrue(compact.roundInterceptor == null)
+        // 2026-09-21: a compaction is built exactly like a turn — same splice_exec declaration, same
+        // guidance, same interceptor — so its upstream bytes share the turn's cached prefix.
+        assertTrue(compact.roundInterceptor != null, "a compaction rides the bridge like any turn")
+        val turn = builder.prepare(toolBody(), false, "s", built("gpt-6-astra", lite = true))
+        assertEquals(turn.requestBody, compact.requestBody, "compact and turn build byte-identical bodies")
         assertTrue(toolless.roundInterceptor == null)
         assertTrue(nonLite.roundInterceptor == null)
         assertTrue(named.roundInterceptor == null)

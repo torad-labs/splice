@@ -62,8 +62,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         val disabled = CodexCodeModeTurnBuilder(null, media()).prepare(body, false, "session", original)
         assertSame(original, disabled)
         val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        // 2026-09-21: a compaction is no longer excluded — it must build the same bytes as a turn, so
+        // its prefix stays cached (CodexCodeModeBridgeTest pins the byte identity).
+        val compact = builder.prepare(body, true, "session", original)
+        assertEquals(builder.prepare(body, false, "session", original).requestBody, compact.requestBody)
         listOf(
-            builder.prepare(body, true, "session", original),
             builder.prepare(toollessBody(), false, "session", original),
             builder.prepare(namedChoiceBody(), false, "session", original),
         ).forEach { excluded ->

@@ -33,7 +33,6 @@ note: "JsonNull is a JsonPrimitive whose content is \"null\". Use element.str() 
 files:
   - upstream/src/main/**/*.kt
   - providers/*/src/main/**/*.kt
-  - gateway/provider-*/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt
 rule:

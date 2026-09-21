@@ -30,7 +30,7 @@ include(
     ":providers-grok",
     ":providers-kimi",
     ":providers-muse",
-    ":provider-openai",
+    ":providers-openai",
     ":daemon-head",
     ":daemon-control",
     ":app",
@@ -49,7 +49,7 @@ project(":providers-codex").projectDir = file("providers/codex")
 project(":providers-grok").projectDir = file("providers/grok")
 project(":providers-kimi").projectDir = file("providers/kimi")
 project(":providers-muse").projectDir = file("providers/muse")
-project(":provider-openai").projectDir = file("gateway/provider-openai")
+project(":providers-openai").projectDir = file("providers/openai")
 project(":daemon-head").projectDir = file("daemon/head")
 project(":daemon-control").projectDir = file("daemon/control")
 project(":app").projectDir = file("gateway/app")

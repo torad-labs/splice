@@ -75,7 +75,7 @@ files:
   - providers/grok/src/main/**/*.kt
   - providers/kimi/src/main/**/*.kt
   - providers/codex/src/main/**/*.kt
-  - gateway/provider-openai/src/main/**/*.kt
+  - providers/openai/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt

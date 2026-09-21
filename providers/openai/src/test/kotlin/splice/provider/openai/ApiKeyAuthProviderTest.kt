@@ -1,7 +1,7 @@
 // NEW: ApiKeyAuthProvider precedence — env > auth.file > KeyStore — and the launch-time peek.
 // The KeyStore fallback is what makes `splice key set` / `<head> login` / token capture durable:
 // a daemon started WITHOUT the env var still authenticates, from any shell, after one store.
-package openai
+package splice.provider.openai
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.KeyStore
-import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions

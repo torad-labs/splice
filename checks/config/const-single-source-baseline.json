@@ -372,7 +372,7 @@
     ],
     "COPY MASK_KEEP": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
-      "gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt"
+      "providers/openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt"
     ],
     "COPY MAX_LOG_BYTES": [
       "gateway/app/src/main/kotlin/splice/app/DaemonBoundary.kt",

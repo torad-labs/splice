@@ -250,7 +250,7 @@ export function audit(items: Items, rows: Row[], opts: AuditOpts = {}): [string[
   }
 
   const stats: Stats = {
-    total: items.size, unwalled: 0, walled: 0, green: 0, vacuous: 0, false_green: 0,
+    total: items.size, unwalled: 0, walled: 0, retired: 0, green: 0, vacuous: 0, false_green: 0,
     uncontrolled: 0, laws: 0, unlawed: 0, lawed: 0, law_violations: 0,
   };
 
@@ -260,6 +260,34 @@ export function audit(items: Items, rows: Row[], opts: AuditOpts = {}): [string[
     if (rs.length !== 1) continue;
     const wall = String(rs[0].wall ?? "").trim();
     if (!wall) {
+      // A RETIRED wall (restructure PR 6, plan §2.7): the guarantee moved into the owning module's
+      // own test and the wrapper was deleted AFTER an equivalence proof — red and green on the same
+      // violation on both sides. The row keeps the enduring home and the proof sentence, so the
+      // item is still walled: by a test the ladder runs, not by a script this gate runs. A home
+      // nobody writes is a lie the same way a missing .ts is (C3); a retirement without its proof
+      // is a wall deleted on a promise.
+      //
+      // ONE ROW, SEVERAL HOMES. A wall that guarded two things splits into two — a unit test for
+      // the behaviour, and an architecture law for the shape no runtime can observe (NF-04's parse
+      // contract and its one-parser law; JW-01's boot net and the ordering that installs it).
+      // `retired_to` therefore takes a string OR a list, and EVERY named home must exist: crediting
+      // a row for one existing home would let the other be deleted under a green gate, which is the
+      // disappearing-denominator shape this gate exists against.
+      const homes = (Array.isArray(rs[0].retired_to) ? rs[0].retired_to : [rs[0].retired_to])
+        .map((h: unknown) => String(h ?? "").trim())
+        .filter((h: string) => h !== "");
+      if (homes.length > 0) {
+        const proof = String(rs[0].proof ?? "").trim();
+        const missing = homes.filter((h: string) => !existsSync(resolveWall(h)));
+        if (missing.length > 0) {
+          findings.push(`C3 RETIRED HOME  ${itemId}: retired_to ${pyList(missing)} does not exist on disk`);
+        } else if (!proof) {
+          findings.push(`C3 RETIRED BLIND ${itemId}: retired_to ${pyList(homes)} carries no proof — a wall is retired on its equivalence proof, never on a promise`);
+        } else {
+          stats.retired += 1;
+        }
+        continue;
+      }
       stats.unwalled += 1;
       findings.push(`C4 UNWALLED      ${itemId} [${status}]: no wall. The fix is BUILDING THE WALL, not editing the row.`);
       continue;
@@ -431,7 +459,7 @@ export function report(findings: string[], stats: Stats, strict: boolean): numbe
   }
   out.push("");
   out.push(
-    `  items ${stats.total} | walled ${stats.walled} | UNWALLED ${stats.unwalled} | ` +
+    `  items ${stats.total} | walled ${stats.walled} | retired-to-tests ${stats.retired} | UNWALLED ${stats.unwalled} | ` +
       `earned-green ${stats.green} | vacuous ${stats.vacuous} | false-green ${stats.false_green} | ` +
       `uncontrolled ${stats.uncontrolled}`,
   );
@@ -490,6 +518,17 @@ export function selftest(): number {
     expect("C2-orphan", audit(new Map(), [{ id: "ZZ-99", wall: "" }], off)[0], "C2");
     expect("C3-missing", audit(I("todo"), [{ id: "NF-01", wall: "walls/__nope__.ts" }], off)[0], "C3");
     expect("C4-unwalled", audit(I("todo"), [{ id: "NF-01", wall: "" }], off)[0], "C4");
+    // A retired wall: its home must exist and its proof must be written, else C3 — never C4, never a pass.
+    expect("C3-retired-home-missing", audit(I("done"), [{ id: "NF-01", wall: "", retired_to: join(td, "__gone__Test.kt"), proof: "p" }], off)[0], "C3");
+    expect("C3-retired-blind", audit(I("done"), [{ id: "NF-01", wall: "", retired_to: realGrn, proof: "" }], off)[0], "C3");
+    const retiredOk = audit(I("done"), [{ id: "NF-01", wall: "", retired_to: realGrn, proof: "red and green on the same violation" }], off);
+    expect("green-retired", retiredOk[0], null);
+    if (retiredOk[1].retired !== 1 || retiredOk[1].unwalled !== 0) fails.push("retired: a retired row counts as retired, never as unwalled");
+    // SEVERAL HOMES: a list is not satisfied by its first entry — every home must be on disk.
+    expect("C3-retired-home-partial", audit(I("done"), [{ id: "NF-01", wall: "", retired_to: [realGrn, join(td, "__gone__Test.kt")], proof: "p" }], off)[0], "C3");
+    const retiredTwo = audit(I("done"), [{ id: "NF-01", wall: "", retired_to: [realGrn, realRed], proof: "red and green on the same violation" }], off);
+    expect("green-retired-multi", retiredTwo[0], null);
+    if (retiredTwo[1].retired !== 1) fails.push("retired: a two-home row is ONE retired item, not two");
     expect("C5-vacuous", audit(I("todo"), [{ id: "NF-01", wall: realGrn }], off)[0], "C5");
     expect("C5-false-green", audit(I("verified"), [{ id: "NF-01", wall: realRed }], off)[0], "C5");
 
@@ -534,7 +573,8 @@ export function selftest(): number {
   }
   process.stdout.write(
     "SELFTEST OK — C1-C11 red cases fire; C6 catches the do-nothing wall WITHOUT a false C5; " +
-      "cross-phase fence reuse stays clean; both correct-polarity cases pass\n",
+      "cross-phase fence reuse stays clean; both correct-polarity cases pass; a retired wall needs " +
+      "EVERY home it names on disk and its proof written\n",
   );
   return 0;
 }

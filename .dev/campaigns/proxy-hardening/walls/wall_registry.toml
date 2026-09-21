@@ -54,7 +54,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.ts"
 [[item]]
 id = "SH-06"
 phase = "W1-bounded-failure"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_06_credential_lock_bounded.ts"
+wall = ""
+retired_to = "upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt"
+proof = "2026-09-21: CredentialLock.acquireBounded() mutated so budget expiry throws instead of proceeding unlocked; the wall went RED and the CredentialLockTest arm 'a peer holding the lock past the budget degrades to unlocked - SH-06' FAILED on the same mutation; restored, both GREEN (5/5)"
 
 [[item]]
 id = "SH-01"

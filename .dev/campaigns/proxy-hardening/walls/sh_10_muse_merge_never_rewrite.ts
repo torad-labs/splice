@@ -84,7 +84,7 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
     "2026-09-15 Codex credential persist",
   "providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt":
     "2026-09-15 Codex code-mode state persist",
-  "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt":
+  "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt":
     "2026-09-15 Grok credential persist",
   "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt":
     "2026-09-15 Kimi credential persist",

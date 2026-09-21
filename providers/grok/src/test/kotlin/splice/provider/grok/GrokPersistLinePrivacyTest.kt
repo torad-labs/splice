@@ -1,9 +1,9 @@
 // NEW: V4-152 — split out of GrokAuthProviderTest.kt, which held SEVEN classes in one 830-line file
 // and tripped detekt's LargeClass ceiling at 400. This class is NOT new: it already existed and
 // already had its own JUnit report, so only its FILE was wrong. Its comment block and its body
-// arrive verbatim; the split's acceptance is that :provider-grok:test reports the same total before
+// arrive verbatim; the split's acceptance is that :providers-grok:test reports the same total before
 // and after.
-package grok
+package splice.provider.grok
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -13,8 +13,6 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.util.LogSink
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 

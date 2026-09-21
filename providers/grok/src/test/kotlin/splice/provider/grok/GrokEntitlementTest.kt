@@ -3,7 +3,7 @@
 // spending-limit) and a genuine EXPIRY (unauthenticated:bad-credentials, the 2026-07-18
 // grok-dead-head shape). Rule 1: a 403 on a demonstrably-fine credential is never an expiry,
 // whatever the body says. Rule 3: the entitlement phrases choose only the sentence.
-package grok
+package splice.provider.grok
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.RefreshAttempt
-import splice.provider.grok.GrokAuthProvider
-import splice.provider.grok.GrokOAuth
 import java.nio.file.Files
 import java.nio.file.Path
 

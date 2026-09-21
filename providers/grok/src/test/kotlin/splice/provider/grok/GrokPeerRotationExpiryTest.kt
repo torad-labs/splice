@@ -2,8 +2,8 @@
 // and tripped detekt's LargeClass ceiling at 400. This class is NOT new: it already existed and
 // already had its own JUnit report, so only its FILE was wrong. It arrives verbatim, including the
 // two private helpers it carries rather than shares — the idiom an earlier split in this file
-// established. Acceptance: :provider-grok:test reports the same total before and after.
-package grok
+// established. Acceptance: :providers-grok:test reports the same total before and after.
+package splice.provider.grok
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
-import splice.provider.grok.GrokAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

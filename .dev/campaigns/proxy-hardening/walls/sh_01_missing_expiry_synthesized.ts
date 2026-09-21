@@ -57,7 +57,7 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 const CORE = resolve(ROOT, "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt");
 const CODEX = resolve(ROOT, "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt");
 const KIMI = resolve(ROOT, "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt");
-const GROK = resolve(ROOT, "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt");
+const GROK = resolve(ROOT, "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly.
  *

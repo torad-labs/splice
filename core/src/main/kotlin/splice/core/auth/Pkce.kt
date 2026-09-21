@@ -1,4 +1,4 @@
-// NEW: the ONE PKCE pair (review of PR 99). :providers-codex and :provider-grok each declared their
+// NEW: the ONE PKCE pair (review of PR 99). :providers-codex and :providers-grok each declared their
 // own `data class Pkce(verifier, challenge)` — name-for-name and field-for-field identical, because
 // PKCE (RFC 7636) has no vendor-specific content: the verifier is random bytes and the challenge is
 // its S256 digest, both base64url. Two copies of a shared construct is how the two drift; :core is

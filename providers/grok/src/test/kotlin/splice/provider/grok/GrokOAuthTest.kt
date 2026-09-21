@@ -2,7 +2,7 @@
 // the code-exchange + refresh form bodies, and the token-response → auth.json mapping. These are
 // the pieces `splice login grok` drives; pinned so a constant drift (client id, scope, endpoints)
 // is a test failure, not a silent broken login.
-package grok
+package splice.provider.grok
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
-import splice.provider.grok.GrokOAuth
-import splice.provider.grok.GrokOAuthEndpoints
 
 class GrokOAuthTest {
 

@@ -3,7 +3,7 @@
 // error UPSTREAM_REPORTED, so the wire type the client keys its retry on was api_error whatever the
 // vendor had said: an overflow was retried identically instead of compacted, a rate limit looked
 // like a server fault, and llama-server's full KV pool reached the banner as bare text.
-package campaign.v4164
+package splice.dialect.chat
 
 import driveEvents
 import ev

@@ -22,7 +22,7 @@ dependencies {
     implementation(project(":client"))
     implementation(project(":upstream"))
     implementation(project(":dialects-openai-responses"))
-    implementation(project(":dialect-openai-chat"))
+    implementation(project(":dialects-openai-chat"))
     implementation(project(":dialects-anthropic"))
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))

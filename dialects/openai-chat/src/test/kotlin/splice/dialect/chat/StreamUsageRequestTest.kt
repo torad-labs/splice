@@ -3,7 +3,7 @@
 // zero tokens for the whole turn. The assembly arm (app campaign.v4163) picks WHO asks; this pins
 // what asking and not asking look like on the wire, and that the overlay's null keeps the profile's
 // own answer — the property every unopted head's byte-identity rests on.
-package campaign.v4163
+package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -14,8 +14,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.ChatRequestBuilder
 
 private const val TURN = """{"model":"m","messages":[{"role":"user","content":"hi"}]}"""
 

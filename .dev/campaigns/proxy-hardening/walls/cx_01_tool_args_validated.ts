@@ -88,9 +88,9 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // preceded this named only ChatToolCalls.kt, which left both other steps unread — and moved the
 // vacuity guard off the translator, so deleting ChatStreamTranslator.kt no longer made the key None.
 const CHAT = [
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
 ];
 // LIST, not a single file (HD-24 decomposition, 2026-08-17): a target may move the validation latch
 // and its parser to siblings. Every path must exist or the whole key reads as missing (vacuity

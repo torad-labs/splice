@@ -60,7 +60,7 @@
     ],
     "COLLISION HIGH_BUDGET_FLOOR": [
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEffortLadder.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt"
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt"
     ],
     "COLLISION LIVE_MAX_TOKENS": [
       "gateway/app/src/main/kotlin/splice/app/cli/AddChecks.kt",
@@ -119,7 +119,7 @@
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION RUNAWAY_GUARD_MESSAGE": [
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt"
     ],
     "COLLISION SCOPE": [
@@ -147,7 +147,7 @@
       "gateway/app/src/main/kotlin/splice/app/cli/AddProfileCatalog.kt"
     ],
     "COPY BASE64_SEPARATOR": [
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputParts.kt"
     ],
     "COPY BOLD": [
@@ -175,7 +175,7 @@
     "COPY CONTENT": [
       "client/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesSystemPrompt.kt"
     ],
     "COPY CSI_CUU": [
@@ -191,7 +191,7 @@
       "daemon/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"
     ],
     "COPY DATA_URL_PREFIX": [
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputParts.kt"
     ],
     "COPY DAY_MS": [
@@ -451,7 +451,7 @@
     ],
     "COPY NAME": [
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
     "COPY NANOS_PER_MS": [
       "gateway/app/src/main/kotlin/splice/app/cli/UpgradeDaemon.kt",
@@ -516,8 +516,8 @@
     ],
     "COPY ROLE": [
       "daemon/control/src/main/kotlin/splice/control/api/sessions/TeamsEconomics.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesSystemPrompt.kt"
     ],
     "COPY ROLE_ASSISTANT": [
@@ -550,7 +550,7 @@
     ],
     "COPY SYSTEM": [
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt"
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatSystemPrompt.kt"
     ],
     "COPY S_PER_MIN": [
       "gateway/app/src/main/kotlin/splice/app/cli/AccountPoolText.kt",
@@ -562,7 +562,7 @@
     ],
     "COPY TEXT": [
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt"
     ],
     "COPY TOKEN_BYTES": [
       "gateway/app/src/main/kotlin/splice/app/cli/LoginCodex.kt",
@@ -576,7 +576,7 @@
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeFatalFrame.kt",
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/MfjsSanitizer.kt",
       "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",
-      "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
+      "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatWireMapper.kt",
       "daemon/head/src/main/kotlin/splice/head/wire/MessageStart.kt",
       "daemon/head/src/main/kotlin/splice/head/wire/SseEmitter.kt",
       "daemon/head/src/main/kotlin/splice/head/wire/WireBlockWriter.kt"

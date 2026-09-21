@@ -1,6 +1,8 @@
 // NEW: unit test the Anthropic Messages -> OpenAI Chat Completions request builder — wire message
 // ordering (the tool-message-follows-assistant contract), assistant tool_calls shape, system-first,
 // and base64 image data-url mapping. Mirrors ResponsesRequestBuilderTest conventions.
+package splice.dialect.chat
+
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -10,8 +12,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.ChatRequestBuilder
 
 private val CHAT = ChatQuirks(providerTag = "kimi")
 

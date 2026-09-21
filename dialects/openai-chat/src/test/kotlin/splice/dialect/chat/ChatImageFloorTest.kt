@@ -8,6 +8,8 @@
 // Two properties are pinned here and they pull in opposite directions, which is the point: an image
 // PROVEN undersized is dropped with an honest sentence of its own, and everything else — including
 // every head that did not opt in — is byte-identical to before this existed.
+package splice.dialect.chat
+
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -17,8 +19,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.ChatRequestBuilder
 import java.util.Base64
 
 class ChatImageFloorTest {

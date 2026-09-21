@@ -7,7 +7,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":upstream"))
     implementation(project(":dialects-openai-responses"))
-    implementation(project(":dialect-openai-chat"))
+    implementation(project(":dialects-openai-chat"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(project(":daemon-head"))

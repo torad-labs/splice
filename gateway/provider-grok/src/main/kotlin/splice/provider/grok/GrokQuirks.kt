@@ -1,6 +1,6 @@
 // NEW: Grok owns its responses quirk profile and the chat xhigh model regex.
 // DR-155: both the chat and responses profiles are live depending on the TOML dialect; this
-// module owns the 8px floor so :app does not re-declare a vendor fact, and dialect-openai-chat
+// module owns the 8px floor so :app does not re-declare a vendor fact, and :dialects-openai-chat
 // never depends on provider-grok.
 package splice.provider.grok
 

@@ -3,6 +3,8 @@
 // both final-only open with real input), finding 5a (a nameless final-only call is surfaced, not
 // dropped), and PINS the two documented known limitations — finding 4 (id-less stream echoed with an
 // id duplicates) and finding 5b (an id-matched echo does not repair under-delivered stream args).
+package splice.dialect.chat
+
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -14,8 +16,6 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
-import splice.dialect.chat.ChatStreamTranslator
-import splice.dialect.chat.ChatTurnContext
 import splice.upstream.sse.WireSink
 
 private class FoldRec : WireSink {

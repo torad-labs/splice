@@ -3,14 +3,14 @@
 // recording sink in two files, and a second pasted copy is the drift this repo keeps paying for,
 // so there is ONE definition here instead. Internal, not private, precisely so both suites share it.
 // (ChatToolFoldTest still carries its own older copy — pre-existing, untouched by this change.)
+package splice.dialect.chat
+
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.TurnOutcome
-import splice.dialect.chat.ChatStreamTranslator
-import splice.dialect.chat.ChatTurnContext
 import splice.upstream.sse.WireSink
 
 internal class Rec : WireSink {

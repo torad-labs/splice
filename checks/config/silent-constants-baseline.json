@@ -106,7 +106,7 @@
     "core/src/main/kotlin/splice/core/util/JsonlSink.kt": 1,
     "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughEffortLadder.kt": 2,
     "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt": 4,
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt": 3,
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortTiers.kt": 3,
     "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ConversationSummaryParts.kt": 4,
     "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/DefaultEffortVocabulary.kt": 4,
     "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/LoopGuard.kt": 2,

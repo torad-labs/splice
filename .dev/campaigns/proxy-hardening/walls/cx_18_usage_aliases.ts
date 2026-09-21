@@ -88,7 +88,7 @@ export const PATHS: Record<string, string> = {
   hud: "daemon/head/src/main/kotlin/splice/head/usage/UsageJson.kt",
   // HD-24 (2026-08-17): ChatStreamTranslator decomposed; both usage-alias reads moved to
   // ChatUsage.kt (the usage-accounting owner).
-  chat: "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",
+  chat: "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",
   // HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; both nested-cache_creation reads
   // moved to PassthroughUsage.kt (the usage-accounting owner), the same repoint HD-24 made twice
   // above. BAN_DIRS is derived from this path's PARENT, and the destination is a same-package

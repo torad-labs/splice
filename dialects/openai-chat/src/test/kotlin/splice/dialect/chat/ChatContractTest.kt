@@ -6,13 +6,13 @@
 // half (a CHANGED golden must match a receipt hash, so a blind regenerate can't go green) activates
 // on live traffic. See gateway/CONTRACT.md. Regenerate deliberately: delete the golden, run, review
 // the diff, re-run.
+package splice.dialect.chat
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.ChatRequestBuilder
 import java.io.File
 
 class ChatContractTest {

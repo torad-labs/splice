@@ -1,10 +1,13 @@
 // NEW: V4-169 (2026-09-19) — the moment the daemon learns WHICH session the `-r` picker or `-c`
 // chose. At launch the daemon knows a session id only for `-r SESSION_ID`; the picker and `-c` pick
 // inside Claude Code, after launch. Claude Code tells us: its SessionStart hook fires with
-// `source: "resume"`, the `session_id` and the `transcript_path`. This installs that hook — matcher
-// "resume" only, so a fresh start, /clear and a compaction never call — and the script POSTs the hook
-// JSON to the daemon's /hooks/resume/<head>, which moves that transcript onto the head's model
-// (TranscriptModelRewrite, the same rewrite the `-r SESSION_ID` launch runs).
+// `source: "resume"`, the `session_id` and the `transcript_path`. This installs that hook and the
+// script POSTs the hook JSON to the daemon's /hooks/resume/<head>, which moves that transcript onto
+// the head's model (TranscriptModelRewrite, the same rewrite the `-r SESSION_ID` launch runs).
+//
+// V4-183 (2026-09-20): the same hook also fires on `source: "startup"` — a fresh session — so the
+// daemon can record which head OWNS each session (SessionOwnership) and bound a later bare `-c` to
+// this head's own sessions. /clear and a compaction still never call: they start no session.
 //
 // NO SECRET IN THE SCRIPT: the session's own environment carries ANTHROPIC_AUTH_TOKEN, which is the
 // management bearer the launch recipe planted, so the script authenticates from its env and the file
@@ -28,6 +31,9 @@ import java.nio.file.Path
  *  declaration, read by the hook installer here and by the control route that receives the call. */
 public const val RESUME_SOURCE: String = "resume"
 
+/** The SessionStart `source` value Claude Code sends for a fresh session (V4-183). */
+public const val STARTUP_SOURCE: String = "startup"
+
 internal object ResumeHook {
     const val RESUME_HOOK_SH: String = "splice-resume-hook.sh"
 
@@ -39,9 +45,10 @@ internal object ResumeHook {
      *  and it lands inside a double-quoted URL, so it is written as is. */
     fun script(controlPort: Int, headKey: String): String = buildString {
         appendLine("#!/usr/bin/env bash")
-        appendLine("# NEW (splice, V4-169): on `--resume` / `--continue` / /resume, tell the daemon which session")
-        appendLine("# this head is resuming so its assistant rows are moved onto this head's model. Authenticates")
-        appendLine("# with the session's own ANTHROPIC_AUTH_TOKEN; never blocks the session (exit 0 always).")
+        appendLine("# NEW (splice, V4-169 / V4-183): on a session start or a `--resume` / `--continue` / /resume,")
+        appendLine("# tell the daemon which session this head owns, so a later bare -c resumes this head's own")
+        appendLine("# session and a resumed transcript is moved onto this head's model. Authenticates with the")
+        appendLine("# session's own ANTHROPIC_AUTH_TOKEN; never blocks the session (exit 0 always).")
         appendLine("[ -n \"\${ANTHROPIC_AUTH_TOKEN:-}\" ] || exit 0")
         appendLine("curl -sS -m $CURL_TIMEOUT_S -X POST -H \"Authorization: Bearer \${ANTHROPIC_AUTH_TOKEN}\" \\")
         appendLine("  -H 'Content-Type: application/json' --data-binary @- \\")
@@ -49,9 +56,10 @@ internal object ResumeHook {
         appendLine("exit 0")
     }
 
-    /** The hook additions for the materializer: one SessionStart entry, matcher "resume". An install
-     *  failure is said and the head launches without the hook — the resume then costs the notice
-     *  this hook removes, nothing more. */
+    /** The hook additions for the materializer: two SessionStart entries on one script, matchers
+     *  "resume" and "startup". An install failure is said and the head launches without the hook —
+     *  the resume then costs the notice this hook removes, and the head's sessions go unrecorded
+     *  until the next launch, nothing more. */
     fun install(
         configDir: Path,
         controlPort: Int,
@@ -69,6 +77,7 @@ internal object ResumeHook {
             mapOf(
                 HookScriptFiles.SESSION_START to listOf(
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = RESUME_SOURCE),
+                    HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = STARTUP_SOURCE),
                 ),
             )
         }

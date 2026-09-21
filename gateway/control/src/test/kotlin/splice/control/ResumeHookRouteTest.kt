@@ -8,6 +8,7 @@ package splice.control
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -18,10 +19,12 @@ import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.launch.ClaudePolicy
+import splice.core.launch.SessionOwnership
 import java.nio.file.Files
 import java.nio.file.Path
 
 private const val SESSION = "0f6b1c2e-7d3a-4b8e-9c1d-2a5f6e7b8c9d"
+private const val OTHER = "1a2b3c4d-0000-4000-8000-000000000000"
 private const val PINNED = "gpt-5.6-sol"
 private const val FOREIGN_ROW = """{"type":"assistant","sessionId":"$SESSION","message":{"model":"k3-256k","content":[]}}"""
 
@@ -34,11 +37,17 @@ class ResumeHookRouteTest {
         return ResumeHookRoute(heads, log = { log.append(it) })
     }
 
-    private fun hookJson(sessionId: String, transcript: Path, source: String = "resume"): String = buildJsonObject {
+    private fun hookJson(
+        sessionId: String,
+        transcript: Path,
+        source: String = "resume",
+        cwd: String? = null,
+    ): String = buildJsonObject {
         put("session_id", JsonPrimitive(sessionId))
         put("transcript_path", JsonPrimitive(transcript.toString()))
         put("source", JsonPrimitive(source))
         put("hook_event_name", JsonPrimitive("SessionStart"))
+        cwd?.let { put("cwd", JsonPrimitive(it)) }
     }.toString()
 
     private fun write(path: Path, text: String): Path {
@@ -97,10 +106,43 @@ class ResumeHookRouteTest {
         val route = route(own)
 
         assertEquals("no head is keyed that", route.handle("nope", hookJson(SESSION, transcript)))
-        assertEquals("the hook source is not a resume", route.handle("codex", hookJson(SESSION, transcript, "startup")))
+        assertEquals(
+            "the hook source is neither a startup nor a resume",
+            route.handle("codex", hookJson(SESSION, transcript, "compact")),
+        )
         assertEquals("the session id is not a session id", route.handle("codex", hookJson("../../etc", transcript)))
         assertEquals("the body is not a JSON object", route.handle("codex", "not json"))
         assertEquals(FOREIGN_ROW + "\n", Files.readString(transcript), "every refusal leaves the transcript as it was")
+    }
+
+    // V4-183: both sources enter the session in this head's own index; only a resume rewrites.
+    @Test
+    fun `a startup records the session as this head's, in its cwd, and rewrites nothing`(@TempDir home: Path) {
+        val (own, shared) = linkedHead(home)
+        val transcript = write(shared.resolve("-work-repo").resolve("$SESSION.jsonl"), FOREIGN_ROW + "\n")
+        val cwd = Files.createDirectories(home.resolve("work-repo")).toString()
+
+        assertNull(route(own).handle("codex", hookJson(SESSION, transcript, "startup", cwd)))
+
+        assertEquals(SESSION, SessionOwnership(own).newestFor(cwd)?.id, "the head owns the session it started")
+        assertEquals(FOREIGN_ROW + "\n", Files.readString(transcript), "a startup has nothing to move")
+        assertFalse(log.contains("moved onto"), log.toString())
+    }
+
+    @Test
+    fun `a resume records the session too, and a hook without a cwd records nothing`(@TempDir home: Path) {
+        val (own, shared) = linkedHead(home)
+        val transcript = write(shared.resolve("-work-repo").resolve("$SESSION.jsonl"), FOREIGN_ROW + "\n")
+        val cwd = Files.createDirectories(home.resolve("work-repo")).toString()
+
+        assertNull(route(own).handle("codex", hookJson(SESSION, transcript, "resume", cwd)))
+        assertEquals(SESSION, SessionOwnership(own).newestFor(cwd)?.id)
+        assertTrue(Files.readString(transcript).contains("\"$PINNED\""), "a resume still rewrites")
+
+        val other = write(shared.resolve("-elsewhere").resolve("$OTHER.jsonl"), FOREIGN_ROW + "\n")
+        val elsewhere = Files.createDirectories(home.resolve("elsewhere")).toString()
+        assertNull(route(own).handle("codex", hookJson(OTHER, other, "startup")))
+        assertNull(SessionOwnership(own).newestFor(elsewhere), "a hook without a cwd enters nothing")
     }
 
     private fun head(own: Path): ManagedHead = ManagedHead(

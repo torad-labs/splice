@@ -4,6 +4,11 @@
 // assistant rows onto the head's pinned model (TranscriptModelRewrite), so a session written on
 // another head resumes here without Claude Code's "Session model <X> could not be restored" notice.
 //
+// V4-183 (2026-09-20): the hook also fires on `source: "startup"`, and on BOTH sources the route
+// records the session as owned by this head (SessionOwnership, in the head's own config dir) so a
+// later bare `-c` on this head resumes this head's own newest session in that cwd. The rewrite
+// still runs on a resume only; a startup has nothing to move.
+//
 // ALWAYS 200. This route sits inside a session's own start-up hook; an error status would be a
 // splice-made reason for a resume to stall, which is strictly worse than the notice it removes. So
 // every refusal — unknown head, a source that is not a resume, an id that is not a session id, a
@@ -23,6 +28,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.control.LogSafe
 import splice.control.ManagedHead
 import splice.core.launch.RESUME_SOURCE
+import splice.core.launch.STARTUP_SOURCE
+import splice.core.launch.SessionOwnership
 import splice.core.launch.TranscriptModelRewrite
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -65,23 +72,30 @@ internal class ResumeHookRoute(
             managed == null -> "no head is keyed that"
             spec == null -> "that head has no launch spec, so no transcript tree"
             hook == null -> "the body is not a JSON object"
-            hook.source != RESUME_SOURCE -> "the hook source is not a resume"
+            hook.source != RESUME_SOURCE && hook.source != STARTUP_SOURCE ->
+                "the hook source is neither a startup nor a resume"
             !SESSION_ID_SHAPE.matches(hook.sessionId) -> "the session id is not a session id"
             else -> located(managed, spec.trees.own, spec.pinnedModel, hook)
         }
     }
 
-    /** The three fields of the hook JSON this route reads, absent ones as empty strings. */
+    /** The four fields of the hook JSON this route reads, absent ones as empty strings. */
     private class ResumeCall(hook: JsonObject) {
         val source: String = JsonScalars.str(hook, "source").orEmpty()
         val sessionId: String = JsonScalars.str(hook, "session_id").orEmpty()
         val transcriptPath: String = JsonScalars.str(hook, "transcript_path").orEmpty()
+        val cwd: String = JsonScalars.str(hook, "cwd").orEmpty()
     }
 
     private fun located(managed: ManagedHead, configDir: Path, pinnedModel: String, hook: ResumeCall): String? {
         val transcript = transcriptInsideHead(hook.transcriptPath, configDir)
             ?: return "the transcript path is not a file under this head's transcript tree"
-        return rewrite(managed, transcript, pinnedModel, hook.sessionId)
+        // V4-183: ownership first, on both sources — a resume that then fails to rewrite is still
+        // this head's session. A hook without a cwd records nothing (a launch resolves -c by cwd).
+        if (hook.cwd.isNotBlank()) {
+            SessionOwnership(configDir, log = log).record(hook.sessionId, hook.cwd, transcript)
+        }
+        return if (hook.source == RESUME_SOURCE) rewrite(managed, transcript, pinnedModel, hook.sessionId) else null
     }
 
     private fun rewrite(managed: ManagedHead, transcript: Path, pinnedModel: String, sessionId: String): String? {

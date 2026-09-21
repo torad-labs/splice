@@ -511,12 +511,13 @@ class ControlServerTest {
             // whose content is the literal string "null", so the old `(it as? JsonPrimitive)?.content`
             // chain handed a null argument to the launched client as a live word. This is
             // CLIENT-supplied JSON becoming a process argv, the shape the wall's header names.
-            setBody("""{"args":["-c",null]}""")
+            // V4-183: `-c` is resolved by the daemon now, so a plain flag stands in as the live word.
+            setBody("""{"args":["--verbose",null]}""")
         }.bodyAsText()
         val obj = json.parseToJsonElement(body).jsonObject
         val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertFalse(argv.contains("--dangerously-skip-permissions"))
-        assertTrue(argv.contains("-c"))
+        assertTrue(argv.contains("--verbose"))
         assertFalse(argv.contains("null"), "a JSON null is absence, not an argument: $argv")
         assertFalse(obj.containsKey("warning"))
     }

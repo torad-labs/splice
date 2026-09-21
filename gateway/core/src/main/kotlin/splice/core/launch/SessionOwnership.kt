@@ -16,7 +16,7 @@
 //
 // The file is a convenience, never a gate: absent or unparseable it reads as empty (one log line),
 // a record that cannot be written is logged and the session runs, and a stale entry whose transcript
-// is gone is skipped on read. Bounded to the newest MAX_ENTRIES so a head's file never grows without
+// is gone is skipped on read. Bounded to the newest MAX_OWNED_SESSIONS so a head's file never grows without
 // limit; cwd paths are canonicalised (realpath) on both sides, since the shim sends $PWD and the hook
 // sends Claude Code's cwd, which can spell one directory two ways through a symlink.
 package splice.core.launch
@@ -44,12 +44,12 @@ public const val SESSION_OWNERSHIP_FILE: String = "splice-sessions.json"
 
 // why: a head starts a handful of sessions a day, so 500 entries is months of history while the
 // file, read on every launch, stays at a few tens of kilobytes.
-private const val MAX_ENTRIES = 500
-private const val FIELD_SESSIONS = "sessions"
-private const val FIELD_ID = "id"
-private const val FIELD_CWD = "cwd"
-private const val FIELD_TRANSCRIPT = "transcript"
-private const val FIELD_AT = "at"
+private const val MAX_OWNED_SESSIONS = 500
+private const val OWNED_FIELD_SESSIONS = "sessions"
+private const val OWNED_FIELD_ID = "id"
+private const val OWNED_FIELD_CWD = "cwd"
+private const val OWNED_FIELD_TRANSCRIPT = "transcript"
+private const val OWNED_FIELD_AT = "at"
 
 /** The id shape an entry may carry — a path component and an argv word, never anything else. */
 private val OWNED_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
@@ -76,7 +76,7 @@ public class SessionOwnership(
         // Newest first, and the entry just recorded first among equals: the sort is stable, so two
         // records in one millisecond (a test, a burst of launches) still resolve to the latest.
         val kept = listOf(entry) + load().filter { it.id != id }
-        save(kept.sortedByDescending(OwnedSession::at).take(MAX_ENTRIES))
+        save(kept.sortedByDescending(OwnedSession::at).take(MAX_OWNED_SESSIONS))
     }
 
     /** The newest session this head owns in [cwd] whose transcript still exists, or null. */
@@ -99,30 +99,30 @@ public class SessionOwnership(
             log("[sessions] $file is unreadable (${SafeFailureText.render(cause)}) — treated as empty\n")
             null
         }
-        val sessions = root?.get(FIELD_SESSIONS) as? JsonArray
+        val sessions = root?.get(OWNED_FIELD_SESSIONS) as? JsonArray
         return sessions?.mapNotNull { element -> entry(element as? JsonObject) }.orEmpty()
     }
 
     private fun entry(obj: JsonObject?): OwnedSession? {
-        val id = JsonScalars.str(obj, FIELD_ID)?.takeIf(OWNED_ID_SHAPE::matches) ?: return null
-        val at = JsonScalars.str(obj, FIELD_AT)?.toLongOrNull() ?: return null
-        val cwd = JsonScalars.str(obj, FIELD_CWD)
-        val transcript = JsonScalars.str(obj, FIELD_TRANSCRIPT)
+        val id = JsonScalars.str(obj, OWNED_FIELD_ID)?.takeIf(OWNED_ID_SHAPE::matches) ?: return null
+        val at = JsonScalars.str(obj, OWNED_FIELD_AT)?.toLongOrNull() ?: return null
+        val cwd = JsonScalars.str(obj, OWNED_FIELD_CWD)
+        val transcript = JsonScalars.str(obj, OWNED_FIELD_TRANSCRIPT)
         return if (cwd != null && transcript != null) OwnedSession(id, cwd, transcript, at) else null
     }
 
     private fun save(entries: List<OwnedSession>) {
         val body = buildJsonObject {
             put(
-                FIELD_SESSIONS,
+                OWNED_FIELD_SESSIONS,
                 buildJsonArray {
                     entries.forEach { entry ->
                         add(
                             buildJsonObject {
-                                put(FIELD_ID, entry.id)
-                                put(FIELD_CWD, entry.cwd)
-                                put(FIELD_TRANSCRIPT, entry.transcript)
-                                put(FIELD_AT, entry.at)
+                                put(OWNED_FIELD_ID, entry.id)
+                                put(OWNED_FIELD_CWD, entry.cwd)
+                                put(OWNED_FIELD_TRANSCRIPT, entry.transcript)
+                                put(OWNED_FIELD_AT, entry.at)
                             },
                         )
                     }

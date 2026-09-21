@@ -69,7 +69,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
 }
 
 // V4-177's state-layout row lives HERE and not in its own file, deliberately. splice.app.cli sits
-// AT the package ratchet's recorded baseline (84 files, checks/concentration.ts), so an 86th
+// AT the package ratchet's recorded baseline (84 files, ConcentrationLawTest), so an 86th
 // Doctor* file in it is a package regression the gate names by number — and the gate's other
 // remedy, raising PACKAGE_MAX_FILES, is a dated edit recording that the clump grew. It is still its
 // own CLASS rather than a private member, which is the part that mattered: daemonChecks() builds

@@ -34,7 +34,7 @@
 // could not be copied is Refused. Neither is an exception: the refusal rides the return type of the
 // call that decided it (kt-no-exception-as-outcome).
 //
-// THE CALLER'S OWN TREE IS THE CWD SIGNAL. The launch request carries only argv (the bin/splice-launch
+// THE CALLER'S OWN TREE IS THE CWD SIGNAL. The launch request carries only argv (the app/src/main/dist/bin/splice-launch
 // shim sends {"args": [...]}; LaunchRequest has no cwd), so "same encoded cwd first" is read off the
 // one thing that IS available: an encoded-cwd directory this head already holds a transcript tree for
 // is the session's likely home, and a head whose tree is freshly empty has no signal at all — which

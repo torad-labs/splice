@@ -9,7 +9,7 @@ public const val GATEWAY_VERSION: String = "0.3.2"
 // inside the image and fails when that observation differs from this pin.
 public const val TESTED_CLAUDE_CODE: String = "2.1.257"
 
-// Hand-paired with the SPLICE_SHIM_VERSION marker embedded in bin/splice-launch (same
+// Hand-paired with the SPLICE_SHIM_VERSION marker embedded in app/src/main/dist/bin/splice-launch (same
 // hand-paired pattern as GATEWAY_VERSION/wantVersion already used for head staleness in
-// ControlServer.headStatus). Bump both together whenever bin/splice-launch's behavior changes.
-public const val SHIM_VERSION: String = "shim-5"
+// ControlServer.headStatus). Bump both together whenever app/src/main/dist/bin/splice-launch's behavior changes.
+public const val SHIM_VERSION: String = "shim-6"

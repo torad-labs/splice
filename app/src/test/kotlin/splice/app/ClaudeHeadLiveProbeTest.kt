@@ -20,7 +20,7 @@
 //
 // The remaining half — a REAL turn on the operator's own Max login, which costs quota and needs a
 // credential splice deliberately never holds — is the operator's to run. Recipe and evidence live
-// in gateway/spikes/results/claude-head-probe.md.
+// in .dev/research/spikes/claude-head-probe.md.
 package splice.app
 
 import io.ktor.client.HttpClient

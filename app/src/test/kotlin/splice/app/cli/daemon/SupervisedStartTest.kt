@@ -1,6 +1,6 @@
 // NEW: V4-190 — the CLI cold start is unit-first. RED on the pre-fix DaemonLaunch: with the unit on the
 // box and no selector set, ensureDaemon raw-spawned (the "starting the daemon" line) and never asked
-// systemctl. The selector list is pinned to bin/splice-launch's unit_defaults() so the shim and the
+// systemctl. The selector list is pinned to the launch shim's unitDefaults() so the shim and the
 // CLI cannot disagree about which shells own their daemon.
 package splice.app.cli.daemon
 
@@ -16,6 +16,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
 
+private const val SHIM = "app/src/main/dist/bin/splice-launch"
 private const val UNIT = "splice.service"
 private const val CANARY_UNIT = "splice-canary.service"
 
@@ -70,13 +71,14 @@ class SupervisedStartTest {
     }
 
     @Test
-    fun `the selector list is the shim's unit_defaults list, byte for byte`() {
-        val shim = repo().resolve("bin/splice-launch").readText()
-        val guard = shim.lineSequence().dropWhile { !it.startsWith("unit_defaults() {") }.drop(1).first()
-        val shimSelectors = Regex("""\$\{([A-Z_]+):-}""").findAll(guard)
+    fun `the selector list is the shim's unitDefaults list, byte for byte`() {
+        val shim = repo().resolve(SHIM).readText()
+        // The `selectors` array literal: `env.NAME` entries, then the captured CONTROL_PORT_FROM_ENV.
+        val list = shim.substringAfter("function unitDefaults() {").substringBefore("];")
+        val shimSelectors = Regex("""\b(?:env\.)?([A-Z_]+)\b""").findAll(list.substringAfter("["))
             .map { it.groupValues[1].removeSuffix("_FROM_ENV") }
             .toList()
-        assertEquals(shimSelectors, harnessSelectors, "bin/splice-launch unit_defaults() and the CLI's list drifted")
+        assertEquals(shimSelectors, harnessSelectors, "$SHIM unitDefaults() and the CLI's list drifted")
     }
 
     // ── DaemonLaunch, the composer ────────────────────────────────────────────────────────────

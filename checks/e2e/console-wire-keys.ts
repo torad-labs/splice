@@ -499,17 +499,15 @@ export function liveStateDir(home = homedir(), env = process.env): string {
     if (value !== undefined && value.trim() !== "") return value;
   }
   // Adoption needs POSITIVE evidence on both sides: the current root proven absent, the pre-0.4 one
-  // proven to be a DIRECTORY. statSync with throwIfNoEntry keeps "absent" apart from "cannot be
-  // read", which is StatePaths' three-valued probe and the reason a file at either path is not a
-  // state root.
+  // proven to be a DIRECTORY. ENOENT alone is absence — `throwIfNoEntry: false` would answer
+  // undefined on ENOTDIR too (a REGULAR FILE where ~/.splice belongs) and adopt the pre-0.4 root
+  // where StatePaths' three-valued probe declines. "Cannot be read" is not absent either.
   const probe = (dir: string): "dir" | "absent" | "unusable" => {
     try {
-      const found = statSync(dir, { throwIfNoEntry: false });
-      if (found === undefined) return "absent";
-      return found.isDirectory() ? "dir" : "unusable";
-    } catch {
-      // EACCES on the parent: present-or-absent is UNKNOWN, which is not absent.
-      return "unusable";
+      return statSync(dir).isDirectory() ? "dir" : "unusable";
+    } catch (failure) {
+      // EACCES on the parent, ENOTDIR: present-or-absent is UNKNOWN, which is not absent.
+      return (failure as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "unusable";
     }
   };
   const current = join(home, ".splice", "state");

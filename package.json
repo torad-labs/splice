@@ -13,12 +13,11 @@
     "gate": "bun tools/gate run",
     "gate:no-python": "bun tools/gate no-python && bun test tools/gate/test/no-python.test.ts",
     "gate:rules": "bun tools/gate rules --prove-coverage",
-    "gate:concentration": "bun checks/concentration.ts --ratchet --max-ratio 1.8",
+    "gate:audit": "bun tools/gate audit",
     "gate:campaign": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts",
     "gate:campaign:census": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --no-run",
     "gate:campaign:selftest": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --selftest",
     "test:hooks": "bun test tools/gate/test/hook.test.ts && bun .claude/hooks/tests/test_one_committer.ts",
-    "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bun tools/e2e heads",
     "e2e:heads:wire": "bun tools/e2e heads --tier 1",
     "e2e:heads:selftest": "bun tools/e2e heads --selftest",
@@ -27,7 +26,9 @@
     "oracle:check": "bun tools/e2e oracle check",
     "oracle:replay": "bun tools/e2e oracle",
     "gate:campaign:strict": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --strict",
-    "promote": "bash checks/promote.sh"
+    "release:accept": "bun tools/release accept",
+    "release:verify": "bun tools/release verify",
+    "promote": "bun tools/release promote"
   },
   "devDependencies": {
     "@ast-grep/cli": "0.45.2",

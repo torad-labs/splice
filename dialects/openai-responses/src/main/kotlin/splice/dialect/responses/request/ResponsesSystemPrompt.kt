@@ -35,7 +35,7 @@ public class ResponsesSystemPrompt {
      *  copied that rule — but `isBaseInstructions` matches "a developer item whose content is a
      *  string", which is EXACTLY the shape [appended] builds. On a non-lite turn an append layer
      *  followed by a strip layer therefore stripped splice's OWN item and left the client's
-     *  `instructions` untouched: the documented case in `config/splice.example.toml` failing
+     *  `instructions` untouched: the documented case in `app/src/main/resources/splice.example.toml` failing
      *  silently. A strip edits whatever system text is present at its point, so it edits BOTH.
      *
      *  A text no pattern touches is left exactly as it was; an item stripped to nothing is dropped,

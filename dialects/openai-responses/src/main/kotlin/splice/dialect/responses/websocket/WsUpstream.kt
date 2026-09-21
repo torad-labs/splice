@@ -9,7 +9,7 @@
 // WS round yields the exact Flow<JsonObject> the stream translators already consume. What the WS
 // adds over SSE is a REUSABLE connection: the server keeps the previous response's context per
 // connection, which is what makes previous_response_id incremental turns possible (live spike
-// receipt: gateway/spikes/results/responses-websocket.md).
+// receipt: .dev/research/spikes/responses-websocket.md).
 //
 // Laws (campaign ws-transport):
 //   NEVER-BELOW-STATUS-QUO — every failure here (connect, busy, send, first-event timeout) surfaces

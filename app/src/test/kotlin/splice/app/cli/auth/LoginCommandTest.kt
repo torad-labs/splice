@@ -240,14 +240,10 @@ class LoginCommandTest {
 
     @Test
     fun `example config muse head has no extra headers and uses port 3106`() {
-        var dir = Paths.get("").toAbsolutePath()
-        var toml: String? = null
-        repeat(4) {
-            val candidate = dir.resolve("config").resolve("splice.example.toml")
-            if (toml == null && Files.exists(candidate)) toml = Files.readString(candidate)
-            dir = dir.parent ?: dir
-        }
-        val topology = TopologyLoader.parse(requireNotNull(toml) { "example toml missing" })
+        val toml = checkNotNull(javaClass.getResourceAsStream("/splice.example.toml")) {
+            "example toml missing"
+        }.bufferedReader().use { it.readText() }
+        val topology = TopologyLoader.parse(toml)
         val head = topology.heads.getValue("claude-muse")
         val muse = topology.providers.getValue(head.provider)
         assertEquals("muse-oauth", muse.auth.kind)

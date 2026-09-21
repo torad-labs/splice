@@ -1,11 +1,12 @@
 // Mutation-proves src/lib/configguard.ts (DR-115, DR-131/132, DR-133). The wall guards the RULES;
 // this proves the wall can actually fail. The real checker runs against a mirrored tree — every
-// file it and its two subprocess legs read — so fixtures never touch the repo's own config.
+// file it reads — so fixtures never touch the repo's own config.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { configGuardProblems } from "../src/lib/configguard.ts";
+import { fnmatchCase } from "../src/lib/dependabot.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -13,30 +14,13 @@ let tmp = "";
 const guard = () => configGuardProblems(tmp);
 const names = (problems: string[], phrase: string) => problems.some((p) => p.includes(phrase));
 
-/** Copy a repo-relative file into the mirror, then every relative import it makes, recursively —
- *  so the mirror follows the checkers' imports wherever a later move puts them. */
-function mirrorWithImports(rel: string, seen = new Set<string>()): void {
-  if (seen.has(rel)) return;
-  seen.add(rel);
-  const src = join(repoRoot, rel);
-  mkdirSync(dirname(join(tmp, rel)), { recursive: true });
-  cpSync(src, join(tmp, rel));
-  if (!rel.endsWith(".ts")) return;
-  for (const [, target] of readFileSync(src, "utf8").matchAll(/from\s+"(\.[^"]+)"/g)) {
-    const abs = resolve(dirname(src), target!);
-    mirrorWithImports(abs.slice(repoRoot.length + 1), seen);
-  }
-}
-
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "gate-configguard-"));
-  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json", "tools/gate/config/ladder.json"]) {
+  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json"]) {
     mkdirSync(dirname(join(tmp, rel)), { recursive: true });
     cpSync(join(repoRoot, rel), join(tmp, rel));
   }
   cpSync(join(repoRoot, "quality", "rules"), join(tmp, "quality", "rules"), { recursive: true });
-  mirrorWithImports("checks/config/dependabot-kotlin-scope.ts");
-  mirrorWithImports("checks/config/concentration-leg-routed.ts");
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -123,48 +107,39 @@ describe("the config guard", () => {
     }
   });
 
-  // ── the concentration-leg routing guard's forward half, over the ladder TABLE ───────────────
-  // Mutations go on the MIRRORED tools/gate/config/ladder.json, never the repo's own. A row is
-  // present or absent and its argv is an array, so the shell-era dodges (a comment, `if false`, a
-  // function nobody calls, heredoc data) have no JSON analogue; what remains is the row itself.
-  const ladder = () => join(tmp, "tools", "gate", "config", "ladder.json");
-  interface Leg { task: string; why: string; command: string[] }
-  const isLeg = (leg: Leg) => leg.command.includes("gate:concentration");
-  function withLadder(rewrite: (doc: { legs: Leg[] }) => string, check: (problems: string[]) => void): void {
-    const original = readFileSync(ladder(), "utf8");
-    writeFileSync(ladder(), rewrite(JSON.parse(original) as { legs: Leg[] }));
+  // ── the Dependabot Kotlin scope (checks/config/dependabot-kotlin-scope.ts's arms until PR 6) ──
+  const dependabot = () => join(tmp, ".github", "dependabot.yml");
+  function withDependabot(mutate: (text: string) => string, check: (problems: string[]) => void): void {
+    const original = readFileSync(dependabot(), "utf8");
+    writeFileSync(dependabot(), mutate(original));
     try {
       check(guard());
     } finally {
-      writeFileSync(ladder(), original);
+      writeFileSync(dependabot(), original);
     }
   }
-  const edited = (doc: { legs: Leg[] }, edit: (leg: Leg) => Leg | null): string => {
-    expect(doc.legs.filter(isLeg), "the mirrored ladder must carry exactly one concentration leg").toHaveLength(1);
-    return JSON.stringify({ ...doc, legs: doc.legs.flatMap((leg) => (isLeg(leg) ? (edit(leg) === null ? [] : [edit(leg)!]) : [leg])) });
-  };
-  test("9. the concentration row removed from the ladder", () => {
-    withLadder((doc) => edited(doc, () => null), (p) => expect(names(p, "does not run 'gate:concentration'")).toBe(true));
+  test("an ignore glob that swallows kotlinx is refused by glob and name", () => {
+    withDependabot((t) => t.replace('- dependency-name: "org.jetbrains.kotlin:*"', '- dependency-name: "org.jetbrains.kotlin*"'), (p) =>
+      expect(names(p, "ignore glob 'org.jetbrains.kotlin*' swallows kotlinx name 'org.jetbrains.kotlinx.kover'")).toBe(true));
   });
-  test("10. the row's argv is `true`, the script name kept in its reason — the near-miss is named", () => {
-    withLadder(
-      (doc) => edited(doc, (leg) => ({ ...leg, why: `${leg.why} (gate:concentration disabled pending investigation)`, command: ["true"] })),
-      (p) => {
-        expect(names(p, "does not run 'gate:concentration'")).toBe(true);
-        expect(names(p, "does appear in 1 row(s)")).toBe(true);
-      },
-    );
+  test("a toolchain name no glob blocks is refused by name", () => {
+    withDependabot((t) => t.replace(/ *- dependency-name: "org\.jetbrains\.kotlin\.\*".*\n/, ""), (p) =>
+      expect(names(p, "toolchain name 'org.jetbrains.kotlin.jvm' is not blocked by any ignore glob")).toBe(true));
   });
-  test("11. DR-51: npm middle flags that re-point and disarm the run are not a routing", () => {
-    withLadder(
-      (doc) => edited(doc, (leg) => ({ ...leg, command: ["npm", "run", "--prefix", "/tmp", "--if-present", "gate:concentration"] })),
-      (p) => expect(names(p, "does not run 'gate:concentration'")).toBe(true),
-    );
+  test("a broken grouping contract is refused with the value quoted back", () => {
+    withDependabot((t) => t.replace(/(gradle-minor-patch:\n\s+applies-to: version-updates\n\s+patterns:) \["\*"\]/, '$1 ["org.*"]'), (p) =>
+      expect(names(p, "patterns is ['org.*'], expected ['*']")).toBe(true));
   });
-  test("12. an unparseable ladder fails CLOSED, by name", () => {
-    withLadder(() => "{ this is not json", (p) => expect(names(p, "could not be read or parsed")).toBe(true));
+  test("dependabot.yml without a gradle block, or unparseable, refuses to pass", () => {
+    withDependabot((t) => t.replace('package-ecosystem: "gradle"', 'package-ecosystem: "maven"'), (p) => expect(names(p, "no gradle update found")).toBe(true));
+    withDependabot(() => "updates: [\n", (p) => expect(names(p, "not parseable YAML")).toBe(true));
   });
-  test("13. CONTROL: the real ladder table is routed", () => {
-    expect(guard()).toEqual([]);
+  test("fnmatchCase is Python's, including the literal ] that opens a class", () => {
+    expect(fnmatchCase("org.jetbrains.kotlinx.kover", "org.jetbrains.kotlin*")).toBe(true);
+    expect(fnmatchCase("org.jetbrains.kotlinx.kover", "org.jetbrains.kotlin.*")).toBe(false);
+    expect(fnmatchCase("org.jetbrains.kotlin:kotlin-stdlib", "org.jetbrains.kotlin:*")).toBe(true);
+    expect(fnmatchCase("]", "[!]a]")).toBe(false);
+    expect(fnmatchCase("b", "[!]a]")).toBe(true);
+    expect(fnmatchCase("abc", "[!]a]")).toBe(false);
   });
 });

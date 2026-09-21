@@ -1,4 +1,4 @@
-// NEW: the committed config/splice.example.toml is a TESTED artifact, not aspirational docs — it
+// NEW: the committed app/src/main/resources/splice.example.toml is a TESTED artifact, not aspirational docs — it
 // must parse and yield the three documented heads with the right dialects/auth. If someone edits
 // the example into an invalid shape, this fails.
 package splice.app
@@ -16,22 +16,14 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
 import splice.core.topology.HeadModel
-import java.nio.file.Files
-import java.nio.file.Paths
 import java.time.Duration
 
 class ExampleConfigTest {
 
-    private fun exampleToml(): String {
-        // walk up from the gateway module dir to the repo root
-        var dir = Paths.get("").toAbsolutePath()
-        repeat(4) {
-            val candidate = dir.resolve("config").resolve("splice.example.toml")
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent ?: return@repeat
-        }
-        error("config/splice.example.toml not found from ${Paths.get("").toAbsolutePath()}")
-    }
+    private fun exampleToml(): String =
+        checkNotNull(javaClass.getResourceAsStream("/splice.example.toml")) {
+            "splice.example.toml is not on the classpath"
+        }.bufferedReader().use { it.readText() }
 
     /**
      * SPLICE OWNS ITS CREDENTIAL, in the file operators COPY FROM. AuthKind's header records why

@@ -10,8 +10,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.app.daemon.TopologyLoader
 import splice.core.topology.Dialect
-import java.nio.file.Files
-import java.nio.file.Paths
 
 class PromotedKnobsExampleTest {
 
@@ -32,13 +30,8 @@ class PromotedKnobsExampleTest {
         assertNull(codex.quirks.codeModeHeapMb)
     }
 
-    private fun exampleToml(): String {
-        var dir = Paths.get("").toAbsolutePath()
-        repeat(4) {
-            val candidate = dir.resolve("config").resolve("splice.example.toml")
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent ?: return@repeat
-        }
-        error("config/splice.example.toml not found from ${Paths.get("").toAbsolutePath()}")
-    }
+    private fun exampleToml(): String =
+        checkNotNull(javaClass.getResourceAsStream("/splice.example.toml")) {
+            "splice.example.toml is not on the classpath"
+        }.bufferedReader().use { it.readText() }
 }

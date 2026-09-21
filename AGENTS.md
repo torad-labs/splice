@@ -5,7 +5,7 @@
 Structural walls enforce these at write time (`quality/rules/kotlin/` for the
 gateway, `quality/rules/console/` for the console, routed at write time by
 `bun tools/gate rules --stdin pretooluse`) and permanent tests enforce the behavioral
-half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
+half (the Kotlin module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
 
 1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,

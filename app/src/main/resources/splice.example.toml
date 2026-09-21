@@ -1,0 +1,876 @@
+# splice — example multi-provider topology.
+#
+# Copy to ~/.config/splice/splice.toml for the comprehensive example. `splice init` writes the
+# zero-config OpenRouter API-key starter instead. Adding a provider/head requires a daemon restart.
+# Context windows are the exception: the running daemon re-reads a context_window edit (model rows,
+# extra_windows, window_rules, default_context_window, a head's context_window) with no restart.
+#
+# The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
+# Kimi, or Muse subscription. They are unofficial: they reuse each vendor CLI's public OAuth client
+# identity, which no vendor documents for third parties. Use them at your own risk.
+# A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
+
+[daemon]
+control_port = 3096          # loopback-only control plane + dashboard
+
+# Reasoning display — edit here, restart daemon. No code change.
+# Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.
+show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking into Claude Code
+summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
+# effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
+replay_reasoning = false     # NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
+mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtime PATCH cannot enable transcript mirrors
+# Plan-usage bars: a subscription head (ChatGPT, Kimi, SuperGrok) polls its provider's usage
+# endpoint every five minutes with that head's own bearer. Env CLAUDEX_QUOTA_POLL=off stops every
+# poller (restart the daemon); the bars then draw only from the headers each round already carries.
+# Shared MCP hosting (default on): stdio MCP servers that depend on neither a project directory nor
+# client roots start once in the daemon and serve every session over loopback Streamable HTTP;
+# each head's .claude.json points at the hosted URL, your own config file is never edited.
+# mcp_hosting = false            # every session launches its own servers, as before
+# mcp_hosting_exclude = ["name"] # keep these servers per session even when eligible; hosted servers
+#                                # run in your home directory, so list any that reads its cwd unnamed
+
+# ── compaction instructions: your text after Claude Code's own summarizer prompt ──
+# Most specific scope wins and REPLACES the others (project+model > project > model > global);
+# absent inherits; instructions = "" opts out. Text inline or file = "~/path". Compaction requests
+# only: the cached request prefix is byte-identical with and without it. /api/compact shows the
+# effective text and its source.
+# [compaction]
+# instructions = "Keep every file path, command and error text verbatim."
+# [[compaction.model]]
+# model = "gpt-6-astra"          # the upstream id, after any [1m]-style suffix is stripped
+# file = "~/.config/splice/compaction-astra.md"
+# [[compaction.project]]
+# path = "/home/me/projects/app" # the session's working directory, longest path wins
+# instructions = "Summarize the migration plan in docs/plan.md first."
+
+# ── EXPERIMENTAL OPT-IN: ChatGPT Codex subscription via OAuth ─────────────────
+[providers.codex]
+dialect = "openai-responses"
+base_url = "https://chatgpt.com/backend-api/codex"
+# EXPERIMENTAL: reuses the Codex CLI's public OAuth client identity — NOT a vendor-documented
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/codex.json, written by `splice login claudex`,
+# on whichever ChatGPT account you choose there. Set file = "~/.codex/auth.json" ONLY to share the
+# Codex app's session — the two then rotate each other's refresh token and sign each other out.
+auth = { kind = "chatgpt-oauth" }
+# More accounts of the same kind: `splice login claudex --label work` stores a second credential at
+# ~/.config/splice/auth/chatgpt-oauth/codex.json/work.json; the head switches to it between turns when the
+# primary's window is exhausted or a 429 outlasts the turn, and comes back after the reset (README,
+# "More than one account per provider"). No key here: the pool is whatever files exist.
+# Table form, not inline: tool_surface below is a sub-table, and TOML forbids adding a sub-table
+# to an inline table. Every knob here is what the daily-driven claudex runs.
+[providers.codex.quirks]
+store = false
+account_id_header = true
+cache_key = "first-message-hash"
+effort_ceiling = "max"
+summary_field = true
+# RETIRED — compact_effort is not a knob any more, and setting it FAILS AT LOAD. A compaction is
+# built exactly like a turn and inherits the session's model and effort: any pin moves the
+# reasoning off the session's, and the backend's prompt cache then misses the whole transcript on
+# the most expensive turn class there is. The key is still PARSED so a config that carries it is
+# rejected loudly at startup instead of being ignored in silence. Remove it from any config that
+# has it; it is documented here so that an operator reading this file learns why it is gone.
+# retired: compact_effort — a compaction is built exactly like a turn, so any effort pin misses the prompt cache on the whole transcript
+# websocket (default false in code): serve rounds over the Responses WebSocket with
+# previous_response_id chaining, so a continuation turn sends ONLY the new items instead of the
+# whole history. Measured on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send
+# grows linearly — 92.5% less at round 12. It is an OVERLAY: any failure — handshake, busy socket,
+# send, first-event timeout, or a round that fails before the client sees content — falls back to
+# the normal SSE path, which keeps sole ownership of retry, the 401 refresh and the 429 cooldown.
+# With the key false or absent no WebSocket is ever constructed and the request path is
+# byte-identical to a build without the feature.
+websocket = true
+# zstd_request_body (default false): compress request bodies the way codex-cli 0.145.0 does to
+# this endpoint (2.7x measured). Codex ONLY — xAI 400s on a compressed body; never set it elsewhere.
+zstd_request_body = true
+# reasoning_cache (default true): the gateway holds each turn's encrypted reasoning and reinjects
+# it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
+# tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
+# encrypted envelopes, bounded + TTL'd; set reasoning_cache = false to restore the old behavior.
+# parallel_tool_calls (default false): explicit wire policy for responses-lite turns.
+# Official Codex also sends false for Lite, even when model metadata advertises parallel support.
+# This controls backend function-call batching, not tool callbacks inside one JavaScript cell.
+# A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
+# true was tried live 2026-09-20: the ChatGPT lite backend 400s every turn ("requires
+# `parallel_tool_calls` to be false"). Leave it unset; batching comes from code mode.
+# parallel_tool_calls = false
+# code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
+# adds splice's JAR-bundled JavaScript runner and orchestration instructions only to eligible turns:
+# GPT-6 Astra and Sol in both families by default, or the ids in code_mode_models. Set the list to
+# the models this box routes, e.g. ["gpt-6-astra", "gpt-5.6-sol"], so subagent tiers get it too. Ordinary tools remain Claude Code's permission-checked client handlers, which
+# execute the real operations. Code mode requires neither Codex nor Node. Only chatgpt-oauth +
+# openai-responses providers may enable it; code_mode = false turns it off. Compact/toolless/forced-
+# tool turns retain the ordinary path; a single tool result over 64 KiB is truncated at admission
+# behind a "[truncated N chars]" marker. Child JVMs bound workers/time/heap and deny guest host/I/O
+# access; Graal community is not an OS-hardened same-user attacker sandbox.
+# This setting is shared by every head using providers.codex and read only at boot: finish ongoing
+# work before editing, then run `splice restart` for a FULL daemon restart. A head restart alone does
+# not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
+# reruns the lost JavaScript source automatically.
+# code_mode = false
+# The JAR-bundled JavaScript worker pool, shown with its code defaults. Each is an OVERLAY:
+# leave it out and the default below rides. All are code-mode only (chatgpt-oauth + responses).
+#   code_mode_workers = 4      the GraalJS child-JVM pool size
+#   code_mode_timeout_ms = 5000 ms one worker exchange may wait for the child's answer
+#   code_mode_heap = 128       MB each child JVM's -Xmx
+#   code_mode_models = ["gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol"]  models offered the runner
+# Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
+# request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
+[providers.codex.quirks.tool_surface]
+enabled = true
+# LSP availability brake: gpt-5.6 over-calls Claude Code's LSP tool when its schema rides every
+# request (Anthropic-native sessions keep it deferred, so the asymmetry only shows on this head).
+# Forcing it into the deferred set drops the schema from the eager surface; the model reaches it
+# only via tool_search, which it rarely does for navigation it can already do with grep/read.
+# Prior LSP use replays its declaration in history; it never promotes LSP into the stable
+# initial tool list. The partition depends on the current catalog and policy, not usage.
+defer = ["LSP"]
+# The rest of the tool_surface policy, shown with its code defaults. Every one is an OVERLAY: leave
+# it out and the default below is what rides, which is what the daily-driven claudex runs. Names
+# here are the TOOL NAMES Claude Code advertises, matched exactly.
+#   eager = []                 names FORCED onto the eager surface; wins over every defer rule
+#   defer_prefixes = ["mcp__"] every name under these prefixes is deferred wholesale
+#   min_deferred = 8           below this many deferrable tools the split buys nothing and costs
+#                              a round, so the whole surface stays eager
+#   search_limit = 8           most tools one tool_search answer returns (clamped 1..this). A
+#                              HIGHER limit answers a broad query in fewer rounds at the cost of a
+#                              bigger payload every round; a LOWER one keeps each answer small but
+#                              pushes more queries toward the exhaustive final round
+#   search_rounds = 3          permitted tool_search rounds before the FINAL round answers with the
+#                              ENTIRE deferred set regardless of query — capability at the cap is
+#                              exactly today's full surface, so the loop cannot wedge
+[[providers.codex.models]]
+id = "gpt-6-astra"
+label = "Codex 6 Astra"
+description = "GPT-6 Astra (2026-09-03). Effort up to max; included in the ChatGPT plan."
+context_window = 400000
+[[providers.codex.models]]
+id = "gpt-5.6-sol"
+label = "Codex 5.6 Sol"
+context_window = 400000
+[[providers.codex.models]]
+id = "gpt-5.6-terra"
+label = "Codex 5.6 Terra"
+context_window = 400000
+[[providers.codex.models]]
+id = "gpt-5.6-luna"
+label = "Codex 5.6 Luna"
+context_window = 400000
+[[providers.codex.models]]
+id = "gpt-5.5"
+label = "Codex 5.5"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.4"
+label = "Codex 5.4"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.4-mini"
+label = "Codex 5.4 Mini"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.3-codex-spark"
+label = "Codex Spark"
+context_window = 128000
+
+# ── EXPERIMENTAL OPT-IN: xAI/Grok OAuth (SuperGrok/X Premium+) ──────────────────
+[providers.xai]
+dialect = "openai-responses"
+base_url = "https://api.x.ai/v1"
+# EXPERIMENTAL: reuses the Grok CLI's public OAuth client identity — NOT a vendor-documented
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: an OpenRouter API key (kind = "api-key", env = "OPENROUTER_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/grok.json, written by `claude-grok login`.
+# Set file = "~/.grok/auth.json" ONLY to share the Grok CLI's session (see the codex note above).
+auth = { kind = "grok-oauth" }  # browser login: `claude-grok login`
+# summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
+# Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
+# reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
+# the cache would only widen the request's include[] for nothing (it defaults on for codex).
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true, reasoning_cache = false }
+[[providers.xai.models]]
+id = "grok-4.6"
+label = "Grok 4.6"
+context_window = 500000       # docs.x.ai: grok-4.6 = 500k; grok-4.5 = 500k; grok-4.3 = 1M; grok-build = 256k
+[[providers.xai.models]]
+id = "grok-4.5"
+label = "Grok 4.5"
+context_window = 500000
+[[providers.xai.models]]
+id = "grok-4.3"
+label = "Grok 4.3"
+context_window = 1000000
+[[providers.xai.models]]
+id = "grok-build-latest"
+label = "Grok Build"
+context_window = 256000
+
+# ── local runtime: Ollama / LM Studio / vLLM on this machine (Chat Completions) ─
+# A loopback base_url is local by default (local = true|false overrides). splice never downloads a
+# model or starts the runtime; at boot and in `splice doctor` it asks the runtime what it serves and
+# REFUSES a row the runtime does not list or that declares more context than the runtime serves
+# (the refused head is DEGRADED, the rest of the daemon serves). Ollama: /api/ps reports the window
+# a LOADED model was given (the model card is only a ceiling); LM Studio: loaded_context_length;
+# vLLM: max_model_len. `splice doctor --live` proves streaming + one tool call per listed model.
+# The key env is unused by these runtimes but the api-key kind needs a name; any value works.
+# A local head also ASKS FOR TOKEN COUNTS: usage frames are opt-in on this dialect
+# (stream_options.include_usage), and a head that never asks reports zero tokens per turn, so Claude
+# Code never auto-compacts and the session hits the context wall. llama.cpp, Ollama, vLLM and LM
+# Studio all answer the field; a runtime that refuses it takes quirks = { stream_usage = false },
+# and a hosted vendor known to accept it takes stream_usage = true (off there by default, because
+# strict vendors 400 on unrecognized stream_options members).
+# A llama-server head can also KEEP EACH CONVERSATION ON ONE SLOT: quirks = { slot_affinity = true }.
+# llama-server picks slots by prompt similarity and skips empty ones, so a new session sharing Claude
+# Code's ~30K preamble takes an idle conversation's slot, and that conversation re-prefills from
+# zero. With the quirk, splice sends id_slot per conversation (session + opening messages), reads the
+# slot count from the server's /props, and sends a turn unpinned whenever no slot is free.
+# [providers.ollama]
+# dialect = "openai-chat"
+# base_url = "http://localhost:11434/v1"   # LM Studio: http://localhost:1234/v1, vLLM: :8000/v1
+# auth = { kind = "api-key", env = "OLLAMA_API_KEY" }
+# [[providers.ollama.models]]
+# id = "qwen3:4b"                          # exactly as `ollama list` / /v1/models spells it
+# label = "Qwen3 4B (local)"
+# context_window = 32768                   # at or under what the runtime serves for this model
+# [heads.ollama]
+# provider = "ollama"
+# port = 3105
+# discovery_prefix = "claude-ollama--"
+# pinned_model = "qwen3:4b"
+# [heads.ollama.claude]
+# command = "claude-ollama"
+
+# ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
+# Swap base_url + env for DeepSeek, Fireworks, etc.; a loopback runtime is the local example above.
+# api-key resolution: $OPENROUTER_API_KEY from the daemon's env wins; else the shared
+# ~/.config/splice/keys.toml store (written by `claude-openrouter login` / `splice key set` /
+# the in-session token-capture hook) — env always overrides the store.
+[providers.openrouter]
+dialect = "openai-chat"
+base_url = "https://openrouter.ai/api/v1"
+auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+# THE TEN ROWS `splice add openrouter` SHIPS, in the roster's own order (V4-109). This list and
+# AddProfileCatalog's are compared mechanically by ModelCatalogsSingleSourceLawTest, and THIS
+# file is the source of truth for the windows: the roster's WINDOW_* constants must agree with the
+# context_window values below, so a vendor raising a ceiling is a one-line change here plus the
+# constant. The head below slots four of the ten — declaring a row and serving it are separate
+# decisions, and the slot note on the claudex head says what an undeclared tier does.
+[[providers.openrouter.models]]
+id = "anthropic/claude-sonnet-5"
+label = "Claude Sonnet 5"
+context_window = 1000000
+[[providers.openrouter.models]]
+id = "anthropic/claude-opus-5"
+label = "Claude Opus 5"
+context_window = 1000000
+[[providers.openrouter.models]]
+id = "z-ai/glm-5.3-flash"
+label = "GLM 5.3 Flash"
+context_window = 1310720
+[[providers.openrouter.models]]
+id = "openai/gpt-5.6-sol"
+label = "GPT-5.6 Sol"
+context_window = 1050000
+[[providers.openrouter.models]]
+id = "openai/gpt-5.6-luna"
+label = "GPT-5.6 Luna"
+context_window = 1050000
+[[providers.openrouter.models]]
+id = "google/gemini-3.8-flash"
+label = "Gemini 3.8 Flash"
+context_window = 1048576
+[[providers.openrouter.models]]
+id = "deepseek/deepseek-v4-flash-0731"
+label = "DeepSeek V4 Flash 0731"
+context_window = 1310720
+[[providers.openrouter.models]]
+id = "meta-llama/llama-4-maverick"
+label = "Llama 4 Maverick"
+context_window = 1048576
+[[providers.openrouter.models]]
+id = "z-ai/glm-5.3"
+label = "GLM 5.3"
+context_window = 1310720       # OpenRouter's declared context_length for this row
+[[providers.openrouter.models]]
+id = "anthropic/claude-haiku-4.5"
+label = "Claude Haiku 4.5"
+context_window = 200000
+
+# ── strict OpenAI-compatible vendor: reasoning_effort must be turned OFF ────────
+# This dialect emits reasoning_effort/reasoning by default (DeepSeek/xAI/OpenRouter accept and
+# use them). Strict OpenAI-compatible validators (Fireworks) 400 on unrecognized fields — set
+# reasoning_effort = false to omit both (issue #21).
+[providers.fireworks]
+dialect = "openai-chat"
+base_url = "https://api.fireworks.ai/inference/v1"
+auth = { kind = "api-key", env = "FIREWORKS_API_KEY" }
+quirks = { reasoning_effort = false }
+[[providers.fireworks.models]]
+id = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+label = "Llama 3.1 70B (Fireworks)"
+context_window = 131072
+
+# ── EXPERIMENTAL OPT-IN: Kimi device-flow OAuth (x-api-key) ─────────────────────
+# api.kimi.com/coding speaks the Anthropic Messages wire natively. Browser device login:
+# `claude-kimi login` (RFC 8628 — enter a code, no loopback redirect). The wire id sent upstream
+# is the BARE model (the `[1m]` suffix is stripped); the 1M context tier is a plan entitlement,
+# not a distinct model. Moonshot's pay-per-token anthropic base (api.moonshot.ai/anthropic) works
+# too — set auth = { kind = "api-key", env = "MOONSHOT_API_KEY" } and it authenticates via Bearer.
+[providers.kimi]
+dialect = "anthropic-passthrough"
+base_url = "https://api.kimi.com/coding"
+# EXPERIMENTAL: reuses the Kimi CLI's public OAuth client identity — NOT a vendor-documented
+# third-party integration. The credential file is password-equivalent; splice reads AND refreshes it
+# in place. Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
+# The credential is splice's OWN: ~/.config/splice/auth/kimi.json plus a device_id beside it, written
+# by `claude-kimi login`. Set file = "~/.kimi/credentials/kimi-code.json" ONLY to share the Kimi
+# CLI's session and device identity (see the codex note above).
+auth = { kind = "kimi-oauth" }
+# The anthropic-passthrough dialect forwards the client's bytes FAITHFULLY by default; each knob
+# below opts into one deformation Kimi's /coding surface requires. They were hardcoded while Kimi
+# was the dialect's only consumer — declaring them here is what lets an api.anthropic.com-shaped
+# vendor share the dialect without inheriting Moonshot's wire (see the [providers.anthropic] entry).
+#   mfjs                  — rewrite tool input_schema into Moonshot-Flavored JSON Schema (drops
+#                           format, prefix-item schemas, $ref siblings; collapses tuple items)
+#   block_allowlist       — Kimi's own 400 enumerates these tags; every other block is DROPPED
+#   strip_cache_control   — Kimi rejects cache_control markers (no prompt caching to lose here)
+#   synthesize_signatures — Kimi never signs thinking blocks and Claude Code discards unsigned ones
+#   map_thinking_adaptive — Kimi takes adaptive thinking + output_config.effort, not budget_tokens
+#   reanchor_prefill      — may a mid-stream re-anchor resume a TRUNCATED stream by re-POSTing with
+#                           the partial answer appended as a trailing assistant message? A VENDOR
+#                           FACT: probe it, never assume it. Kimi and DeepSeek continue from such a
+#                           prefill (measured 2026-09-16); muse 400s on the shape outright, which
+#                           would turn a retryable overloaded_error into an invalid_request_error
+#                           the client will NOT retry. DEFAULTS OFF, so an unprobed vendor keeps
+#                           today's ending and measurement is what earns the resume. Kimi's own
+#                           value rides its built-in profile, so it is not repeated in the table
+#                           below; declare it yourself for any other passthrough provider.
+quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true, map_thinking_adaptive = true, block_allowlist = ["text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"] }
+# strip_sampling_params (default absent — the sampling knobs ride): drop temperature/top_p/top_k
+# from the request when a live probe shows the endpoint rejects them. Kimi accepts them, so it is
+# NOT set here; declare it for a passthrough upstream that 400s on the shape.
+# strip_sampling_params = true
+# Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
+# exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.
+# `Accept` and the X-Msh-* device identity stay in code: one is a dialect invariant, the other is
+# COMPUTED per install rather than declared.
+extra_headers = { anthropic-version = "2023-06-01", User-Agent = "KimiCLI/1.5" }
+# Window lookups happen on the STRIPPED id ("k3"), while the picker entry below keeps the "[1m]"
+# hint — this exact-match row keeps K3's 1M window independent of model-list order.
+[[providers.kimi.extra_windows]]
+id = "k3"
+# EXACTLY 1e6, matching the k3[1m] row below — see the note there.
+context_window = 1000000
+[[providers.kimi.models]]
+id = "k3-256k"                 # same K3, fixed 256k window; Kimi meters k3 (1M) at ~2x this row's quota
+label = "Kimi K3 (256k)"
+context_window = 262144
+[[providers.kimi.models]]
+id = "k3[1m]"                  # sent upstream as bare `k3`; [1m] is a display/context-tier hint
+label = "Kimi K3 (1M)"
+description = "1M context needs the Allegretto plan or higher — Moderato serves 256K."
+# EXACTLY 1e6, NOT 1024*1024. Claude Code hardcodes 1e6 for any id matching /\[1m\]/i and never
+# reads this number, so declaring 1048576 asks ModelCatalog.usageScale to correct a 4.6% gap that
+# is pure notation. This row is ALSO this head's pinned_model, so that scale would ride every
+# default turn, compacting ~4.6% late with nothing logging the factor. A "[1m]" row declares 1000000.
+context_window = 1000000
+[[providers.kimi.models]]
+id = "kimi-for-coding"
+label = "Kimi K2.7 Code"
+context_window = 262144
+[[providers.kimi.models]]
+id = "kimi-for-coding-highspeed"
+label = "Kimi K2.7 Code (highspeed)"
+context_window = 262144
+
+# ── EXPERIMENTAL OPT-IN: Muse device-flow OAuth (minted subscription key) ───────
+# api.meta.ai speaks the Anthropic Messages wire. Browser device login:
+# `claude-muse login` (RFC 8628 — enter a code, no loopback redirect). The account
+# token is not an inference credential; login mints the subscription key into the
+# splice auth file. No extra_headers: MusePassthroughArm sends Authorization and
+# splice's User-Agent only (live capture 2026-09-15: x-api-version is not required).
+[providers.muse]
+dialect = "anthropic-passthrough"
+base_url = "https://api.meta.ai"
+# EXPERIMENTAL: reuses the Muse Code CLI's public OAuth client identity — NOT a
+# vendor-documented third-party integration. The credential is splice's OWN:
+# ~/.config/splice/auth/muse.json, written by `claude-muse login`. Set
+# file = "~/.config/muse/auth.json" ONLY to share the Muse Code CLI's session.
+auth = { kind = "muse-oauth" }
+# Muse is the ONE head that must cap tool names: api.meta.ai rejects a tool name over 64
+# characters where Anthropic accepts it, and Claude Code's MCP names run past 80 (V4-32).
+# The cap is muse's built-in default; declaring it here keeps it visible and editable.
+[providers.muse.quirks]
+tool_name_cap = 64
+[[providers.muse.models]]
+id = "muse-spark-1.3[1m]"
+label = "Muse Spark 1.3"
+# EXACTLY 1e6 — Claude Code hardcodes 1e6 for any id matching /\[1m\]/i.
+context_window = 1000000
+[[providers.muse.models]]
+id = "muse-spark-1.2[1m]"
+label = "Muse Spark 1.2"
+context_window = 1000000
+
+# ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
+# `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
+# `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
+# one window onto every selected row; omit it when their real backend ceilings differ. A launch
+# plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
+# other row compact at its own declared window — live through /model. A window edited here reaches
+# running sessions after `splice restart`, through the window each session reports.
+[claude]                       # global config-sharing policy for every wrapper
+# `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
+# `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
+# `projects` shares the transcript tree, so a session started on ANY head (or in plain `claude`) shows
+# in every head's `-r` picker and resumes there — switch head when an account runs dry and carry on.
+# A head's existing private transcripts are merged into ~/.claude/projects (same files, never copies)
+# the first time it launches with this on. A transcript carries the model id of the head that wrote
+# it, so on resume splice moves its assistant rows onto the resuming head's model where they lie —
+# at launch for `-r SESSION_ID`, and through a SessionStart hook (matcher `resume`, installed in each
+# head's settings.json) for the picker and `-c`. Isolate `projects` on a head to keep
+# its transcripts private; that head then reaches a foreign session only by name — `<wrapper> -r
+# SESSION_ID` finds the id in the other heads' trees, COPIES it in with every assistant row's model
+# rewritten to this head's, and launches; an id that exists nowhere is reported and nothing is copied.
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions", "projects"]
+
+# ── per-head system prompt: standing instructions every turn of a head carries ──
+# Set under [heads.<key>]. Either inline text or a file, NEVER both — both present is a config
+# error at load, as is a system_prompt_file that cannot be read. Absent, or the empty string, is
+# exactly today's bytes on the wire.
+#   system_prompt = "Answer in British English. Never edit files under vendor/."
+#   system_prompt_file = "~/.config/splice/prompts/review.md"   # ~/ is home; relative is beside this file
+#
+# system_prompt_mode picks the seam:
+#   "append"  (the DEFAULT — an operator who names no mode gets this) places your text BESIDE
+#             Claude Code's own system field. The client's bytes ride through untouched, every
+#             existing cache_control breakpoint survives, and the prompt cache still hits from
+#             turn two.
+#   "replace" SUBSTITUTES that whole field. Claude Code ships its ENTIRE operating instruction set
+#             there, so replace strips the harness instructions and the head then behaves like a
+#             bare model with tools attached. `splice doctor` WARNs on any head that sets it. Use
+#             it deliberately, usually on a head you drive yourself rather than through Claude Code.
+#   "strip"   KEEPS the client's field and DELETES paragraphs from it. The prompt text is then a
+#             PATTERN LIST — one regex per line, blank lines and `#` comments ignored — and every
+#             blank-line-separated paragraph of the client's own system text that a pattern
+#             matches is removed at the wire; every other paragraph, block and cache_control
+#             breakpoint rides through byte-identical, so the cache still warms from turn two. A
+#             pattern that is not a regex, or a list with no pattern, is a config error at load.
+#             You are editing the client's own instructions: what a pattern removes is yours to
+#             own, and `splice doctor` WARNs on every strip layer, as it does on replace. splice
+#             ships no pattern list. A pattern matches ONE paragraph: a `# Heading` pattern removes
+#             the heading and leaves the section body, so name a distinctive sentence of the
+#             paragraph you mean. Example — a project whose own append layer restates the client's
+#             summarization rule drops the original paragraph:
+#               system_prompt_mode = "strip"
+#               system_prompt = "some or all of the current context is summarized"
+#   system_prompt_mode = "append"
+
+# ── per-project system prompt, and per head of that project ──
+# Two more layers keyed by the repo a session works in (its cwd, from Claude Code's session
+# registry or transcript). The key is the project ROOT as a quoted absolute path (~/ is home); a
+# relative key is a config error at load, and a root missing on disk is a `splice doctor` WARN. The
+# DEEPEST configured root that is the cwd or one of its ancestors wins, so nested repos work. The
+# same three keys as a head, but a relative system_prompt_file resolves against the PROJECT ROOT,
+# so the prompt can live in the repo:
+#   [projects."~/work/api"]
+#   system_prompt_file = ".splice/prompt.md"
+#   [projects."~/work/api".heads.claudex]              # only when head claudex serves this repo
+#   system_prompt = "Run the api test suite before you say done."
+#
+# Composition, in order head -> project -> project-head: append layers stack as separate blocks
+# after the client's system field, in that order. A replace at ANY layer substitutes the client's
+# field AND every earlier layer; later append layers still land after it. A strip layer edits
+# whatever system text is there at its point in the order (the client's field and every earlier
+# append alike). A session whose cwd cannot be resolved gets the head layer only. No [projects]
+# table at all is exactly today's bytes.
+#
+# CACHE TRADE: every layer is a trailing block, so a breakpoint Claude Code sets inside `system`
+# never invalidates, and editing a layer misses the message-level breakpoints for ONE turn before
+# they re-cache. But each project gets different bytes, so a head serving four repos holds four
+# cache prefixes instead of one. That is cheap for a short prompt; know it before attaching a long
+# one to many repos.
+
+[heads.claudex]
+provider = "codex"
+port = 3099
+discovery_prefix = "claude-codex--"
+pinned_model = "gpt-5.6-sol"
+# slot = the Claude Code tier alias this row answers (opus/sonnet/haiku/fable). A tier NO row
+# declares is not emitted at launch, so Claude Code requests using its built-in Anthropic ids —
+# background titling/summarization, `--model haiku` — get a clean pre-upstream 400 on this head
+# (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
+# point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
+models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }, { id = "gpt-6-astra", slot = "fable" }]
+context_window = 400000
+[heads.claudex.claude]
+command = "claudex"
+[heads.claudex.overrides]
+maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
+# progressLine (bool, default true, restart) is the other knob worth knowing on THIS head. A wire
+# that has gone quiet for 30s carries a short line from splice saying how long the turn has been
+# running and whether the model has produced anything yet — the codex rows reason for minutes with
+# nothing on the wire, and a blank spinner cannot be told from a hung session. Set it to "false" to
+# get silence back; the keepalive pings that hold the turn open are separate and always sent.
+
+# grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
+# titling and `--model haiku` stay served on this head. No fable analog exists: fable stays
+# undeclared and 400s cleanly (see the slot note on [heads.claudex]).
+[heads.claude-grok]
+provider = "xai"
+port = 3100
+discovery_prefix = "claude-grok--"
+pinned_model = "grok-4.6"
+models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
+[heads.claude-grok.claude]
+command = "claude-grok"
+isolate = ["commands"]         # this head gets its own commands/, everything else shared
+
+[heads.openrouter]
+provider = "openrouter"
+port = 3101
+discovery_prefix = "claude-openrouter--"
+pinned_model = "meta-llama/llama-4-maverick"
+# Tiers declared on purpose: Llama 4 Maverick as opus (pinned), GLM 5.3
+# as sonnet. haiku and fable stay undeclared and 400 cleanly pre-upstream — the slot note on
+# [heads.claudex] explains what degrades (background titling, `--model haiku`). No head-wide
+# context_window: the two rows have different ceilings and each keeps its own.
+models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }, { id = "z-ai/glm-5.3", slot = "sonnet" }]
+[heads.openrouter.claude]
+command = "claude-openrouter"
+
+[heads.fireworks]
+provider = "fireworks"
+port = 3103
+discovery_prefix = "claude-fireworks--"
+pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+# opus-only on purpose: undeclared tiers (sonnet/haiku/fable) 400 cleanly pre-upstream — the
+# slot note on [heads.claudex] explains what degrades (background titling, `--model haiku`).
+models = [{ id = "accounts/fireworks/models/llama-v3p1-70b-instruct", slot = "opus" }]
+context_window = 131072
+[heads.fireworks.claude]
+command = "claudefw"
+
+[heads.claude-kimi]
+provider = "kimi"
+port = 3102
+discovery_prefix = "claude-kimi--"
+pinned_model = "k3[1m]"
+# Tiers declared on purpose: opus is K3 on the 1M window (pinned),
+# sonnet is the same K3 held at 256k (Kimi meters the 1M tier at ~2x this one), haiku is Kimi K2.7
+# Code. fable stays undeclared and 400s cleanly pre-upstream (slot note on [heads.claudex]). No
+# head-wide context_window: the rows have different ceilings and each keeps its own.
+models = [{ id = "k3[1m]", slot = "opus" }, { id = "k3-256k", slot = "sonnet" }, { id = "kimi-for-coding", slot = "haiku" }]
+[heads.claude-kimi.claude]
+command = "claude-kimi"
+# PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,
+# upstreamTimeoutMs, streamIdleMs, firstByteTimeoutMs, ...), always as STRINGS. The same names work
+# in an optional top-level [defaults] table, which this example deliberately omits: a knob put there
+# governs EVERY head, which is the exact problem per-head overrides exist to solve. Precedence:
+#   knob defaults <- [defaults] <- [heads.<key>.overrides] <- state config.json <- env <- PATCH
+#
+# maxInflight is the one that matters most: it is the concurrency the UPSTREAM ACCOUNT tolerates,
+# not what the gateway can hold. The gate admits up to this many turns and QUEUES the rest — which
+# is the backpressure that stops a workflow fan-out from bursting into a 429 storm (a real 429 arms
+# a shared per-head cooldown and every concurrent turn then fails fast, no retry). Measured on this
+# box: 0.3% turn failure at inflight<=14, 11% at 38, 67% at 100.
+#
+# Start near the observed-good ceiling and raise only with perf-jsonl evidence.
+[heads.claude-kimi.overrides]
+maxInflight = "8"
+# kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
+# codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
+upstreamTimeoutMs = "2400000"
+
+[heads.claude-muse]
+provider = "muse"
+port = 3106                    # 3103 is fireworks; 3104 is claude-splice; 3105 is commented ollama
+discovery_prefix = "claude-muse--"
+pinned_model = "muse-spark-1.3[1m]"
+# No models line: Spark 1.3 is the only catalog model worth pinning, and four slots on one id
+# is illegal (head model list contains duplicates). The head keeps the provider-wide surface.
+context_window = 1000000
+[heads.claude-muse.claude]
+command = "claude-muse"
+
+# ── EXPERIMENTAL OPT-IN: DeepSeek over its own Anthropic-format endpoint ────────
+# DeepSeek publish an Anthropic Messages-compatible route, so this is the same dialect
+# the OAuth heads use — only the key differs. Unlike those, this is a DOCUMENTED
+# third-party integration with an ordinary API key, not a reused vendor CLI identity.
+# `x-api-key` is fully supported; `anthropic-version` and `anthropic-beta` are ignored
+# rather than rejected, so no header shaping is needed.
+[providers.deepseek]
+dialect = "anthropic-passthrough"
+base_url = "https://api.deepseek.com/anthropic"
+auth = { kind = "api-key", env = "DEEPSEEK_API_KEY" }
+[providers.deepseek.quirks]
+# The endpoint's OWN accepted set, read out of its deserializer by POSTing an unknown
+# variant (it replies `unknown variant X, expected one of ...`). Derived that way on
+# purpose: the published compatibility table says what is SUPPORTED, which is not the same
+# claim as what is REJECTED, and treating the first as the second silently dropped `image`
+# and `document` from every request for a whole campaign. redacted_thinking is the entry
+# that earns the allowlist: DR-118 forwards it VERBATIM because Anthropic require it back
+# unchanged, and this endpoint rejects it. Also genuinely absent: search_result,
+# mcp_tool_use, mcp_tool_result, container_upload, code_execution_tool_result.
+block_allowlist = ["text", "tool_reference", "image", "document", "server_tool_use", "tool_use", "tool_result", "web_search_tool_result", "thinking"]
+# cache_control is ignored upstream — sending it is pure wire weight.
+strip_cache_control = true
+[[providers.deepseek.models]]
+# deepseek-flash serves DeepSeek-V4.1-Flash. DeepSeek's own docs say it surpassed V4 Pro
+# on performance, cost AND speed, so it takes the opus slot: the name suggests pro is the
+# strong row and the vendor's evidence says otherwise.
+id = "deepseek-flash"
+label = "DeepSeek V4.1 Flash"
+context_window = 1000000
+[[providers.deepseek.models]]
+id = "deepseek-v4-pro"
+label = "DeepSeek V4 Pro"
+context_window = 1000000
+
+[heads.claude-deepseek]
+provider = "deepseek"
+port = 3107                    # 3106 is claude-muse above
+discovery_prefix = "claude-deepseek--"
+pinned_model = "deepseek-flash"
+# One slot per id: the head model list rejects a repeated id, and two slots on one id emit
+# two rows with the same id. DeepSeek publish two ids, so haiku and fable go undeclared and
+# take the documented honest 400 rather than a duplicated picker row.
+models = [{ id = "deepseek-flash", slot = "opus" }, { id = "deepseek-v4-pro", slot = "sonnet" }]
+context_window = 1000000
+[heads.claude-deepseek.claude]
+command = "claude-deepseek"
+
+# ── Claude on the CLIENT's OWN login (the "no shortcuts" head) ───────────────────
+# The only head whose upstream is Anthropic itself, and the only one where splice holds NO
+# credential: `kind = "client"` forwards the caller's own Authorization / x-api-key /
+# anthropic-version / anthropic-beta upstream and keeps Claude Code's native auth lifecycle —
+# credentials, keychain, refresh and /login all stay the client's. Nothing to sign into here,
+# nothing for splice to rotate, and no vendor OAuth reimplemented.
+#
+# It exists so a Claude session gets the same gateway machinery every other head has — unified
+# usage/telemetry, per-head knobs, the model picker, the dashboard — without changing how it
+# authenticates. Two consequences worth knowing:
+#   · this head's port does NOT enforce the local gateway credential (there is none to protect:
+#     a caller that forwards no valid Anthropic auth simply gets Anthropic's own 401). It is
+#     loopback-only, like every head.
+#   · being a faithful passthrough, it declares no quirks at all — cache_control markers, full
+#     JSON Schema tool definitions and native thinking blocks all reach Anthropic untouched.
+[providers.anthropic]
+dialect = "anthropic-passthrough"
+base_url = "https://api.anthropic.com"
+auth = { kind = "client" }
+# A DEFAULT: whatever the client sends wins. Present so a caller that omits the header still
+# produces a valid Anthropic request.
+extra_headers = { anthropic-version = "2023-06-01" }
+[[providers.anthropic.models]]
+id = "claude-fable-5"
+label = "Claude Fable 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-opus-5"
+label = "Claude Opus 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-sonnet-5"
+label = "Claude Sonnet 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-haiku-4-5"
+label = "Claude Haiku 4.5"
+context_window = 200000
+
+[heads.claude-splice]
+provider = "anthropic"
+port = 3104                    # 3103 is fireworks above
+discovery_prefix = "claude-splice--"
+pinned_model = "claude-fable-5"
+models = [{ id = "claude-fable-5", slot = "fable" }, { id = "claude-opus-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
+context_window = 200000
+[heads.claude-splice.claude]
+# The SEPARATE lane: a command of its own, beside the `claude` you already run. Nothing in
+# ~/.claude is touched, and this is what `splice setup` preselects.
+#
+# The other lane is WRAP, and it is not spelled here — do not set `command = "claude"` to get it.
+# Wrapping is an ACTION, not a config value: `splice setup` offers it, and the console's Settings
+# page posts it to /api/claude-head/wrap. The daemon then shadows `claude` with a shim and carries
+# your settings.json and .claude.json across, backing both up first, so there is a way back.
+#
+# The recursion this comment used to warn about is handled in code since V4-129: a wrapped `claude`
+# ON PATH *is* the shim, so a head launching the bare name would invoke itself — LaunchService.kt:103
+# execs the real binary path the wrap recorded, and falls back to the bare name only when nothing is
+# wrapped. Setting `command = "claude"` by hand still gets you a second command named `claude` with
+# none of that bookkeeping: no backups, no recorded real binary, nothing for an unwrap to restore.
+command = "claude-splice"
+
+# ── KNOB REFERENCE: every key the config layers accept ──────────────────────────
+# A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the
+# daemon's state config.json, or at runtime through a /mgmt/config PATCH. Precedence is
+# env > TOML > default; the daemon snapshots nearly every knob at start, so a changed knob needs a
+# restart except where marked HOT. `[daemon]` spells these with underscores (`show_reasoning`);
+# everywhere else a key is spelled as the name shown below. Both name the same knob. Defaults sit
+# beside each key; nothing below is live (the whole block is commented), so copying this file keeps
+# today's behaviour.
+#
+# chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
+# codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
+# progressLine = true                                       # bool; splice's own status line on a quiet wire
+# foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold
+# foldMaxContinue = 3                                       # rounds; max hidden continuation rounds per fold
+# foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn
+# foldMaxTier = 6                                           # n; the deepest truncation tier that still folds
+# toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
+# quotaPoll = "auto"                                        # "off" stops every plan-usage poller
+# quotaPollIntervalMs = 300000                              # ms; how often a subscription head re-polls usage
+# maxQueued = 512                                           # requests; admission queue cap, 0 = unlimited (HOT)
+# upstreamRetries = 4                                       # attempts; upstream re-POSTs per round before failing
+# wireTap = 0                                               # bodies; how many of this head's most recent upstream
+#                                                           #     REQUEST BODIES to keep, in memory only, for
+#                                                           #     `splice wire <head>`. 0 (the default) keeps none.
+#                                                           #     OPT-IN ON PURPOSE: a body carries the whole
+#                                                           #     conversation it was sent for. Set it on ONE head
+#                                                           #     while you audit what splice sends (a system-prompt
+#                                                           #     layer, a compaction tail, a dialect's shape), read
+#                                                           #     it, then remove it. Nothing is written to disk, a
+#                                                           #     restart forgets it, and `splice doctor` names the
+#                                                           #     head on every run while it is on.
+# trace = false                                             # the FULL request/response trace of this head, on disk:
+#                                                           #     every request it receives, every upstream attempt
+#                                                           #     with the exact body it sent (credentials redacted)
+#                                                           #     and the raw response, every frame streamed back,
+#                                                           #     one JSONL per UTC day under <state>/trace/,
+#                                                           #     owner-only. The Portkey/LiteLLM shape. OFF BY
+#                                                           #     DEFAULT and opt-in per head for the same reason as
+#                                                           #     wireTap: a record carries whole conversations.
+#                                                           #     Read with `splice trace <head>`; `--purge` deletes.
+# traceRetentionDays = 7                                    # days; whole day files older than this are deleted
+# traceMaxBodyChars = 4194304                               # chars; a longer body is cut and the record says so
+# retryBackoffBaseMs = 200                                  # ms; the generic retry curve's base, doubled each attempt
+# retryBackoffCapMs = 10000                                 # ms; the generic retry curve's ceiling
+# retryBackoffJitterPct = 10                                # percent; the generic retry curve's plus-or-minus jitter
+# firstByteTimeoutMs = 90000                                # ms; headers-phase timeout, the first byte must land,
+#                                                           #     and (through WatchdogBudget) the watchdog's
+#                                                           #     FIRST-OUTPUT tier, so one number judges a stream
+#                                                           #     before and after its first frame
+# streamIdleMs = 90000                                      # ms; stream silence before the stall watchdog ASKS.
+#                                                           #     Since V4-125 a breach is a PROBE, not a verdict:
+#                                                           #     the round's path is asked whether it is alive, a live
+#                                                           #     path is HELD (polled on, never reaped short of
+#                                                           #     upstreamTimeoutMs) and only a path that cannot answer
+#                                                           #     is reaped at all. So this buys how long you wait
+#                                                           #     before splice starts healing, NOT how long a silent
+#                                                           #     backend is tolerated — which is why 90s replaced the
+#                                                           #     old 300s. That 300s was pinned to codex-rs parity
+#                                                           #     after the idle tier ended 129 compactions in one day
+#                                                           #     (2026-09-01) at 180s; it was safe then because a
+#                                                           #     breach was fatal. It no longer is. A head that
+#                                                           #     genuinely needs the long wait names 300000 here.
+# stallReanchorMs = 20000                                   # ms; mid-output silence (content already delivered)
+#                                                           #     before splice CANCELS the round and re-anchors it
+#                                                           #     itself (re-POST from the salvage). Only arm it for a
+#                                                           #     head whose upstream is MEASURED to continue from an
+#                                                           #     assistant prefill (reanchor_prefill); a head that
+#                                                           #     cannot be prefilled has nothing to resume into, so
+#                                                           #     streamIdleMs stays its floor. Not consulted before the
+#                                                           #     first content frame. 0 disables the tier for this head.
+# authCacheMs = 60000                                       # ms; how long an OAuth snapshot is reused
+# debug = false                                             # bool; verbose logging
+# contextWindowOverride = 200000                            # tokens; unset by default, pins the client window
+# grokPort = 3100                                           # TCP port; the grok head's listener
+# grokModel = "grok-4.6"                                    # the grok model id the head pins
+# xaiApiBase = "https://api.x.ai/v1"                        # base URL of the xAI backend
+# grokAuthPath = "~/.grok/auth.json"                        # where the grok OAuth credential file lives
+# usageWarnPct = 80                                         # percent; plan-window usage that triggers the warning
+# usageWarnTokens5h = 0                                     # tokens; absolute 5h threshold, 0 disables the warning
+# statuslineGitRoots = ""                                   # extra git roots the status line inspects
+# mcpIdleTimeoutMs = 1800000                                # ms; a hosted MCP server with no open stream is closed after this
+# mcpMaxServers = 32                                        # count; most MCP server processes hosted at once (daemon-wide)
+# mcpRequestTimeoutMs = 1800000                             # ms; how long one forwarded MCP request may wait for the child
+# mcpInitializeTimeoutMs = 60000                            # ms; the child initialize handshake budget
+# mcpSlice = "app-mcp.slice"                                # the systemd slice hosted MCP servers are spawned into
+# supervisorUnit = "splice.service"                         # the systemd user unit that restarts this daemon
+#
+#   THE TWO NAMES ABOVE ARE SPLICE'S SUPERVISION CONTRACT, and splice owns NEITHER of them.
+#   It restarts INTO `supervisorUnit` (which is why POST /api/daemon/restart may drain at all: a
+#   unit with Restart= brings the process back, and a daemon started by hand is refused in words
+#   rather than stopped), and it spawns hosted MCP servers INTO `mcpSlice`, asking systemd for that
+#   slice's MemoryMax at every spawn — a slice with no ceiling is reported as no containment, never
+#   treated as some. Supply them however you like: a packaged unit, your own hand-written one, a
+#   container runtime's restart policy. Change the names here only if yours are called something
+#   else; the defaults are what this repo's install.sh layout produces.
+# maxRequestBytes = 8388608                                 # bytes; largest request body the gateway decodes (413 past this)
+# requestReadTimeoutMs = 30000                              # ms; how long one client request body read may take
+# materializationPermits = 16                               # count; PROCESS-SHARED concurrent decode/translate permits
+# activityRetentionDays = 90                                # days; message edges and activity labels kept, whole days
+# activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
+# budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
+# perfArchiveRetentionDays = 90                              # days; archived perf generations kept, once archiveDir is set
+
+# ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
+# Precedence for every name below is env > TOML > default: an environment variable beats the TOML
+# value, which beats the built-in default. Most are ALIASES of a knob above — the first alias
+# present wins, so exporting one is the same as writing that key in [defaults]. The rest are seam
+# reads (paths, OAuth endpoints, install locations) with no TOML spelling of their own.
+#
+# Knob aliases, with the key each one sets in the trailing column:
+#   CHATGPT_API_BASE chatgptApiBase          CODEX_AUTH_PATH codexAuthPath
+#   CLAUDEX_PROGRESS_LINE / SPLICE_PROGRESS_LINE progressLine
+#   CLAUDEX_FOLD_REASONING_MODELS foldReasoningModels    CLAUDEX_FOLD_MAX_CONTINUE foldMaxContinue
+#   CLAUDEX_FOLD_MARKER_TEXT foldMarkerText             CLAUDEX_FOLD_MAX_TIER foldMaxTier
+#   CLAUDEX_TOOL_SURFACE toolSurface         CLAUDEX_QUOTA_POLL quotaPoll
+#   CLAUDEX_MAX_INFLIGHT maxInflight         CLAUDEX_MAX_QUEUED maxQueued
+#   CLAUDEX_UPSTREAM_RETRIES upstreamRetries CLAUDEX_UPSTREAM_TIMEOUT_MS upstreamTimeoutMs
+#   SPLICE_WIRE_TAP wireTap
+#   SPLICE_TRACE trace                       SPLICE_TRACE_RETENTION_DAYS traceRetentionDays
+#   SPLICE_TRACE_MAX_BODY_CHARS traceMaxBodyChars
+#   CLAUDEX_FIRST_BYTE_TIMEOUT_MS firstByteTimeoutMs    CLAUDEX_STREAM_IDLE_MS streamIdleMs
+#   CLAUDEX_STALL_REANCHOR_MS stallReanchorMs
+#   CLAUDEX_AUTH_CACHE_MS authCacheMs        CLAUDEX_DEBUG / CODEX_PROXY_DEBUG debug
+#   CODEX_PROXY_PORT port                    CONTROL_PROXY_PORT / SPLICE_CONTROL_PORT controlPort
+#   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath
+#   CLAUDEX_MODEL / CLAUDEX_PINNED_MODEL model           CLAUDE_GROK_MODEL / CLAUDE_GROK_PINNED_MODEL model
+#   CODEX_MODEL_CONTEXT_WINDOW contextWindowOverride     CLAUDEX_STATUSLINE_GIT_ROOTS statuslineGitRoots
+#   SPLICE_USAGE_WARN_PCT usageWarnPct
+#   SPLICE_USAGE_WARN_TOKENS_5H usageWarnTokens5h        CLAUDEX_MIRROR_REASONING mirrorReasoning
+#   CLAUDEX_SHOW_REASONING / CODEX_SHOW_REASONING showReasoning
+#   CLAUDEX_REASONING_EFFORT / CODEX_REASONING_EFFORT effort
+#   CLAUDEX_REASONING_SUMMARY / CODEX_REASONING_SUMMARY summary
+#   CLAUDEX_REPLAY_REASONING / CODEX_REPLAY_REASONING replayReasoning
+#   SPLICE_QUOTA_POLL_INTERVAL_MS quotaPollIntervalMs
+#   SPLICE_RETRY_BACKOFF_BASE_MS retryBackoffBaseMs   SPLICE_RETRY_BACKOFF_CAP_MS retryBackoffCapMs
+#   SPLICE_RETRY_BACKOFF_JITTER_PCT retryBackoffJitterPct
+#   SPLICE_MCP_IDLE_TIMEOUT_MS mcpIdleTimeoutMs       SPLICE_MCP_MAX_SERVERS mcpMaxServers
+#   SPLICE_MCP_REQUEST_TIMEOUT_MS mcpRequestTimeoutMs SPLICE_MCP_INITIALIZE_TIMEOUT_MS mcpInitializeTimeoutMs
+#   SPLICE_MAX_REQUEST_BYTES maxRequestBytes          SPLICE_REQUEST_READ_TIMEOUT_MS requestReadTimeoutMs
+#   SPLICE_MATERIALIZATION_PERMITS materializationPermits
+#   SPLICE_ACTIVITY_RETENTION_DAYS activityRetentionDays  SPLICE_ACTIVITY_STORE_HEADS activityStoreHeads
+#   SPLICE_BUDGET_DEFAULT_ACTION budgetDefaultAction      SPLICE_PERF_ARCHIVE_RETENTION_DAYS perfArchiveRetentionDays
+#   SPLICE_SUPERVISOR_UNIT supervisorUnit                 SPLICE_MCP_SLICE mcpSlice
+#
+# Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
+#   SPLICE_CONFIG           the config file to load, overriding the default lookup
+#   SPLICE_STATE_DIR        the state directory, overriding both the default root and the
+#                           pre-0.4 one it adopts; CLAUDEX_STATE_DIR is the older spelling
+#                           and still works, with SPLICE_STATE_DIR winning when both are set
+#   SPLICE_BIN_DIR          the install bin directory        SPLICE_SHARE_DIR the install share directory
+#   SPLICE_RELEASE_BASE_URL the base URL `splice upgrade` downloads a release from
+#   XDG_CONFIG_HOME         where the config and key store live when it is set
+#   OPENROUTER_API_KEY      the openrouter head's api-key; when set it always beats the key store
+#   PATH and no_proxy / NO_PROXY are read from the ambient environment (the two proxy spellings are
+#                               separate variables and both are honoured)
+#   CODEX_OAUTH_AUTHORIZE_URL / CODEX_OAUTH_TOKEN_URL / CODEX_OAUTH_CLIENT_ID / CODEX_OAUTH_ISSUER /
+#   CODEX_OAUTH_ORIGINATOR  override the Codex login endpoints and the originator header
+#   GROK_OAUTH_AUTHORIZE_URL / GROK_OAUTH_TOKEN_URL / GROK_OAUTH_CLIENT_ID / GROK_OAUTH_ISSUER
+#                           do the same for the Grok device login
+#   KIMI_OAUTH_HOST         points the Kimi device flow at a different auth host
+#   CODEX_PROXY_TEST        a TEST HOOK, not an operator setting: it exists so tests can name a
+#                           scenario without touching the topology, and it does nothing in normal use
+#   INVOCATION_ID           SET BY SYSTEMD, never by an operator, and read only to answer whether
+#                           anything would restart this process. systemd puts it in the environment
+#                           of every unit it starts, so its mere presence is the supervision fact
+#                           POST /api/daemon/restart needs: unsupervised, a drain-and-exit would
+#                           leave nothing serving, so the route refuses instead. Setting it by hand
+#                           does not make the daemon supervised, it only makes the route believe it
+#                           is — which is why it is documented here rather than offered as a knob.

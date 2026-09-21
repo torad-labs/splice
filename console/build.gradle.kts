@@ -38,7 +38,7 @@ fun Exec.consoleInputs(vararg trees: String) {
         // FAIL BY NAME, never a silent skip: a release without a console is not a release.
         check(onPath("bunx") != null) {
             "bun is not on PATH, so the console cannot be built or checked. Install Bun 1.4.2 (the " +
-                "packageManager pin in package.json; CONTRIBUTING.md) and run `bun install " +
+                "packageManager pin in package.json; .github/CONTRIBUTING.md) and run `bun install " +
                 "--frozen-lockfile` at the repository root."
         }
         check(rootProject.file("node_modules").isDirectory) {

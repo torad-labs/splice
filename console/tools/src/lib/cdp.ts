@@ -21,7 +21,7 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *  the only root on the box. This file hardcoded the pre-0.4 path, which reads a file that does not
  *  exist on any install made after 0.4. Blank-checked per variable, and adoption needs the current
  *  root PROVEN absent and the pre-0.4 one proven to be a directory — the same rule StatePaths.kt,
- *  bin/splice-launch and the two e2e harnesses follow. */
+ *  app/src/main/dist/bin/splice-launch and the two e2e harnesses follow. */
 export function mgmtKey(home = process.env.HOME) {
   return readFileSync(join(liveStateDir(home), 'mgmt-key'), 'utf8').trim();
 }
@@ -33,15 +33,14 @@ export function liveStateDir(home = process.env.HOME, env = process.env) {
     const value = env[name];
     if (value !== undefined && value.trim() !== '') return value;
   }
-  // One stat, three answers — the same shape as StatePaths.probeRoot. `throwIfNoEntry: false`
-  // covers ENOENT; EACCES on the parent still THROWS, and "cannot determine" is not "absent".
+  // One stat, three answers — the same shape as StatePaths.probeRoot. ENOENT alone is absence:
+  // `throwIfNoEntry: false` would answer undefined on ENOTDIR too (a REGULAR FILE where ~/.splice
+  // belongs); EACCES on the parent THROWS, and "cannot determine" is not "absent".
   const probe = (dir) => {
     try {
-      const found = statSync(dir, { throwIfNoEntry: false });
-      if (found === undefined) return 'absent';
-      return found.isDirectory() ? 'dir' : 'unusable';
-    } catch {
-      return 'unusable';
+      return statSync(dir).isDirectory() ? 'dir' : 'unusable';
+    } catch (failure) {
+      return failure.code === 'ENOENT' ? 'absent' : 'unusable';
     }
   };
   const current = join(home, '.splice', 'state');

@@ -23,16 +23,17 @@ cp "$ROOT/checks/config/one-conventional-type-list.ts" "$tmp/checks/config/" || 
 
 # The fixture tree must carry the SOURCE file so the checker parses TYPES from
 # it rather than from a list this selftest types.
-mkdir -p "$tmp/checks"
-grep -E "^TYPES=" "$ROOT/checks/pr-title.sh" > "$tmp/checks/pr-title.sh" || {
-  echo "  ✗ one-conventional-type-list-selftest: checks/pr-title.sh has no TYPES assignment"
+SOURCE=tools/gate/src/lib/conventional.ts
+mkdir -p "$tmp/$(dirname "$SOURCE")"
+grep -E '^export const TYPES = ' "$ROOT/$SOURCE" > "$tmp/$SOURCE" || {
+  echo "  ✗ one-conventional-type-list-selftest: $SOURCE has no TYPES export"
   exit 1
 }
 
 spaces_from_source() {
   bun -e "$(cat <<'JS'
 const text = await Bun.file(process.argv[1]).text();
-const match = /^TYPES='([^']+)'/m.exec(text);
+const match = /^export const TYPES = "([^"]+)";$/m.exec(text);
 console.log(match[1].split("|").join(" "));
 JS
 )" "$1"
@@ -41,7 +42,7 @@ JS
 two_from_source() {
   bun -e "$(cat <<'JS'
 const text = await Bun.file(process.argv[1]).text();
-const match = /^TYPES='([^']+)'/m.exec(text);
+const match = /^export const TYPES = "([^"]+)";$/m.exec(text);
 const parts = match[1].split("|");
 console.log(parts[0], parts[1]);
 JS
@@ -49,8 +50,8 @@ JS
 }
 
 CHECKER=(bun checks/config/one-conventional-type-list.ts check .)
-TYPES_SPACES="$(spaces_from_source "$tmp/checks/pr-title.sh")"
-TWO="$(two_from_source "$tmp/checks/pr-title.sh")"
+TYPES_SPACES="$(spaces_from_source "$tmp/$SOURCE")"
+TWO="$(two_from_source "$tmp/$SOURCE")"
 
 arm() {
   local label="$1" want="$2"
@@ -90,11 +91,11 @@ arm "two types are green" 0
 rm -f "$tmp/note.md"
 
 # 5 — missing source refuses to pass vacuously.
-mv "$tmp/checks/pr-title.sh" "$tmp/checks/pr-title.sh.bak"
+mv "$tmp/$SOURCE" "$tmp/$SOURCE.bak"
 ( cd "$tmp" && "${CHECKER[@]}" >/dev/null 2>&1 )
 rc=$?
 [ "$rc" != 0 ] || err "missing source: expected non-zero, got rc=0"
-mv "$tmp/checks/pr-title.sh.bak" "$tmp/checks/pr-title.sh"
+mv "$tmp/$SOURCE.bak" "$tmp/$SOURCE"
 
 # 6 — empty tree of text files besides the source still green (scanned count > 0
 #     because the walk sees the checker itself, which must not restate the list).
@@ -102,7 +103,7 @@ arm "checker file is not itself a second copy" 0
 
 # 7 — untracked scratch is not in the git denominator; a tracked copy still reds.
 git -C "$tmp" init -q
-git -C "$tmp" add checks/pr-title.sh checks/config/one-conventional-type-list.ts
+git -C "$tmp" add "$SOURCE" checks/config/one-conventional-type-list.ts
 printf '%s\n' "$TYPES_SPACES" > "$tmp/scratch.md"
 arm "untracked second copy is green under git ls-files" 0
 git -C "$tmp" add scratch.md

@@ -42,17 +42,17 @@ changing a rule.
 The org-injected PR-title gate (check name `title`) enforces Conventional Commits on the **PR
 title** — it is the squash-merge subject, so it becomes `main`'s history verbatim. This repo used
 to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The allowed types live once,
-in `checks/pr-title.sh`, mirroring the org gate. A second copy is how two types the org gate
+in `tools/gate/src/lib/conventional.ts`, mirroring the org gate. A second copy is how two types the org gate
 rejects survived here after that deletion.
 
 Check a title before opening the PR, the same way the PR template tells you to:
 
-    bash checks/pr-title.sh "feat(scope): subject"
+    bun tools/gate title "feat(scope): subject"
 
 Scope is optional: `fix(walls): …`. Anything else fails the org check, which is a required check,
 so the PR cannot merge.
 
-**That script is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
+**That file is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
 `verify(x):` — fails the check.
 
 **Use an allowed type in your branch commit subject as well.** Only the title is linted, but the

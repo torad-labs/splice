@@ -160,9 +160,9 @@ Green means all of them. A wall block means fix the code, not the wall — never
 
 The org-injected PR-title gate enforces Conventional Commits on the **PR title** via a REQUIRED
 check. This repo used to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The
-allowed types live once, in `checks/pr-title.sh`.
+allowed types live once, in `tools/gate/src/lib/conventional.ts`.
 
-    bash checks/pr-title.sh "feat(scope): subject"
+    bun tools/gate title "feat(scope): subject"
 
 Scope optional (`fix(walls): ...`). Anything else fails the org check and blocks the merge.
 

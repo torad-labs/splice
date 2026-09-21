@@ -230,14 +230,15 @@ run "tests are discovered selftest" bun checks/config/tests-are-discovered.ts --
 # (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.
 run "terminal-restore bracketed" bun checks/config/terminal-restore-bracketed.ts check .
 run "terminal-restore selftest" bun checks/config/terminal-restore-bracketed.ts --selftest
-# V4-30: the conventional-type vocabulary lives once, in the checks/pr-title.sh the next leg runs.
+# V4-30: the conventional-type vocabulary lives once, in tools/gate/src/lib/conventional.ts, which
+# `gate title` (the leg after next) enforces.
 # CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted to include `release` and
-# `codex`, types the org gate rejects — the exact divergence pr-title.sh's own header describes as
+# `codex`, types the org gate rejects — the exact divergence conventional.ts's own header describes as
 # fixed history. Denominator is `git ls-files`, so an untracked sidecar or editor backup cannot red
 # the gate; a second copy must be tracked to reach main.
 run "one conventional type list" bun checks/config/one-conventional-type-list.ts check .
 run "one conventional type list selftest" bash checks/one-conventional-type-list-selftest.sh
-run "pr title"       bash checks/pr-title.sh
+run "pr title"       bun tools/gate title
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.
 run "secret-scan allowlist generated" bun checks/gen-secret-scan-allow.ts --check

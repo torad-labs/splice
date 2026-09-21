@@ -26,7 +26,7 @@
  * second time about this very table.
  *
  * The remaining hand-edit risk — someone editing the .txt directly — is closed by `--check`, which
- * the gate runs (the same regenerate-and-diff idiom already used for webui/dist).
+ * the gate runs (the same regenerate-and-diff idiom already used for console/dist).
  *
  * Usage:
  *     bun checks/gen-secret-scan-allow.ts --write   # write the .txt

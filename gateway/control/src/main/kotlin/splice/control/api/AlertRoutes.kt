@@ -7,7 +7,7 @@
 //                            saved, so PUT then test is the honest order, and a route that tested an
 //                            unsaved draft could pass while the saved setting is broken)
 //
-// webui/src/entities/alert/api/index.ts already calls POST /api/alerts/test rather than a verb on
+// console/src/entities/alert/api/index.ts already calls POST /api/alerts/test rather than a verb on
 // the GET/PUT pair, reading FEATURES.md §6's "test send" as its own operation — this route answers
 // exactly that path.
 //

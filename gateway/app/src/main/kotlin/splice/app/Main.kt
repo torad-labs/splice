@@ -132,7 +132,7 @@ internal class DaemonProcess {
                 return
             }
         }
-        val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
+        val distPath = Paths.get(System.getProperty("user.dir"), "..", "console", "dist", "index.html")
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore

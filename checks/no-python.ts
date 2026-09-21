@@ -13,7 +13,7 @@
  * python" — a TypeScript original, deliberately converted the wrong way.
  *
  * THAT FILE IS FIXED, AND THIS PARAGRAPH STAYS IN THE PAST TENSE ON PURPOSE. M1-88 ported it
- * back to .dev/web-console/idle-watch.ts under bun on 2026-09-18, and its burndown line is burned
+ * back to .dev/campaigns/idle-watch.ts under bun on 2026-09-18, and its burndown line is burned
  * off with it — a file that no longer exists cannot hold an allowlist entry, which is the
  * burn-down burning down rather than the list being weakened. The scar is kept because the wall
  * is the reason it got fixed: the instance sat in the same directory as the rule that names it,
@@ -120,7 +120,7 @@ export const SELF = new Set([
 /** Does this text RUN or NAME python?
  *
  *  The wall's own NAME is not a python reference, and on 2026-09-18 that distinction
- *  was the difference between a green gate and a red one. webui/.impeccable/review/
+ *  was the difference between a green gate and a red one. console/.impeccable/review/
  *  ink/sweep-d7.mjs is the PORT AWAY FROM PYTHON — its header explains that the repo
  *  runs no Python and that the prose teaching it goes stale in silence, which is the
  *  rule stated correctly — and the only lowercase `python` anywhere in it is the
@@ -322,7 +322,7 @@ function excused(list: Burndown): string[] {
  *  writes in the worktree, runs once, and adds later because it is already there.
  *
  *  Measured 2026-09-18, twenty minutes after this wall landed and while the first
- *  census read a clean 90: webui/.m1-34.py, 196 untracked lines of Python
+ *  census read a clean 90: console/.m1-34.py, 196 untracked lines of Python
  *  rewriting six .tsx files by string substitution. Invisible to both censuses
  *  above, and one `git add` away from being tracked.
  *

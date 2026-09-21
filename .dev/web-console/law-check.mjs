@@ -8,7 +8,7 @@
 // demonstrated the same night by four verify lines shipping with two broken legs each.
 //
 // LAW 25: a row whose fence can touch CSS carries a build leg, and the leg is `npx vite build`
-//   specifically — not `npm run build -w webui`, whose script is `tsc --noEmit && vite build`, so a
+//   specifically — not `npm run build -w console`, whose script is `tsc --noEmit && vite build`, so a
 //   peer's in-flight type error would mask a CSS defect. An orphaned declaration reached the tree
 //   and broke the build for every seat because ZERO done rows carried one.
 //
@@ -251,13 +251,13 @@ function report(rows) {
 function selftest() {
   const cases = [
     { label: 'a CSS-fenced row with no build leg is RED', want: ['law-25'],
-      rows: [{ id: 'X-1', status: 'done', files: ['webui/src/widgets/rule/rule.css'], verify: 'npx tsc --noEmit' }] },
+      rows: [{ id: 'X-1', status: 'done', files: ['console/src/widgets/rule/rule.css'], verify: 'npx tsc --noEmit' }] },
     { label: 'the same row WITH npx vite build is GREEN', want: [],
-      rows: [{ id: 'X-1', status: 'done', files: ['webui/src/widgets/rule/rule.css'], verify: 'npx tsc --noEmit && npx vite build' }] },
+      rows: [{ id: 'X-1', status: 'done', files: ['console/src/widgets/rule/rule.css'], verify: 'npx tsc --noEmit && npx vite build' }] },
     { label: 'npm run build is NOT a build leg (tsc masks the CSS defect)', want: ['law-25'],
-      rows: [{ id: 'X-1', status: 'done', files: ['webui/src/widgets/rule/rule.css'], verify: 'npm run build -w webui' }] },
+      rows: [{ id: 'X-1', status: 'done', files: ['console/src/widgets/rule/rule.css'], verify: 'npm run build -w console' }] },
     { label: 'a CSS-holding directory counts, not just a .css path', want: ['law-25'],
-      rows: [{ id: 'X-1', status: 'done', files: ['webui/src/widgets/rule/**'], verify: 'npx tsc --noEmit' }] },
+      rows: [{ id: 'X-1', status: 'done', files: ['console/src/widgets/rule/**'], verify: 'npx tsc --noEmit' }] },
     { label: 'a fence with no CSS anywhere is not a law-25 row', want: [],
       rows: [{ id: 'X-1', status: 'done', files: ['.dev/web-console/law-check.mjs'], verify: 'npx tsc --noEmit' }] },
     { label: 'the M1-08 shape is RED', want: ['law-27'],
@@ -269,9 +269,9 @@ function selftest() {
       rows: [{ id: 'X-1', status: 'done', files: ['.dev/web-console/law-check.mjs'], verify: 'test -z "$(grep -v ok file.txt)"' }] },
     { label: 'a presence assertion of the compliant shape is GREEN', want: [],
       rows: [{ id: 'X-1', status: 'done', files: ['.dev/web-console/law-check.mjs'],
-        verify: 'node .dev/web-console/scan.mjs webui/src && grep -q OWNER .dev/web-console/census/m1-punch-list.md' }] },
+        verify: 'node .dev/web-console/scan.mjs console/src && grep -q OWNER .dev/web-console/census/m1-punch-list.md' }] },
     { label: 'both laws on one row are both reported', want: ['law-25', 'law-27'],
-      rows: [{ id: 'X-1', status: 'done', files: ['webui/src/widgets/rule/rule.css'],
+      rows: [{ id: 'X-1', status: 'done', files: ['console/src/widgets/rule/rule.css'],
         verify: "npx tsc --noEmit && if grep -q x y; then exit 1; fi" }] },
   ];
   let bad = 0;

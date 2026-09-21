@@ -3,7 +3,7 @@
 // headers, no websocket, no code-mode bridge.
 //
 // TestResponsesQuirks is deliberately independent of CodexQuirks: :daemon-head must not depend on
-// provider-codex. This profile starts at the bare ResponsesQuirks constructor and carries only
+// :providers-codex. This profile starts at the bare ResponsesQuirks constructor and carries only
 // fields :daemon-head:test load-bears on. It does not stand in for Codex's live profile.
 package splice.head
 

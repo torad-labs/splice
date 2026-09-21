@@ -15,7 +15,7 @@
  *  not production writers.
  *
  *  A hit is a Muse second writer when all of: the relative path contains muse (LoginMuse,
- *  provider-muse, a colliding MuseMintPersistence.kt elsewhere), the file calls
+ *  :providers-muse, a colliding MuseMintPersistence.kt elsewhere), the file calls
  *  SecureFile.writeAtomic0600, and the path is not the allowed writer. Matching the basename
  *  alone is not an exemption. Every other live atomic writer needs a dated disposition;
  *  absence is not one.
@@ -41,9 +41,9 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
     "2026-09-17 V4-75 hourly token-economics rollup persist; never a credential",
   "core/src/main/kotlin/splice/core/teams/TeamStore.kt":
     "2026-09-18 V4-131 teams.json persist and its .bak sibling; team rows and slot text, never a credential",
-  "gateway/app/src/main/kotlin/splice/app/LoginIo.kt":
+  "app/src/main/kotlin/splice/app/auth/LoginIo.kt":
     "2026-09-15 shared login credential write used by every vendor flow",
-  "gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountWrites.kt":
+  "app/src/main/kotlin/splice/app/auth/OAuthAccountWrites.kt":
     "2026-09-15 labeled OAuth pool writes for every kind",
   "core/src/main/kotlin/splice/core/config/ConfigService.kt":
     "2026-09-15 daemon config.json persist",
@@ -120,9 +120,9 @@ export const LOGIN_MUSE_DELEGATED = `
         }
     `;
 
-export const LOGIN_MUSE_PATH = "gateway/app/src/main/kotlin/splice/app/cli/LoginMuse.kt";
+export const LOGIN_MUSE_PATH = "app/src/main/kotlin/splice/app/cli/auth/LoginMuse.kt";
 export const CORE_FAKE_MUSE = "core/src/main/kotlin/splice/core/MuseMintPersistence.kt";
-export const LOGIN_CODEX_PATH = "gateway/app/src/main/kotlin/splice/app/cli/LoginCodex.kt";
+export const LOGIN_CODEX_PATH = "app/src/main/kotlin/splice/app/cli/auth/LoginCodex.kt";
 export const TEST_MUSE_WRITER = "providers/muse/src/test/kotlin/splice/provider/muse/MuseWriterFixture.kt";
 export const TEST_CORE_WRITER = "core/src/test/kotlin/NewWriterTest.kt";
 
@@ -326,7 +326,7 @@ export function selftest(): number {
       "core/src/main/kotlin/splice/core/NewWriter.kt": PRE_V4_23_LOGIN_MUSE,
     }).length === 0
   ) {
-    failures.push("W2 widen roots: undisposed atomic writer outside provider-muse and app/cli must be RED");
+    failures.push("W2 widen roots: undisposed atomic writer outside :providers-muse and app/cli must be RED");
   }
   if (extraWriters({ [TEST_MUSE_WRITER]: PRE_V4_23_LOGIN_MUSE }).length > 0) {
     failures.push("W4 src/test: a muse test fixture calling writeAtomic0600 is out of live scope");

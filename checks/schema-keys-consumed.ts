@@ -135,7 +135,7 @@ const KNOB_CLASS = "Knob";
 // error: a dead exclusion is an un-graded surface one rename later.
 let NON_CONSUMPTION: [string, string][] = [
   [
-    "gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt",
+    "app/src/main/kotlin/splice/app/cli/doctor/DoctorReportShape.kt",
     "2026-09-17: THE ECHO SURFACE. It puts every topology key back out under its own key name " +
       '(`put("state_dir", t.daemon.stateDir)`) — the value is being SHOWN, not used. Counting it ' +
       "would make this wall green over exactly the population it exists to name: state_dir's only " +

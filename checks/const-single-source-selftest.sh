@@ -175,7 +175,7 @@ const p = process.argv[1];
 const doc = JSON.parse(fs.readFileSync(p, "utf8"));
 doc.groups["COPY ZZ_SELFTEST_VANISHED"] = [
   "core/src/main/kotlin/splice/core/Gone.kt",
-  "gateway/app/src/main/kotlin/splice/app/AlsoGone.kt",
+  "app/src/main/kotlin/splice/app/AlsoGone.kt",
 ];
 doc.total += 1;
 fs.writeFileSync(p, JSON.stringify(doc, null, 2));

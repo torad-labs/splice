@@ -532,7 +532,7 @@ function selftest(): number {
     }
   };
 
-  const A = "gateway/app/src/main/kotlin/splice/A.kt";
+  const A = "app/src/main/kotlin/splice/A.kt";
 
   expectGreen("the compliant fixture (why:, a KDoc sentence, a trailing sentence)", { "app/A.kt": COMPLIANT }, base(0, 3, {}), "measured    0");
   expectGreen("the BORING case: one silent const, baseline 1", { "app/A.kt": ONE_SILENT }, base(1, 1, { [A]: 1 }), "measured    1");

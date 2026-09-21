@@ -1,5 +1,5 @@
 // NEW: dialect-local copy of Kimi's passthrough profile so goldens stay byte-identical without
-// importing provider-kimi. :app KimiQuirksFixtureTest pins this equal to KimiQuirks.
+// importing :providers-kimi. :app KimiQuirksFixtureTest pins this equal to KimiQuirks.
 package splice.dialect.anthropic
 
 public class KimiProfileFixture {

@@ -153,7 +153,7 @@ describe("the P1 coverage proof", () => {
     // and the loss it used to excuse is reported again, by name
     const lost = messagesFor(report, "kt-no-println", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("gateway/app/src/main/kotlin");
+    expect(lost[0]).toContain("app/src/main/kotlin");
   });
 
   test("mutant (f): a files row typed as a scalar cannot become a whole-source-root row", async () => {
@@ -181,11 +181,11 @@ describe("the P1 coverage proof", () => {
     edit(
       copy.exclusions,
       '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["app"]',
-      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["provider-openai"]',
+      '[[exclusion]]\nrule = "kt-no-println"\nmodules = ["providers-openai"]',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     expect(report.findings.some((f) => f.kind === "exclusion-stale" && f.message.includes("kt-no-println"))).toBe(true);
-    expect(report.findings.some((f) => f.kind === "source-root-lost" && f.message.includes("gateway/app/src/main/kotlin"))).toBe(true);
+    expect(report.findings.some((f) => f.kind === "source-root-lost" && f.message.includes("app/src/main/kotlin"))).toBe(true);
   });
 });

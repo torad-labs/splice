@@ -28,7 +28,7 @@
 #
 # THE CENSUS (measured 2026-09-17, gateway/*/src/main). Denominator from the source: 3
 # `invokeOnCancellation` handlers in the whole tree, 1 RED:
-#   RED   gateway/app/src/main/kotlin/splice/app/codemode/WorkerChannel.kt:57   { close() }
+#   RED   app/src/main/kotlin/splice/app/codemode/WorkerChannel.kt:57   { close() }
 #   green upstream/src/main/kotlin/splice/upstream/retry/InflightGate.kt:137   { synchronized(lock) { queue.remove(waiter) } }
 #   green daemon/head/src/main/kotlin/splice/head/turn/CollectTurn.kt:111 { future.removeListener(listener) }
 # The two green ones are the law satisfied, not the matcher failing: both bodies do bounded,

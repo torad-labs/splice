@@ -135,7 +135,7 @@ run "code-mode guidance selftest" bun checks/e2e/code_mode_guidance.ts --selftes
 run "code-mode mock selftest" bun checks/e2e/code_mode_mock.ts --selftest
 # Exercise the fat JAR built by clean check, with synthetic auth and loopback-only tools.
 run "code-mode packaged mock" bun checks/e2e/code_mode_mock.ts \
-  --artifact gateway/app/build/libs/app-all.jar \
+  --artifact app/build/libs/app-all.jar \
   --receipt "checks/e2e/receipts/code-mode-mock-$(date -u +%Y%m%dT%H%M%S)-$$.json"
 run "config guard"   bash checks/config-guard.sh
 run "config-guard selftest" bash checks/config-guard-selftest.sh

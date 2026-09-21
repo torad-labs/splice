@@ -54,7 +54,7 @@ files:
   # client/'s whole main source set. Same files, same wall — only the directory changed.
   - client/src/main/kotlin/splice/client/**/*.kt
   - daemon/control/src/main/kotlin/splice/control/Launch*.kt
-  - gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
+  - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
 ignores:
   # the ONE dated entry: the single source of the vanilla dir's NAME (Keys.CLAUDE / Keys.CLAUDE_DIR)
   - client/src/main/kotlin/**/ClaudeConfigKeys.kt

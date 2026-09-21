@@ -599,8 +599,8 @@ function audit(root: string): string[] {
 
 // ── selftest fixtures ─────────────────────────────────────────────────────────────────
 
-const SEAM_SOURCE_REL = "gateway/app/src/main/kotlin/splice/app/cli/Fixture.kt";
-const COMPUTED_SOURCE_REL = "gateway/app/src/main/kotlin/splice/app/cli/Computed.kt";
+const SEAM_SOURCE_REL = "app/src/main/kotlin/splice/app/cli/Fixture.kt";
+const COMPUTED_SOURCE_REL = "app/src/main/kotlin/splice/app/cli/Computed.kt";
 
 const SEAM_SOURCE = `package splice.app.cli
 
@@ -879,14 +879,14 @@ function selftest(): number {
     }
 
     writeTree(root, COMPLIANT_DOC, SEAM_SOURCE, KNOB_SOURCE, COMPUTED_SOURCE, [
-      "gateway/app/src/main/kotlin/splice/app/cli/Sneaky.kt",
+      "app/src/main/kotlin/splice/app/cli/Sneaky.kt",
       DIRECT_GETENV_SOURCE,
     ]);
     hits = audit(root);
     if (!hits.some((h) => h.includes("DIRECT READ OUTSIDE THE SEAM"))) {
       failures.push(`a direct System.getenv call must be RED, got: ${hits}`);
     }
-    rmSync(join(root, "gateway/app/src/main/kotlin/splice/app/cli/Sneaky.kt"));
+    rmSync(join(root, "app/src/main/kotlin/splice/app/cli/Sneaky.kt"));
 
     writeTree(root, COMPLIANT_DOC, NO_SEAM_SOURCE, KNOB_SOURCE, null);
     hits = audit(root);

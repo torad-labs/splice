@@ -21,12 +21,12 @@ config with one good head and two deliberately bad heads:
 
 ```bash
 bun checks/local-models/e2e.ts --runtime ollama \
-  --jar gateway/app/build/libs/app-all.jar \
+  --jar app/build/libs/app-all.jar \
   --config /path/to/splice-local.toml --home /path/to/isolated-home \
   --good-head ollama --bad-heads ollama-unlisted,ollama-overclaim \
   --out checks/local-models/receipts/local-models-ollama.json
 bun checks/local-models/e2e.ts --runtime lmstudio \
-  --jar gateway/app/build/libs/app-all.jar \
+  --jar app/build/libs/app-all.jar \
   --config /path/to/splice-lmstudio.toml --home /path/to/isolated-home \
   --good-head lmstudio --bad-heads lmstudio-unlisted,lmstudio-overclaim \
   --out checks/local-models/receipts/local-models-lmstudio.json

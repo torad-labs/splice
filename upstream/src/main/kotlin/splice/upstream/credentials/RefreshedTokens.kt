@@ -1,5 +1,5 @@
 // NEW: result of the token endpoint's refresh POST (only the fields we persist). Moved from
-// provider-codex so the daemon-wide TokenUrlRefreshCall is not typed on one vendor.
+// :providers-codex so the daemon-wide TokenUrlRefreshCall is not typed on one vendor.
 package splice.upstream.credentials
 
 /** Result of the token endpoint's refresh POST (only the fields we persist). */

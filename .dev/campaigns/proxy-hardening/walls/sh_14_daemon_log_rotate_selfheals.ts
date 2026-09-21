@@ -58,7 +58,7 @@ function pyRepr(items: string[]): string {
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 // 2026-08-23: persistentLogger moved to DaemonBoundary.kt. Main.kt is a one-line delegate.
-const MAIN = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/DaemonBoundary.kt");
+const MAIN = resolve(ROOT, "app/src/main/kotlin/splice/app/DaemonBoundary.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(text: string | null): string[] {

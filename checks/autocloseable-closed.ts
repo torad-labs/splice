@@ -11,9 +11,9 @@
  * THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 6). `JvmCodeModeRuntime` implements `CodeModeRuntime`,
  * which extends `AutoCloseable`, and its `close()` shuts down the worker pool: it destroys child JVMs
  * and releases their permits. It is constructed in production at
- * gateway/app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt:101 (`runtime =
+ * app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt:101 (`runtime =
  * JvmCodeModeRuntime()`), and nothing in any main source ever closes it. The only `.close()`/`.use {}`
- * callers are gateway/app/src/test/kotlin/CodeModeRuntimeTest.kt:238 and friends — which is why every
+ * callers are app/src/test/kotlin/splice/app/codemode/CodeModeRuntimeTest.kt:238 and friends — which is why every
  * test that exercises worker reclamation passes while the daemon never reclaims anything.
  *
  * THE DENOMINATOR, FROM THE SOURCE, AND TRANSITIVELY (§24). The types are not a list in this file.
@@ -575,9 +575,9 @@ function write(root: string, files: Record<string, string>): void {
   }
 }
 
-const APP = "gateway/app/src/main/kotlin/splice/app/App.kt";
+const APP = "app/src/main/kotlin/splice/app/App.kt";
 const SPI = "upstream/src/main/kotlin/splice/upstream/Spi.kt";
-const TEST = "gateway/app/src/test/kotlin/RuntimeTest.kt";
+const TEST = "app/src/test/kotlin/RuntimeTest.kt";
 
 /** Python's repr() of a list of strings. */
 const pyReprList = (items: string[]): string =>

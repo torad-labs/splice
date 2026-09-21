@@ -21,7 +21,7 @@ import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import java.io.File
 
-// The codex quirk profile, mirrored from CodexProvider.defaultQuirks() (provider-codex DEPENDS ON
+// The codex quirk profile, mirrored from CodexProvider.defaultQuirks() (:providers-codex DEPENDS ON
 // this module, never the reverse — the dialect can never import a concrete provider).
 private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = ResponsesQuirks(
     providerTag = "claudex",

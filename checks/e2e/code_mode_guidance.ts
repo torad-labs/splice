@@ -29,7 +29,7 @@ Return only the requested JSON object, without markdown fences. Stop once suffic
 
 export const GUIDANCE_PATH = join(
   resolve(dirname(import.meta.path), "../.."),
-  "gateway/provider-codex/src/main/resources",
+  "providers/codex/src/main/resources",
   "splice/provider/codex/code-mode-orchestration.txt",
 );
 // read_text() decodes UTF-8 with universal newlines.

@@ -537,10 +537,10 @@ class NoTestsHere {
 function writeTree(root: string, source: string, xml: string | null, quietModule: string | null = null): void {
   const gateway = join(root, "gateway");
   if (existsSync(gateway)) rmSync(gateway, { recursive: true, force: true });
-  const src = join(root, "gateway/gateway/src/test/kotlin/SampleTest.kt");
+  const src = join(root, "daemon/head/src/test/kotlin/SampleTest.kt");
   mkdirSync(dirname(src), { recursive: true });
   writeFileSync(src, source, "utf8");
-  const results = join(root, "gateway/gateway/build/test-results/test");
+  const results = join(root, "daemon/head/build/test-results/test");
   // CLEARED FIRST: a case that asks for no XML must not inherit the previous case's XML,
   // which is this wall's own subject — an observation left over from an earlier run.
   if (existsSync(results)) rmSync(results, { recursive: true, force: true });

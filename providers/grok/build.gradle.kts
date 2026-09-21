@@ -11,4 +11,5 @@ dependencies {
     testImplementation(project(":daemon-head"))
     testImplementation(libs.ktor.client.cio)
     testImplementation(testFixtures(project(":daemon-head")))
+    testImplementation(testFixtures(project(":dialects-openai-responses")))
 }

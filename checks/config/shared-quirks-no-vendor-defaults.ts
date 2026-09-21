@@ -25,7 +25,7 @@
  * a checker like this gets wrong by over-matching.
  *
  * SCOPE IS DERIVED, not listed: every .kt under `gateway/dialect-{name}/src/main` is read from the
- * source tree. A provider module (`gateway/provider-codex`, ...) is NOT in scope — its own
+ * source tree. A provider module (`providers/codex`, ...) is NOT in scope — its own
  * `CodexQuirks` may hold vendor facts, because it IS the vendor — and the selftest pins that
  * asymmetry with a temp tree holding both, so a future widening of the glob cannot silently pull
  * provider modules in.
@@ -404,7 +404,7 @@ function selftest(): number {
     "shared-quirks-no-vendor-defaults SELFTEST OK — null vendor knobs, false/omit " +
       "lite booleans, and a boring null extra are green; Regex, header-name, " +
       "vendor-host, and lite-gated measured-wire-byte defaults are red by name; a " +
-      "provider-codex CodexQuirks Regex is out of scope\n",
+      ":providers-codex CodexQuirks Regex is out of scope\n",
   );
   return 0;
 }

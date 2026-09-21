@@ -1,7 +1,7 @@
 // NEW: the head's quota tracker (see QuotaTracker): upstream headers observed on a round become
 // the unified headers every client response carries, the file survives a restart, and a round
 // without either family changes nothing. The extra family is a test-local QuotaHeaderFamily fake
-// so this module does not construct provider-codex (V4-24).
+// so this module does not construct :providers-codex (V4-24).
 package splice.head.usage
 
 import org.junit.jupiter.api.Assertions.assertEquals

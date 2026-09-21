@@ -279,7 +279,7 @@ export const DECOY_HELPERS_FIX =
 // something that is not this header (marker, no mention). The leg is the AND of the two, and each
 // control fails if it silently becomes an OR.
 export const SECOND_PARSER_FIXTURE: Record<string, string> = {
-  "gateway/app/src/main/kotlin/splice/app/SecondParser.kt":
+  "app/src/main/kotlin/splice/app/SecondParser.kt":
     "private fun retryAfterMs(header: String?): Long? {\n" +
     "    val value = header?.trim() ?: return null\n" +
     "    if (value.all { it in '0'..'9' }) return value.toLongOrNull()\n" +
@@ -288,11 +288,11 @@ export const SECOND_PARSER_FIXTURE: Record<string, string> = {
     "}",
 };
 export const DELEGATING_FIXTURE: Record<string, string> = {
-  "gateway/app/src/main/kotlin/splice/app/Delegating.kt":
+  "app/src/main/kotlin/splice/app/Delegating.kt":
     'val ms = retryAfter.retryAfterMs(response.headers["Retry-After"], clock)\n',
 };
 export const UNRELATED_DATE_FIXTURE: Record<string, string> = {
-  "gateway/app/src/main/kotlin/splice/app/OtherDates.kt":
+  "app/src/main/kotlin/splice/app/OtherDates.kt":
     "val expiry = ZonedDateTime.parse(cookie, DateTimeFormatter.RFC_1123_DATE_TIME)\n",
 };
 // A seconds-ONLY re-derivation in a different module: no date token at all, so it is caught by the

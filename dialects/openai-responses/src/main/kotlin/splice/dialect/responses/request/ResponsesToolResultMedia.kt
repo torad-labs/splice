@@ -11,7 +11,7 @@
 // tool_result that drift apart silently, so there is one, and it is pure: a ToolResultBlock in, the
 // ordered items out, nothing else consulted.
 //
-// PUBLIC because provider-codex is its second consumer; the rest of the tool round-trip family stays
+// PUBLIC because :providers-codex is its second consumer; the rest of the tool round-trip family stays
 // internal — this is the narrow surface, not the builder.
 package splice.dialect.responses.request
 

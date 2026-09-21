@@ -15,8 +15,8 @@ note: >
   Mark the helper `private`, or keep it suspend and let the caller stay suspend. The exemption for
   Main.kt/cli exists for PROCESS ENTRY, not for a reusable blocking API.
 files:
-  - gateway/app/src/main/kotlin/**/Main.kt
-  - gateway/app/src/main/kotlin/**/cli/**
+  - app/src/main/kotlin/**/Main.kt
+  - app/src/main/kotlin/**/cli/**
 rule:
   kind: function_declaration
   all:

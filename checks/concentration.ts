@@ -266,8 +266,8 @@
  */
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { argparse, cpCompare, pyRepr, pySplitlines } from "./e2e/pyshim.ts";
-import { dumpsIndent, floatRepr, obj, type PyValue } from "./e2e/pyjson.ts";
+import { argparse, cpCompare, pyRepr, pySplitlines } from "../tools/e2e/src/compat/python-values.ts";
+import { dumpsIndent, floatRepr, obj, type PyValue } from "../tools/e2e/src/compat/python-json.ts";
 
 export const ROOT = dirname(dirname(realpathSync(import.meta.path)));
 // restructure PR 3: :client is the first module to live outside gateway/, so the production

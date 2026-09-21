@@ -13,12 +13,12 @@ err() { echo "  ✗ config-guard-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 # ── mirror: everything config-guard.sh and its two script legs read ──────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/quality/detekt" "$tmp/.github"
+mkdir -p "$tmp/checks/config" "$tmp/tools/e2e/src/compat" "$tmp/quality/detekt" "$tmp/.github"
 cp "$ROOT/checks/config-guard.sh" "$tmp/checks/"
 cp "$ROOT/checks/config/dependabot-kotlin-scope.ts" "$ROOT/checks/config/concentration-leg-routed.ts" "$tmp/checks/config/"
-# V4-145: the routing leg is bun now and imports the Python-semantics shims beside it; without them
+# V4-145: the routing leg is bun now and imports the Python-semantics shims from tools/e2e/src/compat/; without them
 # it fails to LOAD in every fixture, which the arms below would read as the wall refusing.
-cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
+cp "$ROOT/tools/e2e/src/compat/python-json.ts" "$ROOT/tools/e2e/src/compat/python-values.ts" "$tmp/tools/e2e/src/compat/"
 # DR-131/DR-132: the shared rule-document enumerator the severity wall now parses with. Omitting it
 # would make config-guard.sh fail CLOSED on every fixture below — including the control — and a wall
 # that rejects everything because its checker is missing proves nothing about the checker.

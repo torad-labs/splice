@@ -39,7 +39,7 @@
  *
  *    THE RECEIPT IS A PYTHON json.dumps ARTIFACT. Receipts from the two runtimes are committed and
  *    were reviewed against each other, so key ORDER and indent=2 are part of the artifact. It is
- *    built as an ordered pair list and emitted through pyjson's dumpsIndent, not JSON.stringify.
+ *    built as an ordered pair list and emitted through python-json's dumpsIndent, not JSON.stringify.
  *
  *    `print(f"runtime: {receipt['runtime']}")` IS str() OF A DICT — Python renders that with single
  *    quotes and repr()d members, not as JSON. pyStr reproduces it.
@@ -57,7 +57,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { dumps, dumpsIndent, loads, obj, isPyNum, isPyObj, type PyValue } from "../e2e/pyjson.ts";
+import { dumps, dumpsIndent, loads, obj, isPyNum, isPyObj, type PyValue } from "../../tools/e2e/src/compat/python-json.ts";
 
 const ROOT = resolve(import.meta.dir, "..", "..");
 const STREAM_PROBE = resolve(ROOT, "checks", "e2e", "stream_probe.ts");

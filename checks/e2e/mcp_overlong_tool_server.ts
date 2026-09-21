@@ -28,12 +28,12 @@
  *  interpreter command is reworded to describe the same event without naming the interpreter, on the
  *  orchestrator's ruling: this file invokes nothing, so the mention was an instruction rather than a
  *  dependency, and the census's own remedy for prose is to update the prose. Input goes through the
- *  shared pyjson parser and every reply is built with its constructors, so the emitted bytes are
+ *  shared python-json parser and every reply is built with its constructors, so the emitted bytes are
  *  json.dumps bytes — including the id, which keeps its exact source token rather than being rounded
  *  through a JS number.
  */
 import { appendFileSync } from "node:fs";
-import { dumps, loads, obj, objGet, isPyObj, fromJS, quote, type PyValue, type PyObj } from "./pyjson.ts";
+import { dumps, loads, obj, objGet, isPyObj, fromJS, quote, type PyValue, type PyObj } from "../../tools/e2e/src/compat/python-json.ts";
 
 const TOOL_NAME = "read_process_output";
 const SERVER_NAME = "splice-e2e-overlong-tool";

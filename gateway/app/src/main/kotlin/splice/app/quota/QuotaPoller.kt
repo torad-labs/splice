@@ -13,7 +13,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
-import splice.gateway.usage.QuotaTracker
+import splice.head.usage.QuotaTracker
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.atomic.AtomicBoolean

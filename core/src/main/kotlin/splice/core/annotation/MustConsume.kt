@@ -4,7 +4,7 @@
 // it without a new dependency; the wall that reads it is MustConsumeDiscardChecker in :fir-checks.
 //
 // Retention is BINARY (not SOURCE): the marker must survive into Kotlin metadata so a cross-module
-// FIR checker resolving a callee from :core's jar can still see the annotation at :app/:gateway
+// FIR checker resolving a callee from :core's jar can still see the annotation at :app/:daemon-head
 // compile time. SOURCE would vanish before any downstream module compiled against :core.
 //
 // CLASS target lets a later (G7-gated) PR annotate a whole type — e.g. RefreshOutcome — once and

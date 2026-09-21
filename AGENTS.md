@@ -60,8 +60,8 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 > **Wire contract, Kotlin implementation.** The behaviour below is the contract; the `server/`
 > Node tree that first implemented it was **deleted on 2026-08-10** (P8-CUT). The live sources are
-> `gateway/control/.../ControlServer.kt`, `gateway/gateway/.../wire/SseEmitter.kt` and
-> `gateway/gateway/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
+> `gateway/control/.../ControlServer.kt`, `daemon/head/.../wire/SseEmitter.kt` and
+> `daemon/head/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 

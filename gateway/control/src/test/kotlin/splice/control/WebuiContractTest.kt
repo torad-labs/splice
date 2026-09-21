@@ -290,10 +290,10 @@ private const val HEADS_KEY = "heads"
 //
 // WHY EconomicsRow AND NOT EconomicsBucket, which the row asked for. Two blocking premises, both
 // recorded in the V4-98 ledger note:
-//   1. splice.gateway.usage.EconomicsBucket is NOT @Serializable, and neither is EconomicsRow, and
+//   1. splice.head.usage.EconomicsBucket is NOT @Serializable, and neither is EconomicsRow, and
 //      EconomicsPayloads hand-builds the JSON with put(...) — so there is no
 //      `serializer().descriptor.elementNames` anywhere on this path to read.
-//   2. :control may not see :gateway (FileSources.kt:52 states that split as the reason the copy
+//   2. :control may not see :daemon-head (FileSources.kt:52 states that split as the reason the copy
 //      exists at all), so this test — a :control test — cannot name EconomicsBucket even if it
 //      were serializable.
 // EconomicsRow is the nearest correct denominator: it is :control's own vocabulary, it is what

@@ -2,13 +2,13 @@
 //
 // Wave 4a named the three highest-count SHAPES (log/env/clock, 126 sites) in :core. What was left
 // is the long tail the census called "few roles, many shapes": 116 raw function types where the
-// same question is asked from :upstream, all three dialects and :gateway, threaded by hand
+// same question is asked from :upstream, all three dialects and :daemon-head, threaded by hand
 // through every constructor between them. The ones HERE are the ones more than one module asks.
 //
 // WHY :upstream AND NOT :core. Their signatures name [WatchdogFired] and
 // [splice.core.auth.Credentials]-derived request headers — turn vocabulary, not stdlib. :core is
 // the framework-free bottom (module law) and these are the SPI's own contract; every consumer
-// (the three dialects, :gateway) already depends on :upstream. Same reasoning that put HD-19's
+// (the three dialects, :daemon-head) already depends on :upstream. Same reasoning that put HD-19's
 // Waiter/Ticker here rather than in :core.
 //
 // WHY BY ROLE AND NEVER BY SHAPE — the sharpest case in the tree. [ClientGone] and
@@ -21,7 +21,7 @@
 //
 // The same census discipline applies to what is NOT here. `TurnDriver.watchdogFired: () -> Boolean`
 // asks a DIFFERENT question from [WatchdogProbe] (`did it fire` vs `with what reason`), returns a
-// different type, and stays named in :gateway. `ResponsesWsRunner.handshakeHeaders` is shape-
+// different type, and stays named in :daemon-head. `ResponsesWsRunner.handshakeHeaders` is shape-
 // adjacent to [CredentialHeaders] but non-suspending and one-shot at connect, and stays in its
 // dialect.
 //

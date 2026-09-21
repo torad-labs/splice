@@ -32,8 +32,6 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
-import mock.awaitListening
-import mock.freshPort
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -43,6 +41,8 @@ import splice.app.Daemon
 import splice.app.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
+import splice.head.awaitListening
+import splice.head.freshPort
 import java.nio.file.Files
 
 private fun topologyToml(controlPort: Int, headPort: Int): String = """

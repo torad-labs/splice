@@ -31,7 +31,7 @@ include(
     ":provider-kimi",
     ":provider-muse",
     ":provider-openai",
-    ":gateway",
+    ":daemon-head",
     ":control",
     ":app",
     ":arch-tests",
@@ -50,7 +50,7 @@ project(":provider-grok").projectDir = file("gateway/provider-grok")
 project(":provider-kimi").projectDir = file("gateway/provider-kimi")
 project(":provider-muse").projectDir = file("gateway/provider-muse")
 project(":provider-openai").projectDir = file("gateway/provider-openai")
-project(":gateway").projectDir = file("gateway/gateway")
+project(":daemon-head").projectDir = file("daemon/head")
 project(":control").projectDir = file("gateway/control")
 project(":app").projectDir = file("gateway/app")
 project(":arch-tests").projectDir = file("gateway/arch-tests")

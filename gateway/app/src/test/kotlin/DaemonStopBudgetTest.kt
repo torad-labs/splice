@@ -10,7 +10,7 @@
 // MEASURED REASON the innermost link had to grow: a restart cancelled every in-flight turn, and the
 // operator's deepseek turns run 7 to 16s.
 //
-// The drain figure itself lives in :gateway (HeadServer.STOP_DRAIN_NS), which this module cannot
+// The drain figure itself lives in :daemon-head (HeadServer.STOP_DRAIN_NS), which this module cannot
 // import, so it appears here as the documented bound the head budget must clear and is pinned at
 // its source by HeadServerStopDrainTest. Two tests, one ladder, each half checked where it is
 // visible — and if either number moves wrongly, ONE of the two reds.
@@ -29,7 +29,7 @@ import splice.app.head.HEAD_STOP_BUDGET_MS
 
 class DaemonStopBudgetTest {
 
-    /** The innermost link, owned by :gateway's HeadServer. Kept in step with that constant by
+    /** The innermost link, owned by :daemon-head's HeadServer. Kept in step with that constant by
      *  HeadServerStopDrainTest, which asserts its value directly where it is declared. */
     private val drainMs = 45_000L
 

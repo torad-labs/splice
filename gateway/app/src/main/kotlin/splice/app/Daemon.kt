@@ -37,7 +37,7 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
-import splice.gateway.head.CompactionTail
+import splice.head.compaction.CompactionTail
 import java.nio.file.Path
 
 public class Daemon(

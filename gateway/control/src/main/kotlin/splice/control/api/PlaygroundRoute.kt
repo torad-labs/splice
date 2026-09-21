@@ -6,19 +6,19 @@
 //                           the upstream call itself failing)
 //
 // NEVER RECORDED MEANS THE DAEMON, NOT ONLY THE CONSOLE. The normal turn pipeline
-// (:gateway TurnDriver/TurnTelemetry) writes a perf row, a trace record when capture is on, and
+// (:daemon-head TurnDriver/TurnTelemetry) writes a perf row, a trace record when capture is on, and
 // folds tokens into economics on EVERY turn it serves — there is no flag on that path to skip
 // those writes, and adding one would touch the hot turn-completion code every real request runs
 // through, outside this row's fence. So this route does not send the prompt through a head's own
 // server at all: [PlaygroundSource] (implemented in :app, where the real upstream client and
-// credentials already live — :control cannot see :gateway/provider-* types, module law) performs
+// credentials already live — :control cannot see :daemon-head/provider-* types, module law) performs
 // one independent upstream call and nothing here or in it writes to any splice-owned store. The
 // request/response pair lives in the HTTP response body and nowhere else, matching the doctor
 // page's own PlaygroundState comment ("no store, no storage, no history").
 //
 // DELIBERATELY MINIMAL, NOT A SECOND TRANSLATION PIPELINE. A real turn carries tool schemas, the
 // system prompt layers, compaction and cache-control markers — reproducing that here would
-// duplicate :gateway's dialect modules, incorrectly, outside their own tests. The playground sends
+// duplicate :daemon-head's dialect modules, incorrectly, outside their own tests. The playground sends
 // exactly what "one prompt through one head" says: the head's pinned model and the prompt text,
 // nothing else. See PlaygroundProbe.kt (:app) for the per-dialect request shape.
 package splice.control.api

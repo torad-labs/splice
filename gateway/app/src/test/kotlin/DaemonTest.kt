@@ -13,9 +13,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import mock.MockChatGptUpstream
-import mock.awaitListening
-import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -32,6 +29,9 @@ import splice.app.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.head.MockChatGptUpstream
+import splice.head.awaitListening
+import splice.head.freshPort
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CancellationException

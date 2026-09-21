@@ -37,7 +37,7 @@ const ATOMIC_WRITE = "SecureFile.writeAtomic0600(";
 
 // 2026-09-15. Pre-existing non-muse atomic writers. Not Muse credential persists.
 export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
-  "gateway/gateway/src/main/kotlin/splice/gateway/usage/EconomicsStore.kt":
+  "daemon/head/src/main/kotlin/splice/head/usage/EconomicsStore.kt":
     "2026-09-17 V4-75 hourly token-economics rollup persist; never a credential",
   "core/src/main/kotlin/splice/core/teams/TeamStore.kt":
     "2026-09-18 V4-131 teams.json persist and its .bak sibling; team rows and slot text, never a credential",
@@ -74,11 +74,11 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
     "2026-09-15 per-head command wrapper persist",
   "client/src/main/kotlin/splice/client/login/LoginOutcomeFile.kt":
     "2026-09-15 login outcome file persist",
-  "gateway/gateway/src/main/kotlin/splice/gateway/usage/QuotaTracker.kt":
+  "daemon/head/src/main/kotlin/splice/head/usage/QuotaTracker.kt":
     "2026-09-15 quota snapshot persist",
-  "gateway/gateway/src/main/kotlin/splice/gateway/usage/RateLimitFile.kt":
+  "daemon/head/src/main/kotlin/splice/head/usage/RateLimitFile.kt":
     "2026-09-15 rate-limit file persist",
-  "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageRingFile.kt":
+  "daemon/head/src/main/kotlin/splice/head/usage/UsageRingFile.kt":
     "2026-09-15 usage ring persist",
   "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt":
     "2026-09-15 Codex credential persist",

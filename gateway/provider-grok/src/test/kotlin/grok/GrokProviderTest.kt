@@ -17,9 +17,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import mock.MockChatGptUpstream
-import mock.awaitListening
-import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -35,12 +32,15 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.gateway.compact.CompactStats
-import splice.gateway.compact.ShadowClassifier
-import splice.gateway.head.HeadDeps
-import splice.gateway.head.HeadServer
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageStore
+import splice.head.HeadDeps
+import splice.head.HeadServer
+import splice.head.MockChatGptUpstream
+import splice.head.awaitListening
+import splice.head.compact.CompactStats
+import splice.head.compact.ShadowClassifier
+import splice.head.freshPort
+import splice.head.perf.PerfStats
+import splice.head.usage.UsageStore
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokRefreshedTokens
@@ -247,7 +247,7 @@ class GrokProviderTest {
     }
 }
 
-/** A LOCAL mirror of the :gateway fixture (campaign/v4105/HeadDepsFixture.kt), because that is in
+/** A LOCAL mirror of the :daemon-head fixture (campaign/v4105/HeadDepsFixture.kt), because that is in
  *  another module test source set and this module cannot see it. Small on purpose: this module has
  *  exactly one head shape, so there is nothing here to share with a second rig. */
 private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(

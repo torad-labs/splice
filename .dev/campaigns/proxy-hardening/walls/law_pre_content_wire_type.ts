@@ -78,14 +78,14 @@ const SOURCE_ROOT_GLOBS = [
   "quality/*/src/main/kotlin",
 ];
 const SOURCE_ROOT_GLOB = SOURCE_ROOT_GLOBS.join(", ");
-const SEAM_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt";
+const SEAM_FILE = "daemon/head/src/main/kotlin/splice/head/wire/SseEmitter.kt";
 const SEAM_FUN = "emitError";
 
-const COLLECT_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt";
+const COLLECT_FILE = "daemon/head/src/main/kotlin/splice/head/wire/CollectingTerminal.kt";
 const COLLECT_MARK = "CollectingTerminal";
 const COLLECT_REASON = "the COLLECT path (stream:false), where the failure's real HTTP status carries the verdict";
 
-const PRE_TURN_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/head/AdmissionResponses.kt";
+const PRE_TURN_FILE = "daemon/head/src/main/kotlin/splice/head/admission/AdmissionResponses.kt";
 const PRE_TURN_MARK = "AdmissionResponses";
 const PRE_TURN_REASON = "2026-09-17: the PRE-TURN admission plane. Every verdict here is decided before";
 
@@ -589,7 +589,7 @@ const CLEAN_ENDING =
 function tree(seamText: string = SEAM_OK, extra: Record<string, string> = {}): Record<string, string> {
   const sources: Record<string, string> = { [SEAM_FILE]: seamText, [COLLECT_FILE]: COLLECT };
   for (const [name, text] of Object.entries(extra)) {
-    sources[`gateway/gateway/src/main/kotlin/splice/gateway/head/${name}.kt`] = text;
+    sources[`daemon/head/src/main/kotlin/splice/gateway/head/${name}.kt`] = text;
   }
   return sources;
 }

@@ -9,7 +9,7 @@ import splice.control.HeadAccountPoolView
 import splice.control.HeadAccountSwitchView
 import splice.control.HeadAccountView
 import splice.core.util.WallClock
-import splice.gateway.usage.QuotaTracker
+import splice.head.usage.QuotaTracker
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountPoolView

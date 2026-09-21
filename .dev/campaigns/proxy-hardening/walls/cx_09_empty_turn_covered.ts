@@ -84,12 +84,12 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // reason that is not a regression. ANY missing file in a key's list makes the whole key null (the
 // vacuity guard, unchanged and strengthened — a deleted file cannot go quiet).
 export const PATHS: Record<string, string[]> = {
-  mirror: ["gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt"],
+  mirror: ["daemon/head/src/main/kotlin/splice/head/reasoning/Mirror.kt"],
   // 2026-08-23: honesty tokens live in StreamHonesty.kt after the pipeline split.
   // TurnPipeline stays on the list so a deleted composer still fails vacuity.
   pipeline: [
-    "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt",
-    "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/StreamHonesty.kt",
+    "daemon/head/src/main/kotlin/splice/head/pipeline/TurnPipeline.kt",
+    "daemon/head/src/main/kotlin/splice/head/pipeline/StreamHonesty.kt",
   ],
   // HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; emittedThinking's set-site moved
   // to PassthroughProseChannels.kt and its read-into-the-outcome site stays in
@@ -111,7 +111,7 @@ export const PATHS: Record<string, string[]> = {
     "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningFold.kt",
     "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesOutcomePayload.kt",
   ],
-  test: ["gateway/gateway/src/test/kotlin/TurnPipelineTest.kt"],
+  test: ["daemon/head/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt"],
 };
 
 export const REQUIRED: Record<string, [string | string[], string][]> = {

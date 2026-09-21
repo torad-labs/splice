@@ -298,7 +298,7 @@ export const UNRELATED_DATE_FIXTURE: Record<string, string> = {
 // A seconds-ONLY re-derivation in a different module: no date token at all, so it is caught by the
 // digit/normalizer markers rather than the RFC one — the leg is not "the date parser moved".
 export const SECOND_PARSER_FIXTURE_OTHER_MODULE: Record<string, string> = {
-  "gateway/gateway/src/main/kotlin/splice/gateway/head/SecondParser.kt":
+  "daemon/head/src/main/kotlin/splice/gateway/head/SecondParser.kt":
     'private val RETRY_AFTER = Regex("retry[-_]after", RegexOption.IGNORE_CASE)\n' +
     "fun seconds(value: String): Long = " +
     "value.trimStart('0').ifEmpty { \"0\" }.toLong()\n",

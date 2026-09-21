@@ -25,7 +25,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":provider-kimi" to setOf(":core", ":upstream", ":dialect-anthropic-passthrough"),
     ":provider-muse" to setOf(":core", ":upstream"),
     ":provider-openai" to setOf(":core", ":upstream", ":dialect-openai-responses", ":dialect-openai-chat"),
-    ":gateway" to setOf(":core", ":upstream"),
+    ":daemon-head" to setOf(":core", ":upstream"),
     ":control" to setOf(":core", ":client"),
     ":arch-tests" to emptySet(),
     // :fir-checks is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
@@ -40,7 +40,7 @@ val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
 val nonLibrary = setOf(":app", ":arch-tests", ":fir-checks")
 
 // The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
-// integration tests legitimately wire sibling modules (e.g. :gateway tests use
+// integration tests legitimately wire sibling modules (e.g. :daemon-head tests use
 // :dialect-openai-responses), and the one genuinely-illegal test dep — a cycle — is already a
 // Gradle build error. (The plan's "cover test configs" was reverted for this reason.)
 val lawChecked = setOf("api", "implementation", "compileOnly", "runtimeOnly")

@@ -1,7 +1,7 @@
 // NEW: (ws-transport WS-3, 2026-08-01) the WS seam the generic head drives — and ONLY the seam.
 // The concrete transport (WsUpstream/WsConnection) deliberately does NOT live here: it is used by
 // exactly one caller, the Responses dialect, and keeping an implementation type in :upstream
-// widened the shared surface for no consumer (review of #72). :gateway needs the interface and the
+// widened the shared surface for no consumer (review of #72). :daemon-head needs the interface and the
 // sentinel, nothing more, and the module law gives it nothing more.
 package splice.upstream
 
@@ -12,7 +12,7 @@ import splice.core.turn.TurnMeta
 
 /**
  * The WS seam the generic head drives (ws-transport WS-3). It lives in :upstream because the
- * module law forbids :gateway from naming a dialect type (splice.module-law.gradle.kts:15-31), so
+ * module law forbids :daemon-head from naming a dialect type (splice.module-law.gradle.kts:15-31), so
  * every Responses-specific decision — the round-terminal vocabulary, the chaining frame, the
  * pre-content failure test — is supplied by the provider behind this interface.
  *

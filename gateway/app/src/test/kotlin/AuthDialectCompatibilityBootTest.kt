@@ -14,8 +14,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import mock.awaitListening
-import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -27,6 +25,8 @@ import splice.app.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
+import splice.head.awaitListening
+import splice.head.freshPort
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList

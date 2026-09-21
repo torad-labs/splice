@@ -30,7 +30,7 @@ import splice.app.quota.UsageFields
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.gateway.usage.QuotaTracker
+import splice.head.usage.QuotaTracker
 import splice.upstream.Ticker
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger

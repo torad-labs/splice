@@ -85,7 +85,7 @@ export const PATHS: Record<string, string> = {
   harvest: "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesHarvest.kt",
   // HD-24 (2026-08-17): UsageHud decomposed; firstNum (the delegating alias-chain call) moved to
   // UsageJson.kt (the usage-accounting owner).
-  hud: "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageJson.kt",
+  hud: "daemon/head/src/main/kotlin/splice/head/usage/UsageJson.kt",
   // HD-24 (2026-08-17): ChatStreamTranslator decomposed; both usage-alias reads moved to
   // ChatUsage.kt (the usage-accounting owner).
   chat: "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",

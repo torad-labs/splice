@@ -85,7 +85,7 @@ tasks.withType<Test>().configureEach {
     ).withPropertyName("productionSourceCensus")
     // Same lesson, second input set (HD-11): the module-dependency-direction law reads the BUILD
     // files, so those are inputs too. Without this the law's own red/green proof came back
-    // UP-TO-DATE after a forbidden `project(":gateway")` was added — a green that never ran.
+    // UP-TO-DATE after a forbidden `project(":daemon-head")` was added — a green that never ran.
     // P0: each module's build file is named through the map, for the same reason the sources are.
     inputs.files(
         moduleDirectories.values.map { dir -> repoRoot.file("$dir/build.gradle.kts") },

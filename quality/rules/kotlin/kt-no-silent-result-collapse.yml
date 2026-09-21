@@ -26,7 +26,7 @@
 # api/StatuslineRoute 94.
 # The return-position gap named below is UNCHANGED by the widening and still open.
 #
-# WIDENED 2026-09-18 (V4-151): :gateway was a coverage hole, not an exclusion. 7 NEW RED, all
+# WIDENED 2026-09-18 (V4-151): :daemon-head was a coverage hole, not an exclusion. 7 NEW RED, all
 # dispositioned in the same unit. SURFACED (the degrade kept, a log added): usage/EconomicsStore
 # (an exists() pre-gate and no log; the next persist overwrote a corrupt history silently),
 # usage/QuotaTracker readFile, compact/Compact bad rows. EXEMPT, each ignore naming the file:line
@@ -78,7 +78,7 @@ files:
   - gateway/provider-openai/src/main/**/*.kt
   - gateway/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt
-  - gateway/gateway/src/main/**/*.kt
+  - daemon/head/src/main/**/*.kt
 rule:
   any:
     # A. direct chain — the original wall, unchanged

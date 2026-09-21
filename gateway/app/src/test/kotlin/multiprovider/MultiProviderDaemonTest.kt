@@ -15,9 +15,6 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
-import mock.MockChatGptUpstream
-import mock.awaitListening
-import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -31,6 +28,9 @@ import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
+import splice.head.MockChatGptUpstream
+import splice.head.awaitListening
+import splice.head.freshPort
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path

@@ -7,7 +7,7 @@ package splice.app.head
 import splice.core.activity.ActivityDays
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
-import splice.gateway.wire.TraceStore
+import splice.head.wire.TraceStore
 
 internal class HeadTraceStores(private val statePaths: StatePaths) {
 

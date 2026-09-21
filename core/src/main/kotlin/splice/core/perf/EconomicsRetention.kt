@@ -3,7 +3,7 @@
 //
 // WHY IT IS IN CORE: the window is written in milliseconds by the store that trims against it and in
 // hours by the payload that reports it to the console, and those two live in modules with no
-// dependency edge between them (:gateway/usage and :control/api) — so neither can import the
+// dependency edge between them (:daemon-head/usage and :control/api) — so neither can import the
 // other's declaration. A prose comment was doing the job instead, which is the EQUAL-BY-COMMENT
 // class: "Mirrors EconomicsStore's RETENTION_MS (8 days)" asserts an equality that nothing enforces,
 // and a comment is not a wall. Core is the lowest module both reach.

@@ -32,8 +32,8 @@
 //     TokenUrlRefreshCall — and none of those reaches the probe scope or the head-stop phase. There
 //     is no seam to observe the order through, and adding one means editing Daemon.kt, which is the
 //     fix row's file, not this row's.
-//   - (b) and (d) live INSIDE :gateway: stopLocked is private, and TurnDriver and TurnStreamer are
-//     `internal class` in :gateway, so no test in this module can name them. Their behavioural
+//   - (b) and (d) live INSIDE :daemon-head: stopLocked is private, and TurnDriver and TurnStreamer are
+//     `internal class` in :daemon-head, so no test in this module can name them. Their behavioural
 //     twins belong beside HeadServerStopDrainTest; the ledger note names the exact assertions.
 //   - (c) is a DISCARDED RETURN VALUE. There is no runtime state to observe: forcing drain() to
 //     return false means overflowing AsyncFileIo's process-wide 2048-task lane, which would poison
@@ -60,9 +60,9 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 private const val DAEMON_REL = "gateway/app/src/main/kotlin/splice/app/Daemon.kt"
-private const val HEAD_SERVER_REL = "gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt"
+private const val HEAD_SERVER_REL = "daemon/head/src/main/kotlin/splice/head/HeadServer.kt"
 private const val MAIN_REL = "gateway/app/src/main/kotlin/splice/app/Main.kt"
-private const val TURN_STREAMER_REL = "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnStreamer.kt"
+private const val TURN_STREAMER_REL = "daemon/head/src/main/kotlin/splice/head/turn/TurnStreamer.kt"
 
 class DaemonStopOrderTest {
 

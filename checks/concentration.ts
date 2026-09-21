@@ -219,7 +219,7 @@
  * package, which is the same responsibility clump one directory up and is invisible to a file-scale
  * oracle by construction. Measured 2026-09-17 on this tree, with the file census green (band HIGH
  * 0): splice.app.cli holds 84 of 631 production files and 5050.0 of the tree's C, splice.dialect
- * .responses 80, splice.gateway.head 51 of the 99 files in :gateway. `head/` is the audit's own
+ * .responses 80, splice.gateway.head 51 of the 99 files in :daemon-head. `head/` is the audit's own
  * finding (A row 5) and it is not even the worst one.
  *
  * So the census gains a PACKAGE row — files per package and summed C per package, printed on every

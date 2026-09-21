@@ -59,8 +59,8 @@ public enum class ErrorType(public val wireName: String) {
  * that made a torn stream continuable is the row that would otherwise have hidden its successor,
  * because a converted tear finishes through the pipeline instead of the conn-reset surface.
  *
- * In core beside [ErrorType] because BOTH sides now read it: splice.gateway.head (internal) and
- * splice.gateway.pipeline (public) cannot see each other, and a copy in each is the drift.
+ * In core beside [ErrorType] because BOTH sides now read it: splice.head (internal) and
+ * splice.head.pipeline (public) cannot see each other, and a copy in each is the drift.
  */
 public const val CONN_RESET_KIND: String = "conn-reset"
 

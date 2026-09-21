@@ -5,7 +5,7 @@
 // was still reachable on the request-body and upstream-error-body paths, both of which run while a
 // turn holds its InflightGate slot. Review 2026-08-28 (PR 99, comments 2 and 6).
 //
-// PUBLIC on purpose, unlike most of this package: :gateway consumes it across a module boundary
+// PUBLIC on purpose, unlike most of this package: :daemon-head consumes it across a module boundary
 // (RequestBodyReader), where `internal` does not reach.
 package splice.upstream.transport
 
@@ -17,7 +17,7 @@ import splice.upstream.failure.SseSpuriousWakeupException
 
 // A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups
 // means the upstream is broken — end the stream honestly rather than pin a core. Public because
-// the cap is part of [ChannelReads]'s cross-module contract (DR-26d): callers in :gateway reason
+// the cap is part of [ChannelReads]'s cross-module contract (DR-26d): callers in :daemon-head reason
 // about when a torn peer turns into SseSpuriousWakeupException, and an invisible constant made
 // that contract unreviewable from the consuming side.
 public const val MAX_SPURIOUS_WAKEUPS: Int = 1024

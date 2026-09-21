@@ -15,11 +15,11 @@ import splice.control.QuotaWindowView
 import splice.control.RateLimitView
 import splice.control.UsageView
 import splice.core.usage.QuotaSnapshot
-import splice.gateway.compact.CompactStats
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.EconomicsStore
-import splice.gateway.usage.QuotaTracker
-import splice.gateway.usage.UsageStore
+import splice.head.compact.CompactStats
+import splice.head.perf.PerfStats
+import splice.head.usage.EconomicsStore
+import splice.head.usage.QuotaTracker
+import splice.head.usage.UsageStore
 
 public class UsageStoreSource(
     private val store: UsageStore,
@@ -49,7 +49,7 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
 }
 
 /** The hourly quota rollup, projected onto the control plane's row type. A straight field-for-field
- *  copy on purpose: [EconomicsRow] is :control's own vocabulary and :control may not see :gateway,
+ *  copy on purpose: [EconomicsRow] is :control's own vocabulary and :control may not see :daemon-head,
  *  so the translation belongs here, in the composition root, and nowhere else. */
 public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEconomicsSource {
     override fun buckets(): List<EconomicsRow> = store.read().map {

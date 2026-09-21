@@ -43,7 +43,7 @@ const BUN = process.execPath;
 const VIOLATION = 'class Probe {\n    fun endTurn(out: Writer) {\n        out.write("message_stop")\n    }\n}\n';
 const CLEAN = "class Probe {\n    fun endTurn(out: Writer) {\n        out.close()\n    }\n}\n";
 const L3_TARGET = "core/src/main/kotlin/splice/core/Probe.kt"; // in scope, NOT the emitter
-const L3_EXEMPT = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt"; // the sole emitter
+const L3_EXEMPT = "daemon/head/src/main/kotlin/splice/head/wire/SseEmitter.kt"; // the sole emitter
 const L3_RULE = "kt-l3-sole-wire-terminals";
 
 // ── the harness ───────────────────────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ test("edit introducing violation blocks", () => {
 });
 
 test("edit clean passes and multiedit applies sequentially", () => {
-  const target = join(root, "gateway/gateway/src/main/kotlin/splice/gateway/head/Boot.kt");
+  const target = join(root, "daemon/head/src/main/kotlin/splice/gateway/head/Boot.kt");
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(
     target,

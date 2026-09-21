@@ -1,6 +1,6 @@
 // NEW: reasoning-continuation folding SPI (the codex 518n-2 "dumbing down" fix). The generic head
-// (:gateway) drives THIS; the codex-specific detection + continuation-request construction live in
-// the openai-responses dialect. Keeping the contract here (not in the dialect) is why :gateway can
+// (:daemon-head) drives THIS; the codex-specific detection + continuation-request construction live in
+// the openai-responses dialect. Keeping the contract here (not in the dialect) is why :daemon-head can
 // fold a truncated round without ever importing a concrete dialect — the module law again.
 package splice.upstream
 

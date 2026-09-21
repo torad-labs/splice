@@ -35,7 +35,7 @@ import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.LogSink
-import splice.gateway.usage.QuotaTracker
+import splice.head.usage.QuotaTracker
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

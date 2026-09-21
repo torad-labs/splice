@@ -6,7 +6,7 @@
 //
 // Here rather than beside the loop because after the HD-25 split no single file owns them any
 // more: [UpstreamFailed] is thrown by RetryPolicy.kt's give-up AND by RateLimitCooldown.kt's
-// fail-fast, [StreamTornBeforeClient] is thrown by WsRoundRunner.kt and by :gateway's turn driver,
+// fail-fast, [StreamTornBeforeClient] is thrown by WsRoundRunner.kt and by :daemon-head's turn driver,
 // while [UpstreamAuthMissing] is raised by UpstreamClient.kt itself. The whole-turn exhaustion
 // signal is NOT here any more: V4-114 made it UpstreamPost.TurnWaitExhausted, a value on post()'s
 // return type, because it is the one ending this loop DECIDES rather than suffers.

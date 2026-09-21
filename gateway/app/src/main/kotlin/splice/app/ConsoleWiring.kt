@@ -7,7 +7,7 @@
 // all four ports at once without breaking the build.
 //
 // V4-134, FEATURES.md §6 — ConsoleEventPublisher, below: the daemon's ONE console event bus and
-// the adapter every head reports through. :gateway reports what a head observed (HeadEvents); this turns it into the
+// the adapter every head reports through. :daemon-head reports what a head observed (HeadEvents); this turns it into the
 // ConsoleEvent families GET /api/events streams. ControlPlane holds the one instance: it hands
 // [bus] to the ControlServer's route and [forHead] to every head HeadServerFactory builds, so the
 // route and the producers cannot hold different buses. OneEventBusPinTest fails if they do.
@@ -61,8 +61,8 @@ import splice.core.teams.TeamStore
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.util.WallClock
-import splice.gateway.head.HeadEvents
-import splice.gateway.head.HeadLifecycle
+import splice.head.HeadEvents
+import splice.head.HeadLifecycle
 
 internal object ConsoleWiring {
     internal fun wire(srv: ControlServer, topology: BootedTopology) {

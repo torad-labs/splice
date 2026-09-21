@@ -3,7 +3,7 @@
 // and the transcript view for clients with no local transcript".
 //
 // THE CAPTURE SWITCH IS THE TRACE KNOB, NEVER A SECOND STORE. V4-174 already built exactly this
-// store (splice.gateway.wire.TraceStore/TurnTrace over ActivityDays, owner-only day files under
+// store (splice.head.wire.TraceStore/TurnTrace over ActivityDays, owner-only day files under
 // <state>/trace/, headers redacted at write time, size-capped per record) behind
 // `Knob.TRACE`/`TRACE_RETENTION_DAYS`/`TRACE_MAX_BODY_CHARS`, opt-in per head via
 // `[heads.<key>.overrides]`. This route is the console's read/write surface onto those three keys

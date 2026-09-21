@@ -27,11 +27,11 @@ import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.util.LogSink
-import splice.gateway.compact.CompactStats
-import splice.gateway.perf.PerfStats
-import splice.gateway.usage.EconomicsStore
-import splice.gateway.usage.QuotaTracker
-import splice.gateway.usage.UsageStore
+import splice.head.compact.CompactStats
+import splice.head.perf.PerfStats
+import splice.head.usage.EconomicsStore
+import splice.head.usage.QuotaTracker
+import splice.head.usage.UsageStore
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider

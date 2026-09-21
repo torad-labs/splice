@@ -7,7 +7,7 @@ import splice.app.Daemon
 import splice.app.TopologyLoader
 import splice.core.compaction.CompactionScope
 import splice.core.config.StatePaths
-import splice.gateway.head.CompactionTail
+import splice.head.compaction.CompactionTail
 import java.nio.file.Files
 import java.nio.file.Path
 

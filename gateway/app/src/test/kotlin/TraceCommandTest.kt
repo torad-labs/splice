@@ -19,9 +19,9 @@ import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
-import splice.gateway.wire.ClientInbound
-import splice.gateway.wire.TraceStore
-import splice.gateway.wire.TurnIdMint
+import splice.head.wire.ClientInbound
+import splice.head.wire.TraceStore
+import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream

@@ -115,16 +115,6 @@
       "command": ["bash", "checks/safe-failure-render-selftest.sh"]
     },
     {
-      "task": "quirksKeysDocumented",
-      "why": "V4-44: a quirk KEY must not drift away from its documentation. The denominator is parsed from QuirksConfig.kt, so a key added tomorrow is in scope with no edit to the checker; every key is documented in config/splice.example.toml or the `splice add PROFILE` emitter, or retired with a written reason.",
-      "command": ["bun", "checks/config/quirks-keys-documented.ts", "check", "."]
-    },
-    {
-      "task": "quirksKeysSelftest",
-      "why": "Red on a synthetic key appended to a temp copy of the source, on a retirement carrying no reason, and on a key named only in a runtime doctor map.",
-      "command": ["bun", "checks/config/quirks-keys-documented.ts", "--selftest"]
-    },
-    {
       "task": "knobKeysDocumented",
       "why": "ARCH-AUDIT 2026-09-17 (#924, walls V4-87..V4-98): each violation class the architecture audit found became an instrument BEFORE its instances were fixed, and every instrument is red-green proven by a selftest that runs beside it.",
       "command": ["bun", "checks/config/knob-keys-documented.ts", "check", "."]

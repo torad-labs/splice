@@ -20,11 +20,11 @@
 #
 # THE CENSUS (measured 2026-09-17, `ast-grep scan`, gateway/*/src/main): 43 unsafe casts total,
 # 38 dispositioned by the three exemptions below, 5 RED:
-#   gateway/gateway/src/main/kotlin/splice/gateway/round/FoldRunner.kt:79          outcome as TurnOutcome.Failure
-#   gateway/gateway/src/main/kotlin/splice/gateway/round/ReanchorRunner.kt:54      outcome as TurnOutcome.Success
-#   gateway/gateway/src/main/kotlin/splice/gateway/round/ReanchorRunner.kt:93      outcome as TurnOutcome.Failure
-#   gateway/gateway/src/main/kotlin/splice/gateway/round/FoldContinuations.kt:70   outcome as TurnOutcome.Success
-#   gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt:63
+#   daemon/head/src/main/kotlin/splice/head/round/FoldRunner.kt:79          outcome as TurnOutcome.Failure
+#   daemon/head/src/main/kotlin/splice/head/round/ReanchorRunner.kt:54      outcome as TurnOutcome.Success
+#   daemon/head/src/main/kotlin/splice/head/round/ReanchorRunner.kt:93      outcome as TurnOutcome.Failure
+#   daemon/head/src/main/kotlin/splice/head/round/FoldContinuations.kt:70   outcome as TurnOutcome.Success
+#   providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt:63
 #                                                                                 (it as TextBlock).text
 #
 # THE DENOMINATOR IS EVERY UNSAFE CAST, NOT A SPELLING (completeness law, §24). The audit row

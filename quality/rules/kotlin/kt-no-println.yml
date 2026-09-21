@@ -28,7 +28,7 @@ files:
 ignores:
   # :app is the wiring/entry/CLI layer — a terminal tool legitimately writes to stdout
   # (doctor output, usage). Daemon LOGGING still flows through the injected log lambda.
-  - gateway/app/src/main/**/*.kt
+  - app/src/main/**/*.kt
 rule:
   any:
     - pattern: println($$$A)

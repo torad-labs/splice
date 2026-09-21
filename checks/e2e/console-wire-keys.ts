@@ -31,7 +31,7 @@
  *  THE DAEMON:
  *    --boot <jar>       boot THAT jar isolated (its own user.home, config and free ports, no
  *                       provider credential in its environment), read it, stop it. The tree's
- *                       build is gateway/app/build/libs/app-all.jar.
+ *                       build is app/build/libs/app-all.jar.
  *    --control <url>    read an already-running daemon instead (default http://127.0.0.1:3096,
  *                       bearer from the state root's mgmt-key or --key-file). Read-only GETs.
  *    --capture <dir>    also write each payload read, as <call-site id>.json.
@@ -108,7 +108,7 @@ const FETCH_DISPOSITIONED: Record<string, string> = {
     "unauthenticated probe read fail-open, and its one declared key (topologyStale) is optional",
   "entities/events/api/index.ts|STREAM_PATH":
     "the SSE stream, not a JSON read; its families are checked against ConsoleEvent's serializer " +
-    "by console.v4134.ConsoleEventProducersTest",
+    "by splice.app.ConsoleEventProducersTest",
 };
 
 // ── the denominator: every request<T> call in console/src ────────────────────────────────────────

@@ -376,8 +376,8 @@ bun -e '
 const fs = require("fs");
 const target = process.argv[1];
 const text = fs.readFileSync(target, "utf8");
-const patched = text.replace(/^const SRC_GLOB = .*$/m, "const SRC_GLOB = \"gateway/*/src/nowhere\";");
-if (patched === text) throw new Error("SRC_GLOB assignment not found");
+const patched = text.replace(/^const SRC_GLOBS = .*$/m, "const SRC_GLOBS = [\"gateway/*/src/nowhere\"];");
+if (patched === text) throw new Error("SRC_GLOBS assignment not found");
 fs.writeFileSync(target, patched);
 ' "$CHECK"
 check

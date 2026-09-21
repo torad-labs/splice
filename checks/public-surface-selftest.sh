@@ -12,8 +12,15 @@
 #
 # EVERYTHING RUNS OUT OF TREE. The harness is a mktemp -d holding a COPY of the checker, a COPY of
 # the baseline, a COPY of settings.gradle.kts (mutable: one arm appends a synthetic module) and one
-# SYMLINK per gateway module — so the checker measures the real source (ROOT is derived from its own
-# __file__, so a copy under $tmp/checks measures $tmp) while nothing is ever written into gateway/.
+# SYMLINK per module — so the checker measures the real source (ROOT is derived from its own
+# __file__, so a copy under $tmp/checks measures $tmp) while nothing is ever written into the tree.
+#
+# THE LINK SET COMES FROM settings.gradle.kts, not from `gateway/*` (restructure PR 3, :client).
+# The modules no longer all live under one parent: :client is at client/ and the rest are still at
+# gateway/<id>. A `for main in $ROOT/gateway/*/src/main` loop would silently omit :client, the
+# checker would read an empty tree for it, and the CONTROL would go red for a harness defect that
+# reads exactly like a real regression. Gradle states every directory, so the harness reads THE
+# SAME LINE the checker does.
 #
 # THE CONTROL COMES FIRST and is not decoration: each arm claims "this mutation turns green into
 # red", which is worth nothing unless the unmutated harness is green.
@@ -32,23 +39,28 @@ BASELINE="$tmp/checks/config/public-surface-baseline.json"
 SETTINGS="$tmp/settings.gradle.kts"
 SYNTH_MODULE="zz-selftest-surface"
 
-mkdir -p "$tmp/checks/config" "$tmp/gateway"
-for main in "$ROOT"/gateway/*/src/main; do
-  [ -d "$main" ] || continue
-  mod="${main#"$ROOT"/gateway/}"
-  mod="${mod%%/*}"
-  ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+mkdir -p "$tmp/checks/config"
+module_dirs="$(grep -oE 'project\("(:[A-Za-z0-9._-]+)"\)\.projectDir = file\("[^"]+"\)' "$ROOT/settings.gradle.kts" \
+  | sed -E 's/.*file\("([^"]+)"\).*/\1/' | sort -u)"
+[ -n "$module_dirs" ] || { echo "  x public-surface-selftest: settings.gradle.kts states no projectDir — nothing to link"; exit 1; }
+for dir in $module_dirs; do
+  [ -d "$ROOT/$dir/src/main" ] || continue
+  mkdir -p "$tmp/$(dirname "$dir")"
+  [ -e "$tmp/$dir" ] || ln -s "$ROOT/$dir" "$tmp/$dir"
 done
 # build-logic holds the nonLibrary set and lives at the ROOT since PR 2, so the module loop above
 # does not link it. `ln -s` into an existing symlink-to-a-directory writes THROUGH it — that is how
 # an earlier revision of this harness created gateway/build-logic/build-logic in the working tree,
 # the exact mktemp-hygiene failure CLAUDE.md s19 records. Guarded, and the guard is the point.
 [ -e "$tmp/build-logic" ] || ln -s "$ROOT/build-logic" "$tmp/build-logic"
-[ -e "$tmp/gateway/core" ] || { echo "  x public-surface-selftest: no gateway modules found under $ROOT"; exit 1; }
+[ -e "$tmp/core" ] || { echo "  x public-surface-selftest: :core is not linked — the link set lost the first module that moved out of gateway/"; exit 1; }
+[ -e "$tmp/client" ] || { echo "  x public-surface-selftest: :client is not linked — the link set lost a module that lives outside gateway/"; exit 1; }
 [ -e "$tmp/build-logic/src/main/kotlin" ] || { echo "  x public-surface-selftest: the module law is unreachable from the harness"; exit 1; }
 # NOTHING MAY LAND IN THE TREE. Recorded before the arms run and re-checked at exit: a harness that
-# writes into the tree it measures has stopped being a harness.
+# writes into the tree it measures has stopped being a harness. Both module homes are watched, for
+# the same reason the link set reads settings.gradle.kts: one of them is no longer under gateway/.
 tree_state="$(cd "$ROOT/gateway" && ls -1A)"
+client_state="$(cd "$ROOT/client" && ls -1A)"
 law_state="$(cd "$ROOT/build-logic" && ls -1A)"
 
 reset_all() {
@@ -103,12 +115,21 @@ cat > "$tmp/gateway/$SYNTH_MODULE/src/main/kotlin/splice/selftest/SelftestLeak.k
 package splice.selftest
 public class SelftestLeakedType(val v: String)
 KT
+# A real new module enters the denominator through BOTH lines settings.gradle.kts carries for one:
+# the include() and the projectDir. The checker refuses an id with only the first (its --selftest
+# arm 13b), so a fixture that appended only the include() would go red for the wrong reason.
 bun -e "$(cat <<'JS'
 const [path, mod] = process.argv.slice(1);
 const text = await Bun.file(path).text();
-const needle = '    ":fir-checks",\n';
-if (!text.includes(needle)) throw new Error("settings.gradle.kts no longer includes :fir-checks - the injection point moved");
-await Bun.write(path, text.replace(needle, needle + `    ":${mod}",\n`));
+const needle = '    ":quality-compiler-plugin",\n';
+if (!text.includes(needle)) throw new Error("settings.gradle.kts no longer includes :quality-compiler-plugin - the injection point moved");
+const dirNeedle = 'project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")\n';
+if (!text.includes(dirNeedle)) throw new Error("settings.gradle.kts no longer states :quality-compiler-plugin' projectDir - the injection point moved");
+await Bun.write(
+  path,
+  text.replace(needle, needle + `    ":${mod}",\n`)
+      .replace(dirNeedle, dirNeedle + `project(":${mod}").projectDir = file("gateway/${mod}")\n`),
+);
 JS
 )" "$SETTINGS" "$SYNTH_MODULE"
 check --ratchet
@@ -166,7 +187,7 @@ reset_all
 # stops parsing, every module reads as a consumer and NOTHING is graded. That must be red.
 bun -e "$(cat <<'JS'
 const path = process.argv[1];
-await Bun.write(path, 'rootProject.name = "splice-gateway"\ninclude(\n    ":app",\n)\n');
+await Bun.write(path, 'rootProject.name = "splice-gateway"\ninclude(\n    ":app",\n)\n\nproject(":app").projectDir = file("gateway/app")\n');
 JS
 )" "$SETTINGS"
 check --ratchet
@@ -176,11 +197,14 @@ reset_all
 if [ "$tree_state" != "$(cd "$ROOT/gateway" && ls -1A)" ]; then
   err "the harness changed gateway/ — everything here must land in mktemp; diff: $(diff <(printf '%s\n' "$tree_state") <(cd "$ROOT/gateway" && ls -1A) | tr '\n' ' ')"
 fi
+if [ "$client_state" != "$(cd "$ROOT/client" && ls -1A)" ]; then
+  err "the harness changed client/ — everything here must land in mktemp; diff: $(diff <(printf '%s\n' "$client_state") <(cd "$ROOT/client" && ls -1A) | tr '\n' ' ')"
+fi
 if [ "$law_state" != "$(cd "$ROOT/build-logic" && ls -1A)" ]; then
   err "the harness changed build-logic/ — everything here must land in mktemp; diff: $(diff <(printf '%s\n' "$law_state") <(cd "$ROOT/build-logic" && ls -1A) | tr '\n' ' ')"
 fi
 
 if [ "$fail" -eq 0 ]; then
-  note "public-surface selftest: control green over the real tree, 6 mutation arms red for their stated reasons, gateway/ and build-logic/ untouched"
+  note "public-surface selftest: control green over the real tree, 6 mutation arms red for their stated reasons, gateway/, client/ and build-logic/ untouched"
 fi
 exit "$fail"

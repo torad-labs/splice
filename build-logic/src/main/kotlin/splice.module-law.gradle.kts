@@ -13,35 +13,38 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 /** project path -> allowed project-dependency paths. Absent key = unrestricted (:app). */
 val moduleLaw: Map<String, Set<String>> = mapOf(
     ":core" to emptySet(),
-    ":provider-spi" to setOf(":core"),
-    ":dialect-anthropic-passthrough" to setOf(":core", ":provider-spi"),
-    ":dialect-openai-responses" to setOf(":core", ":provider-spi"),
-    ":dialect-openai-chat" to setOf(":core", ":provider-spi"),
-    ":provider-codex" to setOf(":core", ":provider-spi", ":dialect-openai-responses"),
-    ":provider-grok" to setOf(":core", ":provider-spi", ":dialect-openai-responses"),
-    ":provider-kimi" to setOf(":core", ":provider-spi", ":dialect-anthropic-passthrough"),
-    ":provider-muse" to setOf(":core", ":provider-spi"),
-    ":provider-openai" to setOf(":core", ":provider-spi", ":dialect-openai-responses", ":dialect-openai-chat"),
-    ":gateway" to setOf(":core", ":provider-spi"),
-    ":control" to setOf(":core"),
-    ":arch-tests" to emptySet(),
+    // the Claude Code side: an isolated client home, sign-in state, MCP discovery, wrapping and
+    // resume. It speaks the domain and nothing else — :daemon-head must never gain this edge.
+    ":client" to setOf(":core"),
+    ":upstream" to setOf(":core"),
+    ":dialects-anthropic" to setOf(":core", ":upstream"),
+    ":dialects-openai-responses" to setOf(":core", ":upstream"),
+    ":dialects-openai-chat" to setOf(":core", ":upstream"),
+    ":providers-codex" to setOf(":core", ":upstream", ":dialects-openai-responses"),
+    ":providers-grok" to setOf(":core", ":upstream", ":dialects-openai-responses"),
+    ":providers-kimi" to setOf(":core", ":upstream", ":dialects-anthropic"),
+    ":providers-muse" to setOf(":core", ":upstream"),
+    ":providers-openai" to setOf(":core", ":upstream", ":dialects-openai-responses", ":dialects-openai-chat"),
+    ":daemon-head" to setOf(":core", ":upstream"),
+    ":daemon-control" to setOf(":core", ":client"),
+    ":quality-architecture" to emptySet(),
     // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map
     // covers every module the build declares.
     ":console" to emptySet(),
-    // :fir-checks is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
+    // :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).
-    ":fir-checks" to emptySet(),
+    ":quality-compiler-plugin" to emptySet(),
 )
 
 /** :core may only reach the kotlin/kotlinx ecosystem — the domain stays framework-free. */
 val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
 
 /** Modules exempt from explicitApi (executables and test harnesses, not libraries). */
-val nonLibrary = setOf(":app", ":arch-tests", ":fir-checks")
+val nonLibrary = setOf(":app", ":quality-architecture", ":quality-compiler-plugin")
 
 // The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
-// integration tests legitimately wire sibling modules (e.g. :gateway tests use
-// :dialect-openai-responses), and the one genuinely-illegal test dep — a cycle — is already a
+// integration tests legitimately wire sibling modules (e.g. :daemon-head tests use
+// :dialects-openai-responses), and the one genuinely-illegal test dep — a cycle — is already a
 // Gradle build error. (The plan's "cover test configs" was reverted for this reason.)
 val lawChecked = setOf("api", "implementation", "compileOnly", "runtimeOnly")
 

@@ -13,6 +13,18 @@ language: kotlin
 severity: error
 message: "head/ must not call coalesced.flush() directly — ClientChannel.flushQuietly() is the only sanctioned turn-cleanup flush (DR-93: a raw flush throw replaces the primary outcome)."
 files:
-  - gateway/gateway/src/main/kotlin/**/head/*.kt
+  # the former splice.gateway.head package, now splice.head plus its §2.5 subpackages. ast-grep's `*`
+  # crosses `/` (globset), so a per-directory `*.kt` list reads as the whole module there while the
+  # gate's matcher reads it literally; `**` plus an ignores: list of the carried-over subpackages is
+  # the one spelling both matchers agree on (57 of 108 files, the package's reach before the move).
+  - daemon/head/src/main/kotlin/splice/head/**/*.kt
+ignores:
+  - daemon/head/src/main/kotlin/splice/head/round/**
+  - daemon/head/src/main/kotlin/splice/head/wire/**
+  - daemon/head/src/main/kotlin/splice/head/usage/**
+  - daemon/head/src/main/kotlin/splice/head/pipeline/**
+  - daemon/head/src/main/kotlin/splice/head/reasoning/**
+  - daemon/head/src/main/kotlin/splice/head/compact/**
+  - daemon/head/src/main/kotlin/splice/head/perf/**
 rule:
   pattern: $C.coalesced.flush()

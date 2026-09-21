@@ -57,9 +57,9 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const MAIN = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/Main.kt");
+const MAIN = resolve(ROOT, "app/src/main/kotlin/splice/app/Main.kt");
 const SHIM = resolve(ROOT, "bin/splice-launch");
-const ADMIN = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DaemonLaunch.kt");
+const ADMIN = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/daemon/DaemonLaunch.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(main: string | null, shim: string | null, admin: string | null): string[] {

@@ -55,7 +55,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const CONTROL = resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/ControlServer.kt");
+const CONTROL = resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/ControlServer.kt");
 const SHIM = resolve(ROOT, "bin/splice-launch");
 // HD-25: topologyFreshness — the declaration this wall reads — moved out of DoctorCommand.kt into
 // the daemon-section collaborator when that file was decomposed (it was the tree's worst
@@ -63,7 +63,7 @@ const SHIM = resolve(ROOT, "bin/splice-launch");
 // single-file resolution, following the code rather than the god-file it used to live in.
 // 2026-08-23: topologyFreshness (digest + topologyStale comparison) lives in
 // DoctorHeadChecks.kt. DoctorDaemonChecks only composes the call.
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorHeadChecks.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(control: string | null, shim: string | null, doctor: string | null): string[] {

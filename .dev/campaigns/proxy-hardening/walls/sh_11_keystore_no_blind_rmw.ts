@@ -57,7 +57,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const STORE = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt");
+const STORE = resolve(ROOT, "core/src/main/kotlin/splice/core/config/KeyStore.kt");
 
 /** Python re.escape, for the function names this wall interpolates into a pattern. These are
  *  identifiers so nothing is escaped in practice; carried so a renamed target cannot turn into a

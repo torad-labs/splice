@@ -55,7 +55,7 @@ for p in "$CONTROL_PORT" "$HEAD_PORT" "$MOCK_PORT"; do
 done
 
 # ── jar ──────────────────────────────────────────────────────────────────────
-JAR="${RCP_JAR:-$ROOT/gateway/app/build/libs/app-all.jar}"
+JAR="${RCP_JAR:-$ROOT/app/build/libs/app-all.jar}"
 if [ -z "${RCP_JAR:-}" ]; then
   note "building daemon jar from this tree (gradle :app:shadowJar)…"
   (cd "$ROOT" && ./gradlew -q :app:shadowJar) || fatal "jar build failed"

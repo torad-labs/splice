@@ -23,12 +23,12 @@
 # one log line whatever arrives. Any expression beginning `LogSafe.` satisfies this rule, so the
 # helper's own shape is the fix row's to design.
 #
-# THE CENSUS (measured 2026-09-17, gateway/control/src/main). Denominator from the source: 9 `log(`
+# THE CENSUS (measured 2026-09-17, daemon/control/src/main). Denominator from the source: 9 `log(`
 # calls in control main, every one of them a template with at least one interpolation. 6 carry only
 # repo-owned values (dated allowlist below); 3 RED, all of them in the audit helper:
-#   gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt:10  $key, $action
-#   gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt:14  $key, $argv
-#   gateway/control/src/main/kotlin/splice/control/api/ControlAudit.kt:18  $message
+#   daemon/control/src/main/kotlin/splice/control/api/ControlAudit.kt:10  $key, $action
+#   daemon/control/src/main/kotlin/splice/control/api/ControlAudit.kt:14  $key, $argv
+#   daemon/control/src/main/kotlin/splice/control/api/ControlAudit.kt:18  $message
 #
 # :10 AND :18 ARE A PREMISE CORRECTION, not a widening. The audit row named :14 (the argv list) as
 # the finding. The other two arrive from the same place and are the same defect:
@@ -56,7 +56,7 @@
 # WHAT THIS RULE CANNOT DO. "Did this value come from a request" is a taint question and needs a
 # whole-program analysis; ast-grep sees one file. So the rule inverts the burden instead: EVERY
 # interpolation in a control-plane log line is red until it is either escaped or written down here
-# as ours. That is what makes the next `log("... $x")` in :control fail closed — which the audit's
+# as ours. That is what makes the next `log("... $x")` in :daemon-control fail closed — which the audit's
 # own finding shows is the failure mode that actually happens.
 id: kt-log-escapes-caller-input
 language: kotlin
@@ -69,7 +69,7 @@ note: >
   it needs to escape CR/LF and control bytes, quote collection elements, and bound the length. A
   value the repo composes itself gets a DATED entry in this rule's header, never an inline ignore.
 files:
-  - gateway/control/src/main/**/*.kt
+  - daemon/control/src/main/**/*.kt
 rule:
   all:
     - any:

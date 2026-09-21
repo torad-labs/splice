@@ -13,7 +13,7 @@ T1-11 mcpB5+mcpC5  HostedServer.kt:154,211     child initialized ONCE with empty
 T1-12 turnB2+turnB3 AdmissionResponses.kt:59, HeadAdmission.kt:72   all-accounts-exhausted 429 carries no Retry-After (reset is in hand) so the SDK retries blind, and never bumps HeadHealthCounters -> /api/heads + doctor say 0 errors on a head refusing 100%
 T1-13 turnA4       SessionProject.kt:35        5 s project-miss cache changes the compaction tail -> replay key differs on client retry -> second upstream compaction
 T1-14 cliA1        DoctorLogEvents.kt:12       'turn (compact=|...)' consumes compact=, so every per-turn line in doctor --json --with-logs is the dangling 'turn compact=' with no pairs (compact, model lost); untested shape
-T1-15 turnC1       ClientVersionObservationTest.kt:76, ClientVersionSurfaceTest.kt:66   hardcode 'splice 0.3.2'; the 0.4.0 bump reds :gateway:test and :control:test; CONTRIBUTING bump list omits tests
+T1-15 turnC1       ClientVersionObservationTest.kt:76, ClientVersionSurfaceTest.kt:66   hardcode 'splice 0.3.2'; the 0.4.0 bump reds :daemon-head:test and :daemon-control:test; CONTRIBUTING bump list omits tests
 T1-16 cliA4        UpgradeRelease.kt:80        --to v0.3.x: the old jar ignores --json, runs the full TEXT doctor (write probes, gh, daemon calls) then is refused with the false "doctor did not run"
 T1-17 cliA3        SessionRegistry.kt:116      liveness ignores the registry's pidDomain/procStart; reusedPid one-sided and false when startedAt absent -> foreign host pid reported LIVE, its /proc environ read as the head
 T1-18 mcpA1        HostedServer.kt:165         crash backoff `BACKOFF_BASE_MS shl (loop-2)` overflows Long past loop 53 -> 8 of every 64 crashes respawn immediately

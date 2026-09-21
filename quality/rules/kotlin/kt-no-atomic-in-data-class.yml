@@ -20,14 +20,14 @@
 #
 # THE CENSUS (measured 2026-09-17, gateway/*/src/main). The audit row named ONE; the matcher found
 # FIVE, all the same defect, and the four extra are recorded here so the fix row has the real list:
-#   gateway/gateway/src/main/kotlin/splice/gateway/head/TurnInputs.kt:15      slotHandedOff: AtomicBoolean (ctor)
-#   gateway/gateway/src/main/kotlin/splice/gateway/head/HeadAdmission.kt:56   Admitted.handedOff: AtomicBoolean (ctor)
-#   gateway/gateway/src/main/kotlin/splice/gateway/wire/ClientChannel.kt:70   clientGone / detached: AtomicBoolean,
+#   daemon/head/src/main/kotlin/splice/head/turn/TurnInputs.kt:15      slotHandedOff: AtomicBoolean (ctor)
+#   daemon/head/src/main/kotlin/splice/head/admission/HeadAdmission.kt:56   Admitted.handedOff: AtomicBoolean (ctor)
+#   daemon/head/src/main/kotlin/splice/head/wire/ClientChannel.kt:70   clientGone / detached: AtomicBoolean,
 #                                                                            socketFrames: AtomicLong (ctor)
-#   gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDrive.kt:29       rawRoundUsage: AtomicReference,
+#   daemon/head/src/main/kotlin/splice/head/turn/TurnDrive.kt:29       rawRoundUsage: AtomicReference,
 #                                                                            usageStampClaim / accountBoundaryClaim:
 #                                                                            AtomicBoolean (body)
-#   gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountFiles.kt:45       OAuthLoginAccount.reservation /
+#   app/src/main/kotlin/splice/app/auth/OAuthAccountFiles.kt:45       OAuthLoginAccount.reservation /
 #                                                                            writtenLabel: AtomicReference (body)
 # The two BODY-property sites are not a widening of the law: `copy()` does not carry a body property
 # at all, so `OAuthLoginAccount.copy(label = x)` yields an account that has silently dropped the

@@ -9,7 +9,7 @@
 #   - AN INJECTED SCOPE, passed by the component that owns the lifecycle. CodexAuthProvider and
 #     GrokAuthProvider take `prefetchScope`, and the daemon hands them its own probe scope — the
 #     shape was already right; only the DEFAULT VALUE was a factory call.
-#   - `LifecycleScope(context)` (provider-spi/RuntimeSeams.kt) where a component genuinely owns a
+#   - `LifecycleScope(context)` (upstream/RuntimeSeams.kt) where a component genuinely owns a
 #     scope: Daemon's probe scope and SingleFlight's shared-refresh scope. It is a named class that
 #     IMPLEMENTS CoroutineScope rather than a function that calls the factory — the difference is
 #     not cosmetic. A `newScope()` helper would be the factory with a new spelling and this wall

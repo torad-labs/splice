@@ -135,7 +135,7 @@ run "code-mode guidance selftest" bun checks/e2e/code_mode_guidance.ts --selftes
 run "code-mode mock selftest" bun checks/e2e/code_mode_mock.ts --selftest
 # Exercise the fat JAR built by clean check, with synthetic auth and loopback-only tools.
 run "code-mode packaged mock" bun checks/e2e/code_mode_mock.ts \
-  --artifact gateway/app/build/libs/app-all.jar \
+  --artifact app/build/libs/app-all.jar \
   --receipt "checks/e2e/receipts/code-mode-mock-$(date -u +%Y%m%dT%H%M%S)-$$.json"
 run "config guard"   bash checks/config-guard.sh
 run "config-guard selftest" bash checks/config-guard-selftest.sh
@@ -220,7 +220,7 @@ run "schema keys consumed selftest" bash checks/schema-keys-consumed-selftest.sh
 # because that leg PRODUCES the XML they read, and they must read it in the same pass. The results
 # directory is a shared, mutually-destructive observation — any scoped run of one test class in a
 # module wipes every other class's XML in that module, which is measured, not hypothetical (a
-# scoped :gateway:test run by another seat during this row's own development deleted 62 of the 63
+# scoped :daemon-head:test run by another seat during this row's own development deleted 62 of the 63
 # XML files mid-run). Moved above the gradle leg this wall would compare fresh source against
 # absent or stale results and red the whole tree for the wrong reason.
 run "tests are discovered" bun checks/config/tests-are-discovered.ts check .

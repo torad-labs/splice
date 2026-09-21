@@ -1,0 +1,141 @@
+// NEW: V4-127 — the wiring pin for the console's read ports, and it exists for the reason the
+// V4-136 compaction pin exists: the type system cannot do this one.
+//
+// All four values arrive by ASSIGNMENT after ControlServer is constructed, because that constructor
+// sits at the width ratchet's ceiling. So nothing in the compiler connects the daemon to these
+// routes: delete an assignment and everything still builds, the route still answers, and it answers
+// its named 5xx forever.
+//
+// THE UPGRADE ONE IS THE WORST AND IS WHY THIS FILE IS NOT OPTIONAL. An unwired doctor or models
+// route answers a 503 an operator can see. An unwired upgrade port answers a payload that reads as
+// MEASURED and says nothing is newer — which tells an operator they are up to date when nothing has
+// ever looked. That is a did-not-run wearing a legitimate answer, and the route cannot tell the
+// difference from the inside.
+//
+// The assertions are on the SOURCE, which is the honest instrument here for the same reason V4-136
+// gave: the properties are public and settable from anywhere, so no runtime observation
+// distinguishes "ControlPlane set it" from "something set it". Each route's own test already covers
+// what it does when the port is set and when it is not; this file covers only that production wires
+// it. The builder's route tests set the ports directly on their own ControlServer, so they do NOT
+// exercise these lines — that gap is exactly what this file closes.
+//
+// TWO PINS WERE RESPELLED ON 2026-09-18 and the respelling is not a weakening. ControlPlane crossed
+// the constructor-width ratchet at 13 parameters, so its topology digest, path and declaredHeads
+// became one BootedTopology: the assignment is now `srv.ports.declaredHeads = topology.declaredHeads` and
+// the empty-roster default lives in BootedTopology.kt, so that pin reads that file instead. Both
+// still fail on the harm they were written for — delete the assignment, or make the default null,
+// and they go red. This pin caught the refactor leaving a now-dead `declaredHeads` parameter behind
+// on ControlPlane, which is the second time a source pin has reported something no type check could.
+//
+// MOVED ON 2026-09-18 (V4-156, concentration), same assertions at the new site. The four assignments
+// now live in ConsoleWiring.kt, so the port pins read that file; ControlPlane keeps one call,
+// `ConsoleWiring.wire(srv, topology)`, and that call gets its own pin here, because deleting it
+// unwires all four ports at once and the build still passes.
+package splice.app
+
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+
+class ConsoleWiringPinTest {
+
+    @Test
+    fun `the control plane wires every console read port to the control server`() {
+        val source = consoleWiringSource()
+        listOf(
+            "srv.ports.declaredHeads = topology.declaredHeads" to
+                "the models page would group by a provider nobody reported and show no declared tiers",
+            "srv.ports.doctor = DoctorReport(" to
+                "/api/doctor would answer its unwired 5xx while the daemon is healthy and reportable",
+            "srv.ports.upgrade = UpgradeStatus(" to
+                "/api/upgrade would report MEASURED with nothing newer, which tells an operator they " +
+                "are up to date when nothing ever looked",
+        ).forEach { (line, harm) ->
+            assertTrue(
+                source.contains(line),
+                "ConsoleWiring must assign `$line`, or $harm",
+            )
+        }
+    }
+
+    @Test
+    fun `the daemon builds the declared-head roster from the topology it already holds`() {
+        val daemon = daemonSource()
+        assertTrue(
+            daemon.contains("declaredHeads = DeclaredHeads {"),
+            "Daemon must build DeclaredHeads — it is the only place holding the Topology object, " +
+                "and ControlPlane carries only the digest and the path",
+        )
+        assertTrue(
+            daemon.contains("topology.heads.mapValues"),
+            "the roster must come from the topology this daemon booted, not a second read of the " +
+                "file, which can diverge from the heads that were actually built",
+        )
+        assertTrue(
+            daemon.contains("DeclaredHead(head.provider, head.models)"),
+            "each entry carries BOTH the provider key and the declared model list: the models page " +
+                "groups by the first and reports missing tiers from the second",
+        )
+    }
+
+    /** The call that runs every assignment above. Without it ConsoleWiring is dead code and each
+     *  port pin still passes, so this is the pin that keeps the others meaningful. */
+    @Test
+    fun `the control plane runs the console wiring on the server it constructs`() {
+        assertTrue(
+            controlPlaneSource().contains("ConsoleWiring.wire(srv, topology)"),
+            "ControlPlane must call `ConsoleWiring.wire(srv, topology)` after constructing the " +
+                "ControlServer, or every console port is unwired while the build stays green",
+        )
+    }
+
+    /** V4-137's port joins the same block and gets the same pin, but for the opposite reason. The
+     *  three read ports above are dangerous UNWIRED; this one is safe unwired — ControlServer's
+     *  `supervised` is null until assigned and the route refuses on null, so a forgotten line
+     *  declines to drain rather than draining a daemon nothing would bring back. The pin exists
+     *  because the refusal is still the WRONG answer on a host where systemd does run the daemon:
+     *  losing this line turns a working restart button into a permanent 409 nobody would think to
+     *  question, since a refusal reads as the feature behaving correctly. */
+    @Test
+    fun `the control plane wires the draining restart's supervision probe`() {
+        assertTrue(
+            consoleWiringSource().contains("srv.ports.supervised = DrainingRestartAdapter()"),
+            "ConsoleWiring must assign `srv.ports.supervised`, or POST /api/daemon/restart refuses forever " +
+                "on a supervised host — and a refusal is indistinguishable from the guard working",
+        )
+    }
+
+    /** The roster is a MAP so an absent key and a present-key-null stay different facts — a head the
+     *  wiring never named versus a head whose operator declared no tiers. Collapsing them is what a
+     *  per-head nullable list would have done, and the page exists to show the second. */
+    @Test
+    fun `the roster keeps unwired and declared-nothing apart`() {
+        assertTrue(
+            bootedTopologySource().contains("DeclaredHeads { emptyMap() }"),
+            "the BootedTopology default must be an EMPTY ROSTER, never a null port: a daemon that " +
+                "genuinely knows about no heads is a different answer from one nobody wired",
+        )
+    }
+
+    private fun controlPlaneSource(): String = source("app/src/main/kotlin/splice/app/ControlPlane.kt")
+
+    private fun consoleWiringSource(): String = source("app/src/main/kotlin/splice/app/ConsoleWiring.kt")
+
+    private fun bootedTopologySource(): String = source("app/src/main/kotlin/splice/app/daemon/BootedTopology.kt")
+
+    private fun daemonSource(): String = source("app/src/main/kotlin/splice/app/Daemon.kt")
+
+    /** Found by walking up from the working directory: under Gradle the cwd is the module dir and
+     *  from an IDE it is the repo root, so neither is assumed. */
+    private fun source(relative: String): String {
+        var dir: Path? = Paths.get("").toAbsolutePath()
+        while (dir != null) {
+            val candidate = dir.resolve(relative)
+            if (Files.exists(candidate)) return Files.readString(candidate)
+            dir = dir.parent
+        }
+        error("$relative not found above ${Paths.get("").toAbsolutePath()}")
+    }
+}

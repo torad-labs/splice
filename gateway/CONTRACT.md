@@ -12,9 +12,9 @@ canonical turn, and a `*ContractTest` that asserts byte-identity against it:
 
 | dialect | builder | golden | test |
 |---|---|---|---|
-| OpenAI Responses | `ResponsesRequestBuilder` | `dialect-openai-responses/src/test/resources/contract/responses-canonical.json` | `ResponsesContractTest` |
-| OpenAI Chat | `ChatRequestBuilder` | `dialect-openai-chat/src/test/resources/contract/chat-canonical.json` | `ChatContractTest` |
-| Anthropic passthrough | `PassthroughRequestBuilder` | `dialect-anthropic-passthrough/src/test/resources/contract/passthrough-canonical.json` | `PassthroughContractTest` |
+| OpenAI Responses | `ResponsesRequestBuilder` | `dialects/openai-responses/src/test/resources/contract/responses-canonical.json` | `ResponsesContractTest` |
+| OpenAI Chat | `ChatRequestBuilder` | `dialects/openai-chat/src/test/resources/contract/chat-canonical.json` | `ChatContractTest` |
+| Anthropic passthrough | `PassthroughRequestBuilder` | `dialects/anthropic/src/test/resources/contract/passthrough-canonical.json` | `PassthroughContractTest` |
 
 A drift in **any** field of the request — not just the fields an individual scenario test happens to
 assert — fails the contract test. So re-adding `stream_options`, flipping `store`, or changing the

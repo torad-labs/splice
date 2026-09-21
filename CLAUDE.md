@@ -26,7 +26,7 @@ The procedure, every time, in this order:
    readiness` shells out to git (exit 128). The export exists to BUILD the jar from a tree with no
    dirty edits, which is a different job from running the ladder. Build there, gate here.
 
-   The ladder runs the gradle tier (module-law, detekt, arch-tests, every unit test, the load
+   The ladder runs the gradle tier (module-law, detekt, the architecture laws, every unit test, the load
    test), the ast-grep walls, concentration, the campaign walls, the oracle replay, the code-mode
    selftests, config guard, safe-failure-render, the console lint/test, OSS readiness, and the
    pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were

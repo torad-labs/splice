@@ -52,17 +52,23 @@ BASELINE="$tmp/checks/config/const-single-source-baseline.json"
 SYNTH="$tmp/gateway/zz-selftest/src/main/kotlin/splice/selftest"
 
 build_harness() {
-  rm -rf "$tmp/gateway" "$tmp/checks"
+  rm -rf "$tmp/gateway" "$tmp/client" "$tmp/checks"
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
   cp "$ROOT/checks/const-single-source.ts" "$CHECKER"
   cp "$ROOT/checks/config/const-single-source-baseline.json" "$BASELINE"
-  for main in "$ROOT"/gateway/*/src/main; do
-    [ -d "$main" ] || continue
-    mod="${main#"$ROOT"/gateway/}"
-    mod="${mod%%/*}"
-    ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+  # THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
+  # modules out of gateway/ one commit at a time): a harness that measures a tree with a module
+  # missing hands its control a red that reads exactly like a real regression — or, worse, a green
+  # over a smaller tree. Every module home the build declares is linked; none is spelled here.
+  module_dirs="$(grep -oE 'projectDir = file\("[^"]+"\)' "$ROOT/settings.gradle.kts" | sed -E 's/.*file\("([^"]+)"\)/\1/' | sort -u)"
+  [ -n "$module_dirs" ] || { echo "  ✗ const-single-source-selftest: settings.gradle.kts states no projectDir — nothing to link"; exit 1; }
+  for dir in $module_dirs; do
+    [ -d "$ROOT/$dir/src/main" ] || continue
+    mkdir -p "$tmp/$(dirname "$dir")"
+    [ -e "$tmp/$dir" ] || ln -s "$ROOT/$dir" "$tmp/$dir"
   done
-  [ -e "$tmp/gateway/core" ] || { echo "  ✗ const-single-source-selftest: no gateway modules under $ROOT"; exit 1; }
+  [ -e "$tmp/core/src/main" ] || { echo "  ✗ const-single-source-selftest: :core is not linked — the harness lost the first module that moved out of gateway/"; exit 1; }
+  [ -e "$tmp/client/src/main" ] || { echo "  ✗ const-single-source-selftest: :client is not linked — the harness lost a module home"; exit 1; }
 }
 
 run_gate() { bun "$CHECKER" --ratchet --root "$tmp" 2>&1; }
@@ -168,8 +174,8 @@ const fs = require("fs");
 const p = process.argv[1];
 const doc = JSON.parse(fs.readFileSync(p, "utf8"));
 doc.groups["COPY ZZ_SELFTEST_VANISHED"] = [
-  "gateway/core/src/main/kotlin/splice/core/Gone.kt",
-  "gateway/app/src/main/kotlin/splice/app/AlsoGone.kt",
+  "core/src/main/kotlin/splice/core/Gone.kt",
+  "app/src/main/kotlin/splice/app/AlsoGone.kt",
 ];
 doc.total += 1;
 fs.writeFileSync(p, JSON.stringify(doc, null, 2));
@@ -223,14 +229,14 @@ case "$out" in
 esac
 
 # ── 6. a synthetic must-stay-equal comment ────────────────────────────────────────────────────
-# Names MAX_RATE_LIMIT_COOLDOWN_MS, which really is declared in provider-spi — so this fixture
+# Names MAX_RATE_LIMIT_COOLDOWN_MS, which really is declared in :upstream — so this fixture
 # also proves the detector resolves its counterpart against the REAL census, not a fixture list.
 build_harness
 mkdir -p "$SYNTH"
 cat > "$SYNTH/A.kt" <<'KT'
 package splice.selftest
 
-// Mirrors :provider-spi's MAX_RATE_LIMIT_COOLDOWN_MS. The two must stay equal — a client told to
+// Mirrors :upstream's MAX_RATE_LIMIT_COOLDOWN_MS. The two must stay equal — a client told to
 // come back before the cooldown ends is told a time that is not true.
 internal const val SELFTEST_CLIENT_HOLD_MS = 120_000L
 KT
@@ -245,8 +251,12 @@ printf 'package splice.selftest\n\ninternal const val DEFAULT_MAX_INFLIGHT = 12\
 expect_delta "7. a local default shadowing a REAL Knob default" 1 0 "KNOB-SHADOW" "Knob.MAX_INFLIGHT"
 
 # ── 8. no sources: untrustworthy, never green ─────────────────────────────────────────────────
+# EVERY module home is emptied — the ones settings.gradle.kts declares, wherever they live: with one
+# module still linked this arm would find its main sources and grade a real (if partial) tree
+# instead of proving the no-denominator refusal.
 build_harness
-rm -rf "$tmp/gateway"
+rm -rf "$tmp/gateway" "$tmp/client"
+for dir in $module_dirs; do rm -rf "$tmp/$dir"; done
 mkdir -p "$tmp/gateway"
 out="$(run_gate)"; code=$?
 if [ "$code" -ne 2 ]; then
@@ -274,7 +284,7 @@ if ! bun "$CHECKER" --ratchet --root "$tmp" >/dev/null 2>&1; then
   err "9. the documented gate line is non-zero on a CLEAN harness tree — the arm below cannot distinguish a violation from a broken gate"
 else
   # PLANT INTO A REAL MODULE DIR, NEVER THROUGH build_harness's SYMLINK. That function links
-  # $tmp/gateway/<mod> at the REAL module, so writing "$tmp/gateway/core/src/..." writes into the
+  # $tmp/gateway/<mod> at the REAL module, so writing "$tmp/core/src/..." writes into the
   # repository — this arm did exactly that on its first run and left two files in gateway/core plus
   # their compiled classes, which the next run's CONTROL then reported as real growth. A synthetic
   # module is what the checker's own glob (gateway/*/src/main/**) is happy to scan and what nothing

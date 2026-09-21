@@ -87,7 +87,7 @@ KEY_FILE="${STATE_DIR}/mgmt-key"
 # both paths are safe-by-default now; the old CLAUDEX_SAFE is accepted as a harmless no-op.
 DANGEROUS="false"
 [ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS:-0}" = "1" ] && DANGEROUS="true"
-# Hand-paired with splice.core.SHIM_VERSION (gateway/core/src/main/kotlin/splice/core/Versions.kt)
+# Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
 SPLICE_SHIM_VERSION="shim-4"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.

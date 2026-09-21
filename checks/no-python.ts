@@ -592,9 +592,19 @@ function burndownGrowth(): string[] {
   return out.sort();
 }
 
-/** today's path -> the path git says it was renamed FROM, for every rename between [rev] and HEAD. */
+/** today's path -> the path git says it was renamed FROM, for every rename between [rev] and the
+ *  WORKING TREE.
+ *
+ *  Not `rev..HEAD` (2026-09-20, restructure PR 3): every other census on this wall measures the
+ *  working tree, so ending this one at HEAD made the exception unreachable in the only place it is
+ *  ever needed — the gate run of the commit that does the renaming. The :client extraction moved
+ *  two recorded invokers (core/launch/LoginHook{Json,Scripts}.kt -> client/login/), and the wall
+ *  charged them as burn-down GROWTH while git had already detected both at R098/R099; the same run
+ *  would have gone green a minute later, from a commit, with nothing about the tree changed. A
+ *  checker whose verdict depends on whether the work is committed yet is not measuring the work.
+ *  Git is still the witness: this is git's own rename detection, over the tree being graded. */
 function renamedSince(rev: string): Map<string, string> {
-  const r = spawnSync("git", ["diff", "--name-status", "-M", "--diff-filter=R", rev, "HEAD"], { encoding: "utf8" });
+  const r = spawnSync("git", ["diff", "--name-status", "-M", "--diff-filter=R", rev], { encoding: "utf8" });
   const out = new Map<string, string>();
   if (r.status !== 0) return out;
   for (const line of r.stdout.split("\n")) {

@@ -45,13 +45,19 @@ CONFIG="$tmp/checks/config/role-registry.toml"
 SYNTH_DIR="$tmp/gateway/zz-selftest-role/src/main/kotlin/splice/selftest"
 
 mkdir -p "$tmp/checks/config" "$tmp/gateway"
-for main in "$ROOT"/gateway/*/src/main; do
-  [ -d "$main" ] || continue
-  mod="${main#"$ROOT"/gateway/}"
-  mod="${mod%%/*}"
-  ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+# THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
+# modules out of gateway/ one commit at a time): a harness that measures a tree with a module
+# missing hands its control a red that reads exactly like a real regression — or, worse, a green
+# over a smaller tree. Every module home the build declares is linked; none is spelled here.
+module_dirs="$(grep -oE 'projectDir = file\("[^"]+"\)' "$ROOT/settings.gradle.kts" | sed -E 's/.*file\("([^"]+)"\)/\1/' | sort -u)"
+[ -n "$module_dirs" ] || { echo "  ✗ role-registry-selftest: settings.gradle.kts states no projectDir — nothing to link"; exit 1; }
+for dir in $module_dirs; do
+  [ -d "$ROOT/$dir/src/main" ] || continue
+  mkdir -p "$tmp/$(dirname "$dir")"
+  [ -e "$tmp/$dir" ] || ln -s "$ROOT/$dir" "$tmp/$dir"
 done
-[ -e "$tmp/gateway/core" ] || { echo "  ✗ role-registry-selftest: no gateway modules found under $ROOT"; exit 1; }
+[ -e "$tmp/core/src/main" ] || { echo "  ✗ role-registry-selftest: :core is not linked — the harness lost the first module that moved out of gateway/"; exit 1; }
+[ -e "$tmp/client/src/main" ] || { echo "  ✗ role-registry-selftest: :client is not linked — the harness lost a module home"; exit 1; }
 
 reset() {
   cp "$ROOT/checks/role-registry.ts" "$CHECKER"

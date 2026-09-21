@@ -35,6 +35,16 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # Several gate legs are bun scripts (checks/gate.sh:67 onward) and `bun tools/gate` is the
+      # gate of record's entry from PR 3 — so this job runs bun, and gets it from a pinned action
+      # rather than from the `bun` npm package's postinstall.
+      # BOTH pins are load-bearing: the SHA (resolved from the GitHub API, tag v2.2.0) because a
+      # mutable tag is a supply-chain hole, and bun-version because setup-bun falls back to the
+      # LATEST bun when it cannot resolve one — an unpinned toolchain on the leg whose verdict is
+      # the gate.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
       - name: install workspaces
         run: npm ci
       - name: complete repository gate

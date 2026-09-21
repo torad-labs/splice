@@ -1,6 +1,7 @@
 // NEW: Konsist module-law arms (V4-91), split out of ArchitectureLawsTest to clear detekt LargeClass.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 /** Every dialect module — what :gateway is allowed to know about, and what a provider picks from. */
@@ -356,7 +357,7 @@ private fun lawDriftViolations(
 /** V4-91 (audit C row 4): a MAIN-plane allowance no build file declares, as violation lines. PURE.
  *
  *  Mirrors the stale-map arm the direction law already has for MODULE_DEPENDENCY_LAW keys ("names
- *  $module, which settings.gradle.kts does not include — it currently governs nothing"), one level
+ *  $module, which the project map does not include — it currently governs nothing"), one level
  *  down: an allowance nothing uses governs nothing either, and it reads as architecture that exists.
  *  The one live instance, `:provider-muse -> :dialect-anthropic-passthrough` (provider-muse's build
  *  file declares only :core/:provider-spi and MusePassthroughArm lives in :app — the allowance
@@ -437,9 +438,31 @@ private const val DRIFT_HARNESS_EXPECTED = "the harness sets have drifted: splic
 
 private const val DRIFT_STRICTER_EXPECTED = ":spi: the Gradle main plane allows [:core] which MODULE_DEPENDENCY_LAW does not — a main dependency is on the test compile classpath by construction, so the test plane cannot be stricter than the main one."
 
+/** P0: the synthetic build files the nested-module proof grades. Small enough to read, and
+ *  independent of the live build's map — a proof that borrowed the real law would move with it. */
+
+private val NESTED_MODULE_LAW_SOURCE = """
+    val moduleLaw: Map<String, Set<String>> = mapOf(
+        ":provider-x" to setOf(":core"),
+    )
+    val nonLibrary = setOf(":app")
+    val lawChecked = setOf("api", "implementation")
+""".trimIndent()
+
+private val NESTED_MODULE_BUILD_FILE = """
+    dependencies {
+        implementation(project(":gateway"))
+    }
+""".trimIndent()
+
+private const val NESTED_EDGE_EXPECTED = ":provider-x may not depend on :gateway in a MAIN configuration (the build's map allows [:core]). This is also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in build-logic/src/main/kotlin/splice.module-law.gradle.kts if the architecture moved."
+
 class ModuleLawsTest {
 
-    private val root: File = File(System.getProperty("gateway.root"))
+    // P0: the module set and every module's directory come from the BUILD, through one channel
+    // that fails by name when it is absent — see ProjectMap.kt. This replaces both the
+    // settings.gradle.kts regex and the `root/<id>` path arithmetic below it.
+    private val map = ProjectMap.fromSystemProperties()
 
     // V4-91 (audit A rows 3, 10, 11): the OS half of the same law — no child processes, no network.
     // See CORE_FORBIDDEN_IMPORT_PREFIXES for the three matchers, and for the dated reason
@@ -448,10 +471,11 @@ class ModuleLawsTest {
     // ProcessBuilder through a port. The red inventory is recorded in the V4-91 ledger note.
     @Test
     fun `core reaches no OS escape - no child processes and no network in core main`() {
-        val dir = File(root, "core/src/main/kotlin")
+        val dir = map.mainSources(":core")
         org.junit.jupiter.api.Assertions.assertTrue(dir.isDirectory) {
-            "core/src/main/kotlin is missing — a law that cannot read the module it governs must not " +
-                "pass; fix the gateway.root system property or the module layout."
+            "${map.relativeDir(":core")}/src/main/kotlin is missing — a law that cannot read the " +
+                "module it governs must not pass; fix the project map (ProjectMap.kt) or the " +
+                "module layout."
         }
         val files = dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
         org.junit.jupiter.api.Assertions.assertTrue(files.size > 10) {
@@ -459,7 +483,7 @@ class ModuleLawsTest {
                 "no files passes vacuously."
         }
         val violations = files.sortedBy { it.path }.flatMap { file ->
-            coreEscapeViolations(file.relativeTo(root).path, file.readText())
+            coreEscapeViolations(file.relativeTo(map.root).path, file.readText())
         }
         org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
             violations.joinToString(
@@ -524,10 +548,10 @@ class ModuleLawsTest {
     // MODULE_DEPENDENCY_LAW governs exactly what the build's plugin exempts: the test plane.
     @Test
     fun `module dependency direction - main plane from the build, test plane from this file`() {
-        val modules = includedModules()
+        val modules = map.modules
         org.junit.jupiter.api.Assertions.assertTrue(modules.size > 1) {
-            "settings.gradle.kts yielded ${modules.size} modules — the include() parse is broken, " +
-                "and a law that reads no modules passes vacuously."
+            "the project map yielded ${modules.size} module(s) — the channel is broken, and a law " +
+                "that reads no modules passes vacuously."
         }
         val law = moduleLaw()
         org.junit.jupiter.api.Assertions.assertTrue(law.mainLaw.size > 5) {
@@ -538,13 +562,43 @@ class ModuleLawsTest {
             "the Gradle module law declares no `lawChecked` configurations — without them every edge " +
                 "would fall to the test plane and the main plane would grade nothing."
         }
-        val violations = moduleDirectionViolations(modules, law)
+        val violations = moduleDirectionViolations(
+            map = map,
+            law = law,
+            testPlane = MODULE_DEPENDENCY_LAW,
+            unrestricted = UNRESTRICTED_MODULES,
+            ratchet = DEPENDENCY_RATCHET.keys,
+        )
         org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
             violations.joinToString(
                 separator = "\n  - ",
                 prefix = "MODULE DEPENDENCY DIRECTION (HD-11, V4-91) violated:\n  - ",
             )
         }
+    }
+
+    // P0 (restructure §6.1) — THE RED PROOF for the project map, on the law that matters most: the
+    // forbidden edge lives in a module whose directory is NESTED (providers/x), the case both old
+    // readings lost. ArchitectureLawsTest.kt:35-43 listed only the root's immediate children, and
+    // this file's resolver composed root/provider-x/build.gradle.kts and `return emptySet()` on
+    // the miss — so against the OLD logic this fixture yields NO edges and reports compliance.
+    @Test
+    fun `a NESTED module's forbidden edge is graded and named - P0`(@TempDir temp: File) {
+        val buildFile = File(temp, "providers/x/build.gradle.kts")
+        check(buildFile.parentFile.mkdirs()) { "the fixture module directory was not created" }
+        buildFile.writeText(NESTED_MODULE_BUILD_FILE)
+        assertEquals(
+            listOf(NESTED_EDGE_EXPECTED),
+            moduleDirectionViolations(
+                map = ProjectMap.parse(temp, ":provider-x=providers/x", fixtureNotSwept),
+                law = ModuleLawFile(NESTED_MODULE_LAW_SOURCE),
+                testPlane = mapOf(":provider-x" to setOf(":core")),
+                unrestricted = emptySet(),
+                ratchet = emptySet(),
+            ),
+            "a module under providers/ must be graded exactly like a flat one — its build file is " +
+                "found through the map, never by composing root/<id>",
+        )
     }
 
     // V4-91 (audit C row 4): the two maps must keep describing ONE architecture. See
@@ -604,9 +658,8 @@ class ModuleLawsTest {
     @Test
     fun `no main-plane allowance is stale - V4-91`() {
         val law = moduleLaw()
-        val modules = includedModules()
-        val mainEdges = modules.flatMap { module ->
-            configuredEdges(module)
+        val mainEdges = map.modules.flatMap { module ->
+            configuredEdges(map, module)
                 .filter { it.first in law.lawChecked }
                 .map { module to it.second }
         }.toSet()
@@ -688,9 +741,6 @@ class ModuleLawsTest {
         )
     }
 
-    /** Module paths from settings.gradle.kts. Every quoted `:name` in that file is an include() entry —
-     *  rootProject.name and includeBuild("build-logic") carry no leading colon. */
-
     // DR-112 (coverage redo, review 2026-08-31): the direction law and the ratchet-staleness check
     // both read edges through this matcher, so an edge written in any spelling it misses is simply
     // invisible to them — a silent hole, not a failure. No live edge uses the other forms, so this
@@ -714,24 +764,22 @@ class ModuleLawsTest {
         )
     }
 
-    private fun includedModules(): Set<String> =
-        MODULE_PATH.findAll(stripComments(File(root, "settings.gradle.kts").readText()))
-            .map { it.groupValues[1] }
-            .toSet()
-
     /** V4-91: the BUILD's module law, parsed. Read per call rather than cached in a field: these
      *  tests are cheap, and a lazily-cached parse is a parse whose failure surfaces in whichever
-     *  test happened to run first. */
+     *  test happened to run first. build-logic is an included BUILD, not a subproject, so it is
+     *  the one path here the project map does not carry. */
     private fun moduleLaw(): ModuleLawFile =
-        ModuleLawFile(File(root, "build-logic/src/main/kotlin/splice.module-law.gradle.kts").readText())
+        ModuleLawFile(File(map.root, "build-logic/src/main/kotlin/splice.module-law.gradle.kts").readText())
 
     /** V4-91: (configuration, project path) for every edge a module's build file declares. The
-     *  configuration is what decides which PLANE the edge is graded on, so it travels with it. */
-    private fun configuredEdges(module: String): Set<Pair<String, String>> {
-        val buildFile = File(root, "${module.removePrefix(":")}/build.gradle.kts")
-        if (!buildFile.isFile) return emptySet()
-        return configuredEdgesIn(buildFile.readText()).filterNot { it.second == module }.toSet()
-    }
+     *  configuration is what decides which PLANE the edge is graded on, so it travels with it.
+     *
+     *  P0: the build file is resolved THROUGH THE PROJECT MAP and a missing one is a hard failure
+     *  ([ProjectMap.buildFile]). This resolver used to compose `root/<id>/build.gradle.kts` and
+     *  `return emptySet()` when that file did not exist — so a module in a subdirectory, or one
+     *  whose build file was deleted, kept every law green while being graded on no edges at all. */
+    private fun configuredEdges(map: ProjectMap, module: String): Set<Pair<String, String>> =
+        configuredEdgesIn(map.buildFile(module).readText()).filterNot { it.second == module }.toSet()
 
     /** The pure half of [configuredEdges], pinned by a fixture for the DR-112 reason: an edge whose
      *  configuration the matcher misreads is graded against the wrong map, silently. */
@@ -753,28 +801,42 @@ class ModuleLawsTest {
         text.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "")
 
     /** V4-91: every module-direction violation, in the order the original test accumulated them —
-     *  unaccounted modules and stale law keys first, then main-plane, test-plane and ratchet edges. */
-    private fun moduleDirectionViolations(modules: Set<String>, law: ModuleLawFile): List<String> {
-        val violations = unaccountedModuleViolations(modules)
-        val edges = modules.flatMap { module ->
-            configuredEdges(module).map { (configuration, dep) -> Triple(module, configuration, dep) }
+     *  unaccounted modules and stale law keys first, then main-plane, test-plane and ratchet edges.
+     *
+     *  P0: the modules and their build files come from [map], and the test-plane maps are
+     *  PARAMETERS rather than reads of this file's constants, so the whole law can be run against a
+     *  synthetic tree — which is what proves a NESTED module is graded at all. */
+    private fun moduleDirectionViolations(
+        map: ProjectMap,
+        law: ModuleLawFile,
+        testPlane: Map<String, Set<String>>,
+        unrestricted: Set<String>,
+        ratchet: Set<Pair<String, String>>,
+    ): List<String> {
+        val violations = unaccountedModuleViolations(map.modules, testPlane, unrestricted)
+        val edges = map.modules.flatMap { module ->
+            configuredEdges(map, module).map { (configuration, dep) -> Triple(module, configuration, dep) }
         }
         val mainEdges = edges.filter { it.second in law.lawChecked }.map { it.first to it.third }.toSet()
         val testEdges = edges.filterNot { it.second in law.lawChecked }.map { it.first to it.third }.toSet()
         return violations +
             mainPlaneEdgeViolations(law, mainEdges) +
-            testPlaneEdgeViolations(testEdges) +
-            staleRatchetViolations(mainEdges, testEdges)
+            testPlaneEdgeViolations(testEdges, testPlane, ratchet) +
+            staleRatchetViolations(mainEdges, testEdges, ratchet)
     }
 
-    private fun unaccountedModuleViolations(modules: Set<String>): List<String> {
+    private fun unaccountedModuleViolations(
+        modules: Set<String>,
+        testPlane: Map<String, Set<String>>,
+        unrestricted: Set<String>,
+    ): List<String> {
         val violations = mutableListOf<String>()
-        (modules - MODULE_DEPENDENCY_LAW.keys - UNRESTRICTED_MODULES).forEach { module ->
-            violations += "$module is in settings.gradle.kts but in neither MODULE_DEPENDENCY_LAW " +
+        (modules - testPlane.keys - unrestricted).forEach { module ->
+            violations += "$module is in the project map but in neither MODULE_DEPENDENCY_LAW " +
                 "nor UNRESTRICTED_MODULES — add it to the law (preferred) or justify it as a harness."
         }
-        (MODULE_DEPENDENCY_LAW.keys - modules).forEach { module ->
-            violations += "MODULE_DEPENDENCY_LAW names $module, which settings.gradle.kts does not " +
+        (testPlane.keys - modules).forEach { module ->
+            violations += "MODULE_DEPENDENCY_LAW names $module, which the project map does not " +
                 "include — fix the key or drop it; it currently governs nothing."
         }
         return violations
@@ -792,11 +854,15 @@ class ModuleLawsTest {
             "build-logic/src/main/kotlin/splice.module-law.gradle.kts if the architecture moved."
     }
 
-    private fun testPlaneEdgeViolations(testEdges: Set<Pair<String, String>>): List<String> =
+    private fun testPlaneEdgeViolations(
+        testEdges: Set<Pair<String, String>>,
+        testPlane: Map<String, Set<String>>,
+        ratchet: Set<Pair<String, String>>,
+    ): List<String> =
         testEdges.sortedBy { it.first + it.second }.mapNotNull { (module, dep) ->
-            val allowed = MODULE_DEPENDENCY_LAW[module] ?: return@mapNotNull null
+            val allowed = testPlane[module] ?: return@mapNotNull null
             if (dep in allowed) return@mapNotNull null
-            if ((module to dep) in DEPENDENCY_RATCHET) return@mapNotNull null
+            if ((module to dep) in ratchet) return@mapNotNull null
             "$module may not depend on $dep in a TEST configuration (allowed: " +
                 "${allowed.sorted()}). The direction is the architecture. If the edge is deliberate " +
                 "and temporary, add '\"$module\" to \"$dep\"' to DEPENDENCY_RATCHET in this file with " +
@@ -806,15 +872,14 @@ class ModuleLawsTest {
     private fun staleRatchetViolations(
         mainEdges: Set<Pair<String, String>>,
         testEdges: Set<Pair<String, String>>,
+        ratchet: Set<Pair<String, String>>,
     ): List<String> =
-        DEPENDENCY_RATCHET.keys.filterNot { it in mainEdges || it in testEdges }.map { edge ->
+        ratchet.filterNot { it in mainEdges || it in testEdges }.map { edge ->
             "DEPENDENCY_RATCHET still lists ${edge.first} -> ${edge.second}, which no longer exists — " +
                 "delete the entry so the list keeps meaning 'known debt'."
         }
 
     private companion object {
-        val MODULE_PATH = Regex("\"(:[A-Za-z0-9._-]+)\"")
-
         // DR-112: match every Gradle spelling of a project edge — positional `project(":x")`, the
         // named-arg form `project(path = ":x")`, whitespace variants, and a trailing
         // `, configuration = ...` — not just the exact positional idiom. An edge written any other

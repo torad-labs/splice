@@ -5,6 +5,7 @@
 - Node 24
 - Java 21 (JDK, e.g. Temurin)
 - Python 3 (hook tests)
+- Bun 1.4.2 (the `packageManager` pin in package.json; the gate's Bun legs and the arch tests spawn it)
 
 ## The gates
 

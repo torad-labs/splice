@@ -28,7 +28,7 @@ import splice.spi.CodeModeStep
 class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
     @Test
     fun `eligible turns append guidance to the original developer item without moving history`() {
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())))
+        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
         listOf("Caller instructions  \n", "", "<code_mode_orchestration>caller text</code_mode_orchestration>")
             .forEach { system ->
                 val (body, original) = request(system)
@@ -59,9 +59,9 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
     @Test
     fun `disabled and excluded turns preserve the exact request bytes`() {
         val (body, original) = request("Caller instructions")
-        val disabled = CodexCodeModeTurnBuilder(null).prepare(body, false, "session", original)
+        val disabled = CodexCodeModeTurnBuilder(null, media()).prepare(body, false, "session", original)
         assertSame(original, disabled)
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())))
+        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
         listOf(
             builder.prepare(body, true, "session", original),
             builder.prepare(toollessBody(), false, "session", original),
@@ -80,7 +80,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `client parallel disable selects sequential guidance not the lite backend flag`() {
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())))
+        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
         val (ordinaryBody, ordinary) = request("Caller")
         assertEquals("false", ordinary.requestBody.getValue("parallel_tool_calls").jsonPrimitive.content)
         val concurrent = builder.prepare(ordinaryBody, false, "session", ordinary)
@@ -95,7 +95,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `rebuilding an eligible request never accumulates guidance or mutates caller instructions`() {
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())))
+        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
         val (body, original) = request("Caller")
         val snapshot = original.requestBody.toString()
         val first = builder.prepare(body, false, "session", original).requestBody
@@ -117,7 +117,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                 ),
             ),
         )
-        val builder = CodexCodeModeTurnBuilder(bridge(runtime))
+        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media())
         val (initialBody, initial) = request("Caller")
         val first = builder.prepare(initialBody, false, "session", initial)
         val readSink = RecordingSink()

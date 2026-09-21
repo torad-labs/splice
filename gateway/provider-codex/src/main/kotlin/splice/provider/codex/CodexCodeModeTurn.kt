@@ -84,7 +84,7 @@ internal class CodexCodeModeTurn(
             .filter { announced.add("${context.key}|$it") }
             .forEach { log("[code-mode] $it") }
         val completed = registry.completed(context.key)
-        val completedHistory = wire.canonicalize(bodyJson, completed)
+        val completedHistory = wire.canonicalize(bodyJson, completed, context.turn.toolMedia)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.bodyJson)
         val owner = placedOwner(context, canonicalBody)

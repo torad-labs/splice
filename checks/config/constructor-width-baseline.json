@@ -46,7 +46,7 @@
     },
     "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecord": {
       "params": 22,
-      "subsystems": 1
+      "subsystems": 0
     },
     "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecordSnapshot": {
       "params": 22,

@@ -84,7 +84,7 @@ internal data class CodeModeRecordSnapshot(
             else -> phase
         },
         pending = pending.toMutableList(),
-        results = results.mapValues { (id, value) -> value.restore(id) }.toMutableMap(),
+        accepted = CodeModeAccepted(results.mapValues { (id, value) -> value.restore(id) }),
         output = output,
         error = when {
             staleMetadata() ->
@@ -121,7 +121,7 @@ internal data class CodeModeRecord(
     val source: String,
     var phase: CodeModePhase,
     val pending: MutableList<CodeModePending> = mutableListOf(),
-    val results: MutableMap<String, CodeModeResult> = linkedMapOf(),
+    val accepted: CodeModeAccepted = CodeModeAccepted(),
     var output: String? = null,
     var error: String? = null,
     var totalCalls: Int = 0,
@@ -137,6 +137,8 @@ internal data class CodeModeRecord(
     val continuity: List<JsonElement>,
     val continuityReplay: List<CodeModeNativeSegment>,
 ) {
+    val results: Map<String, CodeModeResult> get() = accepted.results
+
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 
     fun clientIds(): Set<String> = (results.keys + pending.map(CodeModePending::clientId)).toSet()
@@ -151,7 +153,7 @@ internal data class CodeModeRecord(
         source = source,
         phase = phase,
         pending = pending.map { it.copy() },
-        results = results.mapValues { (_, result) -> CodeModeResultSnapshot(result.output, result.isError) },
+        results = accepted.snapshot(),
         output = output,
         error = error,
         totalCalls = totalCalls,
@@ -169,6 +171,44 @@ internal data class CodeModeRecord(
     )
 }
 
+/**
+ * What the client has returned for a record so far: each accepted result with, V4-179, the
+ * follow-up wire items (images) it rendered to. One map, so a result and its media can never
+ * disagree on their keys or their order — the map's insertion order IS the acceptance order, the
+ * order the persisted sequence rides in, and kotlinx keeps a JSON object's key order on both sides.
+ */
+internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = emptyMap()) {
+    private val entries: MutableMap<String, CodeModeAcceptedResult> = LinkedHashMap(entries)
+
+    val results: Map<String, CodeModeResult> get() = entries.mapValues { (_, entry) -> entry.result }
+
+    /** null: a LEGACY result, accepted before media was captured — it owns nothing and whatever the
+     *  client's history carries for it stays ordinary content. Empty: captured, with no media. */
+    fun media(id: String): List<JsonElement>? = entries[id]?.media
+
+    /** Every accepted result's follow-ups, flattened in acceptance order: the durable sequence the
+     *  canonical history carries once, right after the record's custom output. */
+    fun durableMedia(): List<JsonElement> = entries.values.flatMap { it.media.orEmpty() }
+
+    /** A supplied id absent from [media] is captured as "no media" (an empty list), never left legacy. */
+    fun accept(supplied: Map<String, CodeModeResult>, media: Map<String, List<JsonElement>>) {
+        supplied.forEach { (id, result) -> entries[id] = CodeModeAcceptedResult(result, media[id].orEmpty()) }
+    }
+
+    fun copy(): CodeModeAccepted = CodeModeAccepted(entries)
+
+    fun restore(prior: CodeModeAccepted) {
+        entries.clear()
+        entries.putAll(prior.entries)
+    }
+
+    fun snapshot(): Map<String, CodeModeResultSnapshot> = entries.mapValues { (_, entry) ->
+        CodeModeResultSnapshot(entry.result.output, entry.result.isError, entry.media)
+    }
+}
+
+internal data class CodeModeAcceptedResult(val result: CodeModeResult, val media: List<JsonElement>?)
+
 @Serializable
 internal data class CodeModeNativeSegment(
     val logicalOffset: Int,
@@ -184,9 +224,15 @@ internal data class CodeModePending(
     var exposed: Boolean,
 )
 
+/** [media]: V4-179, see [CodeModeAccepted.media]. A v3 file has no such key: it decodes to null,
+ *  which is exactly "legacy, not captured" — no metadata-version bump, no invalidated records. */
 @Serializable
-internal data class CodeModeResultSnapshot(val output: String, val isError: Boolean) {
-    fun restore(id: String): CodeModeResult = CodeModeResult(id, output, isError)
+internal data class CodeModeResultSnapshot(
+    val output: String,
+    val isError: Boolean,
+    val media: List<JsonElement>? = null,
+) {
+    fun restore(id: String): CodeModeAcceptedResult = CodeModeAcceptedResult(CodeModeResult(id, output, isError), media)
 }
 
 @Serializable

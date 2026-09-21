@@ -141,7 +141,13 @@ wall = ""
 [[item]]
 id = "JW-04"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.ts"
+wall = ""
+retired_to = [
+    "daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt",
+    "tools/release/test/launcher.test.ts",
+    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+]
+proof = "2026-09-21: three mutations. (a) the shim's topologyStale block deleted -> wall RED (the launch shim never checks staleness) and the launcher rehearsal RED on 2 arms; restored, wall GREEN and 7 pass. (b) put(\"topologyDigest\", ...) renamed in ControlPayloads.kt, where /health actually publishes it -> the WALL STAYED GREEN while ControlServerTest went RED (25 tests, 1 failure): the wall greps ControlServer.kt for the identifier, and that file still passes the value through to the payload builder, so the key leaving the wire is invisible to it. (c) the same identifier renamed IN ControlServer.kt -> wall RED, which is what proves the wall works and is merely aimed at a file that no longer publishes the value. The homes assert on the response body and on the shim's rendered output, which cannot drift when the publication point moves again"
 
 [[item]]
 id = "JW-05"
@@ -153,7 +159,12 @@ proof = "2026-09-21: two mutations. (a) the error-counter row stripped of its fi
 [[item]]
 id = "JW-06"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_06_perhead_config_visible.ts"
+wall = ""
+retired_to = [
+    "daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt",
+    "console/tests/api-client.test.ts",
+]
+proof = "2026-09-21: three mutations, and the wall slept through all three. (a) the head query parameter dropped at the route (configJson(call.request.queryParameters[\"head\"]) -> configJson(null)) -> wall GREEN, ControlServerPerHeadConfigTest RED (1 test, 1 failure). (b) and (c) the console client's head parameter removed and its query string dropped -> wall GREEN both times, the three new api-client arms RED. The wall asserts the token `head?` appears in api-client.ts, and applyConfigPatch(patch, head?: string) contains it, so the selected head could stop reaching the query string entirely with the wall none the wiser. The homes assert the URL the client builds (/api/config?head=kimi, the bare path, and percent-encoding of a head with slashes and question marks) and the layer the server folds in. Restored, wall GREEN, 25/25 + 1/1 + 745 console tests"
 
 [[item]]
 id = "JW-08"

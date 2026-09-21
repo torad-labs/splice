@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-bash -n checks/gate.sh
 ! grep -q "/opt/homebrew/opt/openjdk@21" tools/gate/src/lib/jdk.ts
 resolved="$(env -u JAVA_HOME bun tools/gate run --java-home-only)"
 test -n "$resolved"

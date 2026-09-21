@@ -3,7 +3,7 @@
 // CredentialLock, and each provider's refresh (CodexAuthTest/KimiAuthProviderTest) — and nothing
 // fed a real 401 from an upstream through planRetry into auth.refresh() and out the other side as a
 // reissued request. That composition runs on every head at token expiry, and its live probe is
-// blind by construction: heads-e2e.sh SKIPs a head that reports "not logged in", so a permanently
+// blind by construction: `e2e heads` SKIPs a head that reports "not logged in", so a permanently
 // broken refresh path reads as a clean skip forever.
 //
 // The invariants pinned here, none of which any single-piece test can see:

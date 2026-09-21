@@ -32,10 +32,10 @@ const SECRET_KEYS = new Set([
 const SECRET_KEY_RE = /(token|secret|password|authorization|api[_-]?key|cookie|email)/i;
 const REDACTED = "REDACTED";
 
-// The Python-compatible JSON layer lives in checks/e2e/pyjson.ts: ONE source for the four ways
+// The Python-compatible JSON layer lives in tools/e2e/src/compat/python-json.ts: ONE source for the four ways
 // json.dumps differs from JSON.stringify, shared with the other checks that re-emit JSON rather
 // than a copy per script. Carried out of this file after the artifact differential found them.
-import { loads, dumpsIndent, obj, num, objGet, isPyNum, isPyObj, type PyValue, type PyObj, type PyNum } from "./pyjson.ts";
+import { loads, dumpsIndent, obj, num, objGet, isPyNum, isPyObj, type PyValue, type PyObj, type PyNum } from "../../tools/e2e/src/compat/python-json.ts";
 export { obj, num, objGet, isPyNum, isPyObj };
 export type { PyValue, PyObj, PyNum };
 

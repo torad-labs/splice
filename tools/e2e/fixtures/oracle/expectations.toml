@@ -1,11 +1,11 @@
-# .dev/campaigns/proxy-hardening/oracle/expectations.toml — the honest red list for the migration oracle.
+# tools/e2e/fixtures/oracle/expectations.toml — the honest red list for the migration oracle.
 #
 # MODELLED ON bun's test/expectations.txt. Bun's rule, which this keeps: a scenario that passes
 # but is not enrolled here "wasn't counted and wasn't protected against regression" (bun#34441).
 # Enrolment is what makes a green result MEAN something.
 #
-# WHAT THE ORACLE IS  .dev/campaigns/proxy-hardening/oracle/fixtures/*.json — both wire directions of the LEGACY Node
-# stack (server/), recorded byte-exactly by .dev/campaigns/proxy-hardening/oracle/capture.mjs while that stack was green
+# WHAT THE ORACLE IS  tools/e2e/fixtures/oracle/*.json (flat, beside this file) — both wire directions of the LEGACY Node
+# stack (server/), recorded byte-exactly by capture.mjs (provenance: git show a0ae88c3:.dev/campaigns/proxy-hardening/oracle/capture.mjs) while that stack was green
 # (104/104, `cd server && node --test`). It is the reference implementation of this protocol.
 #
 # THE ORACLE IS NOT A SPEC — IT IS A RECORDING. It faithfully encodes the reference's BUGS as
@@ -29,12 +29,12 @@
 
 [oracle]
 captured = 2026-07-26
-fixtures = ".dev/campaigns/proxy-hardening/oracle/fixtures"
+fixtures = "tools/e2e/fixtures/oracle"
 source = "server/ (legacy Node reference implementation)"
 source_suite_state = "104/104 pass at capture time"
 canonicalization = ["message-id: msg_<digits>[_<sequence>] -> msg_CANON"]
 replayed = 11
-replayed_at = 2026-09-05  # node .dev/campaigns/proxy-hardening/oracle/replay.mjs (hermetic jar + vendored mock)
+replayed_at = 2026-09-05  # bun tools/e2e oracle (was node .dev/campaigns/proxy-hardening/oracle/replay.mjs) (hermetic jar + vendored mock)
 # 2026-09-05: the constant-client-window re-pin (c6629094 / d29c17f2, authority 7e84b89a) was reverted the
 # same day — the launch plants the pinned row's own window again, so the usage payload matches the
 # recording byte-for-byte and every scenario row is back to its pre-7e84b89a verdict and pin; each row's

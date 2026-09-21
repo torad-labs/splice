@@ -21,14 +21,14 @@
  *
  *  V4-145: converted to TypeScript (bun). The artifact here is the SERVED RESPONSE, not stdout, so
  *  that is what the differential compares: status, content-type and BODY BYTES, against the Python
- *  server driven over the same request matrix. The bodies go through checks/e2e/pyjson.ts because
+ *  server driven over the same request matrix. The bodies go through tools/e2e/src/compat/python-json.ts because
  *  Python's json.dumps writes `{"a": 1, "b": 2}` and JSON.stringify writes `{"a":1,"b":2}` — the
  *  proxy under test would not care, but a byte-differential would, and matching costs one import.
  *  The `hold` scenario awaits a timer rather than blocking, which is what keeps the threading
  *  property the docstring requires: Bun.serve serves concurrently, so one held turn does not stop
  *  another head listing its peers.
  */
-import { loads, dumps, obj, num, objGet, isPyObj, type PyValue, type PyObj } from "../pyjson.ts";
+import { loads, dumps, obj, num, objGet, isPyObj, type PyValue, type PyObj } from "../../../tools/e2e/src/compat/python-json.ts";
 
 const REPLY_WORDS = ["Hello", " from", " the", " chat", " mock", ".", " 1,", " 2,", " 3", " END"];
 const MODELS = ["mock-chat", "mock-chat-2", "mock-chat-2-big"];

@@ -62,7 +62,7 @@
  *  more level of guard, in the gate, is what the repo buys; beyond that the answer is code review,
  *  not another script.
  *
- *  V4-145: converted from concentration-leg-routed.py. shlex.split(comments=True) is pyshim's
+ *  V4-145: converted from concentration-leg-routed.py. shlex.split(comments=True) is python-values's
  *  transcription of CPython's read_token. V4-158 moved the oracle to checks/concentration.ts, and
  *  RUNTIME and ORACLE below moved with it in the same commit: the pin follows the oracle, not this
  *  guard. The 2664-case corpus was carried across by a counted swap (see its parity.sh).
@@ -71,8 +71,8 @@
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { pyFloat, pyRepr, pyReprList, shlexSplit, ValueError } from "../e2e/pyshim.ts";
-import { loads, isPyObj, objGet, type PyValue } from "../e2e/pyjson.ts";
+import { pyFloat, pyRepr, pyReprList, shlexSplit, ValueError } from "../../tools/e2e/src/compat/python-values.ts";
+import { loads, isPyObj, objGet, type PyValue } from "../../tools/e2e/src/compat/python-json.ts";
 
 const ROOT = resolve(dirname(import.meta.path), "..", "..");
 const SCRIPT = "gate:concentration";

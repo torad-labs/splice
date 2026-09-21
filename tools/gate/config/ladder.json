@@ -64,38 +64,38 @@
     {
       "task": "oracleReplay",
       "why": "Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the captured Node oracle. Keeping the replay as a package script without a gate leg left the parity claim entirely opt-in. It depends on :app:shadowJar because it judges the fat jar: without the dependency it ran first, found no jar and BUILT one through a nested gradle inside the gate (measured 2026-09-21).",
-      "command": ["npm", "run", "--silent", "oracle:replay"],
+      "command": ["bun", "tools/e2e", "oracle"],
       "dependsOn": [":app:shadowJar"]
     },
     {
       "task": "e2eHeadsSelftest",
       "why": "Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head. The live `e2e:heads` lane is billed and stays out of the ladder.",
-      "command": ["bash", "checks/e2e/heads-e2e-selftest.sh"]
+      "command": ["bun", "tools/e2e", "heads", "--selftest"]
     },
     {
       "task": "codeModeProbeSelftest",
       "why": "Budget/oracle canaries are local; the explicit code-mode A/B lane consumes subscription quota.",
-      "command": ["bun", "checks/e2e/code_mode_probe.ts", "--selftest"]
+      "command": ["bun", "tools/e2e", "code-mode", "probe", "--selftest"]
     },
     {
       "task": "codeModeStartupReceiptSelftest",
       "why": "The code-mode startup receipt comparison, red-green proven.",
-      "command": ["bun", "checks/e2e/code_mode_compare_test.ts"]
+      "command": ["bun", "test", "tools/e2e/test/code-mode.test.ts"]
     },
     {
       "task": "codeModeGuidanceSelftest",
       "why": "The code-mode guidance text's own arms.",
-      "command": ["bun", "checks/e2e/code_mode_guidance.ts", "--selftest"]
+      "command": ["bun", "tools/e2e", "code-mode", "guidance", "--selftest"]
     },
     {
       "task": "codeModeMockSelftest",
       "why": "The code-mode mock's own arms.",
-      "command": ["bun", "checks/e2e/code_mode_mock.ts", "--selftest"]
+      "command": ["bun", "tools/e2e", "code-mode", "mock", "--selftest"]
     },
     {
       "task": "codeModePackagedMock",
       "why": "Exercises the fat JAR the build produced, with synthetic auth and loopback-only tools. The receipt goes under app/build/ — never the tree, and a directory `clean` empties, because the mock refuses to overwrite a receipt.",
-      "command": ["bun", "checks/e2e/code_mode_mock.ts", "--artifact", "app/build/libs/app-all.jar", "--receipt", "app/build/receipts/code-mode-mock.json"],
+      "command": ["bun", "tools/e2e", "code-mode", "mock", "--artifact", "app/build/libs/app-all.jar", "--receipt", "app/build/receipts/code-mode-mock.json"],
       "dependsOn": [":app:shadowJar"],
       "creates": "app/build/receipts"
     },

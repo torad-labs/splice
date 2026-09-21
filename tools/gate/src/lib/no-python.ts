@@ -101,9 +101,22 @@ export const SELF = new Set([
  *  their charge. It cannot become a dodge either: a file that actually invokes `python3` still
  *  matches on that token no matter how often it also writes "no-python". The same narrowing is why
  *  this verb, this file and its config are named `no-python`: a verb named `python` would make
- *  every file that spells the command an invoker. */
+ *  every file that spells the command an invoker.
+ *
+ *  THE SAME NARROWING, A SECOND TIME, FOR THE SAME REASON (restructure PR 5, splice-lead's
+ *  measurement). The Python-semantics compat layer the ported harnesses run on is
+ *  `tools/e2e/src/compat/python-{http,json,values}.ts`: three TypeScript modules that exist so this
+ *  repo does NOT shell into Python, named after the thing they replace. `\bpython\b` matched inside
+ *  each module's own NAME and charged all sixteen files that import or copy one — the wall failing
+ *  the act of complying with it, with the same useless remedy (rename the port away from Python
+ *  after the port away from Python). Measured over the whole tree at PR 5's tip: stripping these
+ *  three names drops EXACTLY the 16 importers and keeps every burn-down invoker charged. It cannot
+ *  become a dodge: a file that actually runs `python3` still matches on that token however often
+ *  it also names python-json. Red-green: test/no-python.test.ts, "a .ts that only IMPORTS a compat
+ *  module" (green) beside "imports a compat module AND shells into python3" (red). */
 export function namesPython(text: string): boolean {
-  return /\bpython3?\b/.test(text.replaceAll("no-python", ""));
+  const named = ["no-python", "python-http", "python-json", "python-values"];
+  return /\bpython3?\b/.test(named.reduce((t, name) => t.replaceAll(name, ""), text));
 }
 
 /** A caller line that runs a file with the WRONG RUNTIME for its extension: `python3 wall.ts`, or

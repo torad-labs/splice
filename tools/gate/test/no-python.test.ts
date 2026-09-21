@@ -141,6 +141,25 @@ describe("the no-python wall", () => {
     commit(r);
   }, (r) => tracked(r).includes("a.py"));
 
+  // ── the compat modules: a NAME is not an invocation ────────────────────────────────────────
+  // tools/e2e/src/compat/python-{http,json,values}.ts exist so this repo does NOT shell into
+  // Python; `\bpython\b` matches inside a hyphenated name, so a file importing one would be charged
+  // for complying — the `no-python` narrowing a second time (src/lib/no-python.ts, namesPython).
+  // The red arm is the boundary: the strip removes the NAME, never the token beside it.
+  arm("a .ts that only IMPORTS a compat module, unlisted", "green", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "checks/x.ts", 'import { loads } from "../tools/e2e/src/compat/python-json.ts";\n');
+    w(r, ALLOW, list(["a.py"], []));
+    commit(r);
+  }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
+
+  arm("a .ts that imports a compat module AND shells into python3, unlisted", "red", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "checks/x.ts", 'import { loads } from "../tools/e2e/src/compat/python-json.ts";\nspawnSync("python3", ["-c", "1"]);\n');
+    w(r, ALLOW, list(["a.py"], []));
+    commit(r);
+  }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
+
   // ── the third census: Python that is not in git at all ─────────────────────────────────────
   arm("an UNTRACKED scratch .py in the worktree", "red", (r) => {
     w(r, "a.py", "x\n");

@@ -34,7 +34,7 @@ additions are the **preventive walls** distilled from that day's incidents:
 | kt-no-stream-options-request | responses/chat dialect src/main | vendor-contract: stream_options 400s the backend (shipped, broke codex) |
 | kt-no-request-body-gzip | :upstream src/main | vendor-contract: gzipped request body 400s xAI (shipped, broke grok) |
 
-The two vendor-contract walls are the **write-time half**; `checks/e2e/heads-e2e.sh` (live head
+The two vendor-contract walls are the **write-time half**; `bun tools/e2e heads` (live head
 probes over real backends) is the **run-time half** — a mock suite cannot see a 400 the real
 vendor returns, which is exactly how both shipped.
 

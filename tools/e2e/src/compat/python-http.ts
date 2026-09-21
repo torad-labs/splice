@@ -16,7 +16,7 @@ import { request as httpsRequest } from "node:https";
 import {
   BadStatusLine, BrokenPipeError, IncompleteRead, OSError, osError, pyRepr,
   RemoteDisconnected, TimeoutError,
-} from "./pyshim.ts";
+} from "./python-values.ts";
 
 // http.server's status table (BaseHTTPRequestHandler.responses, CPython 3.13).
 const RESPONSES: Record<number, [string, string]> = {
@@ -279,13 +279,13 @@ class Connection implements Request {
     const words = requestline.split(/[ \t\n\r\x0b\x0c]+/).filter(Boolean);
     if (words.length === 0) return false;
     if (words.length >= 3) {
-      version = words[words.length - 1];
+      version = words[words.length - 1]!;
       const parts = version.startsWith("HTTP/") ? version.slice(5).split(".") : [];
       if (parts.length !== 2 || parts.some((p) => !/^\d+$/.test(p) || p.length > 10)) {
         this.sendError(400, `Bad request version (${pyRepr(version)})`);
         return false;
       }
-      const [major, minor] = parts.map(Number);
+      const [major, minor] = parts.map(Number) as [number, number];
       if ((major > 1 || (major === 1 && minor >= 1)) && this.protocolVersion >= "HTTP/1.1") this.closeConnection = false;
       if (major >= 2) {
         this.sendError(505, `Invalid HTTP version (${version.slice(5)})`);
@@ -297,7 +297,7 @@ class Connection implements Request {
       this.sendError(400, `Bad request syntax (${pyRepr(requestline)})`);
       return false;
     }
-    const [command, path] = words;
+    const [command, path] = words as [string, string];
     if (words.length === 2) {
       this.closeConnection = true;
       if (command !== "GET") {
@@ -328,7 +328,7 @@ class Connection implements Request {
       const s = line.replace(/\r?\n$/, "");
       if (s === "") break;
       if (/^[ \t]/.test(s) && list.length > 0) {
-        list[list.length - 1][1] += s;
+        list[list.length - 1]![1] += s;
         continue;
       }
       const colon = s.indexOf(":");
@@ -471,7 +471,7 @@ async function parseResponse(reader: SocketReader, failure: () => Error | null, 
       if (chunkLeft === 0) {
         const sizeLine = (await reader.readline(65537)).toString("latin1");
         if (sizeLine === "") throw failure() ?? new IncompleteRead("IncompleteRead(0 bytes read)");
-        chunkLeft = parseInt(sizeLine.split(";")[0].trim(), 16);
+        chunkLeft = parseInt(sizeLine.split(";")[0]!.trim(), 16);
         if (chunkLeft === 0) {
           // trailers up to the blank line
           for (;;) {
@@ -569,7 +569,7 @@ export function httpsConnection(host: string, timeoutS: number): UpstreamConnect
           const read1 = async (n: number): Promise<Uint8Array> => {
             while (queue.length === 0 && !ended && !error) await new Promise<void>((r) => (wake = r));
             if (queue.length > 0) {
-              const head = queue[0];
+              const head = queue[0]!;
               if (head.length <= n) return queue.shift() as Buffer;
               queue[0] = head.subarray(n);
               return head.subarray(0, n);

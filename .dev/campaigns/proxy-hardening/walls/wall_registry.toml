@@ -73,7 +73,9 @@ proof = "2026-09-21: GrokAuthProvider.persistRotation() SH-02b block deleted (no
 [[item]]
 id = "SH-04"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_04_auth_probe_supervised.ts"
+wall = ""
+retired_to = "app/src/test/kotlin/splice/app/auth/AuthProbeLoopTest.kt"
+proof = "2026-09-21: AuthProbeLoop.start() mutated to not attach the invokeOnCompletion supervisor; the wall went RED and three AuthProbeLoopTest arms (restart under budget - SH-04, budget exhaustion announces permanently down - SH-04, stop during restart handoff) FAILED on the same mutation; restored, both GREEN (11/11)"
 
 [[item]]
 id = "SH-10"

@@ -33,6 +33,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudePolicy
+import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
 import splice.control.CompactView
 import splice.control.ControlServer
 import splice.control.HeadCompactSource
@@ -52,9 +55,6 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.launch.ClaudePolicy
-import splice.core.launch.WrapStateStore
-import splice.core.launch.WrappedHead
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path

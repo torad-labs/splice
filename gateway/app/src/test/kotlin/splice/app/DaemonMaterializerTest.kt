@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
-import splice.core.launch.ClaudePolicy
-import splice.core.launch.HookExec
-import splice.core.launch.MaterializeSpec
-import splice.core.launch.TokenCaptureSpec
+import splice.client.ClaudePolicy
+import splice.client.MaterializeSpec
+import splice.client.login.HookExec
+import splice.client.login.TokenCaptureSpec
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path

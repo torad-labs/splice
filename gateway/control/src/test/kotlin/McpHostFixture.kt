@@ -7,11 +7,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import splice.client.mcp.DirectoryProbe
+import splice.client.mcp.McpSharing
 import splice.control.mcp.HostClock
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
-import splice.core.launch.DirectoryProbe
-import splice.core.launch.McpSharing
 import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path

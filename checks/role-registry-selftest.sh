@@ -51,7 +51,12 @@ for main in "$ROOT"/gateway/*/src/main; do
   mod="${mod%%/*}"
   ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
 done
+# restructure PR 3: :client is the first module to live outside gateway/, so the loop above
+# cannot reach it. A harness that measures a tree with one module missing hands its control a
+# red that reads exactly like a real regression (or, worse, a green over a smaller tree).
+[ -e "$tmp/client" ] || ln -s "$ROOT/client" "$tmp/client"
 [ -e "$tmp/gateway/core" ] || { echo "  ✗ role-registry-selftest: no gateway modules found under $ROOT"; exit 1; }
+[ -e "$tmp/client/src/main" ] || { echo "  ✗ role-registry-selftest: :client is not linked — the harness lost a module home"; exit 1; }
 
 reset() {
   cp "$ROOT/checks/role-registry.ts" "$CHECKER"

@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.LoginIo
 import splice.app.TopologyLoader
+import splice.client.login.LoginOutcomeFile
 import splice.core.config.StatePaths
-import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig

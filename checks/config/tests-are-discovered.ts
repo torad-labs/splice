@@ -67,8 +67,12 @@ import { fileURLToPath } from "node:url";
 // parents[2]: this file lives at checks/config/, so the repo root is two levels up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const TEST_SOURCES = "gateway/*/src/test/kotlin/**/*.kt";
-const TEST_RESULTS = "gateway/*/build/test-results/test/*.xml";
+// restructure PR 3: :client is the first module to live outside gateway/, so the test plane is a
+// LIST of module homes. A test root this wall stops globbing has its classes leave the DENOMINATOR
+// entirely — the wall then proves that every test it can still see ran, which is the exact shape
+// of the failure it was written against.
+const TEST_SOURCES = ["gateway/*/src/test/kotlin/**/*.kt", "client/src/test/kotlin/**/*.kt"];
+const TEST_RESULTS = ["gateway/*/build/test-results/test/*.xml", "client/build/test-results/test/*.xml"];
 
 // Classes whose XML count is legitimately HIGHER than the source denominator. Every entry
 // needs a written reason — the reason is the disposition, and an empty one fails the wall.
@@ -318,16 +322,18 @@ function classesIn(path: string, module: string): TestClass[] {
   return found;
 }
 
-/** The `gateway/<module>/...` segment of a path. */
+/** The module segment of a path: `gateway/<module>/...`, or the top directory for a module that
+ *  lives at the root (restructure PR 3: client/). Stated rather than left to indexOf returning -1. */
 function moduleOf(path: string): string {
   const parts = path.split("/");
   const at = parts.indexOf("gateway");
+  if (at < 0) return parts[0];
   return parts[at + 1];
 }
 
 function scanSources(root: string): TestClass[] {
   const classes: TestClass[] = [];
-  const files = [...new Bun.Glob(TEST_SOURCES).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = TEST_SOURCES.flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]).sort();
   for (const rel of files) classes.push(...classesIn(join(root, rel), moduleOf(rel)));
   return classes;
 }
@@ -366,7 +372,7 @@ function parseJUnitXml(text: string): { rootAttrs: Map<string, string>; testcase
 /** module -> simple class name -> (count, testcase names). */
 function xmlRows(root: string): Map<string, Map<string, XmlRow>> {
   const rows = new Map<string, Map<string, XmlRow>>();
-  const files = [...new Bun.Glob(TEST_RESULTS).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = TEST_RESULTS.flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]).sort();
   for (const rel of files) {
     const module = moduleOf(rel);
     const { rootAttrs, testcaseNames } = parseJUnitXml(readFileSync(join(root, rel), "utf8"));
@@ -386,7 +392,7 @@ function audit(root: string): string[] {
   const classes = scanSources(root);
   if (classes.length === 0) {
     return [
-      "no test class with a @Test method was parsed from gateway/*/src/test/kotlin — " +
+      `no test class with a @Test method was parsed from ${TEST_SOURCES.join(", ")} — ` +
         "refusing to pass vacuously, because a green over an empty denominator is the " +
         "very signal this wall exists to distrust",
     ];
@@ -394,7 +400,7 @@ function audit(root: string): string[] {
   const rows = xmlRows(root);
   if (rows.size === 0) {
     return [
-      "no JUnit XML found under gateway/*/build/test-results/test — a checker reading " +
+      `no JUnit XML found under ${TEST_RESULTS.join(", ")} — a checker reading ` +
         "an empty results directory is the bug it is hunting; run the test leg first " +
         "(this is why gate.sh runs it AFTER `gradle clean check`)",
     ];
@@ -724,7 +730,7 @@ function main(argv: string[]): number {
     return 1;
   }
   process.stdout.write(
-    "tests-are-discovered GREEN: every test method declared in gateway/*/src/test/kotlin " +
+    `tests-are-discovered GREEN: every test method declared in ${TEST_SOURCES.join(", ")} ` +
       "appears in the JUnit XML for its class\n",
   );
   return 0;

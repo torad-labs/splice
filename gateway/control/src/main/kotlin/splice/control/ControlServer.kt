@@ -31,6 +31,7 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.client.mcp.McpAccessKey
 import splice.control.api.AccountsRoute
 import splice.control.api.ActivitySource
 import splice.control.api.AlertRoutes
@@ -74,7 +75,6 @@ import splice.control.api.UsagePayloads
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
-import splice.core.launch.McpAccessKey
 import splice.core.sessions.SessionRegistry
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker

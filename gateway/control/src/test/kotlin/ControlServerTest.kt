@@ -148,7 +148,7 @@ class ControlServerTest {
             dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
             launchService = LaunchService(
-                splice.core.launch.ClaudeConfigMaterializer(tmp),
+                splice.client.ClaudeConfigMaterializer(tmp),
             ),
             shutdownDaemon = {
                 shutdownRequests.incrementAndGet()
@@ -172,7 +172,7 @@ class ControlServerTest {
         statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
         loginCommand = "claudex login",
         signInLabel = "Codex (ChatGPT)",
-        policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
+        policy = splice.client.ClaudePolicy(share = emptySet(), isolate = emptySet()),
         port = 3099,
         inferenceToken = inferenceToken,
         apiTimeoutMs = 960_000,

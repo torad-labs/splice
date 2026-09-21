@@ -46,7 +46,7 @@ MUTABLE_FILE="gateway/$MUTABLE_MODULE/src/main/kotlin/splice/provider/muse/MuseK
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
 build_harness() {
-  rm -rf "$tmp/gateway" "$tmp/checks"
+  rm -rf "$tmp/gateway" "$tmp/client" "$tmp/checks"
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
   cp "$ROOT/checks/silent-constants.ts" "$CHECKER"
   cp "$ROOT/checks/config/silent-constants-baseline.json" "$BASELINE"
@@ -61,7 +61,12 @@ build_harness() {
       ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
     fi
   done
+  # restructure PR 3: :client is the first module to live outside gateway/, so the loop above
+  # cannot reach it. A harness that measures a tree with one module missing hands its control a
+  # red that reads exactly like a real regression (or, worse, a green over a smaller tree).
+  [ -e "$tmp/client" ] || ln -s "$ROOT/client" "$tmp/client"
   [ -e "$tmp/gateway/core" ] || { echo "  ✗ silent-constants-selftest: no gateway modules under $ROOT"; exit 1; }
+  [ -e "$tmp/client/src/main" ] || { echo "  ✗ silent-constants-selftest: :client is not linked — the harness lost a module home"; exit 1; }
   [ -f "$tmp/$MUTABLE_FILE" ] || { echo "  ✗ silent-constants-selftest: $MUTABLE_FILE did not materialise"; exit 1; }
 }
 

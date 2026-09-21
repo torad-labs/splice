@@ -17,7 +17,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.launch.McpServerSpec
+import splice.client.mcp.McpServerSpec
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.io.BufferedReader

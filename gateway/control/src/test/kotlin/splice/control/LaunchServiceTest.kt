@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudePolicy
+import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudePolicy
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -89,7 +89,7 @@ class LaunchServiceTest {
     @Test
     fun `a present key disarms token capture and the advertiser at launch time - DR-81`() {
         val armed = spec("cap").copy(
-            tokenCapture = splice.core.launch.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+            tokenCapture = splice.client.login.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
             advertiseKeySetup = true,
         )
         service.launch(armed, emptyList(), dangerouslySkipPermissions = false, keyPresentNow = true)
@@ -99,7 +99,7 @@ class LaunchServiceTest {
     @Test
     fun `an absent key arms token capture at launch time - DR-81 control`() {
         val armed = spec("cap2").copy(
-            tokenCapture = splice.core.launch.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+            tokenCapture = splice.client.login.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
             advertiseKeySetup = true,
         )
         service.launch(armed, emptyList(), dangerouslySkipPermissions = false, keyPresentNow = false)

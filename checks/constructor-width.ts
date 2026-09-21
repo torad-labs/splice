@@ -118,7 +118,10 @@ import { fileURLToPath } from "node:url";
 // parents[1]: this file lives at checks/, so the repo root is one level up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const SRC_GLOB = "gateway/*/src/main";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is a LIST of module homes. A source root this scan stops walking takes its offenders
+// out of the baseline as STALE, which reads exactly like debt that was paid.
+const SRC_GLOBS = ["gateway/*/src/main", "client/src/main"];
 const BASELINE_REL = "checks/config/constructor-width-baseline.json";
 
 // The two widths. Deliberately visible constants: a threshold nobody can read is the same
@@ -430,7 +433,9 @@ function measureFile(rel: string, text: string): { found: Constructor[]; problem
 function collect(root: string): { constructors: Constructor[]; problems: string[] } {
   const constructors: Constructor[] = [];
   const problems: string[] = [];
-  const files = [...new Bun.Glob(`${SRC_GLOB}/**/*.kt`).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = SRC_GLOBS
+    .flatMap((p) => [...new Bun.Glob(`${p}/**/*.kt`).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   for (const rel of files) {
     const measured = measureFile(rel, readFileSync(join(root, rel), "utf8"));
     constructors.push(...measured.found);
@@ -438,7 +443,7 @@ function collect(root: string): { constructors: Constructor[]; problems: string[
   }
   if (constructors.length === 0) {
     problems.push(
-      `parsed 0 primary constructors under ${SRC_GLOB} — refusing to pass vacuously, because ` +
+      `parsed 0 primary constructors under ${SRC_GLOBS.join(", ")} — refusing to pass vacuously, because ` +
         "a green over an empty denominator is what this wall exists to prevent",
     );
   }
@@ -903,7 +908,8 @@ function astDenominator(): string[] {
   // RELATIVE targets with cwd=ROOT, so ast-grep emits the same repo-relative paths
   // collect() records — an absolute-vs-relative mismatch would read as "the regex misses
   // every constructor in the tree", which is a loud failure but the wrong one.
-  const targets = [...new Bun.Glob(SRC_GLOB).scanSync({ cwd: ROOT, onlyFiles: false })]
+  const targets = SRC_GLOBS
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: ROOT, onlyFiles: false })])
     .filter((rel) => existsSync(join(ROOT, rel)))
     .sort();
   if (targets.length === 0) return ["13. AST denominator — no production source roots found"];

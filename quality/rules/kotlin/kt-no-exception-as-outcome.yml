@@ -131,6 +131,9 @@ note: >
 files:
   - gateway/provider-spi/src/main/**/*.kt
   - gateway/core/src/main/**/*.kt
+  # restructure PR 3: 32 of :core's main sources became the :client module. The wall is pinned
+  # where refusal types are DECLARED, and moving the declarations must not move them out of it.
+  - client/src/main/**/*.kt
 rule:
   all:
     - kind: class_declaration

@@ -7,7 +7,7 @@
 // [safePath]. :app is wall-exempt for println.
 package splice.app.cli
 
-import splice.core.launch.WrappedHead
+import splice.client.wrap.WrappedHead
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText

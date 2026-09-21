@@ -125,7 +125,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // The name this checker gives itself in its own findings — the port of Python's Path(__file__).name.
 const THIS_FILE = "const-single-source.ts";
 
-const MAIN_GLOB = "gateway/*/src/main/**/*.kt";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every module home and is extended by each module move.
+const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
 const KNOB_REL = "gateway/core/src/main/kotlin/splice/core/config/Knob.kt";
 const BASELINE_REL = "checks/config/const-single-source-baseline.json";
 
@@ -316,11 +320,13 @@ function parseTree(root: string): { consts: Const[]; problems: string[] } {
   const problems: string[] = [];
   const consts: Const[] = [];
   let rawTotal = 0;
-  const files = [...new Bun.Glob(MAIN_GLOB).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = MAIN_GLOBS
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   if (files.length === 0) {
     return {
       consts: [],
-      problems: [`no main sources matched ${MAIN_GLOB} under ${root} — the denominator is absent`],
+      problems: [`no main sources matched ${MAIN_GLOBS.join(", ")} under ${root} — the denominator is absent`],
     };
   }
   for (const rel of files) {

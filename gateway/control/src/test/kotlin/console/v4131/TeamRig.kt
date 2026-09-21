@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.client.ClaudePolicy
 import splice.control.CompactView
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
@@ -27,7 +28,6 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.launch.ClaudePolicy
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates

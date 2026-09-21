@@ -12,13 +12,13 @@
 // only), which per-head context windows depend on.
 package splice.control
 
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudeLogins
-import splice.core.launch.MaterializeSpec
-import splice.core.launch.ResumeAcrossHeads
-import splice.core.launch.SessionAdoption
-import splice.core.launch.WrapStateRead
-import splice.core.launch.WrapStateStore
+import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudeLogins
+import splice.client.MaterializeSpec
+import splice.client.resume.ResumeAcrossHeads
+import splice.client.resume.SessionAdoption
+import splice.client.wrap.WrapStateRead
+import splice.client.wrap.WrapStateStore
 import splice.core.util.EnvReader
 import kotlin.math.max
 

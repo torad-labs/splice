@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.CheckStatus
 import splice.app.cli.DoctorProbes
+import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
-import splice.core.launch.WrapStateStore
-import splice.core.launch.WrappedHead
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText

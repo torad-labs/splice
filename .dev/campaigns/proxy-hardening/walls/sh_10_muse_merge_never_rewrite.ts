@@ -51,9 +51,9 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
     "2026-09-15 api-key store persist",
   "gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt":
     "2026-09-15 management key persist",
-  "gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt":
+  "client/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt":
     "2026-09-15 Claude Code config and state materializer",
-  "gateway/core/src/main/kotlin/splice/core/launch/ClaudeLogins.kt":
+  "client/src/main/kotlin/splice/client/ClaudeLogins.kt":
     "2026-09-20 V4-129 splice-owned Claude logins. THIS ONE DOES WRITE A CREDENTIAL and the " +
       "disposition says so rather than claiming otherwise: it copies Claude Code's own " +
       ".credentials.json WHOLE (readString then writeAtomic0600, lines 67 and 93) between the " +
@@ -61,7 +61,7 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
       "whole-file copy is not the hazard this wall guards — that is reading a credential OBJECT, " +
       "mutating part of it and writing the partial back, which is how a rotation gets dropped. " +
       "Nothing here parses or merges the object, so no field can be lost.",
-  "gateway/core/src/main/kotlin/splice/core/launch/WrappedHead.kt":
+  "client/src/main/kotlin/splice/client/wrap/WrappedHead.kt":
     "2026-09-20 V4-129 wrap-state persist (real binary path, shadowed symlink target, shim path, " +
       "backup paths, wrapped-at millis); never a credential",
   "gateway/core/src/main/kotlin/splice/core/alert/AlertStore.kt":
@@ -70,9 +70,9 @@ export const NON_MUSE_ATOMIC_WRITERS: Record<string, string> = {
   "gateway/core/src/main/kotlin/splice/core/budget/BudgetStore.kt":
     "2026-09-20 V4-133 budgets.json persist and its .bak sibling; spend ceilings and actions, " +
       "never a credential",
-  "gateway/core/src/main/kotlin/splice/core/launch/HeadCommandsDir.kt":
+  "client/src/main/kotlin/splice/client/wrap/HeadCommandsDir.kt":
     "2026-09-15 per-head command wrapper persist",
-  "gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt":
+  "client/src/main/kotlin/splice/client/login/LoginOutcomeFile.kt":
     "2026-09-15 login outcome file persist",
   "gateway/gateway/src/main/kotlin/splice/gateway/usage/QuotaTracker.kt":
     "2026-09-15 quota snapshot persist",
@@ -201,15 +201,31 @@ export function staleDispositions(files: Record<string, string>): string[] {
   return hits;
 }
 
-/** Each gateway module's src/main, recursively, keyed by repo-relative path. */
+/** Every module's src/main directory: one level below gateway/, plus each module home that sits at
+ *  the repository root. Restructure PR 3 moved :client to client/, and a denominator that only
+ *  walks gateway/ reads five of this wall's own dispositioned atomic writers as MISSING — which
+ *  reds the wall for a staleness that is really the scan having stopped looking. */
+function mainRoots(root: string): string[] {
+  const roots: string[] = [];
+  const gateway = resolve(root, "gateway");
+  if (existsSync(gateway)) {
+    for (const mod of readdirSync(gateway, { withFileTypes: true })) {
+      if (!mod.isDirectory()) continue;
+      const main = resolve(gateway, mod.name, "src/main");
+      if (existsSync(main)) roots.push(main);
+    }
+  }
+  for (const home of ["client"]) {
+    const main = resolve(root, home, "src/main");
+    if (existsSync(main)) roots.push(main);
+  }
+  return roots;
+}
+
+/** Each module's src/main, recursively, keyed by repo-relative path. */
 export function liveMainSources(root: string): Record<string, string> {
   const files: Record<string, string> = {};
-  const gateway = resolve(root, "gateway");
-  if (!existsSync(gateway)) return files;
-  for (const mod of readdirSync(gateway, { withFileTypes: true })) {
-    if (!mod.isDirectory()) continue;
-    const main = resolve(gateway, mod.name, "src/main");
-    if (!existsSync(main)) continue;
+  for (const main of mainRoots(root)) {
     const stack = [main];
     const found: string[] = [];
     while (stack.length > 0) {

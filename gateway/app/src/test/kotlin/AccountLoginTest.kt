@@ -21,10 +21,10 @@ import splice.app.auth.OAuthLoginAccount
 import splice.app.cli.LoginCodex
 import splice.app.cli.LoginGrok
 import splice.app.cli.LoginKimi
+import splice.client.login.LoginOutcomeFile
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.StatePaths
-import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
 import splice.provider.codex.CodexAuthProvider

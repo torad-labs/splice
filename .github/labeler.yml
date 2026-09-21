@@ -2,7 +2,12 @@
 # Labels must already exist in the repo; the action does not create them.
 gateway:
   - changed-files:
-      - any-glob-to-any-file: 'gateway/**'
+      # restructure PR 3: :client is the first Gradle module to live outside gateway/. The LABEL
+      # is a repo label the action cannot create, so it keeps its name while the directory moves —
+      # what it means is "the Kotlin gateway", and :client is part of that.
+      - any-glob-to-any-file:
+          - 'gateway/**'
+          - 'client/**'
 
 webui:
   - changed-files:

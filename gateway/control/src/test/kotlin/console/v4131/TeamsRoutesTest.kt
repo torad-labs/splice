@@ -13,13 +13,13 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.transcript.SentTexts
 import splice.control.ManagedHead
 import splice.control.api.ActivitySource
 import splice.control.api.SentTextSource
 import splice.control.api.TeamSource
 import splice.control.api.TeamsRoutes
 import splice.core.activity.MessageEdge
-import splice.core.sessions.SentTexts
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Path

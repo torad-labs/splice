@@ -12,11 +12,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.app.auth.OAuthAccountFiles
 import splice.app.auth.OAuthLoginAccount
+import splice.client.login.LoginOutcomeFile
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.config.StatePaths
-import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables

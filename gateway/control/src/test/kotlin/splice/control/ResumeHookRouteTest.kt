@@ -12,12 +12,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudePolicy
 import splice.control.api.ResumeHookRoute
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.launch.ClaudePolicy
 import java.nio.file.Files
 import java.nio.file.Path
 

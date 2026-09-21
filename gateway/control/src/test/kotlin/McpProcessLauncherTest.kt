@@ -3,8 +3,8 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.mcp.McpServerSpec
 import splice.control.mcp.StdioProcessLauncher
-import splice.core.launch.McpServerSpec
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 

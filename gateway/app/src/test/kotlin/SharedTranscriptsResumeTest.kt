@@ -34,12 +34,12 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudePolicy
 import splice.control.HeadTrees
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.core.compaction.SessionProject
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudePolicy
 import splice.core.util.JsonScalars
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS

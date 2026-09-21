@@ -5,7 +5,7 @@
 // live on AuthKind / ApiKeyProviderRegistry rows (V4-21).
 package splice.app
 
-import splice.core.launch.TokenCaptureSpec
+import splice.client.login.TokenCaptureSpec
 import splice.core.topology.ApiKeyProviderRegistry
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry

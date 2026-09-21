@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.client.transcript.SentTexts
 import splice.core.activity.ActivityStores
-import splice.core.sessions.SentTexts
 import splice.core.sessions.SessionRegistry
 import splice.core.teams.Team
 import splice.core.teams.TeamStore

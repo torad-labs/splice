@@ -5,9 +5,9 @@
 // reads it (DaemonMaterializerTest), stay in ControlPlane.kt.
 package splice.app
 
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.HookExec
-import splice.core.launch.McpRewrite
+import splice.client.ClaudeConfigMaterializer
+import splice.client.login.HookExec
+import splice.client.mcp.McpRewrite
 import java.nio.file.Path
 
 /** Builds the daemon's [ClaudeConfigMaterializer]. The caller NAMES the exec so the noexec

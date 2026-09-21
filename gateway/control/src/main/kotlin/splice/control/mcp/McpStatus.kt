@@ -15,12 +15,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import splice.core.launch.McpCensusReport
-import splice.core.launch.McpDispositioned
-import splice.core.launch.McpInventory
-import splice.core.launch.McpKindCensus
-import splice.core.launch.McpSharing
-import splice.core.launch.McpSourceKind
+import splice.client.mcp.McpCensusReport
+import splice.client.mcp.McpDispositioned
+import splice.client.mcp.McpInventory
+import splice.client.mcp.McpKindCensus
+import splice.client.mcp.McpSharing
+import splice.client.mcp.McpSourceKind
 
 /** The live hosted process for a server name, or null when none is running. */
 internal fun interface HostedServerLookup {

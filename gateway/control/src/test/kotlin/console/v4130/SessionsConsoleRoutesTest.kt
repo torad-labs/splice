@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudePolicy
 import splice.control.CompactView
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
@@ -32,7 +33,6 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.launch.ClaudePolicy
 import splice.core.sessions.SessionRegistry
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock

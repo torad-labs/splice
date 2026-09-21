@@ -6,8 +6,8 @@
 package splice.control.mcp
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.launch.McpServerSpec
-import splice.core.launch.McpSharing
+import splice.client.mcp.McpServerSpec
+import splice.client.mcp.McpSharing
 import splice.core.util.LogSink
 
 private const val MILLIS_PER_MINUTE = 60_000L

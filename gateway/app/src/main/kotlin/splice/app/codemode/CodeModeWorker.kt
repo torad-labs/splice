@@ -23,6 +23,10 @@ import java.io.DataOutputStream
 import java.io.IOException
 
 private const val EXECUTION_FAILURE: String = "Code execution failed"
+
+/** Bytes kept free under the worker text ceiling for the truncation marker. */
+private const val TRUNCATION_RESERVE: Int = 64
+private const val MAX_CELL_LOG_BYTES: Int = CodeModeWire.maxTextBytes - TRUNCATION_RESERVE
 private const val IDLE_FAILURE: String = "Code execution paused without a tool call"
 private const val TOOL_FAILURE: String = "Tool is not allowed"
 private const val ARGUMENT_FAILURE: String = "Tool arguments must be a serializable object"
@@ -128,6 +132,7 @@ internal class WorkerSession(private val start: WorkerStart) : AutoCloseable {
 internal class WorkerBridge(private val allowedTools: Set<String>) {
     private val outboundCalls: MutableList<CodeModeCall> = mutableListOf()
     private val logs: StringBuilder = StringBuilder()
+    private var truncatedChars: Int = 0
     private var callCount: Int = 0
     private var completion: WorkerCompletion? = null
 
@@ -166,27 +171,57 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
         outboundCalls.add(call)
     }
 
+    /** Output past the text ceiling is cut behind a marker, never fatal: a cell that already ran its
+     *  calls must not lose them to a verbose console.log (a four-call cell on 2026-09-20 did). */
     private fun appendLog(value: String) {
         val separator = if (logs.isEmpty()) "" else "\n"
-        CodeModeFrames.requireText(logs.toString() + separator + value, "output")
-        logs.append(separator).append(value)
+        val room = MAX_CELL_LOG_BYTES - logs.toString().encodeToByteArray().size - separator.length
+        val kept = fitBytes(value, room.coerceAtLeast(0))
+        truncatedChars += value.length - kept.length
+        if (kept.isNotEmpty()) logs.append(separator).append(kept)
     }
 
+    /** A failure carries its reason and the evidence logged before it; the model used to see only
+     *  "Code execution failed" and rerun every call directly. */
     private fun complete(value: String, failed: Boolean) {
-        completion = WorkerCompletion(
-            output = if (failed) "" else finalOutput(value),
-            error = if (failed) EXECUTION_FAILURE else null,
-        )
+        completion = if (failed) {
+            WorkerCompletion(output = "", error = failureMessage(value))
+        } else {
+            WorkerCompletion(output = finalOutput(value), error = null)
+        }
+    }
+
+    private fun failureMessage(reason: String): String {
+        val evidence = logsWithMarker()
+        val detail = buildString {
+            append(EXECUTION_FAILURE)
+            if (reason.isNotBlank()) append(": ").append(reason)
+            if (evidence.isNotEmpty()) append("\nOutput before the failure:\n").append(evidence)
+        }
+        return fitBytes(detail, CodeModeWire.maxTextBytes)
     }
 
     private fun finalOutput(value: String): String {
-        val output = if (logs.isEmpty()) {
-            value
-        } else {
-            listOf(logs.toString(), value).filter(String::isNotEmpty).joinToString("\n")
+        val output = listOf(logsWithMarker(), value).filter(String::isNotEmpty).joinToString("\n")
+        return fitBytes(output, CodeModeWire.maxTextBytes)
+    }
+
+    private fun logsWithMarker(): String =
+        if (truncatedChars == 0) logs.toString() else "$logs\n[truncated $truncatedChars chars]"
+
+    /** The longest prefix of [value] that fits [bytes] of UTF-8, cut on a code point boundary. */
+    private fun fitBytes(value: String, bytes: Int): String {
+        if (value.encodeToByteArray().size <= bytes) return value
+        var used = 0
+        var index = 0
+        while (index < value.length) {
+            val width = if (value[index].isHighSurrogate() && index + 1 < value.length) 2 else 1
+            val size = value.substring(index, index + width).encodeToByteArray().size
+            if (used + size > bytes) break
+            used += size
+            index += width
         }
-        CodeModeFrames.requireText(output, "output")
-        return output
+        return value.substring(0, index)
     }
 
     private fun parseCall(raw: String): CodeModeCall {
@@ -241,14 +276,21 @@ private const val LAUNCHER: String = """
       host.log(values.map(value => String(value)).join(" "));
     }
   });
+  // A SyntaxError message carries the offending source line; only its first line (position and
+  // reason) is reported. A rejected tool call keeps its whole error text.
+  const describe = error => {
+    if (!error || error.message === undefined) return String(error);
+    const message = error instanceof SyntaxError ? String(error.message).split("\n")[0] : String(error.message);
+    return String(error.name || "Error") + ": " + message;
+  };
   try {
     const program = new Function("tools", "console", "\"use strict\"; return (async () => {\n" + source + "\n})()");
     Promise.resolve(program(tools, console)).then(
       value => host.complete(value === undefined ? "" : String(value), false),
-      () => host.complete("", true)
+      error => host.complete(describe(error), true)
     );
   } catch (error) {
-    host.complete("", true);
+    host.complete(describe(error), true);
   }
   return Object.freeze({
     settle(id, output, isError) {

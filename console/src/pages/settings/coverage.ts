@@ -84,7 +84,7 @@ const EDITABLE_TOPOLOGY = [
   'system_prompt_mode',
   'account_id_header', 'cache_key', 'effort_ceiling', 'summary_field', 'tool_choice',
   'reasoning_cache', 'parallel_tool_calls', 'websocket', 'code_mode', 'code_mode_workers',
-  'code_mode_timeout_ms', 'code_mode_heap', 'zstd_request_body', 'reasoning_effort',
+  'code_mode_timeout_ms', 'code_mode_heap', 'code_mode_models', 'zstd_request_body', 'reasoning_effort',
   // Arrived with V4-163 (token reporting on local heads), the same way the two activity knobs
   // above did: a daemon key is a red console until someone says what the console does with it.
   // An ordinary boolean quirk the topology forms write, so it is editable like its neighbours.

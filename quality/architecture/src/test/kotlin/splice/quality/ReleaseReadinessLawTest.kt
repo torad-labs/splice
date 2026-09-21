@@ -73,6 +73,7 @@ private const val TESTNET = "daemon/head/src/testFixtures/kotlin/splice/head/Tes
 private const val ENCRYPTED_COT = "encrypted CoT"
 private const val GATE_LADDER = "build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts"
 private const val INCLUDED_BUILD_TEST = "gradle.includedBuild(\"build-logic\").task(\":test\")"
+private const val BUILD_LOGIC_TESTS = "build-logic/src/test/kotlin/"
 private const val OR_TRUE = "|| true"
 
 // The two swallowed failures install.sh is allowed, by their exact trimmed text (install.sh:370-383):
@@ -127,6 +128,15 @@ internal class ReleaseRepo(val root: File, val tracked: List<String>, val kotlin
 
     fun untracked(prefix: String): String? =
         tracked.firstOrNull { it.startsWith(prefix) }?.let { "$it is tracked — remove it from the index" }
+
+    /**
+     * At least one tracked file under [prefix]. `build-logic-tested` proves the ladder NAMES the
+     * included build's test task; nothing proved that task has anything to RUN, and an empty source
+     * set is the exact shape that keeps a text check green while the census exclusion it earns goes
+     * blind.
+     */
+    fun trackedUnder(prefix: String, what: String): String? =
+        if (tracked.any { it.startsWith(prefix) }) null else "$prefix holds no tracked $what"
 
     fun trackedFile(rel: String): String? = if (rel in tracked) null else "$rel is not tracked"
 
@@ -219,6 +229,7 @@ internal object ReleaseReadiness {
         // this rule and by nothing else: build-logic's sources are governed because gateOfRecord runs
         // that build's own tests, and the day the dependency goes, the exclusion is a blind spot.
         Rule("build-logic-tested") { repo -> repo.contains(GATE_LADDER, INCLUDED_BUILD_TEST) },
+        Rule("build-logic-has-tests") { repo -> repo.trackedUnder(BUILD_LOGIC_TESTS, "test source") },
     )
 
     private fun workflowRules(): List<Rule> = listOf(
@@ -341,6 +352,7 @@ private class Tree(val root: File) {
         // green side proves only that the file had nothing to match.
         file(INSTALL, INSTALL_RELEASE + INSTALL_GH + INSTALL_JAR + INSTALL_SHIM + INSTALL_PREVIOUS)
         file(GATE_LADDER, "gateOfRecord { dependsOn($INCLUDED_BUILD_TEST) }\n")
+        file("${BUILD_LOGIC_TESTS}splice/discovery/TestDiscoveryTest.kt", "class TestDiscoveryTest\n")
         file(
             README,
             "splice is not affiliated with anyone. Each head runs the splice-launch shim.\n" +
@@ -394,6 +406,11 @@ private fun repositoryMutations(): List<Mutation> = listOf(
     },
     Mutation("build-logic's own tests out of the gate", "build-logic-tested", INCLUDED_BUILD_TEST) {
         file(GATE_LADDER, "// a ladder that no longer runs the included build's tests\n")
+    },
+    // The ladder can name the included build's :test while that build has NOTHING to run, because
+    // `build-logic-tested` reads the ladder's TEXT and never the test set it invokes.
+    Mutation("build-logic's test sources deleted", "build-logic-has-tests", BUILD_LOGIC_TESTS) {
+        files.removeAll { it.startsWith(BUILD_LOGIC_TESTS) }
     },
     // THE MISSING-FILE BRANCH of each reader (PR 6 review). `contains`, `lacks`, `matches` and
     // `onlyOn` all answer `missing(rel)` when the file is not there, and nothing proved it: a rule
@@ -519,10 +536,10 @@ private fun kotlinMutations(): List<Mutation> = listOf(
     Mutation("a Kotlin file sleeping 1100 ms", "kotlin-no-sleep-1100", "core/src/test/kotlin/SleepTest.kt") {
         file("core/src/test/kotlin/SleepTest.kt", "fun wait() = Thread.sleep($A_SLEEP_MS)\n")
     },
+    // The Kotlin set has to be EMPTY for this to prove anything, and a hand-listed three went stale
+    // the first time a .kt joined the compliant tree. Derive the deletion from the tree itself.
     Mutation("no Kotlin files at all", "kotlin-no-fixed-ports", "module map is empty") {
-        delete(LAUNCH_SERVICE)
-        delete(TOPOLOGY_LOADER)
-        delete(TESTNET)
+        files.filter { it.endsWith(".kt") }.forEach { delete(it) }
     },
 )
 

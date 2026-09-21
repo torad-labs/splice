@@ -129,6 +129,55 @@ class ResumeHookRouteTest {
         assertFalse(log.contains("moved onto"), log.toString())
     }
 
+    // 2026-09-21: the startup hook fires BEFORE Claude Code writes the session's first row. The live
+    // daemon refused every startup at "not a file under this head's transcript tree", so no head ever
+    // owned a session and a bare -c kept crossing into whatever session was newest in the cwd.
+    @Test
+    fun `a startup owns a session whose transcript is not written yet, a resume still needs the file`(
+        @TempDir home: Path,
+    ) {
+        val (own, shared) = linkedHead(home)
+        val dir = Files.createDirectories(shared.resolve("-work-repo"))
+        val unwritten = dir.resolve("$SESSION.jsonl")
+        val cwd = Files.createDirectories(home.resolve("work-repo")).toString()
+
+        assertNull(route(own).handle("codex", hookJson(SESSION, unwritten, "startup", cwd)))
+        assertFalse(Files.exists(unwritten), "the route never creates the transcript")
+        // newestFor only answers once the transcript exists — Claude Code's first write.
+        assertNull(SessionOwnership(own).newestFor(cwd))
+        write(unwritten, FOREIGN_ROW + "\n")
+        assertEquals(SESSION, SessionOwnership(own).newestFor(cwd)?.id, "owned from its startup on")
+
+        // Still refused on a startup: a name that is not this session's, a directory outside the
+        // tree, and a path whose parent does not exist. A resume of an unwritten file is refused too.
+        val refusal = "the transcript path is not a file under this head's transcript tree"
+        val misnamed = dir.resolve("not-$OTHER.jsonl")
+        assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, misnamed, "startup", cwd)))
+        val outside = Files.createDirectories(home.resolve("elsewhere")).resolve("$OTHER.jsonl")
+        assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, outside, "startup", cwd)))
+        val noParent = shared.resolve("-never-made").resolve("$OTHER.jsonl")
+        assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, noParent, "startup", cwd)))
+        val unwrittenOther = dir.resolve("$OTHER.jsonl")
+        assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, unwrittenOther, "resume", cwd)))
+        val index = Files.readString(own.resolve("splice-sessions.json"))
+        assertFalse(index.contains(OTHER), "no refusal recorded a session")
+    }
+
+    // astra, PR #169: Path.of("\u0000") throws InvalidPathException; the startup fallback must
+    // refuse it like any other unresolvable path, never throw past the route's always-200 answer.
+    @Test
+    fun `a startup whose path the filesystem cannot spell is refused, not thrown`(@TempDir home: Path) {
+        val (own, _) = linkedHead(home)
+        val cwd = Files.createDirectories(home.resolve("work-repo")).toString()
+        val body = """{"session_id":"$SESSION","transcript_path":"\u0000","source":"startup","cwd":"$cwd"}"""
+        assertEquals(
+            "the transcript path is not a file under this head's transcript tree",
+            route(own).handle("codex", body),
+        )
+        assertNull(SessionOwnership(own).newestFor(cwd))
+        assertFalse(Files.exists(own.resolve("splice-sessions.json")), "nothing was recorded")
+    }
+
     @Test
     fun `a resume records the session too, and a hook without a cwd records nothing`(@TempDir home: Path) {
         val (own, shared) = linkedHead(home)

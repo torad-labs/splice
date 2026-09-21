@@ -173,7 +173,7 @@ An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over th
 
 These routes are **unofficial**. They reuse each vendor's own CLI OAuth client identity, which no vendor documents for third-party use. That reuse may violate terms of service, and a vendor could block it or change it without notice. Use these routes at your own risk.
 
-1. Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`.
+1. Copy the matching provider and head from [`app/src/main/resources/splice.example.toml`](app/src/main/resources/splice.example.toml) into `~/.config/splice/splice.toml`.
 2. Run `splice install --all` to install the wrapper commands.
 3. Sign in with `claudex login`, `claude-grok login`, `claude-kimi login` or `claude-muse login`, then launch that same command without `login`.
 
@@ -428,7 +428,7 @@ flowchart LR
     HEAD -- "provider wire dialect" --> API["backend API<br/>(OpenRouter · Moonshot · …)"]
 ```
 
-Each wrapper is an `argv[0]` symlink to the shared launch shim `app/src/main/dist/bin/splice-launch`: it cold-starts the daemon if needed, asks it for an exec recipe over the loopback control plane, and execs the real `claude` pointed at the head's port. Only the head talks to the backend; the dashboard and every control endpoint are bearer-guarded and loopback-only. Adding a backend using an existing dialect and auth kind is a TOML edit, not code. See [`config/splice.example.toml`](config/splice.example.toml) for the full sample topology.
+Each wrapper is an `argv[0]` symlink to the shared launch shim `app/src/main/dist/bin/splice-launch`: it cold-starts the daemon if needed, asks it for an exec recipe over the loopback control plane, and execs the real `claude` pointed at the head's port. Only the head talks to the backend; the dashboard and every control endpoint are bearer-guarded and loopback-only. Adding a backend using an existing dialect and auth kind is a TOML edit, not code. See [`app/src/main/resources/splice.example.toml`](app/src/main/resources/splice.example.toml) for the full sample topology.
 
 `install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor`.
 
@@ -477,15 +477,15 @@ dialects/      anthropic, openai-responses, openai-chat — one request-byte con
 providers/     codex, grok, kimi, muse, openai
 daemon/        head/ (:daemon-head, the proxy between client and upstream) and
                control/ (:daemon-control, the control plane and MCP host)
-app/           :app — assembly, the `splice` CLI, the fat jar, and the launch shim
-               (src/main/dist/bin/splice-launch: every head command is an argv[0] symlink to it)
+app/           :app — assembly, the `splice` CLI, the fat jar, the launch shim and the sample topology
+               (src/main/dist/bin/splice-launch: every head command is an argv[0] symlink to it;
+               src/main/resources/splice.example.toml: the sample multi-provider topology, shipped in the jar)
 console/       React 19 + Vite + Zustand operator console, single-file bundle (console/tools: its look gate)
 quality/       enforcement: architecture/ (the Kotlin laws), compiler-plugin/, rules/ (the ast-grep
                walls, write-time AND at the gate), detekt/
 build-logic/   Gradle convention plugins; the build itself is rooted at the repository root
 tools/         the operational Bun CLIs: gate/ (the ladder, tools/gate/config/ladder.json), e2e/, release/
 checks/        gate legs not yet Kotlin laws or CLI verbs, run by the ladder — shrinking
-config/        splice.example.toml — the sample multi-provider topology
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 .claude/       the write-time hook wiring (settings.json) and its tests
 .dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`), research notes

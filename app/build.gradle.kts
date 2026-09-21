@@ -51,15 +51,12 @@ application {
     mainClass.set("splice.app.MainKt")
 }
 
-// ExampleConfigTest reads config/splice.example.toml by walking up from the module dir, which
-// Gradle cannot see — so editing ONLY the example left :app:test UP-TO-DATE and the check never
-// ran (caught 2026-07-26 while red-proofing it). Declaring the file as an input makes the example
-// a real gate: touch it, the test re-runs.
+// The example topology is a main RESOURCE (src/main/resources/splice.example.toml), so it is on
+// :app:test's classpath and an input to the task by itself: touch it, the tests that read it re-run.
+// (Before restructure PR 6 it lived at config/ and the tests walked up to it, which Gradle could
+// not see — caught 2026-07-26 when editing only the example left :app:test UP-TO-DATE.)
 tasks.test {
     systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
-    inputs.file(rootProject.layout.projectDirectory.file("config/splice.example.toml"))
-        .withPropertyName("spliceExampleToml")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
 
     // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect
     // `user.home` to a @TempDir, but TopologyLoader.configPath() consults SPLICE_CONFIG and

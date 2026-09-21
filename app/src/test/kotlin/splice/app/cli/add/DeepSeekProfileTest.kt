@@ -13,7 +13,6 @@ import splice.app.daemon.TopologyLoader
 import splice.core.topology.Dialect
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 class DeepSeekProfileTest {
 
@@ -97,17 +96,12 @@ class DeepSeekProfileTest {
         assertTrue("redacted_thinking" !in allowed, "DeepSeek reject redacted_thinking")
     }
 
-    /** Same walk ExampleConfigTest does: from the gateway module dir up to the repo root. The
-     *  committed example is a TESTED artifact, so this reads the real file rather than a fixture. */
-    private fun exampleToml(): String {
-        var dir = Paths.get("").toAbsolutePath()
-        repeat(WALK_UP) {
-            val candidate = dir.resolve("config").resolve("splice.example.toml")
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent ?: return@repeat
-        }
-        error("config/splice.example.toml not found from " + Paths.get("").toAbsolutePath())
-    }
+    /** The committed example off the classpath, as ExampleConfigTest reads it: a TESTED artifact,
+     *  so this reads the real file rather than a fixture. */
+    private fun exampleToml(): String =
+        checkNotNull(javaClass.getResourceAsStream("/splice.example.toml")) {
+            "splice.example.toml is not on the classpath"
+        }.bufferedReader().use { it.readText() }
 
     @Test
     fun `the api-key env is the derived DEEPSEEK_API_KEY`() {
@@ -117,7 +111,6 @@ class DeepSeekProfileTest {
 }
 
 private const val PORT = 3107
-private const val WALK_UP = 4
 
 /** Absent from the endpoint's own accepted-variant list, so each of these 400s the request. */
 private val REJECTED = listOf(

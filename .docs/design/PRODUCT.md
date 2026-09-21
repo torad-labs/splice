@@ -111,7 +111,7 @@ topology editor or the forms are the primary settings surface.
   with real perf rows, economics, quota windows and account pools at :3096; the console is
   designed and verified against live data, never against mock data.
 - `docs/assets/doctor.svg`: the doctor output the README leads with.
-- `README.md`, `CHANGELOG.md`, `config/splice.example.toml`: the source of copy, terminology and
+- `README.md`, `CHANGELOG.md`, `app/src/main/resources/splice.example.toml`: the source of copy, terminology and
   the reasons behind each knob.
 - `.dev/campaigns/web-console/FEATURES.md` §3: competitor console research, 2026-09-17.
 - Absent, and not to be fabricated: testimonials, customer logos, adoption numbers, benchmarks

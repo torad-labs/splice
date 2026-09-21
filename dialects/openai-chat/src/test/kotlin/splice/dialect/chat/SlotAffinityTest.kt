@@ -2,7 +2,7 @@
 // is serving someone. llama-server's own choice (prompt similarity against the NEW prompt, empty
 // slots skipped) hands a new session an idle conversation's slot, and the displaced conversation
 // re-prefills from zero; these cells pin the allocator that decides id_slot instead.
-package campaign.v4165
+package splice.dialect.chat
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.dialect.chat.SlotAffinity
 
 class SlotAffinityTest {
 

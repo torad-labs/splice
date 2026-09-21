@@ -39,7 +39,7 @@ note: >
 files:
   - upstream/src/main/**/*.kt
   - dialects/openai-responses/src/main/**/*.kt
-  - gateway/dialect-openai-chat/src/main/**/*.kt
+  - dialects/openai-chat/src/main/**/*.kt
   - dialects/anthropic/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt

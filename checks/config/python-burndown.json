@@ -50,7 +50,7 @@
     "daemon/control/src/test/kotlin/splice/control/mcp/McpHostFixture.kt",
     "daemon/control/src/test/kotlin/splice/control/mcp/McpHostTest.kt",
     "daemon/control/src/test/kotlin/splice/control/api/diagnostics/McpRoutesTest.kt",
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt",
     "daemon/head/src/test/kotlin/splice/head/ActivityLabelTest.kt",
     "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
     "upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailurePolicyRefusalTest.kt",

@@ -1,10 +1,11 @@
+package splice.dialect.chat
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
-import splice.dialect.chat.ChatCompactionTail
 
 class ChatCompactionTailTest {
 

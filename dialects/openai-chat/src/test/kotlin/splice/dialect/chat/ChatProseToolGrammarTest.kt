@@ -3,12 +3,13 @@
 // violation and was left standing, on all three paths that reach openPendingTool. These arms assert
 // the EXACT call sequence, because membership cannot distinguish a compliant stream from an
 // overlapping one — both contain openText and openTool.
+package splice.dialect.chat
+
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.dialect.chat.ChatStreamTranslator
 
 class ChatProseToolGrammarTest {
 

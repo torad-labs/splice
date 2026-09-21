@@ -2,6 +2,8 @@
 // LargeClass) when CX-18 added the alias cases. Usage is not cosmetic on this dialect:
 // used_percentage drives Claude Code's auto-compaction trigger, so a bucket read as zero either
 // suppresses compaction forever or fires it constantly.
+package splice.dialect.chat
+
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

@@ -54,9 +54,9 @@ const PASS = [
   resolve(ROOT, "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughTerminalState.kt"),
 ];
 const CHAT = [
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEventRouter.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEventRouter.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
 ];
 const RESP = [
   resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt"),

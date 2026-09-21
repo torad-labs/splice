@@ -1,6 +1,6 @@
 // NEW: V4-165 — what slot affinity puts on the wire: id_slot, llama-server's own slot override,
 // and nothing at all for a head that did not opt in (every other head's bytes are unchanged).
-package campaign.v4165
+package splice.dialect.chat
 
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -8,10 +8,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.dialect.chat.BuiltChatRequest
-import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.ChatRequestBuilder
-import splice.dialect.chat.SlotAffinity
 
 private const val TURN = """{"model":"m","messages":[{"role":"user","content":"hi"}]}"""
 

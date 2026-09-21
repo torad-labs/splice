@@ -1,5 +1,7 @@
 // NEW: unit test the chat stream machine in isolation (asFlow -> RecordingSink) — reasoning +
 // text + tool_calls + finish_reason mapping, truncated + failure paths.
+package splice.dialect.chat
+
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -8,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
-import splice.dialect.chat.ChatStreamTranslator
 import splice.upstream.transport.BufferCapacity
 
 class ChatStreamTranslatorTest {

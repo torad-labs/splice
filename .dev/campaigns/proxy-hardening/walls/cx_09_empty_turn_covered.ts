@@ -101,8 +101,8 @@ export const PATHS: Record<string, string[]> = {
   // HD-24 (2026-08-17): ChatStreamTranslator decomposed; emittedThinking's set-site moved to
   // ChatProseChannels.kt and its read-into-the-outcome site stays in ChatStreamTranslator.kt.
   chat: [
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt",
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
   ],
   // HD-24 (2026-08-17): ResponsesStreamTranslator decomposed; emittedThinking's set-site and its
   // read-into-the-outcome site moved to these two siblings.

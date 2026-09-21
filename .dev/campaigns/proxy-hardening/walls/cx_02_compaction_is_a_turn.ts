@@ -72,7 +72,7 @@ export const PATHS: Record<string, string[]> = {
     "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnOptions.kt",
   ],
   "openai-chat": [
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
   ],
   "anthropic-passthrough": [
     "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughRequestBuilder.kt",
@@ -99,7 +99,7 @@ const COMPACT_HANDOFF = /compact\s*=\s*(?:opts\.)?compact\b/;
 
 export const CANARY_TESTS: Record<string, string> = {
   "openai-responses": "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/request/ResponsesRequestBuilderTest.kt",
-  "openai-chat": "gateway/dialect-openai-chat/src/test/kotlin/ChatRequestBuilderTest.kt",
+  "openai-chat": "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatRequestBuilderTest.kt",
   "anthropic-passthrough":
     "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughRequestBuilderTest.kt",
 };

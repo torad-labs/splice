@@ -1,3 +1,5 @@
+package splice.dialect.chat
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -9,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import splice.core.prompt.SystemPromptMode
-import splice.dialect.chat.ChatSystemPrompt
 
 class ChatSystemPromptTest {
 

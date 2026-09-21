@@ -29,7 +29,7 @@ include(
     ":providers-codex",
     ":providers-grok",
     ":providers-kimi",
-    ":provider-muse",
+    ":providers-muse",
     ":provider-openai",
     ":daemon-head",
     ":daemon-control",
@@ -48,7 +48,7 @@ project(":dialects-openai-chat").projectDir = file("dialects/openai-chat")
 project(":providers-codex").projectDir = file("providers/codex")
 project(":providers-grok").projectDir = file("providers/grok")
 project(":providers-kimi").projectDir = file("providers/kimi")
-project(":provider-muse").projectDir = file("gateway/provider-muse")
+project(":providers-muse").projectDir = file("providers/muse")
 project(":provider-openai").projectDir = file("gateway/provider-openai")
 project(":daemon-head").projectDir = file("daemon/head")
 project(":daemon-control").projectDir = file("daemon/control")

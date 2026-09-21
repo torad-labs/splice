@@ -54,7 +54,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":providers-codex" to ADAPTER_BASE + ":dialects-openai-responses",
     ":providers-grok" to ADAPTER_BASE + ":dialects-openai-responses",
     ":providers-kimi" to ADAPTER_BASE + ":dialects-anthropic",
-    ":provider-muse" to ADAPTER_BASE,
+    ":providers-muse" to ADAPTER_BASE,
     ":provider-openai" to ADAPTER_BASE + setOf(":dialects-openai-responses", ":dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":daemon-head" to ADAPTER_BASE + DIALECTS,
@@ -69,7 +69,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":provider-muse", ":provider-openai", ":app", ":arch-tests", ":fir-checks",
+    ":provider-openai", ":app", ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -397,7 +397,7 @@ private fun lawDriftViolations(
  *  Mirrors the stale-map arm the direction law already has for MODULE_DEPENDENCY_LAW keys ("names
  *  $module, which the project map does not include — it currently governs nothing"), one level
  *  down: an allowance nothing uses governs nothing either, and it reads as architecture that exists.
- *  The one live instance, `:provider-muse -> :dialects-anthropic` (provider-muse's build
+ *  The one live instance, `:providers-muse -> :dialects-anthropic` (provider-muse's build
  *  file declares only :core/:upstream and MusePassthroughArm lives in :app — the allowance
  *  described a wire nobody ran), was dropped in V4-103: MusePassthroughArm stays in :app, so the
  *  provider module keeps only the :core/:upstream edges it actually declares. */
@@ -691,7 +691,7 @@ class ModuleLawsTest {
     }
 
     // V4-91 (audit C row 4): a main-plane allowance no build file declares. RED on this tree today
-    // by design — `:provider-muse -> :dialects-anthropic` is the row's own example, and
+    // by design — `:providers-muse -> :dialects-anthropic` is the row's own example, and
     // the fix row either drops the allowance or makes the edge real. The wall's job is to name it.
     // P3 (restructure §1.3): id ↔ directory, from the build's map. See idDerivationViolations for
     // the two-way ratchet; ID_DERIVATION_PENDING shrinks by one module per PR 3 commit.

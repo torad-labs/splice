@@ -41,7 +41,7 @@ CHECKER="$tmp/checks/silent-constants.ts"
 BASELINE="$tmp/checks/config/silent-constants-baseline.json"
 # the module whose src/main is materialised as real files so a fixture can mutate one (7 .kt
 # files; every other module stays a symlink so the census is the real one)
-MUTABLE_FILE="gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseKeyMint.kt"
+MUTABLE_FILE="providers/muse/src/main/kotlin/splice/provider/muse/MuseKeyMint.kt"
 MUTABLE_DIR="${MUTABLE_FILE%%/src/*}" # the module home the arms mutate — its directory, wherever the module lives
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 // NEW: V4-22 review fixes for mint holds, prefetch lifecycle, cache, and transport failures.
-package muse
+package splice.provider.muse
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -24,12 +24,6 @@ import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.provider.muse.MuseAuthProvider
-import splice.provider.muse.MuseCredentialSnapshot
-import splice.provider.muse.MuseKeyMintCall
-import splice.provider.muse.MuseMintAttempt
-import splice.provider.muse.MuseMintHolds
-import splice.provider.muse.MuseSubscriptionKey
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
 import java.nio.file.Path

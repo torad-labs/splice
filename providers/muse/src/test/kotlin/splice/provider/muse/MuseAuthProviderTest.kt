@@ -1,5 +1,5 @@
 // NEW: V4-14 Muse runtime-auth, key-mint, persistence, and exclusion walls.
-package muse
+package splice.provider.muse
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -15,11 +15,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.provider.muse.MuseAuthProvider
-import splice.provider.muse.MuseKeyMintCall
-import splice.provider.muse.MuseMintAttempt
-import splice.provider.muse.MuseMintMode
-import splice.provider.muse.MuseSubscriptionKey
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
 import java.nio.file.Path

@@ -1,5 +1,5 @@
 // NEW: MuseMintPersistence write-guard and non-object root pins.
-package muse
+package splice.provider.muse
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -9,9 +9,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
-import splice.provider.muse.MuseMintPersistence
-import splice.provider.muse.MuseMintWriteGuard
-import splice.provider.muse.MuseSubscriptionKey
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger

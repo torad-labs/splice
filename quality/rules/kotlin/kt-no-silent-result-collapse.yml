@@ -31,7 +31,7 @@
 # (an exists() pre-gate and no log; the next persist overwrote a corrupt history silently),
 # usage/QuotaTracker readFile, compact/Compact bad rows. EXEMPT, each ignore naming the file:line
 # that consumes the error: perf/PerfStats, usage/UsageRingFile size, usage/RateLimitStore,
-# wire/CollectingBlocks. STILL OUTSIDE the globs: :core (24 sites) and :provider-muse (2, MuseOAuth),
+# wire/CollectingBlocks. STILL OUTSIDE the globs: :core (24 sites) and :providers-muse (2, MuseOAuth),
 # recorded on the V4-151 row as a followup; this widening does not close the tree.
 id: kt-no-silent-result-collapse
 language: kotlin

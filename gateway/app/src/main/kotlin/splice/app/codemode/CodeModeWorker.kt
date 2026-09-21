@@ -26,7 +26,7 @@ private const val EXECUTION_FAILURE: String = "Code execution failed"
 
 /** Bytes kept free under the worker text ceiling for the truncation marker. */
 private const val TRUNCATION_RESERVE: Int = 64
-private const val MAX_LOG_BYTES: Int = CodeModeWire.maxTextBytes - TRUNCATION_RESERVE
+private const val MAX_CELL_LOG_BYTES: Int = CodeModeWire.maxTextBytes - TRUNCATION_RESERVE
 private const val IDLE_FAILURE: String = "Code execution paused without a tool call"
 private const val TOOL_FAILURE: String = "Tool is not allowed"
 private const val ARGUMENT_FAILURE: String = "Tool arguments must be a serializable object"
@@ -175,7 +175,7 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
      *  calls must not lose them to a verbose console.log (a four-call cell on 2026-09-20 did). */
     private fun appendLog(value: String) {
         val separator = if (logs.isEmpty()) "" else "\n"
-        val room = MAX_LOG_BYTES - logs.toString().encodeToByteArray().size - separator.length
+        val room = MAX_CELL_LOG_BYTES - logs.toString().encodeToByteArray().size - separator.length
         val kept = fitBytes(value, room.coerceAtLeast(0))
         truncatedChars += value.length - kept.length
         if (kept.isNotEmpty()) logs.append(separator).append(kept)

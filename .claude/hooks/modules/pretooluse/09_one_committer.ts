@@ -8,7 +8,7 @@
  *
  *    1. `LEDGER_ORCHESTRATOR=1` as an inline env prefix on the git command, or
  *    2. the console-handover carve-out: every affected path lies inside splice-design's own fence
- *       (`webui/`, `.dev/web-console/`, `.dev/campaigns/web-console.toml`, root `bun.lock`).
+ *       (`console/`, `.dev/web-console/`, `.dev/campaigns/web-console.toml`, root `bun.lock`).
  *
  *  Rule 2 is a PATH rule, not an identity rule: the hook cannot see a reliable seat, so it admits
  *  splice-design's WORK by the fence that only splice-design holds. One affected path outside the
@@ -41,7 +41,7 @@ const INLINE_PREFIX_RE = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*LEDGER_ORCHESTRA
 // branch, limited to exactly this path set. A write whose affected paths all live inside it is
 // admitted; one outside it refuses the write by name.
 const HANDOVER_EXACT: ReadonlySet<string> = new Set(["bun.lock", ".dev/campaigns/web-console.toml"]);
-const HANDOVER_DIRS: readonly string[] = ["webui/", ".dev/web-console/"];
+const HANDOVER_DIRS: readonly string[] = ["console/", ".dev/web-console/"];
 
 const BROAD_ADD_FLAGS: ReadonlySet<string> = new Set([".", "-A", "--all", "-u", "--update"]);
 
@@ -219,7 +219,7 @@ export function run(data: HookEvent): HookResult | null {
   }
   reason +=
     "Builders never git add/commit/push; the orchestrator stages the fence and commits\n" +
-    "locally, and pushes once per milestone. splice-design's own rows (webui/, " +
+    "locally, and pushes once per milestone. splice-design's own rows (console/, " +
     ".dev/web-console/,\n" +
     ".dev/campaigns/web-console.toml, bun.lock) are admitted path-by-path. For\n" +
     "anything else, run with the grant inline ON THIS command — a variable exported by an\n" +

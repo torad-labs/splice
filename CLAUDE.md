@@ -21,14 +21,14 @@ The procedure, every time, in this order:
    `bash checks/gate.sh` inside `buildgate.slice`, ending in `GATE: PASS`, with `git status` empty
    and HEAD equal to the commit being installed. An export cannot run four of its legs and reports
    them RED for reasons that are not the code (measured 2026-09-17 on 1808837b): `pr title` reads
-   HEAD's subject and a `git archive` tree has no `.git` (exit 1); `webui lint`/`tests`/`build`
+   HEAD's subject and a `git archive` tree has no `.git` (exit 1); `console lint`/`tests`
    need `node_modules`, which `git archive` excludes (exit 127, `eslint: not found`); `OSS
    readiness` shells out to git (exit 128). The export exists to BUILD the jar from a tree with no
    dirty edits, which is a different job from running the ladder. Build there, gate here.
 
    The ladder runs the gradle tier (module-law, detekt, arch-tests, every unit test, the load
    test), the ast-grep walls, concentration, the campaign walls, the oracle replay, the code-mode
-   selftests, config guard, safe-failure-render, the webui lint/test/build, OSS readiness, and the
+   selftests, config guard, safe-failure-render, the console lint/test, OSS readiness, and the
    pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
    green three times while the oracle replay had three drifted pins. Grep the log for `GATE:` and
    `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the

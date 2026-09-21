@@ -68,7 +68,7 @@ const CTRL_FILES = [
   resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/ControlServer.kt"),
   resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/api/ConfigRoutes.kt"),
 ];
-const WEBUI = resolve(ROOT, "webui/src/entities/config/api/index.ts");
+const WEBUI = resolve(ROOT, "console/src/entities/config/api/index.ts");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(layers: string | null, ctrl: string | null, webui: string | null): string[] {

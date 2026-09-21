@@ -4,9 +4,9 @@ gateway:
   - changed-files:
       - any-glob-to-any-file: 'gateway/**'
 
-webui:
+console:
   - changed-files:
-      - any-glob-to-any-file: 'webui/**'
+      - any-glob-to-any-file: 'console/**'
 
 documentation:
   - changed-files:

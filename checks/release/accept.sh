@@ -75,8 +75,9 @@ with zipfile.ZipFile(dist / "splice.jar") as jar:
     for sidecar, entry in embedded.items():
         if jar.read(entry) != (dist / sidecar).read_bytes():
             raise SystemExit(f"release accept: {sidecar} differs from {entry} in splice.jar")
-    if jar.read("webui/index.html") != (root / "webui/dist/index.html").read_bytes():
-        raise SystemExit("release accept: packaged dashboard differs from committed webui dist")
+    # PR 4: the bundle is :console:bundle's output; the jar carries what that build produced
+    if jar.read("webui/index.html") != (root / "console/dist/index.html").read_bytes():
+        raise SystemExit("release accept: packaged dashboard differs from the built console bundle")
 PY
 
 run_install() {

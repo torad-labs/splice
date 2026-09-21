@@ -1,7 +1,7 @@
 // PORT-OF: server/test/control-server.test.mjs @ pre-public-port-baseline — bearer guard, /api/status, /api/heads
 // + lifecycle, /api/config GET+PATCH (single-JVM: no fanout targets), /api/usage soft-warn
 // firing from a seeded 90% ratelimit, /api/auth masked, dashboard serving, 404s. Payload shapes
-// match webui/src/shared/api/index.ts (the contract).
+// match console/src/shared/api/index.ts (the contract).
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess

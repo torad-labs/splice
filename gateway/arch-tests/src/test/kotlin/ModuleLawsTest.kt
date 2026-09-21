@@ -57,6 +57,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":gateway" to ADAPTER_BASE + DIALECTS,
     // the management plane reads the domain only.
     ":control" to setOf(":core"),
+    // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
+    ":console" to emptySet(),
 )
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are

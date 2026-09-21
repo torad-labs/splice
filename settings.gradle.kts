@@ -35,6 +35,7 @@ include(
     ":app",
     ":arch-tests",
     ":fir-checks",
+    ":console",
 )
 
 project(":core").projectDir = file("gateway/core")
@@ -52,3 +53,6 @@ project(":control").projectDir = file("gateway/control")
 project(":app").projectDir = file("gateway/app")
 project(":arch-tests").projectDir = file("gateway/arch-tests")
 project(":fir-checks").projectDir = file("gateway/fir-checks")
+// the operator console: a Bun/Vite workspace with no Kotlin, included so the release packages its
+// bundle through a task output rather than a checked-in file (PR 4)
+project(":console").projectDir = file("console")

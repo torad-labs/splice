@@ -84,7 +84,10 @@ val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
 val icuLicense = repositoryRoot.file("checks/release/icu-LICENSE.txt")
-val dashboard = repositoryRoot.file("webui/dist/index.html")
+// PR 4: the console bundle is the OUTPUT of :console:bundle, never a checked-in file. Read through
+// the task's output provider so verifyReleaseCompliance and shadowJar depend on the build itself.
+evaluationDependsOn(":console")
+val dashboard: Provider<File> = project(":console").tasks.named<Exec>("bundle").map { it.outputs.files.singleFile }
 // The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
 // considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
 // is already allowed — no patent clause, no NOTICE obligation, no copyleft, OSI-approved — and the
@@ -316,7 +319,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "Copyright (c) Meta Platforms, Inc. and affiliates.",
             "Copyright (c) 2019 Paul Henschel",
         ).forEach { marker -> check(marker in notices) { "third-party notices missing $marker" } }
-        check(dashboard.asFile.length() > 100_000L) { "committed dashboard bundle is missing or unexpectedly small" }
+        check(dashboard.get().length() > 100_000L) { "the built console bundle (:console:bundle) is missing or unexpectedly small" }
     }
 }
 
@@ -361,5 +364,6 @@ tasks.withType<ShadowJar>().configureEach {
     from(repositoryRoot.file("PROVENANCE.md")) { into("META-INF") }
     from(bom) { into("META-INF") }
     from(licenses) { into("META-INF") }
+    // the archive entry stays `webui/index.html`: DashboardHtml.kt reads that resource by name
     from(dashboard) { into("webui") }
 }

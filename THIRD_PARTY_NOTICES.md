@@ -4,13 +4,13 @@ splice bundles or builds against the third-party materials listed below. This fi
 factual provenance, not legal advice; consult the referenced licenses for the authoritative
 terms.
 
-## IBM Plex Mono (webui fonts)
+## IBM Plex Mono (console fonts)
 
-- Files: `webui/src/shared/fonts/ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`,
+- Files: `console/src/shared/fonts/ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`,
   `ibm-plex-mono-600.woff2`
 - Copyright (c) 2017 IBM Corp. All rights reserved.
 - License: SIL Open Font License, Version 1.1
-- Full license text: `webui/src/shared/fonts/OFL.txt`
+- Full license text: `console/src/shared/fonts/OFL.txt`
 
 ## Gradle Wrapper
 
@@ -23,11 +23,11 @@ terms.
   --gradle-version 9.7.1`), not hand-edited. sha256 of the jar currently vendored in this
   repo: `7a9ce74cff467ca1bf60a4fcd9f05185acceda4d0f382434d393e17864262c5d`.
 
-## webui bundled runtime dependencies
+## console bundled runtime dependencies
 
-`webui/dist/index.html` is a single-file production bundle (built with
+`console/dist/index.html` (the :console:bundle output) is a single-file production bundle (built with
 `vite-plugin-singlefile`); the runtime packages below are compiled into it. Enumerated from
-`webui/package.json` `dependencies`:
+`console/package.json` `dependencies`:
 
 - react 19.2.7 — MIT
   - Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -77,7 +77,7 @@ release's `dependency-licenses.json` and SBOM, with SHA-256 pins in
 
 ## Torad design tokens
 
-The "plate" rendering recipe in `webui/src/shared/tokens.css` (the `--plate-well`,
+The "plate" rendering recipe in `console/src/shared/tokens.css` (the `--plate-well`,
 `--plate-sink`, `--plate-rise`, `--plate-bevel`, and `--plate-leaf` custom properties) was
 ported verbatim from `torad-world.css`, a separate project by the same author/copyright
 holder as this repository. This is same-author material, its use here is authorized, and it

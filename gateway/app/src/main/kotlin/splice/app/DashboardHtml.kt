@@ -17,7 +17,7 @@ internal class DashboardHtml {
         classpathHtml: ClasspathHtml = ClasspathHtml {
             // Asked of the class loader by absolute resource name, not of a class token via
             // `Daemon::class.java`. The shadow jar packages the dashboard at `webui/index.html`
-            // (app/build.gradle.kts `from(dashboard) { into("webui") }`) and the daemon runs as
+            // (gateway/app/build.gradle.kts `from(dashboard) { into("webui") }`, the :console:bundle output) and the daemon runs as
             // `java -jar`, so the system loader is the one holding that jar — same bytes, minus
             // the reflective hop through a class whose only role was to name a loader.
             ClassLoader.getSystemResourceAsStream("webui/index.html")

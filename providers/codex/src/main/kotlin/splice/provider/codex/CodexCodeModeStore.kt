@@ -1,4 +1,7 @@
 // NEW: persists bounded code-mode records and expiry markers through atomic 0600 writes.
+// CREDENTIAL-WRITE-EXEMPT[2026-09-21]: code-mode batch state, never a credential. This file
+// persists the code-mode store's own record of admissions, completions and expiry history; it
+// holds no token, and a from-scratch write loses nothing another process wrote beside it.
 package splice.provider.codex
 
 import kotlinx.serialization.encodeToString

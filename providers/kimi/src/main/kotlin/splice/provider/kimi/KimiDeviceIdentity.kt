@@ -3,6 +3,9 @@
 // Every header value is ASCII-sanitized: non-ASCII chars are stripped and an empty result becomes
 // "unknown", because Ktor rejects non-Latin1 header values and CJK hostnames exist in the wild.
 // The header map contains platform/version/hostname/OS values; it does not read or expose device_id.
+// CREDENTIAL-WRITE-EXEMPT[2026-09-21]: the device identity file, never a credential. It carries a
+// single generated device id that kimi's API wants echoed back; nothing else writes it, so there
+// is no foreign field to preserve. It uses the atomic 0600 write for the permissions, not the merge.
 package splice.provider.kimi
 
 import splice.core.GATEWAY_VERSION

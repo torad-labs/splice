@@ -190,16 +190,16 @@ run "autocloseable closed" bun checks/autocloseable-closed.ts check
 run "autocloseable closed selftest" bash checks/autocloseable-closed-selftest.sh
 # Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted
 # every time it was only prose, because nothing failed when a session added another .py. It is a
-# wall now; checks/config/python-burndown.json is the dated debt and may only shrink.
-run "no python" bun checks/no-python.ts
-run "no python selftest" bun checks/no-python-selftest.ts
+# wall now; tools/gate/config/python-burndown.json is the dated debt and may only shrink.
+run "no python" bun tools/gate no-python
 # SAME CHECKER, TWICE. The leg above is the commit-time half and it fails LATE: on 2026-09-18 a
 # webui commit added a fresh python3 subprocess and the branch stayed green for hours, until a
 # builder converting an unrelated checker happened to run the wall. The PreToolUse guard
-# (.claude/settings.json, Write|Edit|MultiEdit) refuses that write when it is made, importing this
-# wall's own predicate rather than reimplementing it. This leg proves the guard still refuses —
-# a write guard that silently stopped refusing would announce itself only as Python reappearing.
-run "no python write guard" bun checks/no-python-write-guard-selftest.ts
+# (.claude/settings.json, Write|Edit|MultiEdit) is `bun tools/gate no-python --guard`, the same
+# library as the leg above rather than a reimplementation. The test arms below prove both halves —
+# every census RED on its mutation, and the guard still refusing a synthetic event — because a write
+# guard that silently stopped refusing would announce itself only as Python reappearing.
+run "no python selftest" bun test tools/gate/test/no-python.test.ts
 run "public surface" bun checks/public-surface.ts --ratchet
 run "public surface selftest" bash checks/public-surface-selftest.sh
 run "constructor width" bun checks/constructor-width.ts --ratchet

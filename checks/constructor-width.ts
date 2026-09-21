@@ -2,7 +2,7 @@
 /**
  * V4-93 — a primary constructor's WIDTH is billed, because detekt does not bill it.
  *
- * WHY THIS EXISTS. gateway/detekt.yml:38-43 configures LongParameterList with
+ * WHY THIS EXISTS. quality/detekt/detekt.yml:38-43 configures LongParameterList with
  * `constructorThreshold: 8`, and then turns it off for the two shapes this tree actually
  * uses:
  *
@@ -592,7 +592,7 @@ function ratchet(root: string): { code: number; out: string; err: string } {
     const c = measured.get(key) as Constructor;
     problems.push(
       `GROWTH: ${c.rel}:${c.line} ${c.name} is over a constructor width and nothing records it — ` +
-        `${c.over().join("; ")}. detekt cannot see this (gateway/detekt.yml:38-43 ignores data ` +
+        `${c.over().join("; ")}. detekt cannot see this (quality/detekt/detekt.yml:38-43 ignores data ` +
         `classes and defaulted parameters), which is why this wall exists. Take the bundle apart, ` +
         `or record it with \`bun checks/constructor-width.ts --write-baseline\` — a dated diff ` +
         `saying the tree got wider.`,

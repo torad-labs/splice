@@ -9,7 +9,7 @@
 // THE SET BELOW IS DERIVED, NOT INHERITED. The row's design brief carried a candidate list; the
 // instruction was to derive the set by reading every `TurnOutcome.Failure(` site instead, and the
 // derivation disagrees with that list in BOTH directions. The census is the ast-grep rule
-// `.rules/kotlin-splice/kt-failure-has-cause.yml` (26 sites in 12 files, independently corroborated
+// `quality/rules/kotlin/kt-failure-has-cause.yml` (26 sites in 12 files, independently corroborated
 // this session), and every cause below names the sites that produce it.
 //
 //   IN THE BRIEF, PRODUCED BY NO SITE — these are real paths, but they do not construct a

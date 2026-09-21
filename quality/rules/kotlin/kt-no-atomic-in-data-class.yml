@@ -1,0 +1,90 @@
+# THE LAW. A `data class` is a VALUE — something you compare, copy and pass down. A
+# `java.util.concurrent.atomic.*` handle is IDENTITY: mutable state whose whole point is that one
+# writer's `set` is another reader's `get`. Putting one inside a value bundle makes the bundle lie
+# in both directions, and the lie is generated code, so nothing in review points at it:
+#   - `equals`/`hashCode` compare the atomic by REFERENCE, so two bundles carrying the same logical
+#     state are unequal, and a bundle whose flag has since flipped still equals its stale twin.
+#   - `copy()` shares the handle for a constructor property (two "independent" bundles racing on one
+#     flag) and RESETS it for a body property (the new bundle silently loses the claim — worse,
+#     because `copy()` reads as the safe operation).
+# Mutable handoff state belongs to the component that OWNS the lifecycle, behind a named method on
+# that owner. The bundle then carries a value, or a `fun interface` port onto the owner's decision.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit A row 9 / B rows 1,7). `TurnInputs.slotHandedOff` is the
+# named one: an AtomicBoolean threaded through an admission-time value bundle, set by TurnStreamer
+# when a detached compaction takes the slot, read by HeadAdmission's `finally` to decide whether to
+# release it. Two components coordinating slot ownership through a flag inside a `data class` that
+# both hold a reference to — the handoff has no owner, and `copy()` anywhere on that path would
+# have detached the two sides with no diagnostic. The double-release it guards against is the
+# 2026-07 slot-leak class.
+#
+# THE CENSUS (measured 2026-09-17, gateway/*/src/main). The audit row named ONE; the matcher found
+# FIVE, all the same defect, and the four extra are recorded here so the fix row has the real list:
+#   gateway/gateway/src/main/kotlin/splice/gateway/head/TurnInputs.kt:15      slotHandedOff: AtomicBoolean (ctor)
+#   gateway/gateway/src/main/kotlin/splice/gateway/head/HeadAdmission.kt:56   Admitted.handedOff: AtomicBoolean (ctor)
+#   gateway/gateway/src/main/kotlin/splice/gateway/wire/ClientChannel.kt:70   clientGone / detached: AtomicBoolean,
+#                                                                            socketFrames: AtomicLong (ctor)
+#   gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDrive.kt:29       rawRoundUsage: AtomicReference,
+#                                                                            usageStampClaim / accountBoundaryClaim:
+#                                                                            AtomicBoolean (body)
+#   gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountFiles.kt:45       OAuthLoginAccount.reservation /
+#                                                                            writtenLabel: AtomicReference (body)
+# The two BODY-property sites are not a widening of the law: `copy()` does not carry a body property
+# at all, so `OAuthLoginAccount.copy(label = x)` yields an account that has silently dropped the
+# reservation lease its own `check(compareAndSet(null, lease))` relies on being unique.
+#
+# THE DENOMINATOR (§24). "Value bundle" is read from the SOURCE in two ways, not from a list of
+# files: the `data` class modifier as the grammar spells it, and the three value-bundle name
+# suffixes the repo uses for hand-rolled bundles (`*Inputs`, `*Deps`, `*Meta`) so that dropping the
+# `data` modifier is not an escape. Both arms are pinned red in the rule-test.
+#
+# SCOPE IS DIRECT MEMBERSHIP, DELIBERATELY. The atomic must be a direct `class_parameter` of the
+# primary constructor or a direct `property_declaration` of the class body — not `stopBy: end` over
+# the whole subtree. Measured both ways: the subtree form reports the same five, but it also flags a
+# value bundle that merely CONTAINS a nested class of its own with an atomic (a correct owner,
+# nested for locality) and, symmetrically, lets a nested class launder nothing it should. Direct
+# membership is what the law is about — whose property is it.
+#
+# NOT MATCHED, and correct: a non-bundle class owning its own atomic. `AsyncFileIo.pending`,
+# `JsonlSink.unrotated`, `WorkerChannel.closed`, `InflightGate`'s queue counters — 40-odd sites — are
+# exactly the compliant form this rule points the five at, so the remedy already has four examples
+# per module.
+#
+# NO ALLOWLIST. Every finding has a compliant spelling (move the handle to the owner and hand the
+# bundle a port), so an exemption would only be a waived finding. If one is ever genuinely needed it
+# goes here dated, with the reason, never as an inline suppression.
+id: kt-no-atomic-in-data-class
+language: kotlin
+severity: error
+message: "A value bundle must not carry an Atomic* handle: `data class` equals/hashCode compare it by reference and `copy()` either shares it or drops it. Move the handle to the component that owns the lifecycle and pass a named port."
+note: >
+  The owner is whoever calls `set`/`compareAndSet` — give it a private atomic and a named method
+  (`markHandedOff()` / `wasHandedOff()`), then hand the bundle a `fun interface` port onto that
+  method. A bundle whose only mutable member was the atomic usually stops needing to be a bundle at
+  all. Compliant owners already in tree: AsyncFileIo.pending, JsonlSink.unrotated, WorkerChannel.closed.
+files:
+  - "**/src/main/**/*.kt"
+rule:
+  all:
+    - kind: class_declaration
+    # a value bundle, read two ways from the source: the grammar's `data` modifier, and the
+    # repo's hand-rolled-bundle name suffixes so dropping `data` is not an escape.
+    - any:
+        - has:
+            kind: modifiers
+            has: {kind: class_modifier, regex: "^data$"}
+        - has:
+            kind: type_identifier
+            regex: "(Inputs|Deps|Meta)$"
+    # DIRECT membership only — a nested class's own atomic is its own business, in both directions.
+    - any:
+        - has:
+            kind: primary_constructor
+            has:
+              kind: class_parameter
+              regex: '\bAtomic(Boolean|Integer|Long|Reference|IntegerArray|LongArray|ReferenceArray)\b'
+        - has:
+            kind: class_body
+            has:
+              kind: property_declaration
+              regex: '\bAtomic(Boolean|Integer|Long|Reference|IntegerArray|LongArray|ReferenceArray)\b'

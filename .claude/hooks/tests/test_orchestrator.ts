@@ -87,7 +87,7 @@ const assertContains = (haystack: unknown, needle: string, message?: string): vo
 
 const root = mkdtempSync(join(tmpdir(), "splice-hook-test-"));
 cpSync(join(REPO, "sgconfig.yml"), join(root, "sgconfig.yml"));
-cpSync(join(REPO, ".rules"), join(root, ".rules"), { recursive: true });
+cpSync(join(REPO, "quality", "rules"), join(root, "quality", "rules"), { recursive: true });
 
 interface RunResult {
   decision: Record<string, unknown> | null;
@@ -234,7 +234,7 @@ test("stop blocks on dirty tree and respects active flag", () => {
   const isolated = mkdtempSync(join(tmpdir(), "splice-stop-test-"));
   try {
     cpSync(join(REPO, "sgconfig.yml"), join(isolated, "sgconfig.yml"));
-    cpSync(join(REPO, ".rules"), join(isolated, ".rules"), { recursive: true });
+    cpSync(join(REPO, "quality", "rules"), join(isolated, "quality", "rules"), { recursive: true });
     assertNull(runHook("stop", {}, null, isolated).decision, "clean tree must not block stop");
     const bad = join(isolated, L3_TARGET);
     mkdirSync(dirname(bad), { recursive: true });

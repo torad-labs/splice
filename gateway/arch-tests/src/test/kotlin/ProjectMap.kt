@@ -17,7 +17,7 @@
 // when it is absent or malformed: a law that cannot see the modules must not pass.
 import java.io.File
 
-/** Gradle path (`:core`) -> the module's directory relative to the Gradle root (`core`). */
+/** Gradle path (`:core`) -> the module's directory relative to the Gradle root (`gateway/core`). */
 internal class ProjectMap private constructor(
     /** The Gradle root every relative directory in this map resolves against. */
     val root: File,
@@ -85,8 +85,9 @@ internal class ProjectMap private constructor(
         /** The channel: `:path=directory` pairs, `;`-separated, written by arch-tests/build.gradle.kts. */
         const val PROPERTY: String = "splice.projectMap"
 
-        /** The absolute Gradle root the laws read the tree from. */
-        const val ROOT_PROPERTY: String = "gateway.root"
+        /** The absolute Gradle root the laws read the tree from — the REPOSITORY root since the
+         *  build root moved there (restructure PR 2), which is why the property is not `gateway.*`. */
+        const val ROOT_PROPERTY: String = "splice.root"
 
         /** The census channel: the directory names the build's census input excludes, `;`-separated,
          *  written by the same build script as [PROPERTY]. */
@@ -116,7 +117,7 @@ internal class ProjectMap private constructor(
                 val directory = entry.substringAfter(PAIR_SEPARATOR, "")
                 check(module.startsWith(":") && directory.isNotBlank() && !directory.startsWith("/")) {
                     "$PROPERTY entry '$entry' is not ':<gradle path>=<directory relative to the " +
-                        "gateway root>' — a half-read map is a map that drops modules silently."
+                        "repository root>' — a half-read map is a map that drops modules silently."
                 }
                 val clash = directories.put(module, directory)
                 check(clash == null) {

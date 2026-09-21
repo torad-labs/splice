@@ -1,0 +1,94 @@
+# THE LAW. An unsafe cast (`x as T`) is a runtime assertion the compiler cannot check, standing in
+# for the narrowing the type system was built to do. On a sealed tree it is strictly worse than
+# useless: `outcome as TurnOutcome.Failure` compiles against EVERY subtype, so adding a
+# TurnOutcome case leaves the cast silently wrong and the next unhandled outcome arrives as a
+# ClassCastException on the turn path rather than as a compile error in the `when`.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit A row 9 / B rows 1,7). Four casts drive the round loop —
+# FoldRunner.kt:79, ReanchorRunner.kt:54 and :93, FoldContinuations.kt:70 — each narrowing the
+# outcome that the line ABOVE it has just tested with `!is` or a nullable continuation probe. The
+# knowledge exists at the cast site and is thrown away: two statements that must agree, with
+# nothing holding them together. TurnOutcome grew `ClientAbandoned` (DR-125) while these four sat
+# in the tree; nothing in the build could have said so.
+#
+# THE REMEDY. A `when (outcome)` whose branches BIND the narrowed value, or a typed return from the
+# function that already decided the shape (`continuationForFailedRound` knows it computed a retry
+# for a Failure — let it hand the Failure back). Where the decision is genuinely optional, `as?`
+# with `?: return` is compliant and already the overwhelming idiom here: 348 of the tree's 391
+# casts are `as?`, 25 of them onto a nested subtype exactly as these five should be. The compliant
+# form needs no invention.
+#
+# THE CENSUS (measured 2026-09-17, `ast-grep scan`, gateway/*/src/main): 43 unsafe casts total,
+# 38 dispositioned by the three exemptions below, 5 RED:
+#   gateway/gateway/src/main/kotlin/splice/gateway/round/FoldRunner.kt:79          outcome as TurnOutcome.Failure
+#   gateway/gateway/src/main/kotlin/splice/gateway/round/ReanchorRunner.kt:54      outcome as TurnOutcome.Success
+#   gateway/gateway/src/main/kotlin/splice/gateway/round/ReanchorRunner.kt:93      outcome as TurnOutcome.Failure
+#   gateway/gateway/src/main/kotlin/splice/gateway/round/FoldContinuations.kt:70   outcome as TurnOutcome.Success
+#   gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt:63
+#                                                                                 (it as TextBlock).text
+#
+# THE DENOMINATOR IS EVERY UNSAFE CAST, NOT A SPELLING (completeness law, §24). The audit row
+# described this rule as "any `as` onto a sealed subtype", and the obvious matcher — a DOTTED target
+# type, the `Outer.Inner` spelling a nested sealed subtype usually wears — was written first and
+# MEASURED: it found the four round-loop casts and MISSED CodexCodeModeTurnBuilder.kt:63, where
+# `ContentBlock.TextBlock` is spelled bare `TextBlock` through the same-package typealias
+# ContentBlock.kt:3 documents. A denominator taken from a naming convention cannot fail for the
+# violation that does not follow it. So the denominator is every `x as T` the parser finds, and each
+# one carries a disposition: red, or one of the three dated exemptions below.
+#
+# Sealedness itself is NOT expressible here and this is a rule-shape fact, not an omission:
+# ast-grep matches one file at a time, so "is T a subtype of a sealed parent declared in another
+# module" is unreachable. The exemptions are therefore stated as what they really are — the foreign
+# and non-narrowing casts — and anything else is red, which fails CLOSED on a repo-owned type.
+#
+# EXEMPTIONS (dated; each is a shape with no compliant alternative, not a waived finding):
+#   2026-09-17: `null as T?` — 13 sites (HeadResolver.kt:90-92, UsagePayloads.kt:60, ConfigRoutes.kt:95,
+#     SseEmitter.kt:162,:240, MessageStart.kt:56,:57, RateLimitHeaders.kt:41,:42, DoctorReport.kt:83,
+#     ChatWireMapper.kt:93). This is not a cast: it is the type ASCRIPTION kotlinx.serialization's
+#     `put(key, value)` overload resolution requires to emit a JSON null. Nothing is narrowed and
+#     nothing can throw. Matched structurally on the `null` literal, not by target type.
+#   2026-09-17: the seven kotlinx JSON targets (JsonObject, JsonArray, JsonPrimitive, JsonElement,
+#     JsonNull, JsonDecoder, JsonEncoder) — 16 sites. kotlinx.serialization's JsonElement tree
+#     (JsonObject/JsonArray/JsonPrimitive) and its codec seams (JsonDecoder/JsonEncoder) are a
+#     FOREIGN hierarchy; `decoder as JsonDecoder` in a KSerializer is the documented way to reach the
+#     JSON codec, and the element casts sit behind kotlinx's own `require`/serializer contracts. The
+#     splice-owned remedy for the element reads is kt-json-scalars-single-source, which owns that law.
+#   2026-09-17: `HttpURLConnection` (3), `FileTime` (1), `Long` (5) — JDK and stdlib unboxing with no
+#     typed alternative: `URL.openConnection()` is declared to return URLConnection and the JDK
+#     offers no typed accessor; `Files.readAttributes(path, "basic:...")` returns Map<String, Object>;
+#     `Knob.default` is `Any` by construction (ConfigCoercion.kt:68-87).
+#   2026-09-20 (V4-133): `String` — the same `Knob.default: Any` shape as the 2026-09-17 `Long`
+#     entry above, this time for a STRING-kinded knob (BudgetRoutes.kt reading
+#     Knob.BUDGET_DEFAULT_ACTION.default when a PUT /api/budgets row names no action). No typed
+#     accessor exists for either kind; the coercion is `Any` by the same construction.
+# A NEW foreign target goes RED and the remedy is one dated line here with its reason — never an
+# inline suppression. That is the intended cost: 13 target types have accumulated over this repo's
+# life, so the rate is low and each addition is a reviewed decision rather than silence.
+id: kt-no-unsafe-cast
+language: kotlin
+severity: error
+message: "Unsafe cast: narrow with `when (x)` / a typed return, or `as?` + `?: return`. `x as T` is an unchecked assertion — on a sealed tree it compiles against every subtype and breaks at runtime when one is added."
+note: >
+  The knowledge is already at the call site: the `!is` test or the nullable continuation probe one
+  line above decided the shape. Let a `when` bind it, or let the function that decided hand the
+  narrowed type back. `as?` with `?: return` is compliant — 25 sites in this tree already use it.
+  Foreign casts (the seven kotlinx JSON types, JDK HttpURLConnection/FileTime, `Any`-typed Long/String
+  unboxing) and the `null as T?` serialization ascription are exempt; a NEW foreign target needs a
+  dated exemption entry in this rule's header, not an inline ignore.
+files:
+  - "**/src/main/**/*.kt"
+rule:
+  all:
+    # Every unsafe cast the parser finds. `as?` does not match this pattern (measured: 43 unsafe
+    # against 391 as_expression nodes tree-wide — 348 of them `as?`), which is what makes the safe
+    # form compliant rather than merely tolerated.
+    - pattern: $X as $T
+    # `null as T?` — a type ascription for kotlinx `put` overload resolution, not a narrowing.
+    - not:
+        pattern: null as $T
+    # Foreign target hierarchies. Direct child only: a `Map<String, JsonObject>` type ARGUMENT must
+    # not launder a cast onto a repo-owned outer type.
+    - not:
+        has:
+          kind: user_type
+          regex: '^(JsonObject|JsonArray|JsonPrimitive|JsonElement|JsonNull|JsonDecoder|JsonEncoder|HttpURLConnection|FileTime|Long|String)$'

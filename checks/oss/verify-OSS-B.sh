@@ -6,5 +6,5 @@ grep -q "dangerously-skip-permissions" gateway/control/src/main/kotlin/splice/co
 # the lifecycle level those events print at, so it suppressed the one output that config exists to
 # produce: this leg has been reporting "287 tests completed, 1 failed" with no name attached. A
 # green run stays quiet either way, because only failed events are logged.
-( cd gateway && ./gradlew :control:test )
+./gradlew :control:test
 echo "VERIFY OSS-B: OK"

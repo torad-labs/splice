@@ -26,7 +26,7 @@ PY
 ! grep -Eq "uses: .*@v[0-9]+[[:space:]]*$" .github/workflows/release.yml
 grep -q "draft: true" .github/workflows/release.yml
 grep -q "THIRD_PARTY_LICENSES.txt" .github/workflows/release.yml
-grep -q distributionSha256Sum gateway/gradle/wrapper/gradle-wrapper.properties
+grep -q distributionSha256Sum gradle/wrapper/gradle-wrapper.properties
 # DR-19: the tag gate must run on the PROMOTION path too — the stage step threads the resolved
 # version in as SPLICE_RELEASE_TAG (the tag path still wins inside stage.sh via GITHUB_REF_TYPE).
 # Without this wiring, stage.sh's whole SemVer/equality block is skipped exactly where releases
@@ -114,7 +114,7 @@ grep -q "does not match package version" "$invalid_tag_log" || {
   echo "VERIFY OSS-D: mismatched tag failed for the wrong reason" >&2
   exit 1
 }
-( cd gateway && ./gradlew -q :app:shadowJar --no-daemon --no-parallel )
+./gradlew -q :app:shadowJar --no-daemon --no-parallel
 SPLICE_RELEASE_TAG="v$VERSION" bash checks/release/stage.sh
 SPLICE_EXPECTED_VERSION="$VERSION" bash checks/release/accept.sh
 

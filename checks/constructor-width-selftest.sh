@@ -9,7 +9,7 @@
 # zero constructors, finds zero offenders and exits 0. That is the failure
 # checks/concentration-selftest.sh exists for — a gate leg that spent a month executing `true`.
 #
-# THE OTHER HALF IS THE PREMISE. This wall exists because gateway/detekt.yml:38-43 turns
+# THE OTHER HALF IS THE PREMISE. This wall exists because quality/detekt/detekt.yml:38-43 turns
 # LongParameterList off for data classes and defaulted parameters. If someone deletes those two
 # ignores, detekt starts billing the width and this wall is redundant; if someone deletes the RULE,
 # this wall is the only thing left. Either way the premise must not change silently, so it is
@@ -69,9 +69,9 @@ must_fail() { # must_fail <label> <substring the failure must name>
 }
 
 # -- the premise: detekt still cannot see this ------------------------------------------------
-DETEKT="$ROOT/gateway/detekt.yml"
+DETEKT="$ROOT/quality/detekt/detekt.yml"
 if ! grep -q "LongParameterList:" "$DETEKT"; then
-  err "PREMISE: gateway/detekt.yml no longer configures LongParameterList — re-read this wall's header before trusting either instrument"
+  err "PREMISE: quality/detekt/detekt.yml no longer configures LongParameterList — re-read this wall's header before trusting either instrument"
 elif ! grep -q "ignoreDataClasses: true" "$DETEKT" || ! grep -q "ignoreDefaultParameters: true" "$DETEKT"; then
   note "PREMISE CHANGED: detekt's ignoreDataClasses/ignoreDefaultParameters are no longer both true — detekt may now bill some of these widths itself; re-read checks/constructor-width.ts's header"
 else

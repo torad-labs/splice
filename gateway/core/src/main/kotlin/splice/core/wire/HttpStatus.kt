@@ -26,7 +26,7 @@
 // (499/599 range ends, 501, 202): they are not codes any site answers with, so they stay local
 // until something makes them a second site.
 //
-// WALL: .rules/kotlin-splice/kt-http-status-single-source.yml names THIS path in its `ignores:` —
+// WALL: quality/rules/kotlin/kt-http-status-single-source.yml names THIS path in its `ignores:` —
 // the sole allowed declaration site, exempt BY PATH, so no other file can claim the exemption.
 package splice.core.wire
 

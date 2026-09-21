@@ -1,6 +1,6 @@
 // P1 — glob COVERAGE, not liveness.
 //
-// The hazard (restructure plan §6.1 P1): 62 rules bind path globs in `files:`, and ast-grep is
+// The hazard (restructure plan §6.1 P1): the architecture rules bind path globs in `files:`, and ast-grep is
 // silent about a glob that selects nothing. A glob narrowed from `gateway/*/src/main/**/*.kt` to
 // `app/src/main/**/*.kt` still matches everything it names, so `ast-grep scan` stays green
 // while fifteen modules lose enforcement. Nothing in a scan can see that, because the only thing a

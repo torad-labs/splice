@@ -4,7 +4,7 @@
 // the proof RED with a message that names the rule and what it lost. The same rules, copied and NOT
 // broken, must be green — a baseline that is red would make every mutant meaningless.
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { proveCoverage, type CoverageReport } from "../src/lib/coverage.ts";
@@ -19,13 +19,32 @@ afterAll(() => {
   for (const dir of workspaces) rmSync(dir, { recursive: true, force: true });
 });
 
+/** The rule directories sgconfig.yml routes, named ONCE. The mutant copies and the baseline's
+ *  denominator both read this, so a third rule dir added to the config cannot land while the
+ *  copies and the count quietly go on describing the old two. */
+const RULE_DIRS = ["console", "kotlin"] as const;
+
+/** The rule total counted from the FILESYSTEM, never retyped. A hand-kept total is the same defect
+ *  mutant (b) below was written against: `62` went stale the moment a rule landed correctly
+ *  (6b6ad77a added the 63rd) and reddened the gate for the change rather than for a fault.
+ *  Counting the files cross-checks the prover against a source it does NOT reach through
+ *  sgconfig.yml, so a ruleDir dropped from that config still fails this arm. */
+function rulesOnDisk(): number {
+  return RULE_DIRS.reduce(
+    (total, dir) =>
+      total + readdirSync(join(repoRoot, "quality", "rules", dir)).filter((f) => f.endsWith(".yml")).length,
+    0,
+  );
+}
+
 /** A copy of the REAL rule set and the REAL exclusion table, which a mutant then edits. */
 function copyOfTheRealRules(): { sgconfig: string; exclusions: string; rule(id: string): string } {
   const dir = mkdtempSync(join(tmpdir(), "gate-coverage-mutant-"));
   workspaces.push(dir);
-  cpSync(join(repoRoot, "quality", "rules", "console"), join(dir, "console"), { recursive: true });
-  cpSync(join(repoRoot, "quality", "rules", "kotlin"), join(dir, "kotlin"), { recursive: true });
-  writeFileSync(join(dir, "sgconfig.yml"), "ruleDirs:\n  - console\n  - kotlin\n");
+  for (const name of RULE_DIRS) {
+    cpSync(join(repoRoot, "quality", "rules", name), join(dir, name), { recursive: true });
+  }
+  writeFileSync(join(dir, "sgconfig.yml"), `ruleDirs:\n${RULE_DIRS.map((d) => `  - ${d}\n`).join("")}`);
   // A distinct filename per copy: the TOML reader imports by path, and Bun caches modules by path.
   const exclusions = join(dir, "exclusions.toml");
   cpSync(join(repoRoot, EXCLUSIONS), exclusions);
@@ -54,9 +73,11 @@ describe("the P1 coverage proof", () => {
     const real = await prove(join(repoRoot, ROUTED_CONFIG), join(repoRoot, EXCLUSIONS));
     expect(real.findings.map((f) => f.message)).toEqual([]);
     expect(real.ok).toBe(true);
-    expect(real.rules).toBe(62);
+    const onDisk = rulesOnDisk();
+    expect(onDisk, "counting the rule files found none — a zero denominator agrees with any prover").toBeGreaterThan(0);
+    expect(real.rules).toBe(onDisk);
     expect(real.crossCheckAgreed).toBe(real.crossChecked);
-    expect(real.crossChecked).toBe(62);
+    expect(real.crossChecked).toBe(onDisk);
 
     const copy = copyOfTheRealRules();
     const baseline = await prove(copy.sgconfig, copy.exclusions);

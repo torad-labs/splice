@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-/** Loopback control+head for heads-e2e-selftest.sh.
+/** Loopback control+head for tools/e2e/test/heads.test.ts.
  *
  *  Two sockets, never a real daemon and never a vendor. The control plane answers
- *  /health and /api/heads so heads-e2e.sh will not cold-start splice.jar. The head
+ *  /health and /api/heads so `e2e heads` will not cold-start splice.jar. The head
  *  answers /v1/models, /v1/messages (Anthropic SSE with `event:` lines, two
  *  deltas), and /v1/messages/count_tokens. Authorization on BOTH planes is
  *  appended to --record as JSONL so a skip/FATAL arm that still probes is visible.

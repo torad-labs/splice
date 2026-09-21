@@ -347,7 +347,7 @@ async function main(): Promise<number> {
   // what is really a missing header. WHICH credential is the caller's decision, not this script's,
   // and the distinction is a safety boundary rather than a preference: on a splice-credentialed
   // head this is the daemon's mgmt key, but on a CLIENT-auth head the gateway forwards this exact
-  // header verbatim to the vendor, so the mgmt key must never be what lands here. heads-e2e.sh
+  // header verbatim to the vendor, so the mgmt key must never be what lands here. tools/e2e/src/commands/heads.ts
   // (probe_bearer) owns that choice and hands the result down in SPLICE_PROBE_BEARER.
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const bearer = process.env["SPLICE_PROBE_BEARER"] ?? "";

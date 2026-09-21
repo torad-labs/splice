@@ -1,7 +1,7 @@
 // NEW: request-byte CONTRACT fixture (#924 Phase 1). The golden is the EXACT upstream request the
 // ChatRequestBuilder emits for a canonical turn; drift in ANY field fails here — not just the
 // fields individual scenario tests happen to assert. This is the OFFLINE half of the live-receipt
-// defense: checks/e2e/heads-e2e.sh --tier emits a signed receipt
+// defense: bun tools/e2e heads --tier emits a signed receipt
 // {provider, model, http_status, sha256(exact request bytes that got 200)}; the receipt-BINDING
 // half (a CHANGED golden must match a receipt hash, so a blind regenerate can't go green) activates
 // on live traffic. See gateway/CONTRACT.md. Regenerate deliberately: delete the golden, run, review
@@ -49,6 +49,6 @@ internal fun assertGoldenContract(name: String, actual: JsonObject, owner: () ->
         res.readText().trim(),
         pretty.trim(),
         "request-byte contract drift for '$name' — a builder change altered the upstream request. " +
-            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to a heads-e2e receipt. See gateway/CONTRACT.md.",
+            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See gateway/CONTRACT.md.",
     )
 }

@@ -451,16 +451,15 @@ Opaque replay also ships off. Set `CLAUDEX_REPLAY_REASONING=1` only if you delib
 
 An A/B run in July 2026 asked one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** Two isolated real Claude Code sessions ran the same fixed multi-turn workload on a side port, only the replay toggled, and a captured, sanitized transcript replayed it without live credentials. Its harness was retired with the Node proxy it drove; the result is what matters:
 
-The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin. Read `experiments/cache-replay/README.md` for the caveats and run it yourself.
+The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin.
 
 ## Layout
 
 ```
 gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
 config/        splice.example.toml — the sample multi-provider topology
-bin/           splice-launch (the installed wrapper) + claudex / claude-muse (in-repo head entries)
+bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
-checks/        the local gate and the live harnesses (docker e2e, local models, MCP hosting bench)
 webui/         React 19 + Vite + Zustand dashboard, single-file build
 checks/        the gate (`npm run gate`) and its legs: wall routing, the concentration ratchet,
                release acceptance, the OSS ladder, the e2e harnesses
@@ -480,7 +479,7 @@ established survives as 11 byte-exact fixtures in the migration oracle
 ## Development
 
 ```bash
-npm ci
+bun install --frozen-lockfile
 npm run gate   # Gradle, walls/hooks, server, webui, release acceptance, OSS checks
 ```
 

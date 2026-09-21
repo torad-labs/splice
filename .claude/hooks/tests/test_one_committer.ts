@@ -210,7 +210,7 @@ test("handover near miss one webui one src is blocked", () => {
 });
 
 test("handover exact files pass", () => {
-  assertAllowed("git add package-lock.json .dev/campaigns/web-console.toml");
+  assertAllowed("git add bun.lock .dev/campaigns/web-console.toml");
 });
 
 test("handover directory nested passes", () => {

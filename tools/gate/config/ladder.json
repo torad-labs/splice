@@ -120,8 +120,6 @@
       "command": ["bun", "checks/const-single-source.ts", "--ratchet"]
     },
     { "task": "constSingleSourceSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/const-single-source-selftest.sh"] },
-    { "task": "silentConstants", "why": "ARCH-AUDIT ratchet: a silent constant (a magic value with no name) may not be added.", "command": ["bun", "checks/silent-constants.ts", "--ratchet"] },
-    { "task": "silentConstantsSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/silent-constants-selftest.sh"] },
     { "task": "roleRegistry", "why": "ARCH-AUDIT wall: every role is registered once.", "command": ["bun", "checks/role-registry.ts", "check", "."] },
     { "task": "roleRegistrySelftest", "why": "The role-registry wall's own arms.", "command": ["bash", "checks/role-registry-selftest.sh"] },
     { "task": "modelCatalogsSingleSource", "why": "ARCH-AUDIT wall: the model catalogs have one source.", "command": ["bun", "checks/model-catalogs-single-source.ts", "check", "."] },
@@ -136,8 +134,6 @@
       "why": "Every red-green arm of the gate CLI: the slot, the JDK resolver, the title preflight, rule routing, the config guard, the no-python wall (every census RED on its mutation, and the write guard still refusing a synthetic event), the write-time hook, the ledger checks and the coverage proof.",
       "command": ["bun", "test", "tools/gate"]
     },
-    { "task": "publicSurface", "why": "ARCH-AUDIT ratchet: the public surface may not grow unrecorded.", "command": ["bun", "checks/public-surface.ts", "--ratchet"] },
-    { "task": "publicSurfaceSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/public-surface-selftest.sh"] },
     { "task": "constructorWidth", "why": "ARCH-AUDIT ratchet: constructor width may not grow unrecorded.", "command": ["bun", "checks/constructor-width.ts", "--ratchet"] },
     { "task": "constructorWidthSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/constructor-width-selftest.sh"] },
     { "task": "schemaKeysConsumed", "why": "ARCH-AUDIT wall: every schema key is consumed.", "command": ["bun", "checks/schema-keys-consumed.ts"] },

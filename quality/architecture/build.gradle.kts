@@ -5,6 +5,11 @@ plugins {
 
 dependencies {
     testImplementation(libs.konsist)
+    // Restructure PR 6 §4.3: the two ratchet laws (silent constants, public surface) read their
+    // recorded census off a JSON resource on the test classpath — the same document their checkers
+    // read off disk. The tree's own JSON reader, rather than a hand parser per law: a second reading
+    // of a format is a second set of ways to misread it.
+    testImplementation(libs.kotlinx.serialization.json)
 }
 
 // P0 (restructure §6.1): THE PROJECT MAP — every module's Gradle path and the directory it actually
@@ -100,4 +105,19 @@ tasks.withType<Test>().configureEach {
     // sources are, or a key documented late comes back UP-TO-DATE-red and a key retired late
     // UP-TO-DATE-green.
     inputs.files(repoRoot.file("config/splice.example.toml")).withPropertyName("scannedDocumentationSurfaces")
+    // Restructure PR 6 §4.3: the V4-92 public-surface ratchet counts a sibling module's
+    // testFixtures sources as a CONSUMER — a fixture is shipped, cross-module code — so a fixture
+    // that starts or stops naming a library's type moves the measured surface. Without this input a
+    // testFixtures edit leaves the task UP-TO-DATE and the ratchet grades a tree it never re-read.
+    inputs.files(
+        moduleDirectories.values.map { dir ->
+            repoRoot.dir("$dir/src/testFixtures/kotlin").asFileTree.matching { include("**/*.kt") }
+        },
+    ).withPropertyName("scannedTestFixtureSources")
+    // The ratchets' recorded censuses, moved here from checks/config/ with their checkers. They are
+    // the OTHER half of every one of those laws' verdicts: a baseline lowered by hand must re-run
+    // the law that grades against it, or the win is recorded against a run that never happened.
+    inputs.files(
+        layout.projectDirectory.dir("src/test/resources").asFileTree.matching { include("**/*.json") },
+    ).withPropertyName("recordedRatchetBaselines")
 }

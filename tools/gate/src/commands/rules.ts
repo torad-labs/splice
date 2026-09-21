@@ -97,7 +97,10 @@ export async function rules(argv: readonly string[]): Promise<number> {
   console.log(
     `\ncoverage: ${report.rules} routed rules over ${report.units} source roots ` +
       `(${report.modules} gradle modules + ${report.surfaces} workspace surface) — ` +
-      `${report.coveredPairs} rule×source-root pairs covered, ${report.exclusions} dated exclusions`,
+      `${report.coveredPairs} rule×source-root pairs covered, ${report.exclusions} dated exclusions ` +
+      // the rows are what the table looks like; the ATOMS are what is graded. A row naming 14
+      // modules is 14 dispositions, and printing only the row count hides the real denominator.
+      `(${report.exclusionAtoms} scoped dispositions)`,
   );
   console.log(
     `cross-check: ${report.crossCheckAgreed}/${report.crossChecked} rules' files:/ignores: agree with ast-grep's own selection`,

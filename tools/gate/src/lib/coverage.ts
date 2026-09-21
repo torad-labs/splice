@@ -43,6 +43,8 @@ export interface CoverageReport {
   readonly modules: number;
   readonly surfaces: number;
   readonly exclusions: number;
+  /** dispositions actually graded: the rows' cross-product cells, always >= exclusions */
+  readonly exclusionAtoms: number;
   readonly crossChecked: number;
   readonly crossCheckAgreed: number;
   readonly coveredPairs: number;
@@ -82,15 +84,15 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
     }
   }
 
-  // Staleness is keyed on (row, RULE), never on the row alone. A row listing several rules used to
-  // be marked used the moment ONE of them genuinely excused a lost source root, which made every
-  // sibling entry in that row permanently invisible to the retirement check below — 70 of this
-  // table's rule entries live in multi-rule rows. Measured 2026-09-21: six rules were widened to
-  // reach a newly extracted module, the row excusing them went stale in six places, and this proof
-  // stayed GREEN. The mutation arm that was supposed to catch that only ever mutated a
-  // single-rule row, so the row shape that hides dead exclusions was the one shape never tested.
+  // Staleness is keyed on the ATOM, never on the row and never on (row, rule). See atomsOf: a row's
+  // scope is a CROSS PRODUCT, and one live cell used to mark the whole row used, hiding every dead
+  // sibling. Two measured escapes, both on this table: keyed on the ROW, six rules widened to reach
+  // a newly extracted module left six dead entries and the proof stayed GREEN (2026-09-21); keyed on
+  // (row, RULE), a row naming 14 modules still reports nothing when 13 of them stop excusing
+  // anything, because the 14th is alive. Each retreat looked complete because the mutation arm that
+  // should have caught it only ever mutated the shape already covered — a single-rule row, then a
+  // single-member one.
   const used = new Set<string>();
-  const usedKey = (rowIndex: number, ruleId: string): string => `${rowIndex}\u0000${ruleId}`;
   let coveredPairs = 0;
 
   for (const rule of rules) {
@@ -117,7 +119,13 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
       const matched = expected.filter((f) => selects(rule, f));
       if (matched.length === 0) {
         const row = unitRows.find((r) => coversUnit(r, unit));
-        if (row) used.add(usedKey(row.index, rule.id));
+        // the cell that did the work: the row's own member that matched, wildcard where it omits
+        // the dimension entirely.
+        if (row) {
+          used.add(
+            atomKey(row.index, rule.id, row.modules.length ? unit.module : ANY, row.sourceSets.length ? unit.sourceSet : ANY, ANY),
+          );
+        }
         else {
           findings.push({
             kind: "source-root-lost",
@@ -133,9 +141,17 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
       const lost = expected.filter((f) => !selects(rule, f));
       const orphans: string[] = [];
       for (const file of lost) {
-        const row = fileRows.find((r) => r.files.some((glob) => globMatch(glob, file)));
-        if (row) used.add(usedKey(row.index, rule.id));
-        else orphans.push(file);
+        const row = fileRows.find((r) => coversUnit(r, unit) && r.files.some((glob) => globMatch(glob, file)));
+        // Credit every matching glob in the selected row, including overlapping siblings.
+        if (row) {
+          for (const glob of row.files) {
+            if (globMatch(glob, file)) {
+              used.add(
+                atomKey(row.index, rule.id, row.modules.length ? unit.module : ANY, row.sourceSets.length ? unit.sourceSet : ANY, glob),
+              );
+            }
+          }
+        } else orphans.push(file);
       }
       if (orphans.length > 0) {
         findings.push({
@@ -150,16 +166,17 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
   }
 
   for (const row of table.rows) {
-    for (const id of row.rules) {
+    for (const atom of atomsOf(row)) {
       // an id no rule declares is already reported by name as exclusion-invalid above; reporting it
       // a second time here would say nothing the reader does not have.
-      if (!ruleIds.has(id) || used.has(usedKey(row.index, id))) continue;
+      if (!ruleIds.has(atom.rule)) continue;
+      if (used.has(atomKey(row.index, atom.rule, atom.module, atom.sourceSet, atom.file))) continue;
       findings.push({
         kind: "exclusion-stale",
-        rule: id,
+        rule: atom.rule,
         message:
-          `exclusion ${describe(row)} lists "${id}", which excuses nothing — every source root and ` +
-          `file that row names is already covered for that rule. A stale disposition is a finding, ` +
+          `exclusion ${describe(row)} lists "${atom.rule}" for ${atomScope(atom)}, which excuses ` +
+          `nothing — that scope is already covered for that rule. A stale disposition is a finding, ` +
           `not a default.`,
       });
     }
@@ -207,11 +224,51 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
     modules: new Set(units.filter((u) => u.kind === "gradle").map((u) => u.module)).size,
     surfaces: new Set(units.filter((u) => u.kind === "workspace").map((u) => u.module)).size,
     exclusions: table.rows.length,
+    exclusionAtoms: table.rows.reduce((n, row) => n + atomsOf(row).length, 0),
     crossChecked,
     crossCheckAgreed,
     coveredPairs,
     findings,
   };
+}
+
+/** The wildcard cell: a dimension the row OMITS. */
+const ANY = "*";
+
+interface Atom {
+  readonly rule: string;
+  readonly module: string;
+  readonly sourceSet: string;
+  readonly file: string;
+}
+
+function atomKey(rowIndex: number, rule: string, module: string, sourceSet: string, file: string): string {
+  return [rowIndex, rule, module, sourceSet, file].join("\u0000");
+}
+
+/** Each declared scope cell must excuse a real loss. Omitted dimensions remain one wildcard,
+ *  not an expansion over today's tree: an explicit global waiver is deliberately broader. */
+function atomsOf(row: Exclusion): Atom[] {
+  const files = row.files.length ? row.files : [ANY];
+  const modules = row.modules.length ? row.modules : [ANY];
+  const sourceSets = row.sourceSets.length ? row.sourceSets : [ANY];
+  const atoms: Atom[] = [];
+  for (const rule of row.rules) {
+    for (const module of modules) {
+      for (const sourceSet of sourceSets) {
+        for (const file of files) atoms.push({ rule, module, sourceSet, file });
+      }
+    }
+  }
+  return atoms;
+}
+
+/** The cell, named the way the table spells it, so a finding says which line to delete. */
+function atomScope(atom: Atom): string {
+  const module = atom.module === ANY ? "every module" : `module ${atom.module}`;
+  const sourceSet = atom.sourceSet === ANY ? "every source set" : `source set ${atom.sourceSet}`;
+  const file = atom.file === ANY ? "" : ` / files glob ${atom.file}`;
+  return `${module} / ${sourceSet}${file}`;
 }
 
 function coversUnit(row: Exclusion, unit: SourceUnit): boolean {

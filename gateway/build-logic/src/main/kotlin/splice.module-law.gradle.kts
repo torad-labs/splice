@@ -10,7 +10,7 @@
 import org.gradle.api.artifacts.ProjectDependency
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
-/** project path -> allowed project-dependency paths. Absent key = unrestricted (:app, :spikes). */
+/** project path -> allowed project-dependency paths. Absent key = unrestricted (:app). */
 val moduleLaw: Map<String, Set<String>> = mapOf(
     ":core" to emptySet(),
     ":provider-spi" to setOf(":core"),
@@ -34,7 +34,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
 val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
 
 /** Modules exempt from explicitApi (executables and test harnesses, not libraries). */
-val nonLibrary = setOf(":app", ":spikes", ":arch-tests", ":fir-checks")
+val nonLibrary = setOf(":app", ":arch-tests", ":fir-checks")
 
 // The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
 // integration tests legitimately wire sibling modules (e.g. :gateway tests use

@@ -379,15 +379,12 @@ files = [
   "gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt",
   "gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt",
   "gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt",
-  "gateway/spikes/src/test/kotlin/PoolCancelSpike.kt",
-  "gateway/spikes/src/test/kotlin/SseFlushSpike.kt",
 ]
 date = "2026-09-20"
 reason = """
 The rule's own dated census, reason by reason: a proof of absence has no event to await
 (LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
-either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double; and the two spikes
-are measurement experiments disabled without -PrunSpikes.
+either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double.
 """
 
 # ─── file scope: the console surface ─────────────────────────────────────────────────────────────

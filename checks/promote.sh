@@ -30,7 +30,7 @@ version="$(git show "$main_sha:bin/splice-launch" | awk -F'"' '/^SPLICE_GATEWAY_
 
 if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
   echo "promote: tag v${version} already exists — bump the version on main first (Versions.kt," >&2
-  echo "         bin/splice-launch, package.json, package-lock.json move together)." >&2
+  echo "         bin/splice-launch, package.json move together)." >&2
   exit 1
 fi
 

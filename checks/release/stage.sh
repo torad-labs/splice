@@ -8,10 +8,10 @@ if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
   TAG="${GITHUB_REF_NAME:-}"
 fi
 VERSION="$(node -p "require('$ROOT/package.json').version")"
-LOCK_VERSION="$(node -p "require('$ROOT/package-lock.json').version")"
-LOCK_ROOT_VERSION="$(node -p "require('$ROOT/package-lock.json').packages[''].version")"
-[ "$LOCK_VERSION" = "$VERSION" ] && [ "$LOCK_ROOT_VERSION" = "$VERSION" ] || {
-  echo "release stage: package-lock versions ($LOCK_VERSION, $LOCK_ROOT_VERSION) do not match $VERSION" >&2
+# bun.lock records no root version, so the package-lock version cross-check has no successor; what a
+# release needs is a lockfile that agrees with package.json, and --frozen-lockfile refuses any drift.
+( cd "$ROOT" && bun install --frozen-lockfile >/dev/null ) || {
+  echo "release stage: bun.lock does not agree with package.json (bun install --frozen-lockfile refused)" >&2
   exit 1
 }
 if [ -n "$TAG" ]; then

@@ -1,11 +1,11 @@
-// `gate rules` must be the SAME three ast-grep invocations `npm run gate:rules` runs — not an
+// `gate rules` must be the SAME ast-grep invocations `npm run gate:rules` runs — not an
 // equivalent set. package.json:15 is the oracle, read here rather than copied, so that editing the
 // npm script and not the CLI (or the reverse) turns this red instead of producing two checkers that
 // drift and then agree with each other while disagreeing with the tree.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DORMANT_CONFIG, EXCLUSIONS, ROUTED_CONFIG } from "../src/commands/rules.ts";
+import { EXCLUSIONS, ROUTED_CONFIG } from "../src/commands/rules.ts";
 import { astGrepBin } from "../src/lib/astgrep.ts";
 import { layout } from "../src/lib/repo.ts";
 import { readRules, readSgConfig } from "../src/lib/rules.ts";
@@ -23,11 +23,10 @@ describe("gate rules", () => {
     expect(legs).toEqual(fromNpm.map((leg) => leg.slice(1)));
   });
 
-  test("names both ast-grep configs the npm script names", () => {
-    expect(script).toContain(DORMANT_CONFIG);
+  test("the config the npm script implies exists, and it names no other", () => {
     // the routed config is the implicit one: `ast-grep scan` with no --config walks up to it
     expect(existsSync(join(repoRoot, ROUTED_CONFIG))).toBe(true);
-    expect(existsSync(join(repoRoot, DORMANT_CONFIG))).toBe(true);
+    expect(script).not.toContain("--config");
   });
 
   test("prefers the pinned node_modules ast-grep, as npm's PATH does", () => {
@@ -55,7 +54,5 @@ function legsFromSource(): string[][] {
     .split("\n")
     .map((line) => line.trim().replace(/,$/, ""))
     .filter((line) => line.startsWith("["))
-    .map((line) =>
-      [...line.matchAll(/"([^"]*)"|DORMANT_CONFIG/g)].map((m) => (m[0] === "DORMANT_CONFIG" ? DORMANT_CONFIG : m[1]!)),
-    );
+    .map((line) => [...line.matchAll(/"([^"]*)"/g)].map((m) => m[1]!));
 }

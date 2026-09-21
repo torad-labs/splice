@@ -22,7 +22,7 @@ same rule in reverse: **never put another `.toml` flat in `.dev/campaigns/`**, o
 a ledger. `wall_registry.toml` and `oracle/expectations.toml` are safe here because `glob` is
 non-recursive.
 
-`linkedin-gateway-audit/` is the precedent: flat ledger, same-named folder for assets.
+`linkedin-gateway-audit.toml` is the precedent: a flat ledger (its asset folder was removed in the v0.4.0 restructure).
 
 ## research/
 

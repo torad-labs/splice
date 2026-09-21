@@ -8,13 +8,25 @@ internal data class MuseMintHold(
     val identity: CredentialFileIdentity?,
     val accessToken: String?,
     val untilMs: Long,
-)
+) {
+    /** The hold is KEYED to a token, so it carries one. The identity and the deadline are what make
+     *  a backoff readable and neither is a secret. */
+    override fun toString(): String =
+        "MuseMintHold(identity=$identity, accessToken=${if (accessToken == null) "null" else "<redacted>"}, " +
+            "untilMs=$untilMs)"
+}
 
 internal data class MuseInactiveVerdict(
     val identity: CredentialFileIdentity?,
     val accessToken: String?,
     val actionUrl: String?,
-)
+) {
+    /** actionUrl stays readable deliberately: it is the page an operator has to visit to fix an
+     *  inactive subscription, and hiding it would cost the whole point of the verdict. */
+    override fun toString(): String =
+        "MuseInactiveVerdict(identity=$identity, " +
+            "accessToken=${if (accessToken == null) "null" else "<redacted>"}, actionUrl=$actionUrl)"
+}
 
 internal class MuseMintHolds(private val clock: WallClock) {
     @Volatile

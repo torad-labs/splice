@@ -10,7 +10,17 @@ public data class CredentialTokens(
     public val refresh: String?,
     public val expiresAtMs: Long?,
     public val refreshOptional: Boolean = false,
-)
+) {
+    /** access and refresh are the credential material this type exists to carry. The expiry and the
+     *  muse-only [refreshOptional] flag are not secrets, and whether a token is held at all is
+     *  diagnostic rather than secret, so absence survives the redaction. */
+    override fun toString(): String =
+        "CredentialTokens(access=${held(access)}, refresh=${held(refresh)}, " +
+            "expiresAtMs=$expiresAtMs, refreshOptional=$refreshOptional)"
+
+    /** `null` or `<redacted>` — never the value. */
+    private fun held(value: String?): String = if (value == null) "null" else "<redacted>"
+}
 
 /** Read one kind's token material from a parsed auth file. Null = this shape does not judge that file. */
 public fun interface CredentialShape {

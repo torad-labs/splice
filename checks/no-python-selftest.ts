@@ -284,6 +284,30 @@ arm("the burn-down SHRANK", "green", (r) => {
   // Shrinking is the entire point of the list, so the ratchet must never charge it.
 }, (r) => git(r, "show", `HEAD~1:${LIST}`).out.includes("b.py") && !git(r, "show", `HEAD:${LIST}`).out.includes("b.py"));
 
+// A RENAME IS NOT GROWTH — for invokers. #156 moved docs/ to .docs/ and the two documentation
+// files in `invokers` that mention python changed path without changing a byte; git records the
+// rename, and the ratchet reads git's record rather than charging the consolidation as two new
+// invokers. `files` keeps the refusal: a .py at a new path is Python reorganised, not converted.
+arm("an invoker RENAMED by git since birth", "green", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  mkdirSync(join(r, "docs"));
+  writeFileSync(join(r, "docs", "plan.md"), "# plan\n\nthe old python3 doctor step is documented here\n");
+  writeFileSync(join(r, LIST), list(["a.py"], ["docs/plan.md"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "birth");
+  git(r, "mv", "docs/plan.md", "plan.md");
+  writeFileSync(join(r, LIST), list(["a.py"], ["plan.md"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "consolidation moves the doc");
+}, (r) => git(r, "diff", "--name-status", "-M", "HEAD~1", "HEAD").out.includes("R100\tdocs/plan.md\tplan.md"));
+
+arm("a .py RENAMED by git since birth", "red", (r) => {
+  writeFileSync(join(r, "a.py"), "x\n");
+  writeFileSync(join(r, LIST), list(["a.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "birth");
+  git(r, "mv", "a.py", "b.py");
+  writeFileSync(join(r, LIST), list(["b.py"]));
+  git(r, "add", "-A"); git(r, "commit", "-qm", "python reorganised, not converted");
+}, (r) => git(r, "diff", "--name-status", "-M", "HEAD~1", "HEAD").out.includes("R100\ta.py\tb.py"));
+
 // The bug the first cut of this census actually had: it took the FILE's first commit as the
 // baseline for BOTH keys and charged all 77 invokers as growth, because `invokers` was added days
 // after `files`. A ratchet whose baseline predates the thing it measures reports the measurement

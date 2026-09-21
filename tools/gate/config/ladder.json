@@ -68,6 +68,11 @@
       "dependsOn": [":app:shadowJar"]
     },
     {
+      "task": "oracleSelftest",
+      "why": "The oracle verb's own net (corpus integrity, graders, argv contract, provenance arms) — added with the port in PR 5 and, until this row, routed by nothing (#170 review).",
+      "command": ["bun", "test", "tools/e2e/test/oracle.test.ts"]
+    },
+    {
       "task": "e2eHeadsSelftest",
       "why": "Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head. The live `e2e:heads` lane is billed and stays out of the ladder.",
       "command": ["bun", "tools/e2e", "heads", "--selftest"]

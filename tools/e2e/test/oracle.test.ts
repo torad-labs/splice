@@ -1,6 +1,7 @@
 // tools/e2e/test/oracle.test.ts — the oracle verb's own net. Everything here runs without the
 // daemon: the corpus integrity gate, the graders, the argv contract and the provenance arms.
-// The live 11-scenario replay is the gate leg (`checks/gate.sh`, "oracle replay").
+// The live 11-scenario replay is the ladder's oracleReplay leg (tools/gate/config/ladder.json); this file
+// is its oracleSelftest leg.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -163,6 +164,18 @@ describe("argv contract", () => {
     const r = run("--help");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("oracle [replay]");
+  });
+
+  test("RED: a present but valueless --artifact or --fixtures is refused before anything is read", () => {
+    // Each arm is shaped so that the OLD reading (a bare option = its default) could not reach a
+    // daemon either: the option that follows is swallowed as the value, so the jar or corpus is bogus.
+    const artifact = run("oracle", "replay", "--artifact", "--fixtures", ORACLE_DIR);
+    expect(artifact.status).toBe(HARNESS_EXIT);
+    expect(artifact.stderr).toContain("--artifact takes a value");
+    expect(artifact.stderr).not.toContain("fat jar missing");
+    const both = run("oracle", "replay", "--fixtures", "--artifact");
+    expect(both.status).toBe(HARNESS_EXIT);
+    expect(both.stderr).toContain("--fixtures, --artifact take a value");
   });
 
   test("exit code vocabulary is stable", () => {

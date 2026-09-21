@@ -1331,7 +1331,7 @@ async function reasoningCacheProbe(): Promise<number> {
   if (!existsSync(jar)) {
     process.stderr.write(
       `HARNESS FAILURE: fat jar missing at ${jar} — build it first ` +
-        "(bash checks/gradle-slot.sh <tag> :app:shadowJar) or pass RCP_JAR\n",
+        "(bun tools/gate slot <label> -- :app:shadowJar) or pass RCP_JAR\n",
     );
     return HARNESS_EXIT;
   }

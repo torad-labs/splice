@@ -122,16 +122,16 @@ describe("the P1 coverage proof", () => {
   });
 
   test("a files-row can never excuse a WHOLLY lost source root", async () => {
-    // kt-no-vanilla-config-dir carries a files-row spanning all of :control's main sources. If its
-    // glob for :control disappears, that row must not absorb the loss — losing a module is the
+    // kt-no-vanilla-config-dir carries a files-row spanning all of :daemon-control's main sources. If its
+    // glob for :daemon-control disappears, that row must not absorb the loss — losing a module is the
     // failure the proof exists for, and a broad file exemption is the obvious way to hide it.
     const copy = copyOfTheRealRules();
-    edit(copy.rule("kt-no-vanilla-config-dir"), "  - gateway/control/src/main/kotlin/splice/control/Launch*.kt\n", "");
+    edit(copy.rule("kt-no-vanilla-config-dir"), "  - daemon/control/src/main/kotlin/splice/control/Launch*.kt\n", "");
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-vanilla-config-dir", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("gateway/control/src/main/kotlin");
+    expect(lost[0]).toContain("daemon/control/src/main/kotlin");
   });
 
   test("mutant (e): a modules row typed as a scalar cannot waive the source root it names", async () => {

@@ -10,8 +10,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.PerfRowsFileSource
 import splice.app.TopologyLoader
 import splice.app.cli.PerfCommand
-import splice.control.api.PerfSummary
-import splice.control.api.PerfWindow
+import splice.control.api.usage.PerfSummary
+import splice.control.api.usage.PerfWindow
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream

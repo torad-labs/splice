@@ -10,13 +10,13 @@
 # `any:` covering all three alternate shapes; `runCatchingCancellable` stays correctly unaffected
 # because every branch matches on the exact `runCatching` identifier, no prefix collision.
 #
-# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :control and :app sat outside most walls'
-# `files:` globs). :control serves the statusline route and the MCP host inside Ktor coroutines, and
+# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
+# `files:` globs). :daemon-control serves the statusline route and the MCP host inside Ktor coroutines, and
 # :app runs the daemon supervisor, the OAuth callback server and the refresh loops — the 600%-CPU
 # incident's blast radius, not a place the law stops applying. Widened LITERALLY as the audit row
-# specifies, to all of `gateway/control/src/main` and `gateway/app/src/main`, with NO new ignores.
+# specifies, to all of `daemon/control/src/main` and `gateway/app/src/main`, with NO new ignores.
 # NEW RED AT WIDENING — 20, all pre-existing, none fixed here:
-#   :control StatuslineRenderer.kt:61,:71,:93,:203,:236, mcp/McpHost.kt:62, api/StatuslineRoute.kt:94
+#   :daemon-control StatuslineRenderer.kt:61,:71,:93,:203,:236, mcp/McpHost.kt:62, api/StatuslineRoute.kt:94
 #   :app     DaemonLock.kt:89,:93, LoginIo.kt:218, OAuthLoginFlow.kt:161,:167,:180,:230,
 #            cli/LoginMuse.kt:134, cli/AdminSupport.kt:79, cli/RestartCommand.kt:26,
 #            cli/KeyCommand.kt:62, cli/SetupCommand.kt:80, cli/DoctorRedaction.kt:77
@@ -42,7 +42,7 @@ files:
   - gateway/dialect-openai-chat/src/main/**/*.kt
   - gateway/dialect-anthropic-passthrough/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt
-  - gateway/control/src/main/**/*.kt
+  - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt
 rule:
   any:

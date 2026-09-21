@@ -24,7 +24,7 @@
 // ships a copy of one.
 package splice.app.console
 
-import splice.control.api.DaemonSupervised
+import splice.control.api.fleet.DaemonSupervised
 import splice.core.util.EnvReader
 
 /** The environment variable systemd sets on every process it starts. */

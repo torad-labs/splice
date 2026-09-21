@@ -6,8 +6,8 @@
 // the row's "the state reads signed in, live after restart until then". DELETE/PATCH
 // /api/auth/{head}/accounts/{label} are plain OAuthAccountFiles calls, no off-request state.
 //
-// This file is also the :app SIDE of the splice.control.ConsoleAccounts port: :control depends on
-// :core only, and the flows + OAuthAccountFiles both live here, so the port is how a :control route
+// This file is also the :app SIDE of the splice.control.ConsoleAccounts port: :daemon-control depends on
+// :core only, and the flows + OAuthAccountFiles both live here, so the port is how a :daemon-control route
 // reaches them (ConsoleWiring assigns ConsolePorts.accounts, the same shape as its other nine).
 package splice.app
 

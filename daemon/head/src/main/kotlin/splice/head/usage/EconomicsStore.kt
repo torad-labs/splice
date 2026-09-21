@@ -45,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val HOUR_MS = 60L * 60 * 1000
 
 // V4-122: RETENTION_MS is splice.core.perf.ECONOMICS_RETENTION_MS now. The console reports the same
-// window in HOURS from :control/api, which has no dependency edge to this module, so the comment
+// window in HOURS from :daemon-control/api, which has no dependency edge to this module, so the comment
 // that used to claim the two mirrored each other is replaced by one declaration both can read.
 
 // 192 buckets x ~200 bytes is single-digit KB; 1MB is a corrupt-file guard with headroom.

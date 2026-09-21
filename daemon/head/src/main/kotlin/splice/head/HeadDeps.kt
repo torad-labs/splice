@@ -141,7 +141,7 @@ public data class HeadDeps(
 }
 
 // V4-134, FEATURES.md §6 — HeadEvents: what a head tells the console, at the seams that already hold each
-// fact. :daemon-head cannot see :control's EventBus (its build depends on :core and :upstream only),
+// fact. :daemon-head cannot see :daemon-control's EventBus (its build depends on :core and :upstream only),
 // so a head reports through this interface and :app adapts it to the bus, once, in
 // ConsoleEventPublisher. Nothing here is a new probe: every call site is a line that already knew
 // the fact — the head lifecycle mutex, the ready turn's admission, the one perf-row emitter.

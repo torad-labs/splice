@@ -368,7 +368,7 @@ export const RATCHET_MAX_HIGH = 1; // files in band HIGH  (re-measured 2026-09-2
 // section already records this property by name ("ANY file-scale denominator is a statistic of a
 // partition ... a split moves files nobody touched"), with core/wire/AnthropicRequest.kt reading
 // 1.97 before and 5.57 after for the same reason. Bringing ControlServer.kt under the line means
-// decomposing :control inside a commit whose every other line is a file move, so the number is
+// decomposing :daemon-control inside a commit whose every other line is a file move, so the number is
 // recorded here with its instrument output instead, and the file is HD-25's work like the other 96.
 
 // THE PACKAGE-SCALE BASELINE (V4-93) — the worst package's FILE COUNT, measured, never estimated.

@@ -65,8 +65,8 @@ const LAYERS = resolve(ROOT, "core/src/main/kotlin/splice/core/config/ConfigResu
 // route table, "perHead" moved with configJson into ConfigRoutes. Concatenated like the campaign's
 // other multi-file wall keys: ALL-OF still applies, and either file missing is a vacuity RED.
 const CTRL_FILES = [
-  resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/ControlServer.kt"),
-  resolve(ROOT, "gateway/control/src/main/kotlin/splice/control/api/ConfigRoutes.kt"),
+  resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/ControlServer.kt"),
+  resolve(ROOT, "daemon/control/src/main/kotlin/splice/control/api/fleet/ConfigRoutes.kt"),
 ];
 const WEBUI = resolve(ROOT, "webui/src/entities/config/api/index.ts");
 

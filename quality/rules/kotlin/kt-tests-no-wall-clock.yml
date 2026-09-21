@@ -126,7 +126,7 @@
 #   control; the fix is to poll the CONDITION with a deadline, which several of these already half
 #   do (`while (!Files.exists(ready)) delay(10)`).
 #     client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt    (16)
-#     gateway/control/src/test/kotlin/McpHostLifecycleTest.kt                     (4)
+#     daemon/control/src/test/kotlin/splice/control/mcp/McpHostLifecycleTest.kt                     (4)
 #     gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt                     (3)
 #     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
 #     gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt   (1)
@@ -161,12 +161,12 @@
 #     daemon/head/src/test/kotlin/splice/head/HeadServerCompactionReplayTest.kt      (1)
 #     daemon/head/src/test/kotlin/splice/head/HeadServerFoldTest.kt                  (1)
 #     daemon/head/src/test/kotlin/splice/head/HeadServerIntegrationTest.kt           (1)
-#     gateway/control/src/test/kotlin/ControlServerTest.kt                        (2)
-#     gateway/control/src/test/kotlin/ControlServerGateTest.kt                    (1)
-#     gateway/control/src/test/kotlin/ClientVersionSurfaceTest.kt                 (1)
-#     gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt         (1)
-#     gateway/control/src/test/kotlin/McpRoutesTest.kt                            (1)
-#     gateway/control/src/test/kotlin/McpHostTest.kt                              (1)
+#     daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt                        (2)
+#     daemon/control/src/test/kotlin/splice/control/ControlServerGateTest.kt                    (1)
+#     daemon/control/src/test/kotlin/splice/control/ClientVersionSurfaceTest.kt                 (1)
+#     daemon/control/src/test/kotlin/splice/control/WebuiContractTest.kt         (1)
+#     daemon/control/src/test/kotlin/splice/control/api/diagnostics/McpRoutesTest.kt                            (1)
+#     daemon/control/src/test/kotlin/splice/control/mcp/McpHostTest.kt                              (1)
 id: kt-tests-no-wall-clock
 language: kotlin
 severity: error

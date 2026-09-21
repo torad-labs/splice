@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-grep -q "dangerously-skip-permissions" gateway/control/src/main/kotlin/splice/control/LaunchService.kt
+grep -q "dangerously-skip-permissions" daemon/control/src/main/kotlin/splice/control/LaunchService.kt
 # NOT -q. splice.kotlin-common.gradle.kts configures testLogging { events("failed") } with FULL
 # exception format precisely so a CI-only failure carries its assertion message, and -q sits BELOW
 # the lifecycle level those events print at, so it suppressed the one output that config exists to
@@ -10,5 +10,5 @@ grep -q "dangerously-skip-permissions" gateway/control/src/main/kotlin/splice/co
 # (checks/gate.sh:84) and releases it long before this ladder runs, so a bare call here can meet
 # another seat's gradle in the same project dir — the race gradle-slot.sh exists to close. The
 # script supplies --offline (off in CI) and --no-daemon, and wraps buildgate when the box has it.
-bash checks/gradle-slot.sh oss-b :control:test
+bash checks/gradle-slot.sh oss-b :daemon-control:test
 echo "VERIFY OSS-B: OK"

@@ -40,7 +40,7 @@ import splice.control.DoctorReport
 import splice.control.UpgradeStatus
 import splice.control.api.ConsoleEvent
 import splice.control.api.EventBus
-import splice.control.api.PlaygroundProbe
+import splice.control.api.turns.PlaygroundProbe
 import splice.core.activity.ACTIVITY_DIRECTORY
 import splice.core.activity.ALL_HEADS
 import splice.core.activity.ActivityStores
@@ -89,7 +89,7 @@ internal object ConsoleWiring {
         // without a config file: the route declines rather than writing a file nobody asked for.
         srv.ports.topology = topology.path?.let { TopologyWriter(it, TopologyParse(TopologyLoader::parse)) }
 
-        // V4-132: the login/remove/relabel machinery — :control depends on :core only, so this is
+        // V4-132: the login/remove/relabel machinery — :daemon-control depends on :core only, so this is
         // the port's :app-side implementation, assigned here like every port above it. Unassigned,
         // the four routes behind it answer a named 503 rather than a payload reading as "no
         // accounts".

@@ -1,4 +1,4 @@
-// NEW: V4-159 — the team member `checks` field (TeamsEconomics.kt, gateway/control) reduces every
+// NEW: V4-159 — the team member `checks` field (TeamsEconomics.kt, daemon/control) reduces every
 // perf-row outcome tag to pass/fail by comparing its wire spelling against OutcomeTag.OK.wire alone
 // (splice.control.api.TeamsEconomics: `checksOf`). That reduction is only correct while OK's wire
 // spelling is unique in the vocabulary; this proves it here, in core where the vocabulary is

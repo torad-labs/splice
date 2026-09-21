@@ -10,8 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.app.PerfRowsFileSource
 import splice.app.TopologyLoader
-import splice.control.api.PerfSummary
-import splice.control.api.PerfWindow
+import splice.control.api.usage.PerfSummary
+import splice.control.api.usage.PerfWindow
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars

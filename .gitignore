@@ -13,6 +13,7 @@ __pycache__/
 /dist/
 # the console bundle is :console:bundle's output (PR 4), never committed
 /console/dist/
+/console/build/
 /.cache/
 
 # gradle (the build root is the repository root; the modules still live under gateway/)

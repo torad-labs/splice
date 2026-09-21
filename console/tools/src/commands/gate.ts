@@ -34,7 +34,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { colorFraction, decodePng, hexToRgb } from '../lib/png.ts';
 import { mgmtKey, renderHtml, shoot, show, withChrome } from '../lib/cdp.ts';
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { FIXTURES, urlFor } from '../lib/fixtures.ts';
 import { capturePage } from './capture.ts';
@@ -1062,7 +1062,7 @@ const DECLARATIONS = `(() => {
  *  A map derived from the address would have loaded nothing on four pages and looked like it worked.
  *  fleet and mcp ship none and are captured bare, which is honest - and the refusal below is what
  *  stops a bare capture from passing as a content plane. */
-const FIXTURES = {
+const FIXTURE_NAMES = {
   accounts: 'accounts', compaction: 'compaction', doctor: 'doctor', logs: 'tail',
   models: 'models', projects: 'list', sessions: 'board', settings: 'settings',
   teams: 'hero', turns: 'board', usage: 'usage',
@@ -1073,7 +1073,7 @@ const FIXTURES = {
  *  `window.location.search`), and the shell canonicalises one of them. Whichever it drops, the
  *  other survives; a page that reads neither is caught by the refusal below rather than passing. */
 function captureUrl(address) {
-  const fixture = FIXTURES[address];
+  const fixture = FIXTURE_NAMES[address];
   if (fixture === undefined) return `http://localhost:5173/#/${address}`;
   return `http://localhost:5173/?fixture=${fixture}#/${address}?fixture=${fixture}`;
 }
@@ -1175,7 +1175,7 @@ async function captureSet(dir) {
         // THE FIXTURE RIDES IN THE URL (M1-83), through the one helper that decides how an address
         // is addressed: eleven of thirteen pages ship a design fixture and a bare `#/teams` renders
         // NO TEAMS ROUTE over an empty rack - the very page the comp is drawn of, judged as a blank
-        // and photographed as one. `captureUrl` was written beside `FIXTURES` and never called, so
+        // and photographed as one. `captureUrl` was written beside `FIXTURE_NAMES` and never called, so
         // the map only fed the refusal message: the gate could say a fixture HAD NOT loaded and
         // could not ask for one. The refusal below is what proves this call did its job.
         await show(send, captureUrl(address), w, h);
@@ -1216,7 +1216,7 @@ async function captureSet(dir) {
           })()`,
         });
         const seen = JSON.parse(content.result.value);
-        const wanted = FIXTURES[address];
+        const wanted = FIXTURE_NAMES[address];
         // THE MARKER IS THE PROOF, AND A PLANE COUNT IS NOT. The first version of this refusal asked
         // `planes === 0`, and it could not have caught the page the row is about: the blank hero
         // renders NO TEAMS ROUTE / V4-131 PENDING over an EMPTY RACK, so it has .myx-bay planes and
@@ -1266,7 +1266,7 @@ async function captureSet(dir) {
   // WHAT EACH CAPTURE ASKED FOR, printed rather than implied: the strengthened verify greps for
   // `fixture=hero` precisely because the old one passed on thirteen blank pages, so the set must
   // say which fixtures it loaded rather than that it loaded thirteen files.
-  const loaded = list.map((a) => (FIXTURES[a] === undefined ? `${a} (no fixture)` : `${a}=${FIXTURES[a]}`));
+  const loaded = list.map((a) => (FIXTURE_NAMES[a] === undefined ? `${a} (no fixture)` : `${a}=${FIXTURE_NAMES[a]}`));
   return { ok: true, count: wrote, ms,
     detail: `${wrote} captures in ${(ms / 1000).toFixed(1)}s (${(ms / wrote / 1000).toFixed(1)}s each)`
       + ` · fixtures: ${loaded.join(' ')}` };
@@ -1848,6 +1848,19 @@ function selftest() {
     const f = run();
     const good = f && f.ok === expectOk;
     console.log(`  ${good ? 'PASS' : 'FAIL'}  ${id} expected ok=${expectOk} got ok=${f && f.ok}  (${f && f.detail})`);
+    good ? pass++ : fail++;
+  }
+  // The `sheets` arm folded in from gate.mjs shares this module's top level, so a name it needs
+  // must be bound before the dispatch at the top of the file runs it (2026-09-20: the merge lost
+  // readFileSync/writeFileSync and shadowed FIXTURES with look-gate's local table; the look-gate
+  // arms above never enter that branch). A child dry run is the check that does.
+  {
+    const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url), 'sheets', 'selftest-probe', '--dry-run'],
+      { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' });
+    const out = child.stdout.toString();
+    const good = child.exitCode === 0 && out.includes('sheet-dark.png') && out.includes('sheet-light.png');
+    const why = good ? '' : `: ${child.stderr.toString().trim().split('\n').pop()}`;
+    console.log(`  ${good ? 'PASS' : 'FAIL'}  sheets --dry-run loads and plans both sheets  (exit ${child.exitCode}${why})`);
     good ? pass++ : fail++;
   }
   console.log(`\nselftest: ${pass} passed, ${fail} failed`);

@@ -91,7 +91,7 @@
 #   ninth site is the pause inside LoginProcesses.visible, the bounded poll that REPLACED seven
 #   fixed 500 ms readiness sleeps: it waits for the spawned process's argv to become what the hook's
 #   scan reads, and this file is plain JUnit with no coroutine to suspend.
-#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                   (9)
+#     client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt     (9)
 #     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (1)
 #
 #   2026-09-18 · A READINESS POLL WITH NO EVENT TO AWAIT, IN BLOCKING CODE. Nothing signals that a
@@ -125,7 +125,7 @@
 #   actually advances" is the literal comment in three of these). Genuinely outside the JVM's
 #   control; the fix is to poll the CONDITION with a deadline, which several of these already half
 #   do (`while (!Files.exists(ready)) delay(10)`).
-#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                  (16)
+#     client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt    (16)
 #     gateway/control/src/test/kotlin/McpHostLifecycleTest.kt                     (4)
 #     gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt                     (3)
 #     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
@@ -185,7 +185,7 @@ files:
 # The dated census — see the ALLOWLIST section of this header for the reason behind every line.
 ignores:
   # a proof of absence, which has no event
-  - gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt
+  - client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt
   - gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt
   # a readiness poll with no event to await, in blocking code
   - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt

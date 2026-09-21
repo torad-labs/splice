@@ -12,6 +12,9 @@ severity: error
 message: "L2: mirrorInto is defined once, in gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt."
 files:
   - gateway/**/*.kt
+  # restructure PR 3: :client is the first module to live outside gateway/, and a single-definition
+  # wall that stops seeing a module is a wall that cannot find a second definition there.
+  - client/**/*.kt
 ignores:
   - gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt
 rule:

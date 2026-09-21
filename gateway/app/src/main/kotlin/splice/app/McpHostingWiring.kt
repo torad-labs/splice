@@ -4,7 +4,7 @@
 // the operator's servers takes effect at the next spawn).
 //
 // V4-146 (2026-09-20): McpInventoryWiring at the bottom of this file is the production wiring for
-// the five-kind census (splice.core.launch.McpSources / McpInventory) — real filesystem roots
+// the five-kind census (splice.client.mcp's McpSources.kt / McpInventory) — real filesystem roots
 // around the SAME McpGlobalRead and McpSharing this file already builds, so the census can never
 // disagree with what the real pipeline did for the canonical home.
 package splice.app
@@ -12,16 +12,16 @@ package splice.app
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import splice.client.mcp.GlobalMcpServersReader
+import splice.client.mcp.McpGlobalPlan
+import splice.client.mcp.McpInventory
+import splice.client.mcp.McpSharing
+import splice.client.mcp.McpSourceKind
+import splice.client.mcp.PluginInlineReader
+import splice.client.mcp.PluginMcpJsonReader
+import splice.client.mcp.ProjectMcpServersReader
+import splice.client.mcp.RepoMcpJsonReader
 import splice.control.mcp.GlobalMcpServers
-import splice.core.launch.GlobalMcpServersReader
-import splice.core.launch.McpGlobalPlan
-import splice.core.launch.McpInventory
-import splice.core.launch.McpSharing
-import splice.core.launch.McpSourceKind
-import splice.core.launch.PluginInlineReader
-import splice.core.launch.PluginMcpJsonReader
-import splice.core.launch.ProjectMcpServersReader
-import splice.core.launch.RepoMcpJsonReader
 import splice.core.topology.DaemonConfig
 import splice.core.util.LogSink
 import java.io.IOException

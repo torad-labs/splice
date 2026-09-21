@@ -83,8 +83,15 @@ import { fileURLToPath } from "node:url";
 // `__file__`'s parent.parent, i.e. the repo root one level above checks/.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const MAIN_GLOB = "gateway/*/src/main/**/*.kt";
-const TEST_GLOBS = ["gateway/*/src/test/**/*.kt", "gateway/*/src/testFixtures/**/*.kt"];
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every module home and is extended by each module move.
+const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
+const TEST_GLOBS = [
+  "gateway/*/src/test/**/*.kt", "gateway/*/src/testFixtures/**/*.kt",
+  "client/src/test/**/*.kt", "client/src/testFixtures/**/*.kt",
+];
 
 const SEEDS = new Set(["AutoCloseable", "Closeable", "java.lang.AutoCloseable", "java.io.Closeable"]);
 
@@ -358,10 +365,10 @@ function read(root: string, patterns: string | string[]): Map<string, string> {
 
 function audit(root: string): string[] {
   const problems: string[] = [];
-  const main = read(root, MAIN_GLOB);
+  const main = read(root, MAIN_GLOBS);
   if (main.size === 0) {
     return [
-      `no Kotlin main sources matched ${MAIN_GLOB} under ${root} — refusing to pass vacuously; ` +
+      `no Kotlin main sources matched ${MAIN_GLOBS.join(", ")} under ${root} — refusing to pass vacuously; ` +
         "a checker that reads nothing vouches for nothing.",
     ];
   }
@@ -553,7 +560,8 @@ internal class Plain(val label: String) {
 `;
 
 function write(root: string, files: Record<string, string>): void {
-  const existing = [...new Bun.Glob("gateway/*/src/*/**/*.kt").scanSync({ cwd: root, followSymlinks: true })];
+  const existing = ["gateway/*/src/*/**/*.kt", "client/src/*/**/*.kt"]
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]);
   for (const rel of existing) {
     const target = join(root, rel);
     if (existsSync(target)) rmSync(target);
@@ -699,7 +707,7 @@ function main(argv: string[]): number {
   }
   const problems = audit(ROOT);
   if (problems.length === 0) {
-    const mainSources = read(ROOT, MAIN_GLOB);
+    const mainSources = read(ROOT, MAIN_GLOBS);
     const closure = closeableClosure(declarations(mainSources));
     const concrete = declarations(mainSources).filter((d) => closure.has(d.name) && d.kind !== "interface");
     process.stdout.write(

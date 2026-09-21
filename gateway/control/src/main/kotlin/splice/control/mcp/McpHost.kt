@@ -20,8 +20,8 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.launch.McpInventory
-import splice.core.launch.McpSharing
+import splice.client.mcp.McpInventory
+import splice.client.mcp.McpSharing
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus

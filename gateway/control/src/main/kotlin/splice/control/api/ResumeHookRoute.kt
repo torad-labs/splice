@@ -20,10 +20,10 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.client.resume.RESUME_SOURCE
+import splice.client.resume.TranscriptModelRewrite
 import splice.control.LogSafe
 import splice.control.ManagedHead
-import splice.core.launch.RESUME_SOURCE
-import splice.core.launch.TranscriptModelRewrite
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink

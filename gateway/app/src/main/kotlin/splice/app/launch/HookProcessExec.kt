@@ -2,7 +2,7 @@
 // own, implemented here so HookScriptFiles.probeExecutability stays framework- and process-free.
 package splice.app.launch
 
-import splice.core.launch.HookExec
+import splice.client.login.HookExec
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 

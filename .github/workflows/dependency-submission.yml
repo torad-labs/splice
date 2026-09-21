@@ -2,7 +2,7 @@ name: dependency-submission
 
 # GitHub's dependency graph has no static Gradle manifest support, so Dependabot
 # alerts/security-updates and the dependency-review gate currently see npm deps
-# only and the Kotlin gateway (15 Gradle modules under gateway/) is invisible.
+# only and the Kotlin gateway (16 Gradle modules: gateway/<id> plus client/) is invisible.
 #
 # Gradle version updates already work via dependabot.yml's Gradle parser; this
 # workflow closes the graph gap by submitting a Gradle snapshot via the

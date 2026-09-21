@@ -123,7 +123,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const KNOB_REL = "gateway/core/src/main/kotlin/splice/core/config/Knob.kt";
 
 // Where main sources live. The seam scan walks these.
-const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt"];
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every module home and is extended by each module move.
+const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
 
 // The one file an operator copies to write a config.
 const SURFACE = "config/splice.example.toml";

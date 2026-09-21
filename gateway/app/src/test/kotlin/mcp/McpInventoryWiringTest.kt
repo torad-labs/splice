@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.McpGlobalRead
 import splice.app.McpInventoryWiring
-import splice.core.launch.DirectoryProbe
-import splice.core.launch.McpDisposition
-import splice.core.launch.McpSharing
-import splice.core.launch.McpSourceKind
+import splice.client.mcp.DirectoryProbe
+import splice.client.mcp.McpDisposition
+import splice.client.mcp.McpSharing
+import splice.client.mcp.McpSourceKind
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText

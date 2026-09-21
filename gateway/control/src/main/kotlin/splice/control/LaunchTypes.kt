@@ -7,8 +7,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.launch.ClaudePolicy
-import splice.core.launch.TokenCaptureSpec
+import splice.client.ClaudePolicy
+import splice.client.login.TokenCaptureSpec
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
 import java.nio.file.Path

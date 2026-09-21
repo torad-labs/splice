@@ -274,7 +274,10 @@ public class KeyStore(
 // own envVar against THIS regex rather than a second copy, because that value reaches a bare
 // unquoted command word in a generated bash hook — the check has to fire where the spec is
 // BUILT, not only when the generated script finally calls `splice key set`.
-internal val envNameRegex = Regex("[A-Z][A-Z0-9_]*")
+// `public` since the :client extraction (restructure §2.3): TokenCaptureSpec moved to :client, so
+// the same one-copy argument now crosses a MODULE boundary and `internal` would force the second
+// copy the comment above exists to prevent. The consumer is named, so this is an API, not a leak.
+public val envNameRegex: Regex = Regex("[A-Z][A-Z0-9_]*")
 
 /** The warned-version sentinel for a store whose mtime cannot even be statted (DR-40): a real
  *  FileTime with a value no filesystem produces, value-equal across creations. */

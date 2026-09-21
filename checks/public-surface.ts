@@ -108,15 +108,22 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // The two build files that ARE the denominator. Fixed paths on purpose: a checker that
 // silently loses its source is a checker that passes.
-// The build root is the repository root since PR 2 of the restructure; the modules still sit
-// under gateway/<id> until PR 3, so the two are named separately.
-const MODULE_HOME_REL = "gateway";
+//
+// A module's DIRECTORY comes from settings.gradle.kts too, never from a `gateway/<id>` guess.
+// Until PR 3 of the restructure every module sat under gateway/, and this file spelled that
+// prefix; the :client extraction put one module at client/, and a guessed prefix would have made
+// `sourceText` read an empty directory and grade :client's whole surface as absent — silently, and
+// green. Gradle already states every directory (`project(":id").projectDir = file("...")`), which
+// is the same source P0's ProjectMap reads, so that line IS the map. There is NO fallback: an
+// included id with no projectDir line fails BY NAME, because a guess is what this paragraph is about.
 const SETTINGS_REL = "settings.gradle.kts";
 const MODULE_LAW_REL = "build-logic/src/main/kotlin/splice.module-law.gradle.kts";
 const BASELINE_REL = "checks/config/public-surface-baseline.json";
 
 const MODULE_PATH = /"(:[A-Za-z0-9._-]+)"/g;
 const NON_LIBRARY = /val nonLibrary = setOf\(([^)]*)\)/s;
+/** `project(":id").projectDir = file("dir")` — Gradle's own statement of where a module lives. */
+const PROJECT_DIR = /project\(\s*"(:[A-Za-z0-9._-]+)"\s*\)\s*\.projectDir\s*=\s*\w*\(\s*"([^"]+)"/g;
 
 // explicitApi() makes the modifier mandatory, so `public` at column 0 IS the public
 // top-level surface. Every Kotlin spelling of a declaration is admitted — `fun interface`
@@ -215,37 +222,48 @@ const USAGE = [
   "  --selftest        red-green proof, out of tree",
 ];
 
-/** (every included module, the nonLibrary set, problems) — both read off the build. */
-function modulesOf(root: string): { included: string[]; nonLibrary: Set<string>; problems: string[] } {
+/** (every included module, its directory, the nonLibrary set, problems) — all read off the build. */
+function modulesOf(root: string): { included: string[]; directories: Map<string, string>; nonLibrary: Set<string>; problems: string[] } {
   const problems: string[] = [];
   const settings = join(root, SETTINGS_REL);
   const law = join(root, MODULE_LAW_REL);
   if (!existsSync(settings)) {
-    return { included: [], nonLibrary: new Set(), problems: [`${SETTINGS_REL}: missing — the module universe IS the denominator, so its absence cannot pass`] };
+    return { included: [], directories: new Map(), nonLibrary: new Set(), problems: [`${SETTINGS_REL}: missing — the module universe IS the denominator, so its absence cannot pass`] };
   }
   if (!existsSync(law)) {
-    return { included: [], nonLibrary: new Set(), problems: [`${MODULE_LAW_REL}: missing — nonLibrary is what tells a producer from a consumer`] };
+    return { included: [], directories: new Map(), nonLibrary: new Set(), problems: [`${MODULE_LAW_REL}: missing — nonLibrary is what tells a producer from a consumer`] };
   }
-  const included = [...new Set(readFileSync(settings, "utf8").match(MODULE_PATH) ?? [])]
+  const settingsText = readFileSync(settings, "utf8");
+  const included = [...new Set(settingsText.match(MODULE_PATH) ?? [])]
     .map((m) => m.slice(1, -1))
     .sort();
+  const directories = new Map<string, string>();
+  for (const m of settingsText.matchAll(PROJECT_DIR)) directories.set(m[1]!, m[2]!);
+  for (const module of included) {
+    if (directories.has(module)) continue;
+    problems.push(
+      `${SETTINGS_REL}: ${module} is include()d but has no \`project("${module}").projectDir = file(...)\` ` +
+        "line — this checker reads the directory off the build and refuses to guess one, because a " +
+        "guessed prefix reads an empty tree and grades the module's whole surface as absent",
+    );
+  }
   const match = NON_LIBRARY.exec(readFileSync(law, "utf8"));
   if (match === null) {
     problems.push(
       `${MODULE_LAW_REL}: \`val nonLibrary = setOf(...)\` not found — the producer/consumer ` +
         "split cannot be derived, so no surface from this run can be trusted",
     );
-    return { included, nonLibrary: new Set(), problems };
+    return { included, directories, nonLibrary: new Set(), problems };
   }
   const nonLibrary = new Set((match[1].match(MODULE_PATH) ?? []).map((m) => m.slice(1, -1)));
-  return { included, nonLibrary, problems };
+  return { included, directories, nonLibrary, problems };
 }
 
-/** [(relative path, text)] for every .kt under the given source sets of [module]. */
-function sourceText(root: string, module: string, ...subs: string[]): [string, string][] {
+/** [(relative path, text)] for every .kt under the given source sets of the module at [dir]. */
+function sourceText(root: string, dir: string, ...subs: string[]): [string, string][] {
   const out: [string, string][] = [];
   for (const sub of subs) {
-    const directory = join(root, MODULE_HOME_REL, module.replace(/^:/, ""), sub);
+    const directory = join(root, dir, sub);
     if (!existsSync(directory)) continue;
     const pattern = new Bun.Glob("**/*.kt");
     // followSymlinks, because the recursive glob this census was ported from descends through a
@@ -261,9 +279,9 @@ function sourceText(root: string, module: string, ...subs: string[]): [string, s
   return out;
 }
 
-function declarations(root: string, module: string): Declaration[] {
+function declarations(root: string, module: string, dir: string): Declaration[] {
   const found: Declaration[] = [];
-  for (const [rel, text] of sourceText(root, module, "src/main/kotlin")) {
+  for (const [rel, text] of sourceText(root, dir, "src/main/kotlin")) {
     const packageMatch = PACKAGE.exec(text);
     const pkg = packageMatch ? packageMatch[1] : "";
     const lines = text.split(/\r\n|\r|\n/);
@@ -288,10 +306,10 @@ function declarations(root: string, module: string): Declaration[] {
  *
  *  main + testFixtures only. src/test is NOT here; see the module docstring — a sibling's
  *  test caller is the population this wall exists to name, not a justification. */
-function consumers(root: string, modules: string[]): Map<string, { blob: string; stars: Set<string> }> {
+function consumers(root: string, modules: string[], directories: Map<string, string>): Map<string, { blob: string; stars: Set<string> }> {
   const out = new Map<string, { blob: string; stars: Set<string> }>();
   for (const module of modules) {
-    const texts = sourceText(root, module, "src/main/kotlin", "src/testFixtures/kotlin").map(([, t]) => t);
+    const texts = sourceText(root, directories.get(module)!, "src/main/kotlin", "src/testFixtures/kotlin").map(([, t]) => t);
     const blob = texts.join("\n");
     // matchAll, NOT match: with the `g` flag a pattern carrying a capture group returns the FULL
     // matches — `import fix.lib.*` — and the group is dropped. On the committed tree that is
@@ -304,7 +322,7 @@ function consumers(root: string, modules: string[]): Map<string, { blob: string;
 
 /** (offenders, declarations examined, problems). */
 function unjustified(root: string): { offenders: Declaration[]; examined: number; problems: string[] } {
-  const { included, nonLibrary, problems } = modulesOf(root);
+  const { included, directories, nonLibrary, problems } = modulesOf(root);
   if (problems.length > 0) return { offenders: [], examined: 0, problems };
   const libraries = included.filter((m) => !nonLibrary.has(m));
   if (libraries.length === 0) {
@@ -318,10 +336,10 @@ function unjustified(root: string): { offenders: Declaration[]; examined: number
       ],
     };
   }
-  const every = consumers(root, included);
+  const every = consumers(root, included, directories);
   const offenders: Declaration[] = [];
   const all: Declaration[] = [];
-  for (const module of libraries) all.push(...declarations(root, module));
+  for (const module of libraries) all.push(...declarations(root, module, directories.get(module)!));
   const examined = all.length;
 
   // ── ROOTS: a declaration another module NAMES, or whose package it star-imports. ──
@@ -558,12 +576,21 @@ function report(root: string): number {
 
 // ── selftest ──────────────────────────────────────────────────────────────────────────
 
+// Three DIFFERENT directory shapes on purpose — a nested one, a bare one and a gateway/ one — so a
+// checker that guessed `gateway/<id>` (what this file did until the :client extraction) reads an
+// empty tree for two of the three and cannot pass these arms.
+const FIXTURE_DIRS: Record<string, string> = { ":lib": "modules/lib", ":other": "other", ":app": "gateway/app" };
+
 const SETTINGS_FIXTURE = `rootProject.name = "fixture"
 include(
     ":lib",
     ":other",
     ":app",
 )
+
+project(":lib").projectDir = file("modules/lib")
+project(":other").projectDir = file("other")
+project(":app").projectDir = file("gateway/app")
 `;
 
 const LAW_FIXTURE = `val moduleLaw: Map<String, Set<String>> = mapOf(":lib" to emptySet())
@@ -571,7 +598,7 @@ val nonLibrary = setOf(":app")
 `;
 
 function writeModule(root: string, module: string, sub: string, rel: string, text: string): void {
-  const path = join(root, MODULE_HOME_REL, module.replace(/^:/, ""), sub, rel);
+  const path = join(root, FIXTURE_DIRS[module] ?? module.replace(/^:/, ""), sub, rel);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text, "utf8");
 }
@@ -712,7 +739,7 @@ function selftest(): number {
 
   // 10. THE BORING CASES, which are the ones that get waved through (§24).
   const noModules = (root: string): void => {
-    fixture(root, 'rootProject.name = "fixture"\ninclude(\n    ":app",\n)\n');
+    fixture(root, 'rootProject.name = "fixture"\ninclude(\n    ":app",\n)\n\nproject(":app").projectDir = file("gateway/app")\n');
     writeModule(root, ":app", "src/main/kotlin", "M.kt", "package fix.app\nclass M\n");
     baselineFixture(root, []);
   };
@@ -731,6 +758,18 @@ function selftest(): number {
     baselineFixture(root, [":lib fix.lib.One"]);
   };
   arm("12. the one-item tree grades green WITH its count", oneDeclaration, null);
+
+  // 13b. AN INCLUDED MODULE WITH NO DIRECTORY. The arm the :client extraction required: this file
+  // used to GUESS `gateway/<id>`, so the day a module moved to client/ its whole surface would have
+  // read as absent — green, over a denominator that had quietly lost a module. There is no fallback
+  // now, and this proves the refusal fires by name rather than being a sentence in a comment.
+  const noProjectDir = (root: string): void => {
+    fixture(root, SETTINGS_FIXTURE.replace('project(":lib").projectDir = file("modules/lib")\n', ""));
+    writeModule(root, ":lib", "src/main/kotlin", "Api.kt", "package fix.lib\npublic class Api\n");
+    writeModule(root, ":other", "src/main/kotlin", "Use.kt", "package fix.other\nimport fix.lib.Api\ninternal class Use(val a: Api)\n");
+    baselineFixture(root, []);
+  };
+  arm("13b. an include()d module with no projectDir line refuses — the directory is never guessed", noProjectDir, "no `project(\":lib\").projectDir");
 
   const noLaw = (root: string): void => {
     mkdirSync(dirname(join(root, SETTINGS_REL)), { recursive: true });
@@ -811,7 +850,9 @@ function selftest(): number {
       "and deleted), an undated baseline, a tree with no library modules, a tree with no public " +
       "declarations, a missing module law, that SAME return type once its member is internal, a " +
       "blank `kept` reason and an orphan `kept` reason are all red — and a type reached through a " +
-      "WRAPPED member parameter list is green while its consumer stands and red once it is gone\n",
+      "WRAPPED member parameter list is green while its consumer stands and red once it is gone, " +
+      "and an include()d module whose directory settings.gradle.kts never states is red rather " +
+      "than a guessed, empty tree\n",
   );
   return 0;
 }

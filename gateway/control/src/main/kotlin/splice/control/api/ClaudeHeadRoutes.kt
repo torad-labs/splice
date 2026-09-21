@@ -1,6 +1,6 @@
 // NEW: V4-129 — GET /api/claude-head, POST /api/claude-head/{wrap,unwrap} (FEATURES.md §6, 4.12).
 // The wrap/unwrap MECHANICS (shim swap, the narrow ~/.claude materialization, backup/restore) live
-// in splice.core.launch.WrappedHead; this file is the HTTP surface plus the one piece only :control
+// in splice.client.wrap.WrappedHead; this file is the HTTP surface plus the one piece only :control
 // can supply — the splice-owned Claude head's (claude-splice) own LaunchSpec, which is what wrap
 // materializes into the vanilla dir instead of the isolated one. "no pool, no isolation, no un-link
 // on a wrapped head" (the row title): this route touches no ManagedHead state beyond reading that
@@ -17,14 +17,14 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.client.ClaudeLogins
+import splice.client.MaterializeSpec
+import splice.client.wrap.ClaudeHeadStatus
+import splice.client.wrap.UnwrapResult
+import splice.client.wrap.WrapResult
+import splice.client.wrap.WrappedHead
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
-import splice.core.launch.ClaudeHeadStatus
-import splice.core.launch.ClaudeLogins
-import splice.core.launch.MaterializeSpec
-import splice.core.launch.UnwrapResult
-import splice.core.launch.WrapResult
-import splice.core.launch.WrappedHead
 import java.nio.file.Path
 import java.nio.file.Paths
 

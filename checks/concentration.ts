@@ -270,8 +270,14 @@ import { argparse, cpCompare, pyRepr, pySplitlines } from "./e2e/pyshim.ts";
 import { dumpsIndent, floatRepr, obj, type PyValue } from "./e2e/pyjson.ts";
 
 export const ROOT = dirname(dirname(realpathSync(import.meta.path)));
-export const SRC_GLOB = "gateway/*/src/main";
-export const SRC_RE = /^gateway\/[^/]+\/src\/main\/[^\n]*\.kt\n?$/u;
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is a LIST of module homes, not one `gateway/*` pattern. A source root this census stops
+// walking leaves the ratchet grading a smaller tree than the one it claims to measure — and every
+// baseline here is a count, so the loss reads as an improvement.
+export const SRC_GLOBS = ["gateway/*/src/main", "client/src/main"];
+export const SRC_RE = /^(gateway\/[^/]+|client)\/src\/main\/[^\n]*\.kt\n?$/u;
+/** The ARCHIVE roots collectRef asks git for — the top segment of each glob above. */
+export const SRC_ARCHIVE_ROOTS = ["gateway", "client"];
 
 export const TYPE_DECL = new RegExp(
   "^(public |internal |private )?(sealed |data |abstract |open |value |enum |fun |annotation )*"
@@ -345,8 +351,21 @@ export const EXCEPTION_JUSTIFICATION = new RegExp(`^\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd
 // UpstreamClient ceiling, the pre-decomposition AnthropicRequest ceiling). The count is measured
 // and printed on every run as DEBT. See THE GATED CRITERION IS THE HIGH BAND in the header for
 // the control that forced the change.
-export const RATCHET_RECORDED = "2026-08-19";
-export const RATCHET_MAX_HIGH = 0; // files in band HIGH  (re-measured 2026-08-19 after SseReader same-package split: 1 -> 0; HIGH band empty)
+export const RATCHET_RECORDED = "2026-09-20";
+export const RATCHET_MAX_HIGH = 1; // files in band HIGH  (re-measured 2026-09-20 after the :client extraction: 0 -> 1, ControlServer.kt 2.95 -> 3.14)
+//
+// THE 2026-09-20 MOVE, AND WHY IT IS A MEASUREMENT AND NOT A CONCESSION. Restructure PR 3 step 1
+// took 32 files out of `splice.core.launch` and made them the :client module across six packages.
+// `bun checks/concentration.ts --since HEAD --max-ratio 1.8` reports ControlServer.kt crossing with
+//     ratio 2.95 -> 3.14   ΔC +0.0   Δdenom -4.0   moderate -> HIGH   own 0%   cause neighbourhood
+// — its own C did not move by a tenth, and the ONE line the move changed in it is an import path
+// (`splice.core.launch.McpAccessKey` -> `splice.client.mcp.McpAccessKey`), which is the same one
+// subsystem. What moved is the partition the denominator is a statistic OF: the header's second
+// section already records this property by name ("ANY file-scale denominator is a statistic of a
+// partition ... a split moves files nobody touched"), with core/wire/AnthropicRequest.kt reading
+// 1.97 before and 5.57 after for the same reason. Bringing ControlServer.kt under the line means
+// decomposing :control inside a commit whose every other line is a file move, so the number is
+// recorded here with its instrument output instead, and the file is HD-25's work like the other 96.
 
 // THE PACKAGE-SCALE BASELINE (V4-93) — the worst package's FILE COUNT, measured, never estimated.
 // Read THE PACKAGE SCALE in the header first. Same discipline as RATCHET_MAX_HIGH: UP records that
@@ -603,7 +622,7 @@ export function packageProblems(census: PackageRow[]): string[] {
   if (!census.length) {
     return [
       "PACKAGE SCALE: the census is EMPTY — no production package was measured. A plane with no "
-      + "denominator cannot pass; check SRC_GLOB against the tree.",
+      + "denominator cannot pass; check SRC_GLOBS against the tree.",
     ];
   }
   const worst = census[0];
@@ -979,7 +998,7 @@ function rglobKt(rel: string): string[] {
 }
 
 export function collect(): Row[] {
-  const files = globDirs(SRC_GLOB).flatMap(rglobKt);
+  const files = SRC_GLOBS.flatMap(globDirs).flatMap(rglobKt);
   return files.map((rel) => measure(rel, decode(readFileSync(join(ROOT, rel)))));
 }
 
@@ -1039,7 +1058,20 @@ function tarFiles(blob: Uint8Array): [string, Uint8Array][] {
  *  frames with git's actual complaint swallowed by capture_output. This prints what went wrong and
  *  what git said, same exit 1. Do not "restore parity" by putting a stack trace back. */
 export function collectRef(ref: string): Row[] {
-  const run = Bun.spawnSync(["git", "-C", ROOT, "archive", ref, "--", "gateway"], { stdout: "pipe", stderr: "pipe" });
+  // Only the roots that EXIST at `ref`: `git archive` fails the whole export on a pathspec that
+  // matches nothing, and the first commit that introduces a new module home (restructure PR 3's
+  // client/) is by definition a commit whose parent does not have it. Dropping the absent root is
+  // correct here and not a hole — a root missing from the REF contributes no baseline rows, which
+  // is exactly what "this module did not exist yet" means.
+  const roots = SRC_ARCHIVE_ROOTS.filter((root) => {
+    const at = Bun.spawnSync(["git", "-C", ROOT, "ls-tree", "--name-only", ref, "--", root], { stdout: "pipe", stderr: "pipe" });
+    return at.exitCode === 0 && decode(at.stdout).trim().length > 0;
+  });
+  if (roots.length === 0) {
+    err(`git ${ref} holds none of ${SRC_ARCHIVE_ROOTS.join(", ")} — there is no production tree to compare against`);
+    process.exit(1);
+  }
+  const run = Bun.spawnSync(["git", "-C", ROOT, "archive", ref, "--", ...roots], { stdout: "pipe", stderr: "pipe" });
   if (run.exitCode !== 0) {
     err(`git archive ${ref} failed (exit ${run.exitCode}): ${decode(run.stderr).trim()}`);
     process.exit(1);

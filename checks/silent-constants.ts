@@ -102,7 +102,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const MAIN_GLOB = "gateway/*/src/main/**/*.kt";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every module home and is extended by each module move.
+const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
 const BASELINE_REL = "checks/config/silent-constants-baseline.json";
 
 // A sentence. See WHAT COUNTS AS A REASON for the measured insensitivity of this threshold.
@@ -228,9 +232,11 @@ function scan(root: string): { silent: Silent[]; numeric: number; problems: stri
   // a real file: without this flag the census there reads 5 silent constants instead of 415, and the
   // oracle goes red with a STALE report about files that are present. Measured: 103 files through a
   // symlinked module with the flag, 0 without, 103 under pathlib.
-  const files = [...new Bun.Glob(MAIN_GLOB).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = MAIN_GLOBS
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   if (files.length === 0) {
-    return { silent: [], numeric: 0, problems: [`no main sources matched ${MAIN_GLOB} under ${root} — the denominator is absent`] };
+    return { silent: [], numeric: 0, problems: [`no main sources matched ${MAIN_GLOBS.join(", ")} under ${root} — the denominator is absent`] };
   }
   const silent: Silent[] = [];
   let numeric = 0;

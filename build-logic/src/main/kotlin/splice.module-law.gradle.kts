@@ -13,6 +13,9 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 /** project path -> allowed project-dependency paths. Absent key = unrestricted (:app). */
 val moduleLaw: Map<String, Set<String>> = mapOf(
     ":core" to emptySet(),
+    // the Claude Code side: an isolated client home, sign-in state, MCP discovery, wrapping and
+    // resume. It speaks the domain and nothing else — :daemon-head must never gain this edge.
+    ":client" to setOf(":core"),
     ":provider-spi" to setOf(":core"),
     ":dialect-anthropic-passthrough" to setOf(":core", ":provider-spi"),
     ":dialect-openai-responses" to setOf(":core", ":provider-spi"),
@@ -23,7 +26,7 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":provider-muse" to setOf(":core", ":provider-spi"),
     ":provider-openai" to setOf(":core", ":provider-spi", ":dialect-openai-responses", ":dialect-openai-chat"),
     ":gateway" to setOf(":core", ":provider-spi"),
-    ":control" to setOf(":core"),
+    ":control" to setOf(":core", ":client"),
     ":arch-tests" to emptySet(),
     // :fir-checks is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).

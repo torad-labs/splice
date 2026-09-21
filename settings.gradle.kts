@@ -21,6 +21,7 @@ rootProject.name = "splice"
 
 include(
     ":core",
+    ":client",
     ":provider-spi",
     ":dialect-anthropic-passthrough",
     ":dialect-openai-responses",
@@ -38,6 +39,8 @@ include(
 )
 
 project(":core").projectDir = file("gateway/core")
+// The FIRST module to leave gateway/ (restructure plan §2.3): :client is the Claude Code side.
+project(":client").projectDir = file("client")
 project(":provider-spi").projectDir = file("gateway/provider-spi")
 project(":dialect-anthropic-passthrough").projectDir = file("gateway/dialect-anthropic-passthrough")
 project(":dialect-openai-responses").projectDir = file("gateway/dialect-openai-responses")

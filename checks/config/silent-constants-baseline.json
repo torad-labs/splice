@@ -4,6 +4,8 @@
   "denominator": 566,
   "total": 409,
   "files": {
+    "client/src/main/kotlin/splice/client/login/HookScriptFiles.kt": 1,
+    "client/src/main/kotlin/splice/client/login/LoginHookScripts.kt": 2,
     "gateway/app/src/main/kotlin/splice/app/AuthHttpClientFactory.kt": 3,
     "gateway/app/src/main/kotlin/splice/app/AuthProbeLoop.kt": 3,
     "gateway/app/src/main/kotlin/splice/app/DaemonLock.kt": 1,
@@ -84,8 +86,6 @@
     "gateway/core/src/main/kotlin/splice/core/compaction/SessionProject.kt": 2,
     "gateway/core/src/main/kotlin/splice/core/config/ConfigCoercion.kt": 9,
     "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt": 1,
-    "gateway/core/src/main/kotlin/splice/core/launch/HookScriptFiles.kt": 1,
-    "gateway/core/src/main/kotlin/splice/core/launch/LoginHookScripts.kt": 2,
     "gateway/core/src/main/kotlin/splice/core/media/ImageBytes.kt": 4,
     "gateway/core/src/main/kotlin/splice/core/media/ImageHeaderProbe.kt": 27,
     "gateway/core/src/main/kotlin/splice/core/media/WebpChunks.kt": 16,

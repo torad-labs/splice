@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudePolicy
 import splice.control.HeadTrees
 import splice.control.LaunchSpec
 import splice.control.TopologyDigest
@@ -31,7 +32,6 @@ import splice.control.TopologyStale
 import splice.control.api.ControlPayloads
 import splice.control.api.TopologyRoutes
 import splice.control.api.TopologySource
-import splice.core.launch.ClaudePolicy
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry

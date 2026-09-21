@@ -748,7 +748,11 @@ const EXEMPT_LOOKBACK = 8;
 const MIN_REASON_CHARS = 30;
 const PLACEHOLDER = /^(todo|tbd|fixme|n\/?a|none|safe|ok|fine|why|reason|\.+|-+|\?+)\b/i;
 
-const SOURCES = "gateway/*/src/main/kotlin/**/*.kt";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every module home and is extended by each module move.
+const SOURCES = ["gateway/*/src/main/kotlin/**/*.kt", "client/src/main/kotlin/**/*.kt"];
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -798,7 +802,9 @@ function disposition(
 /** Every rendered-throwable site under a credential/state file, with its disposition. */
 function sites(root: string): Site[] {
   const out: Site[] = [];
-  const files = [...new Bun.Glob(SOURCES).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = SOURCES
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   for (const rel of files) {
     const path = join(root, rel);
     const text = readFileSync(path, "utf8");

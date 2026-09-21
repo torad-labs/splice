@@ -41,6 +41,9 @@ private val ADAPTER_BASE = setOf(":core", ":provider-spi")
 private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the domain. Depends on nothing internal, forever.
     ":core" to emptySet(),
+    // the Claude Code side (restructure §2.3): an isolated client home, sign-in state, MCP
+    // discovery and sharing, wrapping the plain `claude`, resuming across heads. Domain only.
+    ":client" to setOf(":core"),
     // the provider contract. Speaks the domain and nothing else.
     ":provider-spi" to setOf(":core"),
     // a dialect adapts the contract to one wire format.
@@ -55,8 +58,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":provider-openai" to ADAPTER_BASE + setOf(":dialect-openai-responses", ":dialect-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":gateway" to ADAPTER_BASE + DIALECTS,
-    // the management plane reads the domain only.
-    ":control" to setOf(":core"),
+    // the management plane reads the domain, and the client side it assembles a launch spec for.
+    ":control" to setOf(":core", ":client"),
 )
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are

@@ -15,10 +15,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.mcp.DirectoryProbe
+import splice.client.mcp.McpSharing
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
-import splice.core.launch.DirectoryProbe
-import splice.core.launch.McpSharing
 import splice.core.util.LogSink
 import java.nio.file.Path
 

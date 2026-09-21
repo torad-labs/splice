@@ -6,13 +6,13 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.client.mcp.DirectoryProbe
+import splice.client.mcp.McpSharing
 import splice.control.mcp.HostedServers
 import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.McpHostConfig
 import splice.control.mcp.McpHostException
 import splice.control.mcp.McpSessions
-import splice.core.launch.DirectoryProbe
-import splice.core.launch.McpSharing
 import java.io.IOException
 
 /** The registry alone, no child ever launched: a server reserved by an in-flight initialize is never

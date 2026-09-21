@@ -116,7 +116,12 @@ import { fileURLToPath } from "node:url";
 // parents[1]: this file lives at checks/, so the repo root is one level up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const SRC_GLOB = "gateway/*/src/main";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every module home and is extended by each module move.
+const SRC_GLOBS = ["gateway/*/src/main", "client/src/main"];
+const SRC_GLOB = SRC_GLOBS.join(", ");
 
 // The five operator-facing config types. Named, not path-pinned: each is LOCATED in the tree, so
 // a move is a move and a disappearance is a hard error.
@@ -355,7 +360,9 @@ const pyReprList = (items: string[]): string => `[${items.map(pyRepr).join(", ")
 
 function sources(root: string): Map<string, string> {
   const out = new Map<string, string>();
-  const files = [...new Bun.Glob(`${SRC_GLOB}/**/*.kt`).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = SRC_GLOBS
+    .flatMap((p) => [...new Bun.Glob(`${p}/**/*.kt`).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   for (const rel of files) out.set(rel, readFileSync(join(root, rel), "utf8"));
   return out;
 }

@@ -1,6 +1,6 @@
 // PORT-OF: splice/app/Daemon.kt (launchSpecFor) @ ed5c868 — invariants unchanged: per-head launch
 // wiring, next to the ManagedHead it is an argument of. The only remaining user of
-// splice.core.launch's ClaudePolicy/LoginOutcomeFile, and the kt-state-paths-single-source ignore
+// :client's ClaudePolicy/LoginOutcomeFile, and the kt-state-paths-single-source ignore
 // entry for the per-head CLAUDE_CONFIG_DIR literal ("~/.claude-$key") is re-pointed at this file.
 package splice.app.head
 
@@ -8,12 +8,12 @@ import splice.app.SignInPlanner
 import splice.app.TopologyLoader
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
+import splice.client.ClaudePolicy
+import splice.client.login.LoginOutcomeFile
 import splice.control.HeadTrees
 import splice.control.LaunchSpec
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.launch.ClaudePolicy
-import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.Topology
 import java.nio.file.Path
 import java.nio.file.Paths

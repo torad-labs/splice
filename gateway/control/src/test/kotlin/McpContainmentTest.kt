@@ -9,12 +9,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.mcp.McpServerSpec
 import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.HOSTED_ADJ
 import splice.control.mcp.McpContainment
 import splice.control.mcp.SliceMemoryCap
 import splice.control.mcp.StdioProcessLauncher
-import splice.core.launch.McpServerSpec
 import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files

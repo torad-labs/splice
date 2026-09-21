@@ -2,7 +2,7 @@
 // type. Split from HostedServer.kt (concentration, 2026-09-13).
 package splice.control.mcp
 
-import splice.core.launch.McpServerSpec
+import splice.client.mcp.McpServerSpec
 import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Path

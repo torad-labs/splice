@@ -9,6 +9,9 @@ import kotlinx.coroutines.cancel
 import splice.app.launch.HookProcessExec
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
+import splice.client.ClaudeConfigMaterializer
+import splice.client.mcp.McpAccessKey
+import splice.client.mcp.McpSharing
 import splice.control.ControlServer
 import splice.control.DashboardPage
 import splice.control.FailedHeads
@@ -26,9 +29,6 @@ import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.McpAccessKey
-import splice.core.launch.McpSharing
 import splice.core.prompt.SlotInstructions
 import splice.core.sessions.HeadOfPid
 import splice.core.sessions.ProcessEnvironment

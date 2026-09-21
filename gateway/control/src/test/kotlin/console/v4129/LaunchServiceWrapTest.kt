@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudeLogins
+import splice.client.ClaudePolicy
+import splice.client.wrap.WrapStateRead
 import splice.control.HeadTrees
 import splice.control.LaunchService
 import splice.control.LaunchSpec
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudeLogins
-import splice.core.launch.ClaudePolicy
-import splice.core.launch.WrapStateRead
 import java.nio.file.Files
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists

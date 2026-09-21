@@ -12,8 +12,8 @@ package splice.control
 
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudePolicy
+import splice.client.ClaudeConfigMaterializer
+import splice.client.ClaudePolicy
 import java.nio.file.Files
 import java.nio.file.Path
 

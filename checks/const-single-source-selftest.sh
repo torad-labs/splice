@@ -52,7 +52,7 @@ BASELINE="$tmp/checks/config/const-single-source-baseline.json"
 SYNTH="$tmp/gateway/zz-selftest/src/main/kotlin/splice/selftest"
 
 build_harness() {
-  rm -rf "$tmp/gateway" "$tmp/checks"
+  rm -rf "$tmp/gateway" "$tmp/client" "$tmp/checks"
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
   cp "$ROOT/checks/const-single-source.ts" "$CHECKER"
   cp "$ROOT/checks/config/const-single-source-baseline.json" "$BASELINE"
@@ -62,7 +62,12 @@ build_harness() {
     mod="${mod%%/*}"
     ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
   done
+  # restructure PR 3: :client is the first module to live outside gateway/, so the loop above
+  # cannot reach it. A harness that measures a tree with one module missing hands its control a
+  # red that reads exactly like a real regression (or, worse, a green over a smaller tree).
+  [ -e "$tmp/client" ] || ln -s "$ROOT/client" "$tmp/client"
   [ -e "$tmp/gateway/core" ] || { echo "  ✗ const-single-source-selftest: no gateway modules under $ROOT"; exit 1; }
+  [ -e "$tmp/client/src/main" ] || { echo "  ✗ const-single-source-selftest: :client is not linked — the harness lost a module home"; exit 1; }
 }
 
 run_gate() { bun "$CHECKER" --ratchet --root "$tmp" 2>&1; }
@@ -245,8 +250,10 @@ printf 'package splice.selftest\n\ninternal const val DEFAULT_MAX_INFLIGHT = 12\
 expect_delta "7. a local default shadowing a REAL Knob default" 1 0 "KNOB-SHADOW" "Knob.MAX_INFLIGHT"
 
 # ── 8. no sources: untrustworthy, never green ─────────────────────────────────────────────────
+# EVERY module home is emptied, not just gateway/: with :client still linked this arm would find
+# 32 main sources and grade a real (if partial) tree instead of proving the no-denominator refusal.
 build_harness
-rm -rf "$tmp/gateway"
+rm -rf "$tmp/gateway" "$tmp/client"
 mkdir -p "$tmp/gateway"
 out="$(run_gate)"; code=$?
 if [ "$code" -ne 2 ]; then

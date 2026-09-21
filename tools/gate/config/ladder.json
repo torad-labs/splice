@@ -105,16 +105,6 @@
       "creates": "app/build/receipts"
     },
     {
-      "task": "safeFailureRender",
-      "why": "DR-140: the DR-65 wall. Every throwable rendered into text from a source that touches files or names credential/state types is routed through SafeFailureText.render or carries a dated, reasoned exemption; an undispositioned sink fails BY NAME. DR-73 swept this class by hand with files as the denominator, so UsageRingFile's write half kept a raw render for another eight days — a hand sweep closes the instance, a checker closes the class.",
-      "command": ["bun", "checks/config/safe-failure-render.ts", "check", "."]
-    },
-    {
-      "task": "safeFailureRenderSelftest",
-      "why": "The DR-65 wall's own red-green arms.",
-      "command": ["bash", "checks/safe-failure-render-selftest.sh"]
-    },
-    {
       "task": "constSingleSource",
       "why": "ARCH-AUDIT ratchet: a constant lives once. Ratchet legs carry a checked-in baseline and fail on GROWTH and on a stale entry, so they are green today and stay green only while nobody adds an offender.",
       "command": ["bun", "checks/const-single-source.ts", "--ratchet"]

@@ -23,9 +23,9 @@
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
     "e2e:heads:selftest": "bash checks/e2e/heads-e2e-selftest.sh",
     "e2e:docker": "bash checks/e2e/docker/run.sh",
-    "oracle:capture": "node .dev/campaigns/proxy-hardening/oracle/capture.mjs",
-    "oracle:check": "node .dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
-    "oracle:replay": "node .dev/campaigns/proxy-hardening/oracle/replay.mjs",
+    "oracle:capture": "bun tools/e2e oracle capture",
+    "oracle:check": "bun tools/e2e oracle check",
+    "oracle:replay": "bun tools/e2e oracle",
     "gate:campaign:strict": "bun .dev/campaigns/proxy-hardening/walls/campaign_wall_gate.ts --strict",
     "promote": "bash checks/promote.sh"
   },

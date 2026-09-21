@@ -4,11 +4,11 @@
     "rows": 6
   },
   "ci-hardening.toml": {
-    "lines": 165,
+    "lines": 166,
     "rows": 8
   },
   "claude-head.toml": {
-    "lines": 262,
+    "lines": 265,
     "rows": 13
   },
   "cli-wizard.toml": {
@@ -16,11 +16,11 @@
     "rows": 10
   },
   "drift-repair.toml": {
-    "lines": 3037,
+    "lines": 3038,
     "rows": 189
   },
   "head-decoupling.toml": {
-    "lines": 974,
+    "lines": 1003,
     "rows": 37
   },
   "kotlin-gateway.toml": {
@@ -32,12 +32,8 @@
     "rows": 13
   },
   "proxy-hardening.toml": {
-    "lines": 1059,
+    "lines": 1099,
     "rows": 88
-  },
-  "proxy-hardening/oracle/expectations.toml": {
-    "lines": 257,
-    "rows": 0
   },
   "proxy-hardening/walls/law_registry.toml": {
     "lines": 134,
@@ -52,12 +48,12 @@
     "rows": 6
   },
   "v0.4.0.toml": {
-    "lines": 4843,
-    "rows": 146
+    "lines": 5995,
+    "rows": 185
   },
   "web-console.toml": {
-    "lines": 1610,
-    "rows": 82
+    "lines": 3915,
+    "rows": 180
   },
   "ws-transport.toml": {
     "lines": 125,

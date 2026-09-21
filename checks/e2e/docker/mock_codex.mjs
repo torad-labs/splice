@@ -2,7 +2,7 @@
 // checks/e2e/docker/mock_codex.mjs — run the migration oracle's VENDORED ChatGPT-backend mock as a
 // standalone upstream for the fresh-machine e2e.
 //
-// The mock is not copied here: it is sliced out of .dev/campaigns/proxy-hardening/oracle/
+// The mock is not copied here: it is sliced out of tools/e2e/fixtures/oracle/
 // mock-upstream.vendored.mjs between the same two markers replay.mjs slices on, so the e2e speaks
 // to the exact bytes the oracle's fixtures were captured against. A drift in the vendored file is
 // the oracle wall's business (sha-pinned in fixtures/_manifest.json), not this harness's.
@@ -23,7 +23,7 @@ if (!root) {
   process.exit(2);
 }
 const port = Number(portArg || 0);
-const vendored = readFileSync(join(root, '.dev/campaigns/proxy-hardening/oracle/mock-upstream.vendored.mjs'), 'utf8');
+const vendored = readFileSync(join(root, 'tools/e2e/fixtures/oracle/mock-upstream.vendored.mjs'), 'utf8');
 const START = "import http from 'node:http';";
 const END = "mock.listen(0, '127.0.0.1');";
 const s = vendored.indexOf(START);

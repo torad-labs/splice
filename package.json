@@ -10,7 +10,7 @@
     "console"
   ],
   "scripts": {
-    "gate": "bash checks/gate.sh",
+    "gate": "bun tools/gate run",
     "gate:no-python": "bun tools/gate no-python && bun test tools/gate/test/no-python.test.ts",
     "gate:rules": "bun tools/gate rules --prove-coverage",
     "gate:concentration": "bun checks/concentration.ts --ratchet --max-ratio 1.8",

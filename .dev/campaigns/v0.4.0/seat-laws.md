@@ -2,7 +2,7 @@
 Worktree: /home/user/Documents/dev/projects/atlas/repo/.claude/worktrees/v0.4.0 (branch feat/v0.4.0).
 Ledger CLI (only channel): bun .dev/campaigns/manifest.ts .dev/campaigns/v0.4.0.toml {get|claim|note|set-status} ...
 Start with `get <ID>`: the title is the spec, the CHECKLIST notes are the inventory, the files= list is your fence.
-1. NEVER commit, push, stash, rebase. NEVER edit checks/gate.sh, sgconfig.yml, or any quality/rules/ file unless the row's fence names it.
+1. NEVER commit, push, stash, rebase. NEVER edit the gate ladder (tools/gate/config/ladder.json, build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts), sgconfig.yml, or any quality/rules/ file unless the row's fence names it.
 2. Fence is exclusive: touch only files in the row's files= list (globs included). Another file needs to change → ledger note + say so; do not touch it.
 3. The wall is the acceptance: done = the named rule/check reports ZERO findings for the row's scope, the row's verify command passes, and every claim in your note cites a command you ran. Never add `// ast-grep-ignore` or an allowlist entry to make a wall green unless the row explicitly allows a dated, reasoned exemption for that site — a blocked write means fix the code, never dodge the rule. The PreToolUse hook will block violating writes; that is the wall working.
 4. Tests: a behaviour change gets a pin that fails on the old code (mutation-proven: say which line you reverted to see it red). New test files carry the `// NEW:` first-line header; new main files carry `// NEW:` or `// PORT-OF:` (Konsist slot-header law). explicitApi is on: new public symbols need `public`; prefer `internal`.

@@ -30,7 +30,7 @@ function mirrorWithImports(rel: string, seen = new Set<string>()): void {
 
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "gate-configguard-"));
-  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json", "checks/gate.sh"]) {
+  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json", "tools/gate/config/ladder.json"]) {
     mkdirSync(dirname(join(tmp, rel)), { recursive: true });
     cpSync(join(repoRoot, rel), join(tmp, rel));
   }
@@ -123,30 +123,48 @@ describe("the config guard", () => {
     }
   });
 
-  // ── DR-133: the concentration-leg routing guard's own reachability model ────────────────────
-  // Mutations go on the MIRRORED gate.sh, never the repo's own.
-  const gate = () => join(tmp, "checks", "gate.sh");
-  const LEG = 'run "concentration"  npm run --silent gate:concentration';
-  const gateWithoutLeg = () => readFileSync(join(repoRoot, "checks", "gate.sh"), "utf8").split("\n").filter((l) => l !== LEG).join("\n");
-  function withGate(text: string, check: (problems: string[]) => void): void {
-    writeFileSync(gate(), text);
+  // ── the concentration-leg routing guard's forward half, over the ladder TABLE ───────────────
+  // Mutations go on the MIRRORED tools/gate/config/ladder.json, never the repo's own. A row is
+  // present or absent and its argv is an array, so the shell-era dodges (a comment, `if false`, a
+  // function nobody calls, heredoc data) have no JSON analogue; what remains is the row itself.
+  const ladder = () => join(tmp, "tools", "gate", "config", "ladder.json");
+  interface Leg { task: string; why: string; command: string[] }
+  const isLeg = (leg: Leg) => leg.command.includes("gate:concentration");
+  function withLadder(rewrite: (doc: { legs: Leg[] }) => string, check: (problems: string[]) => void): void {
+    const original = readFileSync(ladder(), "utf8");
+    writeFileSync(ladder(), rewrite(JSON.parse(original) as { legs: Leg[] }));
     try {
       check(guard());
     } finally {
-      cpSync(join(repoRoot, "checks", "gate.sh"), gate());
+      writeFileSync(ladder(), original);
     }
   }
-  test("9. DR-133: the leg moved into a function body nobody calls", () => {
-    expect(existsSync(gate())).toBe(true);
-    withGate(`${gateWithoutLeg()}\ndisabled_legs() {\n${LEG}\n}\n`, (p) => expect(names(p, "nested scope")).toBe(true));
+  const edited = (doc: { legs: Leg[] }, edit: (leg: Leg) => Leg | null): string => {
+    expect(doc.legs.filter(isLeg), "the mirrored ladder must carry exactly one concentration leg").toHaveLength(1);
+    return JSON.stringify({ ...doc, legs: doc.legs.flatMap((leg) => (isLeg(leg) ? (edit(leg) === null ? [] : [edit(leg)!]) : [leg])) });
+  };
+  test("9. the concentration row removed from the ladder", () => {
+    withLadder((doc) => edited(doc, () => null), (p) => expect(names(p, "does not run 'gate:concentration'")).toBe(true));
   });
-  test("10. DR-133: the identical leg text as heredoc DATA", () => {
-    withGate(`${gateWithoutLeg()}\ncat <<'EOF' >/dev/null\n${LEG}\nEOF\n`, (p) => expect(names(p, "does not run")).toBe(true));
+  test("10. the row's argv is `true`, the script name kept in its reason — the near-miss is named", () => {
+    withLadder(
+      (doc) => edited(doc, (leg) => ({ ...leg, why: `${leg.why} (gate:concentration disabled pending investigation)`, command: ["true"] })),
+      (p) => {
+        expect(names(p, "does not run 'gate:concentration'")).toBe(true);
+        expect(names(p, "does appear in 1 row(s)")).toBe(true);
+      },
+    );
   });
-  test("11. DR-114 regression pin: the leg wrapped in if false", () => {
-    withGate(`${gateWithoutLeg()}\nif false; then\n${LEG}\nfi\n`, (p) => expect(names(p, "nested scope")).toBe(true));
+  test("11. DR-51: npm middle flags that re-point and disarm the run are not a routing", () => {
+    withLadder(
+      (doc) => edited(doc, (leg) => ({ ...leg, command: ["npm", "run", "--prefix", "/tmp", "--if-present", "gate:concentration"] })),
+      (p) => expect(names(p, "does not run 'gate:concentration'")).toBe(true),
+    );
   });
-  test("12. CONTROL: the real gate.sh defines functions with braces and stays routed", () => {
+  test("12. an unparseable ladder fails CLOSED, by name", () => {
+    withLadder(() => "{ this is not json", (p) => expect(names(p, "could not be read or parsed")).toBe(true));
+  });
+  test("13. CONTROL: the real ladder table is routed", () => {
     expect(guard()).toEqual([]);
   });
 });

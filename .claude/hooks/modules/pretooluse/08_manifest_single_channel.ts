@@ -23,7 +23,7 @@ import { resolve as pathResolve } from "node:path";
 
 import { HookResult, hookResult } from "../../orchestrator/result";
 import { filePathOf, isWriteOrEdit } from "../../lib/tool_input";
-import { findProjectRoot } from "../../lib/astgrep_gate";
+import { findProjectRoot } from "../../lib/project_root";
 
 export const MODULE_NAME = "08_manifest_single_channel";
 

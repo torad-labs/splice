@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { HookResult, hookResult } from "../../orchestrator/result";
-import { findProjectRoot } from "../../lib/astgrep_gate";
+import { findProjectRoot } from "../../lib/project_root";
 
 export const MODULE_NAME = "12_inflight_reanchor";
 const SESSIONSTART_SOURCES: ReadonlySet<string> = new Set(["startup", "resume", "clear", "compact"]);

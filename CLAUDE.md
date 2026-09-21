@@ -18,7 +18,7 @@ The procedure, every time, in this order:
 
 1. Clean export, never the dirty worktree: `git archive HEAD | tar -x -C <scratch>/export-<sha>`.
 2. Gate of record is the WHOLE ladder, and it runs IN THE CLEAN WORKTREE, never in the export:
-   `bash checks/gate.sh` inside `buildgate.slice`, ending in `GATE: PASS`, with `git status` empty
+   `bun tools/gate run` inside `buildgate.slice`, ending in `GATE: PASS`, with `git status` empty
    and HEAD equal to the commit being installed. An export cannot run four of its legs and reports
    them RED for reasons that are not the code (measured 2026-09-17 on 1808837b): `pr title` reads
    HEAD's subject and a `git archive` tree has no `.git` (exit 1); `console lint`/`tests`

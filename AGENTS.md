@@ -202,9 +202,9 @@ this), not the clean snapshot.
 | `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
 | god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
 | config weakened to hide findings | T2 `bun tools/gate rules` config guard (no baseline, maxIssues:0, walls stay `severity:error`) |
-| the tiers never running | T0 `gateway-gradle` CI job + `bash checks/gate.sh` — everything above actually executes |
+| the tiers never running | T0 `gateway-gradle` CI job + `bun tools/gate run` — everything above actually executes |
 
-The gate reads **real** exit codes (`checks/gate.sh` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
+The gate reads **real** exit codes (`bun tools/gate run` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
 exit masked BUILD FAILED twice — never trust one.
 
 ## Compaction doctrine

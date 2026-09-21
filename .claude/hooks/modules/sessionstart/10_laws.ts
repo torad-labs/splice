@@ -18,7 +18,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 import { HookResult, hookResult } from "../../orchestrator/result";
-import { findProjectRoot } from "../../lib/astgrep_gate";
+import { findProjectRoot } from "../../lib/project_root";
 
 export const MODULE_NAME = "10_laws";
 

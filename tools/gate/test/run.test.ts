@@ -1,40 +1,66 @@
-// `gate run` is the gate of record, and its invocation is not a preference: `clean`,
-// `--no-build-cache` and the slot are each recorded in run.ts as correctness. While checks/gate.sh
-// still exists (it dies at the end of PR 5) its gradle leg must ENTER through this verb — one
-// boundary, read here rather than assumed — so a second spelling of the gate of record turns red.
+// `gate run` is the ONE entry to the gate of record. `clean`, `--no-build-cache`, `gateOfRecord`,
+// `--continue` and the slot are each recorded in run.ts as correctness; this file pins them, pins
+// package.json's `gate` script to this verb, and reads the ladder table the graph is built from so
+// that a row naming a script that does not exist, or an npm script package.json does not declare,
+// is red here before it is a red leg twenty minutes into a gate run.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { GATE_OF_RECORD_TASKS, run } from "../src/commands/run.ts";
+import { AFTER_THE_SLOT, GATE_OF_RECORD_LABEL, GATE_OF_RECORD_TASKS } from "../src/commands/run.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
+const read = (rel: string) => readFileSync(join(repoRoot, rel), "utf8");
+const scripts = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts;
+interface Leg { task: string; why: string; command: string[] }
 
 describe("gate run", () => {
-  test("checks/gate.sh's gradle leg enters through this verb and spells no tasks of its own", () => {
-    const gate = readFileSync(join(repoRoot, "checks", "gate.sh"), "utf8");
-    expect(gate).toMatch(/^run "gradle clean check" bun tools\/gate run$/m);
-    expect(gate).not.toContain("gradle-slot.sh");
+  test("package.json's gate script is this verb, and checks/gate.sh is gone", () => {
+    expect(scripts.gate).toBe("bun tools/gate run");
+    expect(existsSync(join(repoRoot, "checks", "gate.sh"))).toBe(false);
   });
 
-  test("the gate of record is clean check without the build cache", () => {
-    expect([...GATE_OF_RECORD_TASKS]).toEqual(["--no-build-cache", "clean", "check"]);
+  test("the invocation is pinned: no build cache, clean, the whole ladder, every leg reported", () => {
+    expect([...GATE_OF_RECORD_TASKS]).toEqual(["--no-build-cache", "clean", "gateOfRecord", "--continue"]);
+    expect(GATE_OF_RECORD_LABEL).toBe("gate-of-record");
+    expect(read("tools/gate/src/lib/slot.ts")).toContain("--no-daemon");
   });
 
-  test("--no-daemon comes from the slot, not from the verb — it must not be passed twice", () => {
-    expect(GATE_OF_RECORD_TASKS).not.toContain("--no-daemon");
-    const slot = readFileSync(join(import.meta.dir, "..", "src", "lib", "slot.ts"), "utf8");
-    expect(slot).toContain('"--no-daemon"');
+  test("the root build applies the ladder plugin, and the plugin registers the table this CLI ships", () => {
+    expect(read("build.gradle.kts")).toMatch(/^\s*id\("splice\.gate-ladder"\)/m);
+    expect(read("build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts")).toContain('"tools/gate/config/ladder.json"');
   });
 
-  test("takes no arguments but --java-home-only — the gate of record is one fixed invocation", async () => {
-    const original = console.error;
-    console.error = () => {};
-    try {
-      expect(await run([":app:test"])).toBe(2);
-      expect(await run(["--java-home-only", "extra"])).toBe(2);
-    } finally {
-      console.error = original;
+  test("every ladder row is a leg: a unique task name, a reason, and an argv whose target exists", () => {
+    const legs = (JSON.parse(read("tools/gate/config/ladder.json")) as { legs: Leg[] }).legs;
+    expect(legs.length).toBeGreaterThan(0);
+    expect(new Set(legs.map((l) => l.task)).size).toBe(legs.length);
+    for (const leg of legs) {
+      expect(leg.task, `${leg.task}: a Gradle task name`).toMatch(/^[a-z][A-Za-z0-9]*$/);
+      expect(leg.why.length, `${leg.task}: needs a reason`).toBeGreaterThan(0);
+      expect(["bun", "bash", "npm"], `${leg.task}: runtime`).toContain(leg.command[0]);
+      if (leg.command[0] === "npm") {
+        const script = leg.command[leg.command.length - 1]!;
+        expect(scripts[script], `${leg.task}: package.json declares no '${script}' script`).toBeDefined();
+      } else {
+        const target = leg.command[1] === "test" ? leg.command[2]! : leg.command[1]!;
+        expect(existsSync(join(repoRoot, target)), `${leg.task}: ${target} does not exist`).toBe(true);
+      }
+    }
+  });
+
+  test("the legs after the slot are exactly the ones that take the slot themselves", () => {
+    expect(AFTER_THE_SLOT.map((l) => l.label)).toEqual(["OSS readiness"]);
+    for (const leg of AFTER_THE_SLOT) expect(existsSync(join(repoRoot, leg.command[1]!))).toBe(true);
+    // and the reason holds today: at least one OSS script does run gradle through the slot
+    const oss = readdirSync(join(repoRoot, "checks", "oss")).filter((f) => f.startsWith("verify-OSS-"));
+    expect(oss.some((f) => read(`checks/oss/${f}`).includes("tools/gate slot"))).toBe(true);
+  });
+
+  test("argv other than --java-home-only is refused with exit 2", () => {
+    for (const argv of [["--bogus"], ["--java-home-only", "extra"], ["check"]]) {
+      const proc = Bun.spawnSync([process.execPath, join(repoRoot, "tools", "gate", "index.ts"), "run", ...argv], { stdout: "pipe", stderr: "pipe" });
+      expect(proc.exitCode, `argv ${argv.join(" ")}`).toBe(2);
     }
   });
 });

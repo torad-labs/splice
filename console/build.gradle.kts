@@ -68,8 +68,9 @@ val consoleBundle = tasks.register<Exec>("bundle") {
 }
 
 // The lint and the vitest suite as tasks too (`:console:lint`, `:console:test`), each with both
-// directories as inputs. The gate ladder runs them as its own legs (checks/gate.sh), so they are
-// NOT wired into `check` — the gradle tier would otherwise run each twice per gate.
+// directories as inputs. `gateOfRecord` (build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts)
+// depends on them directly, so they are NOT wired into `check` — the gradle tier would otherwise
+// run each twice per gate.
 tasks.register<Exec>("lint") {
     group = "verification"
     description = "eslint over src and tests — the FSD boundaries are lint-enforced."

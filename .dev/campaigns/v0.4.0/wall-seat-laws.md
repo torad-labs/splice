@@ -11,7 +11,7 @@ Branch feat/v0.4.0. Ledger CLI (the ONLY channel for ledger reads/writes):
 Start by `get` on each row you own — the row title is the spec. Claim it, then work.
 
 ## Hard rules
-1. NEVER commit, push, stash, rebase, or edit git state. NEVER edit checks/gate.sh (the orchestrator
+1. NEVER commit, push, stash, rebase, or edit git state. NEVER edit the gate ladder (tools/gate/config/ladder.json, build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts) (the orchestrator
    wires gate legs); instead put the exact `run "<name>" <command>` line(s) in a ledger note.
 2. Fence: touch ONLY the files your rows list (plus new files under the same directories that the
    row implies: your rule YAML, its rule-test, your python check, its selftest, its baseline).

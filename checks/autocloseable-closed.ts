@@ -72,7 +72,7 @@
  *     bun checks/autocloseable-closed.ts --selftest
  *
  * A BARE RUN IS `check` — the one gating mode, so there is no non-gating default to mis-invoke.
- * `check` is accepted (and ignored) so the gate line reads like its siblings in checks/gate.sh;
+ * `check` is accepted (and ignored) so the gate leg reads like its siblings in tools/gate/config/ladder.json;
  * anything else is a typo and fails rather than being silently dropped.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -698,7 +698,7 @@ function selftest(): number {
 function main(argv: string[]): number {
   if (argv.includes("--selftest")) return selftest();
   // `check` is accepted (and ignored) so the gate `run` line reads like its siblings in
-  // checks/gate.sh; anything else is a typo and must fail rather than be silently dropped.
+  // the ladder; anything else is a typo and must fail rather than be silently dropped.
   for (const arg of argv) {
     if (arg !== "check") {
       process.stdout.write(

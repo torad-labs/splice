@@ -1,0 +1,56 @@
+# State-root protection — splice's state root resolves in ONE place (StatePaths.kt); a second
+# literal is a drift seed. TWO roots are guarded, not one: `~/.splice` (the default since V4-177)
+# and `~/.claude-codex` (the pre-0.4 root, still adopted in place on a box that only has that one).
+# Both must stay inside StatePaths, because a literal elsewhere would pick ONE of them and so would
+# silently read the wrong root on exactly half the installs — the failure this wall exists to make
+# impossible, now with two ways to spell it.
+#
+# Widened from `\.claude-codex` to `\.claude-` (walls audit 2026-07-26): the narrower regex is a
+# PER-NODE substring check, so it is trivially evaded by splitting the literal across concatenation
+# or a string template (`".claude-" + "codex"`, or `"~/.claude-$head"` when head == "codex") — no
+# single string_content node then contains the full substring. Do NOT narrow it back; that reopens
+# the concatenation evasion.
+#
+# LaunchSpecFactory.kt is ignored deliberately, not incidentally. Its `"~/.claude-$key"`
+# (launchSpecFor, moved out of Daemon.kt in the 2026-08-17 decomposition) is the per-head
+# CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code instance — `~/.claude-claudex`,
+# `~/.claude-grok`, one per head. That is a different external contract from this wall's subject,
+# which is the GATEWAY's own state root (StatePaths.kt — `~/.splice/state`, or the adopted
+# `~/.claude-codex/state`). They share a prefix and nothing else; routing the launcher's config
+# dir through StatePaths would be wrong.
+#
+# McpSources.kt is ignored for a THIRD, unrelated reason (V4-146, 2026-09-20): its literal
+# `.claude-plugin` is Claude Code's own reserved plugin-manifest directory name (a plugin's
+# `<version>/.claude-plugin/plugin.json`), not a state or config DIR this daemon resolves — it
+# happens to share the substring `.claude-` with the pattern this wall guards and nothing else. The
+# file's OWN dash-suffixed home enumeration (`.claude-bonsai`, `.claude-claude-grok`, …) is spelled
+# off Keys.CLAUDE (no literal of its own — kt-no-vanilla-config-dir's dispositioned constant); only
+# the plugin-manifest name is a literal, and it names a fixed on-disk contract Claude Code owns, not
+# one this repo could route through StatePaths.
+id: kt-state-paths-single-source
+language: kotlin
+severity: error
+message: "State paths resolve only in StatePaths.kt — no `.splice` or `.claude-` state-root literals, concatenated or templated, elsewhere."
+files:
+  - "**/src/main/**/*.kt"
+ignores:
+  - gateway/core/src/main/kotlin/**/config/StatePaths.kt
+  # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header
+  - gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
+  # `.claude-plugin` is a plugin manifest dirname, not a state/config dir — see header
+  - gateway/core/src/main/kotlin/splice/core/launch/McpSources.kt
+rule:
+  any:
+    - kind: string_content
+      regex: \.claude-
+    # The `.splice` root is matched as a whole PATH SEGMENT, not as a substring, because main
+    # sources legitimately spell five dot-prefixed splice TEMP names that share the prefix and are
+    # not state roots: `.splice-doctor-write-probe.` (DoctorProbeWrite), `.splice-exec-probe.`
+    # (HookScriptFiles), `.splice-link-` (SessionRegistryLink, ClaudeConfigMaterializer,
+    # ProjectsLink) and `.splice-wrap-`/`.splice-wrap-backup-` (WrappedHead). Requiring a `/` or
+    # end-of-node after the segment separates the root from all of them, and still matches the
+    # template chunks a string interpolation leaves behind (`"~/.splice/$leaf"` → `~/.splice/`).
+    # This is the same anchored-on-string_content idiom kt-no-vanilla-config-dir uses, for the same
+    # reason: a raw string has different delimiters, so the regex belongs on the inner content node.
+    - kind: string_content
+      regex: (?:^|/)\.splice(?:/|$)

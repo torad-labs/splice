@@ -1,4 +1,4 @@
-# Module-scoped detekt overlay for :fir-checks ONLY (layered ON TOP of the shared gateway/detekt.yml,
+# Module-scoped detekt overlay for :fir-checks ONLY (layered ON TOP of the shared quality/detekt/detekt.yml,
 # which stays untouched and fully enforced everywhere else). Every disable below is scoped by
 # `excludes` to the SINGLE file that uses Kotlin context parameters — every other file in this module,
 # and every other rule, stays fully checked.

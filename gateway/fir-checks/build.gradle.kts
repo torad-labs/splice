@@ -26,7 +26,7 @@ detekt {
     // The shared law, plus a module-scoped overlay disabling the one ktlint rule that NPEs on Kotlin
     // context parameters (detekt#8140, fixed only in detekt 2.0) — see detekt-context-parameters.yml.
     config.setFrom(
-        rootProject.layout.projectDirectory.file("detekt.yml"),
+        rootProject.layout.projectDirectory.file("quality/detekt/detekt.yml"),
         layout.projectDirectory.file("detekt-context-parameters.yml"),
     )
     buildUponDefaultConfig = true

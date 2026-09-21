@@ -1,0 +1,75 @@
+# splice architecture walls
+
+All write-time policy is ast-grep rules in `console/`. There are NO per-rule
+Python hooks — `.claude/hooks/orchestrator.ts` is the single router (operator
+design constraint, 2026-07-13).
+
+## How the same rule runs twice (same-checker-twice)
+
+1. **Write time** — the orchestrator (PreToolUse on Write/Edit/MultiEdit)
+   computes the post-edit file content, mirrors it to a temp tree at its
+   repo-relative path, and runs `ast-grep scan --config sgconfig.yml <relpath>`
+   from the mirror. `files:`/`ignores:` globs bind against the scanned relative
+   path, so path scoping lives in the RULE, never in Python. `severity: error`
+   blocks the write; lower severities are stderr advisories.
+2. **Gate** — `npm run gate:rules` = `ast-grep scan` (whole tree) +
+   `ast-grep test` (rule red/green cases). Runs in CI. A weakened hook still
+   fails the build. The Stop lifecycle also scans the tree and blocks ending a
+   turn on a dirty tree.
+
+## Rule inventory
+
+| rule | scope | wall |
+|---|---|---|
+| webui-fetch-only-in-api(-tsx) | webui/src | FSD: UI strictly via state |
+| webui-no-emdash-ui-text | webui/src *.tsx | locked copy gate |
+| webui-css-tokens-only | webui/src *.css | --space/--text token scales only |
+
+Kotlin walls (`quality/rules/kotlin/`) mirror the above for the gateway port. The 2026-07-18
+additions are the **preventive walls** distilled from that day's incidents:
+
+| rule | scope | wall |
+|---|---|---|
+| kt-no-quality-suppress | gateway/*/src | no @Suppress of detekt structural rules — fix the code, not the gate |
+| kt-no-stream-options-request | responses/chat dialect src/main | vendor-contract: stream_options 400s the backend (shipped, broke codex) |
+| kt-no-request-body-gzip | provider-spi src/main | vendor-contract: gzipped request body 400s xAI (shipped, broke grok) |
+
+The two vendor-contract walls are the **write-time half**; `checks/e2e/heads-e2e.sh` (live head
+probes over real backends) is the **run-time half** — a mock suite cannot see a 400 the real
+vendor returns, which is exactly how both shipped.
+
+L1 (no reasoning replay) was RETIRED 2026-07-14: encrypted reasoning replay is
+now a supported, default-off, config-gated behavior (`replayReasoning`), paired
+with `prompt_cache_key` for Codex-parity prompt-cache warmth. Replay is opt-in
+because measurements found that it thinned fresh reasoning. The mirror (L2)
+remains the load-bearing thesis — reasoning still surfaces as visible text.
+
+Invariant L4 (no fake summaries) and the L2 both-paths-call assertion are
+test-plane invariants, not lintable shapes. (The six JavaScript rules that guarded
+`server/**` — the L2/L3 emitter walls, the launcher and magic-props rules — were deleted with the
+Node tree on 2026-08-10; their Kotlin successors live in `quality/rules/kotlin/`.)
+
+## Authoring doctrine
+
+- Prefer structural matching: `pattern` (with `context`/`selector` for
+  ambiguous snippets), `kind`, `constraints` on metavariables, and relational
+  rules (`inside`/`has`/`follows`/`precedes` with `stopBy`/`field`). `regex` is
+  reserved for string CONTENT and name-family prefixes, ideally anchored on a
+  specific `kind` (e.g. `string_fragment`, `unit`).
+- Every rule carries `message` (one line) and `note` (remediation; the
+  orchestrator prints both in block output).
+- Every rule ships with a `rule-tests/<id>-test.yml` red/green case. Validate
+  with `ast-grep test --skip-snapshot-tests` — the harness bypasses
+  `files:` scoping, so path exemptions are proven by the orchestrator tests
+  and the tree gate instead.
+- Deliberate code exceptions: `// ast-grep-ignore: <rule-id>` with a written
+  justification on the same or previous line.
+- Wall infrastructure (this directory, `.claude/hooks/`, `.claude/settings.json`,
+  `sgconfig.yml`) is directly editable. The write-time grant gate that used to
+  block it — `SPLICE_WALLS_OK=1` plus the `dev/walls-grant/` command kit — was
+  **removed 2026-08-10 by operator decision**: it made routine work on this repo
+  unbearable. What remains is the commit gate, which is the same-checker-twice
+  half: `npm run gate:rules` runs these exact rules over the tree in CI, so
+  weakening a rule still has to survive the gate and review. Treat "a blocked
+  write means fix the code, not the wall" as the standing convention it now is
+  rather than something enforced at write time.

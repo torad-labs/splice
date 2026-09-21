@@ -9,7 +9,7 @@
 # `id:`. That is the 2026-07-16 .rules/kotlin scar reproduced inside the script written to prevent
 # it, and nothing re-ran the hand transcripts that would have caught it.
 #
-# Runs the real script against a mirrored tree so fixtures never touch the repo's own .rules.
+# Runs the real script against a mirrored tree so fixtures never touch the repo's own quality/rules.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -21,11 +21,11 @@ err() { echo "  ✗ rule-routing-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 # ── mirror: everything rule-routing.sh reads ─────────────────────────────────────────────────
-mkdir -p "$tmp/checks/config"
+mkdir -p "$tmp/checks/config" "$tmp/quality"
 cp "$ROOT/checks/rule-routing.sh" "$tmp/checks/"
 cp "$ROOT/checks/config/ast-grep-rule-docs.ts" "$tmp/checks/config/"
 cp "$ROOT/sgconfig.yml" "$tmp/"
-cp -r "$ROOT/.rules" "$tmp/.rules"
+cp -r "$ROOT/quality/rules" "$tmp/quality/rules"
 
 rc=0
 routing() { bash "$tmp/checks/rule-routing.sh" >"$tmp/out" 2>&1; rc=$?; }
@@ -49,7 +49,7 @@ if [ "$rc" -ne 0 ]; then
 fi
 note "✓ control: mirrored tree green"
 
-DORMANT="$tmp/.rules/zz-selftest-dormant"
+DORMANT="$tmp/quality/rules/zz-selftest-dormant"
 
 # ── 1. DR-132: an unreferenced directory holding a FLOW-STYLE rule ───────────────────────────
 mkdir -p "$DORMANT"
@@ -73,12 +73,12 @@ must_fail "2. dormant dir holding a block-style rule" "but nothing references it
 rm -rf "$DORMANT"
 
 # ── 3. inverse direction: a routed ruleDir that holds no rules ────────────────────────────────
-mkdir -p "$tmp/.rules/zz-empty"
-printf 'ruleDirs:\n  - .rules/rules\n  - .rules/kotlin-splice\n  - .rules/zz-empty\ntestConfigs:\n  - testDir: .rules/rule-tests\n' \
+mkdir -p "$tmp/quality/rules/zz-empty"
+printf 'ruleDirs:\n  - quality/rules/console\n  - quality/rules/kotlin\n  - quality/rules/zz-empty\ntestConfigs:\n  - testDir: quality/rules/rule-tests\n' \
   > "$tmp/sgconfig.yml"
 routing
 must_fail "3. routed ruleDir holding 0 rule files" "holds 0 ast-grep rule files"
-rmdir "$tmp/.rules/zz-empty"
+rmdir "$tmp/quality/rules/zz-empty"
 
 # ── 4. inverse direction: a routed ruleDir that does not exist ────────────────────────────────
 routing

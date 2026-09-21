@@ -24,7 +24,7 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
      Existing violations stay red; do NOT fix instances (that is the sibling fix row's job) and do
      NOT allowlist them away unless the row says "ratchet/baseline". Where the row says baseline,
      the baseline lists today's offenders and the wall fails on GROWTH and on a stale entry.
-   - Same-checker-twice: an ast-grep rule under .rules/kotlin-splice/ is routed by sgconfig.yml
+   - Same-checker-twice: an ast-grep rule under quality/rules/kotlin/ is routed by sgconfig.yml
      into BOTH the PreToolUse hook (.claude/hooks/orchestrator.py pretooluse — it scans proposed
      Write/Edit content) and the gate leg `npm run --silent gate:rules`. Prove the hook side too:
        printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"gateway/gateway/src/main/kotlin/splice/gateway/Zz.kt","content":"<synthetic violation>"}}' | python3 .claude/hooks/orchestrator.py pretooluse; echo exit=$?
@@ -34,8 +34,8 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
      it is a gate leg + selftest.
 4. Templates to mirror (read before authoring; match their header idiom — every rule/check carries a
    header that states the law, the scar, the census and the remedy):
-   - ast-grep rule: .rules/kotlin-splice/kt-no-lambda-seam.yml, .rules/kotlin-splice/kt-no-extension-functions.yml
-   - rule-test: .rules/rule-tests/kt-catch-swallows-cancellation-test.yml (ast-grep test format;
+   - ast-grep rule: quality/rules/kotlin/kt-no-lambda-seam.yml, quality/rules/kotlin/kt-no-extension-functions.yml
+   - rule-test: quality/rules/rule-tests/kt-catch-swallows-cancellation-test.yml (ast-grep test format;
      `npm run --silent gate:rules` runs scan + test); routing: sgconfig.yml, checks/rule-routing-selftest.sh;
      rule docs wall: checks/config/ast-grep-rule-docs.py (a new rule may need a doc entry — run it).
    - bun wall with an IN-FILE --selftest: checks/config/shared-quirks-no-vendor-defaults.ts;
@@ -58,7 +58,7 @@ Start by `get` on each row you own — the row title is the spec. Claim it, then
    inactive/failed, AND this probe must be empty:
      for p in $(pgrep -u marcos -x java); do tr '\0' ' ' </proc/$p/cmdline | grep -qE 'GradleWrapperMain|GradleDaemon' && echo busy $p; done
    (`pgrep -f` self-matches — never use it). Then run inside the memory slice:
-     cd gateway && buildgate ./gradlew --offline --no-daemon <tasks>
+     bash checks/gradle-slot.sh <seat-label> <tasks>
    Wait with a bounded loop (sleep 30; recheck), never a spin. Never kill a java process.
 6. A compaction is NOT a stop: your session compacts and continues; re-read your rows with `get`
    and carry on. Never hand work back citing context.

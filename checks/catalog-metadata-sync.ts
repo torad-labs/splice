@@ -3,7 +3,7 @@
  * Fail when the version catalog outruns dependency-verification metadata.
  *
  * WHY THIS EXISTS (PR #91, and every gradle Dependabot PR before it): Dependabot can edit
- * gateway/gradle/libs.versions.toml but cannot run the metadata regeneration, so every catalog bump
+ * gradle/libs.versions.toml but cannot run the metadata regeneration, so every catalog bump
  * arrives with gradle/verification-metadata.xml still pinning the OLD versions. With
  * verify-metadata=true that is a guaranteed red — but it surfaces six minutes into the gradle leg
  * of the gate, as a wall of "Dependency verification failed" noise. This check states the same
@@ -53,8 +53,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const NS = "https://schema.gradle.org/dependency-verification";
 
-const REMEDY = `catalog-metadata-sync: gateway/gradle/libs.versions.toml declares versions that
-gradle/verification-metadata.xml does not pin. Regenerate from the gateway directory —
+const REMEDY = `catalog-metadata-sync: gradle/libs.versions.toml declares versions that
+gradle/verification-metadata.xml does not pin. Regenerate from the repository root —
 BOTH passes, the shadowJar license pass fetches poms that \`check\` alone never resolves:
 
     ./gradlew --write-verification-metadata sha256 clean check
@@ -98,8 +98,8 @@ function versionOf(key: string, entry: Record<string, unknown>, versions: Versio
 }
 
 function main(argv: string[]): number {
-  const catalogPath = argv[0] ?? resolve(ROOT, "gateway/gradle/libs.versions.toml");
-  const metadataPath = argv[1] ?? resolve(ROOT, "gateway/gradle/verification-metadata.xml");
+  const catalogPath = argv[0] ?? resolve(ROOT, "gradle/libs.versions.toml");
+  const metadataPath = argv[1] ?? resolve(ROOT, "gradle/verification-metadata.xml");
 
   const catalog = Bun.TOML.parse(readFileSync(catalogPath, "utf8")) as Record<string, unknown>;
   const versions = (catalog.versions ?? {}) as Record<string, unknown>;

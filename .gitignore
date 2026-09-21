@@ -13,12 +13,15 @@ __pycache__/
 /dist/
 /.cache/
 
-# gradle (gateway/)
-gateway/.gradle/
+# gradle (the build root is the repository root; the modules still live under gateway/)
+/.gradle/
+/.kotlin/
+/build/
+build-logic/.gradle/
+build-logic/build/
+build-logic/.kotlin/
 gateway/**/.gradle/
 gateway/**/build/
-gateway/.kotlin/
-gateway/build-logic/.kotlin/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/
@@ -68,11 +71,11 @@ credentials.json
 .claude/tmp/
 
 # gradle-slot.sh lock + holder (checks/gradle-slot.sh)
-gateway/.gradle-slot.lock*
+/.gradle-slot.lock*
 # A host build wrapper's per-project lock. checks/gradle-slot.sh runs gradle through whatever
 # memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
-# lock beside the tree it builds (gateway/ for gradle, the root for the rest). A machine artifact,
-# never source, and the pattern is the SHAPE rather than one tool's name so a box with a
+# lock beside the tree it builds — the repository root, where the build is rooted. A machine
+# artifact, never source, and the pattern is the SHAPE rather than one tool's name so a box with a
 # differently-named wrapper needs no edit to this file.
 .*-build.lock
 # per-machine agent tooling installs: skills and hook mirrors for the other seats

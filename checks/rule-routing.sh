@@ -9,13 +9,13 @@
 # 336 top-level functions and 58 companion objects accumulated under a green gate.
 #
 # A green wall proves nothing unless something reads it. This leg checks BOTH directions:
-#   forward — every .rules/ directory holding ast-grep rule files is REFERENCED by sgconfig.yml
+#   forward — every quality/rules/ directory holding ast-grep rule files is REFERENCED by sgconfig.yml
 #             (ruleDirs: or testConfigs.testDir:) or carries a dated entry in UNROUTED_ALLOWLIST
 #   inverse — every ruleDirs: entry EXISTS and holds at least one rule file (a typo'd or emptied
 #             ruleDir is the same fail-open bug seen from the other side)
 #
 # testConfigs.testDir counts as a reference because it IS one: `ast-grep test` reads those files
-# every gate run. A typo'd testDir does not slip through — it un-references .rules/rule-tests, and
+# every gate run. A typo'd testDir does not slip through — it un-references quality/rules/rule-tests, and
 # the forward direction fails on it.
 #
 # Run: `bash checks/rule-routing.sh`, and as a leg of `npm run gate`.
@@ -52,7 +52,7 @@ UNROUTED_ALLOWLIST=(
 # class the script exists to catch, one level up, so an unrunnable module is a hard failure. The
 # `|| printf 0` inside rule_file_count is only an arithmetic safety net for that already-failed
 # world; the preflight is what makes it safe, and it is not a fallback path.
-bun checks/config/ast-grep-rule-docs.ts count .rules 1 >/dev/null 2>&1 ||
+bun checks/config/ast-grep-rule-docs.ts count quality/rules 1 >/dev/null 2>&1 ||
   err "checks/config/ast-grep-rule-docs.ts is not runnable — the rule-file denominator cannot be computed, so this leg can vouch for nothing."
 
 rule_file_count() { # rule_file_count <dir> <maxdepth>
@@ -118,7 +118,7 @@ covered_by() { # covered_by <dir> <prefix...> — true if dir IS a prefix or liv
   return 1
 }
 
-# --- forward: nothing under .rules/ may be present-but-unreferenced ---------------------------
+# --- forward: nothing under quality/rules/ may be present-but-unreferenced --------------------
 ALLOWED_PATHS=()
 for entry in "${UNROUTED_ALLOWLIST[@]}"; do ALLOWED_PATHS+=("${entry%%|*}"); done
 
@@ -128,7 +128,7 @@ while IFS= read -r dir; do
   covered_by "$dir" "${REFERENCED[@]}" && continue
   covered_by "$dir" "${ALLOWED_PATHS[@]}" && continue
   err "$dir holds $count ast-grep rule file(s) but nothing references it — add it to ruleDirs: in $SGCONFIG, or give it a dated entry in UNROUTED_ALLOWLIST in this script. ast-grep never errors on an unreferenced rule directory; it silently scans none of those rules, which is exactly how .rules/kotlin ran dormant for a month."
-done < <(find .rules -type d | sort)
+done < <(find quality/rules -type d | sort)
 
 # --- inverse: every routed directory must exist and actually carry rules -----------------------
 for dir in "${RULE_DIRS[@]}"; do

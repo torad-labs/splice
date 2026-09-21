@@ -1,0 +1,33 @@
+# V4-117 — THE CAUSE IS NOT OPTIONAL. A TurnOutcome.Failure is a statement that a turn died, and
+# the SCAR this rule exists for is that until now the statement carried exactly one fact: the
+# ErrorType. That type is the RETRY CLASS — the thing splice puts on the wire so the CLIENT knows
+# whether to re-send — so it was also the only thing splice itself could say about what went wrong.
+# A 301s upstream silence therefore surfaced as OVERLOADED with the real cause (a stall) living only
+# in a free-text sentence nobody can grep (V4-116's scar, live on claude-deepseek).
+#
+# V4-117 splits the two axes: FailureCause is the TRUTH (what actually happened to the round) and
+# ErrorType stays the WIRE TYPE (the retry class RetryMatrix chooses FROM the cause, never
+# hand-picked at the site). A construction that omits the cause re-merges them by default, which is
+# the bug this rule forbids — every site must state what happened, and the matrix decides what the
+# client is told.
+#
+# kt-failure-has-cause reds any TurnOutcome.Failure(...) whose argument list carries no `cause =`.
+# The files: glob covers every source tree a construction lives in today (dialect-*, provider-*,
+# gateway/*); it is deliberately not narrowed to the 12 files counted on 2026-09-18 so the 27th
+# site — the one nobody has written yet — is caught on the line it is written, not after a census.
+id: kt-failure-has-cause
+language: kotlin
+severity: error
+message: >-
+  V4-117: every TurnOutcome.Failure states its FailureCause — the cause is what actually happened
+  (the truth), the ErrorType is the retry class RetryMatrix chooses FROM it. Add
+  `cause = FailureCause.<X>`; choose X by reading the site, never by copying its ErrorType.
+files:
+  - "**/src/main/**/*.kt"
+rule:
+  pattern: TurnOutcome.Failure($$$ARGS)
+  not:
+    has:
+      stopBy: end
+      kind: value_argument
+      regex: ^cause\s*=

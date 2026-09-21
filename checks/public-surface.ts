@@ -3,7 +3,7 @@
  * V4-92 — a module's PUBLIC surface must have a consumer in another module, or be internal.
  *
  * WHY THIS EXISTS. Every library module in this tree runs under `explicitApi()`
- * (gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts), so every declaration
+ * (build-logic/src/main/kotlin/splice.module-law.gradle.kts), so every declaration
  * spells its visibility out loud — and `public` is what an author types when they are not
  * thinking about the module boundary, because it is what the compiler asks for and the
  * error message that demands it says nothing about who the reader is. The result measured
@@ -19,8 +19,8 @@
  * 2026-07-16 style pack that sat unrouted for a month (see checks/rule-routing.sh).
  *
  * THE DENOMINATOR COMES FROM THE SOURCE, never a hand list (§24). Two files are parsed:
- *   · gateway/settings.gradle.kts — every include()d module path. That is the universe.
- *   · gateway/build-logic/.../splice.module-law.gradle.kts — `nonLibrary`, the set the build
+ *   · settings.gradle.kts — every include()d module path. That is the universe.
+ *   · build-logic/.../splice.module-law.gradle.kts — `nonLibrary`, the set the build
  *     itself exempts from explicitApi (:app, :arch-tests, :fir-checks). A module in
  *     that set has no explicit `public` to read and is not a library, so it is GRADED as a
  *     consumer and never as a producer. This is the row's "each non-:app module" read off
@@ -108,9 +108,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // The two build files that ARE the denominator. Fixed paths on purpose: a checker that
 // silently loses its source is a checker that passes.
-const GRADLE_ROOT_REL = "gateway";
-const SETTINGS_REL = "gateway/settings.gradle.kts";
-const MODULE_LAW_REL = "gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts";
+// The build root is the repository root since PR 2 of the restructure; the modules still sit
+// under gateway/<id> until PR 3, so the two are named separately.
+const MODULE_HOME_REL = "gateway";
+const SETTINGS_REL = "settings.gradle.kts";
+const MODULE_LAW_REL = "build-logic/src/main/kotlin/splice.module-law.gradle.kts";
 const BASELINE_REL = "checks/config/public-surface-baseline.json";
 
 const MODULE_PATH = /"(:[A-Za-z0-9._-]+)"/g;
@@ -243,7 +245,7 @@ function modulesOf(root: string): { included: string[]; nonLibrary: Set<string>;
 function sourceText(root: string, module: string, ...subs: string[]): [string, string][] {
   const out: [string, string][] = [];
   for (const sub of subs) {
-    const directory = join(root, GRADLE_ROOT_REL, module.replace(/^:/, ""), sub);
+    const directory = join(root, MODULE_HOME_REL, module.replace(/^:/, ""), sub);
     if (!existsSync(directory)) continue;
     const pattern = new Bun.Glob("**/*.kt");
     // followSymlinks, because the recursive glob this census was ported from descends through a
@@ -569,7 +571,7 @@ val nonLibrary = setOf(":app")
 `;
 
 function writeModule(root: string, module: string, sub: string, rel: string, text: string): void {
-  const path = join(root, GRADLE_ROOT_REL, module.replace(/^:/, ""), sub, rel);
+  const path = join(root, MODULE_HOME_REL, module.replace(/^:/, ""), sub, rel);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text, "utf8");
 }

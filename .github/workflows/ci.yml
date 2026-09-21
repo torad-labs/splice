@@ -74,7 +74,7 @@ jobs:
     # Validates the Gradle wrapper checksum on every pull request.
     # This catches a tampered gradle-wrapper.jar arriving via fork PR before
     # any build step executes it. The action discovers wrapper files recursively,
-    # so no path inputs are required (repo has gateway/gradlew + wrapper jar).
+    # so no path inputs are required (repo has gradlew + wrapper jar at the root).
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -456,14 +456,15 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ## Layout
 
 ```
-gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
+gateway/       Kotlin daemon (spliced) — the Gradle modules, JDK 21; the PRIMARY stack
+build-logic/   Gradle convention plugins; the build itself is rooted at the repository root
 config/        splice.example.toml — the sample multi-provider topology
 bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 webui/         React 19 + Vite + Zustand dashboard, single-file build
 checks/        the gate (`npm run gate`) and its legs: wall routing, the concentration ratchet,
                release acceptance, the OSS ladder, the e2e harnesses
-.rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)
+quality/       enforcement: detekt config + the ast-grep "walls" (write-time AND at the gate)
 .claude/       the hook orchestrator that runs the walls on every agent write, and its tests
 .dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`),
                research notes, release material
@@ -483,7 +484,7 @@ bun install --frozen-lockfile
 npm run gate   # Gradle, walls/hooks, server, webui, release acceptance, OSS checks
 ```
 
-Contracts and invariants live in `AGENTS.md`; the change log in `CHANGELOG.md`; the wall doctrine in `.rules/README.md`.
+Contracts and invariants live in `AGENTS.md`; the change log in `CHANGELOG.md`; the wall doctrine in `quality/rules/README.md`.
 
 ## License
 

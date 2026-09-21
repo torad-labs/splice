@@ -17,7 +17,7 @@ SCRIPT_SOURCE="${BASH_SOURCE[0]-}"
 REPO_ROOT=""
 if [ -n "$SCRIPT_SOURCE" ]; then
   SOURCE_ROOT="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
-  if [ -f "${SOURCE_ROOT}/gateway/settings.gradle.kts" ]; then
+  if [ -f "${SOURCE_ROOT}/settings.gradle.kts" ]; then
     REPO_ROOT="$SOURCE_ROOT"
   fi
 fi
@@ -239,7 +239,7 @@ if [ -n "${SPLICE_JAR:-}" ]; then
   fi
 elif [ -n "$REPO_ROOT" ]; then
   echo "splice: building the fat jar (./gradlew :app:shadowJar)…"
-  ( cd "${REPO_ROOT}/gateway" && ./gradlew -q :app:shadowJar )
+  ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar )
   BUILT="${REPO_ROOT}/gateway/app/build/libs/app-all.jar"
   [ -f "$BUILT" ] || { echo "splice: build produced no fat jar at $BUILT" >&2; exit 1; }
   cp "$BUILT" "$JAR_TMP"

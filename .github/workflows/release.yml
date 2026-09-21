@@ -113,7 +113,6 @@ jobs:
         run: npm run gate
 
       - name: build exact release jar and compliance reports
-        working-directory: gateway
         run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
       - name: stage exact release bundle

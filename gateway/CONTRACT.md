@@ -39,7 +39,7 @@ The plan's marquee binding is: *for any changed golden, require `sha256(builderO
 receipt.hash`, where the receipt was written by a run that observed `200` on those exact bytes.* That
 turns "golden changed" into un-green-able without a live success.
 
-`checks/e2e/heads-e2e.sh --tier 1` now **emits a receipt** at `checks/e2e/receipts/<head>.json` on a
+`bun tools/e2e heads --tier 1` now **emits a receipt** at `checks/e2e/receipts/<head>.json` on a
 tier-1 `200` (head, model, http_status, observed_at). It is marked `contract_bound: false` because
 the load-bearing field — `sha256` of the exact **upstream** request bytes the head sent — is not
 observable yet:
@@ -50,7 +50,7 @@ observable yet:
 
 **The one missing piece:** a head-side *upstream-request tap* — a debug/perf surface that records the
 exact bytes the `UpstreamClient.post` body carried on the turn that got `200`. Once that exists,
-`heads-e2e.sh` fills `receipt.hash = sha256(upstream bytes)` and sets `contract_bound: true`, and the
+`e2e heads` fills `receipt.hash = sha256(upstream bytes)` and sets `contract_bound: true`, and the
 `*ContractTest`s gain a check: *a changed golden must match a `contract_bound: true` receipt hash.*
 That is a localized change — the receipt file, its emission point, the goldens, and the byte-identity
 assertions all already exist; only the tap + the two-line receipt-hash check remain.

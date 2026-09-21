@@ -102,7 +102,7 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
  *  (`grep -rn "PassthroughQuirks(" gateway/PROJECT/src/main` over every module): the three live
  *  call sites are `app/.../provider/PassthroughArm.kt` (client + unregistered API-key heads),
  *  `app/.../provider/MusePassthroughArm.kt` (Muse's tool-name-cap profile) and
- *  `provider-kimi/.../KimiQuirks.kt` (Kimi's own deformation set) — the head-assembly provider
+ *  `providers/kimi/.../KimiQuirks.kt` (Kimi's own deformation set) — the head-assembly provider
  *  package, plus the one provider module that builds its own profile rather than taking the
  *  neutral one. */
 private val PASSTHROUGH_QUIRKS_ALLOWED_SITES = mapOf(

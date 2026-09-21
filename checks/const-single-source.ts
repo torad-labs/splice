@@ -1007,7 +1007,7 @@ const KNOB_UNRELATED = `package splice.a
 private const val RETRY_SLOTS = 80
 `;
 
-const A_KT = "gateway/app/src/main/kotlin/splice/A.kt";
+const A_KT = "app/src/main/kotlin/splice/A.kt";
 const B_KT = "core/src/main/kotlin/splice/B.kt";
 const C_KT = "daemon/control/src/main/kotlin/splice/C.kt";
 /** A fixture file's spelling in the arms -> the tree path it lands at. The paths carry the module

@@ -1,6 +1,6 @@
 // The DENOMINATOR, derived from the source rather than from the list being checked (constitution
 // Article V.4). A rule's `files:` glob cannot supply its own expected set: a glob narrowed from
-// `gateway/*/src/main/**` to `gateway/app/src/main/**` still matches everything it names, so a
+// `gateway/*/src/main/**` to `app/src/main/**` still matches everything it names, so a
 // denominator read off the glob agrees with the mutation. These roots come from
 // settings.gradle.kts and package.json instead, and the file lists come from `git ls-files`.
 import { existsSync, readFileSync } from "node:fs";

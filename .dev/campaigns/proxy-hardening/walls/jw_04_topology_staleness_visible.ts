@@ -63,7 +63,7 @@ const SHIM = resolve(ROOT, "bin/splice-launch");
 // single-file resolution, following the code rather than the god-file it used to live in.
 // 2026-08-23: topologyFreshness (digest + topologyStale comparison) lives in
 // DoctorHeadChecks.kt. DoctorDaemonChecks only composes the call.
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorHeadChecks.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(control: string | null, shim: string | null, doctor: string | null): string[] {

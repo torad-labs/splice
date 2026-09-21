@@ -57,13 +57,13 @@ function pyRepr(items: string[]): string {
 const ROOT = resolve(import.meta.dir, "../../../..");
 // 2026-08-23: HealthView left ControlPlaneClient.kt when the fetch cluster moved to
 // DaemonLock.kt (concentration split). The wall follows the declaration, not the old file.
-const CLIENT = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/DaemonLock.kt");
+const CLIENT = resolve(ROOT, "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt");
 // HD-25: headChecks + headSummary — BOTH declarations this wall reads — moved out of DoctorCommand.kt
 // into their own collaborator when that file was decomposed (it was the tree's worst concentration
 // row at 8.10). Re-anchored onto the ONE file that now holds them, at the same single-file
 // resolution, following the code rather than the god-file it used to live in — the same repoint
 // jw_13 already carries for HeadBoot.kt.
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorHeadChecks.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(client: string | null, doctor: string | null): string[] {

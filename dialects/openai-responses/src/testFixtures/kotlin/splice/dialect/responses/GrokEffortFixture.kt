@@ -1,5 +1,5 @@
 // NEW: dialect-local copy of Grok's effort vocabulary so builder tests stay byte-identical without
-// importing provider-grok. :app GrokEffortFixtureTest pins this equal to GrokEffortVocabulary.
+// importing :providers-grok. :app GrokEffortFixtureTest pins this equal to GrokEffortVocabulary.
 package splice.dialect.responses
 
 import splice.upstream.EffortVocabulary

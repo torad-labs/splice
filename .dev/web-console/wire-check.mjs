@@ -328,7 +328,7 @@ function daemon() {
   // then VERIFIES, beats a rule that silently swallows a real mismatch — which the greedy version
   // did: it took MISMATCHED from 1 to 0.
   const passThrough = {
-    '/api/doctor': { port: 'DoctorReport', builtIn: 'gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt' },
+    '/api/doctor': { port: 'DoctorReport', builtIn: 'app/src/main/kotlin/splice/app/cli/doctor/DoctorReportShape.kt' },
   };
   // the exemption has to still be true, or it is a stale excuse rather than a disposition — but it
   // is only a claim about a route this tree actually serves, so it is verified after the routes are

@@ -92,7 +92,7 @@
 #   fixed 500 ms readiness sleeps: it waits for the spawned process's argv to become what the hook's
 #   scan reads, and this file is plain JUnit with no coroutine to suspend.
 #     client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt     (9)
-#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (1)
+#     app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt                       (1)
 #
 #   2026-09-18 · A READINESS POLL WITH NO EVENT TO AWAIT, IN BLOCKING CODE. Nothing signals that a
 #   port has started listening, so awaitListening polls a connect attempt against a deadline — the
@@ -131,7 +131,7 @@
 #     providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt          (2)
 #     providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt   (1)
 #     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)
-#     gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt                    (2)
+#     app/src/test/kotlin/splice/app/codemode/CodeModeWorkerReclamation.kt                    (2)
 #     upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt                  (1)
 #
 #   2026-09-17 · A DELIBERATELY SLOW TEST DOUBLE. The mock upstream's whole job is to be slow on the
@@ -149,7 +149,7 @@
 #     upstream/src/test/kotlin/splice/upstream/retry/WatchdogTest.kt                       (11)
 #     daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt          (9)
 #     daemon/head/src/test/kotlin/splice/head/HeadServerStopDrainTest.kt             (3)
-#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (4)
+#     app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt                       (4)
 #     daemon/head/src/test/kotlin/splice/head/HeadServerHeartbeatTest.kt             (2)
 #     gateway/spikes/src/test/kotlin/PoolCancelSpike.kt                           (5)
 #
@@ -186,7 +186,7 @@ files:
 ignores:
   # a proof of absence, which has no event
   - client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt
-  - gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt
+  - app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt
   # a readiness poll with no event to await, in blocking code
   - daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt
   # a deliberately paced test double

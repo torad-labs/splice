@@ -56,10 +56,10 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorCommand.kt");
 // The runtime section lives in its own file (DoctorCommand.kt sits at detekt's file function
 // budget); the wall reads the whole doctor surface so a legitimate split cannot read as a gap.
-const RUNTIME = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorRuntime.kt");
+const RUNTIME = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorRuntime.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(doctor: string | null): string[] {

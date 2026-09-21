@@ -1,4 +1,4 @@
-// NEW: x-codex header family owned by provider-codex, sorted by window length.
+// NEW: x-codex header family owned by :providers-codex, sorted by window length.
 package splice.provider.codex
 
 import org.junit.jupiter.api.Assertions.assertEquals

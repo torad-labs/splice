@@ -77,7 +77,7 @@ files:
   - providers/codex/src/main/**/*.kt
   - providers/openai/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
-  - gateway/app/src/main/**/*.kt
+  - app/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt
 rule:
   any:

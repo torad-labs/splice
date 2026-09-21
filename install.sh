@@ -240,7 +240,7 @@ if [ -n "${SPLICE_JAR:-}" ]; then
 elif [ -n "$REPO_ROOT" ]; then
   echo "splice: building the fat jar (./gradlew :app:shadowJar)…"
   ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar )
-  BUILT="${REPO_ROOT}/gateway/app/build/libs/app-all.jar"
+  BUILT="${REPO_ROOT}/app/build/libs/app-all.jar"
   [ -f "$BUILT" ] || { echo "splice: build produced no fat jar at $BUILT" >&2; exit 1; }
   cp "$BUILT" "$JAR_TMP"
 else

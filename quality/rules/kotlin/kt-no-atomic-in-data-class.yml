@@ -27,7 +27,7 @@
 #   daemon/head/src/main/kotlin/splice/head/turn/TurnDrive.kt:29       rawRoundUsage: AtomicReference,
 #                                                                            usageStampClaim / accountBoundaryClaim:
 #                                                                            AtomicBoolean (body)
-#   gateway/app/src/main/kotlin/splice/app/auth/OAuthAccountFiles.kt:45       OAuthLoginAccount.reservation /
+#   app/src/main/kotlin/splice/app/auth/OAuthAccountFiles.kt:45       OAuthLoginAccount.reservation /
 #                                                                            writtenLabel: AtomicReference (body)
 # The two BODY-property sites are not a widening of the law: `copy()` does not carry a body property
 # at all, so `OAuthLoginAccount.copy(label = x)` yields an account that has silently dropped the

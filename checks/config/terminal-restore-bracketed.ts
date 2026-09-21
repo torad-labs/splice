@@ -9,7 +9,7 @@
  * raw outside that bracket.
  *
  * SCOPE. Kotlin sources of splice.app.cli.prompt under
- * gateway/app/src/main/kotlin/splice/app/cli/prompt. Tests are out of scope —
+ * app/src/main/kotlin/splice/app/cli/prompt. Tests are out of scope —
  * they inject SttyCommand and never talk to a real tty.
  *
  * DENOMINATOR. Every .kt file in that directory on disk. Zero files, or a missing
@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 
 // parents[2]: this file lives at checks/config/, so the repo root is two levels up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const PROMPT_REL = "gateway/app/src/main/kotlin/splice/app/cli/prompt";
+const PROMPT_REL = "app/src/main/kotlin/splice/app/cli/prompt";
 const STTY = "stty";
 const RAW_FLAG = "-icanon";
 const TERMINAL_MODE = "TerminalMode.kt";

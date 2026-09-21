@@ -25,7 +25,7 @@ err() { echo "  ✗ autocloseable-closed-selftest: $1"; fail=1; }
 note() { printf '  %s\n' "$1"; }
 
 CHECKER="$tmp/checks/autocloseable-closed.ts"
-APP="$tmp/gateway/app/src/main/kotlin/splice/app"
+APP="$tmp/app/src/main/kotlin/splice/app"
 SPI="$tmp/upstream/src/main/kotlin/splice/upstream"
 
 mkdir -p "$tmp/checks" "$APP" "$SPI"
@@ -124,7 +124,7 @@ run
 must_red "3. the same closeable with its close() removed" "DaemonLock"
 
 # ── 4. the scar shape: a TWO-HOP closeable closed only from src/test ──────────────────────────
-mkdir -p "$tmp/gateway/app/src/test/kotlin"
+mkdir -p "$tmp/app/src/test/kotlin"
 cat > "$APP/App.kt" <<'KOT'
 package splice.app
 
@@ -137,7 +137,7 @@ internal class Arm {
     fun build() = Wiring(runtime = JvmCodeModeRuntime())
 }
 KOT
-cat > "$tmp/gateway/app/src/test/kotlin/RuntimeTest.kt" <<'KOT'
+cat > "$tmp/app/src/test/kotlin/RuntimeTest.kt" <<'KOT'
 package splice.app
 
 class CodeModeRuntimeTest {
@@ -156,7 +156,7 @@ fi
 # A checker that reads zero sources and exits 0 turns the whole leg into a no-op. That is the bug
 # class this file exists to catch, one level up, so an empty tree must be a hard failure.
 mv "$APP/App.kt" "$tmp/App.kt.bak"
-rm -f "$tmp/gateway/app/src/test/kotlin/RuntimeTest.kt"
+rm -f "$tmp/app/src/test/kotlin/RuntimeTest.kt"
 mv "$SPI/Contract.kt" "$tmp/Contract.kt.bak"
 run
 must_red "5. no Kotlin main sources at all" "refusing to pass vacuously"

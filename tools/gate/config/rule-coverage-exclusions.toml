@@ -7,7 +7,7 @@
 # files, or loses a file inside a root it does cover, fails BY NAME unless a row below says why.
 #
 # That is the point. `ast-grep scan` cannot see a glob that selects nothing: narrowing
-# `gateway/*/src/main/**/*.kt` to `gateway/app/src/main/**/*.kt` leaves the scan green while fifteen
+# `gateway/*/src/main/**/*.kt` to `app/src/main/**/*.kt` leaves the scan green while fifteen
 # modules lose enforcement. The rows here are the only way that narrowing can be legitimate, and
 # each one is dated so the narrowing has a history instead of a habit.
 #
@@ -334,7 +334,7 @@ reason = "TurnMeta's default constructs SharedSummaryParts once per turn; this i
 rule = "kt-state-paths-single-source"
 files = [
   "core/src/main/kotlin/**/config/StatePaths.kt",
-  "gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
+  "app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
   "client/src/main/kotlin/splice/client/mcp/McpSources.kt",
 ]
 date = "2026-09-20"
@@ -360,7 +360,7 @@ reason = "System.getenv is allowed only inside core/config, which is the layered
 rule = "kt-no-vanilla-config-dir"
 files = [
   "daemon/control/src/main/kotlin/**/*.kt",
-  "gateway/app/src/main/kotlin/**/*.kt",
+  "app/src/main/kotlin/**/*.kt",
 ]
 date = "2026-09-20"
 reason = """
@@ -386,7 +386,7 @@ behind it.
 
 [[exclusion]]
 rule = "kt-no-runblocking-in-daemon"
-files = ["gateway/app/src/main/kotlin/**/Main.kt", "gateway/app/src/main/kotlin/**/cli/**"]
+files = ["app/src/main/kotlin/**/Main.kt", "app/src/main/kotlin/**/cli/**"]
 date = "2026-09-20"
 reason = """
 runBlocking is allowed at process entry — app Main.kt and the CLI tree. That exempted path is not
@@ -395,7 +395,7 @@ unguarded: kt-no-runblocking-exported-bridge grades it, requiring every bridge i
 
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
-files = ["gateway/app/src/main/kotlin/**/*.kt"]
+files = ["app/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
 reason = """
 Inside :app the wall binds the entry path only — Main.kt and cli/** — because that is the only place
@@ -425,7 +425,7 @@ is only reachable where the socket is written, and that is wire/.
 rule = "kt-tests-no-wall-clock"
 files = [
   "client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt",
-  "gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt",
+  "app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt",
   "daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt",
   "daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt",
 ]

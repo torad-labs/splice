@@ -60,10 +60,10 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // DoctorCommand.kt into the daemon-section collaborator when that file was decomposed (it was the
 // tree's worst concentration row at 8.10). Re-anchored onto the ONE file that now holds the call
 // sites, at the same single-file resolution; the PROBE half below is unmoved.
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorDaemonChecks.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorDaemonChecks.kt");
 // The probe helper lives in its own file (DoctorCommand.kt was at the file function budget); the
 // wall reads both so a legitimate split cannot read as a gap.
-const PROBE = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbeWrite.kt");
+const PROBE = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorProbeWrite.kt");
 
 const STATE_PROBE_RE = /writableProbe\(\s*"state dir"/;
 const LOGS_PROBE_RE = /writableProbe\(\s*"logs dir"/;

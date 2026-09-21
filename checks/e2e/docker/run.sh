@@ -71,7 +71,7 @@ else
   else
     (cd "$ROOT" && ./gradlew -q :app:shadowJar)
   fi
-  cp "$ROOT/gateway/app/build/libs/app-all.jar" "$ART/splice.jar"
+  cp "$ROOT/app/build/libs/app-all.jar" "$ART/splice.jar"
   cp "$ROOT/bin/splice-launch" "$ART/splice-launch"
 fi
 chmod 0755 "$ART"; chmod 0644 "$ART"/*

@@ -8,4 +8,5 @@ dependencies {
     implementation(project(":upstream"))
     implementation(project(":dialects-anthropic"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(testFixtures(project(":dialects-anthropic")))
 }

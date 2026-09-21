@@ -69,7 +69,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":app", ":arch-tests", ":fir-checks",
+    ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A
@@ -397,7 +397,7 @@ private fun lawDriftViolations(
  *  Mirrors the stale-map arm the direction law already has for MODULE_DEPENDENCY_LAW keys ("names
  *  $module, which the project map does not include — it currently governs nothing"), one level
  *  down: an allowance nothing uses governs nothing either, and it reads as architecture that exists.
- *  The one live instance, `:providers-muse -> :dialects-anthropic` (provider-muse's build
+ *  The one live instance, `:providers-muse -> :dialects-anthropic` (:providers-muse's build
  *  file declares only :core/:upstream and MusePassthroughArm lives in :app — the allowance
  *  described a wire nobody ran), was dropped in V4-103: MusePassthroughArm stays in :app, so the
  *  provider module keeps only the :core/:upstream edges it actually declares. */
@@ -421,10 +421,10 @@ private val DEPENDENCY_RATCHET: Map<Pair<String, String>, String> = mapOf(
         "pre-existing, 2026-08-16, tracked for removal — grok's tests drive a real gateway server " +
         "(testImplementation + testFixtures); the harness belongs somewhere both can depend on.",
     (":providers-openai" to ":daemon-head") to
-        "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as provider-grok.",
+        "pre-existing, 2026-08-16, tracked for removal — same shape and same fix as :providers-grok.",
     (":daemon-head" to ":providers-codex") to
         "pre-existing, 2026-08-16, tracked for removal — two :daemon-head tests still compile " +
-        "against provider-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
+        "against :providers-codex (AccountTurnSelectionTest ChatGPT-Account-ID, " +
         "CodexCodeModeReanchorTest CodexCodeModeBridge); other gateway tests now use " +
         "TestResponsesProvider.",
 )

@@ -117,8 +117,8 @@ const DISPOSITIONS = {
     why: 'this file. It gates on its own denominator, which is the only way the list below can be ' +
       'trusted: a table nothing runs is a document, and this campaign has enough of those',
   },
-  // wire-check, landed and law-check stayed under .dev/web-console (their destinations are
-  // tools/e2e and tools/gate, PR 5): the exit gate still runs them, outside this denominator.
+  // landed and law-check live in tools/gate (`gate ledger landed|laws`) and wire-check in tools/e2e
+  // (PR 5): the exit gate runs them from there, outside this denominator.
   'commands/scan.ts': { kind: LEG, why: 'the structural walls, through the wrapper that refuses a path they did not read' },
   'commands/leak.ts': { kind: LEG, why: 'a fixture byte in dist ships sample data to an operator' },
   'commands/comp.ts': { kind: LEG, why: 'the comp\'s constants measured on live pages, at both frames' },

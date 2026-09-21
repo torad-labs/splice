@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // tools/gate — the repository's gate CLI. Dispatch only: every verb's behaviour lives in
 // src/commands/<verb>.ts, and everything two verbs share lives in src/lib/.
+import { ledger, usage as ledgerUsage } from "./src/commands/ledger.ts";
 import { noPython, usage as noPythonUsage } from "./src/commands/no-python.ts";
 import { rules, usage as rulesUsage } from "./src/commands/rules.ts";
 import { run, usage as runUsage } from "./src/commands/run.ts";
@@ -13,6 +14,7 @@ const VERBS = {
   rules: { usage: rulesUsage, exec: (argv: string[]) => rules(argv) },
   title: { usage: titleUsage, exec: (argv: string[]) => title(argv) },
   "no-python": { usage: noPythonUsage, exec: (argv: string[]) => noPython(argv) },
+  ledger: { usage: ledgerUsage, exec: (argv: string[]) => ledger(argv) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;
 
 const [verb, ...argv] = process.argv.slice(2);

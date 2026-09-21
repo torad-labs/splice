@@ -751,8 +751,14 @@ const PLACEHOLDER = /^(todo|tbd|fixme|n\/?a|none|safe|ok|fine|why|reason|\.+|-+|
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
 // denominator that shrinks in silence, which is the one failure every ratchet here exists to
-// prevent — so the list names every module home and is extended by each module move.
-const SOURCES = ["gateway/*/src/main/kotlin/**/*.kt", "client/src/main/kotlin/**/*.kt"];
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const SOURCES = [
+  "gateway/*/src/main/kotlin/**/*.kt", "client/src/main/kotlin/**/*.kt", "core/src/main/kotlin/**/*.kt",
+  "upstream/src/main/kotlin/**/*.kt", "dialects/*/src/main/kotlin/**/*.kt", "providers/*/src/main/kotlin/**/*.kt",
+  "daemon/*/src/main/kotlin/**/*.kt", "app/src/main/kotlin/**/*.kt", "quality/*/src/main/kotlin/**/*.kt",
+];
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -86,12 +86,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
 // denominator that shrinks in silence, which is the one failure every ratchet here exists to
-// prevent — so the list names every module home and is extended by each module move.
-const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
-const TEST_GLOBS = [
-  "gateway/*/src/test/**/*.kt", "gateway/*/src/testFixtures/**/*.kt",
-  "client/src/test/**/*.kt", "client/src/testFixtures/**/*.kt",
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const MODULE_HOMES = [
+  "gateway/*", "client", "core", "upstream", "dialects/*", "providers/*", "daemon/*", "app", "quality/*",
 ];
+const MAIN_GLOBS = MODULE_HOMES.map((home) => `${home}/src/main/**/*.kt`);
+const TEST_GLOBS = MODULE_HOMES.flatMap((home) => [`${home}/src/test/**/*.kt`, `${home}/src/testFixtures/**/*.kt`]);
 
 const SEEDS = new Set(["AutoCloseable", "Closeable", "java.lang.AutoCloseable", "java.io.Closeable"]);
 
@@ -560,7 +562,7 @@ internal class Plain(val label: String) {
 `;
 
 function write(root: string, files: Record<string, string>): void {
-  const existing = ["gateway/*/src/*/**/*.kt", "client/src/*/**/*.kt"]
+  const existing = MODULE_HOMES.map((home) => `${home}/src/*/**/*.kt`)
     .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]);
   for (const rel of existing) {
     const target = join(root, rel);

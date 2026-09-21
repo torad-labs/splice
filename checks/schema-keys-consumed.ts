@@ -3,11 +3,11 @@
  * V4-91 — every config key an operator can write must be ACTED ON somewhere, by name.
  *
  * WHY THIS EXISTS. A key that parses is not a key that works. `[daemon] state_dir` has been in
- * the schema since the port (gateway/core/src/main/kotlin/splice/core/topology/Topology.kt:75,
+ * the schema since the port (core/src/main/kotlin/splice/core/topology/Topology.kt:75,
  * `@SerialName("state_dir") val stateDir: String?`), it deserializes cleanly, it is echoed back
  * by `doctor --json`, and NOTHING reads it: the state directory comes from
  * CLAUDEX_STATE_DIR or the default in
- * gateway/core/src/main/kotlin/splice/core/config/StatePaths.kt:15-16, never from the TOML. An
+ * core/src/main/kotlin/splice/core/config/StatePaths.kt:15-16, never from the TOML. An
  * operator who sets it gets silence — no error, no effect, and a doctor report that shows the
  * value they asked for. The knob layer has the same shape one level over:
  * `Knob.DEBUG` ("debug") is parsed, coerced, given a typed accessor
@@ -119,8 +119,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
 // denominator that shrinks in silence, which is the one failure every ratchet here exists to
-// prevent — so the list names every module home and is extended by each module move.
-const SRC_GLOBS = ["gateway/*/src/main", "client/src/main"];
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+// ONE line on purpose: the selftest proves the vacuity guard by patching this exact line.
+const SRC_GLOBS = ["gateway/*/src/main", "client/src/main", "core/src/main", "upstream/src/main", "dialects/*/src/main", "providers/*/src/main", "daemon/*/src/main", "app/src/main", "quality/*/src/main"];
 const SRC_GLOB = SRC_GLOBS.join(", ");
 
 // The five operator-facing config types. Named, not path-pinned: each is LOCATED in the tree, so
@@ -140,7 +143,7 @@ let NON_CONSUMPTION: [string, string][] = [
       "checks/config/quirks-keys-documented.ts's WHAT IS NOT A DISPOSITION SURFACE.",
   ],
   [
-    "gateway/core/src/main/kotlin/splice/core/config/SpliceConfig.kt",
+    "core/src/main/kotlin/splice/core/config/SpliceConfig.kt",
     "2026-09-17: THE ACCESSOR FACADE over the knob map. Every one of the 33 knobs is read here, " +
       "so treating it as a consumer would make the knob plane pass with no wiring anywhere. A read " +
       "here is a PROJECTION, and it is followed one hop instead: the accessor that names the knob " +

@@ -78,7 +78,7 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // The CARRIER files — the one file per key that must hold that key's REQUIRED call sites. These are
 // positive tokens only; the FORBIDDEN_READER ban is NOT scoped to this map (see BAN_DIRS).
 export const PATHS: Record<string, string> = {
-  core: "gateway/core/src/main/kotlin/splice/core/util/JsonScalars.kt",
+  core: "core/src/main/kotlin/splice/core/util/JsonScalars.kt",
   // 2026-08-25: detekt Filename fix renamed the file after its single class — ResponsesHarvest
   // now lives in ResponsesHarvest.kt, and Harvested.kt holds the (alias-free) Harvested payload
   // type that used to sit in HarvestedText.kt. Repointed at the code, same single-file resolution.

@@ -55,7 +55,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const KNOB = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/config/Knob.kt");
+const KNOB = resolve(ROOT, "core/src/main/kotlin/splice/core/config/Knob.kt");
 const EXAMPLE = resolve(ROOT, "config/splice.example.toml");
 
 const KNOB_RE = /MAX_INFLIGHT\(\s*"maxInflight"[\s\S]*?,\s*(\d+)L\s*\)/;

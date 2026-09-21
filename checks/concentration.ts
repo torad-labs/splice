@@ -274,10 +274,14 @@ export const ROOT = dirname(dirname(realpathSync(import.meta.path)));
 // universe is a LIST of module homes, not one `gateway/*` pattern. A source root this census stops
 // walking leaves the ratchet grading a smaller tree than the one it claims to measure — and every
 // baseline here is a count, so the loss reads as an improvement.
-export const SRC_GLOBS = ["gateway/*/src/main", "client/src/main"];
-export const SRC_RE = /^(gateway\/[^/]+|client)\/src\/main\/[^\n]*\.kt\n?$/u;
+// Every §2.2 module home — the ones that exist and the ones the next module commits create: a glob
+// over an absent directory matches nothing, collectRef drops absent archive roots, and so the
+// census can only grow as modules land, never shrink.
+// ONE line on purpose: the selftest proves the vacuity guard by patching this exact line.
+export const SRC_GLOBS = ["gateway/*/src/main", "client/src/main", "core/src/main", "upstream/src/main", "dialects/*/src/main", "providers/*/src/main", "daemon/*/src/main", "app/src/main", "quality/*/src/main"];
+export const SRC_RE = /^(gateway\/[^/]+|client|core|upstream|dialects\/[^/]+|providers\/[^/]+|daemon\/[^/]+|app|quality\/[^/]+)\/src\/main\/[^\n]*\.kt\n?$/u;
 /** The ARCHIVE roots collectRef asks git for — the top segment of each glob above. */
-export const SRC_ARCHIVE_ROOTS = ["gateway", "client"];
+export const SRC_ARCHIVE_ROOTS = ["gateway", "client", "core", "upstream", "dialects", "providers", "daemon", "app", "quality"];
 
 export const TYPE_DECL = new RegExp(
   "^(public |internal |private )?(sealed |data |abstract |open |value |enum |fun |annotation )*"

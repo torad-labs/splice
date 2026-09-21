@@ -13,7 +13,7 @@ export interface GradleModule {
 }
 
 export interface SourceUnit {
-  /** repo-relative directory, e.g. `gateway/core/src/main/kotlin` — also the report key */
+  /** repo-relative directory, e.g. `core/src/main/kotlin` — also the report key */
   readonly key: string;
   readonly module: string;
   /** `main` | `test` | `testFixtures` for Gradle, `src` for a Bun workspace surface */

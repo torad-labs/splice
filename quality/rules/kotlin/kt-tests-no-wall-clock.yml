@@ -130,7 +130,7 @@
 #     gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt                     (3)
 #     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
 #     gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt   (1)
-#     gateway/core/src/test/kotlin/AsyncFileIoTest.kt                             (1)
+#     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)
 #     gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt                    (2)
 #     gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt                  (1)
 #

@@ -54,7 +54,7 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const TOPO = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt");
+const TOPO = resolve(ROOT, "core/src/main/kotlin/splice/core/topology/Topology.kt");
 // HD-25: configurationChecks — the declaration this wall reads — moved out of DoctorCommand.kt into
 // its own collaborator when that file was decomposed (it was the tree's worst concentration row at
 // 8.10). Re-anchored onto the ONE file that now holds it, at the same single-file resolution, the

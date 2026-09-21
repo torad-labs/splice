@@ -41,8 +41,8 @@ CHECKER="$tmp/checks/silent-constants.ts"
 BASELINE="$tmp/checks/config/silent-constants-baseline.json"
 # the module whose src/main is materialised as real files so a fixture can mutate one (7 .kt
 # files; every other module stays a symlink so the census is the real one)
-MUTABLE_MODULE="provider-muse"
-MUTABLE_FILE="gateway/$MUTABLE_MODULE/src/main/kotlin/splice/provider/muse/MuseKeyMint.kt"
+MUTABLE_FILE="gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseKeyMint.kt"
+MUTABLE_DIR="${MUTABLE_FILE%%/src/*}" # the module home the arms mutate — its directory, wherever the module lives
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
 build_harness() {
@@ -50,22 +50,24 @@ build_harness() {
   mkdir -p "$tmp/checks/config" "$tmp/gateway"
   cp "$ROOT/checks/silent-constants.ts" "$CHECKER"
   cp "$ROOT/checks/config/silent-constants-baseline.json" "$BASELINE"
-  for main in "$ROOT"/gateway/*/src/main; do
-    [ -d "$main" ] || continue
-    mod="${main#"$ROOT"/gateway/}"
-    mod="${mod%%/*}"
-    if [ "$mod" = "$MUTABLE_MODULE" ]; then
-      mkdir -p "$tmp/gateway/$mod/src"
-      cp -r "$ROOT/gateway/$mod/src/main" "$tmp/gateway/$mod/src/main"
+  # THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
+  # modules out of gateway/ one commit at a time): a harness that measures a tree with a module
+  # missing hands its control a red that reads exactly like a real regression — or, worse, a green
+  # over a smaller tree. Every module home the build declares is linked, except the one module the
+  # arms mutate, which is COPIED so the tree is never written; none is spelled here.
+  module_dirs="$(grep -oE 'projectDir = file\("[^"]+"\)' "$ROOT/settings.gradle.kts" | sed -E 's/.*file\("([^"]+)"\)/\1/' | sort -u)"
+  [ -n "$module_dirs" ] || { echo "  ✗ silent-constants-selftest: settings.gradle.kts states no projectDir — nothing to link"; exit 1; }
+  for dir in $module_dirs; do
+    [ -d "$ROOT/$dir/src/main" ] || continue
+    mkdir -p "$tmp/$(dirname "$dir")"
+    if [ "$dir" = "$MUTABLE_DIR" ]; then
+      mkdir -p "$tmp/$dir/src"
+      cp -r "$ROOT/$dir/src/main" "$tmp/$dir/src/main"
     else
-      ln -s "$ROOT/gateway/$mod" "$tmp/gateway/$mod"
+      [ -e "$tmp/$dir" ] || ln -s "$ROOT/$dir" "$tmp/$dir"
     fi
   done
-  # restructure PR 3: :client is the first module to live outside gateway/, so the loop above
-  # cannot reach it. A harness that measures a tree with one module missing hands its control a
-  # red that reads exactly like a real regression (or, worse, a green over a smaller tree).
-  [ -e "$tmp/client" ] || ln -s "$ROOT/client" "$tmp/client"
-  [ -e "$tmp/gateway/core" ] || { echo "  ✗ silent-constants-selftest: no gateway modules under $ROOT"; exit 1; }
+  [ -e "$tmp/core/src/main" ] || { echo "  ✗ silent-constants-selftest: :core is not linked — the harness lost the first module that moved out of gateway/"; exit 1; }
   [ -e "$tmp/client/src/main" ] || { echo "  ✗ silent-constants-selftest: :client is not linked — the harness lost a module home"; exit 1; }
   [ -f "$tmp/$MUTABLE_FILE" ] || { echo "  ✗ silent-constants-selftest: $MUTABLE_FILE did not materialise"; exit 1; }
 }
@@ -158,7 +160,7 @@ build_harness
 bun -e '
 const path = process.argv[1];
 const doc = JSON.parse(await Bun.file(path).text());
-doc.files["gateway/core/src/main/kotlin/splice/core/ZzVanished.kt"] = 0;
+doc.files["core/src/main/kotlin/splice/core/ZzVanished.kt"] = 0;
 await Bun.write(path, JSON.stringify(doc, null, 2));
 ' "$BASELINE"
 expect_red "5. a baseline naming a vanished file is STALE" "STALE" "ZzVanished.kt" "no longer exists"

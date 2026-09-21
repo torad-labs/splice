@@ -16,10 +16,10 @@
     ],
     "COLLISION CRITICAL_PCT": [
       "gateway/control/src/main/kotlin/splice/control/StatuslineBars.kt",
-      "gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt"
+      "core/src/main/kotlin/splice/core/usage/UsageWarn.kt"
     ],
     "COLLISION DEFAULT_CAPACITY": [
-      "gateway/core/src/main/kotlin/splice/core/model/ClientWindows.kt",
+      "core/src/main/kotlin/splice/core/model/ClientWindows.kt",
       "gateway/gateway/src/main/kotlin/splice/gateway/head/CompactionReplay.kt"
     ],
     "COLLISION DEFAULT_CLIENT_ID": [
@@ -45,7 +45,7 @@
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistoryCodec.kt"
     ],
     "COLLISION FIELD_TYPE": [
-      "gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt",
+      "core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesCodeModeProjection.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsIdentity.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsRunner.kt",
@@ -67,8 +67,8 @@
       "gateway/provider-spi/src/main/kotlin/splice/spi/local/LocalRuntimeProbe.kt"
     ],
     "COLLISION LOCK_WAIT_MS": [
-      "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt",
-      "gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+      "core/src/main/kotlin/splice/core/config/KeyStore.kt",
+      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COLLISION LOG_TAG": [
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
@@ -93,7 +93,7 @@
       "gateway/app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
       "gateway/control/src/main/kotlin/splice/control/StatuslineBars.kt",
       "gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt",
-      "gateway/core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt"
+      "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt"
     ],
     "COLLISION PKCE_VERIFIER_BYTES": [
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt",
@@ -167,8 +167,8 @@
       "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY BYTE_MASK": [
-      "gateway/core/src/main/kotlin/splice/core/media/ImageBytes.kt",
-      "gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt",
+      "core/src/main/kotlin/splice/core/media/ImageBytes.kt",
+      "core/src/main/kotlin/splice/core/util/FormEncoding.kt",
       "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/ToolNameShortener.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStableIds.kt"
     ],
@@ -248,7 +248,7 @@
     ],
     "COPY FIELD_ID": [
       "gateway/app/src/main/kotlin/splice/app/codemode/CodeModeWire.kt",
-      "gateway/core/src/main/kotlin/splice/core/reasoning/Replay.kt"
+      "core/src/main/kotlin/splice/core/reasoning/Replay.kt"
     ],
     "COPY FIELD_INPUT": [
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsSession.kt",
@@ -287,7 +287,7 @@
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FIELD_SUMMARY": [
-      "gateway/core/src/main/kotlin/splice/core/reasoning/Replay.kt",
+      "core/src/main/kotlin/splice/core/reasoning/Replay.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningKnobs.kt"
     ],
     "COPY FIELD_TEXT": [
@@ -308,7 +308,7 @@
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY FULL_PCT": [
-      "gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt",
+      "core/src/main/kotlin/splice/core/usage/UsageWarn.kt",
       "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt"
     ],
     "COPY GREEN": [
@@ -367,8 +367,8 @@
       "gateway/control/src/main/kotlin/splice/control/api/UsagePayloads.kt"
     ],
     "COPY LOCK_POLL_MS": [
-      "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt",
-      "gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+      "core/src/main/kotlin/splice/core/config/KeyStore.kt",
+      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COPY MASK_KEEP": [
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
@@ -404,7 +404,7 @@
     "COPY MILLIS": [
       "gateway/app/src/main/kotlin/splice/app/quota/CodexQuotaProbe.kt",
       "gateway/app/src/main/kotlin/splice/app/quota/MuseQuota.kt",
-      "gateway/core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt",
+      "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt",
       "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt"
     ],
     "COPY MILLIS_PER_MINUTE": [
@@ -440,7 +440,7 @@
     "COPY MS_PER_S": [
       "gateway/app/src/main/kotlin/splice/app/DeviceLoginFlow.kt",
       "gateway/app/src/main/kotlin/splice/app/cli/AccountPoolText.kt",
-      "gateway/core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt",
+      "core/src/main/kotlin/splice/core/auth/SynthesizedExpiry.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt",
       "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsPulse.kt",
       "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnProgressLine.kt",
@@ -459,7 +459,7 @@
     ],
     "COPY NEWLINE_BYTE": [
       "gateway/app/src/main/kotlin/splice/app/LogFileSource.kt",
-      "gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt"
+      "core/src/main/kotlin/splice/core/util/JsonlSink.kt"
     ],
     "COPY OMITTED": [
       "gateway/app/src/main/kotlin/splice/app/cli/DoctorReportFiles.kt",
@@ -503,7 +503,7 @@
     ],
     "COPY REMEMBERED_SESSIONS": [
       "gateway/app/src/main/kotlin/splice/app/ConsoleWiring.kt",
-      "gateway/core/src/main/kotlin/splice/core/prompt/SlotInstructions.kt"
+      "core/src/main/kotlin/splice/core/prompt/SlotInstructions.kt"
     ],
     "COPY RESET": [
       "gateway/app/src/main/kotlin/splice/app/cli/CliStyle.kt",
@@ -557,8 +557,8 @@
       "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnProgressLine.kt"
     ],
     "COPY TAG_LEN": [
-      "gateway/core/src/main/kotlin/splice/core/media/ImageHeaderProbe.kt",
-      "gateway/core/src/main/kotlin/splice/core/media/WebpChunks.kt"
+      "core/src/main/kotlin/splice/core/media/ImageHeaderProbe.kt",
+      "core/src/main/kotlin/splice/core/media/WebpChunks.kt"
     ],
     "COPY TEXT": [
       "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughWireKeys.kt",

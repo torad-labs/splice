@@ -35,7 +35,7 @@ val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modu
 // carrying a `.git` entry — a FILE reading `gitdir: …` for a worktree, a DIRECTORY for a submodule
 // or a vendored clone — is where another repository starts. Now that the Gradle root IS the
 // repository root, the census below reaches the whole checkout, and the real one carries
-// `.claude/worktrees/<name>/` with a complete gateway/core/src/main/kotlin inside it. Fingerprinting
+// `.claude/worktrees/<name>/` with a complete core/src/main/kotlin inside it. Fingerprinting
 // that tree would re-run these laws on another repository's edits; sweeping it made the law report
 // `.claude/worktrees/v0.4.0/gateway/core` as unclaimed. The root itself is never tested — it carries
 // `.git` too, and excluding it would empty the census. ProjectMap.kt is the twin: a tree one of them

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-TESTED_CLAUDE_CODE="$(python3 - "$ROOT/gateway/core/src/main/kotlin/splice/core/Versions.kt" <<'EOF'
+TESTED_CLAUDE_CODE="$(python3 - "$ROOT/core/src/main/kotlin/splice/core/Versions.kt" <<'EOF'
 import re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
 match = re.search(r'public const val TESTED_CLAUDE_CODE: String = "([0-9]+(?:\.[0-9]+)+)"', text)

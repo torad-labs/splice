@@ -24,11 +24,11 @@
       "params": 17,
       "subsystems": 3
     },
-    "gateway/core/src/main/kotlin/splice/core/sessions/SessionRegistry.kt SessionRecord": {
+    "core/src/main/kotlin/splice/core/sessions/SessionRegistry.kt SessionRecord": {
       "params": 13,
       "subsystems": 0
     },
-    "gateway/core/src/main/kotlin/splice/core/turn/Turn.kt TurnMeta": {
+    "core/src/main/kotlin/splice/core/turn/Turn.kt TurnMeta": {
       "params": 19,
       "subsystems": 0
     },

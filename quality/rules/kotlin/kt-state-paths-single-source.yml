@@ -34,7 +34,7 @@ message: "State paths resolve only in StatePaths.kt — no `.splice` or `.claude
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/core/src/main/kotlin/**/config/StatePaths.kt
+  - core/src/main/kotlin/**/config/StatePaths.kt
   # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header
   - gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
   # `.claude-plugin` is a plugin manifest dirname, not a state/config dir — see header

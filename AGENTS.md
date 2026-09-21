@@ -87,7 +87,7 @@ writes it); PATCH wins until restart and persists to the file layer.
 Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
 and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
 snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
-`restartRequiredKnobKeys` in `gateway/core/.../config/KnobKind.kt`, derived from the `Knob` enum's
+`restartRequiredKnobKeys` in `core/.../config/KnobKind.kt`, derived from the `Knob` enum's
 own flag, and the same list on the wire as `restart_required_keys` from `GET /mgmt/config`.
 Everything else hot-applies on the next request.
 
@@ -105,7 +105,7 @@ head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), 
 (`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
 session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
 field and every earlier layer. No projects table = V4-36's bytes. Resolver:
-`gateway/core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
+`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
 
 ## Control plane (spliced)
 

@@ -85,7 +85,7 @@ describe("the P1 coverage proof", () => {
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-lateinit", "source-root-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("kt-no-lateinit reaches 0 of 135 files in gateway/core/src/main/kotlin");
+    expect(lost[0]).toContain("kt-no-lateinit reaches 0 of 135 files in core/src/main/kotlin");
     expect(lost[0]).toContain("no dated exclusion covers it");
     // the loss is invisible to the scan: the other thirteen modules are still enforced
     expect(report.coveredPairs).toBeGreaterThan(700);
@@ -96,13 +96,13 @@ describe("the P1 coverage proof", () => {
     edit(
       copy.rule("kt-no-unsafe-cast"),
       'files:\n  - "**/src/main/**/*.kt"',
-      'files:\n  - "**/src/main/**/*.kt"\nignores:\n  - gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
+      'files:\n  - "**/src/main/**/*.kt"\nignores:\n  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const lost = messagesFor(report, "kt-no-unsafe-cast", "file-lost");
     expect(lost).toHaveLength(1);
-    expect(lost[0]).toContain("kt-no-unsafe-cast loses 1 file(s) inside covered gateway/core/src/main/kotlin");
+    expect(lost[0]).toContain("kt-no-unsafe-cast loses 1 file(s) inside covered core/src/main/kotlin");
     expect(lost[0]).toContain("splice/core/wire/HttpStatus.kt");
   });
 
@@ -156,8 +156,8 @@ describe("the P1 coverage proof", () => {
     const copy = copyOfTheRealRules();
     edit(
       copy.exclusions,
-      'files = ["gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]',
-      'files = "gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"',
+      'files = ["core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]',
+      'files = "core/src/main/kotlin/splice/core/wire/HttpStatus.kt"',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);

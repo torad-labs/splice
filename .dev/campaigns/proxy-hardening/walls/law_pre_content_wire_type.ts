@@ -70,7 +70,14 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const SOURCE_ROOT_GLOB = "gateway/*/src/main/kotlin";
+// Every §2.2 module home (restructure PR 3 moves them out of gateway/ one commit at a time; a glob
+// over an absent directory matches nothing, so the scan can only grow as modules land).
+const SOURCE_ROOT_GLOBS = [
+  "gateway/*/src/main/kotlin", "client/src/main/kotlin", "core/src/main/kotlin", "upstream/src/main/kotlin",
+  "dialects/*/src/main/kotlin", "providers/*/src/main/kotlin", "daemon/*/src/main/kotlin", "app/src/main/kotlin",
+  "quality/*/src/main/kotlin",
+];
+const SOURCE_ROOT_GLOB = SOURCE_ROOT_GLOBS.join(", ");
 const SEAM_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt";
 const SEAM_FUN = "emitError";
 
@@ -465,7 +472,7 @@ export function detect(sources: Record<string, string> | null, seamText: string 
 
 export function load(): [Record<string, string> | null, string | null] {
   const sources: Record<string, string> = {};
-  for (const root of globSync(resolve(ROOT, SOURCE_ROOT_GLOB)).sort()) {
+  for (const root of SOURCE_ROOT_GLOBS.flatMap((g) => globSync(resolve(ROOT, g))).sort()) {
     for (const kt of globSync(`${root}/**/*.kt`).sort()) {
       sources[relative(ROOT, kt)] = readFileSync(kt, "utf8");
     }

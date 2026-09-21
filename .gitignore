@@ -13,19 +13,13 @@ __pycache__/
 /dist/
 /.cache/
 
-# gradle (the build root is the repository root; most modules still live under gateway/, and
-# :client is the first one that does not — restructure PR 3 §2.3)
-/.gradle/
-/.kotlin/
-/build/
-build-logic/.gradle/
-build-logic/build/
-build-logic/.kotlin/
-gateway/**/.gradle/
-gateway/**/build/
-client/.gradle/
-client/build/
-client/.kotlin/
+# gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts
+# them, so the module build outputs are ignored at ANY depth — one rule, not one per module)
+.gradle/
+.kotlin/
+build/
+# the look tooling's committed runtime inputs are not a build output
+!webui/.impeccable/build/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/

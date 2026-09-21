@@ -38,7 +38,7 @@ include(
     ":fir-checks",
 )
 
-project(":core").projectDir = file("gateway/core")
+project(":core").projectDir = file("core")
 // The FIRST module to leave gateway/ (restructure plan §2.3): :client is the Claude Code side.
 project(":client").projectDir = file("client")
 project(":provider-spi").projectDir = file("gateway/provider-spi")

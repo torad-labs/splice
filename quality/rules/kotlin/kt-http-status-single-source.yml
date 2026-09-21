@@ -18,7 +18,7 @@
 # Six spellings of one number is how a retry classifier and an admission responder come to disagree
 # about what "overloaded" means on the wire while every unit test stays green.
 #
-# REMEDY: the fix row creates gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt and every
+# REMEDY: the fix row creates core/src/main/kotlin/splice/core/wire/HttpStatus.kt and every
 # site above becomes `HttpStatus.TOO_MANY_REQUESTS`. That file is the sole allowed declaration site
 # and is named in `ignores:` below, so it is exempt BY PATH — the exemption cannot be claimed by any
 # other file, and the fix row's new file needs no edit to this rule.
@@ -43,12 +43,12 @@ id: kt-http-status-single-source
 language: kotlin
 severity: error
 message: "HTTP status codes are declared once, in splice.core.wire.HttpStatus (core/wire) — reference HttpStatus instead of re-declaring the number here."
-note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt; every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
+note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is core/src/main/kotlin/splice/core/wire/HttpStatus.kt; every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
 files:
   - "**/src/main/**/*.kt"
 ignores:
   # the sole allowed declaration site — exempt BY PATH, so no other file can claim the exemption
-  - gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt
+  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt
 rule:
   kind: property_declaration
   all:

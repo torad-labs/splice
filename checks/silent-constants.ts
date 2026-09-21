@@ -105,8 +105,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // restructure PR 3: :client is the first module to live outside gateway/, so the production
 // universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
 // denominator that shrinks in silence, which is the one failure every ratchet here exists to
-// prevent — so the list names every module home and is extended by each module move.
-const MAIN_GLOBS = ["gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt"];
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const MAIN_GLOBS = [
+  "gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt", "core/src/main/**/*.kt", "upstream/src/main/**/*.kt",
+  "dialects/*/src/main/**/*.kt", "providers/*/src/main/**/*.kt", "daemon/*/src/main/**/*.kt", "app/src/main/**/*.kt",
+  "quality/*/src/main/**/*.kt",
+];
 const BASELINE_REL = "checks/config/silent-constants-baseline.json";
 
 // A sentence. See WHAT COUNTS AS A REASON for the measured insensitivity of this threshold.
@@ -538,7 +544,7 @@ function selftest(): number {
   expectRed(
     "a baseline naming a file that no longer exists",
     { "app/A.kt": ONE_SILENT },
-    base(1, 1, { [A]: 1, "gateway/core/src/main/kotlin/splice/Gone.kt": 0 }),
+    base(1, 1, { [A]: 1, "core/src/main/kotlin/splice/Gone.kt": 0 }),
     "STALE",
     "no longer exists",
   );

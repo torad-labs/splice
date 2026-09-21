@@ -98,7 +98,9 @@ proof = "2026-09-21: MgmtKey.ensure() mutated back to the silent fallthrough (lo
 [[item]]
 id = "SH-14"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_14_daemon_log_rotate_selfheals.ts"
+wall = ""
+retired_to = "app/src/test/kotlin/splice/app/DaemonLogWiringTest.kt"
+proof = "2026-09-21: persistentLogger onFailure mutated to reset writer only (reconcile and stderr announcement deleted); the wall went RED on both halves and the two DaemonLogWiringTest arms (reconcile so the next line lands; announced on stderr with the reconciled size) FAILED on the same mutation; restored, both GREEN (8/8)"
 
 [[item]]
 id = "JW-01"

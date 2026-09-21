@@ -24,8 +24,8 @@ if [ -n "$TAG" ]; then
     exit 1
   }
 fi
-JAR="${SPLICE_RELEASE_JAR:-$ROOT/gateway/app/build/libs/app-all.jar}"
-COMPLIANCE="${SPLICE_COMPLIANCE_DIR:-$ROOT/gateway/app/build/reports/compliance}"
+JAR="${SPLICE_RELEASE_JAR:-$ROOT/app/build/libs/app-all.jar}"
+COMPLIANCE="${SPLICE_COMPLIANCE_DIR:-$ROOT/app/build/reports/compliance}"
 ASSETS=(
   splice.jar splice-launch install.sh
   LICENSE THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.txt PROVENANCE.md

@@ -57,13 +57,13 @@ function pyRepr(items: string[]): string {
 const ROOT = resolve(import.meta.dir, "../../../..");
 // 2026-08-23: the `"logs"` verb table entry lives in InstallCommand.kt.
 // Command.kt still owns LogsCommand but not the quoted verb this wall pins.
-const COMMAND = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/InstallCommand.kt");
+const COMMAND = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/install/InstallCommand.kt");
 // HD-25: the logsDir row this wall reads is inside daemonChecks, which moved out of DoctorCommand.kt
 // into the daemon-section collaborator when that file was decomposed (it was the tree's worst
 // concentration row at 8.10). Re-anchored onto the ONE file that now holds it, at the same
 // single-file resolution. NOT widened to the cli package: unlike the CONTROL_DIR sweep below, this
 // is a REQUIRED token, so a directory read would let any sibling satisfy it.
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorDaemonChecks.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorDaemonChecks.kt");
 // HD-24: the remediation strings this key polices left ControlServer.kt when the control plane
 // split into splice.control + splice.control.api ("refresh failed — run: splice logs" now lives in
 // api/AuthRoutes.kt), which left the single-file read policing a file that carries no remediation
@@ -71,7 +71,7 @@ const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorD
 // assertion, so the file that would carry the violation need not exist yet. Scoped to the
 // NEIGHBOURHOOD instead — every .kt under the control plane, recursively — the same remedy CX-18
 // uses for its ban, so a new route file is covered the moment it is written, with no wall edit.
-const CONTROL_DIR = resolve(ROOT, "gateway/control/src/main/kotlin/splice/control");
+const CONTROL_DIR = resolve(ROOT, "daemon/control/src/main/kotlin/splice/control");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(command: string | null, doctor: string | null, control: string | null): string[] {

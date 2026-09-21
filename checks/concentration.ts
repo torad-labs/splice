@@ -219,7 +219,7 @@
  * package, which is the same responsibility clump one directory up and is invisible to a file-scale
  * oracle by construction. Measured 2026-09-17 on this tree, with the file census green (band HIGH
  * 0): splice.app.cli holds 84 of 631 production files and 5050.0 of the tree's C, splice.dialect
- * .responses 80, splice.gateway.head 51 of the 99 files in :gateway. `head/` is the audit's own
+ * .responses 80, splice.gateway.head 51 of the 99 files in :daemon-head. `head/` is the audit's own
  * finding (A row 5) and it is not even the worst one.
  *
  * So the census gains a PACKAGE row — files per package and summed C per package, printed on every
@@ -270,8 +270,18 @@ import { argparse, cpCompare, pyRepr, pySplitlines } from "./e2e/pyshim.ts";
 import { dumpsIndent, floatRepr, obj, type PyValue } from "./e2e/pyjson.ts";
 
 export const ROOT = dirname(dirname(realpathSync(import.meta.path)));
-export const SRC_GLOB = "gateway/*/src/main";
-export const SRC_RE = /^gateway\/[^/]+\/src\/main\/[^\n]*\.kt\n?$/u;
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is a LIST of module homes, not one `gateway/*` pattern. A source root this census stops
+// walking leaves the ratchet grading a smaller tree than the one it claims to measure — and every
+// baseline here is a count, so the loss reads as an improvement.
+// Every §2.2 module home — the ones that exist and the ones the next module commits create: a glob
+// over an absent directory matches nothing, collectRef drops absent archive roots, and so the
+// census can only grow as modules land, never shrink.
+// ONE line on purpose: the selftest proves the vacuity guard by patching this exact line.
+export const SRC_GLOBS = ["gateway/*/src/main", "client/src/main", "core/src/main", "upstream/src/main", "dialects/*/src/main", "providers/*/src/main", "daemon/*/src/main", "app/src/main", "quality/*/src/main"];
+export const SRC_RE = /^(gateway\/[^/]+|client|core|upstream|dialects\/[^/]+|providers\/[^/]+|daemon\/[^/]+|app|quality\/[^/]+)\/src\/main\/[^\n]*\.kt\n?$/u;
+/** The ARCHIVE roots collectRef asks git for — the top segment of each glob above. */
+export const SRC_ARCHIVE_ROOTS = ["gateway", "client", "core", "upstream", "dialects", "providers", "daemon", "app", "quality"];
 
 export const TYPE_DECL = new RegExp(
   "^(public |internal |private )?(sealed |data |abstract |open |value |enum |fun |annotation )*"
@@ -345,8 +355,50 @@ export const EXCEPTION_JUSTIFICATION = new RegExp(`^\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd
 // UpstreamClient ceiling, the pre-decomposition AnthropicRequest ceiling). The count is measured
 // and printed on every run as DEBT. See THE GATED CRITERION IS THE HIGH BAND in the header for
 // the control that forced the change.
-export const RATCHET_RECORDED = "2026-08-19";
-export const RATCHET_MAX_HIGH = 0; // files in band HIGH  (re-measured 2026-08-19 after SseReader same-package split: 1 -> 0; HIGH band empty)
+export const RATCHET_RECORDED = "2026-09-21";
+export const RATCHET_MAX_HIGH = 13; // files in band HIGH  (re-measured 2026-09-21 after restructure PR 3's package split: 0 -> 13 from the PR base 49b418c2 (the intermediate client-extraction baseline read 1); THE 2026-09-21 MOVE below)
+//
+// THE 2026-09-20 MOVE, AND WHY IT IS A MEASUREMENT AND NOT A CONCESSION. Restructure PR 3 step 1
+// took 32 files out of `splice.core.launch` and made them the :client module across six packages.
+// `bun checks/concentration.ts --since HEAD --max-ratio 1.8` reports ControlServer.kt crossing with
+//     ratio 2.95 -> 3.14   ΔC +0.0   Δdenom -4.0   moderate -> HIGH   own 0%   cause neighbourhood
+// — its own C did not move by a tenth, and the ONE line the move changed in it is an import path
+// (`splice.core.launch.McpAccessKey` -> `splice.client.mcp.McpAccessKey`), which is the same one
+// subsystem. What moved is the partition the denominator is a statistic OF: the header's second
+// section already records this property by name ("ANY file-scale denominator is a statistic of a
+// partition ... a split moves files nobody touched"), with core/wire/AnthropicRequest.kt reading
+// 1.97 before and 5.57 after for the same reason. Bringing ControlServer.kt under the line means
+// decomposing :daemon-control inside a commit whose every other line is a file move, so the number is
+// recorded here with its instrument output instead, and the file is HD-25's work like the other 96.
+//
+// THE 2026-09-21 MOVE (restructure PR 3, plan §2.5). Every module left gateway/ and the wide packages
+// split into subpackages: splice.spi -> splice.upstream.{transport,retry,failure,sse,local,codemode,
+// credentials}, splice.gateway.head -> splice.head.{turn,admission,transport,compaction}, splice.control.api
+// -> six, splice.dialect.responses -> five, splice.app.cli -> eight. C bills the DISTINCT splice.* packages a
+// file imports (`concerns`, header), so a file that reached one package through five imports now reaches
+// three or four and its C rises with no line of its code moving. The `--since` instrument cannot attribute
+// this move (git sees 744 deletes + 744 adds, own/neighbourhood both 0), so the attribution is by hand and
+// checked: outside package/import lines every file below is byte-identical to its origin/feat/v0.4.0
+// (49b418c2) self except HeadDeps.kt (8 lines), ControlServer.kt (2 lines), ConsoleWiring.kt (4 lines), Watchdog.kt (2 lines) — comment
+// lines only (module names; ControlServer's is the console/ contract path PR 4 renamed).
+// Measured, base -> tip:
+//     CodeModeWorker.kt            C 163 -> 171  denom 58 -> 36  ratio 2.8 -> 4.72
+//     HeadDeps.kt                  C 142 -> 190  denom 55 -> 50  ratio 2.59 -> 3.77
+//     ControlServer.kt             C 189 -> 237  denom 64 -> 65  ratio 2.95 -> 3.63
+//     RetryPolicy.kt               C 133 -> 157  denom 56 -> 44  ratio 2.38 -> 3.61
+//     CodeModeWire.kt              C 128 -> 128  denom 45 -> 36  ratio 2.86 -> 3.55
+//     TurnPreparation.kt           C 130 -> 154  denom 51 -> 44  ratio 2.54 -> 3.5
+//     ControlPlane.kt              C 162 -> 202  denom 60 -> 58  ratio 2.69 -> 3.49
+//     LocalRuntimeProbe.kt         C 139 -> 139  denom 53 -> 44  ratio 2.61 -> 3.17
+//     UpstreamClient.kt            C 156 -> 180  denom 58 -> 58  ratio 2.7 -> 3.12
+//     TurnTelemetry.kt             C 101 -> 117  denom 40 -> 38  ratio 2.52 -> 3.12
+//     HeadServerFactory.kt         C 152 -> 176  denom 57 -> 57  ratio 2.67 -> 3.09
+//     ConsoleWiring.kt             C 166 -> 190  denom 66 -> 62  ratio 2.49 -> 3.08
+//     Watchdog.kt                  C 116 -> 132  denom 57 -> 44  ratio 2.03 -> 3.0
+// The raw before/after outputs and every affected constructor's subsystem list are in the PR 3 review
+// packet (pr3-ratchet-packet/). Whether a subsystem is a PACKAGE or a MODULE after the split is the
+// calibration question that packet puts to the reviewer; this line records the measurement, not a ruling,
+// and the files stay HD-25's work.
 
 // THE PACKAGE-SCALE BASELINE (V4-93) — the worst package's FILE COUNT, measured, never estimated.
 // Read THE PACKAGE SCALE in the header first. Same discipline as RATCHET_MAX_HIGH: UP records that
@@ -354,8 +406,8 @@ export const RATCHET_MAX_HIGH = 0; // files in band HIGH  (re-measured 2026-08-1
 // the diff reads without running anything, but the NAME is not gated — a different package
 // becoming the worst at the same count is not a regression, and gating the name would red a commit
 // that moved the clump without growing it.
-export const PACKAGE_RATCHET_RECORDED = "2026-09-17";
-export const PACKAGE_MAX_FILES = 84; // splice.app.cli, 84 of 631 production files (next: splice.dialect.responses 80, splice.gateway.head 51)
+export const PACKAGE_RATCHET_RECORDED = "2026-09-21";
+export const PACKAGE_MAX_FILES = 29; // splice.provider.codex, 29 of 744 production files (next: splice.app.cli.doctor 27, splice.head.turn 26); 84 -> 29 is restructure PR 3's package split (splice.app.cli 84 -> eight packages)
 
 // ---------------------------------------------------------------------------------------------
 // The reference's numerics. Every float this file prints or compares went through one of these,
@@ -603,7 +655,7 @@ export function packageProblems(census: PackageRow[]): string[] {
   if (!census.length) {
     return [
       "PACKAGE SCALE: the census is EMPTY — no production package was measured. A plane with no "
-      + "denominator cannot pass; check SRC_GLOB against the tree.",
+      + "denominator cannot pass; check SRC_GLOBS against the tree.",
     ];
   }
   const worst = census[0];
@@ -979,7 +1031,7 @@ function rglobKt(rel: string): string[] {
 }
 
 export function collect(): Row[] {
-  const files = globDirs(SRC_GLOB).flatMap(rglobKt);
+  const files = SRC_GLOBS.flatMap(globDirs).flatMap(rglobKt);
   return files.map((rel) => measure(rel, decode(readFileSync(join(ROOT, rel)))));
 }
 
@@ -1039,7 +1091,20 @@ function tarFiles(blob: Uint8Array): [string, Uint8Array][] {
  *  frames with git's actual complaint swallowed by capture_output. This prints what went wrong and
  *  what git said, same exit 1. Do not "restore parity" by putting a stack trace back. */
 export function collectRef(ref: string): Row[] {
-  const run = Bun.spawnSync(["git", "-C", ROOT, "archive", ref, "--", "gateway"], { stdout: "pipe", stderr: "pipe" });
+  // Only the roots that EXIST at `ref`: `git archive` fails the whole export on a pathspec that
+  // matches nothing, and the first commit that introduces a new module home (restructure PR 3's
+  // client/) is by definition a commit whose parent does not have it. Dropping the absent root is
+  // correct here and not a hole — a root missing from the REF contributes no baseline rows, which
+  // is exactly what "this module did not exist yet" means.
+  const roots = SRC_ARCHIVE_ROOTS.filter((root) => {
+    const at = Bun.spawnSync(["git", "-C", ROOT, "ls-tree", "--name-only", ref, "--", root], { stdout: "pipe", stderr: "pipe" });
+    return at.exitCode === 0 && decode(at.stdout).trim().length > 0;
+  });
+  if (roots.length === 0) {
+    err(`git ${ref} holds none of ${SRC_ARCHIVE_ROOTS.join(", ")} — there is no production tree to compare against`);
+    process.exit(1);
+  }
+  const run = Bun.spawnSync(["git", "-C", ROOT, "archive", ref, "--", ...roots], { stdout: "pipe", stderr: "pipe" });
   if (run.exitCode !== 0) {
     err(`git archive ${ref} failed (exit ${run.exitCode}): ${decode(run.stderr).trim()}`);
     process.exit(1);

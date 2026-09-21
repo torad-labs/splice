@@ -10,15 +10,15 @@
 # (`if (v is JsonPrimitive) { … v.content … }`), the latter using metavariable identity ($V) so it
 # doesn't fire on every `.content` in a file that happens to also smart-cast something unrelated.
 #
-# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :control and :app sat outside most walls'
+# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
 # `files:` globs). The JSON-null-becomes-the-string-"null" bug is a property of kotlinx's
 # JsonPrimitive, not of the provider modules, so a glob naming only `provider-*` was scoping the
-# rule by WHERE THE FIX LANDED rather than by where the hazard lives. :control and :app read
+# rule by WHERE THE FIX LANDED rather than by where the hazard lives. :daemon-control and :app read
 # request and state JSON on every statusline tick, every dashboard load and every CLI command, and
 # were never scanned.
 # NEW RED AT WIDENING — 16, all pre-existing, none fixed here (this is a wall row; the sibling fix
 # row burns the list down):
-#   :control StatuslineRenderer.kt:273, StatuslineWindowLearner.kt:27, mcp/HostedServer.kt:290,
+#   :daemon-control StatuslineRenderer.kt:273, StatuslineWindowLearner.kt:27, mcp/HostedServer.kt:290,
 #            api/StatuslineRoute.kt:95, api/LaunchRoutes.kt:81, api/LaunchRoutes.kt:83
 #   :app     DaemonLock.kt:154, cli/DoctorReport.kt:59, cli/UpgradeInflight.kt:80,:83,
 #            cli/PerfCommand.kt:73,:75,:84,:101,:112, cli/AddChecks.kt:88
@@ -31,9 +31,10 @@ severity: error
 message: "Read JSON scalars via JsonScalars .str()/.str(key) (core/util) — a raw jsonPrimitive.content leaks a JSON null as the string \"null\"."
 note: "JsonNull is a JsonPrimitive whose content is \"null\". Use element.str() or obj.str(key) from splice.core.util (they filter JsonNull) instead of ?.jsonPrimitive?.content — the null-token-becomes-\"null\" bug the extraction closed."
 files:
-  - gateway/provider-*/src/main/**/*.kt
-  - gateway/control/src/main/**/*.kt
-  - gateway/app/src/main/**/*.kt
+  - upstream/src/main/**/*.kt
+  - providers/*/src/main/**/*.kt
+  - daemon/control/src/main/**/*.kt
+  - app/src/main/**/*.kt
 rule:
   any:
     - pattern: $X?.jsonPrimitive?.content

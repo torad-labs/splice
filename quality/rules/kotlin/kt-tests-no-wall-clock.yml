@@ -91,8 +91,8 @@
 #   ninth site is the pause inside LoginProcesses.visible, the bounded poll that REPLACED seven
 #   fixed 500 ms readiness sleeps: it waits for the spawned process's argv to become what the hook's
 #   scan reads, and this file is plain JUnit with no coroutine to suspend.
-#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                   (9)
-#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (1)
+#     client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt     (9)
+#     app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt                       (1)
 #
 #   2026-09-18 · A READINESS POLL WITH NO EVENT TO AWAIT, IN BLOCKING CODE. Nothing signals that a
 #   port has started listening, so awaitListening polls a connect attempt against a deadline — the
@@ -100,24 +100,24 @@
 #   so the suspend spelling would need a runBlocking that is a new ROOT coroutine: it inherits no
 #   cancellation and waits exactly as long. UPSTREAM FIX, not a respelling: most of those 38 calls
 #   follow a start() that has already bound (see the SEQUENTIAL note above) and can simply go.
-#     gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt                     (1)
+#     daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt                     (1)
 #
 #   2026-09-18 · A DELIBERATELY PACED TEST DOUBLE. The tearing upstream must deliver its first
 #   frames in a SEPARATE TCP read before it cuts the stream mid-chunk; TCP offers no "the peer has
 #   read it" signal, so the pause is the fixture, not a bet. Its perf-row read and its
 #   proof-of-absence (no continuation round was POSTed) are the other two shapes above.
-#     gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt          (9)
+#     daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt          (9)
 #
 # SUPERSEDED — the 2026-09-17 census, kept for its reasons, burned down by V4-139:
 #
 #   2026-09-17 · ENGINE WARM-UP AND PORT REUSE. `Thread.sleep(700) // Netty warmup` between tests
 #   that bind and rebind the same port. Waiting on the OS to release a listening socket; the honest
 #   fix is a bind-retry loop with a deadline, not a duration.
-#     gateway/gateway/src/test/kotlin/head/HeadServerCapacityTest.kt              (6)
-#     gateway/gateway/src/test/kotlin/head/HeadServerReviewTest.kt                (7)
-#     gateway/gateway/src/test/kotlin/head/HeadServerLoadTest.kt                  (2)
-#     gateway/gateway/src/test/kotlin/head/RateLimitRefusalClientContractTest.kt  (1)
-#     gateway/gateway/src/test/kotlin/head/RetryAlwaysArmedTest.kt                (1)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerCapacityTest.kt              (6)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerReviewTest.kt                (7)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerLoadTest.kt                  (2)
+#     daemon/head/src/test/kotlin/splice/head/admission/RateLimitRefusalClientContractTest.kt  (1)
+#     daemon/head/src/test/kotlin/splice/head/turn/RetryAlwaysArmedTest.kt                (1)
 #     gateway/spikes/src/test/kotlin/SseFlushSpike.kt                             (1)
 #
 #   2026-09-17 · WAITING ON A REAL SUBPROCESS OR THE FILESYSTEM. A child process, a file appearing,
@@ -125,20 +125,20 @@
 #   actually advances" is the literal comment in three of these). Genuinely outside the JVM's
 #   control; the fix is to poll the CONDITION with a deadline, which several of these already half
 #   do (`while (!Files.exists(ready)) delay(10)`).
-#     gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt                  (16)
-#     gateway/control/src/test/kotlin/McpHostLifecycleTest.kt                     (4)
-#     gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt                     (3)
-#     gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt          (2)
-#     gateway/provider-grok/src/test/kotlin/grok/GrokAuthRefreshRecoveryTest.kt   (1)
-#     gateway/core/src/test/kotlin/AsyncFileIoTest.kt                             (1)
-#     gateway/app/src/test/kotlin/CodeModeWorkerReclamation.kt                    (2)
-#     gateway/provider-spi/src/test/kotlin/CredentialLockTest.kt                  (1)
+#     client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt    (16)
+#     daemon/control/src/test/kotlin/splice/control/mcp/McpHostLifecycleTest.kt                     (4)
+#     providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt                     (3)
+#     providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt          (2)
+#     providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt   (1)
+#     core/src/test/kotlin/splice/core/util/AsyncFileIoTest.kt                             (1)
+#     app/src/test/kotlin/splice/app/codemode/CodeModeWorkerReclamation.kt                    (2)
+#     upstream/src/test/kotlin/splice/upstream/credentials/CredentialLockTest.kt                  (1)
 #
 #   2026-09-17 · A DELIBERATELY SLOW TEST DOUBLE. The mock upstream's whole job is to be slow on the
 #   wire — that is what a watchdog test exercises. The fix is for the mock to take an injected
 #   pacer so the test drives the stall instead of sleeping through it.
-#     gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt         (7)
-#     gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt                     (1)
+#     daemon/head/src/testFixtures/kotlin/splice/head/MockChatGptUpstream.kt         (7)
+#     daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt                     (1)
 #
 #   2026-09-17 · TIMEOUT AND WATCHDOG LADDERS MEASURED AGAINST REAL ELAPSED TIME. These assert on
 #   the production code's OWN clock behaviour (stream-idle tiers, first-byte timeout, the stop
@@ -146,27 +146,27 @@
 #   injected clock — `ElapsedClock`/`RemainingTurnWait` already exist as seams — not a shorter
 #   sleep. HeadServerStopDrainTest.kt:155's `delay(6_500)` is the audit's named site and the
 #   single most expensive one in the suite.
-#     gateway/provider-spi/src/test/kotlin/WatchdogTest.kt                       (11)
-#     gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt          (9)
-#     gateway/gateway/src/test/kotlin/head/HeadServerStopDrainTest.kt             (3)
-#     gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt                       (4)
-#     gateway/gateway/src/test/kotlin/head/HeadServerHeartbeatTest.kt             (2)
+#     upstream/src/test/kotlin/splice/upstream/retry/WatchdogTest.kt                       (11)
+#     daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt          (9)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerStopDrainTest.kt             (3)
+#     app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt                       (4)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerHeartbeatTest.kt             (2)
 #     gateway/spikes/src/test/kotlin/PoolCancelSpike.kt                           (5)
 #
 #   2026-09-17 · WAITING FOR A CONCURRENT PEER TO REACH A POINT. A second coroutine or client is
 #   expected to have drained a frame, parked on the next one, or recorded a row. Each is a
 #   rendezvous spelled as a duration; the fix is a latch or an awaited signal.
-#     gateway/gateway/src/test/kotlin/FrameRecordingTest.kt                       (3)
-#     gateway/gateway/src/test/kotlin/head/HeadServerCollectDisconnectTest.kt     (1)
-#     gateway/gateway/src/test/kotlin/head/HeadServerCompactionReplayTest.kt      (1)
-#     gateway/gateway/src/test/kotlin/head/HeadServerFoldTest.kt                  (1)
-#     gateway/gateway/src/test/kotlin/head/HeadServerIntegrationTest.kt           (1)
-#     gateway/control/src/test/kotlin/ControlServerTest.kt                        (2)
-#     gateway/control/src/test/kotlin/ControlServerGateTest.kt                    (1)
-#     gateway/control/src/test/kotlin/ClientVersionSurfaceTest.kt                 (1)
-#     gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt         (1)
-#     gateway/control/src/test/kotlin/McpRoutesTest.kt                            (1)
-#     gateway/control/src/test/kotlin/McpHostTest.kt                              (1)
+#     daemon/head/src/test/kotlin/splice/head/wire/FrameRecordingTest.kt                       (3)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerCollectDisconnectTest.kt     (1)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerCompactionReplayTest.kt      (1)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerFoldTest.kt                  (1)
+#     daemon/head/src/test/kotlin/splice/head/HeadServerIntegrationTest.kt           (1)
+#     daemon/control/src/test/kotlin/splice/control/ControlServerTest.kt                        (2)
+#     daemon/control/src/test/kotlin/splice/control/ControlServerGateTest.kt                    (1)
+#     daemon/control/src/test/kotlin/splice/control/ClientVersionSurfaceTest.kt                 (1)
+#     daemon/control/src/test/kotlin/splice/control/WebuiContractTest.kt         (1)
+#     daemon/control/src/test/kotlin/splice/control/api/diagnostics/McpRoutesTest.kt                            (1)
+#     daemon/control/src/test/kotlin/splice/control/mcp/McpHostTest.kt                              (1)
 id: kt-tests-no-wall-clock
 language: kotlin
 severity: error
@@ -185,12 +185,12 @@ files:
 # The dated census — see the ALLOWLIST section of this header for the reason behind every line.
 ignores:
   # a proof of absence, which has no event
-  - gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt
-  - gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt
+  - client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt
+  - app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt
   # a readiness poll with no event to await, in blocking code
-  - gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt
+  - daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt
   # a deliberately paced test double
-  - gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt
+  - daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt
 rule:
   any:
     # Thread.sleep blocks a real thread whatever encloses it — no runTest exemption, by design.

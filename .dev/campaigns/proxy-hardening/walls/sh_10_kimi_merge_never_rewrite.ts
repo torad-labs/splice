@@ -65,8 +65,8 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // the FILE moved, MergedCredentialJson.kt -> CredentialJson.kt. Same primitive, same function name,
 // same merge order; the token below is unchanged and the "core source missing" arm still refuses a
 // vacuous pass if this path ever goes stale again.
-const CORE = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/auth/CredentialJson.kt");
-const KIMI = resolve(ROOT, "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt");
+const CORE = resolve(ROOT, "core/src/main/kotlin/splice/core/auth/CredentialJson.kt");
+const KIMI = resolve(ROOT, "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt");
 
 // 2026-08-18 — HD-28, the re-anchor. Every arm below used to key on `writeSecure(`, the name of a
 // one-line PRIVATE forward (`private fun writeSecure(p, c) { SecureFile.writeAtomic0600(p, c) }`)

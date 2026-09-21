@@ -1,6 +1,6 @@
 // The redaction check: does the doctor payload the console is about to render still carry a
 // credential shape? FEATURES.md 4.12 wants the report "redacted like the CLI", and the CLI's rule is
-// DoctorRedaction.text (gateway/app/.../cli/DoctorRedaction.kt:59-69). This mirrors its SHAPES in
+// DoctorRedaction.text (app/.../cli/DoctorRedaction.kt:59-69). This mirrors its SHAPES in
 // its ORDER, so the console's verdict agrees with the pass that produced the payload.
 //
 // The check reports WHERE a shape was found and WHICH shape, never the value: a leak reporter that

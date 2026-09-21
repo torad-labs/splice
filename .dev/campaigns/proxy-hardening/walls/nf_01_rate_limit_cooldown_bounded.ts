@@ -69,9 +69,9 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const COOLDOWN = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/RateLimitCooldown.kt");
-const UPSTREAM = resolve(ROOT, "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt");
-const HEADSERVER = resolve(ROOT, "gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt");
+const COOLDOWN = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt");
+const UPSTREAM = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/transport/UpstreamClient.kt");
+const HEADSERVER = resolve(ROOT, "daemon/head/src/main/kotlin/splice/head/HeadServer.kt");
 
 const ARM_RE = /rateLimitedUntilMs\.accumulateAndGet\([\s\S]*?\n/;
 const CLEAR_BODY_RE = /fun\s+clear\s*\(\s*\)\s*(?::\s*Unit\s*)?\{([^{}]*)\}/g;

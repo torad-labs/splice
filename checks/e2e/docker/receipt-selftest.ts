@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "../../..");
-const VERSIONS = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/Versions.kt");
+const VERSIONS = resolve(ROOT, "core/src/main/kotlin/splice/core/Versions.kt");
 const DOCKERFILE = resolve(ROOT, "checks/e2e/docker/Dockerfile");
 const INSIDE = resolve(ROOT, "checks/e2e/docker/inside.sh");
 const RUN = resolve(ROOT, "checks/e2e/docker/run.sh");

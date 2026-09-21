@@ -1,0 +1,73 @@
+// NEW: the vendor-deformation configuration surface — split out of PassthroughRequestBuilder.kt
+// (2026-08-17, concentration campaign). PassthroughArm/PassthroughAssembly select it, while
+// PassthroughProvider and PassthroughStreamTranslator consume it. It is declarative config with zero
+// JSON-walking logic and zero splice imports. Every relocated member kept its name and argument list.
+package splice.dialect.anthropic
+
+/**
+ * Computed runtime identity headers a vendor requires on upstream calls — today Kimi OAuth/API-key's
+ * `X-Msh-*` host, platform, version, and OS set.
+ *
+ * A function and not config, which is the distinction this type exists to hold: static headers are
+ * data, while these values derive from runtime state. Absent (`{ emptyMap() }`) for generic and
+ * CLIENT arms, so a head that needs no computed identity wires nothing.
+ */
+public fun interface IdentityHeaders {
+    public operator fun invoke(): Map<String, String>
+}
+
+/**
+ * The knobs that turn a FAITHFUL Anthropic passthrough into one vendor's accepted shape.
+ *
+ * CONSTRUCTOR DEFAULTS ARE NEUTRAL, and that inversion is the point (campaign claude-head, CH-2).
+ * Every knob below was hardcoded ON when Kimi was the dialect's only consumer, which made
+ * "passthrough" a misnomer: a real Anthropic upstream loses prompt caching to [stripCacheControl],
+ * has its tool schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
+ * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that a
+ * signature-VERIFYING upstream later rejects. Assembly selects the kimi provider's own profile
+ * only for provider ID `kimi` on OAuth/API-key arms, then applies TOML overrides. Generic and CLIENT
+ * arms receive no vendor deformations unless TOML opts into them.
+ */
+public data class PassthroughQuirks(
+    val providerTag: String,
+    /** Kimi's Anthropic surface accepts ONLY adaptive-style thinking for effort control;
+     *  budget-based inference fails for Kimi model ids. Neutral forwards `thinking` verbatim
+     *  (and stops owning `output_config`, so a client's own rides through). */
+    val mapThinkingToAdaptive: Boolean = false,
+    /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
+    val stripSamplingParams: Boolean = false,
+    /** Rewrite tool `input_schema` into Moonshot-Flavored JSON Schema (and drop `strict` / invent
+     *  an empty `description`). An upstream that accepts full JSON Schema must leave this OFF:
+     *  the sanitizer discards `format`, `prefixItems`, `$ref` siblings and tuple `items`, which
+     *  CHANGES tool semantics. */
+    val mfjsSanitize: Boolean = false,
+    /** Content-block types the upstream accepts; every other block is DROPPED. null (neutral) =
+     *  every block rides. Kimi's list comes from its own 400 and excludes `redacted_thinking`,
+     *  `document` and `search_result` — silent content loss against an upstream that accepts them. */
+    val blockAllowlist: Set<String>? = null,
+    /** Deep-strip every `cache_control` marker. Neutral PRESERVES them: against an upstream with
+     *  prompt caching, stripping is a silent cold-read on every turn, not an error. */
+    val stripCacheControl: Boolean = false,
+    /** Synthesize ONE thinking-block signature at close when the upstream sent none. Required for
+     *  Kimi (never signs; Claude Code discards unsigned thinking blocks) and WRONG for an upstream
+     *  that signs and verifies — a truncated block would otherwise persist a forged signature into
+     *  the transcript and return it upstream on the next turn. */
+    val synthesizeSignatures: Boolean = false,
+    /** DR-119: drop the RESPONSE-side server-tool surface — server_tool_use /
+     *  web_search_tool_result blocks and citations_delta on text — instead of forwarding it
+     *  verbatim. Neutral forwards: Claude Code renders server search results and keeps citations
+     *  only if these reach the transcript. Kimi keeps its historical swallow (byte-identity law —
+     *  flipping kimi's translator output is an operator decision, DR-123-class). */
+    val dropServerToolBlocks: Boolean = false,
+    /** Ordered cheapest-first effort rungs the ladder may emit. null = no vendor ladder (neutral). */
+    val effortRungs: List<String>? = null,
+    /** V4-32: cap on tool `name` length, 0 = no cap. Muse's endpoint enforces 64 where
+     *  Anthropic's does not; every other head leaves this off and nothing is rewritten. */
+    val toolNameCap: Int = 0,
+    /** V4-41: may a re-anchor continuation APPEND the salvaged answer as a trailing assistant
+     *  message? Neutral is FALSE, which leaves a truncated turn ending exactly as it does today
+     *  except for the whole-stream restart that duplicates nothing. Measured per vendor, never
+     *  inferred: deepseek and kimi continue from a prefill, muse rejects the shape with a 400 that
+     *  would convert a retryable error into one Claude Code will not retry. */
+    val reanchorPrefill: Boolean = false,
+)

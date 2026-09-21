@@ -62,21 +62,21 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // The request-builder surface per dialect: every file where a compaction turn is shaped for the wire.
 export const PATHS: Record<string, string[]> = {
   "openai-responses": [
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesInputBuilder.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesInputTools.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesToolPlan.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesLite.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestAssembler.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningKnobs.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnOptions.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequestBuilder.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputBuilder.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputTools.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ResponsesToolPlan.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesLite.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequestAssembler.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReasoningKnobs.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnOptions.kt",
   ],
   "openai-chat": [
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
   ],
   "anthropic-passthrough": [
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughRequestBuilder.kt",
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughThinking.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughRequestBuilder.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughThinking.kt",
   ],
 };
 
@@ -98,10 +98,10 @@ const COMPACT_READ = /\b(?:opts|meta)\.compact\b|\bcompact\b\s*\)|!compact\b|\(c
 const COMPACT_HANDOFF = /compact\s*=\s*(?:opts\.)?compact\b/;
 
 export const CANARY_TESTS: Record<string, string> = {
-  "openai-responses": "gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt",
-  "openai-chat": "gateway/dialect-openai-chat/src/test/kotlin/ChatRequestBuilderTest.kt",
+  "openai-responses": "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/request/ResponsesRequestBuilderTest.kt",
+  "openai-chat": "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatRequestBuilderTest.kt",
   "anthropic-passthrough":
-    "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughRequestBuilderTest.kt",
+    "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughRequestBuilderTest.kt",
 };
 export const CANARY_TOKEN = "compaction is built byte-identical to a turn";
 

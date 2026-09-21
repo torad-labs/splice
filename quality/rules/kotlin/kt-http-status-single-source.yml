@@ -6,19 +6,19 @@
 # SCAR: 429 and 529 were each declared five times under five different names, and nothing kept them
 # in agreement. The 2026-09-17 architecture audit census (verified with ast-grep, not the prose list
 # it arrived as — see the ledger note on V4-88 for the four name corrections):
-#   429  provider-spi/RateLimitCooldown.kt:304        internal const val RATE_LIMITED
-#        provider-spi/UpstreamFailureClassifier.kt:291 private const val RATE_LIMIT_STATUS
+#   429  upstream/RateLimitCooldown.kt:304        internal const val RATE_LIMITED
+#        upstream/UpstreamFailureClassifier.kt:291 private const val RATE_LIMIT_STATUS
 #        app/RefreshRetry.kt:25                        private const val HTTP_TOO_MANY
 #        app/cli/UpgradeFetch.kt:24                    private const val HTTP_TOO_MANY
 #        gateway/head/AdmissionResponses.kt:26         private const val RATE_LIMITED_STATUS
 #        gateway/wire/CollectingTerminal.kt:24         private const val STATUS_RATE_LIMIT
-#   529  provider-spi/UpstreamFailureClassifier.kt:296 private const val OVERLOADED_STATUS
+#   529  upstream/UpstreamFailureClassifier.kt:296 private const val OVERLOADED_STATUS
 #        gateway/head/AdmissionResponses.kt:24         private const val GATEWAY_CAPACITY_STATUS
 #        gateway/wire/CollectingTerminal.kt:25         private const val STATUS_OVERLOADED
 # Six spellings of one number is how a retry classifier and an admission responder come to disagree
 # about what "overloaded" means on the wire while every unit test stays green.
 #
-# REMEDY: the fix row creates gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt and every
+# REMEDY: the fix row creates core/src/main/kotlin/splice/core/wire/HttpStatus.kt and every
 # site above becomes `HttpStatus.TOO_MANY_REQUESTS`. That file is the sole allowed declaration site
 # and is named in `ignores:` below, so it is exempt BY PATH — the exemption cannot be claimed by any
 # other file, and the fix row's new file needs no edit to this rule.
@@ -43,12 +43,12 @@ id: kt-http-status-single-source
 language: kotlin
 severity: error
 message: "HTTP status codes are declared once, in splice.core.wire.HttpStatus (core/wire) — reference HttpStatus instead of re-declaring the number here."
-note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt; every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
+note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is core/src/main/kotlin/splice/core/wire/HttpStatus.kt; every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
 files:
   - "**/src/main/**/*.kt"
 ignores:
   # the sole allowed declaration site — exempt BY PATH, so no other file can claim the exemption
-  - gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt
+  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt
 rule:
   kind: property_declaration
   all:

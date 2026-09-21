@@ -12,7 +12,7 @@ message: "Use FormEncoding.percentEncode/formEncode (core/util) — the percent-
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt
+  - core/src/main/kotlin/splice/core/util/FormEncoding.kt
 rule:
   any:
     - kind: string_literal

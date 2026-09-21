@@ -17,7 +17,7 @@
 #
 # RETURN TYPE ONLY — the `follows: function_value_parameters` constraint is load-bearing, not
 # decoration. This repo's provider SPI is `suspend fun driveTurn(upstream: Flow<JsonObject>, sink:
-# WireSink): TurnOutcome` (provider-spi/Provider.kt:20 plus the three dialect implementations), and
+# WireSink): TurnOutcome` (upstream/Provider.kt:20 plus the three dialect implementations), and
 # that shape is CORRECT: it consumes a Flow and suspends for the whole turn. A rule keyed on
 # `suspend` and `Flow` merely co-occurring flags all four and turns the gate red on the SPI
 # contract itself. `follows:` is what distinguishes "returns a stream" from "is handed a stream";

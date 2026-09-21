@@ -54,17 +54,17 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const TOPO = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt");
+const TOPO = resolve(ROOT, "core/src/main/kotlin/splice/core/topology/Topology.kt");
 // HD-25: configurationChecks — the declaration this wall reads — moved out of DoctorCommand.kt into
 // its own collaborator when that file was decomposed (it was the tree's worst concentration row at
 // 8.10). Re-anchored onto the ONE file that now holds it, at the same single-file resolution, the
 // same way DAEMON below was repointed at HeadBoot.kt.
-const DOCTOR = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/cli/DoctorConfigChecks.kt");
+const DOCTOR = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/doctor/DoctorConfigChecks.kt");
 // assembleDaemonHeads (and its portCollisionMessage pre-flight) moved out of Daemon.kt into its own
 // collaborator in the 2026-08-17 decomposition (campaign claude-head, CH target Daemon) — repointed
 // the same way the kt-state-paths-single-source ignore was, following the code rather than the
 // god-file it used to live in.
-const DAEMON = resolve(ROOT, "gateway/app/src/main/kotlin/splice/app/head/HeadBoot.kt");
+const DAEMON = resolve(ROOT, "app/src/main/kotlin/splice/app/head/HeadBoot.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(topo: string | null, doctor: string | null, daemon: string | null): string[] {

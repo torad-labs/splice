@@ -14,7 +14,7 @@ message: "Use SecureFile.writeAtomic0600 (core/util) — the 0600 credential-wri
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/core/src/main/kotlin/splice/core/util/SecureFile.kt
+  - core/src/main/kotlin/splice/core/util/SecureFile.kt
 rule:
   any:
     - pattern: PosixFilePermissions.fromString("rw-------")

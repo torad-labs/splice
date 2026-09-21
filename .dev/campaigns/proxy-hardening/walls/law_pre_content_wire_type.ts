@@ -70,19 +70,26 @@ function pyRepr(items: string[]): string {
 }
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-const SOURCE_ROOT_GLOB = "gateway/*/src/main/kotlin";
-const SEAM_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt";
+// Every §2.2 module home (restructure PR 3 moves them out of gateway/ one commit at a time; a glob
+// over an absent directory matches nothing, so the scan can only grow as modules land).
+const SOURCE_ROOT_GLOBS = [
+  "gateway/*/src/main/kotlin", "client/src/main/kotlin", "core/src/main/kotlin", "upstream/src/main/kotlin",
+  "dialects/*/src/main/kotlin", "providers/*/src/main/kotlin", "daemon/*/src/main/kotlin", "app/src/main/kotlin",
+  "quality/*/src/main/kotlin",
+];
+const SOURCE_ROOT_GLOB = SOURCE_ROOT_GLOBS.join(", ");
+const SEAM_FILE = "daemon/head/src/main/kotlin/splice/head/wire/SseEmitter.kt";
 const SEAM_FUN = "emitError";
 
-const COLLECT_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt";
+const COLLECT_FILE = "daemon/head/src/main/kotlin/splice/head/wire/CollectingTerminal.kt";
 const COLLECT_MARK = "CollectingTerminal";
 const COLLECT_REASON = "the COLLECT path (stream:false), where the failure's real HTTP status carries the verdict";
 
-const PRE_TURN_FILE = "gateway/gateway/src/main/kotlin/splice/gateway/head/AdmissionResponses.kt";
+const PRE_TURN_FILE = "daemon/head/src/main/kotlin/splice/head/admission/AdmissionResponses.kt";
 const PRE_TURN_MARK = "AdmissionResponses";
 const PRE_TURN_REASON = "2026-09-17: the PRE-TURN admission plane. Every verdict here is decided before";
 
-const POOLED_FILE = "gateway/provider-spi/src/main/kotlin/splice/spi/RateLimitCooldown.kt";
+const POOLED_FILE = "upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt";
 const POOLED_MARK = "RateLimitCooldown";
 const POOLED_REASON = "2026-09-17: the POOLED-REFUSAL fail-fast body, synthesized by the cooldown itself";
 
@@ -465,7 +472,7 @@ export function detect(sources: Record<string, string> | null, seamText: string 
 
 export function load(): [Record<string, string> | null, string | null] {
   const sources: Record<string, string> = {};
-  for (const root of globSync(resolve(ROOT, SOURCE_ROOT_GLOB)).sort()) {
+  for (const root of SOURCE_ROOT_GLOBS.flatMap((g) => globSync(resolve(ROOT, g))).sort()) {
     for (const kt of globSync(`${root}/**/*.kt`).sort()) {
       sources[relative(ROOT, kt)] = readFileSync(kt, "utf8");
     }
@@ -582,7 +589,7 @@ const CLEAN_ENDING =
 function tree(seamText: string = SEAM_OK, extra: Record<string, string> = {}): Record<string, string> {
   const sources: Record<string, string> = { [SEAM_FILE]: seamText, [COLLECT_FILE]: COLLECT };
   for (const [name, text] of Object.entries(extra)) {
-    sources[`gateway/gateway/src/main/kotlin/splice/gateway/head/${name}.kt`] = text;
+    sources[`daemon/head/src/main/kotlin/splice/gateway/head/${name}.kt`] = text;
   }
   return sources;
 }

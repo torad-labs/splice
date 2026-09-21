@@ -18,11 +18,11 @@
  *
  * THE THREE DUPLICATES THIS ROW WAS OPENED FOR, each verified against the declarations rather than
  * taken from the audit (2026-09-17):
- *   ElapsedNow (provider-spi/RuntimeSeams.kt:40) == ElapsedClock (core/util/RuntimePorts.kt:143).
+ *   ElapsedNow (upstream/RuntimeSeams.kt:40) == ElapsedClock (core/util/RuntimePorts.kt:143).
  *       ElapsedNow's KDoc: "A monotonic now-reading in milliseconds. The seam behind retry deadlines
  *       and the shared 429 cooldown." ElapsedClock's: "Reads a MONOTONIC timebase in milliseconds …
  *       for budgets, deadlines, watchdog caps and elapsed timings." Same role, two modules.
- *   AccountNow (provider-spi/AccountSelection.kt:22) == WallClock (core/util/RuntimePorts.kt:105).
+ *   AccountNow (upstream/AccountSelection.kt:22) == WallClock (core/util/RuntimePorts.kt:105).
  *       AccountNow's KDoc: "Epoch time seam used to compare provider reset timestamps." WallClock's
  *       contract is exactly "a real point in calendar time … compared against a foreign epoch".
  *   HeaderLookup (gateway/usage/RateLimitHeaders.kt:22) == QuotaHeaderRead (core/usage/QuotaHeaders.kt:15).
@@ -116,7 +116,17 @@ import { fileURLToPath } from "node:url";
 // parents[1]: this file lives at checks/, so the repo root is one level up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const SOURCE_GLOB = "gateway/*/src/main/**/*.kt";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const SOURCE_GLOBS = [
+  "gateway/*/src/main/**/*.kt", "client/src/main/**/*.kt", "core/src/main/**/*.kt", "upstream/src/main/**/*.kt",
+  "dialects/*/src/main/**/*.kt", "providers/*/src/main/**/*.kt", "daemon/*/src/main/**/*.kt", "app/src/main/**/*.kt",
+  "quality/*/src/main/**/*.kt",
+];
 const CONFIG_REL = "checks/config/role-registry.toml";
 
 const DECL = /\bfun\s+interface\s+(\w+)/g;
@@ -409,7 +419,9 @@ export function collect(root: string): { roles: Role[]; problems: string[] } {
   const problems: string[] = [];
   let occurrences = 0;
   let resolved = 0;
-  const files = [...new Bun.Glob(SOURCE_GLOB).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = SOURCE_GLOBS
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   for (const rel of files) {
     const code = codeView(readFileSync(join(root, rel), "utf8"));
     for (const match of code.matchAll(DECL)) {
@@ -497,7 +509,7 @@ export function denominator(root: string): { count: number; detail: string } {
     "severity: hint\n" +
     "message: fun interface\n" +
     "files:\n" +
-    "  - gateway/*/src/main/**/*.kt\n" +
+    SOURCE_GLOBS.map((g) => `  - ${g}\n`).join("") +
     "rule:\n" +
     "  kind: class_declaration\n" +
     "  regex: '^((public|internal|private|protected|expect|actual|@\\w+)\\s+)*fun\\s+interface\\s'\n";
@@ -505,7 +517,11 @@ export function denominator(root: string): { count: number; detail: string } {
   let code = 0;
   let stderr = "";
   try {
-    const done = spawnSync("ast-grep", ["scan", "--inline-rules", rule, "--json=compact", join(root, "gateway")], {
+    // The SAME module homes the regex census walks (restructure PR 3: :client lives outside
+    // gateway/). A second census that reads a different tree is not an independent check of the
+    // first, it is a guaranteed disagreement — arm 6 of the selftest says so by name.
+    const roots = SOURCE_GLOBS.map((g) => join(root, g.split("/")[0]!)).filter((d, i, a) => a.indexOf(d) === i);
+    const done = spawnSync("ast-grep", ["scan", "--inline-rules", rule, "--json=compact", ...roots], {
       encoding: "utf8",
       timeout: 300000,
       maxBuffer: 256 * 1024 * 1024,
@@ -590,7 +606,7 @@ function audit(root: string, configRel = CONFIG_REL): string[] {
   const problems = [...collectProblems];
   if (roles.length === 0) {
     problems.push(
-      `parsed 0 \`fun interface\` declarations under ${SOURCE_GLOB} — refusing to pass ` +
+      `parsed 0 \`fun interface\` declarations under ${SOURCE_GLOBS.join(", ")} — refusing to pass ` +
         "vacuously, because a green over an empty denominator is what this wall exists to " +
         "prevent",
     );
@@ -728,7 +744,7 @@ function report(root: string, configRel = CONFIG_REL): void {
 
 // ── selftest ──────────────────────────────────────────────────────────────────────────────────────
 
-const MODULE = "gateway/core/src/main/kotlin/splice/core";
+const MODULE = "core/src/main/kotlin/splice/core";
 
 const COMPLIANT_SOURCE = `package splice.core
 

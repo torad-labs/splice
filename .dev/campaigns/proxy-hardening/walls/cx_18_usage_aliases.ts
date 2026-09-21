@@ -78,22 +78,22 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // The CARRIER files — the one file per key that must hold that key's REQUIRED call sites. These are
 // positive tokens only; the FORBIDDEN_READER ban is NOT scoped to this map (see BAN_DIRS).
 export const PATHS: Record<string, string> = {
-  core: "gateway/core/src/main/kotlin/splice/core/util/JsonScalars.kt",
+  core: "core/src/main/kotlin/splice/core/util/JsonScalars.kt",
   // 2026-08-25: detekt Filename fix renamed the file after its single class — ResponsesHarvest
   // now lives in ResponsesHarvest.kt, and Harvested.kt holds the (alias-free) Harvested payload
   // type that used to sit in HarvestedText.kt. Repointed at the code, same single-file resolution.
-  harvest: "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesHarvest.kt",
+  harvest: "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesHarvest.kt",
   // HD-24 (2026-08-17): UsageHud decomposed; firstNum (the delegating alias-chain call) moved to
   // UsageJson.kt (the usage-accounting owner).
-  hud: "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageJson.kt",
+  hud: "daemon/head/src/main/kotlin/splice/head/usage/UsageJson.kt",
   // HD-24 (2026-08-17): ChatStreamTranslator decomposed; both usage-alias reads moved to
   // ChatUsage.kt (the usage-accounting owner).
-  chat: "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",
+  chat: "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",
   // HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; both nested-cache_creation reads
   // moved to PassthroughUsage.kt (the usage-accounting owner), the same repoint HD-24 made twice
   // above. BAN_DIRS is derived from this path's PARENT, and the destination is a same-package
   // sibling, so the negative half sweeps exactly the same neighbourhood it did before.
-  passthrough: "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughUsage.kt",
+  passthrough: "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughUsage.kt",
 };
 
 // The NEIGHBOURHOODS the forbidden-reader ban sweeps: the package directory of every carrier above,

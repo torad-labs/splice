@@ -31,6 +31,15 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+      # koverXmlReport runs the module tests, and the state-layout doctor tests spawn bun to
+      # drive the JS copy of the state-root rule, so this job gets the same pinned bun and the
+      # same frozen install as the gate (both pins are load-bearing; see ci.yml). Without them
+      # the report is red on every PR with "Cannot run program bun".
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - name: install workspaces
+        run: bun install --frozen-lockfile
       - name: Generate aggregated kover report
         run: cd gateway && ./gradlew :koverXmlReport --console=plain
       - uses: mi-kas/kover-report@94d69bc9d417de89b808cd5fe846bca2840911bb # v2.7

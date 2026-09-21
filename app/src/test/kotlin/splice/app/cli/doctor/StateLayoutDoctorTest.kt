@@ -38,7 +38,7 @@ private const val LEGACY_STATE_DIR_ENV = "CLAUDEX_STATE_DIR"
  *  carries the rule too and is driven when present, but it is dev-only tooling outside the shipped
  *  tree, so it is not required here. */
 private val REQUIRED = setOf(
-    "bin/splice-launch",
+    "app/src/main/dist/bin/splice-launch",
     "tools/e2e/src/commands/heads.ts",
     "checks/e2e/docker/inside.sh",
     "checks/e2e/console-wire-keys.ts",
@@ -148,11 +148,11 @@ class StateLayoutDoctorTest {
 /**
  * THE OTHER IMPLEMENTATIONS OF THE STATE-ROOT RULE, pinned against the Kotlin one.
  *
- * `bin/splice-launch` reads the mgmt-key and `config.json` that the daemon WRITES; the two e2e
+ * `app/src/main/dist/bin/splice-launch` reads the mgmt-key and `config.json` that the daemon WRITES; the two e2e
  * harnesses read the daemon's logs and key the same way; `console-wire-keys.ts --attach` reads the
- * key of whatever daemon is already up. So the rule exists in bash AND in TypeScript, and a copy
- * that picks the other root reports "mgmt-key not found" on a healthy install, or cold-starts a
- * second daemon against an empty state dir while the real one is serving.
+ * key of whatever daemon is already up. So the rule exists in Node, in bash AND in TypeScript, and
+ * a copy that picks the other root reports "mgmt-key not found" on a healthy install, or
+ * cold-starts a second daemon against an empty state dir while the real one is serving.
  *
  * THE DENOMINATOR IS ENUMERATED AND THEN PINNED, which is two different jobs. Walking the tree
  * catches a copy someone ADDS. It does not catch a copy someone DELETES, RENAMES, or edits out of
@@ -175,18 +175,25 @@ class StateDirAgreementTest {
     }
 
     private fun shellResolvers(): List<Path> =
-        listOf("bin", "checks", "tools", ".dev").map(repo::resolve).filter { Files.exists(it) }
+        listOf("app/src/main/dist", "checks", "tools", ".dev").map(repo::resolve).filter { Files.exists(it) }
             .flatMap { start -> Files.walk(start).use { walk -> walk.toList() } }
             .filter { it.isRegularFile() && declaresResolver(it) }
             .sorted()
 
     private fun declaresResolver(file: Path): Boolean =
         runCatching { file.readText() }.getOrNull()?.let { text ->
-            "\nresolve_state_dir() {" in text || "export function liveStateDir(" in text
+            "\nresolve_state_dir() {" in text || "export function liveStateDir(" in text ||
+                "\nfunction liveStateDir(" in text
         } ?: false
 
-    /** A bash copy is sourced out of its file; a JS/TS copy is imported and called. Same contract,
-     *  two runtimes — which is the point: the rule is not bash's, it is splice's. */
+    /** The launch shim is a Node script with no extension (its installed name is the contract), so
+     *  its runtime is read off its first line rather than its suffix. */
+    private fun isNodeScript(script: Path): Boolean =
+        runCatching { script.readText() }.getOrNull()?.startsWith("#!/usr/bin/env node") ?: false
+
+    /** A bash copy is sourced out of its file; a TS copy is imported and called; the Node shim is
+     *  `require`d and called. Same contract, three runtimes — which is the point: the rule is not
+     *  bash's, it is splice's. */
     private fun resolveWith(script: Path, home: Path, env: Map<String, String>): String {
         val absolute = script.toAbsolutePath().toString()
         val command = if (script.name.endsWith(".ts") || script.name.endsWith(".mjs")) {
@@ -196,6 +203,16 @@ class StateDirAgreementTest {
                 "bun",
                 "-e",
                 "const m = await import(process.env.PIN_MODULE); " +
+                    "console.log(m.liveStateDir(process.env.PIN_HOME, JSON.parse(process.env.PIN_ENV)))",
+            )
+        } else if (isNodeScript(script)) {
+            // `require`, not `import`: an extensionless file is CommonJS to Node's loader and the
+            // shim exports through module.exports for exactly this read. Its main() runs only when
+            // it is the entry module, so requiring it launches nothing.
+            listOf(
+                "node",
+                "-e",
+                "const m = require(process.env.PIN_MODULE); " +
                     "console.log(m.liveStateDir(process.env.PIN_HOME, JSON.parse(process.env.PIN_ENV)))",
             )
         } else {
@@ -329,6 +346,28 @@ class StateDirAgreementTest {
         assertTrue(
             resolveWith(wrong, home, emptyMap()) != expected,
             "a JS resolver that ignores the pre-0.4 root must not compare equal — the runner is not calling it",
+        )
+    }
+
+    // Mutant: the Node runner. The shim has no extension, so it is routed by its first line; a
+    // `require` that stopped calling liveStateDir would make the shim's arms vacuous while the bun
+    // and bash mutants above stayed honest.
+    @Test
+    fun `the harness would catch a Node shim that resolved the wrong root`(@TempDir root: Path) {
+        val home = Files.createDirectories(root.resolve("home"))
+        makeState(home, LEGACY_ROOT)
+        val wrong = root.resolve("wrong-shim")
+        Files.writeString(
+            wrong,
+            "#!/usr/bin/env node\nfunction liveStateDir(home) { return home + '/" + SPLICE_ROOT + "/state'; }\n" +
+                "module.exports = { liveStateDir };\n",
+        )
+
+        val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
+
+        assertTrue(
+            resolveWith(wrong, home, emptyMap()) != expected,
+            "a Node resolver that ignores the pre-0.4 root must not compare equal — the runner is not calling it",
         )
     }
 }

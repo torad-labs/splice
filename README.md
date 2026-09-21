@@ -6,7 +6,7 @@
 
 ChatGPT · Grok · Kimi · Muse · API backends · native Claude
 
-[Why splice](#why-it-exists) · [Install](#install) · [Quick start](#quick-start) · [Providers](#provider-support) · [Trade-offs](#why-you-might-not-want-splice) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
+[Why splice](#why-it-exists) · [Install](#install) · [Quick start](#quick-start) · [Providers](#provider-support) · [Trade-offs](#why-you-might-not-want-splice) · [Changelog](CHANGELOG.md) · [Security](.github/SECURITY.md)
 
 [![ci](https://github.com/torad-labs/splice/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/torad-labs/splice/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/torad-labs/splice)](https://github.com/torad-labs/splice/releases/latest)
@@ -14,6 +14,20 @@ ChatGPT · Grok · Kimi · Muse · API backends · native Claude
 [![license](https://img.shields.io/github/license/torad-labs/splice)](LICENSE)
 
 </div>
+
+```text
+splice puts Claude Code in front of the backend you choose.
+
+  The bytes are exactly right for every backend.        dialects/ providers/  (.docs/architecture)
+  A turn is never lost.                                 daemon/head
+  It never runs away, and never corrupts a credential.  upstream/  core/config
+  Your Claude Code stays yours.                         client/
+  You see what happens and what it costs.               daemon/control  console/
+  Every failure comes with its remedy.                  app/cli/doctor  daemon/head
+  Heads see each other.                                 daemon/control  core/sessions  client/resume
+
+  app/ assembles all of it.
+```
 
 Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Claude Code. Use `claude-grok`, `claude-kimi` or `claude-muse` for those subscriptions, or connect an API backend such as OpenRouter. You keep Claude Code's tools, permission checks and terminal workflow; splice connects it to the backend you choose.
 
@@ -64,10 +78,9 @@ are Unix programs.
 | Dependency | Why | If missing |
 | --- | --- | --- |
 | **Java 21+** | the spliced daemon ships as a fat jar | `apt install openjdk-21-jre-headless` · `brew install --cask temurin@21` · [adoptium.net](https://adoptium.net) |
-| **Node 24** | Claude Code's own runtime | [nodejs.org](https://nodejs.org) or `nvm install 24` |
+| **Node 24** | Claude Code's own runtime, and the launch shim's | [nodejs.org](https://nodejs.org) or `nvm install 24` |
 | **Claude Code** | splice wraps it — `claude` must resolve on PATH | `npm install -g @anthropic-ai/claude-code` |
-| **Python 3** | the launch shim parses the daemon's JSON launch recipe | `apt install python3` · preinstalled on macOS |
-| **curl** + **bash** | the launch shim and installer | preinstalled almost everywhere |
+| **curl** + **bash** | the installer | preinstalled almost everywhere |
 | **GitHub CLI, authenticated** | release installs verify build-provenance attestations via the GitHub API | `gh auth login` once ([cli.github.com](https://cli.github.com)); building from a checkout does not need it |
 
 You don't have to pre-check any of this: `install.sh` verifies every dependency up front, prints
@@ -112,7 +125,7 @@ cd splice
 
 ```text
 Install splice (https://github.com/torad-labs/splice) on this machine and verify it works:
-1. Check prerequisites: bash, curl, python3, Java 21+, Node 24, and Claude Code
+1. Check prerequisites: bash, curl, Java 21+, Node 24, and Claude Code
    (`claude` on PATH). Install anything missing with this machine's package manager —
    show me each install command and ask before running it.
 2. Install from source: `git clone https://github.com/torad-labs/splice && cd splice
@@ -415,7 +428,7 @@ flowchart LR
     HEAD -- "provider wire dialect" --> API["backend API<br/>(OpenRouter · Moonshot · …)"]
 ```
 
-Each wrapper is an `argv[0]` symlink to the shared launch shim `bin/splice-launch`: it cold-starts the daemon if needed, asks it for an exec recipe over the loopback control plane, and execs the real `claude` pointed at the head's port. Only the head talks to the backend; the dashboard and every control endpoint are bearer-guarded and loopback-only. Adding a backend using an existing dialect and auth kind is a TOML edit, not code. See [`config/splice.example.toml`](config/splice.example.toml) for the full sample topology.
+Each wrapper is an `argv[0]` symlink to the shared launch shim `app/src/main/dist/bin/splice-launch`: it cold-starts the daemon if needed, asks it for an exec recipe over the loopback control plane, and execs the real `claude` pointed at the head's port. Only the head talks to the backend; the dashboard and every control endpoint are bearer-guarded and loopback-only. Adding a backend using an existing dialect and auth kind is a TOML edit, not code. See [`config/splice.example.toml`](config/splice.example.toml) for the full sample topology.
 
 `install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor`.
 
@@ -456,22 +469,31 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ## Layout
 
 ```
-gateway/       Kotlin daemon (spliced) — the Gradle modules, JDK 21; the PRIMARY stack
-build-logic/   Gradle convention plugins; the build itself is rooted at the repository root
-config/        splice.example.toml — the sample multi-provider topology
-bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
-install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
+core/          :core — the vocabulary: config, topology, auth, sessions, turn, model, usage, and the
+               persistence primitives state lives in (framework-free by module law)
+client/        :client — the Claude Code side: login, mcp, wrap, resume, transcript
+upstream/      :upstream — the backend side: contracts, transport, retry, credentials
+dialects/      anthropic, openai-responses, openai-chat — one request-byte contract each
+providers/     codex, grok, kimi, muse, openai
+daemon/        head/ (:daemon-head, the proxy between client and upstream) and
+               control/ (:daemon-control, the control plane and MCP host)
+app/           :app — assembly, the `splice` CLI, the fat jar, and the launch shim
+               (src/main/dist/bin/splice-launch: every head command is an argv[0] symlink to it)
 console/       React 19 + Vite + Zustand operator console, single-file bundle (console/tools: its look gate)
-checks/        gate legs not yet Kotlin laws, run by the ladder (tools/gate/config/ladder.json): the concentration ratchet,
-               release acceptance, the OSS ladder, the e2e harnesses
-quality/       enforcement: detekt config + the ast-grep "walls" (write-time AND at the gate)
-.claude/       the hook orchestrator that runs the walls on every agent write, and its tests
-.dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`),
-               research notes, release material
-.docs/         design specs and plans, README assets
+quality/       enforcement: architecture/ (the Kotlin laws), compiler-plugin/, rules/ (the ast-grep
+               walls, write-time AND at the gate), detekt/
+build-logic/   Gradle convention plugins; the build itself is rooted at the repository root
+tools/         the operational Bun CLIs: gate/ (the ladder, tools/gate/config/ladder.json), e2e/, release/
+checks/        gate legs not yet Kotlin laws or CLI verbs, run by the ladder — shrinking
+config/        splice.example.toml — the sample multi-provider topology
+install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
+.claude/       the write-time hook wiring (settings.json) and its tests
+.dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`), research notes
+.docs/         architecture and design docs (PROVENANCE.md, the request-byte contract), README assets
+.github/       workflows, the community health files, issue and PR templates
 ```
 
-The **gateway/** Kotlin daemon is the only stack. The legacy `server/` Node proxy and its
+The Kotlin daemon is the only stack. The legacy `server/` Node proxy and its
 `bin/claudex-next` shim were **deleted on 2026-08-10** (P8-CUT), after the Kotlin daemon had
 owned the production ports for three days and 32,326 turns at 99.14% clean. The wire behaviour it
 established survives as 11 byte-exact fixtures in the migration oracle

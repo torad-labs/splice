@@ -44,7 +44,7 @@ public class CodexProvider(
     private val codeMode = codeModeBridge
 
     /** Proven against the live ChatGPT backend by the WS-0 spike
-     *  (gateway/spikes/results/responses-websocket.md): handshake, event vocabulary and
+     *  (.dev/research/spikes/responses-websocket.md): handshake, event vocabulary and
      *  previous_response_id chaining all confirmed. No other Responses upstream has been probed. */
     override val supportsWebSocket: Boolean = true
 

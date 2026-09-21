@@ -21,7 +21,7 @@ export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *  the only root on the box. This file hardcoded the pre-0.4 path, which reads a file that does not
  *  exist on any install made after 0.4. Blank-checked per variable, and adoption needs the current
  *  root PROVEN absent and the pre-0.4 one proven to be a directory — the same rule StatePaths.kt,
- *  bin/splice-launch and the two e2e harnesses follow. */
+ *  app/src/main/dist/bin/splice-launch and the two e2e harnesses follow. */
 export function mgmtKey(home = process.env.HOME) {
   return readFileSync(join(liveStateDir(home), 'mgmt-key'), 'utf8').trim();
 }

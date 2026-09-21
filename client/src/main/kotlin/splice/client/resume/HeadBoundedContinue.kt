@@ -29,7 +29,7 @@ public class HeadBoundedContinue {
             cwd.isNullOrBlank() -> ContinueResolution(
                 args,
                 "this launch shim sent no cwd, so -c is not bounded to this head's own sessions — " +
-                    "run `splice install` to refresh bin/splice-launch",
+                    "run `splice install` to refresh app/src/main/dist/bin/splice-launch",
             )
             else -> bounded(ownTree, args.filterIndexed { position, _ -> position != index }, cwd)
         }

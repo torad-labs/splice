@@ -24,25 +24,19 @@ internal val binaries = listOf(
     BinarySpec(
         "node",
         listOf("-v"),
-        "not found on PATH — Claude Code's runtime (Node 24)",
+        "not found on PATH — Claude Code's runtime and the launch shim's (Node 24)",
         "install Node 24: https://nodejs.org",
-    ),
-    BinarySpec(
-        "python3",
-        listOf(FLAG_VERSION),
-        "not found on PATH — the launch shim parses JSON with it",
-        "install python3 with your package manager",
     ),
     BinarySpec(
         "curl",
         listOf(FLAG_VERSION),
-        "not found on PATH — the launch shim's health checks need it",
+        "not found on PATH — install.sh downloads releases with it",
         "install curl with your package manager",
     ),
     BinarySpec(
         "bash",
         listOf(FLAG_VERSION),
-        "not found on PATH — the launch shim is a bash script",
+        "not found on PATH — install.sh is a bash script",
         "install bash with your package manager",
     ),
 )

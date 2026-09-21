@@ -6,7 +6,7 @@
 # What gets installed is chosen ONCE, explicitly:
 #   --release vX.Y.Z      the published GitHub release assets (jar, shim, sha256sums, install.sh)
 #   --jar P --shim P      any prebuilt pair (sha256sums.txt beside the jar is verified if present)
-#   (default)             this checkout: :app:shadowJar via buildgate when present, bin/splice-launch
+#   (default)             this checkout: :app:shadowJar via buildgate when present, app/src/main/dist/bin/splice-launch
 #
 # Usage: checks/e2e/docker/run.sh [--release vX.Y.Z | --jar PATH --shim PATH] [--keep] [--no-build]
 #   --keep       keep the artifacts scratch dir and print its path
@@ -72,7 +72,7 @@ else
     (cd "$ROOT" && ./gradlew -q :app:shadowJar)
   fi
   cp "$ROOT/app/build/libs/app-all.jar" "$ART/splice.jar"
-  cp "$ROOT/bin/splice-launch" "$ART/splice-launch"
+  cp "$ROOT/app/src/main/dist/bin/splice-launch" "$ART/splice-launch"
 fi
 chmod 0755 "$ART"; chmod 0644 "$ART"/*
 echo "run.sh: artifacts: $(sha256sum "$ART/splice.jar" | cut -c1-16)… splice.jar, $(sha256sum "$ART/splice-launch" | cut -c1-16)… splice-launch"

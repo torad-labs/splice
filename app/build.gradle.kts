@@ -362,7 +362,7 @@ tasks.withType<ShadowJar>().configureEach {
     from(repositoryRoot.file("LICENSE")) { into("META-INF"); rename { "LICENSE" } }
     from(thirdPartyNotices) { into("META-INF") }
     from(thirdPartyLicenses) { into("META-INF") }
-    from(repositoryRoot.file("PROVENANCE.md")) { into("META-INF") }
+    from(repositoryRoot.file(".docs/PROVENANCE.md")) { into("META-INF") }
     from(bom) { into("META-INF") }
     from(licenses) { into("META-INF") }
     // the archive entry stays `webui/index.html`: DashboardHtml.kt reads that resource by name

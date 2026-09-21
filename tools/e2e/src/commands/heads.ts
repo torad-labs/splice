@@ -84,7 +84,7 @@ export const HARNESS_EXIT = 2;
 class FatalError extends Error {}
 
 // ── the state root ───────────────────────────────────────────────────────────
-/** V4-177: the same state-root rule as StatePaths.kt, bin/splice-launch and console-wire-keys.ts —
+/** V4-177: the same state-root rule as StatePaths.kt, app/src/main/dist/bin/splice-launch and console-wire-keys.ts —
  *  SPLICE_STATE_DIR, then the pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting
  *  ~/.claude-codex/state in place when that is the only root on the box.
  *
@@ -165,13 +165,13 @@ class Report {
 // UPSTREAM request bytes the head sent, checked against sha256(builderOutput) so a blind
 // golden-regenerate can't go green — needs a head-side upstream-request tap that does NOT exist yet
 // (the head doesn't surface the bytes its RequestBuilder produced). Until that lands, this records
-// what IS observable client-side and marks contract_bound=false. See gateway/CONTRACT.md for the
+// what IS observable client-side and marks contract_bound=false. See .docs/architecture/request-byte-contracts.md for the
 // tap + the enforcement it unlocks. This makes the receipt file + emission point real, not the
 // binding — so wiring the tap is a localized change.
 // DR-111: E2E_RECEIPT_DIR redirects emission for harness selftests — a loopback run against a
 // real head KEY must never fabricate that head's in-repo receipt (the binding would grade fakes).
 export const RECEIPT_NOTE =
-  "upstream-request-bytes tap not wired; sha256(builderOutput)==receipt.hash inactive — see gateway/CONTRACT.md";
+  "upstream-request-bytes tap not wired; sha256(builderOutput)==receipt.hash inactive — see .docs/architecture/request-byte-contracts.md";
 
 function receiptDir(root: string): string {
   return process.env.E2E_RECEIPT_DIR || join(root, "checks/e2e/receipts");
@@ -195,7 +195,7 @@ function emitReceipt(dir: string, key: string, model: string, httpStatus: number
       2,
     ) + "\n",
   );
-  note(`    receipt: ${path} (contract_bound=false — see gateway/CONTRACT.md)`);
+  note(`    receipt: ${path} (contract_bound=false — see .docs/architecture/request-byte-contracts.md)`);
 }
 
 // ── HTTP, with the credential off argv ───────────────────────────────────────
@@ -538,7 +538,7 @@ export function plantOverlongMcp(scratch: string, root: string): void {
  * session's tool surface — the surface the operator's muse turn carried when it 400d.
  *
  * WHY NOT THE WIRE BYTES. The stronger receipt — the exact request the head sent upstream — needs
- * the head-side tap gateway/CONTRACT.md describes and that does not exist yet (the same gap
+ * the head-side tap .docs/architecture/request-byte-contracts.md describes and that does not exist yet (the same gap
  * emitReceipt marks contract_bound=false for), and a perf row carries no tool names at all
  * (PerfStats.kt writes ts/model/outcome/marks/counters). So this gate asserts the name entered
  * the session and the turn assertions assert the head answered anyway: an unshortened over-cap

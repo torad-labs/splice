@@ -4,7 +4,7 @@
 // defense: bun tools/e2e heads --tier emits a signed receipt
 // {provider, model, http_status, sha256(exact request bytes that got 200)}; the receipt-BINDING
 // half (a CHANGED golden must match a receipt hash, so a blind regenerate can't go green) activates
-// on live traffic. See gateway/CONTRACT.md. Regenerate deliberately: delete the golden, run, review
+// on live traffic. See .docs/architecture/request-byte-contracts.md. Regenerate deliberately: delete the golden, run, review
 // the diff, re-run.
 package splice.dialect.chat
 
@@ -49,6 +49,6 @@ internal fun assertGoldenContract(name: String, actual: JsonObject, owner: () ->
         res.readText().trim(),
         pretty.trim(),
         "request-byte contract drift for '$name' — a builder change altered the upstream request. " +
-            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See gateway/CONTRACT.md.",
+            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See .docs/architecture/request-byte-contracts.md.",
     )
 }

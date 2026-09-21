@@ -8,10 +8,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # "stale", sending the launcher down the replace path against the mock (found by the v0.2.0 bump:
 # the hardcoded 0.1.1 made this test fail on exactly the commit that mattered). Same awk as
 # checks/release/accept.sh — one idiom for reading the marker.
-GATEWAY_VERSION="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' "$ROOT/bin/splice-launch")"
-SHIM_VERSION="$(awk -F'"' '/^SPLICE_SHIM_VERSION="/ { print $2; exit }' "$ROOT/bin/splice-launch")"
+GATEWAY_VERSION="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' "$ROOT/app/src/main/dist/bin/splice-launch")"
+SHIM_VERSION="$(awk -F'"' '/^const SPLICE_SHIM_VERSION = "/ { print $2; exit }' "$ROOT/app/src/main/dist/bin/splice-launch")"
 [ -n "$GATEWAY_VERSION" ] && [ -n "$SHIM_VERSION" ] || {
-  echo "launcher test: could not read version markers from bin/splice-launch" >&2
+  echo "launcher test: could not read version markers from app/src/main/dist/bin/splice-launch" >&2
   exit 1
 }
 
@@ -124,7 +124,7 @@ run_launcher() {
   LAUNCHER_START_CAPTURE="$SANDBOX/unit-starts" \
   LAUNCHER_UNIT_PRESENT="${LAUNCHER_UNIT_PRESENT:-1}" \
   LAUNCHER_UNIT_BOOTS="${LAUNCHER_UNIT_BOOTS:-1}" \
-    "$ROOT/bin/splice-launch" "$@"
+    "$ROOT/app/src/main/dist/bin/splice-launch" "$@"
 }
 
 # V4-189: the operator's shape — NO selector overrides, so the shim resolves everything from $HOME
@@ -152,7 +152,7 @@ run_launcher_default() {
   LAUNCHER_UNIT_PRESENT="${LAUNCHER_UNIT_PRESENT:-1}" \
   LAUNCHER_UNIT_BOOTS="${LAUNCHER_UNIT_BOOTS:-1}" \
   ${LAUNCHER_SELECTOR:+"$LAUNCHER_SELECTOR=$LAUNCHER_SELECTOR_VALUE"} \
-    "$ROOT/bin/splice-launch" "$@"
+    "$ROOT/app/src/main/dist/bin/splice-launch" "$@"
 }
 cold() { printf 'down\n' > "$SANDBOX/daemon-state"; rm -f "$SANDBOX/java-spawns" "$SANDBOX/unit-starts"; }
 

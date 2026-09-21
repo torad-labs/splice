@@ -1,0 +1,462 @@
+#!/usr/bin/env node
+// splice-launch — the wrapper the installed argv[0] symlinks (claudex, grok, …) exec.
+// All logic lives in the daemon; this shim does the version handshake, cold-starts the daemon
+// if down, POSTs /launch to get the exec recipe, and execs `claude` under the recipe's environment.
+// Head is inferred from argv[0] (the symlink name) or $SPLICE_HEAD.
+//
+// Node, not bash (restructure PR 6, plan §7.5): Claude Code already needs Node, and the bash shim
+// needed a third interpreter for every JSON read — a runtime the product asked its users for and never used
+// itself. CommonJS on purpose: the installed file has no extension, so `require()` (which is how
+// StateDirAgreementTest drives liveStateDir below) and the shebang both load it without a
+// package.json to say what it is. Shipped by :app's installDist from app/src/main/dist/bin/.
+"use strict";
+
+const fs = require("node:fs");
+const http = require("node:http");
+const os = require("node:os");
+const path = require("node:path");
+const { spawn, execFileSync } = require("node:child_process");
+
+// V4-177: the state root, resolved EXACTLY as StatePaths.kt resolves it — SPLICE_STATE_DIR, then
+// the pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when
+// that is the only one on the box. Two implementations of one rule is the whole risk here: this shim
+// reads the mgmt-key and config.json the daemon WRITES, so a shim that picked the other root would
+// hand the operator "mgmt-key not found" on a perfectly healthy install, or cold-start a second
+// daemon against an empty state dir while the real one is up. Keep the branches in step with
+// StatePaths.kt; StateDirAgreementTest pins every copy against it (this one through `require`).
+function liveStateDir(home, env) {
+  // PER VARIABLE, and blank is not an answer: a variable holding only whitespace is NOT set
+  // (Kotlin's isNotBlank), and an EMPTY SPLICE_STATE_DIR falls through to CLAUDEX_STATE_DIR
+  // instead of skipping it.
+  for (const name of ["SPLICE_STATE_DIR", "CLAUDEX_STATE_DIR"]) {
+    const value = env[name];
+    if (value !== undefined && value.trim() !== "") return value;
+  }
+  // Adoption needs POSITIVE evidence on both sides, the rule StatePaths' three-valued probe
+  // follows: only proven absence may start a fresh root, and the pre-0.4 root must be proven to be
+  // a DIRECTORY. "cannot be stat-ed" is not absence — an unreadable ~/.splice would otherwise adopt
+  // the pre-0.4 root here while the daemon declines and warns — and a REGULAR FILE at either path
+  // is not a state root either.
+  const probe = (dir) => {
+    try {
+      const found = fs.statSync(dir, { throwIfNoEntry: false });
+      if (found === undefined) return "absent";
+      return found.isDirectory() ? "dir" : "unusable";
+    } catch {
+      return "unusable"; // EACCES on the parent: present-or-absent is UNKNOWN, which is not absent.
+    }
+  };
+  const current = path.join(home, ".splice", "state");
+  const legacy = path.join(home, ".claude-codex", "state");
+  return probe(current) === "absent" && probe(legacy) === "dir" ? legacy : current;
+}
+
+module.exports = { liveStateDir };
+
+// Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
+// — bump both together whenever this shim's behavior changes. No code generation.
+const SPLICE_SHIM_VERSION = "shim-6";
+// Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
+const SPLICE_GATEWAY_VERSION = "0.3.2";
+
+const env = process.env;
+const HOME = env.HOME || os.homedir();
+/** `${VAR:-default}`: unset AND empty both fall through, exactly as the shell spelling did. */
+const or = (value, fallback) => (value !== undefined && value !== "" ? value : fallback);
+
+let HEAD = or(env.SPLICE_HEAD, path.basename(process.argv[1] || ""));
+if (HEAD === "splice-launch") HEAD = "claudex";
+
+const fail = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+};
+const warn = (message) => {
+  process.stderr.write(`${message}\n`);
+};
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+function topologyControlPort() {
+  let config = or(env.SPLICE_CONFIG, path.join(or(env.XDG_CONFIG_HOME, path.join(HOME, ".config")), "splice", "splice.toml"));
+  if (config.startsWith("~/")) config = path.join(HOME, config.slice(2));
+  let text;
+  try {
+    text = fs.readFileSync(config, "utf8");
+  } catch {
+    return "";
+  }
+  let inDaemon = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*\[/.test(line)) inDaemon = /^\s*\[daemon\]\s*$/.test(line);
+    if (inDaemon && /^\s*control_port\s*=/.test(line)) {
+      const value = line.replace(/^[^=]*=\s*/, "").replace(/[\s#].*$/, "");
+      if (/^[0-9]+$/.test(value)) return value;
+    }
+  }
+  return "";
+}
+
+const STATE_DIR = liveStateDir(HOME, env);
+
+function stateControlPort() {
+  let value;
+  try {
+    value = JSON.parse(fs.readFileSync(path.join(STATE_DIR, "config.json"), "utf8")).controlPort;
+  } catch {
+    return "";
+  }
+  const port = typeof value === "number" ? value : /^\s*[+-]?[0-9]+\s*$/.test(String(value)) ? Number(value) : NaN;
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? String(port) : "";
+}
+
+// Remembered before the resolution below overwrites it: an inherited CONTROL_PORT is a caller-local
+// endpoint selector, and the unit-first cold start must not answer it (unitDefaults).
+const CONTROL_PORT_FROM_ENV = or(env.CONTROL_PORT, "");
+// Match ConfigService exactly: default < TOML < state/config.json < env aliases.
+let CONTROL_PORT = or(topologyControlPort(), "3096");
+CONTROL_PORT = or(stateControlPort(), CONTROL_PORT);
+CONTROL_PORT = or(env.SPLICE_CONTROL_PORT, or(env.CONTROL_PROXY_PORT, CONTROL_PORT));
+const CONTROL = `http://127.0.0.1:${CONTROL_PORT}`;
+const JAR = or(env.SPLICE_JAR, path.join(or(env.SPLICE_SHARE_DIR, path.join(HOME, ".local", "share", "splice")), "splice.jar"));
+// Bounded heap by default (a 1000-stream fleet with unbounded per-stream buffers OOMs the JVM
+// default); override with SPLICE_JVM_OPTS. Used for every daemon cold-start below.
+// 1G→2G after the 2026-07-19 429 storm: ~650 concurrent SSE turns exhausted 1G even before the
+// inflight cap existed; 2G rides out a full 48-inflight + 512-queue burst with headroom.
+const SPLICE_JVM_OPTS = or(env.SPLICE_JVM_OPTS, "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000");
+// JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a
+// tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
+const LOGS_DIR = path.join(STATE_DIR, "..", "logs");
+const BOOT_LOG = path.join(LOGS_DIR, "daemon-boot.log");
+const KEY_FILE = path.join(STATE_DIR, "mgmt-key");
+// Safe by default: the daemon never adds --dangerously-skip-permissions unless explicitly told to.
+// CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS=1 is the named opt-in; the old CLAUDEX_SAFE is a harmless no-op.
+const DANGEROUS = env.CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS === "1" ? "true" : "false";
+
+const isFile = (file) => {
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** execvp's search, done here because process.execve is a raw execve: a name without a slash is
+ *  looked up through the GIVEN environment's PATH (the recipe may set one), an empty entry is the
+ *  working directory, and the first existing executable regular file wins. A miss is reported
+ *  instead of handed to execve, whose failure aborts the process rather than throwing. */
+function resolveExecutable(name, environment) {
+  if (name.includes("/")) return name;
+  for (const dir of (environment.PATH || "").split(":")) {
+    const candidate = path.join(dir === "" ? "." : dir, name);
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not here; keep looking
+    }
+  }
+  return null;
+}
+
+/** Replaces this process, as the bash `exec` did — the launched program is the terminal's
+ *  foreground job, not a child of the shim. */
+function exec(argv, environment) {
+  const file = resolveExecutable(argv[0], environment);
+  if (file === null) fail(`splice: ${argv[0]}: command not found on PATH`);
+  if (typeof process.execve !== "function") {
+    fail(`splice: the launch shim needs Node 22.15 or newer (process.execve); this is ${process.version}`);
+  }
+  process.execve(file, argv, environment);
+}
+
+function needJar() {
+  if (!isFile(JAR)) fail(`splice: jar not found at ${JAR} (run: splice install, or set SPLICE_JAR)`);
+}
+
+const args = process.argv.slice(2);
+
+// Invoked as `splice` (the admin command): pass every subcommand straight to the CLI
+// (setup, status, dashboard, login <head>, install, …). The CLI self-manages the daemon.
+if (HEAD === "splice") {
+  needJar();
+  exec(["java", "-jar", JAR, ...args], env);
+}
+
+// `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon
+// needed); the arguments after `login` go to the CLI unchanged (v0.4.0: --label signs in another
+// account of this head's kind).
+if (args[0] === "login") {
+  needJar();
+  exec(["java", "-jar", JAR, "login", HEAD, ...args.slice(1)], env);
+}
+
+/** One HTTP exchange against the control plane: the body on ANY status (curl without -f), "" on a
+ *  connection failure or after [timeoutMs] (curl -m). */
+function request(method, url, timeoutMs, headers, body) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (!settled) {
+        settled = true;
+        resolve(value);
+      }
+    };
+    const req = http.request(url, { method, headers }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => settle({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString("utf8") }));
+      res.on("error", () => settle(null));
+    });
+    req.on("error", () => settle(null));
+    const timer = setTimeout(() => {
+      req.destroy();
+      settle(null);
+    }, timeoutMs);
+    timer.unref();
+    req.on("close", () => clearTimeout(timer));
+    if (body !== undefined) req.write(body);
+    req.end();
+  });
+}
+
+async function health() {
+  const answer = await request("GET", `${CONTROL}/health`, 2000);
+  return answer === null ? "" : answer.body;
+}
+
+let HEALTH_JSON = "";
+
+/** A field of the last /health body: "" when the body is not a JSON object, the field is absent,
+ *  or its value is empty, false or zero — the truthiness read the bash shim's JSON one-liner gave
+ *  every consumer below, kept so each warning fires on exactly the same answers. */
+function healthField(field) {
+  let data;
+  try {
+    data = JSON.parse(HEALTH_JSON || "{}");
+  } catch {
+    data = {};
+  }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return "";
+  const value = data[field];
+  if (value === undefined || value === null || value === false || value === 0 || value === "") return "";
+  return String(value);
+}
+
+function readKey() {
+  try {
+    return fs.readFileSync(KEY_FILE, "utf8").replace(/\n+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+async function waitForHealth(attempts) {
+  for (let i = 0; i < attempts; i++) {
+    HEALTH_JSON = await health();
+    if (HEALTH_JSON !== "") break;
+    await sleep(200);
+  }
+}
+
+// A listener is valid only when it is splice and its version matches the installed JAR/shim.
+// New daemons can shut themselves down cleanly for an automatic upgrade. Legacy daemons without
+// that route fail loudly instead of silently serving an incompatible API forever.
+async function replaceStaleDaemon() {
+  const running = healthField("version");
+  if (running === "") fail(`splice: port ${CONTROL_PORT} is occupied by a non-splice or malformed health endpoint`);
+  if (running === SPLICE_GATEWAY_VERSION) return;
+  const key = readKey();
+  if (key === "") fail(`splice: daemon version ${running} is stale, but ${KEY_FILE} is unavailable; stop it and retry`);
+  warn(`splice: replacing stale daemon ${running} with ${SPLICE_GATEWAY_VERSION}…`);
+  const answer = await request("POST", `${CONTROL}/api/daemon/shutdown`, 3000, { Authorization: `Bearer ${key}` });
+  if (answer === null || answer.status >= 400) fail("splice: stale daemon cannot self-stop; terminate it once, then retry");
+  for (let i = 0; i < 50; i++) {
+    HEALTH_JSON = await health();
+    if (HEALTH_JSON === "") break;
+    await sleep(200);
+  }
+  if (HEALTH_JSON !== "") fail("splice: stale daemon did not stop within 10 seconds");
+}
+
+// UNIT-FIRST cold start (hostshield law, verify.sh "splice launcher must be UNIT-FIRST"). When the
+// user unit exists, the daemon is started THROUGH it and this shim only waits for health. A raw
+// spawn from here runs the daemon inside the calling agent's scope, wins the startup lock and locks
+// splice.service out of its own port: the unit then loops "another splice daemon serves on :3096"
+// (restart counter 22,463 once; three squatters on 2026-09-21 alone, each born in the seconds a
+// `systemctl restart` left the port empty, each holding a stale jar until SIGKILLed). Every
+// `splice install` used to revert the unit-first patch because it lived only in the installed
+// copy; it lives here now. The raw spawn below remains ONLY for a machine with no unit, or for a
+// shim pointed away from the unit's defaults — any of the config, jar, state or control-endpoint
+// selectors this file reads (SPLICE_CONFIG, XDG_CONFIG_HOME, SPLICE_JAR, SPLICE_SHARE_DIR,
+// SPLICE_STATE_DIR, CLAUDEX_STATE_DIR, SPLICE_CONTROL_PORT, CONTROL_PROXY_PORT, CONTROL_PORT) set:
+// that daemon is a harness's own, never the unit's, and the unit could not serve it (the launcher
+// rehearsal, heads and docker e2e all run that way). The unit is the operator's
+// SPLICE_SUPERVISOR_UNIT (splice.core.config.Knob SUPERVISOR_UNIT, default splice.service) — the
+// same name the daemon drains into on `POST /api/daemon/restart`.
+function unitDefaults() {
+  const selectors = [
+    env.SPLICE_CONFIG, env.XDG_CONFIG_HOME, env.SPLICE_JAR, env.SPLICE_SHARE_DIR, env.SPLICE_STATE_DIR,
+    env.CLAUDEX_STATE_DIR, env.SPLICE_CONTROL_PORT, env.CONTROL_PROXY_PORT, CONTROL_PORT_FROM_ENV,
+  ];
+  return selectors.every((value) => value === undefined || value === "");
+}
+
+function unitExists(unit) {
+  try {
+    execFileSync("systemctl", ["--user", "cat", unit], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false; // no systemctl on the box, or no such unit
+  }
+}
+
+async function startThroughUnit() {
+  const unit = or(env.SPLICE_SUPERVISOR_UNIT, "splice.service");
+  if (!(HEALTH_JSON === "" && unitDefaults() && unitExists(unit))) return;
+  warn(`splice: starting ${unit}…`);
+  try {
+    execFileSync("systemctl", ["--user", "start", unit], { stdio: "ignore" });
+  } catch {
+    // the wait below reports the outcome; a failed start is a unit that never answers
+  }
+  // Wall clock, not iterations: health() itself may block up to its timeout per probe, so a
+  // probe count is not a deadline. SPLICE_UNIT_WAIT_SECONDS raises it on a box whose JVM boots slowly.
+  const waitSeconds = Number(or(env.SPLICE_UNIT_WAIT_SECONDS, "30"));
+  const deadline = Date.now() + (Number.isFinite(waitSeconds) ? waitSeconds : 30) * 1000;
+  while (Date.now() < deadline) {
+    HEALTH_JSON = await health();
+    if (HEALTH_JSON !== "") break;
+    await sleep(200);
+  }
+  if (HEALTH_JSON === "") {
+    fail(
+      `splice: ${unit} did not answer /health within ${waitSeconds}s — never starting a second daemon beside it. ` +
+        `See: systemctl --user status ${unit}; journalctl --user -u ${unit} -n 50`,
+    );
+  }
+}
+
+/** The boot log's last [lines] lines, for the handshake failure below. */
+function tail(file, lines) {
+  const text = fs.readFileSync(file, "utf8");
+  const all = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");
+  return all.slice(-lines).join("\n");
+}
+
+async function coldStart() {
+  if (HEALTH_JSON !== "") return;
+  if (!isFile(JAR)) fail(`splice: daemon jar not found at ${JAR} (run: splice install, or set SPLICE_JAR)`);
+  warn("splice: starting daemon (no splice.service on this machine)…");
+  try {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  } catch {
+    // an unwritable home degrades the redirect below, never the launch
+  }
+  try {
+    if (fs.statSync(BOOT_LOG).size > 1048576) fs.renameSync(BOOT_LOG, `${BOOT_LOG}.1`);
+  } catch {
+    // no log yet, or it cannot be rolled: the append below decides
+  }
+  const argv = [...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean), "-jar", JAR, "daemon"];
+  let stdio = "ignore";
+  try {
+    const log = fs.openSync(BOOT_LOG, "a");
+    stdio = ["ignore", log, log];
+  } catch {
+    // a read-only home must degrade the redirect, never break launching (JW-01 risk note)
+  }
+  const daemon = spawn("java", argv, { detached: true, stdio });
+  daemon.on("error", () => {
+    // the handshake below reports a daemon that never came up, boot log included
+  });
+  daemon.unref();
+  if (Array.isArray(stdio)) fs.closeSync(stdio[1]);
+  await waitForHealth(50);
+}
+
+function handshake() {
+  const running = healthField("version");
+  if (running === SPLICE_GATEWAY_VERSION) return;
+  warn(`splice: daemon failed version handshake (expected ${SPLICE_GATEWAY_VERSION}, got ${running || "<none>"})`);
+  // JW-01: the answer to "why?" is in the boot log — show it instead of making the operator
+  // know to hand-run the jar.
+  let bootOutput = "";
+  try {
+    bootOutput = tail(BOOT_LOG, 15);
+  } catch {
+    // no boot log: nothing to show
+  }
+  if (bootOutput !== "") {
+    warn(`splice: last boot output (${BOOT_LOG}):`);
+    warn(bootOutput);
+  }
+  process.exit(1);
+}
+
+function warnings() {
+  // Non-fatal staleness check: warn (never block) when the installed shim's marker doesn't match
+  // what the running daemon expects. Diagnostic only — the actual exec below always proceeds.
+  const wantShim = healthField("wantShimVersion");
+  if (wantShim !== "" && wantShim !== SPLICE_SHIM_VERSION) {
+    warn(
+      `splice: WARNING — installed launch shim (${process.argv[1]}) is stale (marker=${SPLICE_SHIM_VERSION}, ` +
+        `daemon expects=${wantShim}). Run: splice install (or ./install.sh) to refresh it.`,
+    );
+  }
+  // JW-04, same non-fatal shape: topology loads once by design, so an edited splice.toml is inert
+  // until a restart — the daemon re-compares its booted digest to the file per /health request
+  // (topologyStale, fail-open), and this names the fix instead of leaving the edit silently dead.
+  if (healthField("topologyStale") === "true") {
+    warn("splice: WARNING — splice.toml changed since the daemon booted; the running topology is stale. Run: splice restart");
+  }
+}
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+async function launch() {
+  const key = readKey();
+  if (key === "") fail(`splice: mgmt-key not found at ${KEY_FILE}`);
+  // Ask the daemon for the exec recipe (env sets/unsets + argv), passing through extra args and the
+  // working directory (shim-4, V4-183): a bare -c is resolved by the daemon to this head's own newest
+  // session in this cwd, so it never continues another head's session.
+  const body = JSON.stringify({ dangerouslySkipPermissions: DANGEROUS, cwd: process.cwd(), args });
+  const answer = await request("POST", `${CONTROL}/launch/${HEAD}`, 0x7fffffff, {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  }, body);
+  const raw = answer === null ? "" : answer.body;
+  let recipe;
+  try {
+    recipe = JSON.parse(raw);
+  } catch {
+    fail(`splice: launch failed (no recipe from daemon): ${raw || "<empty>"}`);
+  }
+  if (recipe === null || typeof recipe !== "object" || Array.isArray(recipe) || !("argv" in recipe)) {
+    fail(`splice: launch failed: ${JSON.stringify(recipe)}`);
+  }
+  // The recipe's env rides into the exec'd process by name. A key that isn't a bare identifier is
+  // not an environment variable: it is rejected here, never handed on, exactly as the shell shim
+  // refused to quote it into an `env K=V` line.
+  const environment = { ...env };
+  for (const name of Array.isArray(recipe.unset) ? recipe.unset : []) delete environment[name];
+  for (const [name, value] of Object.entries(recipe.env && typeof recipe.env === "object" ? recipe.env : {})) {
+    if (ENV_NAME.test(name)) environment[name] = String(value);
+    else warn(`splice: ignoring malformed env key from daemon: '${name}'`);
+  }
+  if (recipe.warning) warn(`splice: ${recipe.warning}`);
+  exec(recipe.argv, environment);
+}
+
+async function main() {
+  HEALTH_JSON = await health();
+  if (HEALTH_JSON !== "") await replaceStaleDaemon();
+  await startThroughUnit();
+  await coldStart();
+  handshake();
+  warnings();
+  await launch();
+}
+
+if (require.main === module) {
+  main().catch((failure) => fail(`splice: launch failed: ${failure && failure.message ? failure.message : failure}`));
+}

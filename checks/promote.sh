@@ -4,7 +4,7 @@
 #
 # THE MECHANISM IS GITHUB-NATIVE: merging the main -> prod PR is the promotion. The push that
 # merge produces fires release.yml on prod, which derives the version FROM THE PROMOTED CODE
-# (bin/splice-launch's SPLICE_GATEWAY_VERSION — the same marker accept.sh pins against the jar),
+# (app/src/main/dist/bin/splice-launch's SPLICE_GATEWAY_VERSION — the same marker accept.sh pins against the jar),
 # re-runs the full gate, builds, attests, and creates the vX.Y.Z tag at the promoted commit when
 # the draft release publishes. Nothing local touches prod, and no command "does the release".
 #
@@ -25,12 +25,12 @@ git fetch -q origin
 # promotion push resolved origin/main at push time, after an interactive prompt of unbounded
 # duration, so main advancing mid-prompt could silently change what got promoted).
 main_sha="$(git rev-parse origin/main)"
-version="$(git show "$main_sha:bin/splice-launch" | awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }')"
+version="$(git show "$main_sha:app/src/main/dist/bin/splice-launch" | awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }')"
 [ -n "$version" ] || { echo "promote: could not read SPLICE_GATEWAY_VERSION from origin/main" >&2; exit 1; }
 
 if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
   echo "promote: tag v${version} already exists — bump the version on main first (Versions.kt," >&2
-  echo "         bin/splice-launch, package.json move together)." >&2
+  echo "         app/src/main/dist/bin/splice-launch, package.json move together)." >&2
   exit 1
 fi
 

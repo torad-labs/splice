@@ -88,7 +88,7 @@ internal class ClientAuth(
      * splice's own inference token is not an upstream credential — sending it to the vendor spends
      * nothing, authenticates nothing, and leaks a local secret to a third party. It reaches this
      * seam by accident rather than by malice: LaunchService plants ANTHROPIC_AUTH_TOKEN=<mgmt key>
-     * for every non-native head, `bin/splice-launch` execs `env` WITHOUT -i, and a native head's
+     * for every non-native head, `app/src/main/dist/bin/splice-launch` execs `env` WITHOUT -i, and a native head's
      * unset list is empty by design — so a native head launched from inside another head's session
      * inherits that bearer. Forwarding it would ALSO mean the caller's real credential never rides,
      * turning a fixable environment slip into an opaque vendor 401. Refusing here says which.

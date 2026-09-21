@@ -11,7 +11,7 @@ import java.nio.file.Files
 
 // FILE SCOPE ON PURPOSE: one compiled Regex shared by every shim-version read, rather than a
 // recompile per InstallCommand instance (doctor constructs one just to reach installedShimVersion).
-private val SHIM_VERSION_LINE = Regex("""^SPLICE_SHIM_VERSION="([^"]*)"""", RegexOption.MULTILINE)
+private val SHIM_VERSION_LINE = Regex("""^const SPLICE_SHIM_VERSION = "([^"]*)";""", RegexOption.MULTILINE)
 
 internal class InstallShim(
     private val layout: InstallLayout = InstallLayout(),

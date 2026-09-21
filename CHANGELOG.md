@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Fixed
+- **Code mode now reaches Sol.** Eligibility matched `gpt-6-(astra|sol)`, a Sol id the catalog never
+  had; the real `gpt-5.6-sol` and with it every sonnet/haiku-tiered subagent ran without the runner
+  (measured 2026-09-20: advertised on 938 of 7,070 calls in one session). The default list is now
+  `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, and `code_mode_models` in the provider quirks replaces it.
+- **A failed cell says why.** The JavaScript harness dropped the rejection reason, so a rejected tool
+  call, a syntax error or an oversized `console.log` all surfaced as a bare `Code execution failed`
+  and the model reran every call directly. The error now carries the reason (a SyntaxError keeps only
+  its position line, never the source) and the output logged before the failure; output past the
+  64 KiB text ceiling is cut behind a `[truncated N chars]` marker instead of failing the cell.
+- **An unplaceable record is abandoned once.** A running script whose history no longer placed was
+  marked LOST but stayed findable by its client call ids, so every later turn of the conversation
+  found it, failed to place it and logged `abandoned record` again (82 lines for one record on
+  2026-09-20). It now retires with its interruption evidence on the first abandonment.
+
+### Changed
+- **Code-mode guidance rewritten as a rule with an example.** It states the cost it avoids (every
+  tool call re-sends the conversation), the trigger (two or more calls with known arguments), the
+  failure contract (`Promise.allSettled`, catch), and carries a worked cell; the hedges are gone. The
+  `splice_exec` tool description carries the trigger too. A client that disables parallel tool use
+  gets the sequential variant from its own resource file.
+
 ### Changed
 - **Repository layout consolidated.** `docs/` is now `.docs/`. The `experiments/` cache-replay
   reproducer, the `goals/` note and the `.superpowers/` leftovers are gone; the one tracked

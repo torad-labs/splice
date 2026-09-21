@@ -34,6 +34,27 @@ class CodeModeConfigTest {
     }
 
     @Test
+    fun `TOML code_mode_models replaces the default runner model list and rejects blanks`() {
+        val base = topology("chatgpt-oauth", "openai-responses", codeMode = true)
+        val listed = base.replace(
+            "code_mode = true",
+            "code_mode = true\ncode_mode_models = [\"gpt-6-astra\", \"gpt-5.6-sol\"]",
+        )
+        val parsed = TopologyLoader.parse(listed)
+        assertEquals(
+            listOf("gpt-6-astra", "gpt-5.6-sol"),
+            parsed.providers.getValue("team-chatgpt").quirks.codeModeModels,
+        )
+        assertEquals(null, TopologyLoader.parse(base).providers.getValue("team-chatgpt").quirks.codeModeModels)
+        listOf("[]", "[\"\"]", "[\"gpt-6-astra\", \" \"]").forEach { models ->
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                TopologyLoader.parse(base.replace("code_mode = true", "code_mode = true\ncode_mode_models = " + models))
+            }
+            assertTrue(error.message.orEmpty().contains("code_mode_models"), error.message)
+        }
+    }
+
+    @Test
     fun `TOML rejects unsupported code mode auth and dialect combinations`() {
         val unsupported = listOf(
             "ChatGPT wrong dialect" to ("chatgpt-oauth" to "openai-chat"),

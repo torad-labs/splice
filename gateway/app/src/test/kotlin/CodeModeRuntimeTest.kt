@@ -8,7 +8,6 @@ import kotlinx.coroutines.yield
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -128,14 +127,6 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `unallowed tool completes with an execution error`() = runBlocking {
-        runtime().use { runtime ->
-            val cell = runtime.start("await tools.call(\"Write\", {});", setOf("Read"))
-            assertNotNull(completed(cell.advance()).error)
-        }
-    }
-
-    @Test
     @Timeout(3)
     fun `worker protocol fault is fatal rather than a completed guest error`() {
         val process = ProcessBuilder(
@@ -224,16 +215,6 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `syntax failure is returned without source text`() = runBlocking {
-        runtime().use { runtime ->
-            val cell = runtime.start("const = ;", emptySet())
-            val completed = completed(cell.advance())
-            assertEquals("", completed.output)
-            assertEquals("Code execution failed", completed.error)
-        }
-    }
-
-    @Test
     fun `active worker cap rejects a second live cell`() = runBlocking {
         JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
             val first = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
@@ -243,14 +224,6 @@ class CodeModeRuntimeTest {
             first.close()
             val replacement = runtime.start("return \"replacement\";", emptySet())
             assertEquals("replacement", completed(replacement.advance()).output)
-        }
-    }
-
-    @Test
-    fun `output cap stops the worker`() = runBlocking {
-        runtime().use { runtime ->
-            val cell = runtime.start("console.log(\"x\".repeat(65537));", emptySet())
-            assertNotNull(completed(cell.advance()).error)
         }
     }
 

@@ -51,6 +51,10 @@ public data class QuirksConfig(
     @SerialName("websocket") val webSocket: Boolean? = null,
     /** Beta ChatGPT responses only: splice-owned JavaScript bridge. Absent/default stays off. */
     @SerialName("code_mode") val codeMode: Boolean? = null,
+    /** Beta ChatGPT responses only: the upstream model ids offered the code-mode runner. Absent keeps
+     *  the built-in default (GPT-6 Astra plus Sol in both families); a `[Nk|Nm]` context suffix on the
+     *  routed model is ignored when matching. */
+    @SerialName("code_mode_models") val codeModeModels: List<String>? = null,
     /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
      *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
      *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this

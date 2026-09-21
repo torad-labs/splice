@@ -10,7 +10,12 @@ import splice.core.wire.ToolResultBlock
 import splice.spi.BuiltTurn
 import splice.spi.CodeModeResult
 
-internal class CodexCodeModeTurnBuilder(private val bridge: CodexCodeModeBridge?) {
+internal class CodexCodeModeTurnBuilder(
+    private val bridge: CodexCodeModeBridge?,
+    models: Collection<String>? = null,
+) {
+    private val models: Set<String> = CodexCodeModeModels.normalize(models ?: CodexCodeModeModels.DEFAULT)
+
     fun prepare(body: AnthropicTurnBody, compact: Boolean, sessionId: String?, built: BuiltTurn): BuiltTurn {
         val manager = bridge ?: return built
         if (!eligible(body, compact, built)) return built
@@ -38,7 +43,7 @@ internal class CodexCodeModeTurnBuilder(private val bridge: CodexCodeModeBridge?
         return !compact &&
             body.typed.tools.isNotEmpty() &&
             choiceAllowsBridge &&
-            CODE_MODE_MODEL.matches(built.meta.upstreamModel) &&
+            CodexCodeModeModels.eligible(built.meta.upstreamModel, models) &&
             isLiteRequest(built.requestBody)
     }
 
@@ -66,8 +71,26 @@ internal class CodexCodeModeTurnBuilder(private val bridge: CodexCodeModeBridge?
         }
 }
 
+/**
+ * The upstream models offered the runner. The catalog's Sol is `gpt-5.6-sol`: the previous
+ * `gpt-6-(astra|sol)` regex matched a model that does not exist and silently left every Sol turn,
+ * and with it every sonnet/haiku-tiered subagent, without code mode (measured 2026-09-20: the
+ * runner was advertised on 938 of a session's 7,070 calls). The TOML `code_mode_models` list
+ * replaces this default; an optional `[Nk|Nm]` context suffix on the model id is ignored.
+ */
+public object CodexCodeModeModels {
+    public val DEFAULT: Set<String> = setOf("gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol")
+
+    private val contextSuffix = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
+
+    public fun normalize(models: Collection<String>): Set<String> =
+        models.map { it.trim().lowercase() }.filter(String::isNotEmpty).toSet()
+
+    public fun eligible(upstreamModel: String, models: Set<String>): Boolean =
+        upstreamModel.trim().lowercase().replace(contextSuffix, "") in models
+}
+
 private const val FIELD_INPUT = "input"
 private const val FIELD_TOOLS = "tools"
 private const val FIELD_TYPE = "type"
 private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
-private val CODE_MODE_MODEL = Regex("^gpt-6-(astra|sol)(?:\\[\\d+[km]])?$", RegexOption.IGNORE_CASE)

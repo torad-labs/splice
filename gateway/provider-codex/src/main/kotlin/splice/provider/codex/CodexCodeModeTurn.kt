@@ -46,6 +46,7 @@ internal class CodexCodeModeTurn(
     private val wire: CodexCodeModeWire,
     private val driver: CodexCodeModeDriver,
     private val resume: CodexCodeModeResume,
+    private val machine: CodexCodeModeMachine,
     private val log: LogSink,
 ) {
     private val identity = CodexCodeModeIdentity()
@@ -116,7 +117,12 @@ internal class CodexCodeModeTurn(
     /** A running script whose history moved underneath it is abandoned: cell closed, evidence kept
      *  on the LOST record, and the turn continues upstream on the client's own history. */
     private fun abandon(owner: CodeModeRecord, error: String) {
-        registry.lose(owner, "code-mode history no longer places the running script: $error; source was not rerun")
+        val detail = "code-mode history no longer places the running script: $error; source was not rerun"
+        registry.lose(owner, detail)
+        // History only grows, so a record that no longer places never will again: it retires with its
+        // evidence now. Left LOST it was found by its client ids and abandoned again on every later
+        // turn of the conversation (82 identical lines for one record on 2026-09-20).
+        machine.interrupt(owner, detail)
         log(
             "[code-mode] abandoned record ${owner.id.take(RECORD_ID_LOG_CHARS)} (outer ${owner.outerCallId}): " +
                 "$error — continuing upstream on the client's history",

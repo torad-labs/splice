@@ -122,6 +122,11 @@ public data class ProviderConfig(
                     "and dialect = 'openai-responses'"
             }
         }
+        quirks.codeModeModels?.let { models ->
+            require(models.isNotEmpty() && models.none(String::isBlank)) {
+                "code_mode_models must list at least one non-blank model id"
+            }
+        }
     }
 
     public val staticHeaders: Map<String, String>

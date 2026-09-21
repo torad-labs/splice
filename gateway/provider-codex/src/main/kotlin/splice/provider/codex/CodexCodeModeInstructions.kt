@@ -7,14 +7,10 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /** Extends the existing Lite instruction item so logical replay offsets do not move. */
 internal object CodexCodeModeInstructions {
-    private val guidance = checkNotNull(javaClass.getResourceAsStream("code-mode-orchestration.txt")) {
-        "missing bundled code-mode orchestration instructions"
-    }.bufferedReader(Charsets.UTF_8).use { it.readText().trimEnd() }
+    private val guidance = resource("code-mode-orchestration.txt")
 
-    private val sequentialGuidance = guidance.replace(
-        "Group independent read-only calls inside one cell using Promise.all.",
-        "The client has disabled parallel tool use; use sequential await for every tools.call.",
-    )
+    /** The same rule for a client that serializes tool use: no Promise.all, sequential await. */
+    private val sequentialGuidance = resource("code-mode-orchestration-sequential.txt")
 
     fun append(request: JsonObject, disableParallel: Boolean): JsonObject {
         val input = request.getValue("input") as JsonArray
@@ -29,4 +25,8 @@ internal object CodexCodeModeInstructions {
         val augmented = input.mapIndexed { index, item -> if (index == 1) extended else item }
         return JsonObject(request + ("input" to JsonArray(augmented)))
     }
+
+    private fun resource(name: String): String = checkNotNull(javaClass.getResourceAsStream(name)) {
+        "missing bundled code-mode orchestration instructions: $name"
+    }.bufferedReader(Charsets.UTF_8).use { it.readText().trimEnd() }
 }

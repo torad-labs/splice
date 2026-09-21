@@ -70,6 +70,7 @@ internal class ResponsesArm(
                         foldConfig = quirksOverlay.foldConfigFrom(cfg),
                         accountIdHeader = providerCfg.quirks.accountIdHeader,
                         codeModeBridge = codeModeBridge(ctx),
+                        codeModeModels = providerCfg.quirks.codeModeModels,
                     ),
                     auth,
                 )

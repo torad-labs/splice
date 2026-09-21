@@ -44,7 +44,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                     Regex("<code_mode_orchestration>").findAll(prefix).count() + 1,
                     Regex("<code_mode_orchestration>").findAll(instructions(prepared.requestBody)).count(),
                 )
-                assertTrue(instructions(prepared.requestBody).contains("Use splice_exec for a bounded stage"))
+                assertTrue(instructions(prepared.requestBody).contains("Use splice_exec whenever the next step"))
                 assertTrue(instructions(prepared.requestBody).contains("Promise.all"))
                 val originalTools = before.first().jsonObject.getValue("tools").jsonArray
                 val augmentedTools = after.first().jsonObject.getValue("tools").jsonArray
@@ -70,12 +70,32 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             assertEquals(original.requestBody.toString(), excluded.requestBody.toString())
             assertTrue(excluded.roundInterceptor == null)
         }
-        listOf("gpt-5.6-sol", "gpt-6-astra-preview", "other").forEach { model ->
+        listOf("gpt-5.6-terra", "gpt-6-astra-preview", "other").forEach { model ->
             val excluded = original.copy(meta = original.meta.copy(upstreamModel = model))
             assertSame(excluded, builder.prepare(body, false, "session", excluded))
         }
         val nonLite = built("gpt-6-astra", lite = false)
         assertSame(nonLite, builder.prepare(body, false, "session", nonLite))
+    }
+
+    @Test
+    fun `the default model list covers Sol in both families and TOML models replace it`() {
+        val (body, original) = request("Caller")
+        val default = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())))
+        listOf("gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol", "GPT-5.6-Sol[1m]").forEach { model ->
+            val eligible = original.copy(meta = original.meta.copy(upstreamModel = model))
+            val prepared = default.prepare(body, false, "session", eligible)
+            assertTrue(instructions(prepared.requestBody).contains("splice_exec"), model)
+        }
+        val configured = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            models = listOf(" gpt-5.6-terra "),
+        )
+        val terra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-5.6-terra"))
+        val terraPrepared = configured.prepare(body, false, "session", terra)
+        assertTrue(instructions(terraPrepared.requestBody).contains("splice_exec"))
+        val astra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-6-astra"))
+        assertSame(astra, configured.prepare(body, false, "session", astra))
     }
 
     @Test

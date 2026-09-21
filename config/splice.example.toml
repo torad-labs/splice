@@ -63,7 +63,8 @@ zstd_request_body = true
 # A client's disable_parallel_tool_use=true always wins; toolless turns stay false.
 # Setting true is an experiment, not demonstrated task-efficiency parity.
 # code_mode (beta, default false): true automatically adds splice's JAR-bundled JavaScript runner
-# and orchestration instructions only to eligible GPT-6 Astra and Sol turns. Ordinary tools remain
+# and orchestration instructions only to eligible turns: GPT-6 Astra and Sol in both families by
+# default, or the ids listed in code_mode_models (e.g. ["gpt-6-astra", "gpt-5.6-sol"]). Ordinary tools remain
 # Claude Code's permission-checked client handlers, which execute the real operations. Code mode
 # requires neither Codex nor Node. Only chatgpt-oauth + openai-responses providers may enable it.
 # False or omitted disables both additions. Compact/toolless/forced-tool turns retain the ordinary
@@ -74,6 +75,7 @@ zstd_request_body = true
 # not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
 # reruns the lost JavaScript source automatically.
 # code_mode = false
+# code_mode_models = ["gpt-6-astra", "gpt-5.6-sol"]
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
 [providers.codex.quirks.tool_surface]

@@ -1,0 +1,398 @@
+/* ============================================================
+   splice console · tokens — THE STRIP BAY
+
+   Two complete sets on the root element, dark by default:
+     :root, :root[data-theme="dark"]   the graphite room  (default, whatever the OS says)
+     :root[data-theme="light"]         the paper bay
+
+   Every value below is measured from the approved comp
+   (.impeccable/mocks/team-board-a.png), not chosen: the dark set from its
+   grounds, strip paper, strip ink and holder edges; the light set from the
+   paper bay of .impeccable/mocks/decision/assigned.png. Where a measured
+   value could not carry its own text at AA it was moved the smallest step
+   that does, and the move is named where it happens.
+
+   The world: a graphite room, pale opaque strips printed on it, a colored
+   holder edge carrying attention, tabular figures. No glow, no blue-black,
+   no radius, no shadow. Type and spacing never appear as raw numbers in a
+   page: they come from var(--space-N) and var(--text-N) (ast-grep wall
+   webui-css-tokens-only).
+
+   Sections 1 of .dev/campaigns/web-console/CONTRACTS.md is the lattice for this file.
+   ============================================================ */
+
+/* ============================================================
+   WHAT IS LEFT OF THE OLD WORLD (M3-04, the finish row).
+   This block held the retired plate world's whole vocabulary -- 129 names of pigments, scales,
+   layout tracks, burin widths and a z-index ladder -- kept while the old pages rendered. M3-04
+   deleted the last of those pages' surfaces and then MEASURED what was still read: every name
+   below has a reader in console/src today (the legacy Btn, Field, Well and ConfirmBtn rules, the
+   modal gate, and the pages that still use --surface-sunk, --line-mute or --data-neg), and 115
+   names had none -- counted TRANSITIVELY, because a pigment read only by a dead semantic token is
+   dead too: --ink-900 looked live through --tick, and --tick had no reader. Those 115 are gone.
+   Themed through light-dark() driven by the color-scheme each theme block below sets.
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* the four pigments the surviving semantic tokens below still read */
+  --paper-200:#e0d4b8; --obsidian-700:#150f09;
+  --red-600:#a53b39; --red-400:#e85d5d;
+
+  --space-0:0;
+  --radius-0:0;
+  /* a hairline is a width here, and a color in the two theme blocks below
+     (--hairline / --hairline-strong): a rail reads
+     `border-top: var(--hair) solid var(--hairline)`. */
+  --hair:1px;
+  /* THE ROOT SCALAR (M1-26). THE DEFECT IT FIXES, measured: the layout is in vw while the type and
+     spacing were fixed px, so on the operator's 3840x2160 monitors every container was 2.5x wider
+     and every glyph the same 14px - rendered text fell from 15.30% of the frame at 1536x1024 to
+     2.90% at 3840, and that single cause is both of his complaints, "the font size is too small"
+     and "there is no proper spacing". It was never right on any monitor: 14px on a 24-inch
+     1920x1080 is a 2.0mm x-height, about 11.5 arcminutes at desk distance, below the 16-20
+     arcminute band comfortable display text sits in.
+
+     THE SCALAR, ruled by the orchestrator 2026-09-18: LINEAR TO THE COMP FRAME, NO CAP. 16px per
+     1536px of frame is the whole of it. At 3840 the root is 40px and the strip label 35px, which
+     on a 32-inch 4K panel (0.184mm per px) is a 6.4mm em, a 3.4mm x-height: 0.30 degrees or 18
+     arcminutes at 650mm - inside the comfortable band, not at its edge. A cap would have to be
+     argued DOWN from what the geometry asks, with no measurement behind it; that would be a fourth
+     authored number in a campaign that struck three in one day.
+
+     THE FLOOR is the comp frame itself, and the comp is its provenance: at or below 1536 the type
+     stops shrinking while the vw layout keeps going, so a narrow window holds a LARGER share of
+     type rather than becoming unreadable. The ladders above are rem so they read against this.
+
+     WHAT MUST NOT SCALE WITH IT: an object follows the TYPE when it is made of type, and the FRAME
+     when it is placed on the frame. The hairlines, the focus ring, anything positioned as a
+     percentage of the frame, and the hand-off lift are frame objects - the lift scaling with this
+     was the accident that proved the rule. */
+  --root-size:max(16px, 1.0417vw);
+  --focus-width:2px; --focus-offset:2px;
+
+  /* the retired mono face aliases to the new world's code face (fonts.css) */
+  --font-mono:var(--font-code);
+
+  /* ---------- SEMANTIC · themed via light-dark(LIGHT, DARK) ---------- */
+  --surface-sunk:   light-dark(var(--paper-200), var(--obsidian-700));
+  --line-mute:   light-dark(rgba(36,29,20,.07),  rgba(239,226,198,.10));
+  --data-neg:    light-dark(var(--red-600),   var(--red-400));
+}
+
+/* ============================================================
+   THE GRAPHITE ROOM — default. Measured from team-board-a.png:
+   top-rule ground #0A0C0D (92% of the rule), rail ground #0C0F10,
+   the room field between bays #0C1010, strip paper #DBD8C4..DFD9C7,
+   holder edges #578A36 (green) and #8E8D87 (grey), health square #1F882C.
+   ============================================================ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ---------- SCALE (theme-agnostic; both sets carry the same rungs) ---------- */
+  /* THE SCALE IS IN rem (M1-26). Same rungs as the comp at the comp's frame - 0.75rem is
+     12px when the root is 16px - but read against a root font size that tracks the frame,
+     so the console at any viewport is the 1536x1024 render SCALED rather than 1536 type
+     inside a 3840 layout. app.css derives the root; the reason is in the comment there. */
+  --space-1:.125rem; --space-2:.25rem; --space-3:.5rem; --space-4:.75rem;
+  --space-5:1rem; --space-6:1.5rem; --space-7:2rem; --space-8:3rem;
+  --text-1:.75rem; --text-2:.875rem; --text-3:1rem;
+  /* THE 17 RUNG (M1-59). The contract's own line names it -- "chat label 14, bay label 16, rule text
+     17 to 18, wordmark 23" -- and the comp's scaffold derives 17px for each of its rule readouts
+     (--r-clocks-font, --r-nearest-window-font, --r-no-window-font), but this ladder stepped 16 then 18
+     with nothing between, so those readouts had nowhere to land but --text-5 (20px) and have rendered
+     2.0-2.3px of cap too tall since the day they were bound. 1.0625rem is 17px at the root's 16.
+     Lowered from 1.125rem so the rung EXISTS; no comp role is bound to it yet, which is why it is the
+     one rung that can move today without breaking a constant that currently passes. */
+  --text-4:1.0625rem; --text-5:1.25rem; --text-6:1.4375rem;
+
+  --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
+  --ease-out:cubic-bezier(.22,1,.36,1);
+
+  --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  /* A FIGURE is a number or an identifier that has to line up in a column, and the
+     comp shows exactly what that looks like: its strip figures advance 0.389em,
+     which is narrower than every monospace in circulation (0.5 to 0.75em), so the
+     comp did not set them in one (M1-15 measured 17 strings on team-board-a.png).
+     --font-figure is therefore the label face, and figures take their alignment
+     from tabular-nums, which is what the board ships. */
+  --font-figure:var(--font-label);
+  /* CODE is a TOML body, a log line, a transcript block or a file path -- genuinely
+     monospace, and the comp shows none of them, so the brief's words decide. It also
+     anchors the ch unit (ui.css's .myx-sfield): a field's declared width in ch has to
+     mean the same thing in every rack, so that box keeps the 0.6em advance. */
+  --font-code:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ---------- GROUND ---------- */
+  /* the room is one graphite field: the rule, the rail and the floor between
+     bays all measure #0A0C0D..#0C1010, grain included. */
+  --room:#0B0E0E;
+  /* the rail. Its margins measure #0A0E0E; the token is one deliberate step
+     below the room so the rail recedes instead of merely differing. */
+  --room-deep:#080A0A;
+  --hairline:rgba(236,234,226,.10);
+  --hairline-strong:rgba(236,234,226,.22);
+  /* WHY THE HAIRLINE IS NOT THE SAME STRENGTH IN BOTH ROOMS (M1-82), written here so it is not
+     re-opened as a defect. The same --hairline reads 1.91:1 against the dark room and 3.56:1 against
+     light paper - nearly a factor of two, and it was reported as an asymmetry twice. IT IS NOT AN
+     ASYMMETRY, IT IS A PLANE EFFECT: contrast is a property of an ink AND its ground, and these two
+     rooms put the line on grounds 200 luminance points apart. Measured against the comp, which is dark
+     and is the only room the comp has: the comp's own rack ribs read 1.37-1.42:1 against their floor
+     (sampled from the slot rules at y 698/729/760 over the bay floor, 9,13,13), so 1.91 is the same
+     band, slightly stronger. And the comp's own separators ON PAPER - its cell dividers - read 4.13:1
+     (the divider at y229, 95,93,86 over strip 213,204,185), so light's 3.56 is the same band,
+     slightly weaker. EACH ROOM IS MEASURED AGAINST ITS OWN GROUND AND EACH IS WITHIN REACH OF THE
+     COMP'S EQUIVALENT. Equalising them would take the dark room's ribs to 3.5:1 against its floor,
+     which is twice the comp's own rib reading and over-articulates a room that separates with
+     material rather than with lines (M1-24's ruling, M1-38's measurement). Do not split the
+     difference either: both rooms are measured against their own grounds or neither is. */
+
+  /* ---------- INK ON THE ROOM ---------- */
+  --ink:#C9C3B4;        /* rule ink, measured #C2BBAE..#CDC6B9 */
+  --ink-mute:#9D9B8E;   /* the quieter half of the rule */
+  --ink-strong:#EAE8D9; /* the brightest ink the comp shows */
+
+  /* ---------- THE STRIP (pale paper on the graphite room) ---------- */
+  --strip:#DED9C6;          /* team header ground #DBD8C4, strips #DDD8C6..#DFD9C8 */
+  --strip-ink:#141414;      /* strip text cores measure #000000..#191818 */
+  --strip-ink-mute:#5A5749; /* the comp's mute #6B685B darkened one step short of
+                               AA on the strip (3.95:1); this value clears it at
+                               5.13:1 and stays a mute: the ink above it is 13:1. */
+  --strip-field:#E4E0D1;    /* boxed field fill: one step above the strip so the
+                               box reads as a field and not as the strip itself */
+  --strip-field-line:#A8A392;
+
+  /* ---------- THE RACK (measured off the comp by M1-12, cut by M1-13) ----------
+     The comp is not two planes; it is a rack. Four values it draws and this sheet
+     had no name for, every one measured on team-board-a.png at 1:1 - the bay's own
+     ground, the rule across its empty floor, the plate bolted over each bay, and the
+     ghost of a strip in motion. They are what a tonal census finds in the comp and
+     not in the build: the comp is 11.9 percent mid-tone, the build of that comp was
+     7.9, and by area the console was 96.7 percent two flat values. */
+  --bay:#090D0D;        /* the comp's bay interior, scanned at the same y as the
+                           room so the mock's vignette cancels: room (13,17,17),
+                           bay (9,13,13) - four steps down, ratio about 1.06. A rack
+                           reads as a rack by its rules and its plate, not by this
+                           difference, which is why the three below carry the work. */
+  --bay-slot:rgba(236,234,226,.19);
+                        /* the rule across the rack's unprinted floor: measured peaks
+                           at rgb (43,46,44) over a floor of 12, 2px wide with its
+                           antialiasing, at a 31-32px pitch. */
+  --plate:#C3B6A0;      /* the plate over each bay, sampled (195,182,160) - a third
+                           cream: 1.38:1 under the strip it labels and far above the
+                           floor, which is what makes it read as a separate object. */
+  --plate-line:#645F50; /* the plate's own edge, measured (100,95,80). */
+  --plate-ink-mute:#454034;
+                        /* THE PLATE'S MUTE, and it exists because no other mute could carry it
+                           (M1-77). What it is FOR: ink on --plate, the printed head plate over a
+                           bay, whose paper is #C3B6A0 - a plane no other mute clears. --strip-ink-mute
+                           measures 3.63:1 there and the retired --ink-mute 3.56, and this campaign
+                           has already recorded that number once: the comment at --bay-count below
+                           documents the same #565955 failing the same way, which is the same defect
+                           arriving on a second reader. This value clears 5.17:1 on the plate.
+                           WHAT IT IS NOT FOR: anything on --room, on --strip, or on --scope. Those
+                           planes have their own inks and this one is dark-on-pale by construction -
+                           printed on the room it would be a dark ink on near-black, which is the
+                           whole failure this token exists to stop repeating.
+                           READERS: .myx-accounts-order (pages/accounts/accounts.css). The second
+                           reader this contract was cut for, .myx-bay-count, has NO RULE IN THE TREE
+                           as of M1-77 - the tokens comments below still name it, and M1-38's bay
+                           work is the likely reason it moved or went. Named here because a contract
+                           that lists a reader nobody can find is the same defect as a token with no
+                           plane: the next seat greps, finds nothing, and prints this rung on the
+                           room where it is a dark ink on near-black. */
+
+  --ghost:rgba(222,217,198,.15);
+                        /* a departing strip's trail: the comp lays the same slip
+                           down three times and the ones behind measure 15 percent
+                           paper over the floor. */
+
+  /* ---------- HOLDER EDGE ----------
+     The four states carry attention, so each must clear 3:1 on the room AND on
+     the pale strip. On a near-black floor and a #DED9C6 strip that leaves one
+     narrow luminance band (0.11 .. 0.20); every edge below sits in it. */
+  --edge-green:#548630;  /* measured #578A36 on the lead strip: moved two steps
+                            down, because the measured value reads 2.91:1 on paper */
+  --edge-amber:#9A6E10;  /* no amber in the board comp: the hue is the light
+                            comp's holder edge #ECB51D, landed in the band. A
+                            brighter amber cannot clear 3:1 on the strip. */
+  --edge-red:#E63521;    /* the light comp's holder edge red; in the band in both */
+  --edge-grey:#6E6D68;   /* measured #8E8D87 on the builder strip: moved two steps
+                            down, because the measured value reads 2.35:1 on paper */
+
+  /* ---------- SCOPE (a chart is a dark inset, in both themes) ---------- */
+  --scope:#090C0C;
+  --scope-ink:#EAE8D9;
+  --scope-grid:rgba(234,232,217,.14);
+
+  /* ---------- FOCUS ----------
+     The one blue in the room. A ring must be seen on the near-black floor and
+     on the pale strip alike, so it lives in the same band the edges do. */
+  --focus:#3F76B4;
+}
+
+/* ============================================================
+   THE PAPER BAY — the light set. Sampled from
+   .impeccable/mocks/decision/assigned.png: page ground #E0E2DF, strip paper
+   #F6F6F3, rail #1F2422, strip ink near-black, holder edge blue #2869D5 and
+   red #E63521, green #029703, chart inset ground #1F2422.
+   Re-derived 2026-09-18 (M1-11): the comp's three planes all measure within
+   1.20:1 of each other and read as one sheet, so the BAY FLOOR was moved to a
+   genuinely deeper matte. The panel and the strip are the comp's own measured
+   values and do not move. The measured rungs are in the GROUND section below.
+   ============================================================ */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* ---------- SCALE (same rungs as the room) ---------- */
+  /* THE SCALE IS IN rem (M1-26). Same rungs as the comp at the comp's frame - 0.75rem is
+     12px when the root is 16px - but read against a root font size that tracks the frame,
+     so the console at any viewport is the 1536x1024 render SCALED rather than 1536 type
+     inside a 3840 layout. app.css derives the root; the reason is in the comment there. */
+  --space-1:.125rem; --space-2:.25rem; --space-3:.5rem; --space-4:.75rem;
+  --space-5:1rem; --space-6:1.5rem; --space-7:2rem; --space-8:3rem;
+  --text-1:.75rem; --text-2:.875rem; --text-3:1rem;
+  /* THE 17 RUNG (M1-59). The contract's own line names it -- "chat label 14, bay label 16, rule text
+     17 to 18, wordmark 23" -- and the comp's scaffold derives 17px for each of its rule readouts
+     (--r-clocks-font, --r-nearest-window-font, --r-no-window-font), but this ladder stepped 16 then 18
+     with nothing between, so those readouts had nowhere to land but --text-5 (20px) and have rendered
+     2.0-2.3px of cap too tall since the day they were bound. 1.0625rem is 17px at the root's 16.
+     Lowered from 1.125rem so the rung EXISTS; no comp role is bound to it yet, which is why it is the
+     one rung that can move today without breaking a constant that currently passes. */
+  --text-4:1.0625rem; --text-5:1.25rem; --text-6:1.4375rem;
+
+  --dur-1:120ms; --dur-2:240ms; --dur-3:400ms;
+  --ease-out:cubic-bezier(.22,1,.36,1);
+
+  --font-label:'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  /* A FIGURE is a number or an identifier that has to line up in a column, and the
+     comp shows exactly what that looks like: its strip figures advance 0.389em,
+     which is narrower than every monospace in circulation (0.5 to 0.75em), so the
+     comp did not set them in one (M1-15 measured 17 strings on team-board-a.png).
+     --font-figure is therefore the label face, and figures take their alignment
+     from tabular-nums, which is what the board ships. */
+  --font-figure:var(--font-label);
+  /* CODE is a TOML body, a log line, a transcript block or a file path -- genuinely
+     monospace, and the comp shows none of them, so the brief's words decide. It also
+     anchors the ch unit (ui.css's .myx-sfield): a field's declared width in ch has to
+     mean the same thing in every rack, so that box keeps the 0.6em advance. */
+  --font-code:'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ---------- GROUND ----------
+     The paper bay is a LADDER, not one sheet of paper. The page is the matte
+     panel, the bay floor (`.myx-bay`, ui.css:310) is a deeper matte, and the
+     strip is paper racked on the two. Re-derived 2026-09-18 (M1-11) from the
+     sampled comp (.impeccable/mocks/decision/assigned.png: floor #E0E2DF, strip
+     #F6F6F3, rail #1F2422) with the numbers the room has to hold. The comp itself
+     is flat here — its strip measures 1.20:1 on its floor and reads only by its
+     outline — so the FLOOR is the plane that moves, and the two values the comp
+     measured are the ones that stay: the panel and the strip. The measured rungs
+     are room|room-deep 1.69:1 and room-deep|strip 2.03:1. The comp's dark rail is
+     not reachable: `--ink` and `--ink-mute` are printed on the bay floor
+     (`.myx-bay-label`, `.myx-bay-count`), and near-black paper cannot carry paper
+     ink, so the deeper matte stops at the value that does. Dark is untouched: its
+     room and its rail are one field by declaration, and every dark pigment in this
+     sheet is the comp's own measurement. */
+  --room:#E0E2DF;      /* the matte panel: the comp's own floor, measured, and the
+                          value every edge and every ink in this block was landed
+                          against, so it is the plane that does not move */
+  --room-deep:#ABB0AC; /* the bay floor and the rail, a deeper matte: 1.69:1 under
+                          the panel, 2.03:1 under the strip */
+  --hairline:rgba(31,36,34,.16);
+  --hairline-strong:rgba(31,36,34,.32);
+
+  /* ---------- INK ON THE ROOM ---------- */
+  --ink:#161A19;
+  --ink-mute:#3F413F;   /* darkened from #565955 (M1-11): the bay floor moved down
+                           to separate the planes, and the mute is printed on it
+                           (`.myx-bay-count`), where #565955 now measures 3.23:1.
+                           This clears 4.68:1 there and 7.90:1 on the panel, and it
+                           stays the lightest of the three inks. The alternative —
+                           holding the mute and the floor where they were — cannot
+                           reach the plane floor at all: ink at 4.5:1 needs a bay
+                           floor at 0.615 luminance and the rung needs one below
+                           0.438, so one of the three has to give. */
+  --ink-strong:#0A0C0B;
+
+  /* ---------- THE STRIP (comp paper on the deeper matte) ---------- */
+  --strip:#F5EDDD;            /* the strip stays the comp's own #F6F6F3, now 2.03:1
+                                 above the bay floor it is racked on */
+  --strip-ink:#141414;
+  --strip-ink-mute:#5A5749;
+  --strip-field:#FBF5E9;     /* MEASURED, not stepped (M1-35). It was #FFFFFF, and the comment
+                               that made it white was honest about its own error: the STEP was
+                               ported from the dark block, not the value. In dark, one step above
+                               #DED9C6 is #E4E0D1 - another paper. In the light room the strip is
+                               already #F5EDDD, so the same relative step ran out of range and
+                               landed on white, which is what you get when a step has no paper
+                               left above it. White is not a paper colour; the comp's own strip is
+                               #F6F6F3 and never was. L 243.0 with R-B +18, in the same cream
+                               family as the strip (+24) and the comp's paper (+26). It matters
+                               because it outweighs --strip about 7:1 by area in the light room,
+                               so the M1-35 cream fix landed on a plane nobody sees. It survived
+                               three nights because teams is the only page with field at 0.00%
+                               and teams is the comp of record - the one page that could not
+                               reveal it is the one everything is calibrated against. */
+  --strip-field-line:rgba(31,36,34,.55);
+
+  /* ---------- THE RACK (M1-13; the dark values are the comp's own) ----------
+     Nothing here re-derives the block above it. --bay holds the value this block
+     already uses as the bay floor, so binding the bays to the name cannot move the
+     two rungs the block was landed on (room|room-deep 1.69:1, room-deep|strip
+     2.03:1). The plate keeps its dark relationship to its own neighbours rather
+     than the dark value: 1.34:1 under the strip, 1.45:1 above the bay floor. */
+  --bay:#ABB0AC;            /* the deeper matte, already this block's bay floor */
+  --bay-slot:rgba(31,36,34,.32);
+                            /* the floor's rule: one step past --hairline (.16) and
+                               well short of --hairline-strong (.32), which is the
+                               weight the dark 12-percent wash reads at on a matte */
+  --plate:#D6D8D3;          /* a third cream on the matte, keeping the dark plate's
+                               position between its strip and its floor */
+  --plate-line:rgba(31,36,34,.55);
+                            /* the plate's own edge, at the weight this block gives
+                               every line drawn on paper */
+  --ghost:rgba(246,246,243,.15);
+                            /* the strip's own paper at the dark alpha, so a leaving
+                               strip trails its own material in both themes */
+
+  /* ---------- HOLDER EDGE ---------- */
+  --edge-green:#1F882C;  /* the comp's green dot #029703 measures 2.97:1 on the
+                            paper floor; this is the board comp's health green,
+                            which clears both grounds at 3.49:1 and 4.20:1 */
+  --edge-amber:#9A6E10;
+  --edge-red:#E63521;
+  --edge-grey:#6E6D68;
+
+  /* ---------- SCOPE ---------- */
+  --scope:#1F2422;      /* measured: the comp's chart insets are dark on paper too */
+  --scope-ink:#F6F6F3;
+  --scope-grid:rgba(246,246,243,.16);
+
+  /* ---------- FOCUS ---------- */
+  --focus:#2869D5;      /* the comp's own blue, measured on the holder edges */
+}
+
+/* ============================================================
+   MOTION — the switch is a cut. The console never fades between themes:
+   applyTheme() stamps data-theme-cut for the frame of the switch, and this
+   rule holds every transition still for that frame. Nothing declares a
+   transition on --room or --strip; this is the belt to that pair of braces.
+   ============================================================ */
+
+:root[data-theme-cut],
+:root[data-theme-cut] * {
+  transition: none !important;
+}
+
+/* prefers-reduced-motion holds every duration at zero. The gestures (print,
+   hand off, swell, strike, cock) keep their end states; they stop moving. */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  :root[data-theme] {
+    --dur-1:0ms; --dur-2:0ms; --dur-3:0ms;
+  }
+}

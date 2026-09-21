@@ -1,5 +1,5 @@
 // NEW: the webui contract gate (P4-WEBUI). The unmodified React dashboard consumes the daemon's
-// /api/* JSON through the field names declared in webui/src/shared/api/index.ts. This test boots
+// /api/* JSON through the field names declared in console/src/shared/api/index.ts. This test boots
 // the ControlServer with a stub head and asserts every declared field is present in the daemon's
 // actual JSON — so a rename in the Kotlin payload builders breaks THIS test, not the dashboard at
 // runtime. Field sets are transcribed from index.ts @ pre-public-port-baseline (the comment is the source of
@@ -279,7 +279,7 @@ private const val HEADS_KEY = "heads"
 
 // ── V4-98: the economics bucket's field set, DERIVED from EconomicsRow ────────────────────────
 //
-// WHY. This file's other field lists are transcribed from webui/src/shared/api/index.ts and that
+// WHY. This file's other field lists are transcribed from console/src/shared/api/index.ts and that
 // is the right shape for them: they pin a CLIENT contract whose keys the Kotlin side does not own.
 // The economics bucket is different — every one of its fields is one EconomicsRow sum, copied by
 // hand three times (EconomicsStore.EconomicsBucket -> FileSources.kt:56 -> EconomicsPayloads'
@@ -312,7 +312,7 @@ private const val HEADS_KEY = "heads"
 //
 // NOT CAUGHT, and why. A field renamed in BOTH EconomicsRow and EconomicsPayloads at once still
 // agrees here — the client contract is what would break, and that is what
-// webui/src/shared/api/index.ts and the webui tests own. A value that is wrong rather than absent:
+// console/src/shared/api/index.ts and the console tests own. A value that is wrong rather than absent:
 // the `economics ships input and cached separately` test below pins the three that must not be
 // pre-netted. This wall owns the field SET.
 private val ECONOMICS_WIRE_RENAMES = mapOf(

@@ -3,7 +3,7 @@
 // single-file dashboard at /. Single-daemon simplification (plan): heads are IN-PROCESS Head
 // objects, so lifecycle is start()/stop() calls and config is ONE shared service — NO PATCH
 // fanout (deleted, not ported). File-based truth (auth/usage/compact/logs) so a DOWN head still
-// shows last-known state. JSON payload shapes match webui/src/shared/api/index.ts so the
+// shows last-known state. JSON payload shapes match console/src/shared/api/index.ts so the
 // unmodified dashboard runs against this daemon (the P4-WEBUI contract).
 //
 // HD-24: split into splice.control.api (the HTTP surface — payload projections and by-name

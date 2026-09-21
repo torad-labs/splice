@@ -37,7 +37,7 @@ private const val LEGACY_STATE_DIR_ENV = "CLAUDEX_STATE_DIR"
 
 /** The copies that must EXIST, by path. Walking the tree finds a copy someone adds; only this finds
  *  one someone deletes, renames, or edits out of the shape the walk recognises — and an enumeration
- *  that silently shrinks to one file still satisfies `isNotEmpty`. `.dev/web-console/lib/cdp.mjs`
+ *  that silently shrinks to one file still satisfies `isNotEmpty`. `console/tools/src/lib/cdp.ts`
  *  carries the rule too and is driven when present, but it is dev-only tooling outside the shipped
  *  tree, so it is not required here. */
 private val REQUIRED = setOf(

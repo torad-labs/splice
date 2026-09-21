@@ -66,7 +66,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/sh_01_missing_expiry_synthesized.ts
 [[item]]
 id = "SH-02"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_02_refresh_ineffective_guard.ts"
+wall = ""
+retired_to = "providers/grok/src/test/kotlin/splice/provider/grok/GrokAuthRefreshRecoveryTest.kt"
+proof = "2026-09-21: GrokAuthProvider.persistRotation() SH-02b block deleted (no backoff, no did-not-advance log, no counter); the wall went RED and the arm 'sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b' FAILED on the same mutation; restored, both GREEN (11/11); SH-02a is pinned by the two no-expires_in arms, which the wall's stale raw-text ban could no longer see"
 
 [[item]]
 id = "SH-04"

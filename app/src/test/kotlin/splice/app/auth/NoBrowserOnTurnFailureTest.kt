@@ -26,11 +26,11 @@ class NoBrowserOnTurnFailureTest {
         // flows; AdminSupport.openUrl exists for `splice dashboard`. Nothing else may reach it.
         assertEquals(
             listOf(
-                "app/src/main/kotlin/splice/app/OAuthLoginFlow.kt",
+                "app/src/main/kotlin/splice/app/auth/OAuthLoginFlow.kt",
                 "app/src/main/kotlin/splice/app/cli/AdminSupport.kt",
-                "app/src/main/kotlin/splice/app/DeviceLoginFlow.kt",
+                "app/src/main/kotlin/splice/app/auth/DeviceLoginFlow.kt",
             ).sorted(),
-            referencing("openBrowser(").filterNot { it.endsWith("splice/app/LoginIo.kt") }.sorted(),
+            referencing("openBrowser(").filterNot { it.endsWith("splice/app/auth/LoginIo.kt") }.sorted(),
             "a new browser call site is a new way to open the operator's browser — sanction it here " +
                 "deliberately, or do not ship it",
         )
@@ -39,7 +39,7 @@ class NoBrowserOnTurnFailureTest {
     @Test
     fun `the dashboard wrapper is the only other route, and it is a verb`() {
         assertEquals(
-            listOf("app/src/main/kotlin/splice/app/cli/DashboardCommand.kt"),
+            listOf("app/src/main/kotlin/splice/app/cli/status/DashboardCommand.kt"),
             referencing("openUrl(").filterNot { it.endsWith("splice/app/cli/AdminSupport.kt") },
         )
     }

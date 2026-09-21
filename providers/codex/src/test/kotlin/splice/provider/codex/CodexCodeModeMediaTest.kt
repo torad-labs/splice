@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeStep
-import splice.upstream.transport.posted
 import java.nio.file.Files
 
 class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {

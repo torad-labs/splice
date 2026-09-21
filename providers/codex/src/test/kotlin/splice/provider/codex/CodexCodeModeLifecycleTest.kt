@@ -12,7 +12,6 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
-import splice.upstream.transport.posted
 import kotlin.time.Duration.Companion.hours
 
 class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {

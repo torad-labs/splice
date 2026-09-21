@@ -407,7 +407,12 @@ internal object ConstSingleSource {
                 if (NUM_TOKEN.matches(fallback)) defaults[match.groupValues[1]] = fallback
             }
         }
-        return Knobs(defaults, emptyList())
+        // KNOB-SHADOW compares against these DEFAULTS, so entries that all match while none yields a
+        // default is the plane switched OFF, not a clean tree — and `entries.isEmpty()` cannot see it.
+        val unreadable = "$knobRel: matched ${entries.size} Knob entry/entries but read 0 defaults — the " +
+            "reader drops named arguments and takes the default from the FOURTH positional, so respelling " +
+            "the entries leaves every entry matched and every default unread, with KNOB-SHADOW silently off"
+        return if (defaults.isEmpty()) Knobs(emptyMap(), listOf(unreadable)) else Knobs(defaults, emptyList())
     }
 
     /** Every name declared in 2+ FILES, classed COPY (one normalised value) or COLLISION. */
@@ -624,6 +629,9 @@ class ConstSingleSourceLawTest {
                 scars,
             )
 
+        /** Replace the Knob source [write] stamped, for the arms that grade the Knob reader itself. */
+        fun rewriteKnob(text: String) = knob.writeText(text)
+
         fun census() = ConstSingleSource.parseTree(KotlinText.kotlinFiles(synthetic), root)
     }
 
@@ -772,6 +780,16 @@ class ConstSingleSourceLawTest {
                 ConstSingleSource.parseTree(emptyList(), root).problems,
                 "the denominator is absent",
             ) { "a tree with no main sources at all must REFUSE" }
+
+            // The Knob plane's teeth are the parsed DEFAULTS, and `entries.isEmpty()` cannot see a
+            // Knob whose entries all still MATCH while none of them yields a default. Respelling the
+            // entries is enough to do it, and before this arm that turned KNOB-SHADOW off for good
+            // with every test green.
+            write(A_KT to dup("SEAM_WIDTH", "8"), B_KT to dup("SEAM_WIDTH", "8"))
+            rewriteKnob(KNOB_NAMED_ARGS)
+            assertHit(audit(baseline()), "read 0 defaults") {
+                "a Knob whose entries match but whose defaults do not parse must REFUSE"
+            }
         }
     }
 
@@ -830,6 +848,25 @@ private const val UPSTREAM_ATTEMPTS = 4
 
         // Same value as a Knob default but sharing no name token: GREEN (see the header's NOT CAUGHT).
         const val KNOB_UNRELATED = "package splice.a\n\nprivate const val RETRY_SLOTS = 80\n"
+
+        /** The same enum, respelled with named arguments: every entry still matches KNOB_ENTRY and
+         *  not one of them yields a readable default. */
+        const val KNOB_NAMED_ARGS = """package splice.core.config
+
+public enum class Knob(
+    public val key: String,
+    public val kind: KnobKind,
+    public val envNames: List<String>,
+    public val default: Any?,
+) {
+    USAGE_WARN_PCT(
+        key = "usageWarnPct",
+        kind = KnobKind.NUMBER,
+        envNames = listOf("SPLICE_USAGE_WARN_PCT"),
+        default = 80L,
+    ),
+}
+"""
 
         const val KNOB_SOURCE = """package splice.core.config
 

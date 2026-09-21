@@ -540,7 +540,13 @@ function staleVerifies(): string[] {
  *  the NEW PYTHON census is already reporting, whose remedy is the conversion. If the
  *  operator ever genuinely needs to re-baseline, that is a deliberate, dated, reviewable
  *  act — re-record the file and say why in the commit — not something a gate should make
- *  frictionless at 3am. */
+ *  frictionless at 3am.
+ *
+ *  ONE EXCEPTION, AND GIT IS ITS WITNESS: an `invokers` entry whose file git itself records
+ *  as RENAMED since the birth revision (`git diff -M --diff-filter=R birth..HEAD`) is the
+ *  same file at a new path — a repository consolidation moving docs/ to .docs/ (2026-09-20,
+ *  #156) does not make a plan that mentions python a new invoker. `files` gets no such
+ *  exception: a renamed .py is exactly the reorganisation the paragraph above refuses. */
 function burndownGrowth(): string[] {
   // EACH ARRAY GETS ITS OWN BIRTH, and the first cut of this census got that wrong in a
   // way worth keeping: it took the FILE's first commit as the baseline for both keys and
@@ -577,9 +583,25 @@ function burndownGrowth(): string[] {
     }
     if (!base) continue; // this key has never been committed with content: nothing to ratchet against yet.
     const was = new Set(base);
-    for (const entry of today) if (!was.has(entry)) out.push(`${key}: ${entry} (not in the list as first recorded at ${baseRev.slice(0, 8)})`);
+    const before = key === "invokers" ? renamedSince(baseRev) : new Map<string, string>();
+    for (const entry of today) {
+      const known = was.has(entry) || was.has(before.get(entry) ?? "");
+      if (!known) out.push(`${key}: ${entry} (not in the list as first recorded at ${baseRev.slice(0, 8)})`);
+    }
   }
   return out.sort();
+}
+
+/** today's path -> the path git says it was renamed FROM, for every rename between [rev] and HEAD. */
+function renamedSince(rev: string): Map<string, string> {
+  const r = spawnSync("git", ["diff", "--name-status", "-M", "--diff-filter=R", rev, "HEAD"], { encoding: "utf8" });
+  const out = new Map<string, string>();
+  if (r.status !== 0) return out;
+  for (const line of r.stdout.split("\n")) {
+    const [status, from, to] = line.split("\t");
+    if (status?.startsWith("R") && from && to) out.set(to, from);
+  }
+  return out;
 }
 
 export function burndown(): Burndown {

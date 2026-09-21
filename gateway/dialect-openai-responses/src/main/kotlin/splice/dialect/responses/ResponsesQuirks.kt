@@ -28,8 +28,9 @@ public data class ResponsesQuirks(
     val emitEmptyLiteInstructions: Boolean = false,
     /** Explicit parallel_tool_calls value for responses-lite. Official Codex construction gates
      *  model parallel support with !use_responses_lite, so Lite sends false even when metadata
-     *  advertises support (pinned source reviewed 2026-09-05). True remains an experimental override,
-     *  not proven task-efficiency parity. JavaScript callback batching is a separate mechanism;
+     *  advertises support (pinned source reviewed 2026-09-05). True was tried live on 2026-09-20: the backend 400s
+     *  every lite turn ("requires `parallel_tool_calls` to be false"), so it is not an option for
+     *  ChatGPT; batching there comes from code mode. JavaScript callback batching is a separate mechanism;
      *  the client's explicit parallel-disable choice still wins over this knob. */
     val liteParallelToolCalls: Boolean = false,
     /** codex parity: `text.verbosity` on lite turns. codex-cli 0.145.0 sends "low"; null omits. */

@@ -28,16 +28,16 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":daemon-head" to setOf(":core", ":upstream"),
     ":daemon-control" to setOf(":core", ":client"),
     ":quality-architecture" to emptySet(),
-    // :fir-checks is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
+    // :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).
-    ":fir-checks" to emptySet(),
+    ":quality-compiler-plugin" to emptySet(),
 )
 
 /** :core may only reach the kotlin/kotlinx ecosystem — the domain stays framework-free. */
 val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
 
 /** Modules exempt from explicitApi (executables and test harnesses, not libraries). */
-val nonLibrary = setOf(":app", ":quality-architecture", ":fir-checks")
+val nonLibrary = setOf(":app", ":quality-architecture", ":quality-compiler-plugin")
 
 // The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
 // integration tests legitimately wire sibling modules (e.g. :daemon-head tests use

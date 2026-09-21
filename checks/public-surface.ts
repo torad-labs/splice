@@ -21,7 +21,7 @@
  * THE DENOMINATOR COMES FROM THE SOURCE, never a hand list (§24). Two files are parsed:
  *   · settings.gradle.kts — every include()d module path. That is the universe.
  *   · build-logic/.../splice.module-law.gradle.kts — `nonLibrary`, the set the build
- *     itself exempts from explicitApi (:app, :quality-architecture, :fir-checks). A module in
+ *     itself exempts from explicitApi (:app, :quality-architecture, :quality-compiler-plugin). A module in
  *     that set has no explicit `public` to read and is not a library, so it is GRADED as a
  *     consumer and never as a producer. This is the row's "each non-:app module" read off
  *     the build rather than retyped: a module added to settings.gradle.kts tomorrow is in
@@ -67,7 +67,7 @@
  *     public MEMBERS of public types, referenced as `x.trimToLast(...)` with no FQN and no
  *     import, so no name-based rule can attribute them to their owner without a resolved type
  *     graph. They are recorded by name in the V4-92 ledger note as the fix row's inventory;
- *     catching them mechanically needs a compiler plugin (:fir-checks is where that would go),
+ *     catching them mechanically needs a compiler plugin (:quality-compiler-plugin is where that would go),
  *     not a regex.
  *   · A DECLARATION CONSUMED ONLY BY A STRING. Reflection, a serializer name, a DI key — the
  *     FQN never appears, so the declaration reads as unjustified. The remedy is the same as for

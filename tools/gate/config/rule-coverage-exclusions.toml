@@ -82,7 +82,7 @@ rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-head", "app", "fir-checks",
+  "providers-openai", "daemon-head", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -102,14 +102,14 @@ would find 28 — local filesystem paths in daemon-log lines, not HTTP-supplied 
 rule = "kt-json-scalars-single-source"
 modules = [
   "core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
-  "daemon-head", "fir-checks",
+  "daemon-head", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Declared scope is the modules that read backend JSON scalars into strings: the five providers,
 :daemon-control and :app. :core declares JsonScalars itself, the dialects own typed wire codecs, and
-:fir-checks is a Kotlin compiler plugin with no JSON on its path.
+:quality-compiler-plugin is a Kotlin compiler plugin with no JSON on its path.
 2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
 the :client extraction, and :core is already excused above for the reason stated — the module
 boundary moved, the wall's declared scope did not. :client reads
@@ -123,7 +123,7 @@ rule = "kt-no-exception-as-outcome"
 modules = [
   "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
   "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai",
-  "daemon-head", "daemon-control", "app", "fir-checks",
+  "daemon-head", "daemon-control", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -148,7 +148,7 @@ rule = "kt-no-runblocking-exported-bridge"
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-head", "daemon-control", "fir-checks",
+  "providers-openai", "daemon-head", "daemon-control", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -164,13 +164,13 @@ names no coroutine at all.
 
 [[exclusion]]
 rule = "kt-no-runcatching-in-coroutine"
-modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai", "fir-checks"]
+modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Declared scope is the turn/stream path: :upstream, the three dialects, :daemon-head, :daemon-control and
 :app. :core is framework-free vocabulary, the five provider modules are auth/quirk adapters outside
-that path, and :fir-checks is a compiler plugin.
+that path, and :quality-compiler-plugin is a compiler plugin.
 2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
 the :client extraction, and :core is already excused above for the reason stated — the module
 boundary moved, the wall's declared scope did not. Measured: 0 in :client, which
@@ -179,12 +179,12 @@ imports no kotlinx.coroutines at all.
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat", "fir-checks"]
+modules = ["core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Declared scope is the modules that consume Result from backend, auth and process calls. :core
-declares the outcome types, the dialects are pure byte builders, and :fir-checks is a compiler
+declares the outcome types, the dialects are pure byte builders, and :quality-compiler-plugin is a compiler
 plugin.
 2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
 the :client extraction, and :core is already excused above for the reason stated — the module
@@ -223,7 +223,7 @@ rule = "kt-no-vanilla-config-dir"
 modules = [
   "core", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-head", "fir-checks",
+  "providers-openai", "daemon-head", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -242,7 +242,7 @@ rule = "kt-outcome-tag-single-source"
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "app", "fir-checks",
+  "providers-openai", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -260,7 +260,7 @@ rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", 
 modules = [
   "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
   "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
-  "providers-openai", "daemon-control", "app", "fir-checks",
+  "providers-openai", "daemon-control", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"

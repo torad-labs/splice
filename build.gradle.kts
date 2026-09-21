@@ -1,6 +1,6 @@
-// NEW (discipline L4): wire the :fir-checks compiler plugin into EVERY Kotlin module's compile, so an
+// NEW (discipline L4): wire the :quality-compiler-plugin compiler plugin into EVERY Kotlin module's compile, so an
 // unconsumed @MustConsume value is a COMPILE ERROR tree-wide (not only where the plugin jar is named
-// by hand). This is the ONLY place that can reference :fir-checks as a sibling: build-logic is a
+// by hand). This is the ONLY place that can reference :quality-compiler-plugin as a sibling: build-logic is a
 // SEPARATE included build and cannot see root subprojects, so splice.kotlin-common cannot do it.
 //
 // -Xplugin=<absolute jar path> is used deliberately instead of the kotlinCompilerPluginClasspath SPI:
@@ -17,12 +17,12 @@ plugins {
     alias(libs.plugins.kover)
 }
 
-// The plugin jar's path is derived from :fir-checks' build layout (default archive name
+// The plugin jar's path is derived from :quality-compiler-plugin' build layout (default archive name
 // `fir-checks.jar`), resolved lazily — referencing the sibling's `jar` task at root-configuration
-// time fails because :fir-checks is not evaluated yet. Ordering is guaranteed by the string
-// task-dependency `:fir-checks:jar` below.
+// time fails because :quality-compiler-plugin is not evaluated yet. Ordering is guaranteed by the string
+// task-dependency `:quality-compiler-plugin:jar` below.
 val firChecksPluginJar =
-    project(":fir-checks").layout.buildDirectory
+    project(":quality-compiler-plugin").layout.buildDirectory
         .file("libs/fir-checks.jar")
 val firChecksPluginArg = firChecksPluginJar.map { "-Xplugin=${it.asFile.absolutePath}" }
 val releaseVersion = (JsonSlurper().parse(file("package.json")) as Map<*, *>)["version"].toString()
@@ -32,11 +32,11 @@ allprojects {
 }
 
 subprojects {
-    // :fir-checks must NOT compile against its own not-yet-built jar (self-application deadlock).
-    if (path == ":fir-checks") return@subprojects
+    // :quality-compiler-plugin must NOT compile against its own not-yet-built jar (self-application deadlock).
+    if (path == ":quality-compiler-plugin") return@subprojects
     plugins.withId("org.jetbrains.kotlin.jvm") {
         tasks.withType<KotlinCompile>().configureEach {
-            dependsOn(":fir-checks:jar")
+            dependsOn(":quality-compiler-plugin:jar")
             // firChecksPluginArg (below) is a plain -Xplugin=<path> STRING built from a fixed path,
             // so Gradle tracks it as an opaque value input — byte-identical across builds even when
             // the jar's content changes, letting this task go UP-TO-DATE against a stale checker.

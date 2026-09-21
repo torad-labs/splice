@@ -35,7 +35,7 @@ include(
     ":daemon-control",
     ":app",
     ":quality-architecture",
-    ":fir-checks",
+    ":quality-compiler-plugin",
 )
 
 project(":core").projectDir = file("core")
@@ -54,4 +54,4 @@ project(":daemon-head").projectDir = file("daemon/head")
 project(":daemon-control").projectDir = file("daemon/control")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
-project(":fir-checks").projectDir = file("gateway/fir-checks")
+project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")

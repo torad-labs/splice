@@ -87,14 +87,17 @@ Thresholds derive from a committed measurement or a spec, never a literal in the
 (`nf_02` reads its ceiling from `config/splice.example.toml`'s own measurement line), so editing a
 wall alone cannot buy headroom.
 
-## oracle/ — verification
+## oracle/ — verification (moved to `tools/e2e/fixtures/oracle/`, restructure PR 5, 2026-09-21)
 
 ```bash
-npm run oracle:capture           # re-freeze from server/  (ONLY works while server/ exists)
-npm run oracle:check             # re-capture to temp, compare
+bun tools/e2e oracle             # replay the 11 frozen scenarios against the built jar (gate leg "oracle replay")
+npm run oracle:check             # provenance only: exits 2 — server/ is gone, the corpus is frozen
 ```
 
-`fixtures/` holds both wire directions of the **legacy Node stack** (`server/`), recorded
+The corpus now lives flat under `tools/e2e/fixtures/oracle/` (the fixtures, `_manifest.json`,
+`expectations.toml` and the vendored mock) and the replay is `tools/e2e/src/commands/oracle.ts`;
+`capture.mjs` is deleted (`git show a0ae88c3:.dev/campaigns/proxy-hardening/oracle/capture.mjs`).
+The fixtures hold both wire directions of the **legacy Node stack** (`server/`), recorded
 byte-exactly while its own suite was green (104/104, `cd server && node --test`). It is the
 reference implementation the Kotlin gateway was ported from — 51 files still carry
 `// PORT-OF: server/src/...` headers.

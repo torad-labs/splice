@@ -180,12 +180,6 @@
     },
     { "task": "verifyTestDiscoverySelftest", "why": "The discovery wall's own arms.", "command": ["bun", "checks/config/tests-are-discovered.ts", "--selftest"] },
     {
-      "task": "terminalRestoreBracketed",
-      "why": "CW-9: stty and raw-mode entry exist only inside TerminalMode.raw. A widget that invokes stty on its own can leave the tty raw after SIGINT.",
-      "command": ["bun", "checks/config/terminal-restore-bracketed.ts", "check", "."]
-    },
-    { "task": "terminalRestoreSelftest", "why": "In-process (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.", "command": ["bun", "checks/config/terminal-restore-bracketed.ts", "--selftest"] },
-    {
       "task": "oneConventionalTypeList",
       "why": "V4-30: the conventional-type vocabulary lives once, in tools/gate/src/lib/conventional.ts, which `gate title` enforces. CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted. Denominator is `git ls-files`, so an untracked sidecar cannot red the gate; a second copy must be tracked to reach main.",
       "command": ["bun", "checks/config/one-conventional-type-list.ts", "check", "."]

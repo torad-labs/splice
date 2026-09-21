@@ -1,7 +1,7 @@
 // NEW: V4-183 — the per-head session index: what a launch reads to bound a bare -c. Pinned on the
 // contract HeadBoundedContinue relies on: newest first, this cwd only, a gone transcript skipped,
 // a damaged or absent file read as empty, an id that is not a session id never entered.
-package splice.core.launch
+package splice.client.resume
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

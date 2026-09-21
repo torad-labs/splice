@@ -27,10 +27,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.client.resume.RESUME_SOURCE
 import splice.client.resume.STARTUP_SOURCE
+import splice.client.resume.SessionOwnership
 import splice.client.resume.TranscriptModelRewrite
 import splice.control.LogSafe
 import splice.control.ManagedHead
-import splice.core.launch.SessionOwnership
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink

@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.upgrade.UpgradeExit
-import splice.app.cli.upgrade.UpgradeProcess
 import splice.core.util.EnvReader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -27,17 +25,17 @@ class SupervisedStartTest {
     private class FakeSystemctl(
         private val unitPresent: Boolean = true,
         private val startOk: Boolean = true,
-    ) : UpgradeProcess {
+    ) : Systemctl {
+        /** Every call, as the real port receives it: the args after `systemctl --user`. */
         val calls = mutableListOf<List<String>>()
-        override fun invoke(command: List<String>, inherit: Boolean): UpgradeExit {
-            calls += command
-            assertEquals(listOf("systemctl", "--user"), command.take(2), "only systemctl --user is ever run: $command")
-            val ok = when (command[2]) {
+        override fun invoke(args: List<String>): Int {
+            calls += args
+            val ok = when (args[0]) {
                 "cat" -> unitPresent
                 "start" -> startOk
-                else -> error("unexpected verb: $command")
+                else -> error("unexpected verb: $args")
             }
-            return UpgradeExit(if (ok) 0 else 1, "")
+            return if (ok) 0 else 1
         }
     }
 
@@ -47,7 +45,7 @@ class SupervisedStartTest {
     fun `no selector and a unit on the box routes to the unit, by the configured name`() {
         val ctl = FakeSystemctl()
         assertEquals(ColdStartRoute.Unit(CANARY_UNIT), SupervisedStart(ctl, env()).route(CANARY_UNIT))
-        assertEquals(listOf(listOf("systemctl", "--user", "cat", CANARY_UNIT)), ctl.calls)
+        assertEquals(listOf(listOf("cat", CANARY_UNIT)), ctl.calls)
     }
 
     @Test
@@ -119,7 +117,7 @@ class SupervisedStartTest {
         val out = captured { up = launch.ensureDaemon(freePort()) }
         assertFalse(up, "nothing answers on a free port, so the start is reported failed")
         assertEquals(0, spawn.spawns, "a second daemon was spawned beside the unit:\n$out")
-        val started = listOf("systemctl", "--user", "start", UNIT) in ctl.calls
+        val started = listOf("start", UNIT) in ctl.calls
         assertTrue(started, "the unit was never started: ${ctl.calls}\n$out")
         val named = "did not answer" in out && "journalctl --user -u $UNIT" in out
         assertTrue(named, "the failure must name the journal:\n$out")
@@ -137,8 +135,19 @@ class SupervisedStartTest {
             val launch = DaemonLaunch(health, spawn, SupervisedStart(ctl, reader), startupPolls = 1)
             val out = captured { assertFalse(launch.ensureDaemon(freePort())) }
             assertEquals(1, spawn.spawns, "the raw spawn is still the cold start here:\n$out")
-            assertTrue(ctl.calls.none { it[2] == "start" }, "the unit must not be started: ${ctl.calls}")
+            assertTrue(ctl.calls.none { it[0] == "start" }, "the unit must not be started: ${ctl.calls}")
         }
+    }
+
+    @Test
+    fun `the real systemctl port answers non-zero for a manager it cannot reach, never throws`() {
+        // PATH-independent: an executable name that exists nowhere is exactly "no systemctl here".
+        val code = JdkSystemctl().let { port ->
+            // The port always prefixes `systemctl --user`; drive it with a verb no manager accepts
+            // so a present manager also answers non-zero, and an absent one answers 127.
+            port(listOf("cat", "splice-test-unit-that-does-not-exist-${System.nanoTime()}.service"))
+        }
+        assertTrue(code != 0, "expected a non-zero answer, got $code")
     }
 
     private fun repo(): Path {

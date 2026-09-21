@@ -1,8 +1,8 @@
 // NEW: cold-start argv + the ensureDaemon composer. Health probes live in
 // DaemonHealth.kt; spawn/jar/boot-tail live in DaemonSpawn.kt; the unit-first ROUTE (V4-190)
 // lives in SupervisedStart.kt. AdminSupport
-// keeps one-line public delegates so Status/Restart/Dashboard/Doctor call
-// sites do not change. daemon-boot.log is named HERE so JW-01 stays
+// keeps one-line public delegates so the Dashboard and Restart call sites (the
+// only ones that cold-start; status and doctor only probe) do not change. daemon-boot.log is named HERE so JW-01 stays
 // path-anchored on this file. DEFAULT_JVM_OPTS still lives on AdminSupport
 // because spawnDaemon and the launch shim must agree on the flag set.
 package splice.app.cli.daemon

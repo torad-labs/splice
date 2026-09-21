@@ -264,12 +264,26 @@ wall = ""
 [[item]]
 id = "CX-07"
 phase = "W4-correctness-walls"
-wall = ".dev/campaigns/proxy-hardening/walls/w4_a_refusal_honesty.ts"
+wall = ""
+retired_to = [
+  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+  "upstream/src/test/kotlin/splice/upstream/retry/RetryMatrixCoverageTest.kt",
+]
+proof = "2026-09-21: W4-A checked ONE chain at BOTH ends and only one end was homed. THE ARM END, each dialect reading the signal into a FailureCause, wall and home on the same bytes: passthrough's `\"refusal\" -> FailureCause.MODEL_REFUSED` disabled — wall RED and PassthroughStopReasonHonestyTest 'stop_reason refusal is an honest provider-reported failure, never a clean success' FAILED (8 arms, 1 failure); chat's `strIfString(obj[\"refusal\"])` disabled — wall RED and ChatRefusalHonestyTest FAILED on 8 of 13 arms; responses' refusal event routing disabled — wall RED and ResponsesRefusalHonestyTest FAILED on 5 of 12. THE WIRE END was held by nothing but the wall's two source substrings, PROVEN TWICE: MODEL_REFUSED remapped to INVALID_REQUEST and UPSTREAM_STATUS_5XX remapped to API_ERROR each red the wall, and each left RetryMatrixCoverageTest's nine pre-existing arms GREEN (9 tests, 0 failures) — its exhaustiveness arm only asserts every (cause, phase) pair is non-null, and its value arms pin INTERNAL, UPSTREAM_REPORTED and the INVALID_REQUEST group, never these two. A tenth arm pins them at every phase, asserting the RESOLVED value rather than a source substring, so a pre-content rule that grew to cover a refusal is visible where the wall's literal was not; both mutations red it. Restored: wall GREEN, RetryMatrixCoverageTest 10/10. Every --tests filter derived with arm-class.sh — all three dialect arms live in SIBLING classes (PassthroughStopReasonHonestyTest, ChatRefusalHonestyTest, ResponsesRefusalHonestyTest), not in the class their file is named after, so filenames would have voided three of five legs"
 
 [[item]]
 id = "CX-08"
 phase = "W4-correctness-walls"
-wall = ".dev/campaigns/proxy-hardening/walls/w4_a_refusal_honesty.ts"
+wall = ""
+retired_to = [
+  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatStreamTranslatorTest.kt",
+  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslatorTest.kt",
+  "upstream/src/test/kotlin/splice/upstream/retry/RetryMatrixCoverageTest.kt",
+]
+proof = "2026-09-21: W4-A checked ONE chain at BOTH ends and only one end was homed. THE ARM END, each dialect reading the signal into a FailureCause, wall and home on the same bytes: passthrough's `\"refusal\" -> FailureCause.MODEL_REFUSED` disabled — wall RED and PassthroughStopReasonHonestyTest 'stop_reason refusal is an honest provider-reported failure, never a clean success' FAILED (8 arms, 1 failure); chat's `strIfString(obj[\"refusal\"])` disabled — wall RED and ChatRefusalHonestyTest FAILED on 8 of 13 arms; responses' refusal event routing disabled — wall RED and ResponsesRefusalHonestyTest FAILED on 5 of 12. THE WIRE END was held by nothing but the wall's two source substrings, PROVEN TWICE: MODEL_REFUSED remapped to INVALID_REQUEST and UPSTREAM_STATUS_5XX remapped to API_ERROR each red the wall, and each left RetryMatrixCoverageTest's nine pre-existing arms GREEN (9 tests, 0 failures) — its exhaustiveness arm only asserts every (cause, phase) pair is non-null, and its value arms pin INTERNAL, UPSTREAM_REPORTED and the INVALID_REQUEST group, never these two. A tenth arm pins them at every phase, asserting the RESOLVED value rather than a source substring, so a pre-content rule that grew to cover a refusal is visible where the wall's literal was not; both mutations red it. Restored: wall GREEN, RetryMatrixCoverageTest 10/10. Every --tests filter derived with arm-class.sh — all three dialect arms live in SIBLING classes (PassthroughStopReasonHonestyTest, ChatRefusalHonestyTest, ResponsesRefusalHonestyTest), not in the class their file is named after, so filenames would have voided three of five legs"
 
 [[item]]
 id = "CX-09"

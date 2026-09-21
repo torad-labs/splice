@@ -183,4 +183,38 @@ class RetryMatrixCoverageTest {
         assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.UPSTREAM_REPORTED, FailurePhase.MID_OUTPUT))
         assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.UPSTREAM_REPORTED, FailurePhase.TERMINAL))
     }
+
+    @Test
+    fun `a refusal and a 5xx keep the classes the dialects hand them to - CX-07 CX-08`() {
+        // W4-A's far end, retired here from w4_a_refusal_honesty.ts (2026-09-21). That wall checked
+        // BOTH ends of one chain: the dialect arms read a refusal or a 5xx into a FailureCause, and
+        // these two pairs are what those causes must still RESOLVE to. One end moving while the
+        // other stays is the failure that matters, and holding only one end cannot see it — the arm
+        // tokens live in the dialects' own tests, and this is the other end.
+        //
+        // The wall asserted the two mappings as SOURCE SUBSTRINGS of WireType.kt. This asserts the
+        // resolved value at every phase, so a pre-content rule that grew to cover a refusal, or a
+        // base map edited past the line the substring matched, is visible here and was not there.
+        //
+        // MODEL_REFUSED is api_error and PERMANENT: the permanence rides `permanent`, not the type,
+        // so the type is the ordinary api_error — which the pre-content rule then converts, and
+        // both halves are asserted because a table returning one of them everywhere would pass a
+        // one-sided test.
+        assertEquals(ErrorType.OVERLOADED, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.CONNECT))
+        assertEquals(ErrorType.OVERLOADED, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.FIRST_BYTE))
+        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.MID_OUTPUT))
+        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.TERMINAL))
+        // CONTENT_FILTERED is the same promise by the same route: a blocked generation is a refusal
+        // the backend phrased differently, and CX-07 names it beside MODEL_REFUSED.
+        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.CONTENT_FILTERED, FailurePhase.MID_OUTPUT))
+        // A 5xx is a capacity answer at EVERY phase — its base is already the retryable class, so
+        // the pre-content rule never touches it and there is no phase at which it hardens.
+        for (phase in FailurePhase.entries) {
+            assertEquals(
+                ErrorType.OVERLOADED,
+                WireType.of(FailureCause.UPSTREAM_STATUS_5XX, phase),
+                "a backend 5xx is the one class Claude Code retries on its own, at $phase",
+            )
+        }
+    }
 }

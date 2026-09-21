@@ -40,7 +40,7 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.Clock
 
 /** The index file's name inside a head's config dir — one declaration, read by the tests too. */
-public const val SESSION_OWNERSHIP_FILE: String = "splice-sessions.json"
+internal const val SESSION_OWNERSHIP_FILE: String = "splice-sessions.json"
 
 // why: a head starts a handful of sessions a day, so 500 entries is months of history while the
 // file, read on every launch, stays at a few tens of kilobytes.

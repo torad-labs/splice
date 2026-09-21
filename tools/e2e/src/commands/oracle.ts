@@ -277,7 +277,14 @@ export function enrolmentDrift(oracleDir: string): string | null {
   }
   for (const name of [...onDisk].sort()) {
     if (!enrolled.has(name)) {
-      problems.push(`UNENROLLED   ${name}: fixture on disk with no expectations row — captured and unprotected`);
+      // The remedy is named because the obvious one is catastrophic: `oracle capture` has been
+      // INOPERABLE since server/ was cut on 2026-08-10, so a fixture deleted to make a gate green
+      // is a recording nobody can re-take. Enrol it or exclude it; never delete it.
+      problems.push(
+        `UNENROLLED   ${name}: fixture on disk with no expectations row — captured and unprotected. ` +
+          "Add a [[scenario]] row, or an [[excluded]] row with a reason — do NOT delete the fixture, " +
+          "it cannot be re-captured",
+      );
     }
   }
   return problems.length === 0 ? null : `FATAL enrolment drift:\n  ${problems.join("\n  ")}`;

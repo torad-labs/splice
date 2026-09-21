@@ -83,8 +83,25 @@ if [ "${LAUNCHER_JAVA_BOOT_FAILS:-0}" = "1" ]; then
   exit 1
 fi
 printf 'new\n' > "$LAUNCHER_DAEMON_STATE"
+printf 'spawned\n' >> "${LAUNCHER_JAVA_CAPTURE:-/dev/null}"
 SH
-chmod +x "$SANDBOX/bin/curl" "$SANDBOX/bin/java"
+# V4-189: the supervisor unit, mocked. `cat <unit>` answers "the unit exists" only when
+# LAUNCHER_UNIT_PRESENT=1; `start <unit>` records the unit name and, when LAUNCHER_UNIT_BOOTS=1,
+# brings the mock daemon up the way the real unit would.
+cat > "$SANDBOX/bin/systemctl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${1:-}" = "--user" ] || { printf 'unexpected systemctl args: %s\n' "$*" >&2; exit 2; }
+case "${2:-}" in
+  cat) [ "${LAUNCHER_UNIT_PRESENT:-0}" = "1" ] ;;
+  start)
+    printf '%s\n' "${3:-}" >> "$LAUNCHER_START_CAPTURE"
+    [ "${LAUNCHER_UNIT_BOOTS:-0}" = "1" ] && printf 'new\n' > "$LAUNCHER_DAEMON_STATE"
+    ;;
+  *) printf 'unexpected systemctl verb: %s\n' "$*" >&2; exit 2 ;;
+esac
+SH
+chmod +x "$SANDBOX/bin/curl" "$SANDBOX/bin/java" "$SANDBOX/bin/systemctl"
 
 run_launcher() {
   HOME="$SANDBOX/home" \
@@ -103,8 +120,41 @@ run_launcher() {
   LAUNCHER_JAVA_BOOT_FAILS="${LAUNCHER_JAVA_BOOT_FAILS:-0}" \
   LAUNCHER_TOPOLOGY_STALE="${LAUNCHER_TOPOLOGY_STALE:-false}" \
   LAUNCHER_PWNED_FILE="$SANDBOX/pwned" \
+  LAUNCHER_JAVA_CAPTURE="$SANDBOX/java-spawns" \
+  LAUNCHER_START_CAPTURE="$SANDBOX/unit-starts" \
+  LAUNCHER_UNIT_PRESENT="${LAUNCHER_UNIT_PRESENT:-1}" \
+  LAUNCHER_UNIT_BOOTS="${LAUNCHER_UNIT_BOOTS:-1}" \
     "$ROOT/bin/splice-launch" "$@"
 }
+
+# V4-189: the operator's shape — NO selector overrides, so the shim resolves everything from $HOME
+# and a cold start belongs to the supervisor unit. The sandbox home carries the same config, jar
+# and mgmt-key at their default paths.
+mkdir -p "$SANDBOX/home/.config/splice" "$SANDBOX/home/.local/share/splice" "$SANDBOX/home/.splice/state"
+cp "$SANDBOX/splice.toml" "$SANDBOX/home/.config/splice/splice.toml"
+touch "$SANDBOX/home/.local/share/splice/splice.jar"
+printf 'test-key\n' > "$SANDBOX/home/.splice/state/mgmt-key"
+run_launcher_default() {
+  env -u SPLICE_CONFIG -u XDG_CONFIG_HOME -u SPLICE_JAR -u SPLICE_SHARE_DIR -u SPLICE_STATE_DIR \
+      -u CLAUDEX_STATE_DIR -u SPLICE_CONTROL_PORT -u CONTROL_PROXY_PORT -u CONTROL_PORT \
+  HOME="$SANDBOX/home" \
+  PATH="$SANDBOX/bin:$PATH" \
+  SPLICE_HEAD=test \
+  LAUNCHER_DAEMON_STATE="$SANDBOX/daemon-state" \
+  LAUNCHER_GATEWAY_VERSION="$GATEWAY_VERSION" \
+  LAUNCHER_SHIM_VERSION="$SHIM_VERSION" \
+  LAUNCHER_URL_CAPTURE="$SANDBOX/url" \
+  LAUNCHER_BODY_CAPTURE="$SANDBOX/body" \
+  LAUNCHER_SHUTDOWN_CAPTURE="$SANDBOX/shutdown" \
+  LAUNCHER_PWNED_FILE="$SANDBOX/pwned" \
+  LAUNCHER_JAVA_CAPTURE="$SANDBOX/java-spawns" \
+  LAUNCHER_START_CAPTURE="$SANDBOX/unit-starts" \
+  LAUNCHER_UNIT_PRESENT="${LAUNCHER_UNIT_PRESENT:-1}" \
+  LAUNCHER_UNIT_BOOTS="${LAUNCHER_UNIT_BOOTS:-1}" \
+  ${LAUNCHER_SELECTOR:+"$LAUNCHER_SELECTOR=$LAUNCHER_SELECTOR_VALUE"} \
+    "$ROOT/bin/splice-launch" "$@"
+}
+cold() { printf 'down\n' > "$SANDBOX/daemon-state"; rm -f "$SANDBOX/java-spawns" "$SANDBOX/unit-starts"; }
 
 run_launcher "" $'line one\nline two'
 python3 - "$SANDBOX/url" "$SANDBOX/body" <<'PY'
@@ -159,5 +209,57 @@ printf 'up\n' > "$SANDBOX/daemon-state"
 STALE_ERR="$(LAUNCHER_TOPOLOGY_STALE=true run_launcher 2>&1 >/dev/null)"
 grep -q "running topology is stale" <<<"$STALE_ERR" || { echo "JW-04: expected the stale-topology warning, got: $STALE_ERR" >&2; exit 1; }
 grep -q "splice restart" <<<"$STALE_ERR" || { echo "JW-04: the warning must name the fix, got: $STALE_ERR" >&2; exit 1; }
+
+# V4-189 / UF-01: with no selector override and splice.service on the box, a cold start STARTS THE
+# UNIT and waits for it; java is never spawned beside it (the raw nohup spawn is how three stray
+# daemons squatted :3096 on 2026-09-21).
+cold
+run_launcher_default
+test "$(cat "$SANDBOX/unit-starts")" = "splice.service"
+test ! -e "$SANDBOX/java-spawns"
+test "$(cat "$SANDBOX/url")" = "http://127.0.0.1:4567/launch/test"
+
+# UF-02: the unit name is the operator's SPLICE_SUPERVISOR_UNIT, never a hardcoded splice.service.
+cold
+SPLICE_SUPERVISOR_UNIT=splice-canary.service run_launcher_default
+test "$(cat "$SANDBOX/unit-starts")" = "splice-canary.service"
+test ! -e "$SANDBOX/java-spawns"
+
+# UF-03: any selector override means a harness's own daemon — the unit is never touched, the raw
+# spawn runs. One arm per selector the guard names; the first (SPLICE_CONFIG) is what run_launcher
+# itself does, the rest are the ones astra found missing from the guard.
+for selector in SPLICE_CONFIG XDG_CONFIG_HOME SPLICE_JAR SPLICE_SHARE_DIR SPLICE_STATE_DIR \
+    CLAUDEX_STATE_DIR SPLICE_CONTROL_PORT CONTROL_PROXY_PORT CONTROL_PORT; do
+  cold
+  case "$selector" in
+    SPLICE_CONFIG) value="$SANDBOX/home/.config/splice/splice.toml" ;;
+    XDG_CONFIG_HOME) value="$SANDBOX/home/.config" ;;
+    SPLICE_JAR) value="$SANDBOX/home/.local/share/splice/splice.jar" ;;
+    SPLICE_SHARE_DIR) value="$SANDBOX/home/.local/share/splice" ;;
+    SPLICE_STATE_DIR|CLAUDEX_STATE_DIR) value="$SANDBOX/home/.splice/state" ;;
+    *) value=4567 ;;
+  esac
+  LAUNCHER_SELECTOR="$selector" LAUNCHER_SELECTOR_VALUE="$value" run_launcher_default
+  test ! -e "$SANDBOX/unit-starts" || { echo "UF-03: $selector set must never start the unit" >&2; exit 1; }
+  test "$(cat "$SANDBOX/java-spawns")" = "spawned" || { echo "UF-03: $selector set must raw-spawn" >&2; exit 1; }
+done
+
+# UF-04: a unit that never answers is reported on a wall-clock deadline and the shim exits 1 —
+# it never falls through to a raw spawn beside the unit it just started.
+cold
+set +e
+DEAD_ERR="$(LAUNCHER_UNIT_BOOTS=0 SPLICE_UNIT_WAIT_SECONDS=1 run_launcher_default 2>&1)"
+DEAD_RC=$?
+set -e
+test "$DEAD_RC" -eq 1
+grep -q "splice.service did not answer /health within 1s" <<<"$DEAD_ERR" || { echo "UF-04: expected the deadline message, got: $DEAD_ERR" >&2; exit 1; }
+test "$(cat "$SANDBOX/unit-starts")" = "splice.service"
+test ! -e "$SANDBOX/java-spawns"
+
+# UF-05: no unit on the box (systemctl cat fails) — the raw spawn is still the cold start.
+cold
+LAUNCHER_UNIT_PRESENT=0 run_launcher_default
+test ! -e "$SANDBOX/unit-starts"
+test "$(cat "$SANDBOX/java-spawns")" = "spawned"
 
 echo "launcher test: OK"

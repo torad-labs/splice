@@ -1,7 +1,8 @@
 // NEW: cold-start argv + the ensureDaemon composer. Health probes live in
-// DaemonHealth.kt; spawn/jar/boot-tail live in DaemonSpawn.kt. AdminSupport
-// keeps one-line public delegates so Status/Restart/Dashboard/Doctor call
-// sites do not change. daemon-boot.log is named HERE so JW-01 stays
+// DaemonHealth.kt; spawn/jar/boot-tail live in DaemonSpawn.kt; the unit-first ROUTE (V4-190)
+// lives in SupervisedStart.kt. AdminSupport
+// keeps one-line public delegates so the Dashboard and Restart call sites (the
+// only ones that cold-start; status and doctor only probe) do not change. daemon-boot.log is named HERE so JW-01 stays
 // path-anchored on this file. DEFAULT_JVM_OPTS still lives on AdminSupport
 // because spawnDaemon and the launch shim must agree on the flag set.
 package splice.app.cli.daemon
@@ -9,11 +10,14 @@ package splice.app.cli.daemon
 import splice.app.cli.AdminSupport
 import splice.core.GATEWAY_VERSION
 import java.nio.file.Path
+import java.time.Duration
 
-internal class DaemonLaunch {
-
-    private val health = DaemonHealth()
-    private val spawn = DaemonSpawn(health)
+internal class DaemonLaunch(
+    private val health: DaemonHealth = DaemonHealth(),
+    private val spawn: DaemonSpawn = DaemonSpawn(health),
+    private val supervised: SupervisedStart = SupervisedStart(),
+    private val startupPolls: Int = STARTUP_POLLS,
+) {
 
     /** The cold-start command as argv. The jar and logs dir ride as positional $1/$2 DATA, never
      *  interpolated into the script text: an apostrophe in the install path ("/home/o'brien")
@@ -55,8 +59,32 @@ internal class DaemonLaunch {
      *  [expectedVersion] (this CLI's own, or the one an upgrade just activated). */
     internal fun ensureDaemon(port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean {
         if (health.daemonUp(port, expectedVersion)) return true
+        return when (val route = supervised.route()) {
+            is ColdStartRoute.Unit -> startUnit(route.unit, port, expectedVersion)
+            is ColdStartRoute.Raw -> spawnHere(route.reason, port, expectedVersion)
+        }
+    }
+
+    /** V4-190: the supervisor unit exists and this shell is on its defaults, so the unit is the only
+     *  thing that may start a daemon here. A unit that never answers is reported with its journal;
+     *  a second daemon is never spawned beside it (that is how every squatter of 2026-09-21 was born). */
+    private fun startUnit(unit: String, port: Int, expectedVersion: String): Boolean {
+        println("splice: starting $unit…")
+        val up = supervised.start(unit) && waitUntilUp(port, expectedVersion)
+        if (!up) {
+            val budget = Duration.ofMillis(startupPolls * POLL_INTERVAL_MS).toSeconds()
+            println(
+                "splice: $unit did not answer /health with $expectedVersion within ${budget}s — never starting " +
+                    "a second daemon beside it. See: systemctl --user status $unit; journalctl --user -u $unit -n 50",
+            )
+        }
+        return up
+    }
+
+    /** The raw spawn: a box with no unit, or a shell a selector points at a daemon of its own. */
+    private fun spawnHere(reason: String, port: Int, expectedVersion: String): Boolean {
         val jar = spawn.startableJar(port) ?: return false
-        println("splice: starting the daemon…")
+        println("splice: starting the daemon here ($reason)…")
         val up = spawn.spawnDaemon(daemonLaunchArgv(jar, spawn.logsDir())) && waitUntilUp(port, expectedVersion)
         // JW-01: when the daemon never answers, the reason is in the boot log — print it here
         // instead of leaving "starting the daemon…" as the last line the operator ever sees.
@@ -66,7 +94,7 @@ internal class DaemonLaunch {
 
     /** Poll until the daemon answers on [port] with [expectedVersion], or the startup budget runs out. */
     private fun waitUntilUp(port: Int, expectedVersion: String): Boolean {
-        repeat(STARTUP_POLLS) {
+        repeat(startupPolls) {
             if (health.daemonUp(port, expectedVersion)) return true
             Thread.sleep(POLL_INTERVAL_MS)
         }

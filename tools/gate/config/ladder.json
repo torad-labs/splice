@@ -2,16 +2,6 @@
   "about": "The gate ladder: every leg of the gate of record that is not yet a Gradle task of its own. build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts registers one Exec task per row under `gateOfRecord` (entered through `bun tools/gate run`), and checks/config/concentration-leg-routed.ts reads the same rows to prove the concentration leg is routed. A row is data, not code: it is present or absent, and its argv is an array Gradle hands to the process without a shell. `why` is the leg's reason for existing — keep it when you move the leg.",
   "legs": [
     {
-      "task": "catalogMetadataSync",
-      "why": "Dependabot edits the catalog but cannot regenerate verification metadata, so gradle bumps used to arrive red six minutes into the gradle tier (#91). State the same fact statically, first and in under a second, with the regeneration remedy attached.",
-      "command": ["bun", "checks/catalog-metadata-sync.ts"]
-    },
-    {
-      "task": "catalogMetadataSelftest",
-      "why": "The canary over the catalog checker: the leg guards the tree, this guards the leg.",
-      "command": ["bash", "checks/catalog-metadata-selftest.sh"]
-    },
-    {
       "task": "gateRules",
       "why": "The ast-grep walls, then RULE ROUTING (the walls prove the routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month reporting zero findings), then the CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot scope, the concentration leg's routing), then the P1 coverage proof.",
       "command": ["bun", "tools/gate", "rules", "--prove-coverage"]

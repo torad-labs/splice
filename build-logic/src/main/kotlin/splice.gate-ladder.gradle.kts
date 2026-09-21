@@ -25,6 +25,13 @@
 import groovy.json.JsonSlurper
 import org.gradle.api.tasks.testing.Test
 
+// The gate's Gradle-native checks, registered by their own plugins and depended on below: the
+// dependency hygiene of §4.2 (catalogMetadataSync) and build-logic's own test suite, which carries
+// those checks' red proofs (restructure PR 6).
+plugins {
+    id("splice.dependency-hygiene")
+}
+
 val ladderPath = "tools/gate/config/ladder.json"
 
 @Suppress("UNCHECKED_CAST")
@@ -60,6 +67,8 @@ val gateOfRecord = tasks.register("gateOfRecord") {
     dependsOn(":console:lint", ":console:test")
     dependsOn(legTasks)
     dependsOn("verifyLadder")
+    dependsOn("catalogMetadataSync")
+    dependsOn(gradle.includedBuild("build-logic").task(":test"))
 }
 
 // THE PROOF IS TAKEN WHEN THE GRAPH IS READY, NEVER DURING EXECUTION. The first cut walked

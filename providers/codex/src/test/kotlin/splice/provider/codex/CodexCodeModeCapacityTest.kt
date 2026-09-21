@@ -18,7 +18,6 @@ import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeCapacityException
-import splice.upstream.transport.posted
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.minutes
 

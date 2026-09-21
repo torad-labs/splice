@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeStep
-import splice.upstream.transport.posted
 import java.nio.file.Files
 
 /**

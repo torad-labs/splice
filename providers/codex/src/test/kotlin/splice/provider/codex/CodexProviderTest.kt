@@ -29,7 +29,6 @@ import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
-import splice.upstream.transport.fakeAuth
 import kotlin.time.Duration.Companion.seconds
 
 class CodexProviderTest {

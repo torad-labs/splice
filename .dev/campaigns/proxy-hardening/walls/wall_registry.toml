@@ -94,8 +94,14 @@ proof = "2026-09-21: AuthProbeLoop.start() mutated to not attach the invokeOnCom
 [[item]]
 id = "SH-10"
 phase = "W2-auth-lifecycle"
-# The Muse entry delegates Kimi's scan and selftest, then enforces Muse with the same detector.
-wall = ".dev/campaigns/proxy-hardening/walls/sh_10_muse_merge_never_rewrite.ts"
+wall = ""
+retired_to = [
+    "quality/architecture/src/test/kotlin/splice/quality/CredentialWriteMergesLawTest.kt",
+    "providers/kimi/src/test/kotlin/splice/provider/kimi/KimiAuthProviderTest.kt",
+    "providers/muse/src/test/kotlin/splice/provider/muse/MuseAuthProviderFixesTest.kt",
+    "providers/codex/src/test/kotlin/splice/provider/codex/CodexAuthTest.kt",
+]
+proof = "2026-09-21: THIS WALL WAS SOUND, and the row says so rather than claiming otherwise. Three hypotheses that its detection was weaker than its text were each tested and each was WRONG: its denominator is already derived from the tree (every .kt under a gateway module's src/main), a planted from-scratch writer at providers/grok/.../GrokPeerWrite.kt reds it by name (undisposed atomic writer -- add a dated disposition; absence is not one), and staleDispositions() already fails an entry whose file is gone or no longer writes. It is retired because its two claims have better homes, not because it was blind. (a) THE MERGE CLAIM: kimi rebuilding the credential object from scratch (mergedCredentialJson dropped) reds the wall, the law, AND KimiSynthesizedExpiryTest `refresh merges onto the on-disk file - foreign fields survive rotation - SH-10` (3 tests, 1 failure); muse persisting only its replacements reds the wall, the law and MuseAuthProviderFixesTest `unknown mint-body fields drop while on-disk unknowns survive` (11, 1). The behavioural arms are strictly stronger than the wall's value trace: the trace proves the merge result reaches the write syntactically, the arms write a foreign field, refresh, and read the file back. (b) THE SECOND-WRITER CLAIM, which no behavioural arm can make because each drives the provider it knows about: the planted writer reds the wall and the law EQUALLY. The law does not beat it there; it carries the guarantee that would otherwise be dropped when the wall goes, and it moves the dispositions out of a map inside the wall into the files themselves, where a rename cannot strand one. A blank disposition reds the law (4 tests, 1 failure). Restored, both walls GREEN, law 4/4, kimi 3/3. The kimi wall file goes with it: nothing imported it but the muse wall"
 
 [[item]]
 id = "SH-11"

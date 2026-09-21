@@ -25,7 +25,7 @@
  * a checker like this gets wrong by over-matching.
  *
  * SCOPE IS DERIVED, not listed: every .kt under `gateway/dialect-{name}/src/main` is read from the
- * source tree. A provider module (`gateway/provider-codex`, ...) is NOT in scope — its own
+ * source tree. A provider module (`providers/codex`, ...) is NOT in scope — its own
  * `CodexQuirks` may hold vendor facts, because it IS the vendor — and the selftest pins that
  * asymmetry with a temp tree holding both, so a future widening of the glob cannot silently pull
  * provider modules in.
@@ -51,15 +51,22 @@ const CLASS_HEAD = /public data class (\w+Quirks)\s*\(/g;
 const HEADER_DEFAULT = /^["']x-[A-Za-z0-9-]+["']$/i;
 const HOST_DEFAULT = /https?:\/\/|api\.openai\.|api\.x\.ai|anthropic\.com|openrouter\.ai|moonshot\.cn/i;
 
+/** Every dialect module's src/main: the §2.2 home dialects/<name>/ and, until restructure PR 3 has moved
+ *  the last one, the old gateway/dialect-<name>/ — a checker that only walked one of the two would read a
+ *  moved dialect as "no shared *Quirks class" and red the wall for a directory it stopped looking in. */
 function dialectQuirkFiles(root: string): string[] {
   const files: string[] = [];
+  const homes: string[] = [];
   const gw = join(root, "gateway");
-  if (!existsSync(gw)) return files;
-  const dialects = readdirSync(gw)
-    .filter((n) => n.startsWith("dialect-") && statSync(join(gw, n)).isDirectory())
-    .sort();
-  for (const dialect of dialects) {
-    const main = join(gw, dialect, "src", "main");
+  if (existsSync(gw)) {
+    for (const n of readdirSync(gw).sort()) if (n.startsWith("dialect-") && statSync(join(gw, n)).isDirectory()) homes.push(join(gw, n));
+  }
+  const grouped = join(root, "dialects");
+  if (existsSync(grouped)) {
+    for (const n of readdirSync(grouped).sort()) if (statSync(join(grouped, n)).isDirectory()) homes.push(join(grouped, n));
+  }
+  for (const home of homes) {
+    const main = join(home, "src", "main");
     if (!existsSync(main) || !statSync(main).isDirectory()) continue;
     const found = [...new Bun.Glob("**/*.kt").scanSync({ cwd: main, followSymlinks: true })].sort();
     for (const rel of found) files.push(join(main, rel));
@@ -276,7 +283,7 @@ function checkTree(root: string): string[] {
     saw = true;
     problems.push(...checkSource(relative(root, path).split("\\").join("/"), source));
   }
-  if (!saw) problems.push("no shared *Quirks data class under gateway/dialect-*/src/main");
+  if (!saw) problems.push("no shared *Quirks data class under dialects/*/src/main (or gateway/dialect-*/src/main)");
   return problems;
 }
 
@@ -370,8 +377,8 @@ function selftest(): number {
 
   const tmp = mkdtemp();
   try {
-    const dialect = join(tmp, "gateway/dialect-openai-responses/src/main/kotlin");
-    const vendor = join(tmp, "gateway/provider-codex/src/main/kotlin");
+    const dialect = join(tmp, "dialects/openai-responses/src/main/kotlin");
+    const vendor = join(tmp, "providers/codex/src/main/kotlin");
     mkdirSync(dialect, { recursive: true });
     mkdirSync(vendor, { recursive: true });
     writeFileSync(join(dialect, "ResponsesQuirks.kt"), COMPLIANT, "utf8");
@@ -397,7 +404,7 @@ function selftest(): number {
     "shared-quirks-no-vendor-defaults SELFTEST OK — null vendor knobs, false/omit " +
       "lite booleans, and a boring null extra are green; Regex, header-name, " +
       "vendor-host, and lite-gated measured-wire-byte defaults are red by name; a " +
-      "provider-codex CodexQuirks Regex is out of scope\n",
+      ":providers-codex CodexQuirks Regex is out of scope\n",
   );
   return 0;
 }
@@ -447,7 +454,7 @@ function main(argv: string[]): number {
   }
   process.stdout.write(
     "shared-quirks-no-vendor-defaults GREEN: no vendor-fact default on a shared " +
-      "*Quirks type under gateway/dialect-*/src/main\n",
+      "*Quirks type under dialects/*/src/main\n",
   );
   return 0;
 }

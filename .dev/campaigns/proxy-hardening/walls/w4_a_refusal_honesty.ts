@@ -51,24 +51,24 @@ function pyRepr(items: string[]): string {
 const ROOT = resolve(import.meta.dir, "../../../..");
 
 const PASS = [
-  resolve(ROOT, "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughTerminalState.kt"),
+  resolve(ROOT, "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughTerminalState.kt"),
 ];
 const CHAT = [
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEventRouter.kt"),
-  resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEventRouter.kt"),
+  resolve(ROOT, "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt"),
 ];
 const RESP = [
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesEventReducer.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalBackfill.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt"),
-  resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesEventReducer.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalBackfill.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt"),
+  resolve(ROOT, "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesTerminalDecision.kt"),
 ];
 const PATHS: Record<string, string | string[]> = { passthrough: PASS, chat: CHAT, responses: RESP };
 
 /** The far end of the chain. A SECOND, INDEPENDENT pair from the arm tokens in REQUIRED — the pair is
  *  what makes this a chain check rather than two greps. */
-const WIRE = resolve(ROOT, "gateway/core/src/main/kotlin/splice/core/turn/WireType.kt");
+const WIRE = resolve(ROOT, "core/src/main/kotlin/splice/core/turn/WireType.kt");
 const WIRE_REQUIRED = [
   "FailureCause.MODEL_REFUSED to ErrorType.API_ERROR",
   "FailureCause.UPSTREAM_STATUS_5XX to ErrorType.OVERLOADED",

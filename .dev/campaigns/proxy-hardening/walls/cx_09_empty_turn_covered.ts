@@ -84,34 +84,34 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 // reason that is not a regression. ANY missing file in a key's list makes the whole key null (the
 // vacuity guard, unchanged and strengthened — a deleted file cannot go quiet).
 export const PATHS: Record<string, string[]> = {
-  mirror: ["gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt"],
+  mirror: ["daemon/head/src/main/kotlin/splice/head/reasoning/Mirror.kt"],
   // 2026-08-23: honesty tokens live in StreamHonesty.kt after the pipeline split.
   // TurnPipeline stays on the list so a deleted composer still fails vacuity.
   pipeline: [
-    "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt",
-    "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/StreamHonesty.kt",
+    "daemon/head/src/main/kotlin/splice/head/pipeline/TurnPipeline.kt",
+    "daemon/head/src/main/kotlin/splice/head/pipeline/StreamHonesty.kt",
   ],
   // HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; emittedThinking's set-site moved
   // to PassthroughProseChannels.kt and its read-into-the-outcome site stays in
   // PassthroughStreamTranslator.kt — the same two-file shape the chat key took in HD-24.
   passthrough: [
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughProseChannels.kt",
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughProseChannels.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughStreamTranslator.kt",
   ],
   // HD-24 (2026-08-17): ChatStreamTranslator decomposed; emittedThinking's set-site moved to
   // ChatProseChannels.kt and its read-into-the-outcome site stays in ChatStreamTranslator.kt.
   chat: [
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt",
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt",
+    "dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
   ],
   // HD-24 (2026-08-17): ResponsesStreamTranslator decomposed; emittedThinking's set-site and its
   // read-into-the-outcome site moved to these two siblings.
   responses: [
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningFold.kt",
-    "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesOutcomePayload.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesStreamTranslator.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReasoningFold.kt",
+    "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/stream/ResponsesOutcomePayload.kt",
   ],
-  test: ["gateway/gateway/src/test/kotlin/TurnPipelineTest.kt"],
+  test: ["daemon/head/src/test/kotlin/splice/head/pipeline/TurnPipelineTest.kt"],
 };
 
 export const REQUIRED: Record<string, [string | string[], string][]> = {

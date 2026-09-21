@@ -36,8 +36,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 CHECKER="$ROOT/checks/model-catalogs-single-source.ts"
 EXAMPLE="config/splice.example.toml"
-CATALOG="gateway/app/src/main/kotlin/splice/app/cli/AddProfileCatalog.kt"
-STARTER="gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt"
+CATALOG="app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt"
+STARTER="app/src/main/kotlin/splice/app/daemon/TopologyLoader.kt"
 
 fail=0
 err() { echo "  ✗ model-catalogs-single-source-selftest: $1"; fail=1; }

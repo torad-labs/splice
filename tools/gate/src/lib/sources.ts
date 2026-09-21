@@ -1,6 +1,6 @@
 // The DENOMINATOR, derived from the source rather than from the list being checked (constitution
 // Article V.4). A rule's `files:` glob cannot supply its own expected set: a glob narrowed from
-// `gateway/*/src/main/**` to `gateway/app/src/main/**` still matches everything it names, so a
+// `gateway/*/src/main/**` to `app/src/main/**` still matches everything it names, so a
 // denominator read off the glob agrees with the mutation. These roots come from
 // settings.gradle.kts and package.json instead, and the file lists come from `git ls-files`.
 import { existsSync, readFileSync } from "node:fs";
@@ -8,12 +8,12 @@ import { dirname, join, relative } from "node:path";
 
 export interface GradleModule {
   readonly id: string;
-  /** repo-relative directory, e.g. `gateway/core` */
+  /** repo-relative directory, e.g. `daemon/head` */
   readonly dir: string;
 }
 
 export interface SourceUnit {
-  /** repo-relative directory, e.g. `gateway/core/src/main/kotlin` — also the report key */
+  /** repo-relative directory, e.g. `core/src/main/kotlin` — also the report key */
   readonly key: string;
   readonly module: string;
   /** `main` | `test` | `testFixtures` for Gradle, `src` for a Bun workspace surface */

@@ -75,7 +75,7 @@ not this document.
 
 splice ships as an **application** — one shadow jar plus a launcher — and publishes no artifact
 to any registry. The Kotlin `public` surface exists for the internal module graph (`:core`,
-`:provider-spi`, the dialects), not for external compiled consumers, so changes to public
+`:upstream`, the dialects), not for external compiled consumers, so changes to public
 data-class shapes (constructor arity, `copy`/`componentN` signatures) are **not** treated as
 breaking. Review findings about JVM ABI drift on these types have this standing answer: nothing
 outside this repository links against them.

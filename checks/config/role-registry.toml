@@ -18,8 +18,8 @@
 #
 # THREE NAMES WERE DELIBERATELY ABSENT, and V4-122 RECONCILED ALL THREE rather than disposing of
 # them — which is what this file said the fix row would have to do:
-#   ElapsedNow    (provider-spi/RuntimeSeams.kt)      -> typealias of ElapsedClock  (core/util/RuntimePorts.kt)
-#   AccountNow    (provider-spi/AccountSelection.kt)  -> typealias of WallClock     (core/util/RuntimePorts.kt)
+#   ElapsedNow    (upstream/RuntimeSeams.kt)          -> typealias of ElapsedClock  (core/util/RuntimePorts.kt)
+#   AccountNow    (upstream/credentials/AccountSelection.kt) -> typealias of WallClock     (core/util/RuntimePorts.kt)
 #   HeaderLookup  (gateway/usage/RateLimitHeaders.kt) -> typealias of QuotaHeaderRead (core/usage/QuotaHeaders.kt)
 # They were never distinct roles, and the evidence was in the declarations rather than the audit:
 # ElapsedNow's KDoc said "a monotonic now-reading in milliseconds … retry deadlines and the shared
@@ -144,8 +144,8 @@ ages are testable without a process-global clock. RemainingTurnWait is a BUDGET 
 turn deadline is left — not a clock reading at all. WsPathPulse is an AGE, milliseconds since the \
 last WS ping, which is a derived difference rather than either clock. HeadPerfSkipSource is not a \
 time at all: it is a COUNT of perf rows that could not be attributed. \
-DELIBERATELY ABSENT: ElapsedNow (provider-spi/RuntimeSeams.kt:40) is ElapsedClock's role in a \
-second module, and AccountNow (provider-spi/AccountSelection.kt:22) is WallClock's. Both are red \
+DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
+second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""
 
 # ── 10 names, () -> String ────────────────────────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ names = [
     "HandshakeHeaders",
     "WsExtraHeaders",
 ]
-reason = """Both build headers for the responses-WebSocket handshake, and they are two LAYERS of it rather than two moments. HandshakeHeaders is the full handshake set — `Authorization` plus the `OpenAI-Beta: responses_websockets=…` opt-in the v2 backend gates on — and its KDoc records why it is not splice.spi.CredentialHeaders despite the identical shape: it is read ONCE PER CONNECTION and is non-suspending, because a WebSocket handshake cannot be re-run without dropping the per-connection server context, whereas CredentialHeaders is rebuilt per ATTEMPT so a post-401 refresh reaches the wire. WsExtraHeaders is the per-handshake EXTRA set layered on top of that Authorization set — "the same role Provider.extraHeaders plays on the SSE path". The SEPARATION law keeps both in the dialect module that owns them; collapsing them would erase the once-per-connection contract that the whole WS path's session reuse depends on."""
+reason = """Both build headers for the responses-WebSocket handshake, and they are two LAYERS of it rather than two moments. HandshakeHeaders is the full handshake set — `Authorization` plus the `OpenAI-Beta: responses_websockets=…` opt-in the v2 backend gates on — and its KDoc records why it is not splice.upstream.CredentialHeaders despite the identical shape: it is read ONCE PER CONNECTION and is non-suspending, because a WebSocket handshake cannot be re-run without dropping the per-connection server context, whereas CredentialHeaders is rebuilt per ATTEMPT so a post-401 refresh reaches the wire. WsExtraHeaders is the per-handshake EXTRA set layered on top of that Authorization set — "the same role Provider.extraHeaders plays on the SSE path". The SEPARATION law keeps both in the dialect module that owns them; collapsing them would erase the once-per-connection contract that the whole WS path's session reuse depends on."""
 
 # ── 2 names, (Int) -> Boolean ─────────────────────────────────────────────────────────────────────
 [[groups]]

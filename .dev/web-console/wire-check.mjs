@@ -328,7 +328,7 @@ function daemon() {
   // then VERIFIES, beats a rule that silently swallows a real mismatch — which the greedy version
   // did: it took MISMATCHED from 1 to 0.
   const passThrough = {
-    '/api/doctor': { port: 'DoctorReport', builtIn: 'gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt' },
+    '/api/doctor': { port: 'DoctorReport', builtIn: 'app/src/main/kotlin/splice/app/cli/doctor/DoctorReportShape.kt' },
   };
   // the exemption has to still be true, or it is a stale excuse rather than a disposition — but it
   // is only a claim about a route this tree actually serves, so it is verified after the routes are
@@ -777,11 +777,11 @@ async function selftest() {
   ok('entity types but no api segment is DID NOT RUN, not a pass', exit(bare) !== 0, true);
   put('console/src/entities/probe/api/index.ts', "const x = request<P>('/api/probe');\n");
   ok('a console side but no gateway tree is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('gateway/control/src/main/kotlin/Empty.kt', '// no keys and no routes here\n');
+  put('daemon/control/src/main/kotlin/Empty.kt', '// no keys and no routes here\n');
   ok('control kotlin that emits no keys at all is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('gateway/control/src/main/kotlin/Empty.kt', 'val x = buildJsonObject { put("a", 1) }\n');
+  put('daemon/control/src/main/kotlin/Empty.kt', 'val x = buildJsonObject { put("a", 1) }\n');
   ok('keys but no served route is DID NOT RUN, not a pass', exit(bare) !== 0, true);
-  put('gateway/control/src/main/kotlin/Empty.kt', 'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { put("a", 1) }\n');
+  put('daemon/control/src/main/kotlin/Empty.kt', 'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { put("a", 1) }\n');
   ok('a console and a daemon that AGREE come back clean', exit(bare), 0);
   put('console/src/entities/probe/model/types.ts', 'export interface P { a_typo: string }\n');
   ok('a planted MISMATCH is red', exit(bare) !== 0, true);
@@ -792,7 +792,7 @@ async function selftest() {
   put('console/src/entities/probe/model/types.ts', 'export interface P { a: string }\n');
   // `if (` on the put's own line is what marks the key conditional, so `a` is a non-optional
   // declaration against a key the wire may omit: a Level 3a AND 3b entry, and nothing else wrong.
-  put('gateway/control/src/main/kotlin/Empty.kt',
+  put('daemon/control/src/main/kotlin/Empty.kt',
     'fun r() { get("/api/probe") { } }\nval x = buildJsonObject { if (flag) put("a", 1) }\n');
   const census = runIn(bare);
   ok('a tree whose ONLY finding is the 3b census comes back CLEAN', census.status, 0);

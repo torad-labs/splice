@@ -1,0 +1,125 @@
+// NEW: reasoning-continuation folding for the codex Responses path. gpt-5.5 / gpt-5.6-luna /
+// gpt-5.6-terra intermittently TRUNCATE their own chain-of-thought at exactly
+// reasoning_tokens == 518*n - 2 (516, 1034, 1552, ...) — the model stops reasoning early and
+// finalizes a shallower answer. gpt-5.6-sol does NOT (probed 2026-07-19). The fix (the mechanism
+// CodexCont / codexcomp use): detect the fingerprint, REPLAY the round's reasoning.encrypted_content
+// back to the server with a phase:commentary "Continue thinking..." marker so the model resumes from
+// the cutoff instead of finalizing. encrypted_content is opaque — replayed, never read (the server
+// holds the keys). The envelope round-trip reuses core/reasoning/Replay.kt (encode on the stream
+// side into TurnOutcome.Success.reasoningEnvelopes, decode HERE back to Responses reasoning input
+// items) — the codec is never re-authored.
+package splice.dialect.responses.stream
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.core.config.Knob
+import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
+import splice.dialect.responses.request.ResponsesRequest
+import splice.dialect.responses.request.responsesRequestJson
+import splice.upstream.FoldController
+import splice.upstream.FoldRound
+
+/** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
+public data class FoldConfig(
+    /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
+     *  operator-tunable default lives in Knob.FOLD_REASONING_MODELS. */
+    val models: Set<String>,
+    /** V4-100: READS Knob.FOLD_MAX_CONTINUE instead of restating its default. The knob is the
+     *  operator-facing source of this number (foldMaxContinue, CLAUDEX_FOLD_MAX_CONTINUE), so a
+     *  file-local `3` was a second declaration of it — the KNOB-SHADOW const-single-source exists to
+     *  catch, and the one that goes wrong silently: the operator sets 5, the config layer carries 5,
+     *  and this default keeps answering 3 for every direct construction. */
+    val maxContinue: Int = (Knob.FOLD_MAX_CONTINUE.default as Long).toInt(),
+    val markerText: String = DEFAULT_MARKER_TEXT,
+    /** V4-100: READS Knob.FOLD_MAX_TIER, same reason as [maxContinue]. */
+    val maxTierN: Int = (Knob.FOLD_MAX_TIER.default as Long).toInt(),
+)
+
+// The one FoldConfig default still at file scope, because Kotlin main sources carry no `companion`
+// blocks and a consumer only drops the `FoldConfig.` prefix. The two NUMERIC defaults that used to
+// sit here are GONE (V4-100): each restated a Knob default, so FoldConfig reads the knobs instead
+// and there is no second number left to drift from the operator-facing one.
+public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
+
+/**
+ * The codex 518n-2 detector + continuation-request builder. One per fold-eligible turn; the gateway
+ * drives it after each completed round. Detection is the shipped fingerprint (516/1034/1552/...);
+ * a truncated round with replayable encrypted reasoning, within the tier window and continuation
+ * cap, yields the NEXT request body (this round's input + replayed reasoning + the marker). Anything
+ * else returns null → the gateway flushes the buffered output and emits the single honest terminal.
+ */
+public class ResponsesFoldController(
+    private val config: FoldConfig,
+    private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
+) : FoldController {
+
+    private val continuation = ResponsesContinuation()
+
+    override fun continuation(round: FoldRound): JsonObject? {
+        if (!shouldContinue(round)) return null
+        val replay = round.outcome.reasoningEnvelopes.mapNotNull { decodeReasoningEnvelope(it) }
+        return if (replay.isEmpty()) null else continuationBody(round.requestBody, replay)
+    }
+
+    /** Truncated on the 518n-2 fingerprint, within the tier window, and under the continuation cap. */
+    private fun shouldContinue(round: FoldRound): Boolean {
+        val reasoningTokens = round.outcome.usage.reasoningTokens
+        return isTruncationFingerprint(reasoningTokens) &&
+            tierOf(reasoningTokens) <= config.maxTierN &&
+            round.roundIndex < config.maxContinue
+    }
+
+    /** The exact 518n-2 truncation fingerprint (516/1034/1552/...). An instance member rather than
+     *  the companion function it used to be (Kotlin main sources carry no `companion` blocks);
+     *  reads only its argument. */
+    public fun isTruncationFingerprint(reasoningTokens: Long): Boolean =
+        reasoningTokens > 0 && (reasoningTokens + FINGERPRINT_OFFSET) % FOLD_PERIOD == 0L
+
+    /** Tier n for a fingerprint-matching count (516→1, 1034→2, ...). */
+    public fun tierOf(reasoningTokens: Long): Long = (reasoningTokens + FINGERPRINT_OFFSET) / FOLD_PERIOD
+
+    private fun continuationBody(previous: JsonObject, replayItems: List<JsonObject>): JsonObject =
+        continuation.continuationRequest(previous, replayItems + listOf(continuationMarker()))
+
+    // A hidden phase:commentary assistant message — the codex-rs / CodexCont / codexcomp nudge.
+    // It ALSO satisfies the Responses "reasoning item needs a following item" constraint.
+    private fun continuationMarker(): JsonObject = buildJsonObject {
+        put("role", "assistant")
+        put("phase", "commentary")
+        put("content", config.markerText)
+    }
+}
+
+// reasoning_tokens == 518*n - 2  ⇔  (reasoning_tokens + 2) % 518 == 0, reasoning_tokens > 0.
+private const val FOLD_PERIOD = 518L
+private const val FINGERPRINT_OFFSET = 2L
+
+/**
+ * DTO-faithful continuation shared by fold, re-anchor and tool-search: decode the prior request,
+ * extend ONLY its `input` with [continuationRequest]'s extra items, re-encode through the same
+ * closed serializer. No request FIELD is added — the #924 closed DTO is untouched, so byte-identity
+ * off every path is trivial.
+ *
+ * A type rather than the file-level function it used to be (Kotlin main sources carry no top-level
+ * functions); the member keeps its old name and argument list, so each of the three call sites only
+ * gained a receiver.
+ */
+internal class ResponsesContinuation {
+
+    /** The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I
+     *  want to always see the reasoning, detailed"): the duplicated sections that the re-request
+     *  provokes are suppressed turn-scoped in the stream translator (SharedSummaryParts) — exact
+     *  repeats of a section already emitted this turn never reach the client; every genuinely-new
+     *  section does. */
+    fun continuationRequest(previous: JsonObject, extraItems: List<JsonObject>): JsonObject {
+        val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
+        val nextInput = buildJsonArray {
+            base.input.forEach { add(it) }
+            extraItems.forEach { add(it) }
+        }
+        val next = base.copy(input = nextInput)
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
+    }
+}

@@ -32,7 +32,7 @@ message: "System.getenv only inside core/config — everything else reads the la
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/core/src/main/kotlin/**/config/**
+  - core/src/main/kotlin/**/config/**
 rule:
   any:
     - pattern: System.getenv($$$A)

@@ -5,7 +5,7 @@
  * WHY THIS EXISTS. A @Test method whose body returns a non-Unit value is not discovered by
  * JUnit: no failure, no skip, no warning, no line in any report. The suite is green, the
  * XML is complete-looking, and the test has never run once in its life. Measured 2026-09-16:
- * gateway/gateway/src/test/kotlin/head/HeadServerCapacityTest.kt declares four @Test methods
+ * daemon/head/src/test/kotlin/splice/head/HeadServerCapacityTest.kt declares four @Test methods
  * and TEST-head.HeadServerCapacityTest.xml reports tests=3 — the fourth ends in held.await()
  * inside `= runBlocking { ... }`, so the method returns a String, and it had never executed.
  * Nothing we own could see it: every gate reads what ran, and nothing compared that against
@@ -67,8 +67,17 @@ import { fileURLToPath } from "node:url";
 // parents[2]: this file lives at checks/config/, so the repo root is two levels up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const TEST_SOURCES = "gateway/*/src/test/kotlin/**/*.kt";
-const TEST_RESULTS = "gateway/*/build/test-results/test/*.xml";
+// restructure PR 3: :client is the first module to live outside gateway/, so the test plane is a
+// LIST of module homes. A test root this wall stops globbing has its classes leave the DENOMINATOR
+// entirely — the wall then proves that every test it can still see ran, which is the exact shape
+// of the failure it was written against.
+// Every §2.2 module home, the ones that exist and the ones the next module commits create (a glob
+// over an absent directory matches nothing, so the denominator can only grow as modules land).
+const MODULE_HOMES = [
+  "gateway/*", "client", "core", "upstream", "dialects/*", "providers/*", "daemon/*", "app", "quality/*",
+];
+const TEST_SOURCES = MODULE_HOMES.map((home) => `${home}/src/test/kotlin/**/*.kt`);
+const TEST_RESULTS = MODULE_HOMES.map((home) => `${home}/build/test-results/test/*.xml`);
 
 // Classes whose XML count is legitimately HIGHER than the source denominator. Every entry
 // needs a written reason — the reason is the disposition, and an empty one fails the wall.
@@ -294,7 +303,7 @@ function memberItems(original: string, masked: string): string[] {
 /** Every class in the file that declares test methods, NESTED classes included.
  *
  *  A nested class gets its outer name as a qualifier (`Outer$Inner`), because that is how
- *  JUnit writes the row it produces: gateway/app's `inner class Heads` inside SetupCommandTest
+ *  JUnit writes the row it produces: app's `inner class Heads` inside SetupCommandTest
  *  ran as SetupCommandTest$Heads, and looking it up by simple name reported a phantom hole. */
 function classesIn(path: string, module: string): TestClass[] {
   const source = readFileSync(path, "utf8");
@@ -318,16 +327,18 @@ function classesIn(path: string, module: string): TestClass[] {
   return found;
 }
 
-/** The `gateway/<module>/...` segment of a path. */
+/** The module DIRECTORY of a path — everything before its `/src/` or `/build/` segment (`app`,
+ *  `client`, `daemon/head`), so two modules under one parent never share a key. A path with neither
+ *  segment is outside every module home and fails by name rather than defaulting. */
 function moduleOf(path: string): string {
-  const parts = path.split("/");
-  const at = parts.indexOf("gateway");
-  return parts[at + 1];
+  const cuts = ["/src/", "/build/"].map((segment) => path.indexOf(segment)).filter((at) => at >= 0);
+  if (cuts.length === 0) throw new Error(`${path} has no /src/ or /build/ segment — it is under no module home`);
+  return path.slice(0, Math.min(...cuts));
 }
 
 function scanSources(root: string): TestClass[] {
   const classes: TestClass[] = [];
-  const files = [...new Bun.Glob(TEST_SOURCES).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = TEST_SOURCES.flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]).sort();
   for (const rel of files) classes.push(...classesIn(join(root, rel), moduleOf(rel)));
   return classes;
 }
@@ -366,7 +377,7 @@ function parseJUnitXml(text: string): { rootAttrs: Map<string, string>; testcase
 /** module -> simple class name -> (count, testcase names). */
 function xmlRows(root: string): Map<string, Map<string, XmlRow>> {
   const rows = new Map<string, Map<string, XmlRow>>();
-  const files = [...new Bun.Glob(TEST_RESULTS).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = TEST_RESULTS.flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]).sort();
   for (const rel of files) {
     const module = moduleOf(rel);
     const { rootAttrs, testcaseNames } = parseJUnitXml(readFileSync(join(root, rel), "utf8"));
@@ -386,7 +397,7 @@ function audit(root: string): string[] {
   const classes = scanSources(root);
   if (classes.length === 0) {
     return [
-      "no test class with a @Test method was parsed from gateway/*/src/test/kotlin — " +
+      `no test class with a @Test method was parsed from ${TEST_SOURCES.join(", ")} — ` +
         "refusing to pass vacuously, because a green over an empty denominator is the " +
         "very signal this wall exists to distrust",
     ];
@@ -394,7 +405,7 @@ function audit(root: string): string[] {
   const rows = xmlRows(root);
   if (rows.size === 0) {
     return [
-      "no JUnit XML found under gateway/*/build/test-results/test — a checker reading " +
+      `no JUnit XML found under ${TEST_RESULTS.join(", ")} — a checker reading ` +
         "an empty results directory is the bug it is hunting; run the test leg first " +
         "(this is why gate.sh runs it AFTER `gradle clean check`)",
     ];
@@ -526,10 +537,10 @@ class NoTestsHere {
 function writeTree(root: string, source: string, xml: string | null, quietModule: string | null = null): void {
   const gateway = join(root, "gateway");
   if (existsSync(gateway)) rmSync(gateway, { recursive: true, force: true });
-  const src = join(root, "gateway/gateway/src/test/kotlin/SampleTest.kt");
+  const src = join(root, "daemon/head/src/test/kotlin/SampleTest.kt");
   mkdirSync(dirname(src), { recursive: true });
   writeFileSync(src, source, "utf8");
-  const results = join(root, "gateway/gateway/build/test-results/test");
+  const results = join(root, "daemon/head/build/test-results/test");
   // CLEARED FIRST: a case that asks for no XML must not inherit the previous case's XML,
   // which is this wall's own subject — an observation left over from an earlier run.
   if (existsSync(results)) rmSync(results, { recursive: true, force: true });
@@ -603,12 +614,12 @@ function selftest(): number {
     if (!problems.some((p) => p.includes("silentmodule") && p.includes("NO XML at all"))) {
       failures.push(`a module with no XML must be RED by module name, got: ${pyReprList(problems)}`);
     }
-    MODULE_DISPOSITIONS = { silentmodule: "" };
+    MODULE_DISPOSITIONS = { "gateway/silentmodule": "" };
     problems = audit(root);
     if (!problems.some((p) => p.includes("NO reason"))) {
       failures.push(`a blank module reason must be RED, got: ${pyReprList(problems)}`);
     }
-    MODULE_DISPOSITIONS = { silentmodule: "test task disabled by configuration unless -PrunX" };
+    MODULE_DISPOSITIONS = { "gateway/silentmodule": "test task disabled by configuration unless -PrunX" };
     problems = audit(root);
     if (problems.length > 0) {
       failures.push(`a reasoned module disposition must be GREEN, got: ${pyReprList(problems)}`);
@@ -724,7 +735,7 @@ function main(argv: string[]): number {
     return 1;
   }
   process.stdout.write(
-    "tests-are-discovered GREEN: every test method declared in gateway/*/src/test/kotlin " +
+    `tests-are-discovered GREEN: every test method declared in ${TEST_SOURCES.join(", ")} ` +
       "appears in the JUnit XML for its class\n",
   );
   return 0;

@@ -11,9 +11,9 @@
  * THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 6). `JvmCodeModeRuntime` implements `CodeModeRuntime`,
  * which extends `AutoCloseable`, and its `close()` shuts down the worker pool: it destroys child JVMs
  * and releases their permits. It is constructed in production at
- * gateway/app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt:101 (`runtime =
+ * app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt:101 (`runtime =
  * JvmCodeModeRuntime()`), and nothing in any main source ever closes it. The only `.close()`/`.use {}`
- * callers are gateway/app/src/test/kotlin/CodeModeRuntimeTest.kt:238 and friends — which is why every
+ * callers are app/src/test/kotlin/splice/app/codemode/CodeModeRuntimeTest.kt:238 and friends — which is why every
  * test that exercises worker reclamation passes while the daemon never reclaims anything.
  *
  * THE DENOMINATOR, FROM THE SOURCE, AND TRANSITIVELY (§24). The types are not a list in this file.
@@ -83,8 +83,17 @@ import { fileURLToPath } from "node:url";
 // `__file__`'s parent.parent, i.e. the repo root one level above checks/.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const MAIN_GLOB = "gateway/*/src/main/**/*.kt";
-const TEST_GLOBS = ["gateway/*/src/test/**/*.kt", "gateway/*/src/testFixtures/**/*.kt"];
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+const MODULE_HOMES = [
+  "gateway/*", "client", "core", "upstream", "dialects/*", "providers/*", "daemon/*", "app", "quality/*",
+];
+const MAIN_GLOBS = MODULE_HOMES.map((home) => `${home}/src/main/**/*.kt`);
+const TEST_GLOBS = MODULE_HOMES.flatMap((home) => [`${home}/src/test/**/*.kt`, `${home}/src/testFixtures/**/*.kt`]);
 
 const SEEDS = new Set(["AutoCloseable", "Closeable", "java.lang.AutoCloseable", "java.io.Closeable"]);
 
@@ -358,10 +367,10 @@ function read(root: string, patterns: string | string[]): Map<string, string> {
 
 function audit(root: string): string[] {
   const problems: string[] = [];
-  const main = read(root, MAIN_GLOB);
+  const main = read(root, MAIN_GLOBS);
   if (main.size === 0) {
     return [
-      `no Kotlin main sources matched ${MAIN_GLOB} under ${root} — refusing to pass vacuously; ` +
+      `no Kotlin main sources matched ${MAIN_GLOBS.join(", ")} under ${root} — refusing to pass vacuously; ` +
         "a checker that reads nothing vouches for nothing.",
     ];
   }
@@ -453,7 +462,7 @@ function testOnlyClosers(root: string, typeName: string): string[] {
 
 // ── selftest fixtures ──────────────────────────────────────────────────────────────────────────
 
-const SPI_CONTRACT = `package splice.spi
+const SPI_CONTRACT = `package splice.upstream
 
 public interface CodeModeRuntime : AutoCloseable {
     public fun start(): Unit
@@ -553,7 +562,8 @@ internal class Plain(val label: String) {
 `;
 
 function write(root: string, files: Record<string, string>): void {
-  const existing = [...new Bun.Glob("gateway/*/src/*/**/*.kt").scanSync({ cwd: root, followSymlinks: true })];
+  const existing = MODULE_HOMES.map((home) => `${home}/src/*/**/*.kt`)
+    .flatMap((p) => [...new Bun.Glob(p).scanSync({ cwd: root, followSymlinks: true })]);
   for (const rel of existing) {
     const target = join(root, rel);
     if (existsSync(target)) rmSync(target);
@@ -565,9 +575,9 @@ function write(root: string, files: Record<string, string>): void {
   }
 }
 
-const APP = "gateway/app/src/main/kotlin/splice/app/App.kt";
-const SPI = "gateway/provider-spi/src/main/kotlin/splice/spi/Spi.kt";
-const TEST = "gateway/app/src/test/kotlin/RuntimeTest.kt";
+const APP = "app/src/main/kotlin/splice/app/App.kt";
+const SPI = "upstream/src/main/kotlin/splice/upstream/Spi.kt";
+const TEST = "app/src/test/kotlin/RuntimeTest.kt";
 
 /** Python's repr() of a list of strings. */
 const pyReprList = (items: string[]): string =>
@@ -699,7 +709,7 @@ function main(argv: string[]): number {
   }
   const problems = audit(ROOT);
   if (problems.length === 0) {
-    const mainSources = read(ROOT, MAIN_GLOB);
+    const mainSources = read(ROOT, MAIN_GLOBS);
     const closure = closeableClosure(declarations(mainSources));
     const concrete = declarations(mainSources).filter((d) => closure.has(d.name) && d.kind !== "interface");
     process.stdout.write(

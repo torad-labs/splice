@@ -14,7 +14,7 @@ message: "SharedSummaryParts is constructed ONCE per turn (TurnMeta's default) â
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/core/src/main/kotlin/**/turn/Turn.kt
+  - core/src/main/kotlin/**/turn/Turn.kt
 rule:
   any:
     # bare construction

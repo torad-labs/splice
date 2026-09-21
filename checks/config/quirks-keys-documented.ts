@@ -40,7 +40,7 @@
  *
  * WHAT IS NOT A DISPOSITION SURFACE, and why it matters. README.md is not a quirk
  * reference (409 lines; across all 28 keys it mentions store and code_mode, incidentally).
- * And gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt names 16 quirk keys
+ * And app/src/main/kotlin/splice/app/cli/doctor/DoctorReportShape.kt names 16 quirk keys
  * in a RUNTIME doctor map — it is a report, not documentation, and counting it would make
  * this wall green with no documentation work at all. The surfaces are exactly the two
  * files an operator reads to write a quirk.
@@ -83,13 +83,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // The denominator. Fixed path on purpose: a checker that silently loses its source is a
 // checker that passes.
-const SOURCE_REL = "gateway/core/src/main/kotlin/splice/core/topology/QuirksConfig.kt";
+const SOURCE_REL = "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt";
 
 // The two files an operator reads to write a quirk: the copyable example config and the
 // `splice add PROFILE` emitter. See NOT CAUGHT for what a third surface would mean.
 const SURFACES = [
   "config/splice.example.toml",
-  "gateway/app/src/main/kotlin/splice/app/cli/AddProfileCatalog.kt",
+  "app/src/main/kotlin/splice/app/cli/add/AddProfileCatalog.kt",
 ];
 
 const DATA_CLASS = /(?:public\s+)?data class\s+(\w+)\s*\(/g;

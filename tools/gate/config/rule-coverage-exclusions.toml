@@ -7,7 +7,7 @@
 # files, or loses a file inside a root it does cover, fails BY NAME unless a row below says why.
 #
 # That is the point. `ast-grep scan` cannot see a glob that selects nothing: narrowing
-# `gateway/*/src/main/**/*.kt` to `gateway/app/src/main/**/*.kt` leaves the scan green while fifteen
+# `gateway/*/src/main/**/*.kt` to `app/src/main/**/*.kt` leaves the scan green while fifteen
 # modules lose enforcement. The rows here are the only way that narrowing can be legitimate, and
 # each one is dated so the narrowing has a history instead of a habit.
 #
@@ -52,7 +52,7 @@ date = "2026-09-20"
 reason = """
 Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
 sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test) and
-kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :arch-tests.
+kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in :quality-architecture.
 """
 
 [[exclusion]]
@@ -80,44 +80,55 @@ kt-no-delay-in-production, which binds src/main.
 [[exclusion]]
 rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
 modules = [
-  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
-  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "gateway", "app", "fir-checks",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
+  "providers-openai", "daemon-head", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Both walls are scoped to the control plane: `guarded(call)` covers the 25 control-plane routes, and
-LogSafe escapes the operator- and HTTP-supplied values (argv, head keys) that :control interpolates
-into log lines. Only :control declares those routes. Widening either wall to the head's proxy wire
+LogSafe escapes the operator- and HTTP-supplied values (argv, head keys) that :daemon-control interpolates
+into log lines. Only :daemon-control declares those routes. Widening either wall to the head's proxy wire
 is a separate, evidence-led change to quality/rules/.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not. Measured on the moved tree:
+kt-control-route-guarded finds 0 in :client (it declares no routes) and kt-log-escapes-caller-input
+would find 28 — local filesystem paths in daemon-log lines, not HTTP-supplied values.
 """
 
 [[exclusion]]
 rule = "kt-json-scalars-single-source"
 modules = [
-  "core", "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat",
-  "gateway", "fir-checks",
+  "core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
+  "daemon-head", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Declared scope is the modules that read backend JSON scalars into strings: the five providers,
-:control and :app. :core declares JsonScalars itself, the dialects own typed wire codecs, and
-:fir-checks is a Kotlin compiler plugin with no JSON on its path.
+:daemon-control and :app. :core declares JsonScalars itself, the dialects own typed wire codecs, and
+:quality-compiler-plugin is a Kotlin compiler plugin with no JSON on its path.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not. :client reads
+Claude Code's own on-disk JSON rather than a backend wire, and it already calls JsonScalars where
+it parses one. Measured: widening would find 2 — a recorded gap, not a narrowing. Close it by
+adding `client/src/main/**/*.kt` to the rule, fixing those two, and deleting `client` here.
 """
 
 [[exclusion]]
 rule = "kt-no-exception-as-outcome"
 modules = [
-  "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat",
-  "provider-codex", "provider-grok", "provider-kimi", "provider-muse", "provider-openai",
-  "gateway", "control", "app", "fir-checks",
+  "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat",
+  "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai",
+  "daemon-head", "daemon-control", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-The sealed-outcome law is pinned where refusal types are DECLARED — :core and :provider-spi. Every
+The sealed-outcome law is pinned where refusal types are DECLARED — :core and :upstream. Every
 other module consumes those sealed hierarchies rather than declaring its own exception-as-outcome.
 """
 
@@ -135,9 +146,9 @@ Daemon LOGGING still flows through the injected log lambda."
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
 modules = [
-  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
-  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "gateway", "control", "fir-checks",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
+  "providers-openai", "daemon-head", "daemon-control", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
@@ -145,46 +156,60 @@ reason = """
 The bridge wall grades the one path where runBlocking is allowed at all — :app's Main.kt and cli/
 tree, the exact two paths kt-no-runblocking-in-daemon exempts. Everywhere else runBlocking is banned
 outright, so there is no exported bridge to find.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not. Measured: 0 in :client, which
+names no coroutine at all.
 """
 
 [[exclusion]]
 rule = "kt-no-runcatching-in-coroutine"
-modules = ["core", "provider-codex", "provider-grok", "provider-kimi", "provider-muse", "provider-openai", "fir-checks"]
+modules = ["core", "client", "providers-codex", "providers-grok", "providers-kimi", "providers-muse", "providers-openai", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-Declared scope is the turn/stream path: :provider-spi, the three dialects, :gateway, :control and
+Declared scope is the turn/stream path: :upstream, the three dialects, :daemon-head, :daemon-control and
 :app. :core is framework-free vocabulary, the five provider modules are auth/quirk adapters outside
-that path, and :fir-checks is a compiler plugin.
+that path, and :quality-compiler-plugin is a compiler plugin.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not. Measured: 0 in :client, which
+imports no kotlinx.coroutines at all.
 """
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["core", "dialect-anthropic-passthrough", "dialect-openai-responses", "dialect-openai-chat", "fir-checks"]
+modules = ["core", "client", "dialects-anthropic", "dialects-openai-responses", "dialects-openai-chat", "quality-compiler-plugin"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Declared scope is the modules that consume Result from backend, auth and process calls. :core
-declares the outcome types, the dialects are pure byte builders, and :fir-checks is a compiler
+declares the outcome types, the dialects are pure byte builders, and :quality-compiler-plugin is a compiler
 plugin.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not. :client consumes Result from FILESYSTEM calls, which this wall's declared
+scope never named. Measured: widening would find 16 — a recorded gap, not a narrowing, and the
+same shape as the :providers-muse row below. Close it by adding `client/src/main/**/*.kt` to the
+rule, burning those 16 down, and deleting `client` here.
 """
 
 [[exclusion]]
 rule = "kt-no-silent-result-collapse"
-modules = ["provider-muse"]
+modules = ["providers-muse"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-:provider-muse is the ONE provider missing from this wall's files: list, which names provider-spi,
+:providers-muse is the ONE provider missing from this wall's files: list, which names :upstream,
 grok, kimi, codex and openai. An inconsistency in the rule, not a design: muse performs the same
 credential refresh the other four do. Recorded rather than closed — widening a rule is a change to
-quality/rules/, out of this stage's fence. Close it by adding `gateway/provider-muse/src/main/**/*.kt` to
+quality/rules/, out of this stage's fence. Close it by adding `providers/muse/src/main/**/*.kt` to
 the rule and deleting this row.
 """
 
 [[exclusion]]
 rule = "kt-no-stream-options-request"
-modules = ["dialect-openai-chat"]
+modules = ["dialects-openai-chat"]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
@@ -196,109 +221,121 @@ reopen the incident."
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 modules = [
-  "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
-  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "gateway", "fir-checks",
+  "core", "upstream", "dialects-anthropic", "dialects-openai-responses",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
+  "providers-openai", "daemon-head", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
-Head isolation (V4-115) is decided in three places only: core/launch materialises a head's Claude
+Head isolation (V4-115) is decided in three places only: :client materialises a head's Claude
 config dir, control/Launch* assembles the per-launch spec, and app's LaunchSpecFactory sets
 CLAUDE_CONFIG_DIR. No other module spells a config dir at all.
+
+2026-09-20, restructure PR 3: `core` joins this list. The launch package WAS :core's, and the whole
+of it became :client — so :core's main source set now holds no file this wall has a subject in. The
+wall did not narrow; its subject moved module, and :client's main is covered file-for-file.
 """
 
 [[exclusion]]
 rule = "kt-outcome-tag-single-source"
 modules = [
-  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
-  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "app", "fir-checks",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
+  "providers-openai", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Perf-row outcome tags are emitted by the head and the control plane. :core declares OutcomeTag
 itself (splice/core/perf/OutcomeTag.kt), and no other module writes a perf row.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not.
+Measured: 0 in :client, which writes no perf row.
 """
 
 [[exclusion]]
 rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
 modules = [
-  "core", "provider-spi", "dialect-anthropic-passthrough", "dialect-openai-responses",
-  "dialect-openai-chat", "provider-codex", "provider-grok", "provider-kimi", "provider-muse",
-  "provider-openai", "control", "app", "fir-checks",
+  "core", "client", "upstream", "dialects-anthropic", "dialects-openai-responses",
+  "dialects-openai-chat", "providers-codex", "providers-grok", "providers-kimi", "providers-muse",
+  "providers-openai", "daemon-control", "app", "quality-compiler-plugin",
 ]
 sourceSets = ["main"]
 date = "2026-09-20"
 reason = """
 Three head-local laws: which QuotaTracker a turn reads, the one sanctioned turn-cleanup flush
 (DR-93), and the paired IOException/IllegalStateException catch on the client socket. All three
-name structures that exist only inside :gateway.
+name structures that exist only inside :daemon-head.
+2026-09-20, restructure PR 3: `client` joins this list. These 32 files were :core's until
+the :client extraction, and :core is already excused above for the reason stated — the module
+boundary moved, the wall's declared scope did not. Measured in :client: 0, 0, and 1
+— the one being a plain file-I/O catch, not the client socket this law is about.
 """
 
 # ─── file scope: the single declaration site each single-source wall exempts ──────────────────────
 
 [[exclusion]]
 rule = "kt-error-envelope-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
+files = ["core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt"]
 date = "2026-09-20"
 reason = "The sole builder of the Anthropic error envelope — exempt BY PATH so no other file can claim it."
 
 [[exclusion]]
 rule = "kt-form-encoding-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt"]
+files = ["core/src/main/kotlin/splice/core/util/FormEncoding.kt"]
 date = "2026-09-20"
 reason = "The sole percent-encoder; every other file calls it."
 
 [[exclusion]]
 rule = "kt-http-status-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]
+files = ["core/src/main/kotlin/splice/core/wire/HttpStatus.kt"]
 date = "2026-09-20"
 reason = "The sole declaration site of HTTP status numbers — exempt BY PATH, per the rule's own comment."
 
 [[exclusion]]
 rule = "kt-jsonl-sink-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt"]
+files = ["core/src/main/kotlin/splice/core/util/JsonlSink.kt"]
 date = "2026-09-20"
 reason = "The sole append-only JSONL sink; re-deriving writeString(CREATE, APPEND) elsewhere is what the rule bans."
 
 [[exclusion]]
 rule = "kt-l2-single-mirror-definition"
-files = ["gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt"]
+files = ["daemon/head/src/main/kotlin/**/reasoning/Mirror.kt"]
 date = "2026-09-20"
 reason = "L2: mirrorInto is defined exactly once, and this is that file."
 
 [[exclusion]]
 rules = ["kt-l3-end-turn-literal", "kt-l3-sole-wire-terminals"]
-files = ["gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt"]
+files = ["daemon/head/src/main/kotlin/**/wire/SseEmitter.kt"]
 date = "2026-09-20"
 reason = "L3: SseEmitter is the only file allowed to hold the end_turn / message_stop / message_delta literals."
 
 [[exclusion]]
 rules = ["kt-no-delay-in-production", "kt-no-hardcoded-dispatchers"]
-files = ["gateway/provider-spi/src/main/kotlin/splice/spi/ProcessRuntime.kt"]
+files = ["upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt"]
 date = "2026-09-20"
 reason = "The process runtime edge — the single main-source file allowed to name the global clock and the global dispatchers."
 
 [[exclusion]]
 rule = "kt-secure-file-single-source"
-files = ["gateway/core/src/main/kotlin/splice/core/util/SecureFile.kt"]
+files = ["core/src/main/kotlin/splice/core/util/SecureFile.kt"]
 date = "2026-09-20"
 reason = "The sole 0600 atomic-write primitive; re-deriving it is exactly what the wall bans."
 
 [[exclusion]]
 rule = "kt-shared-summary-parts-single-source"
-files = ["gateway/core/src/main/kotlin/**/turn/Turn.kt"]
+files = ["core/src/main/kotlin/**/turn/Turn.kt"]
 date = "2026-09-20"
 reason = "TurnMeta's default constructs SharedSummaryParts once per turn; this is that declaration."
 
 [[exclusion]]
 rule = "kt-state-paths-single-source"
 files = [
-  "gateway/core/src/main/kotlin/**/config/StatePaths.kt",
-  "gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
-  "gateway/core/src/main/kotlin/splice/core/launch/McpSources.kt",
+  "core/src/main/kotlin/**/config/StatePaths.kt",
+  "app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt",
+  "client/src/main/kotlin/splice/client/mcp/McpSources.kt",
 ]
 date = "2026-09-20"
 reason = """
@@ -309,35 +346,47 @@ dirname rather than a state root.
 
 [[exclusion]]
 rule = "kt-quota-tracker-single-resolution"
-files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/TurnQuota.kt"]
+files = ["daemon/head/src/main/kotlin/splice/head/admission/TurnQuota.kt"]
 date = "2026-09-20"
 reason = "The sole resolver, created by fix row V4-104."
 
 [[exclusion]]
 rule = "kt-no-system-getenv"
-files = ["gateway/core/src/main/kotlin/**/config/**"]
+files = ["core/src/main/kotlin/**/config/**"]
 date = "2026-09-20"
 reason = "System.getenv is allowed only inside core/config, which is the layered ConfigService everything else reads."
 
 [[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 files = [
-  "gateway/core/src/main/kotlin/**/*.kt",
-  "gateway/control/src/main/kotlin/**/*.kt",
-  "gateway/app/src/main/kotlin/**/*.kt",
+  "daemon/control/src/main/kotlin/**/*.kt",
+  "app/src/main/kotlin/**/*.kt",
 ]
 date = "2026-09-20"
 reason = """
-Inside the three modules it covers, the wall binds only the launch seam — core/launch/**,
-control/Launch*.kt and app head/LaunchSpecFactory.kt — plus its one dated ignore,
-core/**/launch/ClaudeConfigKeys.kt, the single source of the vanilla dir's NAME. The rest of those
-three modules never spells a config dir. Losing a whole module still fails: a files-row can never
-excuse a wholly lost source root.
+Inside the two gateway modules it covers, the wall binds only the launch seam — control/Launch*.kt
+and app head/LaunchSpecFactory.kt. The rest of those two modules never spells a config dir. :client
+needs no row: the wall binds its whole main source set, minus its one dated ignore,
+client/**/ClaudeConfigKeys.kt, the single source of the vanilla dir's NAME. Losing a whole module
+still fails: a files-row can never excuse a wholly lost source root.
+"""
+
+[[exclusion]]
+rule = "kt-no-vanilla-config-dir"
+files = ["client/src/main/kotlin/**/ClaudeConfigKeys.kt"]
+date = "2026-09-20"
+reason = """
+The rule's own single dated ignore, re-keyed by restructure PR 3: Keys.CLAUDE / Keys.CLAUDE_DIR is
+the ONE declaration of the vanilla dir's name, and every legitimate reader reaches it through that
+constant. It used to be excused by the `core/src/main/kotlin/**/*.kt` row above, which
+covered :core wholesale; now that the wall binds :client's whole main source set, the one exempt
+file needs its own row — which is the stricter statement, since nothing else in :client can hide
+behind it.
 """
 
 [[exclusion]]
 rule = "kt-no-runblocking-in-daemon"
-files = ["gateway/app/src/main/kotlin/**/Main.kt", "gateway/app/src/main/kotlin/**/cli/**"]
+files = ["app/src/main/kotlin/**/Main.kt", "app/src/main/kotlin/**/cli/**"]
 date = "2026-09-20"
 reason = """
 runBlocking is allowed at process entry — app Main.kt and the CLI tree. That exempted path is not
@@ -346,7 +395,7 @@ unguarded: kt-no-runblocking-exported-bridge grades it, requiring every bridge i
 
 [[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
-files = ["gateway/app/src/main/kotlin/**/*.kt"]
+files = ["app/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
 reason = """
 Inside :app the wall binds the entry path only — Main.kt and cli/** — because that is the only place
@@ -356,29 +405,29 @@ can export a bridge to it).
 
 [[exclusion]]
 rule = "kt-turn-finally-flush-quietly"
-files = ["gateway/gateway/src/main/kotlin/**/*.kt"]
+files = ["daemon/head/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
 reason = """
-Inside :gateway the wall binds head/*.kt, the directory that owns turn cleanup. wire/, reasoning/
+Inside :daemon-head the wall binds head/*.kt, the directory that owns turn cleanup. wire/, reasoning/
 and the compaction files run no turn-finally block, so there is no flush for them to get wrong.
 """
 
 [[exclusion]]
 rule = "kt-wire-catch-ioexception-alone"
-files = ["gateway/gateway/src/main/kotlin/**/*.kt"]
+files = ["daemon/head/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
 reason = """
-Inside :gateway the wall binds wire/**, the client socket. A CLOSED channel's IllegalStateException
+Inside :daemon-head the wall binds wire/**, the client socket. A CLOSED channel's IllegalStateException
 is only reachable where the socket is written, and that is wire/.
 """
 
 [[exclusion]]
 rule = "kt-tests-no-wall-clock"
 files = [
-  "gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt",
-  "gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt",
-  "gateway/gateway/src/testFixtures/kotlin/mock/TestNet.kt",
-  "gateway/gateway/src/test/kotlin/head/MidStreamTearContinuesTest.kt",
+  "client/src/test/kotlin/splice/client/login/LoginHookScriptSafetyTest.kt",
+  "app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt",
+  "daemon/head/src/testFixtures/kotlin/splice/head/TestNet.kt",
+  "daemon/head/src/test/kotlin/splice/head/transport/MidStreamTearContinuesTest.kt",
 ]
 date = "2026-09-20"
 reason = """

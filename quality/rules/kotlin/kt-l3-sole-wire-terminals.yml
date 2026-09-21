@@ -12,11 +12,11 @@
 id: kt-l3-sole-wire-terminals
 language: kotlin
 severity: error
-message: "L3: only gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt may hold `message_stop`/`message_delta` literals."
+message: "L3: only daemon/head/src/main/kotlin/**/wire/SseEmitter.kt may hold `message_stop`/`message_delta` literals."
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt
+  - daemon/head/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
   any:
     - kind: string_content

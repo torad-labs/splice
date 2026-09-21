@@ -3,11 +3,11 @@
  * V4-91 — every config key an operator can write must be ACTED ON somewhere, by name.
  *
  * WHY THIS EXISTS. A key that parses is not a key that works. `[daemon] state_dir` has been in
- * the schema since the port (gateway/core/src/main/kotlin/splice/core/topology/Topology.kt:75,
+ * the schema since the port (core/src/main/kotlin/splice/core/topology/Topology.kt:75,
  * `@SerialName("state_dir") val stateDir: String?`), it deserializes cleanly, it is echoed back
  * by `doctor --json`, and NOTHING reads it: the state directory comes from
  * CLAUDEX_STATE_DIR or the default in
- * gateway/core/src/main/kotlin/splice/core/config/StatePaths.kt:15-16, never from the TOML. An
+ * core/src/main/kotlin/splice/core/config/StatePaths.kt:15-16, never from the TOML. An
  * operator who sets it gets silence — no error, no effect, and a doctor report that shows the
  * value they asked for. The knob layer has the same shape one level over:
  * `Knob.DEBUG` ("debug") is parsed, coerced, given a typed accessor
@@ -90,7 +90,7 @@
  *   · SEMANTIC DEADNESS ONE LEVEL DOWN. A key read into a variable that is then never used, or
  *     threaded into a field nothing consults, passes. Only the first hop is checked on the schema
  *     plane and two on the knob plane; a full reachability answer needs the compiler
- *     (:fir-checks), not a regex.
+ *     (:quality-compiler-plugin), not a regex.
  *
  * SELFTEST. `--selftest` builds temp trees and proves BOTH directions plus the boring cases:
  * GREEN on a key read in another file, on one read only by its own file's projection, on one
@@ -116,7 +116,15 @@ import { fileURLToPath } from "node:url";
 // parents[1]: this file lives at checks/, so the repo root is one level up.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const SRC_GLOB = "gateway/*/src/main";
+// restructure PR 3: :client is the first module to live outside gateway/, so the production
+// universe is no longer one `gateway/*` pattern. A source root this checker stops walking is a
+// denominator that shrinks in silence, which is the one failure every ratchet here exists to
+// prevent — so the list names every §2.2 module home, the ones that exist and the ones the next
+// module commits create (a glob over an absent directory matches nothing, so the denominator can
+// only grow), until PR 5 hands these checkers the build-derived source units of tools/gate.
+// ONE line on purpose: the selftest proves the vacuity guard by patching this exact line.
+const SRC_GLOBS = ["gateway/*/src/main", "client/src/main", "core/src/main", "upstream/src/main", "dialects/*/src/main", "providers/*/src/main", "daemon/*/src/main", "app/src/main", "quality/*/src/main"];
+const SRC_GLOB = SRC_GLOBS.join(", ");
 
 // The five operator-facing config types. Named, not path-pinned: each is LOCATED in the tree, so
 // a move is a move and a disappearance is a hard error.
@@ -127,7 +135,7 @@ const KNOB_CLASS = "Knob";
 // error: a dead exclusion is an un-graded surface one rename later.
 let NON_CONSUMPTION: [string, string][] = [
   [
-    "gateway/app/src/main/kotlin/splice/app/cli/DoctorReportShape.kt",
+    "app/src/main/kotlin/splice/app/cli/doctor/DoctorReportShape.kt",
     "2026-09-17: THE ECHO SURFACE. It puts every topology key back out under its own key name " +
       '(`put("state_dir", t.daemon.stateDir)`) — the value is being SHOWN, not used. Counting it ' +
       "would make this wall green over exactly the population it exists to name: state_dir's only " +
@@ -135,7 +143,7 @@ let NON_CONSUMPTION: [string, string][] = [
       "checks/config/quirks-keys-documented.ts's WHAT IS NOT A DISPOSITION SURFACE.",
   ],
   [
-    "gateway/core/src/main/kotlin/splice/core/config/SpliceConfig.kt",
+    "core/src/main/kotlin/splice/core/config/SpliceConfig.kt",
     "2026-09-17: THE ACCESSOR FACADE over the knob map. Every one of the 33 knobs is read here, " +
       "so treating it as a consumer would make the knob plane pass with no wiring anywhere. A read " +
       "here is a PROJECTION, and it is followed one hop instead: the accessor that names the knob " +
@@ -355,7 +363,9 @@ const pyReprList = (items: string[]): string => `[${items.map(pyRepr).join(", ")
 
 function sources(root: string): Map<string, string> {
   const out = new Map<string, string>();
-  const files = [...new Bun.Glob(`${SRC_GLOB}/**/*.kt`).scanSync({ cwd: root, followSymlinks: true })].sort();
+  const files = SRC_GLOBS
+    .flatMap((p) => [...new Bun.Glob(`${p}/**/*.kt`).scanSync({ cwd: root, followSymlinks: true })])
+    .sort();
   for (const rel of files) out.set(rel, readFileSync(join(root, rel), "utf8"));
   return out;
 }

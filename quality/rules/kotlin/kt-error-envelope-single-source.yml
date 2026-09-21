@@ -17,7 +17,7 @@
 # writes into, and it never got the same treatment.
 #
 # THE REMEDY, and the ONE file this wall points at. Fix row V4-103 creates
-#   gateway/gateway/src/main/kotlin/splice/gateway/wire/ErrorEnvelope.kt  (`splice.gateway.wire.ErrorEnvelope`)
+#   daemon/head/src/main/kotlin/splice/head/wire/ErrorEnvelope.kt  (`splice.head.wire.ErrorEnvelope`)
 # as the sole builder, which every terminal CALLS. It is this rule's only `ignores:` entry — the
 # path does not exist yet, so the exemption is inert today and becomes live the moment the fix row
 # lands, with no edit here.
@@ -45,16 +45,16 @@
 #
 # CENSUS AT AUTHORING (2026-09-17, derived from the tree with this rule, never hand-listed — FOUR
 # sites; the ARCH-AUDIT row named three, and the fourth was found by scanning):
-#   gateway/gateway/head/AdmissionResponses.kt:37-46    `errorBodyJson` — bare "type"/"error"
+#   daemon/head/head/AdmissionResponses.kt:37-46    `errorBodyJson` — bare "type"/"error"
 #                                                       literals; five admission terminals share it
-#   gateway/gateway/wire/CollectingTerminal.kt:168-178  `errorEnvelope` — FIELD_TYPE/FIELD_ERROR
+#   daemon/head/wire/CollectingTerminal.kt:168-178  `errorEnvelope` — FIELD_TYPE/FIELD_ERROR
 #                                                       constants, plus an optional `usage` member
-#   gateway/gateway/wire/SseEmitter.kt:199-205          inline in `emitError` — TYPE/MESSAGE
+#   daemon/head/wire/SseEmitter.kt:199-205          inline in `emitError` — TYPE/MESSAGE
 #                                                       constants + `putJsonObject("error")`
-#   gateway/provider-spi/spi/RateLimitCooldown.kt:192-198  inline in the cooldown refusal — THE
+#   upstream/spi/RateLimitCooldown.kt:192-198  inline in the cooldown refusal — THE
 #       FOURTH SITE, NOT IN THE ROW'S CENSUS, and the one with an architectural consequence:
-#       provider-spi is a DEPENDENCY of gateway/gateway, so it cannot import
-#       `splice.gateway.wire.ErrorEnvelope`. Either the builder lands lower (core) or this site
+#       :upstream is a DEPENDENCY of daemon/head, so it cannot import
+#       `splice.head.wire.ErrorEnvelope`. Either the builder lands lower (core) or this site
 #       earns a written exemption. That is the fix row's design call; this wall's job is to make
 #       the site impossible to miss, so it is RED BY NAME rather than scoped away.
 #
@@ -84,13 +84,13 @@
 id: kt-error-envelope-single-source
 language: kotlin
 severity: error
-message: "The Anthropic error envelope {\"type\":\"error\",\"error\":{...}} is assembled in ONE file: call splice.gateway.wire.ErrorEnvelope (gateway/gateway/src/main/kotlin/splice/gateway/wire/ErrorEnvelope.kt), never hand-build it here."
+message: "The Anthropic error envelope {\"type\":\"error\",\"error\":{...}} is assembled in ONE file: call splice.head.wire.ErrorEnvelope (daemon/head/src/main/kotlin/splice/head/wire/ErrorEnvelope.kt), never hand-build it here."
 note: "The envelope is a contract in both directions — Claude Code reads it to decide retryability, and splice re-parses error.message (UpstreamFailureClassifier, FailureText). Four hand copies with three different key spellings exist today; a key renamed in one is invisible in the others. Coordinates with law_pre_content_wire_type.py: that wall owns WHERE an envelope may be built relative to the emitter seam and keeps the collect path's STATUS exemption; this rule owns the BODY SHAPE and keeps none. Do NOT name the new builder `errorEnvelope(` — that wall matches that name at CALL sites too."
 files:
   - "**/src/main/**/*.kt"
 ignores:
   # The sole builder, created by fix row V4-103. Inert until the file exists; live with no edit here.
-  - gateway/core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt
+  - core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt
 rule:
   kind: call_expression
   all:

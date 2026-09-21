@@ -741,7 +741,7 @@ function withField(lines: readonly string[], block: ItemBlock, key: string, valu
  * VENDORING DELTA 8 (splice V4-143 Phase C, 2026-09-18): manifest.py's FENCE NORMALIZER, ported
  * for its behaviour rather than its text (manifest.py:4383 `_fence_prefix`). A fence entry is a
  * path, a directory or a GLOB, and the glob is the case the string comparison here could not see:
- * `gateway/app/src/test/kotlin/**` and `gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt` are
+ * `app/src/test/kotlin/**` and `app/src/test/kotlin/splice/app/cli/daemon/DaemonStopDeadlineTest.kt` are
  * the SAME fence, share no equal string, and neither ends in `/`, so the old check found no
  * overlap. V4-139's own fence carries three such globs, so this is the live shape, not a synthetic
  * one. One trailing glob suffix is stripped, then trailing slashes.

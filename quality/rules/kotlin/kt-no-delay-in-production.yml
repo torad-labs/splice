@@ -1,14 +1,14 @@
 # Clock discipline — a bare `delay(...)` in production logic is an unnamed dependency on the global
 # clock. It cannot be replaced, so it cannot be observed: every backoff curve, poll interval and
 # retry pause becomes untestable except by sleeping through it in real time. This repo paid for that
-# twice. The retry curve in provider-spi/UpstreamClient.kt (200/400/800ms, ±10% jitter, Retry-After
+# twice. The retry curve in upstream/UpstreamClient.kt (200/400/800ms, ±10% jitter, Retry-After
 # as a floor) had NO coverage — every test overrode the whole `backoff` lambda with a no-op and the
 # two tests that claimed to pin it re-derived `minOf(200L shl it, 10_000L)` in their own assertion,
 # so they would have passed against any implementation. And the wall-clock waits this shape forces
 # are the HeadServerFoldTest NF-03 flake class: a test that measures elapsed milliseconds under full
 # build load fails for reasons that have nothing to do with the code.
 #
-# Compliant forms, both `fun interface` seams in provider-spi/RuntimeSeams.kt:
+# Compliant forms, both `fun interface` seams in upstream/RuntimeSeams.kt:
 #   - `Waiter.wait(ms)` for a ONE-SHOT wait — backoff, a poll pause, an RFC 8628 device-login
 #     interval. Production wires ProcessWaiter (which is `delay(ms)` and nothing else); a test wires
 #     a recorder that returns instantly and captures the intervals, which is how
@@ -43,7 +43,7 @@ files:
   - "**/src/main/**/*.kt"
 ignores:
   # The process runtime edge — the single main-source file allowed to name the global clock.
-  - gateway/provider-spi/src/main/kotlin/splice/spi/ProcessRuntime.kt
+  - upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt
 rule:
   # `$$$ARGS` matches zero-or-more, so one branch covers delay(ms), delay(duration) and the named
   # spelling delay(timeMillis = 5L) alike. A receiver-qualified `x.delay(...)` is deliberately NOT

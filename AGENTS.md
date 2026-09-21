@@ -60,8 +60,8 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 
 > **Wire contract, Kotlin implementation.** The behaviour below is the contract; the `server/`
 > Node tree that first implemented it was **deleted on 2026-08-10** (P8-CUT). The live sources are
-> `gateway/control/.../ControlServer.kt`, `gateway/gateway/.../wire/SseEmitter.kt` and
-> `gateway/gateway/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
+> `daemon/control/.../ControlServer.kt`, `daemon/head/.../wire/SseEmitter.kt` and
+> `daemon/head/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
@@ -87,7 +87,7 @@ writes it); PATCH wins until restart and persists to the file layer.
 Which keys need a restart is NOT a hand list here — a hand list is wrong the day a knob is added,
 and this one had been wrong for a long time (V4-109: it named four, while nearly every knob is
 snapshotted at `Daemon.start` and only the hot few apply live). Ask the machine instead:
-`restartRequiredKnobKeys` in `gateway/core/.../config/KnobKind.kt`, derived from the `Knob` enum's
+`restartRequiredKnobKeys` in `core/.../config/KnobKind.kt`, derived from the `Knob` enum's
 own flag, and the same list on the wire as `restart_required_keys` from `GET /mgmt/config`.
 Everything else hot-applies on the next request.
 
@@ -105,12 +105,12 @@ head (`[heads.<key>]` system_prompt / system_prompt_file / system_prompt_mode), 
 (`[projects."<root>".heads.<key>]`). The project is the deepest configured root containing the
 session's cwd (`SessionProject`). Appends stack as trailing blocks; a replace drops the client's
 field and every earlier layer. No projects table = V4-36's bytes. Resolver:
-`gateway/core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
+`core/.../prompt/SystemPromptLayers.kt`; applied in `TurnPreparation.applySystemPrompt`.
 
 ## Control plane (spliced)
 
 > **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now
-> `gateway/control/src/main/kotlin/splice/control/ControlServer.kt`. The Node
+> `daemon/control/src/main/kotlin/splice/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
@@ -149,7 +149,7 @@ npm test -w console   # vitest
 ```
 
 The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law
-(config-time), detekt (`maxIssues:0`), the Konsist arch-tests, every unit test, and the
+(config-time), detekt (`maxIssues:0`), the Konsist architecture laws (:quality-architecture), every unit test, and the
 1000-stream load test. It runs in CI (`gateway-gradle` job) and inside `npm run gate`. Before this
 existed it was authored but NEVER executed by automation — only the ast-grep walls ran.
 

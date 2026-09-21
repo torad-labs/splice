@@ -27,23 +27,23 @@
 # refused. `TurnOutcome` (core/turn/TurnOutcome.kt:92) is the in-tree example of the target shape.
 #
 # THE CENSUS (measured 2026-09-17, `ast-grep scan`). The audit row named ONE and predicted the
-# declaration-side matcher would find it; the matcher finds NINE, all in :provider-spi, all expected
+# declaration-side matcher would find it; the matcher finds NINE, all in :upstream, all expected
 # refusals, and the eight extra are recorded here because that list IS the fix row's work:
-#   gateway/provider-spi/src/main/kotlin/splice/spi/AccountSelection.kt:144  AllAccountsExhausted : IllegalStateException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:13     UpstreamAuthMissing : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:16     UpstreamTurnWaitExhausted : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:23     StreamTornBeforeClient : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamErrors.kt:26     UpstreamFailed : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt:192      GatewayAtCapacityException : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
-#   gateway/provider-spi/src/main/kotlin/splice/spi/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
-# gateway/core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
+#   upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt:144  AllAccountsExhausted : IllegalStateException
+#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:13     UpstreamAuthMissing : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:16     UpstreamTurnWaitExhausted : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:23     StreamTornBeforeClient : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:26     UpstreamFailed : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/retry/InflightGate.kt:192      GatewayAtCapacityException : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/transport/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/failure/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
+#   upstream/src/main/kotlin/splice/upstream/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
+# core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
 # matcher over the same glob reports the nine above, so :core's emptiness is measured against a
 # denominator that demonstrably produces findings ("empty" and "empty in X" are different
 # sentences, §24).
 #
-# Six of the nine are caught or dispatched BY NAME from :gateway main sources, which is the proof
+# Six of the nine are caught or dispatched BY NAME from :daemon-head main sources, which is the proof
 # that they are control flow and not invariant breaks: HeadAdmission.kt:233 (AllAccountsExhausted),
 # TurnFailures.kt:26 / TurnKnownEnd.kt:31 / TurnDriver.kt:149 (UpstreamAuthMissing),
 # SseRoundPost.kt:62 (UpstreamTurnWaitExhausted), AdmissionGate.kt:37 (GatewayAtCapacityException),
@@ -88,8 +88,8 @@
 #     WsRoundRunner.kt:111     WsRoundNeedsSse           -> deleted from the SPI; WsRoundDrive
 #                              returns `WsRoundResult { Streamed | NeedsSse }`. PROOF: WsRoundDriver
 #                              .kt:112 RE-SERVED the round over SSE, so the caught signal led to a
-#                              successful turn. It was also declared in :provider-spi while being
-#                              thrown and caught entirely inside :gateway — nothing in provider-spi
+#                              successful turn. It was also declared in :upstream while being
+#                              thrown and caught entirely inside :daemon-head — nothing in :upstream
 #                              referenced it. The residual throw is a private in-file loop break
 #                              between two adjacent statements (a suspend `collect` has no other way
 #                              to stop early), which is why the SPI class is gone rather than moved.
@@ -129,8 +129,11 @@ note: >
   that genuinely IS an invariant break takes
   `// ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>`.
 files:
-  - gateway/provider-spi/src/main/**/*.kt
-  - gateway/core/src/main/**/*.kt
+  - upstream/src/main/**/*.kt
+  - core/src/main/**/*.kt
+  # restructure PR 3: 32 of :core's main sources became the :client module. The wall is pinned
+  # where refusal types are DECLARED, and moving the declarations must not move them out of it.
+  - client/src/main/**/*.kt
 rule:
   all:
     - kind: class_declaration

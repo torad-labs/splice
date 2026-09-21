@@ -286,7 +286,14 @@ proof = "2026-09-21: LoopGuard mutated to read the <tool_use_error> marker only,
 [[item]]
 id = "CX-18"
 phase = "W4-correctness-walls"
-wall = ".dev/campaigns/proxy-hardening/walls/cx_18_usage_aliases.ts"
+wall = ""
+retired_to = [
+  "quality/architecture/src/test/kotlin/splice/quality/UsageSingleAliasReaderLawTest.kt",
+  "dialects/openai-chat/src/test/kotlin/splice/dialect/chat/ChatUsageTest.kt",
+  "dialects/openai-responses/src/test/kotlin/splice/dialect/responses/stream/HarvestedTest.kt",
+  "dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/PassthroughStreamTranslatorTest.kt",
+]
+proof = "2026-09-21: both halves, every leg wall-and-home on the same bytes. POSITIVE — chat's input bucket loses its alias: wall RED and ChatUsageTest 'usage reads the input_tokens output_tokens alias shape' FAILED; the Responses harvest loses its alias: wall RED and HarvestedTest 'usage alias chain reads prompt_tokens and completion_tokens spellings' FAILED; the nested TTL buckets stop being SUMMED (parts.sum() -> parts.firstOrNull()): wall RED and PassthroughStreamTranslatorTest 'nested cache_creation buckets sum into the input total' FAILED; the shared chain renamed away: wall RED and the law RED by name. NEGATIVE — the wall's forbidden-reader ban is the regex /fun\\s+num\\s*\\([^)]*vararg\\s+keys/ over five package directories, and it is GREEN on two shapes its own sentence forbids: `fun firstOf(obj: JsonObject, vararg keys: String): Long` appended to ChatUsage.kt (a banned directory, another name) and `fun num(obj: JsonObject, vararg keys: String): Long` appended to upstream/.../RetryAfter.kt (its exact banned spelling, one package outside the swept set). UsageSingleAliasReaderLawTest reds on both, naming file and function; the wall's own control (`fun num(` inside ChatUsage.kt) reds on both sides, so the wall could fire and it was the scope that was short. The law's denominator is every production Kotlin file the BUILD declares, its in-scope shape is name-independent (vararg String keys in, a number out), and a second declaration is legal only when its own body calls firstLong — which keeps UsageJson.firstNum, the real thin wrapper, green, while a firstNum that stops delegating reds on both sides. Restored: wall GREEN, law 2/2, ChatUsageTest 6/6, HarvestedTest 8/8, PassthroughStreamTranslatorTest 21/21. Every --tests filter derived with arm-class.sh"
 
 [[item]]
 id = "CX-20"

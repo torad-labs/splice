@@ -26,7 +26,7 @@ dependencies {
     implementation(project(":dialects-anthropic"))
     implementation(project(":providers-codex"))
     implementation(project(":providers-grok"))
-    implementation(project(":provider-kimi"))
+    implementation(project(":providers-kimi"))
     implementation(project(":provider-muse"))
     implementation(project(":provider-openai"))
     implementation(project(":daemon-head"))

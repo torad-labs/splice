@@ -22,7 +22,7 @@ import java.io.File
 private val PORT_SCOPE_MODULES = listOf(
     ":core", ":client", ":upstream", ":dialects-openai-responses", ":dialects-openai-chat",
     ":dialects-anthropic", ":providers-codex", ":providers-grok", ":provider-openai",
-    ":provider-kimi", ":provider-muse", ":daemon-head", ":daemon-control", ":app", ":fir-checks",
+    ":providers-kimi", ":provider-muse", ":daemon-head", ":daemon-control", ":app", ":fir-checks",
 )
 
 /** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
@@ -108,7 +108,7 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
 private val PASSTHROUGH_QUIRKS_ALLOWED_SITES = mapOf(
     ":dialects-anthropic" to "src/main/", // the class's own module
     ":app" to "src/main/kotlin/splice/app/provider/", // head assembly: ProviderAssembly + its arms
-    ":provider-kimi" to "src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
+    ":providers-kimi" to "src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
 )
 
 /** P0: the allowed sites as root-relative path prefixes, resolved through the project map — the

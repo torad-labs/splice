@@ -53,7 +53,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // a provider speaks its own dialect(s) — never another provider, never the transport.
     ":providers-codex" to ADAPTER_BASE + ":dialects-openai-responses",
     ":providers-grok" to ADAPTER_BASE + ":dialects-openai-responses",
-    ":provider-kimi" to ADAPTER_BASE + ":dialects-anthropic",
+    ":providers-kimi" to ADAPTER_BASE + ":dialects-anthropic",
     ":provider-muse" to ADAPTER_BASE,
     ":provider-openai" to ADAPTER_BASE + setOf(":dialects-openai-responses", ":dialects-openai-chat"),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
@@ -69,7 +69,7 @@ private val UNRESTRICTED_MODULES = setOf(":app", ":arch-tests", ":fir-checks")
 /** P3: the modules still at their pre-restructure directory (`gateway/<id>`); one leaves per PR 3
  *  commit, and the law fails when a row goes stale. Empty at the end of PR 3, and gone with it. */
 private val ID_DERIVATION_PENDING = setOf(
-    ":provider-kimi", ":provider-muse", ":provider-openai", ":app", ":arch-tests", ":fir-checks",
+    ":provider-muse", ":provider-openai", ":app", ":arch-tests", ":fir-checks",
 )
 
 /** V4-91 (audit A rows 3, 10, 11): the two OS escapes :core may not reach for — SPAWNING A

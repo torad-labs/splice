@@ -2,7 +2,7 @@
 // proactive-refresh threshold math with a fake clock (before/after the max(300, expires_in/2)
 // boundary); mandatory rotation persisted to disk at 0600; single-flight coalescing (two concurrent
 // refreshes → one refreshCall). No network — refreshCall is injected (mirrors GrokProviderTest).
-package kimi
+package splice.provider.kimi
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -27,8 +27,6 @@ import org.junit.jupiter.api.Timeout
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshCall
-import splice.provider.kimi.KimiAuthProvider
-import splice.provider.kimi.KimiRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime

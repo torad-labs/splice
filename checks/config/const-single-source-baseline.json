@@ -5,7 +5,7 @@
   "total": 127,
   "groups": {
     "COLLISION CLIENT_ID": [
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COLLISION CONNECT_TIMEOUT_MS": [
@@ -27,7 +27,7 @@
       "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt"
     ],
     "COLLISION DEFAULT_EXPIRES_IN_S": [
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COLLISION DEFAULT_TAIL": [
@@ -73,7 +73,7 @@
     "COLLISION LOG_TAG": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt",
       "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
     ],
     "COLLISION LOG_TAIL_BYTES": [
       "gateway/app/src/main/kotlin/splice/app/LogFileSource.kt",
@@ -199,11 +199,11 @@
       "daemon/head/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
     "COPY DEFAULT_INTERVAL_S": [
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COPY DEVICE_CODE_GRANT_TYPE": [
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COPY DIM": [
@@ -421,7 +421,7 @@
       "providers/grok/src/main/kotlin/splice/provider/grok/GrokEffortVocabulary.kt"
     ],
     "COPY MIN_INTERVAL_S": [
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "gateway/provider-muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt"
     ],
     "COPY MODEL": [
@@ -445,7 +445,7 @@
       "dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsPulse.kt",
       "daemon/head/src/main/kotlin/splice/head/turn/TurnProgressLine.kt",
       "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiOAuth.kt",
       "upstream/src/main/kotlin/splice/upstream/failure/UpstreamFailureClassifier.kt",
       "upstream/src/main/kotlin/splice/upstream/retry/Watchdog.kt"
     ],
@@ -499,7 +499,7 @@
     "COPY REFRESH_ERROR_SNIPPET": [
       "providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthDescribe.kt",
       "providers/grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt",
-      "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"
+      "providers/kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"
     ],
     "COPY REMEMBERED_SESSIONS": [
       "gateway/app/src/main/kotlin/splice/app/ConsoleWiring.kt",

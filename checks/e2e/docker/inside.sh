@@ -13,7 +13,7 @@
 # silently: a head that cannot be probed is a FAIL with a reason, never a green.
 set -uo pipefail
 
-# V4-177: same state-root rule as StatePaths.kt and bin/splice-launch — SPLICE_STATE_DIR, then the
+# V4-177: same state-root rule as StatePaths.kt and app/src/main/dist/bin/splice-launch — SPLICE_STATE_DIR, then the
 # pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that
 # is the only root on the box. Inside the container there is never a pre-0.4 root to adopt; the
 # branch is kept anyway so this file cannot drift from the rule it is exercising.

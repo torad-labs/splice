@@ -3,7 +3,7 @@
 // one on the box, and this file is the ONLY place either root literal may appear (ast-grep wall).
 //
 // WHY THE ROOT MOVED (V4-177, 2026-09-20). Nobody chose `~/.claude-codex` for splice: it is the
-// isolated config dir of the upstream Node proxy this was ported from (PROVENANCE.md:62-63), and it
+// isolated config dir of the upstream Node proxy this was ported from (.docs/PROVENANCE.md:62-63), and it
 // stuck because the header here used to declare the paths an EXTERNAL CONTRACT — "an out-of-repo HUD
 // reads codex-usage.json / codex-ratelimit.json / claudex-compact-stats.jsonl byte-identically".
 // That consumer is gone, measured rather than assumed: the live statusline (~/.claude/statusline.sh,

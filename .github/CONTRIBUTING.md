@@ -62,7 +62,7 @@ history complies.
 
 ## No CLA
 
-Contributions are made under the project's [MIT license](LICENSE) — MIT in, MIT out. No
+Contributions are made under the project's [MIT license](../LICENSE) — MIT in, MIT out. No
 contributor license agreement is required.
 
 ## Versioning
@@ -90,7 +90,7 @@ The `prod` branch is the release line, and **merging the `main -> prod` PR is th
 action** — GitHub does the rest, no local command involved:
 
 1. Land a version-bump PR on `main` (all three sites move together: `Versions.kt`
-   `GATEWAY_VERSION`, `bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`), with
+   `GATEWAY_VERSION`, `app/src/main/dist/bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`), with
    the `CHANGELOG.md` cut for the release.
 2. Open the promotion PR, base `prod`, head `main` — in the UI, or `npm run promote` which
    opens the same PR after a courtesy version preflight. `promotion-check` fails the PR before

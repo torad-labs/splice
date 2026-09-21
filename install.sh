@@ -123,11 +123,9 @@ check_runtime() {
     RUNTIME_GAPS=$((RUNTIME_GAPS + 1))
   fi
 }
-check_runtime curl "the launch shim's health checks and this installer's downloads need it" \
+check_runtime curl "this installer's release downloads need it" \
   "$(runtime_fix curl https://curl.se)"
-check_runtime python3 "the launch shim parses the daemon's JSON launch recipe with it" \
-  "$(runtime_fix python3 https://python.org)"
-check_runtime node "Claude Code's runtime (Node 24 recommended)" \
+check_runtime node "Claude Code's runtime and the launch shim's (Node 24)" \
   "$(runtime_fix nodejs https://nodejs.org)"
 check_runtime claude "splice wraps Claude Code — install it before launching a head" \
   "npm install -g @anthropic-ai/claude-code"
@@ -136,7 +134,7 @@ if [ "$RUNTIME_GAPS" -gt 0 ]; then
   echo "splice: before launching (splice doctor re-checks everything and prints each fix)."
 fi
 JAR_DST="${SHARE_DIR}/splice.jar"
-SHIM_SRC="${REPO_ROOT:+${REPO_ROOT}/bin/splice-launch}"
+SHIM_SRC="${REPO_ROOT:+${REPO_ROOT}/app/src/main/dist/bin/splice-launch}"
 
 mkdir -p "$SHARE_DIR" "$BIN_DIR"
 JAR_TMP="$(mktemp "${SHARE_DIR}/.splice.jar.XXXXXX")"

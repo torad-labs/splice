@@ -1,7 +1,7 @@
 // NEW: V4-129 — the default-command shim (FEATURES.md 4.12 "Wrap"). The operator's plain `claude`
 // on PATH becomes a splice launcher over the vanilla config dir (~/.claude) instead of an isolated
 // tree. Two hazards this file exists to close:
-//   - SELF-EXEC: bin/splice-launch execs its recipe's argv[0] by resolving it through PATH, and
+//   - SELF-EXEC: app/src/main/dist/bin/splice-launch execs its recipe's argv[0] by resolving it through PATH, and
 //     LaunchService plants the bare string "claude" there. The moment `claude` on PATH IS the shim,
 //     every head's launch (not only the wrapped one) would resolve argv[0] back to the shim that is
 //     currently running, recursing forever. WrapStateStore is the one fact LaunchService reads on

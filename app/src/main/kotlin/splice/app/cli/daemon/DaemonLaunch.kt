@@ -26,7 +26,7 @@ internal class DaemonLaunch {
             "-c",
             // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
             // generation), never /dev/null; an unwritable logs dir degrades the redirect
-            // instead of breaking the launch. Mirrors bin/splice-launch byte-for-byte in
+            // instead of breaking the launch. Mirrors app/src/main/dist/bin/splice-launch byte-for-byte in
             // behaviour — the two cold-start paths must not drift.
             "L=\"\$2\"; " +
                 "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +

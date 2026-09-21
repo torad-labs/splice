@@ -4,7 +4,7 @@ name: release
 #
 #   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
 #     this workflow — GitHub generates the release; nobody runs a release command. The version is
-#     DERIVED from the promoted code (bin/splice-launch's SPLICE_GATEWAY_VERSION, the same marker
+#     DERIVED from the promoted code (app/src/main/dist/bin/splice-launch's SPLICE_GATEWAY_VERSION, the same marker
 #     accept.sh pins against the jar), and the tag is created by the publish step at the promoted
 #     commit — an artifact of promotion, never a second manual pointer that can disagree (fleet's
 #     release-line pattern, minus changesets: splice's versions are hand-paired in code, so the
@@ -93,9 +93,9 @@ jobs:
           else
             # Promotion path: the promoted CODE is the version authority — the same shim marker
             # accept.sh compares against the jar, so resolve and accept can never disagree.
-            version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' bin/splice-launch)"
+            version="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
             if [ -z "$version" ]; then
-              echo "release: could not read SPLICE_GATEWAY_VERSION from bin/splice-launch" >&2
+              echo "release: could not read SPLICE_GATEWAY_VERSION from app/src/main/dist/bin/splice-launch" >&2
               exit 1
             fi
             if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then

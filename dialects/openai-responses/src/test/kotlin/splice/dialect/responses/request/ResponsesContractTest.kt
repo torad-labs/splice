@@ -3,7 +3,7 @@
 // (stream_options 400, request-body gzip 400) came through, so a whole-request golden that catches
 // drift in ANY field is the marquee offline defense. The planned live-receipt binding is DORMANT:
 // `e2e heads` receipts are contract_bound:false because no head-side upstream-byte tap exists yet.
-// gateway/CONTRACT.md names that missing tap and the hash check still required before a changed
+// .docs/architecture/request-byte-contracts.md names that missing tap and the hash check still required before a changed
 // golden can be bound to a live 200.
 package splice.dialect.responses.request
 
@@ -129,6 +129,6 @@ internal fun assertGoldenContract(name: String, actual: JsonObject, owner: () ->
         res.readText().trim(),
         pretty.trim(),
         "request-byte contract drift for '$name' — a builder change altered the upstream request. " +
-            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See gateway/CONTRACT.md.",
+            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See .docs/architecture/request-byte-contracts.md.",
     )
 }

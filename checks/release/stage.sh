@@ -45,9 +45,9 @@ rm -rf "$DIST"
 mkdir -p "$DIST"
 
 install -m 0644 "$JAR" "$DIST/splice.jar"
-install -m 0755 "$ROOT/bin/splice-launch" "$DIST/splice-launch"
+install -m 0755 "$ROOT/app/src/main/dist/bin/splice-launch" "$DIST/splice-launch"
 install -m 0755 "$ROOT/install.sh" "$DIST/install.sh"
-install -m 0644 "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/PROVENANCE.md" "$DIST/"
+install -m 0644 "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/.docs/PROVENANCE.md" "$DIST/"
 install -m 0644 \
   "$COMPLIANCE/bom.cdx.json" \
   "$COMPLIANCE/dependency-licenses.json" \

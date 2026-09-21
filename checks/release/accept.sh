@@ -26,7 +26,7 @@ head -1 "$DIST/PROVENANCE.md" | grep -q "^# Provenance" || {
 jar_version="$(java -jar "$DIST/splice.jar" version)"
 jar_version="${jar_version#splice }"
 shim_gateway_version="$(
-  awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' "$DIST/splice-launch"
+  awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' "$DIST/splice-launch"
 )"
 [ "$shim_gateway_version" = "$jar_version" ] || {
   echo "release accept: launcher expects gateway $shim_gateway_version but jar is $jar_version" >&2

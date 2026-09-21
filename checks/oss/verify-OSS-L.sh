@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-test -f PROVENANCE.md
-grep -Eqi "UNRESOLVED|upstream" PROVENANCE.md
+test -f .docs/PROVENANCE.md
+grep -Eqi "UNRESOLVED|upstream" .docs/PROVENANCE.md
 echo "VERIFY OSS-L: OK"

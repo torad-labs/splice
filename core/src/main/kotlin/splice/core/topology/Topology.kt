@@ -1,5 +1,5 @@
 // NEW: the TOML topology schema (shape proven by spike P0-TOML incl. @SerialName mapping;
-// gateway/spikes/results/ktoml.md). Loaded once at daemon start by :app — adding a
+// .dev/research/spikes/ktoml.md). Loaded once at daemon start by :app — adding a
 // provider or head is an operator action and implies a restart (no hot topology). V4-162: the
 // context windows are the one exception, re-read while the daemon runs (see withoutWindows).
 // 2026-08-16 (HD-M8): the file's top-level functions were relocated without changing any body.

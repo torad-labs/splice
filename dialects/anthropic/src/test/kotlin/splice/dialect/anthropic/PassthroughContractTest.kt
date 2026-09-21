@@ -3,7 +3,7 @@
 // fields individual scenario tests happen to assert. OFFLINE half of the live-receipt defense:
 // bun tools/e2e heads --tier emits a signed receipt
 // {provider, model, http_status, sha256(exact request bytes that got 200)}; the receipt-BINDING
-// half (a CHANGED golden must match a receipt hash) activates on live traffic. See gateway/CONTRACT.md.
+// half (a CHANGED golden must match a receipt hash) activates on live traffic. See .docs/architecture/request-byte-contracts.md.
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.Json
@@ -47,6 +47,6 @@ internal fun assertGoldenContract(name: String, actual: JsonObject, owner: () ->
         res.readText().trim(),
         pretty.trim(),
         "request-byte contract drift for '$name' — a builder change altered the upstream request. " +
-            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See gateway/CONTRACT.md.",
+            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See .docs/architecture/request-byte-contracts.md.",
     )
 }

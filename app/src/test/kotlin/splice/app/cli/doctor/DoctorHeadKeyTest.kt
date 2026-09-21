@@ -87,9 +87,9 @@ class DoctorHeadKeyTest {
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
         Files.writeString(configDir.resolve("splice.toml"), starterTomlHeadNotProvider)
         val shim = share.resolve("splice-launch")
-        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        Files.writeString(shim, "#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = \"$SHIM_VERSION\";\n")
         shim.toFile().setExecutable(true)
-        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        fakeBinaries(bin, "claude", "node", "curl", "bash")
         Files.createSymbolicLink(bin.resolve("claude-fast"), shim)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 

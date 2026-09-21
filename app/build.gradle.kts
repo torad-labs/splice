@@ -6,6 +6,7 @@ import groovy.json.JsonSlurper
 import org.cyclonedx.model.Component
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 
 plugins {
@@ -50,15 +51,12 @@ application {
     mainClass.set("splice.app.MainKt")
 }
 
-// ExampleConfigTest reads config/splice.example.toml by walking up from the module dir, which
-// Gradle cannot see — so editing ONLY the example left :app:test UP-TO-DATE and the check never
-// ran (caught 2026-07-26 while red-proofing it). Declaring the file as an input makes the example
-// a real gate: touch it, the test re-runs.
+// The example topology is a main RESOURCE (src/main/resources/splice.example.toml), so it is on
+// :app:test's classpath and an input to the task by itself: touch it, the tests that read it re-run.
+// (Before restructure PR 6 it lived at config/ and the tests walked up to it, which Gradle could
+// not see — caught 2026-07-26 when editing only the example left :app:test UP-TO-DATE.)
 tasks.test {
     systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
-    inputs.file(rootProject.layout.projectDirectory.file("config/splice.example.toml"))
-        .withPropertyName("spliceExampleToml")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
 
     // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect
     // `user.home` to a @TempDir, but TopologyLoader.configPath() consults SPLICE_CONFIG and
@@ -85,6 +83,17 @@ val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
 val icuLicense = repositoryRoot.file("checks/release/icu-LICENSE.txt")
+val licenseFile = repositoryRoot.file("LICENSE")
+// PR 6: PROVENANCE.md lives under .docs/ — the repository root keeps only the files GitHub itself
+// reads. Both consumers (the jar's META-INF copy below and stageRelease) read it from HERE.
+val provenance = repositoryRoot.file(".docs/PROVENANCE.md")
+// PR 6: the launch shim ships from the application's dist layout, not from bin/ — one path, read by
+// stageRelease here and by `bun tools/release accept`/`verify` through tools/release/src/lib/shim.ts.
+val launchShim = layout.projectDirectory.file("src/main/dist/bin/splice-launch")
+val installScript = repositoryRoot.file("install.sh")
+val packageJson = repositoryRoot.file("package.json")
+val bunLock = repositoryRoot.file("bun.lock")
+val distDir = repositoryRoot.dir("dist")
 // PR 4: the console bundle is the OUTPUT of :console:bundle, never a checked-in file. Read through
 // the task's output provider so verifyReleaseCompliance and shadowJar depend on the build itself.
 evaluationDependsOn(":console")
@@ -324,6 +333,140 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
     }
 }
 
+// ── STAGING THE RELEASE BUNDLE (checks/release/stage.sh until PR 6) ──────────────────────────────
+//
+// DR-25: ONE asset list, and it is `releaseAssets` below. The task stages exactly these names and
+// writes dist/sha256sums.txt over them IN THIS ORDER; `bun tools/release accept` reads the asset set
+// back out of that manifest, and `bun tools/release verify` checks release.yml's `files:` list
+// against the same staged manifest. Nothing carries a second hand copy — three hand-authored lists
+// cross-checking each other is the shape DR-25 was opened against, and a list that checks itself
+// cannot fail for what it omits (§24).
+//
+// Every rule and every message of stage.sh is kept, in its order: the lockfile agreement, the
+// SemVer + tag/version equality gate (a real pushed tag wins over SPLICE_RELEASE_TAG through
+// GITHUB_REF_TYPE — DR-19, so the promotion path is gated too), the fat jar's own `version` output,
+// and the compliance reports' presence. The jar and the reports are declared INPUTS rather than
+// probed by path, so `:app:stageRelease` builds what it stages; the "expected fat jar missing"
+// refusal stays as the floor for a dist staged against a deleted artifact.
+val releaseAssets = listOf(
+    "splice.jar", "splice-launch", "install.sh",
+    "LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md",
+    "bom.cdx.json", "dependency-licenses.json",
+)
+
+/** SemVer with no build metadata, the exact grammar stage.sh's `[[ =~ ]]` spelled. */
+val releaseTagPattern =
+    Regex(
+        "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)" +
+            "(-((0|[1-9][0-9]*)|([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))" +
+            "(\\.((0|[1-9][0-9]*)|([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)))*)?$",
+    )
+
+val releaseJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
+// A real pushed tag is the authority; SPLICE_RELEASE_TAG is how the promotion path threads the
+// resolved version in (release.yml), and an empty value means "no tag gate", as in the script.
+val releaseTag =
+    providers.environmentVariable("GITHUB_REF_TYPE").orElse("").zip(
+        providers.environmentVariable("GITHUB_REF_NAME").orElse(""),
+    ) { refType, refName -> if (refType == "tag") refName else "" }
+        .zip(providers.environmentVariable("SPLICE_RELEASE_TAG").orElse("")) { fromRef, fromEnv ->
+            fromRef.ifEmpty { fromEnv }
+        }
+val stagingLauncher = javaToolchains.launcherFor(java.toolchain)
+
+tasks.register("stageRelease") {
+    group = "release"
+    description = "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
+    inputs.file(releaseJar).withPropertyName("fatJar")
+    inputs.files(bom, licenses, thirdPartyLicenses).withPropertyName("complianceReports")
+    inputs.files(licenseFile, thirdPartyNotices, provenance, launchShim, installScript)
+        .withPropertyName("publishedRepositoryFiles")
+    inputs.files(packageJson, bunLock).withPropertyName("versionAndLockfile")
+    inputs.property("releaseTag", releaseTag)
+    outputs.dir(distDir)
+    val version = releaseVersion
+    val launcher = stagingLauncher
+    val tagProvider = releaseTag
+    val repositoryDir = repositoryRoot.asFile
+    doLast {
+        // bun.lock records no root version, so the package-lock version cross-check has no successor;
+        // what a release needs is a lockfile that agrees with package.json, and --frozen-lockfile
+        // refuses any drift.
+        // stdout to /dev/null, stderr THROUGH: the script kept bun's own explanation of the drift
+        // on the terminal, and the refusal below only says that there was some.
+        val install = ProcessBuilder("bun", "install", "--frozen-lockfile")
+            .directory(repositoryDir)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
+            .start()
+        check(install.waitFor() == 0) {
+            "release stage: bun.lock does not agree with package.json (bun install --frozen-lockfile refused)"
+        }
+
+        val tag = tagProvider.get()
+        if (tag.isNotEmpty()) {
+            check(releaseTagPattern.matches(tag)) {
+                "release stage: tag must be valid SemVer without build metadata, got $tag"
+            }
+            check(tag == "v$version") {
+                "release stage: tag $tag does not match package version $version"
+            }
+        }
+
+        val jar = releaseJar.get().asFile
+        check(jar.isFile) { "release stage: expected fat jar missing at $jar" }
+        listOf(bom, licenses).forEach { report ->
+            val file = report.get().asFile
+            check(file.isFile) { "release stage: compliance report missing at $file" }
+        }
+        val javaBin = launcher.get().executablePath.asFile.absolutePath
+        val versionProcess = ProcessBuilder(javaBin, "-jar", jar.absolutePath, "version")
+            .redirectErrorStream(false)
+            .start()
+        val jarVersion = versionProcess.inputStream.bufferedReader().use { it.readText() }.trim()
+        versionProcess.waitFor()
+        check(jarVersion == "splice $version") {
+            "release stage: package version $version does not match '$jarVersion'"
+        }
+
+        val dist = distDir.asFile
+        dist.deleteRecursively()
+        dist.mkdirs()
+        val sources = mapOf(
+            "splice.jar" to jar,
+            "splice-launch" to launchShim.asFile,
+            "install.sh" to installScript.asFile,
+            "LICENSE" to licenseFile.asFile,
+            "THIRD_PARTY_NOTICES.md" to thirdPartyNotices.asFile,
+            "THIRD_PARTY_LICENSES.txt" to thirdPartyLicenses.get().asFile,
+            "PROVENANCE.md" to provenance.asFile,
+            "bom.cdx.json" to bom.get().asFile,
+            "dependency-licenses.json" to licenses.get().asFile,
+        )
+        // `install -m 0755` for the two the operator executes, `install -m 0644` for the rest —
+        // set outright rather than inherited from the source or from this process's umask.
+        val executable = setOf("splice-launch", "install.sh")
+        check(sources.keys.toList() == releaseAssets) {
+            "release stage: the staged sources do not spell the asset list — ${sources.keys} vs $releaseAssets"
+        }
+        val sums = releaseAssets.joinToString("") { asset ->
+            val staged = dist.resolve(asset)
+            Files.copy(sources.getValue(asset).toPath(), staged.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Files.setPosixFilePermissions(
+                staged.toPath(),
+                PosixFilePermissions.fromString(if (asset in executable) "rwxr-xr-x" else "rw-r--r--"),
+            )
+            val digest = MessageDigest.getInstance("SHA-256").digest(staged.readBytes())
+                .joinToString("") { byte -> "%02x".format(byte) }
+            "$digest  $asset\n"
+        }
+        dist.resolve("sha256sums.txt").writeText(sums)
+        // QUIET, not LIFECYCLE: the rehearsal and the release workflow both run gradle with `-q`,
+        // and stage.sh's closing line printed there too.
+        logger.quiet("release stage: $dist")
+    }
+}
+
 // A classpath test cannot catch lost language service registrations in the shipped fat JAR.
 val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
     dependsOn(tasks.named("shadowJar"))
@@ -362,7 +505,7 @@ tasks.withType<ShadowJar>().configureEach {
     from(repositoryRoot.file("LICENSE")) { into("META-INF"); rename { "LICENSE" } }
     from(thirdPartyNotices) { into("META-INF") }
     from(thirdPartyLicenses) { into("META-INF") }
-    from(repositoryRoot.file("PROVENANCE.md")) { into("META-INF") }
+    from(provenance) { into("META-INF") }
     from(bom) { into("META-INF") }
     from(licenses) { into("META-INF") }
     // the archive entry stays `webui/index.html`: DashboardHtml.kt reads that resource by name

@@ -1,6 +1,6 @@
 // NEW (G25): idle heap uncommit — DEFAULT_JVM_OPTS must carry -XX:G1PeriodicGCInterval=60000
 // alongside the pre-existing G10 flags (-Xmx2048m, -XX:+UseStringDeduplication), since both
-// cold-start paths (AdminSupport.spawnDaemon and bin/splice-launch) are meant to agree.
+// cold-start paths (AdminSupport.spawnDaemon and app/src/main/dist/bin/splice-launch) are meant to agree.
 package splice.app.cli
 
 import com.sun.net.httpserver.HttpServer

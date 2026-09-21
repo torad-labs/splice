@@ -16,25 +16,26 @@
 // what gate.sh's `run` was: every leg runs and reports its own verdict, and the gate is red if any
 // leg is — a ladder that stops at the first red hides every red behind it.
 //
-// AFTER THE SLOT: the legs that cannot run inside the graph. The OSS readiness scripts
-// (checks/oss/run.sh) run gradle through the slot themselves (verify-OSS-B, -D, -J), and the slot
-// is held for the whole graph — a nested run would wait on its own lock. They run once it is
-// released, until ReleaseReadinessLawTest absorbs them (PR 6). GATE: PASS needs both phases green.
+// AFTER THE SLOT: the legs that cannot run inside the graph. The release rehearsal
+// (`bun tools/release verify`) builds and stages a release through the slot itself, and the slot
+// is held for the whole graph — a nested run would wait on its own lock. It runs once the slot is
+// released. GATE: PASS needs both phases green. (The OSS readiness scripts ran here until PR 6;
+// their static assertions are ReleaseReadinessLawTest, their dependency audit a ladder row.)
 //
 // `--java-home-only` prints the resolved JAVA_HOME and stops: it is the resolver's own executable
-// test (checks/oss/verify-OSS-J.sh runs it with JAVA_HOME unset and expects a Java 21 back).
+// test (tools/gate/test/jdk.test.ts runs it with JAVA_HOME unset and expects a Java 21 back).
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { layout } from "../lib/repo.ts";
 import { runUnderSlot } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
 
-export const usage = "run [--java-home-only]                the gate of record: JDK 21, then clean gateOfRecord through the slot, then the OSS readiness scripts";
+export const usage = "run [--java-home-only]                the gate of record: JDK 21, then clean gateOfRecord through the slot, then the release rehearsal";
 
 export const GATE_OF_RECORD_LABEL = "gate-of-record";
 export const GATE_OF_RECORD_TASKS = ["--no-build-cache", "clean", "gateOfRecord", "--continue"] as const;
 /** The legs that run after the slot is released, because they take the slot themselves. */
 export const AFTER_THE_SLOT: readonly { readonly label: string; readonly command: readonly string[] }[] = [
-  { label: "OSS readiness", command: ["bash", "checks/oss/run.sh"] },
+  { label: "release rehearsal", command: ["bun", "tools/release", "verify"] },
 ];
 
 /** A slot phase that ended by SIGNAL (128+signum, the shell's contract in status.ts) is a cancelled

@@ -1,6 +1,6 @@
 // NEW: v0.4.0 FEATURES.md §5 — the launch shim is the one artifact an operator may have edited
 // after install (a host that patches the launcher rewrites it in place), and it is version-locked to
-// the jar: bin/splice-launch shuts a daemon down and refuses to launch when the daemon's version is
+// the jar: app/src/main/dist/bin/splice-launch shuts a daemon down and refuses to launch when the daemon's version is
 // not its own SPLICE_GATEWAY_VERSION. So an upgrade ALWAYS activates the new release's shim; a kept
 // old shim cannot launch anything (review 2026-09-14: every flat 0.3.x install kept its shim and lost
 // every launch). A live shim that differs from its release's pristine copy — or has no pristine copy

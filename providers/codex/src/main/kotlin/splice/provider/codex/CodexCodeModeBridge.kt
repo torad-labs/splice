@@ -95,7 +95,7 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
     public fun onHeadStop() {
         registry.onHeadStop()
         // The runtime owns child JVM worker processes; a head stop is the one production path that
-        // releases them, so its close() is called here and nowhere else (autocloseable-closed).
+        // releases them, so its close() is called here and nowhere else (AutoCloseableClosedLawTest).
         config.runtime.close()
     }
 }

@@ -295,7 +295,7 @@ class ArchitectureLawsTest {
     // ships a *RequestBuilder must also ship at least one contract/<name>.json golden — so a new
     // dialect arrives WITH its exact-request-bytes fixture (the stream_options / gzip incident class
     // becomes a failing unit test) rather than un-pinned. The receipt-binding half (a changed golden
-    // must match a live-200 receipt) activates on traffic; see gateway/CONTRACT.md.
+    // must match a live-200 receipt) activates on traffic; see .docs/architecture/request-byte-contracts.md.
     // DR-165: the builder modules come from the SOURCE TREE, not from PORT_SCOPE_MODULES. Derived
     // from the allowlist, this law could be switched off for a whole dialect by deleting one string
     // — codex-splice's mutant removed dialect-openai-responses and the suite stayed green 16/16,
@@ -327,7 +327,7 @@ class ArchitectureLawsTest {
             violations.joinToString(
                 separator = "\n  - ",
                 prefix = "REQUEST-BYTE CONTRACT COVERAGE (#924 Phase 1, DR-165) violated:\n  - ",
-                postfix = "\nSee gateway/CONTRACT.md.",
+                postfix = "\nSee .docs/architecture/request-byte-contracts.md.",
             )
         }
     }

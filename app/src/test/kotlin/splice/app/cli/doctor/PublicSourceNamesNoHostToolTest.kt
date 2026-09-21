@@ -11,7 +11,7 @@
 // tool>" tells a reader packaging splice for their own box nothing they can act on, and quietly
 // says the requirement is someone else's problem. "a unit that starts this process and restarts it
 // when it exits" is the same sentence with the requirement in it. The names are also a private
-// infrastructure inventory, and this repo ships publicly (checks/oss/).
+// infrastructure inventory, and this repo ships publicly (ReleaseReadinessLawTest).
 //
 // AND NOTE WHERE THAT SENTENCE HAD TO BE REWRITTEN: its first draft quoted the real name as the
 // example of what not to write, and this wall failed on its own file at that line. A check that

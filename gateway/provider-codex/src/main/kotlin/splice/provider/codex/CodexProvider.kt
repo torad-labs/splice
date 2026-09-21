@@ -14,6 +14,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolResultMedia
 import splice.spi.BuiltTurn
 import splice.spi.ProviderTuning
 
@@ -33,7 +34,7 @@ public class CodexProvider(
     codeModeBridge: CodexCodeModeBridge? = null,
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
-    private val codeModeTurns = CodexCodeModeTurnBuilder(codeModeBridge)
+    private val codeModeTurns = CodexCodeModeTurnBuilder(codeModeBridge, ResponsesToolResultMedia(quirks))
     private val codeMode = codeModeBridge
 
     /** Proven against the live ChatGPT backend by the WS-0 spike

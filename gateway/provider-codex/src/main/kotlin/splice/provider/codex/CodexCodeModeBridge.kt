@@ -2,6 +2,7 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
@@ -46,6 +47,13 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
         val model: String,
         val tools: Set<String>,
         val toolResults: List<CodeModeResult> = emptyList(),
+        /** V4-179: per code-mode result id, the follow-up wire items its images render to (the
+         *  ordinary dialect policy, rendered once by CodexCodeModeTurnBuilder). The script never
+         *  sees these; the record persists them and the history replays them. */
+        val toolMedia: Map<String, List<JsonElement>> = emptyMap(),
+        /** V4-179: the same results rendered with the V4-178 markers, for replay identity against a
+         *  record the previous daemon wrote (see CodexCodeModeValidation.conflicts). */
+        val legacyResults: List<CodeModeResult> = emptyList(),
     )
 
     private val json = Json { encodeDefaults = true }
@@ -73,7 +81,10 @@ public class CodexCodeModeBridge(private val config: CodeModeBridgeConfig) {
         initialOuter: GatewayCustomCall? = null,
         disableParallel: Boolean,
     ): RoundInterceptor {
-        val admitted = turn.copy(toolResults = turn.toolResults.map(validation::admit))
+        val admitted = turn.copy(
+            toolResults = turn.toolResults.map(validation::admit),
+            legacyResults = turn.legacyResults.map(validation::admit),
+        )
         return RoundInterceptor { bodyJson, sink, post ->
             controller.run(CodeModeRunInput(admitted, initialOuter, disableParallel, bodyJson, sink, post))
         }

@@ -233,7 +233,7 @@ they stream, the failure share by outcome, retries, cache hit ratio and peak con
 When a session's Claude Code is newer than the version this splice release was tested with,
 doctor, `splice status` and the status line say so once; equal or older is silent.
 
-<img src="docs/assets/doctor.svg" alt="splice doctor output: every failing check prints its fix" width="760">
+<img src=".docs/assets/doctor.svg" alt="splice doctor output: every failing check prints its fix" width="760">
 
 The daemon reads API-key env vars from **its own** environment. Export a key *after* the daemon
 has started and the shell sees it but the daemon does not: launches warn, requests fail upstream. `splice restart` restarts the daemon with your current
@@ -461,9 +461,14 @@ build-logic/   Gradle convention plugins; the build itself is rooted at the repo
 config/        splice.example.toml — the sample multi-provider topology
 bin/           splice-launch (the installed wrapper; every head command is an argv[0] symlink to it)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
-checks/        the local gate and the live harnesses (docker e2e, local models, MCP hosting bench)
 webui/         React 19 + Vite + Zustand dashboard, single-file build
+checks/        the gate (`npm run gate`) and its legs: wall routing, the concentration ratchet,
+               release acceptance, the OSS ladder, the e2e harnesses
 quality/       enforcement: detekt config + the ast-grep "walls" (write-time AND at the gate)
+.claude/       the hook orchestrator that runs the walls on every agent write, and its tests
+.dev/          campaign ledgers with their walls and oracle (`gate:campaign`, `oracle:*`),
+               research notes, release material
+.docs/         design specs and plans, README assets
 ```
 
 The **gateway/** Kotlin daemon is the only stack. The legacy `server/` Node proxy and its

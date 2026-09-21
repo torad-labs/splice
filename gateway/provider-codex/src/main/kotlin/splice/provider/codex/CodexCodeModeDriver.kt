@@ -93,7 +93,7 @@ internal class CodexCodeModeDriver(
         return if (record == null || record.phase != CodeModePhase.COMPLETED) {
             accumulated.finishLocal(advanced)
         } else {
-            val rewritten = wire.canonicalize(state.bodyJson, registry.completed(context.key))
+            val rewritten = wire.canonicalize(state.bodyJson, registry.completed(context.key), context.turn.toolMedia)
             rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
             state.bodyJson = checkNotNull(rewritten.bodyJson)
             state.outcome = context.post(state.bodyJson)

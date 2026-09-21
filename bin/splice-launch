@@ -63,6 +63,9 @@ try:
 except (OSError, ValueError, TypeError, json.JSONDecodeError):
     pass' "$config" 2>/dev/null || true
 }
+# Remembered before the resolution below overwrites it: an inherited CONTROL_PORT is a caller-local
+# endpoint selector, and the unit-first cold start must not answer it (unit_defaults).
+CONTROL_PORT_FROM_ENV="${CONTROL_PORT:-}"
 # Match ConfigService exactly: default < TOML < state/config.json < env aliases.
 CONTROL_PORT="$(topology_control_port)"
 CONTROL_PORT="${CONTROL_PORT:-3096}"
@@ -89,7 +92,7 @@ DANGEROUS="false"
 [ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS:-0}" = "1" ] && DANGEROUS="true"
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-4"
+SPLICE_SHIM_VERSION="shim-5"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.3.2"
 
@@ -170,23 +173,32 @@ fi
 # `systemctl restart` left the port empty, each holding a stale jar until SIGKILLed). Every
 # `splice install` used to revert the unit-first patch because it lived only in the installed
 # copy; it lives here now. The raw spawn below remains ONLY for a machine with no unit, or for a
-# shim pointed away from the unit's defaults (SPLICE_CONFIG / SPLICE_JAR / SPLICE_SHARE_DIR /
-# SPLICE_STATE_DIR / CLAUDEX_STATE_DIR set): that daemon is a harness's own, never the unit's, and
-# the unit could not serve it (release/launcher-test.sh, heads and docker e2e all run that way).
+# shim pointed away from the unit's defaults — any of the config, jar, state or control-endpoint
+# selectors this file reads (SPLICE_CONFIG, XDG_CONFIG_HOME, SPLICE_JAR, SPLICE_SHARE_DIR,
+# SPLICE_STATE_DIR, CLAUDEX_STATE_DIR, SPLICE_CONTROL_PORT, CONTROL_PROXY_PORT, CONTROL_PORT) set:
+# that daemon is a harness's own, never the unit's, and the unit could not serve it
+# (release/launcher-test.sh, heads and docker e2e all run that way). The unit is the operator's
+# SPLICE_SUPERVISOR_UNIT (splice.core.config.Knob SUPERVISOR_UNIT, default splice.service) — the
+# same name the daemon drains into on `POST /api/daemon/restart`.
 unit_defaults() {
-  [ -z "${SPLICE_CONFIG:-}${SPLICE_JAR:-}${SPLICE_SHARE_DIR:-}${SPLICE_STATE_DIR:-}${CLAUDEX_STATE_DIR:-}" ]
+  [ -z "${SPLICE_CONFIG:-}${XDG_CONFIG_HOME:-}${SPLICE_JAR:-}${SPLICE_SHARE_DIR:-}${SPLICE_STATE_DIR:-}${CLAUDEX_STATE_DIR:-}${SPLICE_CONTROL_PORT:-}${CONTROL_PROXY_PORT:-}${CONTROL_PORT_FROM_ENV:-}" ]
 }
+SUPERVISOR_UNIT="${SPLICE_SUPERVISOR_UNIT:-splice.service}"
+# Wall clock, not iterations: health() itself may block up to its curl timeout per probe, so a
+# probe count is not a deadline. SPLICE_UNIT_WAIT_SECONDS raises it on a box whose JVM boots slowly.
+UNIT_WAIT_SECONDS="${SPLICE_UNIT_WAIT_SECONDS:-30}"
 if [ -z "$HEALTH_JSON" ] && unit_defaults && command -v systemctl >/dev/null 2>&1 \
-  && systemctl --user cat splice.service >/dev/null 2>&1; then
-  echo "splice: starting splice.service…" >&2
-  systemctl --user start splice.service >/dev/null 2>&1 || true
-  for ((i = 0; i < 150; i++)); do
+  && systemctl --user cat "$SUPERVISOR_UNIT" >/dev/null 2>&1; then
+  echo "splice: starting $SUPERVISOR_UNIT…" >&2
+  systemctl --user start "$SUPERVISOR_UNIT" >/dev/null 2>&1 || true
+  UNIT_WAIT_START=$SECONDS
+  while [ $((SECONDS - UNIT_WAIT_START)) -lt "$UNIT_WAIT_SECONDS" ]; do
     HEALTH_JSON="$(health)"
     [ -n "$HEALTH_JSON" ] && break
     sleep 0.2
   done
   if [ -z "$HEALTH_JSON" ]; then
-    echo "splice: splice.service did not answer /health within 30 seconds — never starting a second daemon beside it. See: systemctl --user status splice.service; journalctl --user -u splice.service -n 50" >&2
+    echo "splice: $SUPERVISOR_UNIT did not answer /health within ${UNIT_WAIT_SECONDS}s — never starting a second daemon beside it. See: systemctl --user status $SUPERVISOR_UNIT; journalctl --user -u $SUPERVISOR_UNIT -n 50" >&2
     exit 1
   fi
 fi

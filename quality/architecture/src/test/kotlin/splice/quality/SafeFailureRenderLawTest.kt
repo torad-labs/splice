@@ -726,7 +726,17 @@ internal object SafeFailureRender {
             val found = EXEMPT.find(lens.lines[back]) ?: continue
             return exemption(found)
         }
-        return Verdict(BAD_VERDICT, "renders a throwable raw with no SafeFailureText.render and no exemption")
+        return Verdict(
+            BAD_VERDICT,
+            // The reader of this line is the person who has to fix it, and the marker's spelling is
+            // not derivable from the sentence "no exemption": it is dated, it is bounded to the
+            // lines above the site, and its reason has a floor. All three are named here, from the
+            // same constants the parser uses, so the remedy cannot drift from the rule.
+            "renders a throwable raw with no SafeFailureText.render and no exemption — route it " +
+                "through SafeFailureText.render, or write `// SAFE-RENDER-EXEMPT[YYYY-MM-DD]: " +
+                "<why this render cannot leak>` within $EXEMPT_LOOKBACK lines above it, with at " +
+                "least $MIN_REASON_CHARS characters of reason",
+        )
     }
 
     private fun exemption(found: MatchResult): Verdict {

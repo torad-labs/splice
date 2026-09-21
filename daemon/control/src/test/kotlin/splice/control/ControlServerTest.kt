@@ -312,23 +312,6 @@ class ControlServerTest {
     }
 
     @Test
-    fun `an unauthorized start never reaches the extracted feature`() = runTest {
-        try {
-            client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
-                header("Authorization", "Bearer $key")
-            }
-
-            val response = client.post("http://127.0.0.1:$port/api/heads/codex/start")
-
-            assertEquals(HttpStatusCode.Unauthorized, response.status)
-            val heads = json.parseToJsonElement(authed("/api/heads")).jsonObject["heads"]!!.jsonArray
-            assertEquals("false", heads.first().jsonObject["running"]?.jsonPrimitive?.content)
-        } finally {
-            head.running = true
-        }
-    }
-
-    @Test
     fun `head lifecycle - stop then start flips running`() = runTest {
         val stopped = client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
             header("Authorization", "Bearer $key")

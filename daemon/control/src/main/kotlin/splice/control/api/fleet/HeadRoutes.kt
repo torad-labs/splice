@@ -24,9 +24,10 @@ internal class HeadRoutes(
     private val payloads: ControlPayloads,
     private val audit: ControlAudit,
 ) {
-    private val startHead = StartHead(HeadStartAdapter(resolver), StartHeadAudit { name ->
-        audit.headAction(name, "start")
-    })
+    private val startHead = StartHead(
+        HeadStartAdapter(resolver),
+        StartHeadAudit { name -> audit.headAction(name, "start") },
+    )
 
     suspend fun headAction(call: ApplicationCall) {
         val action = call.parameters["action"].orEmpty()

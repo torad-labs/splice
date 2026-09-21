@@ -19,12 +19,12 @@ The procedure, every time, in this order:
 1. Clean export, never the dirty worktree: `git archive HEAD | tar -x -C <scratch>/export-<sha>`.
 2. Gate of record is the WHOLE ladder, and it runs IN THE CLEAN WORKTREE, never in the export:
    `bun tools/gate run` inside `buildgate.slice`, ending in `GATE: PASS`, with `git status` empty
-   and HEAD equal to the commit being installed. An export cannot run four of its legs and reports
-   them RED for reasons that are not the code (measured 2026-09-17 on 1808837b): `pr title` reads
-   HEAD's subject and a `git archive` tree has no `.git` (exit 1); `console lint`/`tests`
-   need `node_modules`, which `git archive` excludes (exit 127, `eslint: not found`); `OSS
-   readiness` shells out to git (exit 128). The export exists to BUILD the jar from a tree with no
-   dirty edits, which is a different job from running the ladder. Build there, gate here.
+   and HEAD equal to the commit being installed. An export cannot run several of its legs and
+   reports them RED for reasons that are not the code (measured 2026-09-17 on 1808837b): `pr title`
+   reads HEAD's subject and a `git archive` tree has no `.git` (exit 1); `console lint`/`tests`
+   need `node_modules`, which `git archive` excludes (exit 127, `eslint: not found`). The export
+   exists to BUILD the jar from a tree with no dirty edits, which is a different job from running
+   the ladder. Build there, gate here.
 
    The ladder runs the gradle tier (module-law, detekt, the architecture laws — concentration,
    safe-failure-render and release readiness among them — every unit test, the load test), the

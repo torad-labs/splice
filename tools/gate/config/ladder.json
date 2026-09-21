@@ -95,6 +95,11 @@
       "creates": "app/build/receipts"
     },
     {
+      "task": "dependencyAudit",
+      "why": "bun audit --audit-level=critical over bun.lock, three attempts capped at a minute each (checks/oss/verify-OSS-I.sh until PR 6): the registry's advisory endpoint has hung and answered 503 mid-gate, and a critical advisory must still red all three attempts.",
+      "command": ["bun", "tools/gate", "audit"]
+    },
+    {
       "task": "noPython",
       "why": "Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted every time it was only prose, because nothing failed when a session added another .py. It is a wall now; the dated burn-down list beside this table is the debt and may only shrink. The PreToolUse guard (.claude/settings.json) is `bun tools/gate no-python --guard`, the same library rather than a reimplementation.",
       "command": ["bun", "tools/gate", "no-python"]

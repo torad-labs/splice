@@ -39,8 +39,8 @@ release:
   - changed-files:
       - any-glob-to-any-file:
           - 'install.sh'
-          - 'bin/**'
-          - 'checks/release/**'
+          - 'app/src/main/dist/**'
+          - 'tools/release/**'
 
 dependencies:
   - changed-files:

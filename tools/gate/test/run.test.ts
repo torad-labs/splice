@@ -4,7 +4,7 @@
 // that a row naming a script that does not exist, or an npm script package.json does not declare,
 // is red here before it is a red leg twenty minutes into a gate run.
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AFTER_THE_SLOT, GATE_OF_RECORD_LABEL, GATE_OF_RECORD_TASKS, cancelledBySignal } from "../src/commands/run.ts";
 import { layout } from "../src/lib/repo.ts";
@@ -50,7 +50,7 @@ describe("gate run", () => {
     for (const leg of legs) {
       expect(leg.task, `${leg.task}: a Gradle task name`).toMatch(/^[a-z][A-Za-z0-9]*$/);
       expect(leg.why.length, `${leg.task}: needs a reason`).toBeGreaterThan(0);
-      expect(["bun", "bash", "npm"], `${leg.task}: runtime`).toContain(leg.command[0]);
+      expect(["bun", "bash", "npm"], `${leg.task}: runtime`).toContain(leg.command[0]!);
       if (leg.command[0] === "npm") {
         const script = leg.command[leg.command.length - 1]!;
         expect(scripts[script], `${leg.task}: package.json declares no '${script}' script`).toBeDefined();
@@ -62,11 +62,10 @@ describe("gate run", () => {
   });
 
   test("the legs after the slot are exactly the ones that take the slot themselves", () => {
-    expect(AFTER_THE_SLOT.map((l) => l.label)).toEqual(["OSS readiness"]);
+    expect(AFTER_THE_SLOT.map((l) => l.label)).toEqual(["release rehearsal"]);
     for (const leg of AFTER_THE_SLOT) expect(existsSync(join(repoRoot, leg.command[1]!))).toBe(true);
-    // and the reason holds today: at least one OSS script does run gradle through the slot
-    const oss = readdirSync(join(repoRoot, "checks", "oss")).filter((f) => f.startsWith("verify-OSS-"));
-    expect(oss.some((f) => read(`checks/oss/${f}`).includes("tools/gate slot"))).toBe(true);
+    // and the reason holds today: the rehearsal runs gradle through the slot
+    expect(read("tools/release/src/commands/verify.ts")).toMatch(/"slot",\s*SLOT_LABEL/);
   });
 
   test("argv other than --java-home-only is refused with exit 2", () => {

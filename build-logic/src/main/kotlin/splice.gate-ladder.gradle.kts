@@ -16,10 +16,10 @@
 // hole one layer up. Fingerprinting the tree every checker reads (all of it, plus git) would also
 // cost more than most legs. So each leg declares no inputs and refuses up-to-date.
 //
-// WHAT IS NOT HERE: the OSS readiness ladder (checks/oss/run.sh). Three of its scripts run gradle
-// through the slot (verify-OSS-B, -D, -J), and the slot is held by the gate for the whole of this
-// graph — a nested run would wait on its own lock. `bun tools/gate run` runs it AFTER the graph,
-// with the slot released, until ReleaseReadinessLawTest absorbs it (PR 6). The console's lint and
+// WHAT IS NOT HERE: the release rehearsal (`bun tools/release verify`). It builds and stages a
+// release through the slot, and the slot is held by the gate for the whole of this graph — a
+// nested run would wait on its own lock. `bun tools/gate run` runs it AFTER the graph, with the
+// slot released. The console's lint and
 // vitest suite are `:console:lint` and `:console:test`, tasks of their own module, and the Kotlin
 // modules' `check` tasks carry detekt, the unit suites and the module laws.
 import groovy.json.JsonSlurper

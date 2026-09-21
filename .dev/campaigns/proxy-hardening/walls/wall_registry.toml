@@ -87,7 +87,9 @@ proof = "2026-09-21: KeyStore.unset() mutated to read entries() instead of entri
 [[item]]
 id = "SH-12"
 phase = "W2-auth-lifecycle"
-wall = ".dev/campaigns/proxy-hardening/walls/sh_12_mgmtkey_loud_remint.ts"
+wall = ""
+retired_to = "core/src/test/kotlin/splice/core/config/MgmtKeyTest.kt"
+proof = "2026-09-21: MgmtKey.ensure() mutated back to the silent fallthrough (loud log block and mintedAtMs assignment deleted); the wall went RED and 6 of 7 MgmtKeyTest arms FAILED on the same mutation; restored, both GREEN (7/7)"
 
 [[item]]
 id = "SH-14"

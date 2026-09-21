@@ -62,6 +62,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":daemon-head" to ADAPTER_BASE + DIALECTS,
     // the management plane reads the domain, and the client side it assembles a launch spec for.
     ":daemon-control" to setOf(":core", ":client"),
+    // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
+    ":console" to emptySet(),
 )
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are

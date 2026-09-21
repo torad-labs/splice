@@ -18,12 +18,12 @@ npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
 npm run test:hooks        # orchestrator hook test suite
 bash checks/config-guard.sh   # rules that guard the rules
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
-npm run lint -w webui && npm test -w webui && npm run build -w webui
+npm run lint -w console && npm test -w console && ./gradlew :console:build
 npm run oss:verify
 ```
 
 `npm run gate` (`checks/gate.sh`) runs the complete list: Gradle module-law/detekt/tests,
-ast-grep walls, hook tests, campaign walls, config guard, webui lint/test/build
+ast-grep walls, hook tests, campaign walls, config guard, console lint/test (the bundle builds in the gradle tier)
 with a committed-dist check, staged release acceptance, dependency audit, and every OSS
 readiness check. The individual commands are listed only so a contributor can run one in
 isolation while iterating. The Gradle build is rooted at the repository root with its own

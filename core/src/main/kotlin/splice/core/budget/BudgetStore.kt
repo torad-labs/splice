@@ -27,7 +27,7 @@ import java.nio.file.Path
 /** The state-dir file the budgets live in. */
 public const val BUDGETS_FILE: String = "budgets.json"
 
-/** One head's daily spend budget. Wire-identical to `webui/src/entities/budget/model/types.ts`. */
+/** One head's daily spend budget. Wire-identical to `console/src/entities/budget/model/types.ts`. */
 @Serializable
 public data class Budget(
     val head: String,

@@ -28,6 +28,9 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":daemon-head" to setOf(":core", ":upstream"),
     ":daemon-control" to setOf(":core", ":client"),
     ":quality-architecture" to emptySet(),
+    // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map
+    // covers every module the build declares.
+    ":console" to emptySet(),
     // :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).
     ":quality-compiler-plugin" to emptySet(),

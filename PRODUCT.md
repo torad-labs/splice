@@ -59,7 +59,7 @@ unsupported by those vendors; the console carries that honesty without shouting 
   failing check; releases are checksummed and provenance-attested before the installer activates
   them.
 - Feature inventory for the console, enumerated from the daemon's source and from competing
-  consoles: `.dev/web-console/FEATURES.md` (2026-09-17).
+  consoles: `.dev/campaigns/web-console/FEATURES.md` (2026-09-17).
 
 ## Capabilities and Constraints
 
@@ -82,7 +82,7 @@ Constraints:
 - Topology is boot-only; the daemon reports when the file on disk no longer matches what booted.
 - Secrets are masked and replace-only; account ids and emails are never displayed unmasked.
 - Missing provider data reads "not reported by provider", never zero and never unlimited.
-- The webui architecture is lint-enforced: Feature-Sliced layers, HTTP only inside entity api
+- The console architecture is lint-enforced: Feature-Sliced layers, HTTP only inside entity api
   segments, spacing and font sizes only from the token scales, zero em-dashes in UI text.
 
 Terminology: head, provider, dialect, quirk, slot (opus, sonnet, haiku, fable), pinned model,
@@ -113,7 +113,7 @@ topology editor or the forms are the primary settings surface.
 - `docs/assets/doctor.svg`: the doctor output the README leads with.
 - `README.md`, `CHANGELOG.md`, `config/splice.example.toml`: the source of copy, terminology and
   the reasons behind each knob.
-- `.dev/web-console/FEATURES.md` §3: competitor console research, 2026-09-17.
+- `.dev/campaigns/web-console/FEATURES.md` §3: competitor console research, 2026-09-17.
 - Absent, and not to be fabricated: testimonials, customer logos, adoption numbers, benchmarks
   beyond the repo's own measurements.
 
@@ -130,6 +130,6 @@ topology editor or the forms are the primary settings surface.
 ## Accessibility & Inclusion
 
 WCAG AA for text, controls, focus and data inks in both light and dark, verified by the contrast
-test in `webui/tests`. Focus is always visible. Motion is functional only and respects
+test in `console/tests`. Focus is always visible. Motion is functional only and respects
 prefers-reduced-motion. Color is never the sole signal: every status carries a text label. The
 console is fully operable from the keyboard.

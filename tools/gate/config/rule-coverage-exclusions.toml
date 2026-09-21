@@ -440,12 +440,12 @@ either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double
 
 [[exclusion]]
 rule = "webui-css-tokens-only"
-files = ["webui/src/shared/tokens.css"]
+files = ["console/src/shared/tokens.css"]
 date = "2026-09-20"
 reason = "The token scales themselves — the one stylesheet allowed to hold raw px/rem values."
 
 [[exclusion]]
 rule = "webui-fetch-only-in-api"
-files = ["webui/src/shared/api/**", "webui/src/entities/*/api/**"]
+files = ["console/src/shared/api/**", "console/src/entities/*/api/**"]
 date = "2026-09-20"
 reason = "FSD: the api segments ARE the HTTP layer the rule confines fetch to."

@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 /** Wire name -> the element names that name's payload must carry, in order. The names are the
- *  console's own vocabulary (.dev/web-console/FEATURES.md §6, splice-design owns it) — dotted, not
+ *  console's own vocabulary (.dev/campaigns/web-console/FEATURES.md §6, splice-design owns it) — dotted, not
  *  underscored, which is the one place this implementation differed from the contract and adopted
  *  it rather than asking the console to adapt. */
 private val EXPECTED_SHAPES: Map<String, List<String>> = mapOf(

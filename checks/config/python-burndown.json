@@ -56,7 +56,7 @@
     "upstream/src/test/kotlin/splice/upstream/failure/UpstreamFailurePolicyRefusalTest.kt",
     "install.sh",
     "quality/rules/kotlin/kt-tests-no-wall-clock.yml",
-    "webui/.impeccable/review/material-spec.md"
+    "console/.impeccable/review/material-spec.md"
   ],
   "pendingTools": []
 }

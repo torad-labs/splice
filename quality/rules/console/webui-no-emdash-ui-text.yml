@@ -16,7 +16,7 @@ note: |
   Data cells use a plain hyphen or an explicit empty-state string, never an
   em-dash placeholder.
 files:
-  - webui/src/**/*.tsx
+  - console/src/**/*.tsx
 rule:
   any:
     - kind: jsx_text

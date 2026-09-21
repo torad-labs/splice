@@ -7,7 +7,7 @@
 // that the publisher only ever `trySend`s into; an overflow is DROPPED and COUNTED, so the console
 // can say "you missed 12" instead of showing a stream that quietly stopped matching reality.
 //
-// The event SHAPES are the contract (.dev/web-console/FEATURES.md §6, owned by splice-design), so
+// The event SHAPES are the contract (.dev/campaigns/web-console/FEATURES.md §6, owned by splice-design), so
 // they are a sealed hierarchy with an explicit wire name each: the control test that pins them
 // takes its denominator from these subclasses rather than from a hand-written list, which is what
 // makes a NEW event type impossible to add without a disposition.

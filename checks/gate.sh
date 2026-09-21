@@ -242,16 +242,12 @@ run "pr title"       bash checks/pr-title.sh
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.
 run "secret-scan allowlist generated" bun checks/gen-secret-scan-allow.ts --check
 run "secret-scan allowlist" bash checks/secret-scan-allow-selftest.sh
-run "webui lint"     npm run lint -w webui
-run "webui tests"    npm test -w webui
-webui_dist_before="$(mktemp)"
-if ! cp webui/dist/index.html "$webui_dist_before"; then
-  echo "  ✗ webui dist snapshot (committed bundle missing)"
-  fail=1
-fi
-run "webui build"    npm run build -w webui
-run "webui dist"     cmp -s "$webui_dist_before" webui/dist/index.html
-rm -f "$webui_dist_before"
+run "console lint"   npm run lint -w console
+run "console tests"  npm test -w console
+# PR 4: the "webui build" and "webui dist" legs are RETIRED with the committed bundle. The bundle is
+# :console:bundle's output, built inside the gradle tier above (`clean check` reaches :console:check),
+# and :app's shadowJar packages that output through the task's provider — producer wiring, not a
+# byte comparison against a file in the tree.
 run "OSS readiness"  bash checks/oss/run.sh
 
 echo

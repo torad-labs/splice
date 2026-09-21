@@ -69,7 +69,8 @@ class RetryAfterSingleParserLawTest {
         val sources = KotlinText.kotlinFiles(map).associate { file ->
             KotlinText.rel(map, file) to KotlinText.stripComments(file.readText())
         }
-        val parserRel = KotlinText.rel(map, File(map.mainSources(":upstream"), RetryAfterSingleParser.PARSER_IN_UPSTREAM))
+        val parserFile = File(map.mainSources(":upstream"), RetryAfterSingleParser.PARSER_IN_UPSTREAM)
+        val parserRel = KotlinText.rel(map, parserFile)
         val problems = RetryAfterSingleParser.audit(sources, parserRel)
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "RETRY-AFTER SINGLE PARSER (NF-04) violated:\n  - ")
@@ -78,7 +79,11 @@ class RetryAfterSingleParserLawTest {
 
     @Test
     fun `the law can actually fail - each marker, the anchor, and the out-of-scope file`() {
-        assertEquals(emptyList<String>(), RetryAfterSingleParser.audit(COMPLIANT, PARSER), "compliant tree must be GREEN")
+        assertEquals(
+            emptyList<String>(),
+            RetryAfterSingleParser.audit(COMPLIANT, PARSER),
+            "compliant tree must be GREEN",
+        )
 
         // Three variants of the same class: one marker each, in a file that names the header.
         for ((label, body) in MIRRORS) {
@@ -89,16 +94,28 @@ class RetryAfterSingleParserLawTest {
         // A parser token in a file that never names the header is out of scope: the class is
         // "re-deriving THIS header", not "using a date formatter".
         val unrelated = COMPLIANT + ("core/src/main/kotlin/Clock.kt" to "val f = DateTimeFormatter.RFC_1123_DATE_TIME\n")
-        assertEquals(emptyList<String>(), RetryAfterSingleParser.audit(unrelated, PARSER), "an unrelated formatter user is GREEN")
+        assertEquals(
+            emptyList<String>(),
+            RetryAfterSingleParser.audit(unrelated, PARSER),
+            "an unrelated formatter user is GREEN",
+        )
 
         // A marker that survives only in a comment was stripped before this audit ever saw it —
         // the live test strips; the pure audit grades what it is handed.
         val stripped = COMPLIANT + ("app/src/main/kotlin/Delegator.kt" to KotlinText.stripComments(COMMENTED_MIRROR))
-        assertEquals(emptyList<String>(), RetryAfterSingleParser.audit(stripped, PARSER), "a marker in a comment is prose")
+        assertEquals(
+            emptyList<String>(),
+            RetryAfterSingleParser.audit(stripped, PARSER),
+            "a marker in a comment is prose",
+        )
 
-        assertHit(RetryAfterSingleParser.audit(COMPLIANT - PARSER, PARSER), "missing") { "a missing parser must be RED" }
+        assertHit(RetryAfterSingleParser.audit(COMPLIANT - PARSER, PARSER), "missing") {
+            "a missing parser must be RED"
+        }
         val hollow = COMPLIANT + (PARSER to "class RetryAfter { fun retryAfterMs(h: String?): Long? = null }\n")
-        assertHit(RetryAfterSingleParser.audit(hollow, PARSER), "0 of 3 parser markers") { "an unanchored parser must be RED" }
+        assertHit(RetryAfterSingleParser.audit(hollow, PARSER), "0 of 3 parser markers") {
+            "an unanchored parser must be RED"
+        }
     }
 
     private companion object {

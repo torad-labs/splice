@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-/** Python semantics the code-mode harnesses (code_mode_*.ts) were written against, in one place.
+/** Python semantics the code-mode harnesses (src/commands/code-mode.ts) were written against, in one place.
  *
  *  WHY THIS EXISTS. The code-mode A/B and mock harnesses were Python whose receipts record the NAME
  *  of whatever exception ended a run (`type(exc).__name__`) and whose control flow catches by class
@@ -19,12 +19,12 @@
  *  It also carries the Python exception hierarchy (by the NAMES receipts record), a unittest-shaped
  *  runner whose per-test lines match CPython's `unittest -v` runner, and an argparse subset.
  */
-import { spawn as nodeSpawn } from "node:child_process";
+import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { constants as osConstants } from "node:os";
-import { isPyNum, isPyObj, type PyObj, type PyValue } from "./pyjson.ts";
+import { isPyNum, isPyObj, type PyObj, type PyValue } from "./python-json.ts";
 
 // ---------------------------------------------------------------------------------------------
-// Exceptions. JS TypeError stands for Python's TypeError; JSONDecodeError (pyjson) and
+// Exceptions. JS TypeError stands for Python's TypeError; JSONDecodeError (python-json) and
 // UnicodeDecodeError are SyntaxErrors there and count as ValueError here, as they subclass it in
 // Python.
 // ---------------------------------------------------------------------------------------------
@@ -154,13 +154,13 @@ export function at(seq: PyValue, i: number): PyValue {
   if (Array.isArray(seq)) {
     const j = i < 0 ? seq.length + i : i;
     if (j < 0 || j >= seq.length) throw new IndexError("list index out of range");
-    return seq[j];
+    return seq[j]!;
   }
   if (typeof seq === "string") {
     const cps = Array.from(seq);
     const j = i < 0 ? cps.length + i : i;
     if (j < 0 || j >= cps.length) throw new IndexError("string index out of range");
-    return cps[j];
+    return cps[j]!;
   }
   if (isPyObj(seq)) throw new KeyError(String(i));
   throw new TypeError(`'${typeName(seq)}' object is not subscriptable`);
@@ -209,7 +209,7 @@ export function pyEq(a: PyValue, b: PyValue): boolean {
   }
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return a === b;
   if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => pyEq(x, b[i]));
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => pyEq(x, b[i]!));
   }
   if (isPyObj(a) && isPyObj(b)) {
     if (a.__pyObj.length !== b.__pyObj.length) return false;
@@ -257,7 +257,7 @@ const PY_WS = " \t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0        �
 /** str.rstrip() with Python's whitespace set. */
 export function pyRstrip(s: string): string {
   let b = s.length;
-  while (b > 0 && PY_WS.includes(s[b - 1])) b--;
+  while (b > 0 && PY_WS.includes(s[b - 1]!)) b--;
   return s.slice(0, b);
 }
 /** str.splitlines(). */
@@ -265,7 +265,7 @@ export function pySplitlines(s: string): string[] {
   const out: string[] = [];
   let cur = "";
   for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
+    const ch = s[i]!;
     if (ch === "\r" && s[i + 1] === "\n") {
       out.push(cur);
       cur = "";
@@ -281,14 +281,14 @@ export function pySplitlines(s: string): string[] {
 /** shlex.split(s, comments), posix=True and whitespace_split=True, transcribed from read_token.
  *  With comments=true an unquoted `#` discards the rest of the line, exactly as a shell does.
  *  Landed by V4-145 for checks/config/concentration-leg-routed.ts; proven 8032/8032 against
- *  shlex.split in both comments modes. code_mode_guidance.ts still carries its own older
+ *  shlex.split in both comments modes. The code-mode command module still carries its own older
  *  comments=false copy; folding it into an import is a separate change. */
 export function shlexSplit(s: string, comments = false): string[] {
   const WS = " \t\r\n";
   const QUOTES = "'\"";
   const out: string[] = [];
   let i = 0;
-  const read = (): string => (i < s.length ? s[i++] : "");
+  const read = (): string => (i < s.length ? s[i++]! : "");
   // instream.readline(): everything to and including the next newline is consumed.
   const readline = (): void => {
     while (i < s.length && s[i++] !== "\n");
@@ -361,7 +361,7 @@ export function cpCompare(a: string, b: string): number {
   const x = Array.from(a);
   const y = Array.from(b);
   for (let i = 0; i < Math.min(x.length, y.length); i++) {
-    const d = (x[i].codePointAt(0) as number) - (y[i].codePointAt(0) as number);
+    const d = (x[i]!.codePointAt(0) as number) - (y[i]!.codePointAt(0) as number);
     if (d !== 0) return d;
   }
   return x.length - y.length;
@@ -397,7 +397,7 @@ export function pyFloat(s: string): number {
   const t = s.replace(new RegExp(`^[${PY_WS}]+|[${PY_WS}]+$`, "gu"), "")
     .replace(/\p{Nd}/gu, (ch) => String(ndValue(ch)));
   const special = /^([+-]?)(inf|infinity|nan)$/i.exec(t);
-  if (special) return special[2].toLowerCase() === "nan" ? NaN : special[1] === "-" ? -Infinity : Infinity;
+  if (special) return special[2]!.toLowerCase() === "nan" ? NaN : special[1] === "-" ? -Infinity : Infinity;
   const digits = String.raw`[0-9]+(?:_[0-9]+)*`;
   if (!new RegExp(String.raw`^[+-]?(?:${digits}(?:\.(?:${digits})?)?|\.${digits})(?:[eE][+-]?${digits})?$`).test(t)) {
     throw new ValueError(`could not convert string to float: ${pyRepr(s)}`);
@@ -426,7 +426,7 @@ export interface Proc {
 }
 
 export function popen(argv: string[], opts: { env: Record<string, string>; cwd: string; stdoutFd: number }): Proc {
-  const child = nodeSpawn(argv[0], argv.slice(1), {
+  const child: ChildProcess = nodeSpawn(argv[0] as string, argv.slice(1), {
     cwd: opts.cwd,
     env: opts.env,
     stdio: ["inherit", opts.stdoutFd, opts.stdoutFd],
@@ -434,13 +434,13 @@ export function popen(argv: string[], opts: { env: Record<string, string>; cwd: 
   if (child.pid === undefined) {
     // Popen raises synchronously; node reports a missing binary only through an async event.
     child.on("error", () => {});
-    throw new FileNotFoundError(`[Errno 2] No such file or directory: ${pyRepr(argv[0])}`);
+    throw new FileNotFoundError(`[Errno 2] No such file or directory: ${pyRepr(argv[0] as string)}`);
   }
   let returncode: number | null = null;
   const exited = new Promise<number>((res) => {
-    child.on("exit", (code, signal) => {
+    child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
       returncode = code ?? -(osConstants.signals[signal as NodeJS.Signals] ?? 0);
-      res(returncode);
+      res(returncode as number);
     });
   });
   const signal = (sig: NodeJS.Signals) => {
@@ -472,47 +472,10 @@ export function popen(argv: string[], opts: { env: Record<string, string>; cwd: 
 }
 
 // ---------------------------------------------------------------------------------------------
-// unittest. One class per module, tests run in NAME order (unittest's loader sorts them), each
-// reported as CPython's `unittest -v` runner reports it; the summary goes to stderr like unittest's.
+// The TestCase assertions. unittest's own runner lived here until restructure PR 5 turned the
+// code-mode suites into `bun test` files: bun reports the results now, and only the ASSERTIONS
+// still have to be Python's, because what they compare is the tagged Python tree.
 // ---------------------------------------------------------------------------------------------
-
-export type Tests = Record<string, () => void | Promise<void>>;
-
-export async function runUnittest(module: string, cls: string, tests: Tests): Promise<number> {
-  const names = Object.keys(tests).filter((n) => n.startsWith("test")).sort();
-  const started = performance.now();
-  const failures: [string, string][] = [];
-  const errors: [string, string][] = [];
-  for (const name of names) {
-    const label = `${name} (${module}.${cls}.${name})`;
-    try {
-      await tests[name]();
-      process.stderr.write(`${label} ... ok\n`);
-    } catch (e) {
-      const trace = e instanceof Error ? (e.stack ?? `${e.name}: ${e.message}`) : String(e);
-      if (e instanceof AssertionError) {
-        process.stderr.write(`${label} ... FAIL\n`);
-        failures.push([label, trace]);
-      } else {
-        process.stderr.write(`${label} ... ERROR\n`);
-        errors.push([label, trace]);
-      }
-    }
-  }
-  const rule = "=".repeat(70);
-  for (const [kind, list] of [["ERROR", errors], ["FAIL", failures]] as const) {
-    for (const [label, trace] of list) process.stderr.write(`\n${rule}\n${kind}: ${label}\n${"-".repeat(70)}\n${trace}\n`);
-  }
-  const secs = ((performance.now() - started) / 1000).toFixed(3);
-  process.stderr.write(`\n${"-".repeat(70)}\nRan ${names.length} test${names.length === 1 ? "" : "s"} in ${secs}s\n\n`);
-  if (failures.length + errors.length === 0) {
-    process.stderr.write("OK\n");
-    return 0;
-  }
-  const parts = [failures.length ? `failures=${failures.length}` : "", errors.length ? `errors=${errors.length}` : ""];
-  process.stderr.write(`FAILED (${parts.filter(Boolean).join(", ")})\n`);
-  return 1;
-}
 
 /** The TestCase assertions these suites use. Equality is Python == over the tagged tree; plain JS
  *  values compare structurally. */
@@ -692,21 +655,24 @@ export function argparse(argv: string[], spec: OptSpec[], prog: string, usage: s
     const hit = hits[i];
     if (hit?.ambiguous) fail(`ambiguous option: ${hit.flag} could match ${hit.ambiguous.join(", ")}`);
     if (kinds[i] !== "O" || !hit || hit.action === null) {
-      extras.push(argv[i]);
+      extras.push(argv[i] as string);
       i++;
       continue;
     }
-    let { action, flag, explicit, sep } = hit;
-    if (action === "help" || action.kind === "true") {
+    // `action` is re-bound to the next glued single-dash flag, and to null when that flag names
+    // nothing, so it is declared nullable here; the walk above already skipped a null `hit.action`.
+    let { flag, explicit, sep } = hit;
+    let action: OptSpec | "help" | null = hit.action;
+    if (action === "help" || (action as OptSpec).kind === "true") {
       // nargs=0. A single-dash flag reads its explicit tail as more single-dash flags (`-hh`); a
       // tail char naming no flag sets the rest aside as an extra (`-hx` still prints help); an
       // explicit value after `=`, or after a long flag, is refused.
       const taken: (OptSpec | "help")[] = [];
       while (explicit !== null) {
         if (flag[1] === "-" || explicit === "" || sep || explicit[0] === "-") {
-          fail(`argument ${named(action)}: ignored explicit argument ${pyRepr(explicit)}`);
+          fail(`argument ${named(action as OptSpec | "help")}: ignored explicit argument ${pyRepr(explicit)}`);
         }
-        taken.push(action);
+        taken.push(action as OptSpec | "help");
         const next = actions.get("-" + explicit[0]);
         if (next === undefined) {
           extras.push("-" + explicit);
@@ -714,7 +680,7 @@ export function argparse(argv: string[], spec: OptSpec[], prog: string, usage: s
           break;
         }
         action = next;
-        flag = "-" + explicit[0];
+        flag = "-" + (explicit as string)[0];
         const rest = explicit.slice(1);
         [sep, explicit] = !rest ? [null, null] : rest[0] === "=" ? ["=", rest.slice(1)] : ["", rest];
       }
@@ -736,7 +702,7 @@ export function argparse(argv: string[], spec: OptSpec[], prog: string, usage: s
       value = explicit;
       i++;
     } else if (kinds[i + 1] === "A") {
-      value = argv[i + 1];
+      value = argv[i + 1] as string;
       i += 2;
     } else {
       fail(`argument ${action.flag}: expected one argument`);

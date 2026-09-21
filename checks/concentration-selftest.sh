@@ -58,10 +58,10 @@ ROUTING="$tmp/checks/config/concentration-leg-routed.ts"
 SYNTH="$tmp/gateway/zz-selftest-synthetic/src/main/kotlin/splice/selftest"
 
 # ── harness ───────────────────────────────────────────────────────────────────────────────────
-mkdir -p "$tmp/checks/config" "$tmp/checks/e2e" "$tmp/gateway" "$tmp/tools/gate/config"
+mkdir -p "$tmp/checks/config" "$tmp/tools/e2e/src/compat" "$tmp/gateway" "$tmp/tools/gate/config"
 # The routing wall (V4-145) and the oracle (V4-158) are bun, and both import the Python-semantics
-# shims from ../e2e/.
-cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$tmp/checks/e2e/"
+# shims from tools/e2e/src/compat/.
+cp "$ROOT/tools/e2e/src/compat/python-json.ts" "$ROOT/tools/e2e/src/compat/python-values.ts" "$tmp/tools/e2e/src/compat/"
 # THE LINK SET COMES FROM settings.gradle.kts, never from one directory (restructure PR 3 moves the
 # modules out of gateway/ one commit at a time): a harness that measures a tree with a module
 # missing hands its control a red that reads exactly like a real regression — or, worse, a green
@@ -430,9 +430,9 @@ reset_config
 # pre-DR-51 oracle: the intersection loop dropped the added and deleted rows entirely, and abs()
 # shares could not go negative, so an own-C FALL during a ratio RISE read as a positive share.
 G="$tmp/since-repo"
-mkdir -p "$G/checks/e2e" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
+mkdir -p "$G/checks" "$G/tools/e2e/src/compat" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
 cp "$ROOT/checks/concentration.ts" "$G/checks/concentration.ts"
-cp "$ROOT/checks/e2e/pyjson.ts" "$ROOT/checks/e2e/pyshim.ts" "$G/checks/e2e/"
+cp "$ROOT/tools/e2e/src/compat/python-json.ts" "$ROOT/tools/e2e/src/compat/python-values.ts" "$G/tools/e2e/src/compat/"
 { printf 'package splice.a\nimport splice.b.SelftestMarkerB\nclass A0(val v: Int)\n'; for i in $(seq 1 40); do printf 'class AF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m1/src/main/kotlin/splice/a/A.kt"
 { printf 'package splice.b\nclass SelftestMarkerB(val v: Int)\n'; for i in $(seq 1 200); do printf 'class BF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m2/src/main/kotlin/splice/b/B.kt"
 printf 'package splice.b\nclass Doomed(val v: Int)\n' > "$G/gateway/m2/src/main/kotlin/splice/b/Doomed.kt"

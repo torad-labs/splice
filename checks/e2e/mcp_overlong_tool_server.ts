@@ -11,13 +11,13 @@
  *  WHAT IT IS. Newline-delimited JSON-RPC 2.0 over stdin/stdout (the MCP stdio transport — no
  *  Content-Length framing), standard library only, one tool. Claude Code composes the wire name as
  *  mcp__<server-key-from-.mcp.json>__<advertised tool name>, so the over-length lives in the
- *  COMPOSITION: this server advertises the short half (TOOL_NAME) and heads-e2e.sh owns the long
- *  half (OVERLONG_MCP_SERVER). heads-e2e-selftest.sh pins the two halves to each other and to the
+ *  COMPOSITION: this server advertises the short half (TOOL_NAME) and tools/e2e/src/commands/heads.ts owns the long
+ *  half (OVERLONG_MCP_SERVER). tools/e2e/test/heads.test.ts pins the two halves to each other and to the
  *  68 characters the operator's 400 reported — rename either and the gate goes red.
  *
  *  THE RECEIPT. Every method served is appended as one JSONL row to $SPLICE_E2E_MCP_LOG (absolute
- *  path, planted by heads-e2e.sh into the scratch dir). That file is the only observable proof that
- *  Claude Code really spawned this server and really pulled its tools; heads-e2e.sh's
+ *  path, planted by heads.ts into the scratch dir). That file is the only observable proof that
+ *  Claude Code really spawned this server and really pulled its tools; heads.ts's
  *  mcp_surface_ok() reads it, and the selftest drives this server directly and reads it too.
  *  Unset SPLICE_E2E_MCP_LOG simply disables the receipt — the server still serves.
  *
@@ -28,12 +28,12 @@
  *  interpreter command is reworded to describe the same event without naming the interpreter, on the
  *  orchestrator's ruling: this file invokes nothing, so the mention was an instruction rather than a
  *  dependency, and the census's own remedy for prose is to update the prose. Input goes through the
- *  shared pyjson parser and every reply is built with its constructors, so the emitted bytes are
+ *  shared python-json parser and every reply is built with its constructors, so the emitted bytes are
  *  json.dumps bytes — including the id, which keeps its exact source token rather than being rounded
  *  through a JS number.
  */
 import { appendFileSync } from "node:fs";
-import { dumps, loads, obj, objGet, isPyObj, fromJS, quote, type PyValue, type PyObj } from "./pyjson.ts";
+import { dumps, loads, obj, objGet, isPyObj, fromJS, quote, type PyValue, type PyObj } from "../../tools/e2e/src/compat/python-json.ts";
 
 const TOOL_NAME = "read_process_output";
 const SERVER_NAME = "splice-e2e-overlong-tool";

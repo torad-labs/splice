@@ -50,7 +50,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { dumps, dumpsIndent, floatRepr, isPyNum, isPyObj, loads, obj, type PyValue } from "../e2e/pyjson.ts";
+import { dumps, dumpsIndent, floatRepr, isPyNum, isPyObj, loads, obj, type PyValue } from "../../tools/e2e/src/compat/python-json.ts";
 
 const PROMPT = "List the names of every MCP tool you have available, one per line, then stop. Do not call any tool.";
 const SAMPLE_S = 0.5;
@@ -180,7 +180,7 @@ function cpCompare(a: string, b: string): number {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Python value helpers over pyjson's tagged tree.
+// Python value helpers over python-json's tagged tree.
 // ---------------------------------------------------------------------------------------------
 
 const int = (x: number): PyValue => ({ __pyNum: String(x), isFloat: false });

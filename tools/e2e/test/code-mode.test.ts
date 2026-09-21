@@ -1,17 +1,25 @@
-#!/usr/bin/env bun
-/** Focused receipt tests for the isolated code-mode comparison runner.
+/** Focused receipt tests for the isolated code-mode comparison runner — the gate's
+ *  "code-mode startup receipt selftest" leg.
  *
  *  V4-145: converted from code_mode_compare_test.py; each mock.patch of a code_mode_compare global
- *  is a swap on code_mode_compare.seams, restored in `finally`.
+ *  is a swap on the module's `compareSeams`, restored in `finally`.
+ *
+ *  Restructure PR 5: a real `bun test` file. The ASSERTIONS stay `check.*` from the compat layer
+ *  rather than becoming `expect`: they compare the tagged Python tree (ints vs floats, key order,
+ *  int precision past 2^53), which is exactly what these receipts are about, and `expect`'s
+ *  structural equality would silently accept a float where the receipt must carry an int.
  */
+import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { get, check, FileNotFoundError, OSError, runUnittest, ValueError, type Tests } from "./pyshim.ts";
-import { loads, obj, type PyValue } from "./pyjson.ts";
-import { Budget } from "./code_mode_probe.ts";
-import { run, seams, type RunArgs } from "./code_mode_compare.ts";
+import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
+import { check, FileNotFoundError, get, OSError, ValueError } from "../src/compat/python-values.ts";
+import { loads, obj, type PyValue } from "../src/compat/python-json.ts";
+import { Budget, compareSeams as seams, runCompare as run, type RunArgs } from "../src/commands/code-mode.ts";
+
+const CLI = resolve(import.meta.dir, "../index.ts");
 
 class Process {
   pid = 0;
@@ -72,8 +80,8 @@ const raisesOSError = (message: string) => async () => {
   throw new OSError(message);
 };
 
-export const tests: Tests = {
-  async test_early_daemon_exit_writes_sanitized_startup_receipt() {
+describe("comparison receipts", () => {
+  test("early daemon exit writes sanitized startup receipt", async () => {
     await withDir(async (directory) => {
       const [args, artifact, receipt] = makeArgs(directory);
       await withSeams({ Popen: () => new Process(23) }, async () => {
@@ -87,9 +95,9 @@ export const tests: Tests = {
       check.equal(0, accounting(receipt, "requests"));
       check.notIn("do-not-record", readFileSync(receipt, "utf8"));
     });
-  },
+  });
 
-  async test_readiness_timeout_records_terminated_exit_status() {
+  test("readiness timeout records terminated exit status", async () => {
     await withDir(async (directory) => {
       const [args, , receipt] = makeArgs(directory);
       const proc = new Process();
@@ -103,9 +111,9 @@ export const tests: Tests = {
       check.equal(-15, get(s, "exit_status"));
       check.notIn("private connection detail", readFileSync(receipt, "utf8"));
     });
-  },
+  });
 
-  async test_invalid_health_response_is_a_sanitized_startup_failure() {
+  test("invalid health response is a sanitized startup failure", async () => {
     await withDir(async (directory) => {
       const [args, , receipt] = makeArgs(directory);
       await withSeams({ Popen: () => new Process(), requestJson: async () => [] }, async () => {
@@ -116,9 +124,9 @@ export const tests: Tests = {
       check.equal("invalid_health_response", get(s, "category"));
       check.equal(-15, get(s, "exit_status"));
     });
-  },
+  });
 
-  async test_spawn_and_configuration_failures_are_receipted_without_secrets() {
+  test("spawn and configuration failures are receipted without secrets", async () => {
     await withDir(async (directory) => {
       const [args, , receipt] = makeArgs(directory);
       await withSeams({ Popen: () => { throw new OSError("launch secret"); } }, async () => {
@@ -140,9 +148,9 @@ export const tests: Tests = {
       check.isNone(get(s, "exit_status"));
       check.notIn("auth.json", readFileSync(receipt, "utf8"));
     });
-  },
+  });
 
-  async test_existing_receipt_is_not_replaced() {
+  test("existing receipt is not replaced", async () => {
     await withDir(async (directory) => {
       const [args, , receipt] = makeArgs(directory);
       writeFileSync(receipt, '{"keep":true}\n');
@@ -158,9 +166,9 @@ export const tests: Tests = {
       check.equal(0, served);
       check.equal(0, launched);
     });
-  },
+  });
 
-  async test_cleanup_preserves_rows_and_drained_accounting() {
+  test("cleanup preserves rows and drained accounting", async () => {
     await withDir(async (directory) => {
       const [args, , receipt] = makeArgs(directory);
       const proc = new Process();
@@ -183,9 +191,9 @@ export const tests: Tests = {
       check.isNone(accounting(receipt, "error"));
       check.notIn("private comparison detail", readFileSync(receipt, "utf8"));
     });
-  },
+  });
 
-  async test_cleanup_failure_still_drains_server_accounting_and_preserves_startup_failure() {
+  test("cleanup failure still drains server accounting and preserves startup failure", async () => {
     const budget = new Budget();
     const server = {
       serverPort: 12345,
@@ -207,14 +215,26 @@ export const tests: Tests = {
       }, async () => {
         await check.raises((e) => e instanceof ValueError, () => run(args), /did not become ready/);
       });
-      check.true(server.closed);
+      expect(server.closed).toBe(true);
       check.equal(3, accounting(receipt, "input_tokens"));
       check.equal(2, accounting(receipt, "output_tokens"));
       check.notIn("cleanup secret", readFileSync(receipt, "utf8"));
     });
-  },
-};
+  });
 
-if (import.meta.main) {
-  process.exit(await runUnittest("code_mode_compare_test", "CompareReceiptTests", tests));
-}
+  // Same contract on the BILLED arm, and it matters more here: the comparison spends quota, so a
+  // run that cannot possibly work must stop at the jar rather than after configuring a daemon.
+  test("a missing fat jar is a harness failure (exit 2) that names the producer, never a nested gradle", () => {
+    const receipt = join(mkdtempSync(join(tmpdir(), "code-mode-compare-")), "receipt.json");
+    const auth = join(mkdtempSync(join(tmpdir(), "code-mode-auth-")), "auth.json");
+    writeFileSync(auth, '{"tokens":{"access_token":"do-not-record"}}');
+    const r = spawnSync(process.execPath,
+      [CLI, "code-mode", "compare", "--artifact", "/nonexistent/app-all.jar", "--auth-file", auth, "--receipt", receipt],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("fat jar missing at /nonexistent/app-all.jar");
+    expect(r.stderr).toContain("bash checks/gradle-slot.sh <tag> :app:shadowJar");
+    expect(r.stdout).toBe("");
+    expect(existsSync(receipt)).toBe(false);
+  });
+});

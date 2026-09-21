@@ -81,7 +81,9 @@ tasks.register<Exec>("test") {
     group = "verification"
     description = "vitest run."
     consoleInputs("src", "tests")
-    outputs.upToDateWhen { true }
+    // Never up-to-date: the tests also read .dev/campaigns/web-console/CONTRACTS.md, FEATURES.md and
+    // the base branch's token sheet through git (world.test.ts), which no input tree here can name.
+    outputs.upToDateWhen { false }
     commandLine("bunx", "vitest", "run")
 }
 

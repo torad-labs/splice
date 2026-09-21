@@ -19,7 +19,7 @@ package splice.quality
 
 import java.io.File
 
-/** Gradle path (`:core`) -> the module's directory relative to the Gradle root (`gateway/core`). */
+/** Gradle path (`:daemon-head`) -> the module's directory relative to the Gradle root (`daemon/head`). */
 internal class ProjectMap private constructor(
     /** The Gradle root every relative directory in this map resolves against. */
     val root: File,

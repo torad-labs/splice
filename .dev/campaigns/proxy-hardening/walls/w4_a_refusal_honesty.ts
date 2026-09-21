@@ -51,7 +51,7 @@ function pyRepr(items: string[]): string {
 const ROOT = resolve(import.meta.dir, "../../../..");
 
 const PASS = [
-  resolve(ROOT, "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughTerminalState.kt"),
+  resolve(ROOT, "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughTerminalState.kt"),
 ];
 const CHAT = [
   resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt"),

@@ -23,7 +23,7 @@ include(
     ":core",
     ":client",
     ":upstream",
-    ":dialect-anthropic-passthrough",
+    ":dialects-anthropic",
     ":dialect-openai-responses",
     ":dialect-openai-chat",
     ":provider-codex",
@@ -42,7 +42,7 @@ project(":core").projectDir = file("core")
 // The FIRST module to leave gateway/ (restructure plan §2.3): :client is the Claude Code side.
 project(":client").projectDir = file("client")
 project(":upstream").projectDir = file("upstream")
-project(":dialect-anthropic-passthrough").projectDir = file("gateway/dialect-anthropic-passthrough")
+project(":dialects-anthropic").projectDir = file("dialects/anthropic")
 project(":dialect-openai-responses").projectDir = file("gateway/dialect-openai-responses")
 project(":dialect-openai-chat").projectDir = file("gateway/dialect-openai-chat")
 project(":provider-codex").projectDir = file("gateway/provider-codex")

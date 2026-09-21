@@ -6,6 +6,6 @@ plugins {
 dependencies {
     implementation(project(":core"))
     implementation(project(":upstream"))
-    implementation(project(":dialect-anthropic-passthrough"))
+    implementation(project(":dialects-anthropic"))
     testImplementation(libs.kotlinx.coroutines.test)
 }

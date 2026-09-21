@@ -379,7 +379,7 @@ private const val PATH_PING_GRACE_MS = 60_000L
 
 // V4-116 — the single source for the tier names a stalled round can be judged by, and the
 // milliseconds-per-second divisor the translators scale their "silent Ns" lines with. PUBLIC
-// because both stream translators (dialect-anthropic-passthrough, dialect-openai-chat) import them
+// because both stream translators (:dialects-anthropic, :dialect-openai-chat) import them
 // rather than re-declaring the same three file-local constants — the one-spelling-each rule that
 // keeps a log line and a client-visible sentence from naming the same tier twice.
 public const val FIRST_OUTPUT_TIER: String = "first-output"

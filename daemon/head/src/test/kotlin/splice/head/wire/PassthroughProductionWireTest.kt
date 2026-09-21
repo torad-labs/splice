@@ -18,9 +18,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
-import splice.dialect.passthrough.PassthroughQuirks
-import splice.dialect.passthrough.PassthroughStreamTranslator
-import splice.dialect.passthrough.PassthroughTurnContext
+import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughStreamTranslator
+import splice.dialect.anthropic.PassthroughTurnContext
 
 class PassthroughProductionWireTest {
 

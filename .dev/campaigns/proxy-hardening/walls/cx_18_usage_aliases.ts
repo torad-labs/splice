@@ -93,7 +93,7 @@ export const PATHS: Record<string, string> = {
   // moved to PassthroughUsage.kt (the usage-accounting owner), the same repoint HD-24 made twice
   // above. BAN_DIRS is derived from this path's PARENT, and the destination is a same-package
   // sibling, so the negative half sweeps exactly the same neighbourhood it did before.
-  passthrough: "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughUsage.kt",
+  passthrough: "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughUsage.kt",
 };
 
 // The NEIGHBOURHOODS the forbidden-reader ban sweeps: the package directory of every carrier above,

@@ -21,7 +21,7 @@ import java.io.File
  *  directory. */
 private val PORT_SCOPE_MODULES = listOf(
     ":core", ":client", ":upstream", ":dialect-openai-responses", ":dialect-openai-chat",
-    ":dialect-anthropic-passthrough", ":provider-codex", ":provider-grok", ":provider-openai",
+    ":dialects-anthropic", ":provider-codex", ":provider-grok", ":provider-openai",
     ":provider-kimi", ":provider-muse", ":daemon-head", ":daemon-control", ":app", ":fir-checks",
 )
 
@@ -90,7 +90,7 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
 }
 
 /** HD-9 (#924 capstone): the files allowed to directly construct
- *  [splice.dialect.passthrough.PassthroughQuirks]. A quirks profile is one provider's wire
+ *  [splice.dialect.anthropic.PassthroughQuirks]. A quirks profile is one provider's wire
  *  deformation set (Kimi's adaptive-thinking map, Muse's tool-name cap); letting any file build
  *  one lets provider identity leak into whichever module happens to need a header tweak. Only the
  *  class's own module and the code that assembles a head's provider may build one. Tests are
@@ -106,7 +106,7 @@ private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: 
  *  package, plus the one provider module that builds its own profile rather than taking the
  *  neutral one. */
 private val PASSTHROUGH_QUIRKS_ALLOWED_SITES = mapOf(
-    ":dialect-anthropic-passthrough" to "src/main/", // the class's own module
+    ":dialects-anthropic" to "src/main/", // the class's own module
     ":app" to "src/main/kotlin/splice/app/provider/", // head assembly: ProviderAssembly + its arms
     ":provider-kimi" to "src/main/", // Kimi's own deformation profile (KimiQuirks.kt)
 )
@@ -366,7 +366,7 @@ class ArchitectureLawsTest {
         // graded against. A proof that hardcodes `app/src/...` silently stops being the case it
         // claims to prove the moment a module's directory changes — which it did when the Gradle
         // root moved to the repository root and every module's directory gained its `gateway/`.
-        val ownModule = map.relativeDir(":dialect-anthropic-passthrough")
+        val ownModule = map.relativeDir(":dialects-anthropic")
         val headAssembly = map.relativeDir(":app")
         val headModule = map.relativeDir(":daemon-head")
         assertEquals(

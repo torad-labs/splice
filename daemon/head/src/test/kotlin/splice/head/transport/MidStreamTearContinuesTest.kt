@@ -49,8 +49,8 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.WatchdogBudget
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.HeadServer
 import splice.head.freshPort
 import splice.head.headDeps

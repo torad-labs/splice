@@ -5,7 +5,7 @@ package splice.app.provider
 
 import splice.app.TopologyLoader
 import splice.core.auth.ClientAuthProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Paths
 

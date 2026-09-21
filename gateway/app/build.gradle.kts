@@ -23,7 +23,7 @@ dependencies {
     implementation(project(":upstream"))
     implementation(project(":dialect-openai-responses"))
     implementation(project(":dialect-openai-chat"))
-    implementation(project(":dialect-anthropic-passthrough"))
+    implementation(project(":dialects-anthropic"))
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))
     implementation(project(":provider-kimi"))
@@ -42,7 +42,7 @@ dependencies {
     testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":daemon-head")))
     testImplementation(testFixtures(project(":dialect-openai-responses")))
-    testImplementation(testFixtures(project(":dialect-anthropic-passthrough")))
+    testImplementation(testFixtures(project(":dialects-anthropic")))
 }
 
 application {

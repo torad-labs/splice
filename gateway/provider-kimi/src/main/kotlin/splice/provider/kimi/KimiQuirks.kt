@@ -2,7 +2,7 @@
 // The dialect stays vendor-neutral; assembly selects this profile for the kimi provider id.
 package splice.provider.kimi
 
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughQuirks
 
 /** Kimi's Anthropic-passthrough deformation set — one definition so wiring and goldens cannot drift. */
 public class KimiQuirks {

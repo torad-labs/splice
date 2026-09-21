@@ -8,8 +8,8 @@ package splice.app.provider
 import splice.core.config.SpliceConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ToolSurfaceConfig
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.chat.ChatQuirks
-import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.responses.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks

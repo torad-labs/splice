@@ -60,7 +60,7 @@ const ROOT = resolve(import.meta.dir, "../../../..");
 const SPI = resolve(ROOT, "upstream/src/main/kotlin/splice/upstream/transport/BufferCapacity.kt");
 const CHAT = resolve(ROOT, "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt");
 const RESP = resolve(ROOT, "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt");
-const PASS = resolve(ROOT, "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt");
+const PASS = resolve(ROOT, "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughStreamTranslator.kt");
 const EXPECTED_SURFACES: Record<string, string[]> = {
   chat: ["channels.textBuf.length", "channels.thinkingBuf.length",
     "toolCalls.retainedIndexEntryCount", "toolCalls.bufferedArgsChars"],

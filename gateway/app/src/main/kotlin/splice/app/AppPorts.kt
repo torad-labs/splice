@@ -3,7 +3,7 @@
 // :app is the composition root, so most of what it threads is a role some LOWER module already
 // names — [splice.control.DashboardPage], [splice.control.ShutdownDaemon],
 // [splice.control.TopologyStale], [splice.control.TurnPathStalled],
-// [splice.dialect.passthrough.IdentityHeaders]. Those are imported, never re-declared: a
+// [splice.dialect.anthropic.IdentityHeaders]. Those are imported, never re-declared: a
 // composition root that mints its own twin of a port it is wiring has stopped being a composition
 // root. What lives HERE is only what :app itself owns — the OAuth login flows, the refresh HTTP
 // hop, daemon lifecycle, and the CLI's process/HTTP edges.

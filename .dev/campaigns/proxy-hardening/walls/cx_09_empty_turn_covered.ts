@@ -95,8 +95,8 @@ export const PATHS: Record<string, string[]> = {
   // to PassthroughProseChannels.kt and its read-into-the-outcome site stays in
   // PassthroughStreamTranslator.kt — the same two-file shape the chat key took in HD-24.
   passthrough: [
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughProseChannels.kt",
-    "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughProseChannels.kt",
+    "dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughStreamTranslator.kt",
   ],
   // HD-24 (2026-08-17): ChatStreamTranslator decomposed; emittedThinking's set-site moved to
   // ChatProseChannels.kt and its read-into-the-outcome site stays in ChatStreamTranslator.kt.

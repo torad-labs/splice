@@ -27,7 +27,7 @@ dependencies {
     }
     testImplementation(libs.ktor.client.cio)
     testImplementation(project(":dialect-openai-responses"))
-    testImplementation(project(":dialect-anthropic-passthrough"))
+    testImplementation(project(":dialects-anthropic"))
     testImplementation(project(":provider-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.serialization.json)

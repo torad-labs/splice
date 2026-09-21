@@ -4,9 +4,9 @@
 package splice.app.provider
 
 import splice.core.auth.RefreshableAuthProvider
-import splice.dialect.passthrough.IdentityHeaders
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.IdentityHeaders
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 

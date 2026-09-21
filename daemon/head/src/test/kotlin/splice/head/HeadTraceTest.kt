@@ -35,8 +35,8 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
-import splice.dialect.passthrough.PassthroughProvider
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughProvider
+import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate

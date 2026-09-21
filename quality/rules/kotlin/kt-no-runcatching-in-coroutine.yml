@@ -40,7 +40,7 @@ files:
   - upstream/src/main/**/*.kt
   - gateway/dialect-openai-responses/src/main/**/*.kt
   - gateway/dialect-openai-chat/src/main/**/*.kt
-  - gateway/dialect-anthropic-passthrough/src/main/**/*.kt
+  - dialects/anthropic/src/main/**/*.kt
   - daemon/head/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt
   - gateway/app/src/main/**/*.kt

@@ -126,7 +126,12 @@ proof = "2026-09-21: three mutations, each red on both sides. (a) Main.runDaemon
 [[item]]
 id = "JW-02"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.ts"
+wall = ""
+retired_to = [
+    "app/src/test/kotlin/splice/app/cli/doctor/DoctorHeadChecksTest.kt",
+    "app/src/test/kotlin/splice/app/cli/doctor/DoctorCommandTest.kt",
+]
+proof = "2026-09-21: two mutations, each red on both sides. (a) the per-head TCP probe deleted from DoctorHeadChecks -> wall RED and two DoctorHeadChecksTest arms RED (the unbound head that must WARN 'not listening', and the held port that must read INFO 'listening'); (b) headSummary made to ignore failedHeads -> wall RED, one DoctorHeadChecksTest arm RED (the FAILED-to-start row) and the DoctorCommandTest JW-02 arm RED. Restored, wall GREEN and both homes green (5/5, 14/14). The new home grades the ROWS the check returns rather than doctor's rendered text, so a row that stops being emitted cannot hide behind a sibling row's string"
 
 [[item]]
 id = "JW-03"
@@ -141,7 +146,9 @@ wall = ".dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.ts
 [[item]]
 id = "JW-05"
 phase = "W3-see-the-daemon"
-wall = ".dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.ts"
+wall = ""
+retired_to = ["app/src/test/kotlin/splice/app/cli/doctor/DoctorRuntimeSectionTest.kt"]
+proof = "2026-09-21: two mutations. (a) the error-counter row stripped of its fix -> the new DoctorRuntimeSectionTest arm RED (8 tests, 1 failure) while the WALL STAYED GREEN — the wall asserts the string `splice logs --head codex --tail 50` appears anywhere in doctor's output, and DoctorProbeWrite.perfTailRow emits the same string, so the row losing its own fix was invisible to it; (b) both runtime fixes stripped -> wall RED (runtime warnings carry no actionable fix) and the same arm RED. Restored, both GREEN (8/8). Mutation (a) is the retirement's justification: a fix belongs to a ROW, not to a report, and the new arm asserts on the row object (counters.fix == the exact command, and a clean head's fix == null) where the wall could only grep the page"
 
 [[item]]
 id = "JW-06"

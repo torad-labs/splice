@@ -176,6 +176,20 @@ describe("argv contract", () => {
     const both = run("oracle", "replay", "--fixtures", "--artifact");
     expect(both.status).toBe(HARNESS_EXIT);
     expect(both.stderr).toContain("--fixtures, --artifact take a value");
+    // An EMPTY value is the same hole through truthiness: `--fixtures ""` chose the frozen corpus.
+    const emptyFixtures = run("oracle", "replay", "--fixtures", "", "--artifact", "/nonexistent/app-all.jar");
+    expect(emptyFixtures.status).toBe(HARNESS_EXIT);
+    expect(emptyFixtures.stderr).toContain("--fixtures takes a value");
+    expect(emptyFixtures.stderr).not.toContain("fat jar missing");
+    const emptyDir = mkdtempSync(join(tmpdir(), "oracle-empty-"));
+    try {
+      const emptyArtifact = run("oracle", "replay", "--artifact", "", "--fixtures", emptyDir);
+      expect(emptyArtifact.status).toBe(HARNESS_EXIT);
+      expect(emptyArtifact.stderr).toContain("--artifact takes a value");
+      expect(emptyArtifact.stderr).not.toContain("ENOENT");
+    } finally {
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
   });
 
   test("exit code vocabulary is stable", () => {

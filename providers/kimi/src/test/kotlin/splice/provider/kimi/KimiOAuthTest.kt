@@ -2,7 +2,7 @@
 // percent-encoded device-code grant_type), device-authorization parse defaults + interval clamp,
 // the flat auth-file mapping (field-for-field, rotation-required), and plan-tier 401 classification.
 // A constant drift here is a test failure, not a silent broken login.
-package kimi
+package splice.provider.kimi
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -13,8 +13,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
-import splice.provider.kimi.KimiOAuth
-import splice.provider.kimi.KimiOAuthEndpoints
 
 class KimiOAuthTest {
 

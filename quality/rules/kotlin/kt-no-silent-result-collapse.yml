@@ -73,7 +73,7 @@ note: >
 files:
   - upstream/src/main/**/*.kt
   - providers/grok/src/main/**/*.kt
-  - gateway/provider-kimi/src/main/**/*.kt
+  - providers/kimi/src/main/**/*.kt
   - providers/codex/src/main/**/*.kt
   - gateway/provider-openai/src/main/**/*.kt
   - daemon/control/src/main/**/*.kt

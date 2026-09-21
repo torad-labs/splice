@@ -1,6 +1,6 @@
 // NEW: the Kimi (Moonshot) token-refresh HTTP call — POST grant_type=refresh_token to
 // auth.kimi.com's token URL, the network hop KimiAuthProvider injects. Lives in :app so
-// :provider-kimi stays HTTP-client-agnostic and unit-testable with a fake refreshCall (mirrors
+// :providers-kimi stays HTTP-client-agnostic and unit-testable with a fake refreshCall (mirrors
 // GrokRefresh). Invariants: rotation is mandatory (a response missing refresh_token → Denied →
 // re-prompt); 401/403 and error=="invalid_grant" are terminal (auth dead → InvalidGrant);
 // 429/500/502/503/504 are retryable (3 attempts, backoff 2^attempt seconds, ±10% jitter — see

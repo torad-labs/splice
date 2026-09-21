@@ -1,12 +1,11 @@
 // NEW: KimiDeviceIdentity pins — the five X-Msh-* headers, ASCII sanitization (CJK hostname
 // stripped; empty result -> "unknown"; Ktor throws on non-Latin1 header values), and the persisted
 // device_id (uuid, stable across calls, 0600).
-package kimi
+package splice.provider.kimi
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.provider.kimi.KimiDeviceIdentity
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 

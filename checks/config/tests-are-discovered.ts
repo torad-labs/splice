@@ -303,7 +303,7 @@ function memberItems(original: string, masked: string): string[] {
 /** Every class in the file that declares test methods, NESTED classes included.
  *
  *  A nested class gets its outer name as a qualifier (`Outer$Inner`), because that is how
- *  JUnit writes the row it produces: gateway/app's `inner class Heads` inside SetupCommandTest
+ *  JUnit writes the row it produces: app's `inner class Heads` inside SetupCommandTest
  *  ran as SetupCommandTest$Heads, and looking it up by simple name reported a phantom hole. */
 function classesIn(path: string, module: string): TestClass[] {
   const source = readFileSync(path, "utf8");
@@ -327,7 +327,7 @@ function classesIn(path: string, module: string): TestClass[] {
   return found;
 }
 
-/** The module DIRECTORY of a path — everything before its `/src/` or `/build/` segment (`gateway/app`,
+/** The module DIRECTORY of a path — everything before its `/src/` or `/build/` segment (`app`,
  *  `client`, `daemon/head`), so two modules under one parent never share a key. A path with neither
  *  segment is outside every module home and fails by name rather than defaulting. */
 function moduleOf(path: string): string {

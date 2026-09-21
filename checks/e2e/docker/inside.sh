@@ -13,7 +13,7 @@
 # silently: a head that cannot be probed is a FAIL with a reason, never a green.
 set -uo pipefail
 
-# V4-177: same state-root rule as StatePaths.kt and bin/splice-launch — SPLICE_STATE_DIR, then the
+# V4-177: same state-root rule as StatePaths.kt and app/src/main/dist/bin/splice-launch — SPLICE_STATE_DIR, then the
 # pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting ~/.claude-codex/state in place when that
 # is the only root on the box. Inside the container there is never a pre-0.4 root to adopt; the
 # branch is kept anyway so this file cannot drift from the rule it is exercising.
@@ -593,7 +593,7 @@ cross_head_listagents() {
 step "cross-head ListAgents: claude-mockchat2 lists a session held on claude-mockchat" cross_head_listagents
 
 # ── 8d. the shipped example topology, on this machine, without a single credential ───────────
-# config/splice.example.toml is what a fresh install starts from. Boot it here: every head it
+# app/src/main/resources/splice.example.toml is what a fresh install starts from. Boot it here: every head it
 # declares must install, list, and hand out a launch recipe whose model and window are the ones
 # the example promises, with its sessions registry linked and its wrapper on PATH. No provider is
 # reachable and no auth exists, which is a fresh machine before the operator's first login: the
@@ -673,7 +673,7 @@ assert not failed, f"login verb did not reach its provider flow for: {failed}"
 EOF
 }
 example_topology() {
-  local example="$REPO/config/splice.example.toml" live="$HOME/.config/splice/splice.toml" rc=0
+  local example="$REPO/app/src/main/resources/splice.example.toml" live="$HOME/.config/splice/splice.toml" rc=0
   cp "$live" "$OUT/e2e-topology.toml"
   cp "$example" "$live"
   # install --all links every wrapper the topology declares; the running daemon still serves the

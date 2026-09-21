@@ -3,7 +3,7 @@
  *
  *  GAP (RED at authoring, 2026-07-26): Knob.kt:139 ships
  *      MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 100L)
- *  while splice's OWN committed measurement at config/splice.example.toml:202 reads
+ *  while splice's OWN committed measurement at app/src/main/resources/splice.example.toml:202 reads
  *      "0.3% turn failure at inflight<=14, 11% at 38, 67% at 100".
  *  The shipped default IS the value measured as catastrophic. Observed live 2026-07-26 on
  *  claude-kimi-perf.jsonl: 92% of turns ran at inflight>=2, peaking at 32, 32% errors in the 14:00 hour.
@@ -56,7 +56,7 @@ function pyRepr(items: string[]): string {
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const KNOB = resolve(ROOT, "core/src/main/kotlin/splice/core/config/Knob.kt");
-const EXAMPLE = resolve(ROOT, "config/splice.example.toml");
+const EXAMPLE = resolve(ROOT, "app/src/main/resources/splice.example.toml");
 
 const KNOB_RE = /MAX_INFLIGHT\(\s*"maxInflight"[\s\S]*?,\s*(\d+)L\s*\)/;
 const MEASURE_RE = /([\d.]+)%\s+turn failure at inflight\s*<=\s*(\d+)/;
@@ -82,7 +82,7 @@ export function detect(knobText: string | null, exampleText: string | null): [st
     const mm = exampleText.match(MEASURE_RE);
     if (mm !== null) {
       ceiling = parseInt(mm[2], 10);
-      basis = `config/splice.example.toml — ${mm[1]}% turn failure at inflight<=${ceiling}`;
+      basis = `app/src/main/resources/splice.example.toml — ${mm[1]}% turn failure at inflight<=${ceiling}`;
     }
   }
 

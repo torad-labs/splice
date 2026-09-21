@@ -28,7 +28,7 @@ import splice.control.ManagedHead
 import java.nio.file.Path
 import java.nio.file.Paths
 
-/** The one head wrap targets (config/splice.example.toml:682-692): the splice-owned Claude head
+/** The one head wrap targets (app/src/main/resources/splice.example.toml:682-692): the splice-owned Claude head
  *  whose command is deliberately NOT `claude` (its own comment says why), so wrap borrows its
  *  already-assembled catalog/statusline/login wiring and retargets the write at the vanilla dir. */
 private const val CLAUDE_HEAD_KEY = "claude-splice"

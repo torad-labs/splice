@@ -173,10 +173,10 @@ class InstallCommandTest {
             writeShim(
                 home,
                 """
-                #!/usr/bin/env bash
-                set -euo pipefail
-                SPLICE_SHIM_VERSION="shim-1"
-                echo hi
+                #!/usr/bin/env node
+                "use strict";
+                const SPLICE_SHIM_VERSION = "shim-1";
+                console.log("hi")
                 """.trimIndent(),
             )
             assertEquals("shim-1", InstallCommand().installedShimVersion(env = noEnv))
@@ -186,7 +186,7 @@ class InstallCommandTest {
     @Test
     fun `shimStalenessWarning is null when the marker matches SHIM_VERSION`(@TempDir home: Path) {
         withHome(home) {
-            writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+            writeShim(home, "#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = \"$SHIM_VERSION\";\n")
             assertNull(InstallCommand().shimStalenessWarning(env = noEnv))
         }
     }
@@ -194,7 +194,7 @@ class InstallCommandTest {
     @Test
     fun `shimStalenessWarning warns when the marker is stale or missing`(@TempDir home: Path) {
         withHome(home) {
-            writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"shim-0\"\n")
+            writeShim(home, "#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = \"shim-0\";\n")
             val stale = InstallCommand().shimStalenessWarning(env = noEnv)
             assertTrue(stale != null && stale.contains("STALE") && stale.contains("splice install"))
         }

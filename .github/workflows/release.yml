@@ -4,8 +4,8 @@ name: release
 #
 #   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
 #     this workflow — GitHub generates the release; nobody runs a release command. The version is
-#     DERIVED from the promoted code (bin/splice-launch's SPLICE_GATEWAY_VERSION, the same marker
-#     accept.sh pins against the jar), and the tag is created by the publish step at the promoted
+#     DERIVED from the promoted code (the launch shim's SPLICE_GATEWAY_VERSION, the same marker
+#     `bun tools/release accept` pins against the jar), and the tag is created by the publish step at the promoted
 #     commit — an artifact of promotion, never a second manual pointer that can disagree (fleet's
 #     release-line pattern, minus changesets: splice's versions are hand-paired in code, so the
 #     bump lands on main via PR). `npm run promote` merely OPENS the promotion PR.
@@ -93,9 +93,9 @@ jobs:
           else
             # Promotion path: the promoted CODE is the version authority — the same shim marker
             # accept.sh compares against the jar, so resolve and accept can never disagree.
-            version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' bin/splice-launch)"
+            version="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
             if [ -z "$version" ]; then
-              echo "release: could not read SPLICE_GATEWAY_VERSION from bin/splice-launch" >&2
+              echo "release: could not read SPLICE_GATEWAY_VERSION from app/src/main/dist/bin/splice-launch" >&2
               exit 1
             fi
             if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
@@ -117,16 +117,16 @@ jobs:
 
       - name: stage exact release bundle
         # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
-        # block runs on the PROMOTION path too (a real pushed tag still wins inside stage.sh via
+        # block runs on the PROMOTION path too (a real pushed tag still wins inside the task via
         # GITHUB_REF_TYPE). Without this, the gate was skipped exactly where releases are cut.
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
-        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" bash checks/release/stage.sh
+        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" ./gradlew :app:stageRelease --no-daemon --no-parallel
 
       - name: accept exact release bundle
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
-        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bash checks/release/accept.sh
+        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept
 
       - name: transfer accepted bundle to publisher
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

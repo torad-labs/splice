@@ -25,13 +25,13 @@ jobs:
           persist-credentials: false
       - name: the promoted version must not already be tagged
         run: |
-          version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' bin/splice-launch)"
+          version="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
           if [ -z "$version" ]; then
-            echo "::error::could not read SPLICE_GATEWAY_VERSION from bin/splice-launch"
+            echo "::error::could not read SPLICE_GATEWAY_VERSION from app/src/main/dist/bin/splice-launch"
             exit 1
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
-            echo "::error::tag v${version} already exists — this promotion would release nothing. Bump the version on main first (Versions.kt, bin/splice-launch, package.json move together)."
+            echo "::error::tag v${version} already exists — this promotion would release nothing. Bump the version on main first (Versions.kt, app/src/main/dist/bin/splice-launch, package.json move together)."
             exit 1
           fi
           echo "promotion releases v${version} on merge"

@@ -40,7 +40,7 @@ public class LaunchService(
      *  cross-head resume needs no daemon state — only the sibling config dirs the spec carries. */
     private val resumeAcrossHeads: ResumeAcrossHeads = ResumeAcrossHeads(),
     /** V4-129: the real absolute claude binary when the default `claude` command is WRAPPED —
-     *  bin/splice-launch execs argv[0] by resolving it through PATH, and a wrapped `claude` on PATH
+     *  app/src/main/dist/bin/splice-launch execs argv[0] by resolving it through PATH, and a wrapped `claude` on PATH
      *  IS the shim, so planting the bare [claudeBinary] string there would make EVERY head's launch
      *  (not only a wrapped one) recurse into itself. Defaulted to a REAL reader (not a no-op) so this
      *  self-protection holds from day one without ControlPlane needing to wire anything: the state
@@ -197,7 +197,7 @@ public class LaunchService(
                 "shows for that session, or with a bare -r to get this head's picker"
     }
 
-    /** Vars a launched head must SCRUB from the inherited environment: bin/splice-launch execs
+    /** Vars a launched head must SCRUB from the inherited environment: app/src/main/dist/bin/splice-launch execs
      *  `env` WITHOUT -i, so a head launched from inside another head's session inherits the OUTER
      *  recipe (the same mechanism that let the mgmt key reach a native head — DR-30). Three
      *  classes: (1) a foreign head strips the client's Anthropic session; a native head keeps it —

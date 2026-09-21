@@ -8,7 +8,7 @@
  *
  *  GREEN requires ALL of:
  *    1. Main.kt installs a boot-failure net (bootFailureHandler) BEFORE TopologyLoader.loadOrMaterialize;
- *    2. bin/splice-launch redirects the spawned JVM to daemon-boot.log (with a /dev/null fallback
+ *    2. app/src/main/dist/bin/splice-launch redirects the spawned JVM to daemon-boot.log (with a /dev/null fallback
  *       for an unwritable logs dir) and prints the boot-log tail on handshake failure;
  *    3. DaemonLaunch.spawnDaemon does the same redirect, and ensureDaemon prints the tail when the
  *       daemon never comes up. The cold-start cluster left AdminSupport.kt (concentration HIGH,
@@ -16,10 +16,9 @@
  *
  *  EXIT 0 = boot failures visible. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
  *
- *  V4-154: converted to TypeScript (bun). Two strippers, not one — the Kotlin readers and a SHELL
- *  stripper for bin/splice-launch, whose comment marker is `#`. Running the Kotlin stripper over
- *  the shim would miss every `# TODO:` AND eat the `//` in `http://127.0.0.1`, so the shell marker
- *  is its own regex with a lookbehind for start-of-line-or-whitespace.
+ *  V4-154: converted to TypeScript (bun). The shim was bash then and carried its own `#` stripper;
+ *  since restructure PR 6 it is a Node script under app/src/main/dist/bin/, so the one `//` and
+ *  `/* *\/` stripper below reads all three files.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -58,14 +57,14 @@ function pyRepr(items: string[]): string {
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const MAIN = resolve(ROOT, "app/src/main/kotlin/splice/app/Main.kt");
-const SHIM = resolve(ROOT, "bin/splice-launch");
+const SHIM = resolve(ROOT, "app/src/main/dist/bin/splice-launch");
 const ADMIN = resolve(ROOT, "app/src/main/kotlin/splice/app/cli/daemon/DaemonLaunch.kt");
 
 /** Pure detection. No I/O — the selftest feeds it directly. */
 export function detect(main: string | null, shim: string | null, admin: string | null): string[] {
   for (const [name, text] of [
     ["Main.kt", main],
-    ["bin/splice-launch", shim],
+    ["app/src/main/dist/bin/splice-launch", shim],
     ["DaemonLaunch.kt", admin],
   ] as [string, string | null][]) {
     if (text === null) {
@@ -88,11 +87,11 @@ export function detect(main: string | null, shim: string | null, admin: string |
   }
   if ((shim ?? "").includes("daemon >/dev/null 2>&1") && !(shim ?? "").includes("daemon-boot.log")) {
     problems.push(
-      "bin/splice-launch still discards the spawned JVM's output — a boot stack " +
+      "app/src/main/dist/bin/splice-launch still discards the spawned JVM's output — a boot stack " +
         "trace dies in /dev/null",
     );
   } else if (!(shim ?? "").includes("daemon-boot.log")) {
-    problems.push("bin/splice-launch never mentions daemon-boot.log — no tailable boot lane");
+    problems.push("app/src/main/dist/bin/splice-launch never mentions daemon-boot.log — no tailable boot lane");
   }
   if (!(shim ?? "").includes("tail")) {
     problems.push(
@@ -109,10 +108,6 @@ export function detect(main: string | null, shim: string | null, admin: string |
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 const LINE_COMMENT = /\/\/.*?$/gm;
 const IMPORT_LINE = /^import .*$/gm;
-// bin/splice-launch is SHELL, not Kotlin: its comment marker is `#`. Running the Kotlin stripper
-// over it would miss every `# TODO:` (leaving the hole open on the very reader that carries two of
-// this wall's four required tokens) AND eat the `//` in `http://127.0.0.1`. Same law, own marker.
-const SHELL_COMMENT = /(?:(?<=\s)|^)#.*?$/gm;
 
 /** A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
  *  a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
@@ -128,18 +123,8 @@ export function codeOnly(text: string | null): string | null {
   return stripped.replace(IMPORT_LINE, "");
 }
 
-/** code_only for the shim — the same law spoken in the shell's comment marker. */
-export function shellCodeOnly(text: string | null): string | null {
-  if (text === null) return null;
-  return text.replace(SHELL_COMMENT, "");
-}
-
 function read(p: string): string | null {
   return existsSync(p) ? codeOnly(readFileSync(p, "utf8")) : null;
-}
-
-function readShell(p: string): string | null {
-  return existsSync(p) ? shellCodeOnly(readFileSync(p, "utf8")) : null;
 }
 
 export const MAIN_OPEN =
@@ -197,7 +182,7 @@ function selftest(): number {
 
 function main(): number {
   if (process.argv.includes("--selftest")) return selftest();
-  const problems = detect(read(MAIN), readShell(SHIM), read(ADMIN));
+  const problems = detect(read(MAIN), read(SHIM), read(ADMIN));
   if (problems.length > 0) {
     process.stdout.write("JW-01 WALL RED — a boot-dead daemon leaves no trace:\n");
     for (const p of problems) process.stdout.write(`  · ${p}\n`);

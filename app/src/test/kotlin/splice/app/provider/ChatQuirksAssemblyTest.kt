@@ -85,7 +85,7 @@ class ChatQuirksAssemblyTest {
     //
     // An earlier version of this comment called the Responses floor dormant because "no grok head
     // rides that dialect". That was wrong, and wrong in the way worth recording: the shipped
-    // config/splice.example.toml puts [providers.xai] on openai-responses while the operator config
+    // app/src/main/resources/splice.example.toml puts [providers.xai] on openai-responses while the operator config
     // behind the DR-152 soak has it on openai-chat, so BOTH profiles are live depending on which
     // file you read. Neither floor is dormant, which is why both carry the number.
     //

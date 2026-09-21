@@ -1,7 +1,7 @@
 // NEW: v0.4.0 V4-13 — the bash that finds and cancels a sign-in still waiting for its browser
 // callback, split from LoginHookScripts (that object sits at detekt's function ceiling).
 //
-// OWNERSHIP BOUNDARY: the ONE invocation bin/splice-launch emits for a login, and nothing broader.
+// OWNERSHIP BOUNDARY: the ONE invocation app/src/main/dist/bin/splice-launch emits for a login, and nothing broader.
 // The shim runs `exec java -jar "$JAR" login "$HEAD" ...` with JAR resolved as
 // ${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}/splice.jar}. A pending sign-in is
 // therefore a process that, read from /proc on Linux, satisfies all of: (1) its executable

@@ -2,29 +2,9 @@
   "about": "The gate ladder: every leg of the gate of record that is not yet a Gradle task of its own. build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts registers one Exec task per row under `gateOfRecord` (entered through `bun tools/gate run`), and checks/config/concentration-leg-routed.ts reads the same rows to prove the concentration leg is routed. A row is data, not code: it is present or absent, and its argv is an array Gradle hands to the process without a shell. `why` is the leg's reason for existing — keep it when you move the leg.",
   "legs": [
     {
-      "task": "catalogMetadataSync",
-      "why": "Dependabot edits the catalog but cannot regenerate verification metadata, so gradle bumps used to arrive red six minutes into the gradle tier (#91). State the same fact statically, first and in under a second, with the regeneration remedy attached.",
-      "command": ["bun", "checks/catalog-metadata-sync.ts"]
-    },
-    {
-      "task": "catalogMetadataSelftest",
-      "why": "The canary over the catalog checker: the leg guards the tree, this guards the leg.",
-      "command": ["bash", "checks/catalog-metadata-selftest.sh"]
-    },
-    {
       "task": "gateRules",
       "why": "The ast-grep walls, then RULE ROUTING (the walls prove the routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month reporting zero findings), then the CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot scope, the concentration leg's routing), then the P1 coverage proof.",
       "command": ["bun", "tools/gate", "rules", "--prove-coverage"]
-    },
-    {
-      "task": "concentration",
-      "why": "The decomposition campaign's own oracle was referenced by nothing but its ledger, so the gate printed PASS while saying nothing about concentration. Wired 2026-08-18 as a RATCHET, not as `--max-ratio 1.8`: the tree-wide gate is red on 42 files, and a leg that lands red is a leg that gets weakened within a day. The counts may not rise; the debt prints.",
-      "command": ["npm", "run", "--silent", "gate:concentration"]
-    },
-    {
-      "task": "concentrationSelftest",
-      "why": "The leg guards the tree, this canary guards the LEG. It shipped without one, and that is precisely why a routing guard defeated by a single `#` survived into the branch: its red-proofs were hand-run transcripts in a ledger note, so nothing re-ran them. Both of those bypasses are fixtures now.",
-      "command": ["bash", "checks/concentration-selftest.sh"]
     },
     {
       "task": "hookTests",
@@ -40,16 +20,6 @@
       "task": "campaignWallsSelftest",
       "why": "campaign_wall_gate's own C1–C10 red/green fixtures.",
       "command": ["npm", "run", "--silent", "gate:campaign:selftest"]
-    },
-    {
-      "task": "campaignLedgerFloor",
-      "why": "DR-181: the walls guard the SOURCE TREE a campaign describes; nothing guarded the campaign MEMORY itself. On 2026-09-01 drift-repair.toml lost 164 rows and 2604 lines, was committed and pushed, and the ladder passed 13 of 13 — because no leg read the file.",
-      "command": ["bun", "checks/campaign-ledger-floor.ts", "--check"]
-    },
-    {
-      "task": "campaignLedgerFloorSelftest",
-      "why": "The floor's own red-green arms.",
-      "command": ["bash", "checks/campaign-ledger-floor-selftest.sh"]
     },
     {
       "task": "campaignCliSelftest",
@@ -105,57 +75,10 @@
       "creates": "app/build/receipts"
     },
     {
-      "task": "safeFailureRender",
-      "why": "DR-140: the DR-65 wall. Every throwable rendered into text from a source that touches files or names credential/state types is routed through SafeFailureText.render or carries a dated, reasoned exemption; an undispositioned sink fails BY NAME. DR-73 swept this class by hand with files as the denominator, so UsageRingFile's write half kept a raw render for another eight days — a hand sweep closes the instance, a checker closes the class.",
-      "command": ["bun", "checks/config/safe-failure-render.ts", "check", "."]
+      "task": "dependencyAudit",
+      "why": "bun audit --audit-level=critical over bun.lock, three attempts capped at a minute each (checks/oss/verify-OSS-I.sh until PR 6): the registry's advisory endpoint has hung and answered 503 mid-gate, and a critical advisory must still red all three attempts.",
+      "command": ["bun", "tools/gate", "audit"]
     },
-    {
-      "task": "safeFailureRenderSelftest",
-      "why": "The DR-65 wall's own red-green arms.",
-      "command": ["bash", "checks/safe-failure-render-selftest.sh"]
-    },
-    {
-      "task": "sharedQuirksNoVendorDefaults",
-      "why": "V4-29: a non-null default on a SHARED dialect's quirks is inherited by every provider that does not override it, so a vendor fact parked there rides to other vendors' endpoints. Fields are enumerated by parsing every shared *Quirks primary constructor on disk; there is no allowlist.",
-      "command": ["bun", "checks/config/shared-quirks-no-vendor-defaults.ts", "check", "."]
-    },
-    {
-      "task": "sharedQuirksSelftest",
-      "why": "The shared-quirks wall's own arms.",
-      "command": ["bun", "checks/config/shared-quirks-no-vendor-defaults.ts", "--selftest"]
-    },
-    {
-      "task": "quirksKeysDocumented",
-      "why": "V4-44: a quirk KEY must not drift away from its documentation. The denominator is parsed from QuirksConfig.kt, so a key added tomorrow is in scope with no edit to the checker; every key is documented in config/splice.example.toml or the `splice add PROFILE` emitter, or retired with a written reason.",
-      "command": ["bun", "checks/config/quirks-keys-documented.ts", "check", "."]
-    },
-    {
-      "task": "quirksKeysSelftest",
-      "why": "Red on a synthetic key appended to a temp copy of the source, on a retirement carrying no reason, and on a key named only in a runtime doctor map.",
-      "command": ["bun", "checks/config/quirks-keys-documented.ts", "--selftest"]
-    },
-    {
-      "task": "knobKeysDocumented",
-      "why": "ARCH-AUDIT 2026-09-17 (#924, walls V4-87..V4-98): each violation class the architecture audit found became an instrument BEFORE its instances were fixed, and every instrument is red-green proven by a selftest that runs beside it.",
-      "command": ["bun", "checks/config/knob-keys-documented.ts", "check", "."]
-    },
-    { "task": "knobKeysSelftest", "why": "The knob-keys wall's own arms.", "command": ["bash", "checks/knob-keys-documented-selftest.sh"] },
-    { "task": "envVarsDocumented", "why": "ARCH-AUDIT wall: every environment variable the code reads is documented.", "command": ["bun", "checks/config/env-vars-documented.ts", "check", "."] },
-    { "task": "envVarsSelftest", "why": "The env-vars wall's own arms.", "command": ["bash", "checks/env-vars-documented-selftest.sh"] },
-    {
-      "task": "constSingleSource",
-      "why": "ARCH-AUDIT ratchet: a constant lives once. Ratchet legs carry a checked-in baseline and fail on GROWTH and on a stale entry, so they are green today and stay green only while nobody adds an offender.",
-      "command": ["bun", "checks/const-single-source.ts", "--ratchet"]
-    },
-    { "task": "constSingleSourceSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/const-single-source-selftest.sh"] },
-    { "task": "silentConstants", "why": "ARCH-AUDIT ratchet: a silent constant (a magic value with no name) may not be added.", "command": ["bun", "checks/silent-constants.ts", "--ratchet"] },
-    { "task": "silentConstantsSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/silent-constants-selftest.sh"] },
-    { "task": "roleRegistry", "why": "ARCH-AUDIT wall: every role is registered once.", "command": ["bun", "checks/role-registry.ts", "check", "."] },
-    { "task": "roleRegistrySelftest", "why": "The role-registry wall's own arms.", "command": ["bash", "checks/role-registry-selftest.sh"] },
-    { "task": "modelCatalogsSingleSource", "why": "ARCH-AUDIT wall: the model catalogs have one source.", "command": ["bun", "checks/model-catalogs-single-source.ts", "check", "."] },
-    { "task": "modelCatalogsSelftest", "why": "The model-catalogs wall's own arms.", "command": ["bash", "checks/model-catalogs-single-source-selftest.sh"] },
-    { "task": "autocloseableClosed", "why": "ARCH-AUDIT wall: every AutoCloseable is closed.", "command": ["bun", "checks/autocloseable-closed.ts", "check"] },
-    { "task": "autocloseableClosedSelftest", "why": "The AutoCloseable wall's own arms.", "command": ["bash", "checks/autocloseable-closed-selftest.sh"] },
     {
       "task": "noPython",
       "why": "Operator rule 2026-09-18: this repo has no Python — tooling is bun/TypeScript. The rule drifted every time it was only prose, because nothing failed when a session added another .py. It is a wall now; the dated burn-down list beside this table is the debt and may only shrink. The PreToolUse guard (.claude/settings.json) is `bun tools/gate no-python --guard`, the same library rather than a reimplementation.",
@@ -166,12 +89,6 @@
       "why": "Every red-green arm of the gate CLI: the slot, the JDK resolver, the title preflight, rule routing, the config guard, the no-python wall (every census RED on its mutation, and the write guard still refusing a synthetic event), the write-time hook, the ledger checks and the coverage proof.",
       "command": ["bun", "test", "tools/gate"]
     },
-    { "task": "publicSurface", "why": "ARCH-AUDIT ratchet: the public surface may not grow unrecorded.", "command": ["bun", "checks/public-surface.ts", "--ratchet"] },
-    { "task": "publicSurfaceSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/public-surface-selftest.sh"] },
-    { "task": "constructorWidth", "why": "ARCH-AUDIT ratchet: constructor width may not grow unrecorded.", "command": ["bun", "checks/constructor-width.ts", "--ratchet"] },
-    { "task": "constructorWidthSelftest", "why": "The ratchet's own arms.", "command": ["bash", "checks/constructor-width-selftest.sh"] },
-    { "task": "schemaKeysConsumed", "why": "ARCH-AUDIT wall: every schema key is consumed.", "command": ["bun", "checks/schema-keys-consumed.ts"] },
-    { "task": "schemaKeysConsumedSelftest", "why": "The schema-keys wall's own arms.", "command": ["bash", "checks/schema-keys-consumed-selftest.sh"] },
     {
       "task": "verifyTestDiscovery",
       "why": "V4-68: a @Test method JUnit never DISCOVERED is a green suite with a hole in it. The denominator is parsed from the SOURCE (@Test/@ParameterizedTest per class, member depth only) and the observation is the JUnit XML. POSITION IS LOAD-BEARING: it depends on every Test task, because they PRODUCE the XML it reads and it must read it in the same pass — the results directory is a shared, mutually-destructive observation (a scoped run of one test class wipes every other class's XML in that module; 62 of 63 files deleted mid-run, measured).",
@@ -179,24 +96,11 @@
       "afterAllTests": true
     },
     { "task": "verifyTestDiscoverySelftest", "why": "The discovery wall's own arms.", "command": ["bun", "checks/config/tests-are-discovered.ts", "--selftest"] },
-    {
-      "task": "terminalRestoreBracketed",
-      "why": "CW-9: stty and raw-mode entry exist only inside TerminalMode.raw. A widget that invokes stty on its own can leave the tty raw after SIGINT.",
-      "command": ["bun", "checks/config/terminal-restore-bracketed.ts", "check", "."]
-    },
-    { "task": "terminalRestoreSelftest", "why": "In-process (temp tree, RED then GREEN) so a green live wall cannot hide a dead selftest.", "command": ["bun", "checks/config/terminal-restore-bracketed.ts", "--selftest"] },
-    {
-      "task": "oneConventionalTypeList",
-      "why": "V4-30: the conventional-type vocabulary lives once, in tools/gate/src/lib/conventional.ts, which `gate title` enforces. CONTRIBUTING.md and AGENTS.md had both restated it and both had drifted. Denominator is `git ls-files`, so an untracked sidecar cannot red the gate; a second copy must be tracked to reach main.",
-      "command": ["bun", "checks/config/one-conventional-type-list.ts", "check", "."]
-    },
-    { "task": "oneConventionalTypeListSelftest", "why": "The one-list wall's own arms.", "command": ["bash", "checks/one-conventional-type-list-selftest.sh"] },
     { "task": "prTitle", "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {
       "task": "secretScanAllowlist",
       "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
-      "command": ["bun", "checks/gen-secret-scan-allow.ts", "--check"]
-    },
-    { "task": "secretScanAllowlistSelftest", "why": "The canary over the generated allowlist.", "command": ["bash", "checks/secret-scan-allow-selftest.sh"] }
+      "command": ["bun", "tools/gate", "allowlist", "--check"]
+    }
   ]
 }

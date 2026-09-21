@@ -1,5 +1,5 @@
 // NEW (DR-155): the vendor minimum-edge floor on the chat wire. This is the dialect the operator
-// config behind the DR-152 soak puts [providers.xai] on; the SHIPPED config/splice.example.toml
+// config behind the DR-152 soak puts [providers.xai] on; the SHIPPED app/src/main/resources/splice.example.toml
 // puts it on openai-responses instead, so both dialects are live depending on which file is in
 // play and both carry the floor. Six turns in that soak died on a byte-identical HTTP 400 from xAI,
 // code=invalid_image, "Image dimensions 1x1 are too small. Both width and height must be at least 8

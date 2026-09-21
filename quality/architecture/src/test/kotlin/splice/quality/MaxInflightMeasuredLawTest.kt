@@ -23,27 +23,51 @@ internal object MaxInflightMeasured {
     private val KNOB = Regex("MAX_INFLIGHT\\(\\s*\"maxInflight\"[\\s\\S]*?,\\s*(\\d+)L\\s*\\)")
     private val MEASURE = Regex("([\\d.]+)%\\s+turn failure at inflight\\s*<=\\s*(\\d+)")
 
-    /** Pure: (knob source, example config text) -> problems. */
-    fun audit(knobSource: String?, knobRel: String, example: String?, exampleRel: String): List<String> {
-        if (knobSource == null) return listOf("$knobRel: missing — the knob enum carries the default under audit")
-        val knob = KNOB.find(KotlinText.stripComments(knobSource))
-            ?: return listOf("$knobRel: MAX_INFLIGHT knob declaration not found (shape changed?) — refusing to pass vacuously")
-        val default = knob.groupValues[1].toLong()
-        if (example == null) return listOf("$exampleRel: missing — the measured ceiling lives there and nowhere else")
-        val measure = MEASURE.find(example)
-            ?: return listOf(
-                "$exampleRel: no '<pct>% turn failure at inflight<=<n>' measurement line — the ceiling is read from " +
-                    "the config's own measurement, never hardcoded, so without it there is no ceiling to grade against",
+    /** One side's reading: the number, or why it could not be read. [detail] carries the measured
+     *  failure rate, which the verdict quotes back so a red says what the ceiling was measured from. */
+    private data class Read(val value: Long?, val problems: List<String>, val detail: String = "")
+
+    private fun shippedDefault(source: String?, rel: String): Read {
+        if (source == null) return Read(null, listOf("$rel: missing — the knob enum carries the default under audit"))
+        val knob = KNOB.find(KotlinText.stripComments(source))
+            ?: return Read(
+                null,
+                listOf("$rel: MAX_INFLIGHT knob declaration not found (shape changed?) — refusing to pass vacuously"),
             )
-        val ceiling = measure.groupValues[2].toLong()
-        if (default > ceiling) {
-            return listOf(
-                "shipped maxInflight default $default exceeds the measured-good ceiling $ceiling " +
-                    "(${measure.groupValues[1]}% turn failure at inflight<=$ceiling, $exampleRel). Re-measure, " +
+        return Read(knob.groupValues[1].toLong(), emptyList())
+    }
+
+    private fun measuredCeiling(example: String?, rel: String): Read {
+        if (example == null) return Read(null, listOf("$rel: missing — the measured ceiling lives there and nowhere else"))
+        val measure = MEASURE.find(example)
+            ?: return Read(
+                null,
+                listOf(
+                    "$rel: no '<pct>% turn failure at inflight<=<n>' measurement line — the ceiling is read from " +
+                        "the config's own measurement, never hardcoded, so without it there is no ceiling to grade against",
+                ),
+            )
+        return Read(measure.groupValues[2].toLong(), emptyList(), measure.groupValues[1])
+    }
+
+    /** Pure: (knob source, example config text) -> problems. Both sides are read before either is
+     *  judged, so a run where neither is readable says so about BOTH rather than about the first. */
+    fun audit(knobSource: String?, knobRel: String, example: String?, exampleRel: String): List<String> {
+        val default = shippedDefault(knobSource, knobRel)
+        val ceiling = measuredCeiling(example, exampleRel)
+        val unreadable = default.problems + ceiling.problems
+        val shipped = default.value
+        val bound = ceiling.value
+        return when {
+            unreadable.isNotEmpty() -> unreadable
+            shipped == null || bound == null -> emptyList()
+            shipped <= bound -> emptyList()
+            else -> listOf(
+                "shipped maxInflight default $shipped exceeds the measured-good ceiling $bound " +
+                    "(${ceiling.detail}% turn failure at inflight<=$bound, $exampleRel). Re-measure, " +
                     "or reconcile Knob.kt with splice's own measurement.",
             )
         }
-        return emptyList()
     }
 }
 
@@ -69,7 +93,9 @@ class MaxInflightMeasuredLawTest {
     fun `the law can actually fail - the gap, the boundary, the missing line, the commented entry`() {
         assertEquals(emptyList<String>(), audit(knob(12), EXAMPLE), "12 under a ceiling of 14 is GREEN")
         assertEquals(emptyList<String>(), audit(knob(14), EXAMPLE), "the boundary value is GREEN")
-        assertHit(audit(knob(100), EXAMPLE), "default 100 exceeds", "ceiling 14") { "the original gap must be RED by name" }
+        assertHit(audit(knob(100), EXAMPLE), "default 100 exceeds", "ceiling 14") {
+            "the original gap must be RED by name"
+        }
         assertHit(audit(knob(15), EXAMPLE), "default 15 exceeds") { "one over the ceiling must be RED" }
 
         // A commented-out old entry is history: only the live entry is the default.
@@ -85,7 +111,12 @@ class MaxInflightMeasuredLawTest {
     }
 
     private fun audit(knob: String?, example: String?) =
-        MaxInflightMeasured.audit(knob, "core/src/main/kotlin/splice/core/config/Knob.kt", example, "config/splice.example.toml")
+        MaxInflightMeasured.audit(
+            knob,
+            "core/src/main/kotlin/splice/core/config/Knob.kt",
+            example,
+            "config/splice.example.toml",
+        )
 
     private fun knob(default: Long) =
         "    MAX_INFLIGHT(\"maxInflight\", KnobKind.NUMBER, listOf(\"CLAUDEX_MAX_INFLIGHT\"), ${default}L),\n"
